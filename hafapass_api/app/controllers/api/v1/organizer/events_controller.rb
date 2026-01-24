@@ -6,8 +6,8 @@ module Api
         before_action :set_event, only: [:show, :update, :destroy, :publish, :stats, :attendees]
 
         def index
-          events = current_organizer_profile.events.order(created_at: :desc)
-          render json: events.map { |event| event_json(event) }
+          events = current_organizer_profile.events.includes(:ticket_types).order(created_at: :desc)
+          render json: events.map { |event| event_json(event, include_ticket_types: true) }
         end
 
         def show

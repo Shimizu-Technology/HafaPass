@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 25 / 38
-**Current Task:** Task 26 - Create organizer dashboard home
+**Tasks Completed:** 26 / 38
+**Current Task:** Task 27 - Create event creation form
 
 ---
 
@@ -807,3 +807,39 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, API endpoint testing, and Vite dev server transformation of all updated components.
+
+### 2026-01-24 — Task 26: Create organizer dashboard home
+
+**Changes made:**
+- Created `src/pages/dashboard/DashboardPage.jsx` at `/dashboard` route (protected):
+  - Checks if current user has organizer profile via `GET /api/v1/organizer_profile`
+  - If no profile (404 response): shows `OrganizerProfileForm` component with business_name (required) and business_description fields
+  - On profile form submit: `POST /api/v1/organizer_profile`, then reloads dashboard
+  - If has profile: displays welcome message with business name ("Welcome, [business_name]")
+  - Fetches organizer's events from `GET /api/v1/organizer/events` and displays as EventListCard components
+  - Each EventListCard shows: title, date, venue, status badge (draft/published/cancelled/completed), tickets sold count
+  - Cards link to `/dashboard/events/:id/edit`
+  - "Create Event" button (orange CTA) linking to `/dashboard/events/new`
+  - Empty state: calendar icon, "No events yet" message, "Create Your First Event" button
+  - Loading state: centered spinner
+  - Error state: red panel with error message and "Try Again" button
+  - Handles 401 error with "Please sign in" message
+- Updated backend `Api::V1::Organizer::EventsController#index`:
+  - Added `includes(:ticket_types)` eager loading to prevent N+1
+  - Added `include_ticket_types: true` so dashboard can display tickets sold counts
+- Updated `src/App.jsx`:
+  - Imported `DashboardPage` component
+  - Added `<Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />`
+
+**Commands run:**
+- `npx eslint src/pages/dashboard/DashboardPage.jsx src/App.jsx` — 0 errors
+- `npx vite build` — 167 modules, builds clean (331.43 kB JS)
+- `bundle exec rspec` — 152 examples, 0 failures
+- `curl http://localhost:3000/api/v1/organizer_profile` — returns 401 without auth (correct)
+- `curl http://localhost:3000/api/v1/organizer/events` — returns 401 without auth (correct)
+- `curl http://localhost:5173/dashboard` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/dashboard/DashboardPage.jsx?t=...` — Vite transforms and serves component (imports resolve correctly)
+- `curl http://localhost:5173/src/App.jsx?t=...` — confirms 2 DashboardPage references (import + route)
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, RSpec test suite (152 passing), API endpoint testing, and Vite dev server transformation confirming component compiles and imports resolve correctly.

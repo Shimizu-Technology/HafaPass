@@ -8,6 +8,7 @@ import CheckoutPage from './pages/CheckoutPage'
 import OrderConfirmationPage from './pages/OrderConfirmationPage'
 import TicketPage from './pages/TicketPage'
 import MyTicketsPage from './pages/MyTicketsPage'
+import DashboardPage from './pages/dashboard/DashboardPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 
@@ -22,6 +23,7 @@ function App() {
         <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
         <Route path="/tickets/:qrCode" element={<TicketPage />} />
         <Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/sign-in/*" element={<SignInPage />} />
         <Route path="/sign-up/*" element={<SignUpPage />} />
       </Route>
