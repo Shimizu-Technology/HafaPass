@@ -3,7 +3,7 @@ module Api
     module Organizer
       class EventsController < ApplicationController
         before_action :require_organizer_profile
-        before_action :set_event, only: [:show, :update, :destroy, :publish]
+        before_action :set_event, only: [:show, :update, :destroy, :publish, :stats, :attendees]
 
         def index
           events = current_organizer_profile.events.order(created_at: :desc)
@@ -43,6 +43,61 @@ module Api
           else
             render json: { error: "Only draft events can be published" }, status: :unprocessable_entity
           end
+        end
+
+        def stats
+          tickets = @event.tickets
+          orders = @event.orders.where(status: :completed)
+
+          total_tickets_sold = tickets.where.not(status: :cancelled).count
+          total_revenue_cents = orders.sum(:total_cents)
+          tickets_checked_in = tickets.where(status: :checked_in).count
+
+          tickets_by_type = @event.ticket_types.order(:sort_order, :id).map do |tt|
+            type_tickets = tickets.where(ticket_type_id: tt.id).where.not(status: :cancelled)
+            {
+              name: tt.name,
+              sold: type_tickets.count,
+              available: tt.available_quantity,
+              revenue_cents: tt.price_cents * type_tickets.count
+            }
+          end
+
+          recent_orders = orders.order(created_at: :desc).limit(10).map do |order|
+            {
+              id: order.id,
+              buyer_name: order.buyer_name,
+              buyer_email: order.buyer_email,
+              ticket_count: order.tickets.count,
+              total_cents: order.total_cents,
+              created_at: order.created_at
+            }
+          end
+
+          render json: {
+            total_tickets_sold: total_tickets_sold,
+            total_revenue_cents: total_revenue_cents,
+            tickets_checked_in: tickets_checked_in,
+            tickets_by_type: tickets_by_type,
+            recent_orders: recent_orders
+          }
+        end
+
+        def attendees
+          tickets = @event.tickets.includes(:ticket_type, :order).order(created_at: :desc)
+
+          render json: tickets.map { |ticket|
+            {
+              id: ticket.id,
+              attendee_name: ticket.attendee_name,
+              attendee_email: ticket.attendee_email,
+              ticket_type: ticket.ticket_type.name,
+              status: ticket.status,
+              checked_in_at: ticket.checked_in_at,
+              qr_code: ticket.qr_code,
+              order_id: ticket.order_id
+            }
+          }
         end
 
         private

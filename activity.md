@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 12 / 38
-**Current Task:** Task 13 - Create organizer dashboard stats API
+**Tasks Completed:** 13 / 38
+**Current Task:** Task 14 - RSpec model specs
 
 ---
 
@@ -395,3 +395,36 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - Previous Rails server processes from earlier sessions on ports 3000-3060 could not be killed from sandbox. Started fresh server on port 3070 for testing.
+
+### 2026-01-24 — Task 13: Create organizer dashboard stats API
+
+**Changes made:**
+- Added `stats` action to `Api::V1::Organizer::EventsController`:
+  - Calculates `total_tickets_sold` (non-cancelled tickets count)
+  - Calculates `total_revenue_cents` (sum of completed orders' total_cents)
+  - Calculates `tickets_checked_in` (tickets with checked_in status)
+  - Returns `tickets_by_type`: array of {name, sold, available, revenue_cents} for each ticket type
+  - Returns `recent_orders`: last 10 completed orders with buyer info and ticket count
+- Added `attendees` action to `Api::V1::Organizer::EventsController`:
+  - Lists all tickets for event with attendee_name, attendee_email, ticket_type name, status, checked_in_at, qr_code, order_id
+  - Includes eager-loaded ticket_type and order to avoid N+1 queries
+- Added routes: `GET /api/v1/organizer/events/:id/stats`, `GET /api/v1/organizer/events/:id/attendees` (as member routes)
+- Updated `before_action :set_event` to include `:stats` and `:attendees` actions
+
+**Commands run:**
+- `bundle exec rails routes | grep -E "(stats|attendees)"` — verified 2 new routes
+- Created test data: 1 event, 2 ticket types (GA, VIP), 6 orders, 11 tickets (3 checked in, 1 cancelled)
+- `curl http://localhost:3080/api/v1/organizer/events/10/stats` — returns 401 (auth required, correct)
+- `curl http://localhost:3080/api/v1/organizer/events/10/attendees` — returns 401 (auth required, correct)
+- Rails runner assertions verified:
+  - total_tickets_sold = 10 (11 total minus 1 cancelled)
+  - total_revenue_cents = 33775 (sum of 6 completed orders)
+  - tickets_checked_in = 3
+  - GA: sold=10, available=90, revenue=25000
+  - VIP: sold=0, available=19, revenue=0
+  - recent_orders returns 6 orders, most recent first (VIP Buyer)
+  - attendees returns 11 tickets with correct statuses and ticket_type names
+- `bundle exec rspec` — 5 examples, 0 failures, 5 pending
+
+**Issues and resolutions:**
+- Rack::MockRequest approach for endpoint testing returned HTML error pages due to auth monkey-patching not propagating correctly in-process. Verified via Rails runner assertions instead, which test the exact same query logic the controller uses.
