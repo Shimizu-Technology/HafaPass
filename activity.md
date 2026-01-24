@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 19 / 38
-**Current Task:** Task 20 - Create event detail page
+**Tasks Completed:** 20 / 38
+**Current Task:** Task 21 - Create checkout page - order summary
 
 ---
 
@@ -606,3 +606,34 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - agent-browser daemon failed to start (Chromium blocked by macOS sandbox mach port restrictions). Verified via successful production build, ESLint, curl confirming API and frontend serve correctly, and Vite dev server transformation of EventsPage component.
+
+### 2026-01-24 — Task 20: Create event detail page
+
+**Changes made:**
+- Created `src/pages/EventDetailPage.jsx` at `/events/:slug` route:
+  - Fetches event from `GET /api/v1/events/:slug` (includes ticket_types)
+  - Displays cover image (full width, or gradient placeholder)
+  - Displays title, formatted date/time (weekday, month, day, year + time range), venue name and address
+  - Displays description section under "About" heading with whitespace-pre-line for formatting
+  - Age restriction badge (18+ or 21+) if not all_ages, displayed next to title
+  - Ticket types section with: name, description, price ($XX.XX format), availability ("X remaining" or "Sold Out" badge)
+  - Quantity selector (+/- buttons) for each available ticket type, respects max_per_order and available_quantity limits
+  - "Get Tickets" button navigates to `/checkout/:slug` with selected line_items and event in navigation state
+  - Button disabled when no tickets selected, shows dynamic count ("Get 3 Tickets")
+  - Loading state: centered spinner
+  - Error state: red panel with error message and "Back to Events" button
+  - 404 handling: displays "Event not found." message
+- Updated `src/App.jsx`:
+  - Imported `EventDetailPage` component
+  - Added `<Route path="/events/:slug" element={<EventDetailPage />} />` inside Layout
+
+**Commands run:**
+- `npx eslint src/pages/EventDetailPage.jsx src/App.jsx` — 0 errors
+- `npx vite build` — 159 modules, builds clean (296.65 kB JS)
+- `curl http://localhost:3000/api/v1/events/full-moon-beach-party` — returns event with 3 ticket_types, 21+ age restriction
+- `curl http://localhost:3000/api/v1/events/nonexistent-event` — returns 404
+- `curl http://localhost:5173/events/full-moon-beach-party` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/EventDetailPage.jsx` — Vite transforms and serves component
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, and curl confirming both API and frontend serve correct content.
