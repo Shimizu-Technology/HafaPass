@@ -1,0 +1,83 @@
+{
+  "env": {
+    "XDG_CACHE_HOME": ".cache",
+    "npm_config_cache": ".cache/npm",
+    "PIP_CACHE_DIR": ".cache/pip",
+    "BUNDLE_PATH": ".cache/bundle"
+  },
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:*)",
+      "Bash(agent-browser:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm create:*)",
+      "Bash(npx:*)",
+      "Bash(pnpm:*)",
+      "Bash(yarn:*)",
+      "Bash(bun:*)",
+      "Bash(node:*)",
+      "Bash(rails:*)",
+      "Bash(bundle:*)",
+      "Bash(ruby:*)",
+      "Bash(gem:*)",
+      "Bash(rake:*)",
+      "Bash(rspec:*)",
+      "Bash(rubocop:*)",
+      "Bash(curl:*)",
+      "Bash(mkdir:*)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(touch:*)",
+      "Bash(echo:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(chmod:*)",
+      "Bash(createdb:*)",
+      "Bash(dropdb:*)",
+      "Bash(psql:*)",
+      "Bash(pg_dump:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)"
+    ],
+    "deny": [
+      "Bash(sudo:*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~/*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./hafapass_api/.env)",
+      "Read(./hafapass_frontend/.env.local)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(rm -rf:*)"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowLocalBinding": true
+    }
+  }
+}
