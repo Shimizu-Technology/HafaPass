@@ -60,6 +60,10 @@ class Api::V1::OrdersController < ApplicationController
       @order = Order.create!(
         user: @current_user,
         event: event,
+        # STRIPE INTEGRATION: When Stripe is configured, create order as :pending
+        # instead of :completed. The order transitions to :completed only after
+        # successful payment confirmation via webhook.
+        # Change to: status: :pending
         status: :completed,
         subtotal_cents: subtotal_cents,
         service_fee_cents: service_fee_cents,
@@ -67,6 +71,8 @@ class Api::V1::OrdersController < ApplicationController
         buyer_email: params[:buyer_email],
         buyer_name: params[:buyer_name],
         buyer_phone: params[:buyer_phone],
+        # STRIPE INTEGRATION: Remove completed_at here; set it in webhook handler
+        # when payment_intent.succeeded is received.
         completed_at: Time.current
       )
 
@@ -82,6 +88,18 @@ class Api::V1::OrdersController < ApplicationController
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
       end
     end
+
+    # STRIPE INTEGRATION: When Stripe is configured, create a PaymentIntent
+    # and return the client_secret to the frontend instead of completing immediately.
+    #
+    # if StripeService.stripe_configured?
+    #   intent = StripeService.create_payment_intent(@order)
+    #   @order.update!(stripe_payment_intent_id: intent.id)
+    #   render json: order_json(@order).merge(client_secret: intent.client_secret), status: :created
+    # else
+    #   # Mock checkout: complete immediately (current behavior)
+    #   render json: order_json(@order), status: :created
+    # end
 
     render json: order_json(@order), status: :created
   rescue ActiveRecord::RecordInvalid => e

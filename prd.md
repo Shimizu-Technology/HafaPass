@@ -667,7 +667,7 @@ HafaPass is a ticketing platform for Guam's hospitality industry, powered by Amb
       "Add STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY to .env.example",
       "Verify app runs without Stripe keys (no errors on boot)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 33,

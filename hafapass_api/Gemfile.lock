@@ -216,6 +216,7 @@ GEM
       rspec-support (~> 3.13)
     rspec-support (3.13.6)
     securerandom (0.4.1)
+    stripe (18.0.1)
     stringio (3.2.0)
     thor (1.5.0)
     timeout (0.6.0)
@@ -244,6 +245,7 @@ DEPENDENCIES
   rack-cors
   rails (~> 8.0)
   rspec-rails (~> 7.0)
+  stripe
   tzinfo-data
 
 BUNDLED WITH

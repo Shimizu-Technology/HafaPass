@@ -6,6 +6,7 @@ gem "puma", ">= 5.0"
 gem "rack-cors"
 gem "dotenv-rails"
 gem "jwt"
+gem "stripe"
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false
 
