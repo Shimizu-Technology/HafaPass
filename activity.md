@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 9 / 38
-**Current Task:** Task 10 - Create Orders API with mock checkout
+**Tasks Completed:** 10 / 38
+**Current Task:** Task 11 - Create attendee orders and tickets API
 
 ---
 
@@ -294,3 +294,43 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - None. Clean implementation.
+
+### 2026-01-24 — Task 10: Create Orders API with mock checkout
+
+**Changes made:**
+- Created `app/controllers/api/v1/orders_controller.rb` with `create` action:
+  - Accepts params: `event_id`, `buyer_email`, `buyer_name`, `buyer_phone`, `line_items` (array of `{ticket_type_id, quantity}`)
+  - Validates event exists and is published
+  - Validates ticket types belong to the event
+  - Validates quantities available (checks `available_quantity`)
+  - Validates `max_per_order` not exceeded
+  - Calculates subtotal from ticket prices × quantities
+  - Calculates service_fee: `(subtotal * 0.03).round + (total_ticket_count * 50)` cents
+  - Calculates total: subtotal + service_fee
+  - Creates order and tickets in a database transaction
+  - Increments `quantity_sold` on ticket types
+  - QR codes auto-generated via Ticket model's `before_create` callback
+  - Order status set to `completed` with `completed_at` timestamp (mock checkout = instant)
+  - Returns order with nested tickets in response
+  - Supports optional authentication (guest checkout works without token, but attaches user if authenticated)
+- Added route: `POST /api/v1/orders` in `config/routes.rb`
+
+**Commands run:**
+- `bundle exec rails routes | grep order` — verified route exists
+- Started Rails server on port 3040
+- Tested successful order creation:
+  - 2× General Admission ($25) + 1× VIP ($75) = subtotal $125.00
+  - Service fee: ($125 × 3%) + (3 × $0.50) = $3.75 + $1.50 = $5.25
+  - Total: $130.25 — all calculations correct
+  - 3 tickets created with unique UUID QR codes, status "issued"
+  - Attendee info copied from buyer info correctly
+- Tested error scenarios:
+  - Missing buyer info → 422 "buyer_email and buyer_name are required"
+  - Invalid event_id → 404 "Event not found"
+  - Quantity exceeds available → 422 "Only X tickets available for Y"
+  - Empty line_items → 422 "line_items is required and must be a non-empty array"
+  - Exceeds max_per_order → 422 "Maximum X tickets per order for Y"
+- `bundle exec rspec` — 5 examples, 0 failures, 5 pending
+
+**Issues and resolutions:**
+- Multiple stale Rails server processes on ports 3000-3030 from previous sessions. Removed stale PID file and started fresh server on port 3040.
