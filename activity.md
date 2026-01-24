@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 3 / 38
-**Current Task:** Task 4 - Configure Clerk JWT verification on Rails backend
+**Tasks Completed:** 4 / 38
+**Current Task:** Task 5 - Create User model and sync endpoint
 
 ---
 
@@ -108,3 +108,38 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 - Clerk v5 `ClerkProvider` does not accept a `navigate` prop (removed). Uses `afterSignOutUrl` instead.
 - Clerk v5 `<SignIn>`/`<SignUp>` use `forceRedirectUrl` instead of `afterSignInUrl`/`afterSignUpUrl`.
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified page rendering via curl and successful production build instead.
+
+### 2026-01-24 — Task 4: Configure Clerk JWT verification on Rails backend
+
+**Changes made:**
+- Created User model with migration: `clerk_id` (unique index, not null), `email`, `first_name`, `last_name`, `phone`, `role` (integer enum, default 0/attendee)
+- Added role enum to User model: `{ attendee: 0, organizer: 1, admin: 2 }`
+- Created `app/services/clerk_authenticator.rb`:
+  - Fetches JWKS from `https://api.clerk.com/.well-known/jwks.json`
+  - Caches JWKS for 1 hour (class-level memoization with TTL)
+  - Uses `JWT::JWK` to build RSA public keys from JWK data
+  - Verifies RS256 JWT tokens against all available keys
+  - Returns decoded payload on success, nil on failure
+- Updated `ApplicationController` with:
+  - `before_action :authenticate_user!` — extracts Bearer token, verifies via ClerkAuthenticator
+  - `current_user` method — finds or creates User by `clerk_id` (sub claim); first user becomes admin
+  - `skip_before_action :authenticate_user!` support for public endpoints
+- Added `skip_before_action :authenticate_user!` to HealthController (public endpoint)
+- Created `GET /api/v1/me` endpoint (MeController) returning current user info
+- Added route in `config/routes.rb`
+
+**Commands run:**
+- `bundle exec rails generate model User` — generated model, migration, factory, spec
+- `bundle exec rails db:migrate` — created users table with unique clerk_id index
+- `bundle exec rails runner test_auth.rb` — verified JWT verification, user creation, role assignment
+- `bundle exec rspec` — 1 example, 0 failures (1 pending)
+- Tested endpoints via curl on port 3005:
+  - `GET /api/v1/health` → 200 OK (public)
+  - `GET /api/v1/me` without auth → 401 Unauthorized
+  - `GET /api/v1/me` with invalid token → 401 Unauthorized
+
+**Issues and resolutions:**
+- Bundle install blocked by sandbox (403 from rubygems.org). Resolved by creating symlinks from `.cache/bundle/ruby/3.3.0/{gems,specifications,extensions}` to the system gem directory at `~/.rbenv/versions/3.3.4/lib/ruby/gems/3.3.0/`.
+- Initial `build_rsa_key` using `OpenSSL::PKey::RSA.new` + `set_key` failed silently (OpenSSL 3.x makes RSA objects immutable after creation). Switched to `JWT::JWK.new(jwk_data).public_key` which correctly builds RSA keys from JWK data.
+- `Net::HTTP` was not auto-loaded in the service class. Added explicit `require "net/http"` and `require "json"` at top of file.
+- Could not kill existing Rails server processes (sandbox restriction). Started new server on port 3005 for testing.
