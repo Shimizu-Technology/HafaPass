@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 17 / 38
-**Current Task:** Task 18 - Create home page
+**Tasks Completed:** 18 / 38
+**Current Task:** Task 19 - Create events listing page
 
 ---
 
@@ -550,3 +550,33 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful build (all modules compile) and curl (Vite serves transformed components).
+
+### 2026-01-24 — Task 18: Create home page
+
+**Changes made:**
+- Created `src/pages/HomePage.jsx` at `/` route with three sections:
+  - Hero section: gradient background (ocean blue to teal), tagline "Your Island. Your Events. Your Pass.", CTA button "Browse Events" linking to /events
+  - Featured events section: fetches upcoming events from GET /api/v1/events, displays top 4 as EventCard components in a responsive grid (1-2-4 columns)
+  - Organizer CTA section: blue-50 background, pitch text about HafaPass, "Get Started" button linking to /dashboard
+- Created `src/components/EventCard.jsx`:
+  - Cover image (or blue-to-teal gradient placeholder with "HP" watermark)
+  - Event title, formatted date/time, venue name
+  - Starting price from ticket_types (handles free events, "No tickets listed" fallback)
+  - Featured badge for featured events
+  - Links to `/events/:slug`
+- Updated `hafapass_api/app/controllers/api/v1/events_controller.rb`:
+  - Added `include_ticket_types: true` to index action so EventCards can display pricing
+  - Added `.includes(:ticket_types, :organizer_profile)` eager loading to prevent N+1 queries
+- Both components handle loading state (spinner), error state (red message), and empty state ("No events available")
+
+**Commands run:**
+- `npx eslint src/pages/HomePage.jsx src/components/EventCard.jsx` — 0 errors
+- `npx vite build` — 157 modules, builds clean (289.64 kB JS)
+- `curl http://localhost:3000/api/v1/events` — returns 4 published events with ticket_types
+- `curl http://localhost:5173/` — serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/HomePage.jsx` — Vite transforms and serves component
+- `bundle exec rspec` — 152 examples, 0 failures
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, and curl confirming both servers serve correct content.
+- Events list API initially didn't include ticket_types. Updated controller to include them with eager loading so EventCard can display starting prices.
