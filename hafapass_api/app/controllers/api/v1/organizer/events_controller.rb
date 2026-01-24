@@ -119,6 +119,12 @@ module Api
         end
 
         def event_params
+          # NOTE: cover_image_url currently accepts a direct URL string.
+          # With S3 integration, the flow would be:
+          #   1. Frontend calls POST /api/v1/uploads/presign to get a presigned POST URL
+          #   2. Frontend uploads the image directly to S3 using the presigned URL
+          #   3. Frontend sends the resulting S3 key back here as cover_image_url
+          #   4. Backend could use S3Service.generate_presigned_get(key) to serve time-limited URLs
           params.permit(
             :title, :description, :short_description, :cover_image_url,
             :venue_name, :venue_address, :venue_city,

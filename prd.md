@@ -684,7 +684,7 @@ HafaPass is a ticketing platform for Guam's hospitality industry, powered by Amb
       "Add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_BUCKET, AWS_REGION to .env.example",
       "Verify app runs without AWS keys (presign endpoint returns 503 'Storage not configured')"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 34,

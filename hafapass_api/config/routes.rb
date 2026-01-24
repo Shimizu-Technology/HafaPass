@@ -12,6 +12,9 @@ Rails.application.routes.draw do
       post "organizer_profile", to: "organizer_profiles#create_or_update"
       put "organizer_profile", to: "organizer_profiles#create_or_update"
 
+      # Presigned upload URL (authenticated)
+      post "uploads/presign", to: "uploads#presign"
+
       # Orders (public create for guest checkout)
       resources :orders, only: [:create]
 

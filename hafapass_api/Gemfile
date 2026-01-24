@@ -7,6 +7,7 @@ gem "rack-cors"
 gem "dotenv-rails"
 gem "jwt"
 gem "stripe"
+gem "aws-sdk-s3"
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false
 
