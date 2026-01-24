@@ -147,7 +147,7 @@ export default function MyTicketsPage() {
 
           return (
             <div key={event.id} className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className={`px-5 py-4 border-b ${isPast ? 'bg-gray-50' : 'bg-blue-50'}`}>
+              <div className={`px-4 sm:px-5 py-4 border-b ${isPast ? 'bg-gray-50' : 'bg-blue-50'}`}>
                 <div className="flex items-start justify-between">
                   <div>
                     <Link
@@ -174,7 +174,7 @@ export default function MyTicketsPage() {
                   <Link
                     key={ticket.id}
                     to={`/tickets/${ticket.qr_code}`}
-                    className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
+                    className="flex items-center justify-between px-4 sm:px-5 py-3 min-h-[52px] hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex items-center space-x-3">
                       <div className="flex-shrink-0">

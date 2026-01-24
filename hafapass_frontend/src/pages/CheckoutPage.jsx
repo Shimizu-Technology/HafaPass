@@ -181,7 +181,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Order Summary Card */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-6">
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 sm:p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Order Summary</h2>
 
         {/* Line items */}
@@ -210,7 +210,7 @@ export default function CheckoutPage() {
         <div className="flex justify-between items-center mb-2">
           <span className="text-gray-600">
             Service fee
-            <span className="text-xs text-gray-400 ml-1">(3% + $0.50/ticket)</span>
+            <span className="text-xs text-gray-400 ml-1 hidden sm:inline">(3% + $0.50/ticket)</span>
           </span>
           <span className="text-gray-900">{formatPrice(serviceFeeCents)}</span>
         </div>
@@ -226,7 +226,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Buyer Information Form */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-6">
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 sm:p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Your Information</h2>
 
         {submitError && (

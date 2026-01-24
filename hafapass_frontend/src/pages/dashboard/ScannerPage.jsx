@@ -313,19 +313,19 @@ export default function ScannerPage() {
       <div className="border-t border-gray-200 pt-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-2">Manual Entry</h2>
         <p className="text-sm text-gray-500 mb-3">Enter or paste a ticket QR code value directly.</p>
-        <form onSubmit={handleManualSubmit} className="flex gap-2">
+        <form onSubmit={handleManualSubmit} className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             value={manualCode}
             onChange={(e) => setManualCode(e.target.value)}
             placeholder="Enter QR code (UUID)"
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             disabled={manualSubmitting}
           />
           <button
             type="submit"
             disabled={!manualCode.trim() || manualSubmitting}
-            className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium px-4 py-3 rounded-lg transition-colors whitespace-nowrap"
+            className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium px-4 py-3 min-h-[44px] rounded-lg transition-colors whitespace-nowrap"
           >
             {manualSubmitting ? 'Checking...' : 'Check In'}
           </button>

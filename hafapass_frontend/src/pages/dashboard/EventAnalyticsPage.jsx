@@ -177,31 +177,31 @@ export default function EventAnalyticsPage() {
 
       {/* Tickets by Type */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
-        <div className="px-5 py-4 border-b border-gray-200">
+        <div className="px-4 sm:px-5 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Tickets by Type</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Sold</th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Available</th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
+                <th className="text-left px-3 sm:px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                <th className="text-right px-2 sm:px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Sold</th>
+                <th className="text-right px-2 sm:px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Avail</th>
+                <th className="text-right px-3 sm:px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {stats.tickets_by_type.map((type, idx) => (
                 <tr key={idx}>
-                  <td className="px-5 py-3 text-sm font-medium text-gray-900">{type.name}</td>
-                  <td className="px-5 py-3 text-sm text-gray-600 text-right">{type.sold}</td>
-                  <td className="px-5 py-3 text-sm text-gray-600 text-right">{type.available}</td>
-                  <td className="px-5 py-3 text-sm text-gray-900 text-right font-medium">{formatCents(type.revenue_cents)}</td>
+                  <td className="px-3 sm:px-5 py-3 text-sm font-medium text-gray-900">{type.name}</td>
+                  <td className="px-2 sm:px-5 py-3 text-sm text-gray-600 text-right">{type.sold}</td>
+                  <td className="px-2 sm:px-5 py-3 text-sm text-gray-600 text-right">{type.available}</td>
+                  <td className="px-3 sm:px-5 py-3 text-sm text-gray-900 text-right font-medium">{formatCents(type.revenue_cents)}</td>
                 </tr>
               ))}
               {stats.tickets_by_type.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-4 text-sm text-gray-500 text-center">No ticket types yet.</td>
+                  <td colSpan={4} className="px-3 sm:px-5 py-4 text-sm text-gray-500 text-center">No ticket types yet.</td>
                 </tr>
               )}
             </tbody>
@@ -215,30 +215,49 @@ export default function EventAnalyticsPage() {
           <h2 className="text-lg font-semibold text-gray-900">Recent Orders</h2>
         </div>
         {stats.recent_orders.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Buyer</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                  <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Tickets</th>
-                  <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                  <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {stats.recent_orders.map((order) => (
-                  <tr key={order.id}>
-                    <td className="px-5 py-3 text-sm font-medium text-gray-900">{order.buyer_name}</td>
-                    <td className="px-5 py-3 text-sm text-gray-600">{order.buyer_email}</td>
-                    <td className="px-5 py-3 text-sm text-gray-600 text-right">{order.ticket_count}</td>
-                    <td className="px-5 py-3 text-sm text-gray-900 text-right font-medium">{formatCents(order.total_cents)}</td>
-                    <td className="px-5 py-3 text-sm text-gray-500 text-right whitespace-nowrap">{formatDate(order.created_at)}</td>
+          <>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Buyer</th>
+                    <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Tickets</th>
+                    <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                    <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {stats.recent_orders.map((order) => (
+                    <tr key={order.id}>
+                      <td className="px-5 py-3 text-sm font-medium text-gray-900">{order.buyer_name}</td>
+                      <td className="px-5 py-3 text-sm text-gray-600">{order.buyer_email}</td>
+                      <td className="px-5 py-3 text-sm text-gray-600 text-right">{order.ticket_count}</td>
+                      <td className="px-5 py-3 text-sm text-gray-900 text-right font-medium">{formatCents(order.total_cents)}</td>
+                      <td className="px-5 py-3 text-sm text-gray-500 text-right whitespace-nowrap">{formatDate(order.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Mobile card layout */}
+            <div className="sm:hidden divide-y divide-gray-200">
+              {stats.recent_orders.map((order) => (
+                <div key={order.id} className="px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-900">{order.buyer_name}</span>
+                    <span className="text-sm font-medium text-gray-900">{formatCents(order.total_cents)}</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-gray-500 truncate mr-2">{order.buyer_email}</span>
+                    <span className="text-xs text-gray-500 whitespace-nowrap">{order.ticket_count} ticket{order.ticket_count === 1 ? '' : 's'}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">{formatDate(order.created_at)}</p>
+                </div>
+              ))}
+            </div>
+          </>
         ) : (
           <div className="px-5 py-8 text-center">
             <p className="text-sm text-gray-500">No orders yet.</p>
@@ -260,46 +279,78 @@ export default function EventAnalyticsPage() {
         </div>
         {showAttendees && attendees && (
           attendees.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                    <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                    <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket Type</th>
-                    <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {attendees.map((att) => (
-                    <tr key={att.id}>
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900">{att.attendee_name || '—'}</td>
-                      <td className="px-5 py-3 text-sm text-gray-600">{att.attendee_email || '—'}</td>
-                      <td className="px-5 py-3 text-sm text-gray-600">{att.ticket_type}</td>
-                      <td className="px-5 py-3">
-                        {att.status === 'checked_in' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                            Checked In
-                          </span>
-                        ) : att.status === 'issued' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                            Valid
-                          </span>
-                        ) : att.status === 'cancelled' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                            Cancelled
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                            {att.status}
-                          </span>
-                        )}
-                      </td>
+            <>
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                      <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                      <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket Type</th>
+                      <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {attendees.map((att) => (
+                      <tr key={att.id}>
+                        <td className="px-5 py-3 text-sm font-medium text-gray-900">{att.attendee_name || '—'}</td>
+                        <td className="px-5 py-3 text-sm text-gray-600">{att.attendee_email || '—'}</td>
+                        <td className="px-5 py-3 text-sm text-gray-600">{att.ticket_type}</td>
+                        <td className="px-5 py-3">
+                          {att.status === 'checked_in' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                              Checked In
+                            </span>
+                          ) : att.status === 'issued' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                              Valid
+                            </span>
+                          ) : att.status === 'cancelled' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                              Cancelled
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                              {att.status}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Mobile card layout */}
+              <div className="sm:hidden divide-y divide-gray-200">
+                {attendees.map((att) => (
+                  <div key={att.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-900">{att.attendee_name || '—'}</span>
+                      {att.status === 'checked_in' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                          Checked In
+                        </span>
+                      ) : att.status === 'issued' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                          Valid
+                        </span>
+                      ) : att.status === 'cancelled' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                          Cancelled
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                          {att.status}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{att.attendee_email || '—'}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{att.ticket_type}</p>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="px-5 py-8 text-center">
               <p className="text-sm text-gray-500">No attendees yet.</p>

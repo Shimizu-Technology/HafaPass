@@ -83,8 +83,8 @@ export default function TicketPage() {
   const status = statusConfig[ticket.status] || statusConfig.issued;
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg overflow-hidden">
+    <div className="min-h-[60vh] flex items-center justify-center px-3 sm:px-4 py-8">
+      <div className="w-full max-w-[340px] sm:max-w-sm bg-white rounded-2xl shadow-lg overflow-hidden">
         {/* Status Badge */}
         <div className={`px-4 py-2 ${status.bgColor} ${status.borderColor} border-b text-center`}>
           <span className={`text-sm font-semibold ${status.textColor}`}>
@@ -98,11 +98,11 @@ export default function TicketPage() {
         </div>
 
         {/* QR Code Section */}
-        <div className="px-6 pt-6 pb-4 flex flex-col items-center">
-          <div className="bg-white p-3 rounded-lg border border-gray-100">
-            <QRCode value={ticket.qr_code} size={256} />
+        <div className="px-4 sm:px-6 pt-6 pb-4 flex flex-col items-center">
+          <div className="bg-white p-2 sm:p-3 rounded-lg border border-gray-100">
+            <QRCode value={ticket.qr_code} size={220} />
           </div>
-          <p className="mt-2 text-xs text-gray-400 font-mono">{ticket.qr_code}</p>
+          <p className="mt-2 text-[10px] sm:text-xs text-gray-400 font-mono break-all text-center">{ticket.qr_code}</p>
         </div>
 
         {/* Divider */}
@@ -113,7 +113,7 @@ export default function TicketPage() {
         </div>
 
         {/* Event Details */}
-        <div className="px-6 py-4 space-y-3">
+        <div className="px-4 sm:px-6 py-4 space-y-3">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{event.title}</h2>
             <p className="text-sm text-blue-600 font-medium">{ticket_type.name}</p>
@@ -166,7 +166,7 @@ export default function TicketPage() {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 bg-gray-50 text-center">
+        <div className="px-4 sm:px-6 py-3 bg-gray-50 text-center">
           <p className="text-xs text-gray-400">Present this QR code at the door</p>
         </div>
       </div>

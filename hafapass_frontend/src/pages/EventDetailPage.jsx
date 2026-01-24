@@ -207,7 +207,7 @@ export default function EventDetailPage() {
                           <button
                             onClick={() => updateQuantity(tt.id, -1)}
                             disabled={qty === 0}
-                            className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            className="w-11 h-11 flex items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-lg"
                             aria-label={`Decrease ${tt.name} quantity`}
                           >
                             &minus;
@@ -216,7 +216,7 @@ export default function EventDetailPage() {
                           <button
                             onClick={() => updateQuantity(tt.id, 1)}
                             disabled={qty >= Math.min(tt.max_per_order || 10, available)}
-                            className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            className="w-11 h-11 flex items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-lg"
                             aria-label={`Increase ${tt.name} quantity`}
                           >
                             +
@@ -237,7 +237,7 @@ export default function EventDetailPage() {
         <button
           onClick={handleGetTickets}
           disabled={totalSelected === 0}
-          className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-3 px-8 rounded-lg text-lg transition-colors duration-200"
+          className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-3.5 px-8 min-h-[48px] rounded-lg text-lg transition-colors duration-200"
         >
           {totalSelected === 0 ? 'Select Tickets' : `Get ${totalSelected} Ticket${totalSelected > 1 ? 's' : ''}`}
         </button>

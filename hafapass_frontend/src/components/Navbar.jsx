@@ -56,7 +56,7 @@ function ClerkNavbar() {
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-md text-blue-100 hover:text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+            className="md:hidden min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-blue-100 hover:text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? (
@@ -74,13 +74,13 @@ function ClerkNavbar() {
 
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-blue-800">
-          <div className="px-4 py-3 space-y-2">
+          <div className="px-4 py-3 space-y-1">
             {navLinks.map(link => (
               <Link
                 key={link.to}
                 to={link.to}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`block px-3 py-2 rounded-md text-base font-medium ${
+                className={`block px-3 py-3 min-h-[44px] rounded-md text-base font-medium ${
                   location.pathname.startsWith(link.to)
                     ? 'bg-blue-800 text-white'
                     : 'text-blue-100 hover:bg-blue-800 hover:text-white'
@@ -90,18 +90,18 @@ function ClerkNavbar() {
               </Link>
             ))}
             <SignedOut>
-              <div className="pt-2 border-t border-blue-800 space-y-2">
+              <div className="pt-2 border-t border-blue-800 space-y-1">
                 <Link
                   to="/sign-in"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="block px-3 py-2 rounded-md text-base font-medium text-blue-100 hover:bg-blue-800 hover:text-white"
+                  className="block px-3 py-3 min-h-[44px] rounded-md text-base font-medium text-blue-100 hover:bg-blue-800 hover:text-white"
                 >
                   Sign In
                 </Link>
                 <Link
                   to="/sign-up"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="block px-3 py-2 rounded-md text-base font-medium bg-orange-500 text-white text-center hover:bg-orange-600"
+                  className="block px-3 py-3 min-h-[44px] rounded-md text-base font-medium bg-orange-500 text-white text-center hover:bg-orange-600"
                 >
                   Sign Up
                 </Link>
@@ -109,7 +109,7 @@ function ClerkNavbar() {
             </SignedOut>
             <SignedIn>
               <div className="pt-2 border-t border-blue-800">
-                <div className="px-3 py-2">
+                <div className="px-3 py-3">
                   <UserButton afterSignOutUrl="/" />
                 </div>
               </div>
@@ -165,7 +165,7 @@ function BasicNavbar() {
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-md text-blue-100 hover:text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+            className="md:hidden min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-blue-100 hover:text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? (
@@ -183,13 +183,13 @@ function BasicNavbar() {
 
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-blue-800">
-          <div className="px-4 py-3 space-y-2">
+          <div className="px-4 py-3 space-y-1">
             {navLinks.map(link => (
               <Link
                 key={link.to}
                 to={link.to}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`block px-3 py-2 rounded-md text-base font-medium ${
+                className={`block px-3 py-3 min-h-[44px] rounded-md text-base font-medium ${
                   location.pathname.startsWith(link.to)
                     ? 'bg-blue-800 text-white'
                     : 'text-blue-100 hover:bg-blue-800 hover:text-white'
@@ -198,18 +198,18 @@ function BasicNavbar() {
                 {link.label}
               </Link>
             ))}
-            <div className="pt-2 border-t border-blue-800 space-y-2">
+            <div className="pt-2 border-t border-blue-800 space-y-1">
               <Link
                 to="/sign-in"
                 onClick={() => setMobileMenuOpen(false)}
-                className="block px-3 py-2 rounded-md text-base font-medium text-blue-100 hover:bg-blue-800 hover:text-white"
+                className="block px-3 py-3 min-h-[44px] rounded-md text-base font-medium text-blue-100 hover:bg-blue-800 hover:text-white"
               >
                 Sign In
               </Link>
               <Link
                 to="/sign-up"
                 onClick={() => setMobileMenuOpen(false)}
-                className="block px-3 py-2 rounded-md text-base font-medium bg-orange-500 text-white text-center hover:bg-orange-600"
+                className="block px-3 py-3 min-h-[44px] rounded-md text-base font-medium bg-orange-500 text-white text-center hover:bg-orange-600"
               >
                 Sign Up
               </Link>

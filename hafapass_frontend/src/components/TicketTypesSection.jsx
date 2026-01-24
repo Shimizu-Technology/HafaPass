@@ -80,7 +80,7 @@ function TicketTypeCard({ ticketType, eventId, onUpdated, onDeleted }) {
               disabled={saving}
             />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Price ($)</label>
               <input
@@ -121,7 +121,7 @@ function TicketTypeCard({ ticketType, eventId, onUpdated, onDeleted }) {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="bg-blue-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition-colors"
+            className="bg-blue-900 text-white px-4 py-2.5 min-h-[44px] rounded-md text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving...' : 'Save'}
           </button>
@@ -137,7 +137,7 @@ function TicketTypeCard({ ticketType, eventId, onUpdated, onDeleted }) {
               })
             }}
             disabled={saving}
-            className="text-gray-600 hover:text-gray-800 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            className="text-gray-600 hover:text-gray-800 px-4 py-2.5 min-h-[44px] text-sm font-medium disabled:opacity-50"
           >
             Cancel
           </button>
@@ -173,10 +173,10 @@ function TicketTypeCard({ ticketType, eventId, onUpdated, onDeleted }) {
         <div className="flex items-center gap-1 ml-2">
           <button
             onClick={() => setEditing(true)}
-            className="p-1.5 text-gray-400 hover:text-blue-600 rounded transition-colors"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-blue-600 rounded transition-colors"
             title="Edit"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
           </button>
@@ -184,10 +184,10 @@ function TicketTypeCard({ ticketType, eventId, onUpdated, onDeleted }) {
             <button
               onClick={handleDelete}
               disabled={deleting}
-              className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors disabled:opacity-50"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 rounded transition-colors disabled:opacity-50"
               title="Delete"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
@@ -304,7 +304,7 @@ function AddTicketTypeForm({ eventId, onAdded, onCancel }) {
         <button
           type="submit"
           disabled={saving}
-          className="bg-green-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+          className="bg-green-600 text-white px-4 py-2.5 min-h-[44px] rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
         >
           {saving ? 'Adding...' : 'Add Ticket Type'}
         </button>
@@ -312,7 +312,7 @@ function AddTicketTypeForm({ eventId, onAdded, onCancel }) {
           type="button"
           onClick={onCancel}
           disabled={saving}
-          className="text-gray-600 hover:text-gray-800 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+          className="text-gray-600 hover:text-gray-800 px-4 py-2.5 min-h-[44px] text-sm font-medium disabled:opacity-50"
         >
           Cancel
         </button>
