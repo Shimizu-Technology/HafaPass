@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 30 / 38
-**Current Task:** Task 31 - Create QR code scanner page
+**Tasks Completed:** 31 / 38
+**Current Task:** Task 32 - Scaffold Stripe integration
 
 ---
 
@@ -979,3 +979,45 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - agent-browser skill not available in this environment. Verified via successful production build (171 modules), ESLint, RSpec test suite (152 passing), API data verification via Rails runner, and Vite dev server transformation confirming component compiles and imports resolve correctly.
+
+### 2026-01-24 — Task 31: Create QR code scanner page
+
+**Changes made:**
+- Created `src/pages/dashboard/ScannerPage.jsx` at `/dashboard/scanner` route (protected):
+  - Camera scanning section: uses `navigator.mediaDevices.getUserMedia()` to access device camera, displays live video preview with scanning overlay (corner brackets indicating scan area)
+  - Uses native `BarcodeDetector` API (available in Chrome/Edge) to detect QR codes from camera frames every 500ms; falls back to manual input if BarcodeDetector unavailable
+  - On successful scan: POST to `/api/v1/check_in/:qr_code`
+  - Result feedback display:
+    - Green success card: "Check-in successful!" with attendee name, ticket type, event title
+    - Yellow warning card: "Already checked in" with check-in timestamp and attendee info
+    - Red error card: "Invalid ticket" with detail message, or generic "Network error"
+  - Auto-reset of scan result after 3 seconds to resume scanning
+  - Manual QR code text input as fallback: text field with "Check In" button, handles form submission
+  - Session counter: displays "X tickets checked in this session" with reset button
+  - Camera controls: "Start Camera" / "Stop Camera" toggle button
+  - Camera permission denied: shows helpful error message suggesting manual input
+  - No camera found: shows fallback message
+  - Camera video element hidden when not scanning, showing camera icon placeholder
+  - Proper cleanup on unmount (stops camera stream, clears intervals/timeouts)
+- Updated `src/App.jsx`:
+  - Imported `ScannerPage` component
+  - Added `<Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />`
+- Updated `src/components/Navbar.jsx`:
+  - Added "Scanner" link to both ClerkNavbar and BasicNavbar nav links (for authenticated users)
+- Updated `src/pages/dashboard/DashboardPage.jsx`:
+  - Added "Scan Tickets" button (blue, with QR code icon) next to "Create Event" button in dashboard header
+
+**Commands run:**
+- `npx eslint src/pages/dashboard/ScannerPage.jsx src/App.jsx src/components/Navbar.jsx src/pages/dashboard/DashboardPage.jsx` — 0 errors
+- `npx vite build` — 172 modules, builds clean (388.82 kB JS)
+- `bundle exec rspec` — 152 examples, 0 failures
+- `curl http://localhost:5173/dashboard/scanner` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/dashboard/ScannerPage.jsx` — Vite transforms and serves component with all imports resolved
+- Tested check-in API with seed data tickets:
+  - POST valid issued ticket → 200, "Check-in successful", attendee details returned
+  - POST same ticket again → 422, "Ticket already checked in" with checked_in_at
+  - POST non-existent code → 404, "Ticket not found"
+
+**Issues and resolutions:**
+- npm install blocked by sandbox (403 from registry). Instead of `html5-qrcode`, used browser-native `BarcodeDetector` API with `getUserMedia()` for camera-based scanning. This avoids third-party dependencies while providing QR detection on supported browsers (Chrome/Edge). Manual text input fallback ensures functionality on all browsers.
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build (172 modules), ESLint, RSpec test suite (152 passing), API endpoint testing (all 3 check-in scenarios), and Vite dev server transformation confirming component compiles and imports resolve correctly.

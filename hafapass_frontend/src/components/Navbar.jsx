@@ -13,6 +13,7 @@ function ClerkNavbar() {
     { to: '/events', label: 'Events' },
     ...(isSignedIn ? [
       { to: '/my-tickets', label: 'My Tickets' },
+      { to: '/dashboard/scanner', label: 'Scanner' },
       { to: '/dashboard', label: 'Dashboard' },
     ] : []),
   ]
@@ -127,6 +128,7 @@ function BasicNavbar() {
   const navLinks = [
     { to: '/events', label: 'Events' },
     { to: '/my-tickets', label: 'My Tickets' },
+    { to: '/dashboard/scanner', label: 'Scanner' },
     { to: '/dashboard', label: 'Dashboard' },
   ]
 
