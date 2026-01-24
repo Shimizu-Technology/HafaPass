@@ -1,123 +1,119 @@
-# HafaPass Visual Testing Session
+# HafaPass Autonomous Development & Testing
 
-You are testing the HafaPass application using `agent-browser` to verify all pages render correctly and user flows work as expected.
+You are working on the HafaPass ticketing platform. This is an autonomous development loop - complete tasks from `prd.md` without user intervention.
 
 ## Setup
 
-First, read these files:
-1. Read `prd.md` to see all testing tasks
-2. Read `activity.md` to see what tests have been completed
+1. Read `prd.md` to see all tasks
+2. Read `activity.md` to see what has been completed
+3. Find the next task where `"passes": false` and complete it
 
-## Servers
+## Environment
 
-Both servers should already be running:
-- **Backend:** Rails API on `localhost:3000`
-- **Frontend:** React Vite on `localhost:5173`
+The following should already be running (started via `start-autonomous.sh`):
 
-If servers aren't running, start them:
+- **Rails API:** Running locally, exposed via ngrok
+- **Vite Frontend:** Running locally, exposed via ngrok
+- **ngrok Tunnels:** Exposing both services publicly
+
+**Important URLs (check http://localhost:4040 for current ngrok URLs):**
+- Local API: `http://localhost:3000`
+- Local Frontend: `http://localhost:5173`
+- Public URLs: Available via ngrok dashboard at http://localhost:4040
+
+## Browser Testing with Browserbase
+
+You have access to the `browserbase` MCP server for cloud-hosted browser automation. This allows you to:
+- Navigate to pages
+- Take screenshots
+- Interact with elements
+- Verify visual appearance
+
+### Using Browserbase MCP Tools
+
+```
+# Navigate to a page
+mcp__browserbase__navigate { "url": "https://[ngrok-url]/" }
+
+# Take a snapshot (get page structure)
+mcp__browserbase__snapshot {}
+
+# Click an element
+mcp__browserbase__click { "selector": "#my-button" }
+
+# Type into a field
+mcp__browserbase__type { "selector": "#email", "text": "test@example.com" }
+
+# Take a screenshot
+mcp__browserbase__screenshot { "path": "screenshots/test-name.png" }
+```
+
+**Important:** Use the ngrok public URLs (https://xxx.ngrok.io) for browser testing, NOT localhost!
+
+## For Code/Build Tasks
+
+If the task involves writing code, run tests, or building:
+
 ```bash
-# Terminal 1 - Backend
-cd hafapass_api && rails server
+# Rails commands
+cd hafapass_api && bundle exec rails s -p 3000
+cd hafapass_api && bundle exec rspec
+cd hafapass_api && bundle exec rails db:migrate
 
-# Terminal 2 - Frontend  
+# Frontend commands
 cd hafapass_frontend && npm run dev
+cd hafapass_frontend && npm run build
+cd hafapass_frontend && npm test
 ```
 
-## Testing Workflow
+## Authentication (for testing protected routes)
 
-For each task in prd.md where `"passes": false`:
+Test user credentials:
+- **Email:** test@hafapass.com
+- **Password:** TestPass123!
 
-### 1. Navigate to the page
+Or use Rails runner for backend auth testing:
 ```bash
-agent-browser open http://localhost:5173/[route]
+cd hafapass_api && rails runner "puts User.first.inspect"
 ```
 
-### 2. Take snapshot to inspect elements
-```bash
-agent-browser snapshot -i -c
-```
+## Task Completion Workflow
 
-### 3. Interact with the page (if needed)
-```bash
-agent-browser fill @e1 "value"
-agent-browser click @e2
-agent-browser wait --load networkidle
-```
+For each task:
 
-### 4. Take screenshot for verification
-```bash
-agent-browser screenshot screenshots/test-XX-name.png
-```
-
-### 5. Resize for mobile tests
-```bash
-agent-browser set viewport 375 667   # Mobile
-agent-browser set viewport 1280 800  # Desktop
-```
-
-## Authentication
-
-Test user credentials (if Clerk is configured):
-- **Email:** test-admin@hafameetings.com
-- **Password:** HafaMeetings!
-
-To authenticate:
-```bash
-agent-browser open http://localhost:5173/sign-in
-agent-browser snapshot -i
-# Find email/password fields and sign in button
-agent-browser fill @email "test-admin@hafameetings.com"
-agent-browser fill @password "HafaMeetings!"
-agent-browser click @submit
-agent-browser wait --load networkidle
-```
-
-## API Helpers
-
-To get data for testing:
-```bash
-# Get a valid ticket QR code
-curl -s http://localhost:3000/api/v1/events/full-moon-beach-party | python3 -c "import json,sys; print(json.load(sys.stdin))"
-
-# Get ticket for scanner test (need to find one from orders)
-cd hafapass_api && rails runner "puts Ticket.first.qr_code"
-```
-
-## Logging
-
-After completing each task:
-1. Update the task's `"passes"` field to `true` in prd.md
-2. Append a dated entry to activity.md with:
-   - What was tested
-   - Screenshot filename
-   - Any issues found
-   - Pass/fail status
+1. **Read the task** from prd.md
+2. **Complete the work** (code, test, or visual verification)
+3. **Log to activity.md:**
+   ```markdown
+   ## [Date] - Task [ID]: [Title]
+   - What was done
+   - Commands run / files changed
+   - Result: PASS/FAIL
+   - Screenshot: (if applicable)
+   ```
+4. **Update prd.md** - set `"passes": true` for the completed task
+5. **Move to next task**
 
 ## Important Notes
 
-- If a page has issues, document them but still mark the test as passed if the screenshot was captured
-- Take extra screenshots of interesting states (loading, errors, empty states)
-- If Clerk auth isn't working, skip auth-required tests and note in activity.md
-- Focus on visual verification - does the page LOOK right?
+- If ngrok URLs change, check http://localhost:4040/api/tunnels
+- For visual tests, take screenshots to `screenshots/` directory
+- Document any bugs or issues found in activity.md
+- If a task is blocked, document why and move to next task
+- Commit meaningful changes with descriptive messages
 
-## Completion
+## Git Workflow
 
-## Additional Commands
-
-For SEO/PWA verification:
+After completing significant work:
 ```bash
-# Check meta tags
-curl -s http://localhost:5173/ | grep -E '<title>|<meta'
-
-# Check manifest
-curl -s http://localhost:5173/manifest.json | python3 -m json.tool
-
-# Check robots.txt
-curl -s http://localhost:5173/robots.txt
+git add -A
+git commit -m "feat: [description of changes]"
 ```
 
-## Completion
+Do NOT push automatically - the user will push after review.
 
-When ALL 45 tasks have `"passes": true`, output:
+## Completion Signal
+
+When ALL tasks have `"passes": true`, output:
 
 <promise>COMPLETE</promise>
