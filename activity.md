@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 26 / 38
-**Current Task:** Task 27 - Create event creation form
+**Tasks Completed:** 27 / 38
+**Current Task:** Task 28 - Create event edit page
 
 ---
 
@@ -843,3 +843,34 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, RSpec test suite (152 passing), API endpoint testing, and Vite dev server transformation confirming component compiles and imports resolve correctly.
+
+### 2026-01-24 — Task 27: Create event creation form
+
+**Changes made:**
+- Created `src/pages/dashboard/CreateEventPage.jsx` at `/dashboard/events/new` route (protected):
+  - Basic Info section: title (required), short_description, description, category dropdown (nightlife/concert/festival/dining/sports/other), age_restriction dropdown (all_ages/18+/21+)
+  - Venue section: venue_name (required), venue_address, venue_city (defaults to "Guam")
+  - Date/Time section: starts_at (required, datetime-local input), ends_at, doors_open_at
+  - Settings section: max_capacity (number input), cover_image_url (URL text input)
+  - Form validation: title, venue_name, starts_at required; inline error messages
+  - On submit: POST to `/api/v1/organizer/events` with all fields
+  - On success: navigates to `/dashboard/events/:id/edit` (to add ticket types)
+  - Loading state: "Creating Event..." button text, disabled inputs during submission
+  - Error state: red alert showing API error messages
+  - "Back to Dashboard" link at top
+  - Note below submit: "Your event will be created as a draft."
+- Updated `src/App.jsx`:
+  - Imported `CreateEventPage` component
+  - Added `<Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />`
+
+**Commands run:**
+- `npx eslint src/pages/dashboard/CreateEventPage.jsx src/App.jsx` — 0 errors
+- `npx vite build` — 168 modules, builds clean (341.88 kB JS)
+- `curl http://localhost:3000/api/v1/organizer/events` (POST without auth) — returns 401 (correct)
+- `curl http://localhost:5173/dashboard/events/new` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/dashboard/CreateEventPage.jsx` — Vite transforms and serves component with all imports resolved
+- `curl http://localhost:5173/src/App.jsx` — confirms CreateEventPage import and route registration
+- `bundle exec rspec` — 152 examples, 0 failures
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, API endpoint testing (401 on unauthorized POST), RSpec test suite (152 passing), and Vite dev server transformation confirming component compiles and all imports resolve correctly.
