@@ -18,6 +18,9 @@ Rails.application.routes.draw do
       # Public ticket display (by QR code)
       get "tickets/:qr_code", to: "tickets#show", as: :ticket
 
+      # Ticket check-in
+      post "check_in/:qr_code", to: "check_ins#create", as: :check_in
+
       # Authenticated user endpoints
       namespace :me do
         resources :orders, only: [:index, :show]

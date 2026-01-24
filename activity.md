@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 11 / 38
-**Current Task:** Task 12 - Create ticket check-in API
+**Tasks Completed:** 12 / 38
+**Current Task:** Task 13 - Create organizer dashboard stats API
 
 ---
 
@@ -368,3 +368,30 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - Stale Rails server PID file blocking new server start. Removed PID file and started fresh on port 3060.
+
+### 2026-01-24 — Task 12: Create ticket check-in API
+
+**Changes made:**
+- Created `app/controllers/api/v1/check_ins_controller.rb` with `create` action:
+  - Looks up ticket by `qr_code` parameter (with eager-loaded event and ticket_type)
+  - Returns 404 with `"Ticket not found"` if no ticket matches the QR code
+  - Returns 422 with `"Ticket already checked in"` and `checked_in_at` timestamp if ticket status is `checked_in`
+  - Returns 422 with `"Ticket is cancelled"` if ticket status is `cancelled`
+  - On success: calls `ticket.check_in!`, returns 200 with `"Check-in successful"` and full ticket details (event and ticket_type info)
+  - Endpoint is public (skip_before_action :authenticate_user!) to allow scanner use without complex auth setup
+- Added route: `POST /api/v1/check_in/:qr_code` in `config/routes.rb`
+- Response includes nested event (id, title, slug, venue_name, starts_at) and ticket_type (id, name, price_cents) for display in scanner UI
+
+**Commands run:**
+- `bundle exec rails routes | grep check_in` — verified route exists
+- Created test data via rails runner: 3 tickets (issued, checked_in, cancelled)
+- Tested all scenarios via curl on port 3070:
+  - POST with valid issued ticket → 200, status changes to "checked_in", checked_in_at set
+  - POST with already-checked-in ticket → 422, "Ticket already checked in" with checked_in_at
+  - POST with same ticket again (re-scan) → 422, "Ticket already checked in"
+  - POST with cancelled ticket → 422, "Ticket is cancelled"
+  - POST with non-existent QR code → 404, "Ticket not found"
+- `bundle exec rspec` — 5 examples, 0 failures, 5 pending
+
+**Issues and resolutions:**
+- Previous Rails server processes from earlier sessions on ports 3000-3060 could not be killed from sandbox. Started fresh server on port 3070 for testing.
