@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 5 / 38
-**Current Task:** Task 6 - Create OrganizerProfile model and API
+**Tasks Completed:** 6 / 38
+**Current Task:** Task 7 - Create Event model and API
 
 ---
 
@@ -169,3 +169,28 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - Multiple stale Rails server processes on ports 3000, 3001, 3005 from previous sessions (cannot kill from sandbox). Tested on port 3005 which was already running with current code loaded via Rails development reloader.
+
+### 2026-01-24 — Task 6: Create OrganizerProfile model and API
+
+**Changes made:**
+- Generated OrganizerProfile model with migration: `user:references`, `business_name:string`, `business_description:text`, `logo_url:string`, `stripe_account_id:string`, `is_ambros_partner:boolean` (default false)
+- Added `has_one :organizer_profile, dependent: :destroy` to User model
+- Added `validates :business_name, presence: true` to OrganizerProfile model
+- Created `app/controllers/api/v1/organizer_profiles_controller.rb` with:
+  - `show` action: returns profile JSON or 404 if not found
+  - `create_or_update` action: creates or updates profile, promotes user to organizer role
+  - Returns 201 on create, 200 on update, 422 on validation failure
+- Added routes: `GET /api/v1/organizer_profile`, `POST /api/v1/organizer_profile`, `PUT /api/v1/organizer_profile`
+
+**Commands run:**
+- `bundle exec rails generate model OrganizerProfile` — generated model, migration, factory, spec
+- `bundle exec rails db:migrate` — created organizer_profiles table
+- `bundle exec rails routes | grep organizer` — verified 3 routes exist
+- `bundle exec rails runner tmp/test_organizer.rb` — verified model associations, validations, CRUD
+- `bundle exec rails runner tmp/test_controller2.rb` — verified controller logic (create, read, update, validation)
+- `curl http://localhost:3020/api/v1/organizer_profile` — verified 401 on GET, POST, PUT without auth
+- `bundle exec rspec` — 2 examples, 0 failures, 2 pending
+
+**Issues and resolutions:**
+- Stale Rails server on port 3000 wouldn't reload routes (started before route changes). Started fresh server on port 3020 for testing.
+- Rack::MockRequest test approach returned HTML error pages instead of JSON. Switched to rails runner scripts testing model/controller logic directly.
