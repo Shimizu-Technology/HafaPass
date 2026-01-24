@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 36 / 38
-**Current Task:** Task 37 - SEO basics and Open Graph tags
+**Tasks Completed:** 37 / 38
+**Current Task:** Task 38 - Final integration testing and documentation
 
 ---
 
@@ -1203,3 +1203,39 @@ Comprehensive mobile responsiveness improvements across all frontend pages to en
 **Issues and resolutions:**
 - agent-browser daemon failed to start (EPERM on socket). Verified via production build serving with Python's http.server.
 - Stale Vite dev server (port 5173) doesn't pick up new public/ files without restart. Verified via production build instead.
+
+### 2026-01-24 — Task 37: SEO basics and Open Graph tags
+
+**Changes made:**
+- Created `public/robots.txt` with:
+  - `Allow: /` for all user agents
+  - `Disallow: /dashboard` (protected organizer pages)
+  - `Disallow: /api/` (API endpoints)
+  - `Sitemap: https://hafapass.com/sitemap.xml`
+- Updated `index.html` with base SEO meta tags:
+  - `<title>` changed from "HafaPass" to "HafaPass - Guam Event Tickets"
+  - `<meta name="description">` with event discovery description
+  - `<meta name="keywords">` with relevant Guam/events keywords
+- Added Open Graph meta tags to `index.html`:
+  - `og:title`, `og:description`, `og:image` (uses icon-512.png as default), `og:url` (hafapass.com), `og:type` (website), `og:site_name` (HafaPass)
+- Added Twitter Card meta tags to `index.html`:
+  - `twitter:card` (summary_large_image), `twitter:title`, `twitter:description`, `twitter:image`
+- Updated `public/_redirects` to serve robots.txt before the SPA catch-all:
+  - Added `/robots.txt /robots.txt 200` as first rule
+
+**Commands run:**
+- `npm run lint` — 0 errors
+- `npm run build` — 172 modules, builds clean (391.45 kB JS, 27.09 kB CSS)
+- Served production build on port 5191 and verified:
+  - robots.txt served as text/plain with 200 status
+  - All 13 meta tags present in index.html (title, description, keywords, 6 OG, 4 Twitter)
+  - _redirects present in dist/ with correct rules
+
+**Verification:**
+- Production build contains robots.txt, _redirects, and index.html with all meta tags
+- robots.txt accessible at `/robots.txt` with correct content type
+- Open Graph tags render correctly in page source
+- agent-browser unavailable (sandbox restriction) — verified via production build serving test
+
+**Issues and resolutions:**
+- None. Clean implementation.
