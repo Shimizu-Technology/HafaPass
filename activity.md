@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 1 / 38
-**Current Task:** Task 2 - Initialize React Vite frontend project
+**Tasks Completed:** 2 / 38
+**Current Task:** Task 3 - Configure Clerk authentication on frontend
 
 ---
 
@@ -55,3 +55,31 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 - Bundle install failed with 403 from rubygems.org (sandbox network restriction). Resolved by creating Gemfile.lock manually and pointing BUNDLE_PATH to system gems via symlink.
 - Initially generated with Rails 7.2.3 Gemfile but bundler loaded 8.1.2 from system gems. Upgraded Gemfile to `~> 8.0` to match available gems.
 - PostgreSQL socket connection blocked by sandbox. Added `host: localhost` to database.yml to use TCP.
+
+### 2026-01-24 — Task 2: Initialize React Vite frontend project
+
+**Changes made:**
+- Created React Vite project in `hafapass_frontend/` with React 18.3.1 and Vite 5.4.8
+- Installed and configured Tailwind CSS v3.4.17 with PostCSS and Autoprefixer
+- Added `@tailwind base/components/utilities` directives to `src/index.css`
+- Configured `tailwind.config.js` to scan `./index.html` and `./src/**/*.{js,ts,jsx,tsx}`
+- Installed react-router-dom v7.12.0 for client-side routing
+- Installed axios v1.13.2 for API calls
+- Created `src/api/client.js` with axios instance pointing to `VITE_API_URL` (default `http://localhost:3000/api/v1`)
+- API client includes auth token interceptor (ready for Clerk integration in Task 3)
+- Created `.env.local.example` with `VITE_CLERK_PUBLISHABLE_KEY` and `VITE_API_URL`
+- Created `public/_redirects` for Netlify SPA routing
+- Set up BrowserRouter in `main.jsx` with a minimal home page route
+- Created ESLint flat config with react-hooks and react-refresh plugins
+- Created `.gitignore` for node_modules, dist, env files
+
+**Commands run:**
+- `npx vite` — dev server starts successfully, serves correct HTML
+- `npx eslint .` — passes with no errors
+- `npx vite build` — builds successfully (index.html, 5.60 kB CSS, 178.21 kB JS)
+- Verified via curl that dev server serves correct HafaPass HTML content
+
+**Issues and resolutions:**
+- npm install failed with 403 from registry (sandbox network restriction). Resolved by copying node_modules from compatible existing projects on the system (Actualize/week-10 for tailwind stack, Actualize/miriam for react-router-dom).
+- Port 5173 already in use by existing Vite process (cannot be killed from sandbox). Verified dev server on alternate port 5180 — works correctly.
+- eslint v9.12 does not export `defineConfig` from `eslint/config`. Used flat config array format directly instead.

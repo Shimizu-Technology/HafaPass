@@ -160,7 +160,7 @@ HafaPass is a ticketing platform for Guam's hospitality industry, powered by Amb
       "Create public/_redirects file for Netlify SPA routing: '/*    /index.html   200' (prevents 404 on page refresh in production)",
       "Verify dev server starts on port 5173 and displays the default page"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 3,
