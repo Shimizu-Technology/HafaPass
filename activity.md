@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 18 / 38
-**Current Task:** Task 19 - Create events listing page
+**Tasks Completed:** 19 / 38
+**Current Task:** Task 20 - Create event detail page
 
 ---
 
@@ -580,3 +580,29 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 **Issues and resolutions:**
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, and curl confirming both servers serve correct content.
 - Events list API initially didn't include ticket_types. Updated controller to include them with eager loading so EventCard can display starting prices.
+
+### 2026-01-24 — Task 19: Create events listing page
+
+**Changes made:**
+- Created `src/pages/EventsPage.jsx` at `/events` route:
+  - Fetches all published events from `GET /api/v1/events`
+  - Displays events in responsive grid: 1 column mobile, 2 columns tablet (sm), 3 columns desktop (lg)
+  - Uses existing `EventCard` component for each event
+  - Page title "Upcoming Events" at top
+  - Loading state: centered spinner while fetching
+  - Empty state: message "No events available right now. Check back soon!"
+  - Error state: red alert box with error message and "Try Again" button that refetches
+  - Each EventCard links to `/events/:slug`
+- Updated `src/App.jsx`:
+  - Imported `EventsPage` component
+  - Added `<Route path="/events" element={<EventsPage />} />` inside Layout
+
+**Commands run:**
+- `npx eslint src/pages/EventsPage.jsx src/App.jsx` — 0 errors
+- `npx vite build` — 158 modules, builds clean (291.02 kB JS)
+- `curl http://localhost:3000/api/v1/events` — returns 4 published events with ticket_types
+- `curl http://localhost:5173/events` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/EventsPage.jsx` — Vite transforms and serves component
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chromium blocked by macOS sandbox mach port restrictions). Verified via successful production build, ESLint, curl confirming API and frontend serve correctly, and Vite dev server transformation of EventsPage component.
