@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 24 / 38
-**Current Task:** Task 25 - Create my tickets page
+**Tasks Completed:** 25 / 38
+**Current Task:** Task 26 - Create organizer dashboard home
 
 ---
 
@@ -775,3 +775,35 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 - npm install blocked by sandbox (403 from registry). Implemented custom QR code generator from scratch instead of installing `qrcode.react`. The custom implementation produces standard-compliant QR codes using byte mode encoding, Reed-Solomon error correction, and optimal mask selection.
 - ESLint reported unused `c` parameter in mask function `(r, c) => r % 2 === 0`. Refactored mask functions into a `getMaskFn(maskNum)` switch statement to avoid declaring unused parameters.
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, API endpoint testing (issued/checked_in/not_found scenarios), and Vite dev server transformation of all new components.
+
+### 2026-01-24 — Task 25: Create my tickets page
+
+**Changes made:**
+- Created `src/pages/MyTicketsPage.jsx` at `/my-tickets` route (protected):
+  - Fetches user's orders from `GET /api/v1/me/orders`
+  - Groups tickets by event (flattens from orders → events → tickets)
+  - Sorts events: upcoming first (by starts_at ascending), then past (by starts_at descending)
+  - For each event group: shows event title (linking to event detail), date/time, venue, "Past" badge for past events
+  - Each ticket displayed as a clickable row linking to `/tickets/:qr_code`
+  - Shows ticket type name, attendee name, and status badge (green "Valid", gray "Used", red "Cancelled", yellow "Transferred")
+  - Loading state: centered spinner
+  - Empty state: ticket icon, "No tickets yet" heading, "Browse events to get started!" text, "Browse Events" button
+  - Error state: red panel with error message and "Try Again" button
+  - Handles 401 error with "Please sign in to view your tickets." message
+- Updated `src/App.jsx`:
+  - Added import for `ProtectedRoute` and `MyTicketsPage`
+  - Added `<Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />`
+- Updated `src/components/Navbar.jsx`:
+  - `BasicNavbar` now also includes "My Tickets" link (ClerkNavbar already had it from Task 17)
+
+**Commands run:**
+- `npx eslint src/pages/MyTicketsPage.jsx src/App.jsx src/components/Navbar.jsx` — 0 errors
+- `npx vite build` — 166 modules, builds clean (324.38 kB JS)
+- `curl http://localhost:3000/api/v1/me/orders` — returns 401 without auth (correct)
+- `curl http://localhost:5173/my-tickets` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/MyTicketsPage.jsx?t=...` — Vite transforms and serves component
+- `curl http://localhost:5173/src/App.jsx?t=...` — confirms 2 MyTickets references (import + route)
+- `curl http://localhost:5173/src/components/Navbar.jsx?t=...` — confirms 2 my-tickets link references
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, API endpoint testing, and Vite dev server transformation of all updated components.

@@ -126,6 +126,7 @@ function BasicNavbar() {
 
   const navLinks = [
     { to: '/events', label: 'Events' },
+    { to: '/my-tickets', label: 'My Tickets' },
     { to: '/dashboard', label: 'Dashboard' },
   ]
 
