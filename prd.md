@@ -177,7 +177,7 @@ HafaPass is a ticketing platform for Guam's hospitality industry, powered by Amb
       "Update src/api/client.js to attach Clerk session token as Bearer header on all requests (using useAuth().getToken())",
       "Verify sign-in page renders at /sign-in"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 4,

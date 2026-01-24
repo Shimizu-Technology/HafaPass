@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 2 / 38
-**Current Task:** Task 3 - Configure Clerk authentication on frontend
+**Tasks Completed:** 3 / 38
+**Current Task:** Task 4 - Configure Clerk JWT verification on Rails backend
 
 ---
 
@@ -83,3 +83,28 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 - npm install failed with 403 from registry (sandbox network restriction). Resolved by copying node_modules from compatible existing projects on the system (Actualize/week-10 for tailwind stack, Actualize/miriam for react-router-dom).
 - Port 5173 already in use by existing Vite process (cannot be killed from sandbox). Verified dev server on alternate port 5180 — works correctly.
 - eslint v9.12 does not export `defineConfig` from `eslint/config`. Used flat config array format directly instead.
+
+### 2026-01-24 — Task 3: Configure Clerk authentication on frontend
+
+**Changes made:**
+- Installed `@clerk/clerk-react` v5.58.1 (with dependencies: `@clerk/shared`, `tslib`, `swr`, `dequal`, `use-sync-external-store`, `glob-to-regexp`, `js-cookie`, `std-env`)
+- Created `src/components/ClerkProviderWrapper.jsx` — conditional ClerkProvider that only wraps in ClerkProvider if `VITE_CLERK_PUBLISHABLE_KEY` is set; includes `AuthTokenSync` component that syncs Clerk's `getToken()` to the API client
+- Created `src/pages/SignInPage.jsx` — renders Clerk's `<SignIn>` component with path-based routing, or a fallback message if Clerk is not configured
+- Created `src/pages/SignUpPage.jsx` — renders Clerk's `<SignUp>` component with path-based routing, or a fallback message if Clerk is not configured
+- Created `src/components/ProtectedRoute.jsx` — redirects unauthenticated users to `/sign-in`; bypasses auth check if Clerk is not configured (uses separate `AuthGate` component to satisfy React hooks rules)
+- Updated `src/main.jsx` — wrapped App with `ClerkProviderWrapper` inside `BrowserRouter`
+- Updated `src/App.jsx` — added `/sign-in/*` and `/sign-up/*` routes
+- The existing `src/api/client.js` already had the `setAuthTokenGetter` pattern from Task 2; `AuthTokenSync` now connects it to Clerk's `useAuth().getToken()`
+- Updated `package.json` to list `@clerk/clerk-react` as a dependency
+
+**Commands run:**
+- `npx eslint .` — passes with 0 errors
+- `npx vite build` — builds successfully (153 modules, 282.49 kB JS)
+- Verified dev server serves SPA correctly on `/sign-in`, `/sign-up`, and `/` routes
+
+**Issues and resolutions:**
+- npm install blocked by sandbox (403 from registry). Resolved by copying `@clerk/clerk-react`, `@clerk/shared`, and their sub-dependencies from other projects on the system.
+- Initial `ProtectedRoute` component called `useAuth()` conditionally (after early return for missing Clerk key), violating React hooks rules. Fixed by extracting the auth logic into a separate `AuthGate` component.
+- Clerk v5 `ClerkProvider` does not accept a `navigate` prop (removed). Uses `afterSignOutUrl` instead.
+- Clerk v5 `<SignIn>`/`<SignUp>` use `forceRedirectUrl` instead of `afterSignInUrl`/`afterSignUpUrl`.
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified page rendering via curl and successful production build instead.
