@@ -12,8 +12,17 @@ Rails.application.routes.draw do
       post "organizer_profile", to: "organizer_profiles#create_or_update"
       put "organizer_profile", to: "organizer_profiles#create_or_update"
 
-      # Orders
+      # Orders (public create for guest checkout)
       resources :orders, only: [:create]
+
+      # Public ticket display (by QR code)
+      get "tickets/:qr_code", to: "tickets#show", as: :ticket
+
+      # Authenticated user endpoints
+      namespace :me do
+        resources :orders, only: [:index, :show]
+        resources :tickets, only: [:index]
+      end
 
       # Public events
       resources :events, only: [:index], param: :slug

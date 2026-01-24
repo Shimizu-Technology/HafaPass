@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 10 / 38
-**Current Task:** Task 11 - Create attendee orders and tickets API
+**Tasks Completed:** 11 / 38
+**Current Task:** Task 12 - Create ticket check-in API
 
 ---
 
@@ -334,3 +334,37 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - Multiple stale Rails server processes on ports 3000-3030 from previous sessions. Removed stale PID file and started fresh server on port 3040.
+
+### 2026-01-24 — Task 11: Create attendee orders and tickets API
+
+**Changes made:**
+- Created `app/controllers/api/v1/me/orders_controller.rb` with:
+  - `index` action: returns authenticated user's orders ordered by created_at desc, includes event details and nested tickets with ticket_type info
+  - `show` action: returns single order by ID, scoped to current user (returns 404 if not found or belongs to another user)
+- Created `app/controllers/api/v1/me/tickets_controller.rb` with:
+  - `index` action: returns all tickets belonging to current user's orders, includes event and ticket_type details
+- Created `app/controllers/api/v1/tickets_controller.rb` (public) with:
+  - `show` action: looks up ticket by qr_code param, returns full ticket details with event (venue_address, doors_open_at, timezone) and ticket_type (description) info
+  - Returns 404 if ticket not found
+  - No authentication required (allows QR code display for anyone with the link)
+- Updated `config/routes.rb` with new routes:
+  - `GET /api/v1/tickets/:qr_code` → public ticket display
+  - `GET /api/v1/me/orders` → authenticated user's orders
+  - `GET /api/v1/me/orders/:id` → single order detail
+  - `GET /api/v1/me/tickets` → authenticated user's tickets
+- All responses include event and ticket_type details as nested objects
+- Orders scoped via `current_user.orders` to ensure users can only see their own data
+
+**Commands run:**
+- `bundle exec rails routes | grep -E "(me/|tickets)"` — verified 4 new routes
+- Created test data via rails runner: 2 users, 1 event, 2 ticket types, 3 orders (2 for test user, 1 for other user)
+- `curl http://localhost:3060/api/v1/tickets/:qr_code` — returns full ticket JSON with event and ticket_type
+- `curl http://localhost:3060/api/v1/tickets/nonexistent` — returns 404
+- `curl http://localhost:3060/api/v1/me/orders` — returns 401 without auth
+- `curl http://localhost:3060/api/v1/me/orders/:id` — returns 401 without auth
+- `curl http://localhost:3060/api/v1/me/tickets` — returns 401 without auth
+- Rails runner verified: user orders properly scoped, other user's orders not visible, tickets fetched through order relationship
+- `bundle exec rspec` — 5 examples, 0 failures, 5 pending
+
+**Issues and resolutions:**
+- Stale Rails server PID file blocking new server start. Removed PID file and started fresh on port 3060.
