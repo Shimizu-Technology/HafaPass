@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 15 / 38
-**Current Task:** Task 16 - Create seed data for development
+**Tasks Completed:** 16 / 38
+**Current Task:** Task 17 - Create frontend layout and navigation
 
 ---
 
@@ -494,3 +494,31 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 - Initial run had 7 failures. Fixed by:
   1. Empty `line_items: []` param wasn't properly handled by Rails param processing in test context (sends empty string instead of empty array). Changed test to use `except(:line_items)` which tests the same validation path.
   2. Organizer event specs returned 403 because `organizer_profile` was a lazy `let` (not created before request). Changed to `let!` to eagerly create the profile before each test.
+
+### 2026-01-24 — Task 16: Create seed data for development
+
+**Changes made:**
+- Created `db/seeds.rb` with realistic Guam-themed sample data:
+  - 5 users: 2 organizers (Carlos Santos / Island Nights Promotions, Maria Cruz / Guam Beach Club), 3 attendees (Jake, Sarah, Mike)
+  - 2 organizer profiles with Ambros partner flag
+  - 6 events across categories:
+    - Full Moon Beach Party (nightlife, published, featured, 21+)
+    - Neon Nights: UV Glow Party (nightlife, published, 18+)
+    - Sunset Sessions: Island Reggae Concert (concert, published, featured, all ages)
+    - Taste of Guam Food Festival (festival, published, all ages)
+    - New Year's Eve Countdown (nightlife, draft, 21+)
+    - Beach Volleyball Tournament (sports, completed/past, all ages)
+  - 16 ticket types with realistic Guam pricing (2-3 per event: GA, VIP, premium tiers)
+  - 11 orders with 24 tickets distributed across 4 events
+  - 4 tickets checked in (for the past Beach Volleyball event)
+- Helper method `create_order_with_tickets` replicates the OrdersController fee calculation logic (3% + $0.50/ticket)
+- Seeds are idempotent (destroy_all at top, safe to re-run)
+
+**Commands run:**
+- `bundle exec rails db:seed` — successful, created all data as expected
+- `curl http://localhost:3000/api/v1/events` — returns 4 published events ordered by starts_at
+- `curl http://localhost:3000/api/v1/events/full-moon-beach-party` — returns event with 3 ticket types, correct quantity_sold values
+- `bundle exec rspec` — 152 examples, 0 failures
+
+**Issues and resolutions:**
+- None. Clean implementation.
