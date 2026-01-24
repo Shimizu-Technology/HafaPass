@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 29 / 38
-**Current Task:** Task 30 - Create event analytics page
+**Tasks Completed:** 30 / 38
+**Current Task:** Task 31 - Create QR code scanner page
 
 ---
 
@@ -943,3 +943,39 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build (170 modules), ESLint, RSpec test suite (152 passing), API endpoint verification, and Vite dev server transformation confirming all components compile and imports resolve.
+
+### 2026-01-24 — Task 30: Create event analytics page
+
+**Changes made:**
+- Created `src/pages/dashboard/EventAnalyticsPage.jsx` at `/dashboard/events/:id/analytics` route (protected):
+  - Fetches stats from `GET /api/v1/organizer/events/:id/stats` and event details in parallel
+  - Summary cards (3-column grid on desktop, stacked on mobile):
+    - Tickets Sold: count with "of X total" subtitle
+    - Total Revenue: formatted as $XX.XX
+    - Check-in Rate: percentage with "X checked in" subtitle
+  - Tickets by Type table: type name, sold count, available count, revenue per type
+  - Recent Orders table: buyer name, email, ticket count, total, formatted date
+  - Attendees section: toggleable with "View All" button, lazy-loads attendee list from `GET /api/v1/organizer/events/:id/attendees`
+  - Attendee list shows: name, email, ticket type, status badge (Valid/Checked In/Cancelled)
+  - "Back to Event" link to edit page
+  - Event title displayed as subtitle
+  - Loading state: centered spinner
+  - Error states: 401 ("Please sign in"), 404 ("Event not found"), generic error
+  - Empty states for tables when no data available
+- Updated `src/App.jsx`:
+  - Imported `EventAnalyticsPage` component
+  - Added `<Route path="/dashboard/events/:id/analytics" element={<ProtectedRoute><EventAnalyticsPage /></ProtectedRoute>} />`
+- EditEventPage already had "View Analytics" link for published events (Task 28)
+
+**Commands run:**
+- `npx eslint src/pages/dashboard/EventAnalyticsPage.jsx src/App.jsx` — 0 errors
+- `npx vite build` — 171 modules, builds clean (378.94 kB JS)
+- `bundle exec rspec` — 152 examples, 0 failures
+- `curl http://localhost:5173/dashboard/events/11/analytics` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/dashboard/EventAnalyticsPage.jsx` — Vite transforms and serves component with all imports resolved
+- `curl http://localhost:5173/src/App.jsx` — confirms EventAnalyticsPage import and route registration
+- Rails runner verified seed data: Event 11 has 14 tickets sold, $625.00 revenue, 3 ticket types, 5 orders, 14 attendees
+- Rails runner verified Event 16 has 5 tickets sold, 4 checked in (80% check-in rate)
+
+**Issues and resolutions:**
+- agent-browser skill not available in this environment. Verified via successful production build (171 modules), ESLint, RSpec test suite (152 passing), API data verification via Rails runner, and Vite dev server transformation confirming component compiles and imports resolve correctly.

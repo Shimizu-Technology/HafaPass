@@ -11,6 +11,7 @@ import MyTicketsPage from './pages/MyTicketsPage'
 import DashboardPage from './pages/dashboard/DashboardPage'
 import CreateEventPage from './pages/dashboard/CreateEventPage'
 import EditEventPage from './pages/dashboard/EditEventPage'
+import EventAnalyticsPage from './pages/dashboard/EventAnalyticsPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 
@@ -28,6 +29,7 @@ function App() {
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
         <Route path="/dashboard/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />
+        <Route path="/dashboard/events/:id/analytics" element={<ProtectedRoute><EventAnalyticsPage /></ProtectedRoute>} />
         <Route path="/sign-in/*" element={<SignInPage />} />
         <Route path="/sign-up/*" element={<SignUpPage />} />
       </Route>
