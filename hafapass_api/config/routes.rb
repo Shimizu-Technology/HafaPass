@@ -5,6 +5,7 @@ Rails.application.routes.draw do
     namespace :v1 do
       get "health", to: "health#show"
       get "me", to: "me#show"
+      post "users/sync", to: "users#sync"
     end
   end
 end

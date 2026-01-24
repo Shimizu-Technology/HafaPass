@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 4 / 38
-**Current Task:** Task 5 - Create User model and sync endpoint
+**Tasks Completed:** 5 / 38
+**Current Task:** Task 6 - Create OrganizerProfile model and API
 
 ---
 
@@ -143,3 +143,29 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 - Initial `build_rsa_key` using `OpenSSL::PKey::RSA.new` + `set_key` failed silently (OpenSSL 3.x makes RSA objects immutable after creation). Switched to `JWT::JWK.new(jwk_data).public_key` which correctly builds RSA keys from JWK data.
 - `Net::HTTP` was not auto-loaded in the service class. Added explicit `require "net/http"` and `require "json"` at top of file.
 - Could not kill existing Rails server processes (sandbox restriction). Started new server on port 3005 for testing.
+
+### 2026-01-24 — Task 5: Create User model and sync endpoint
+
+**Changes made:**
+- User model already existed from Task 4 with all required fields (clerk_id, email, first_name, last_name, phone, role enum with unique index on clerk_id)
+- Created `app/controllers/api/v1/users_controller.rb` with `sync` action:
+  - Accepts `clerk_id` (or `id`), `email`, `first_name`, `last_name`, `phone` params
+  - Also handles Clerk webhook format with nested `email_addresses` and `phone_numbers` arrays
+  - Creates or updates user by clerk_id (find_or_initialize_by pattern)
+  - First user created becomes admin role automatically
+  - Returns user JSON with 201 (created) or 200 (updated) status
+  - Returns 422 if clerk_id is missing
+  - Endpoint is public (skip_before_action :authenticate_user!) since it's called by Clerk webhooks
+- Added route: `POST /api/v1/users/sync` in `config/routes.rb`
+
+**Commands run:**
+- `bundle exec rails routes | grep users` — verified route exists
+- `bundle exec rails runner` — verified routes load correctly
+- Tested via curl on port 3005:
+  - POST with new user → 201 Created, returns user JSON with admin role
+  - POST with same clerk_id, updated fields → 200 OK, returns updated user
+  - POST without clerk_id → 422, returns error message
+- `bundle exec rspec` — 1 example, 0 failures, 1 pending
+
+**Issues and resolutions:**
+- Multiple stale Rails server processes on ports 3000, 3001, 3005 from previous sessions (cannot kill from sandbox). Tested on port 3005 which was already running with current code loaded via Rails development reloader.
