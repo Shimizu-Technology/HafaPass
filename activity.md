@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 6 / 38
-**Current Task:** Task 7 - Create Event model and API
+**Tasks Completed:** 7 / 38
+**Current Task:** Task 8 - Create TicketType model and API
 
 ---
 
@@ -194,3 +194,38 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 **Issues and resolutions:**
 - Stale Rails server on port 3000 wouldn't reload routes (started before route changes). Started fresh server on port 3020 for testing.
 - Rack::MockRequest test approach returned HTML error pages instead of JSON. Switched to rails runner scripts testing model/controller logic directly.
+
+### 2026-01-24 — Task 7: Create Event model and API
+
+**Changes made:**
+- Generated Event model with all required fields: organizer_profile:references, title, slug, description, short_description, cover_image_url, venue_name, venue_address, venue_city, starts_at, ends_at, doors_open_at, timezone, status, category, age_restriction, max_capacity, is_featured, published_at
+- Migration includes: unique index on slug, index on status, index on starts_at; defaults for timezone (Pacific/Guam), status (0/draft), category (5/other), age_restriction (0/all_ages), is_featured (false)
+- Added enums to Event model: status (draft/published/cancelled/completed), category (nightlife/concert/festival/dining/sports/other), age_restriction (all_ages/eighteen_plus/twenty_one_plus)
+- Added `before_validation :generate_slug` callback that generates parameterized slug from title; appends random hex suffix if slug already exists
+- Added scopes: `published`, `upcoming`, `past`, `featured`
+- Added `has_many :events, dependent: :destroy` to OrganizerProfile
+- Created public `Api::V1::EventsController` with:
+  - `index`: returns published upcoming events ordered by starts_at
+  - `show`: finds published event by slug, includes ticket_types (empty array until TicketType model exists)
+- Created `Api::V1::Organizer::EventsController` (authenticated) with:
+  - Full CRUD (index, show, create, update, destroy) scoped to current organizer's events
+  - `publish` action: transitions draft events to published with published_at timestamp
+  - `require_organizer_profile` before_action returns 403 if no organizer profile
+- Added routes: `GET /api/v1/events`, `GET /api/v1/events/:slug` (public); `GET/POST /api/v1/organizer/events`, `GET/PUT/PATCH/DELETE /api/v1/organizer/events/:id`, `POST /api/v1/organizer/events/:id/publish` (protected)
+
+**Commands run:**
+- `bundle exec rails generate model Event ...` — generated model and migration
+- `bundle exec rails db:migrate` — created events table with indexes
+- `bundle exec rails routes | grep event` — verified 9 event routes
+- `bundle exec rails runner tmp/test_events.rb` — verified model creation, slug generation, scopes
+- `bundle exec rails runner tmp/test_organizer_events.rb` — verified CRUD, publish, slug uniqueness
+- `curl http://localhost:3010/api/v1/events` — returns published events (2 events)
+- `curl http://localhost:3010/api/v1/events/full-moon-beach-party` — returns event with ticket_types: []
+- `curl http://localhost:3010/api/v1/events/sunset-jazz-night` — returns 404 (draft, not public)
+- `curl http://localhost:3010/api/v1/organizer/events` — returns 401 without auth
+- `bundle exec rspec` — 2 examples, 0 failures, 2 pending
+
+**Issues and resolutions:**
+- TicketType model doesn't exist yet (Task 8), so `has_many :ticket_types` in Event model caused NameError. Removed the association from Event model; controllers use `respond_to?(:ticket_types)` to gracefully return empty array until Task 8 adds the association.
+- Stale Rails servers on ports 3000-3005. Started fresh server on port 3010 for testing.
+- Rails runner choked on shell-escaped bang methods. Used file-based runner scripts instead.

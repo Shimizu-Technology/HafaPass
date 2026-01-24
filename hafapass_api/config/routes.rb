@@ -11,6 +11,19 @@ Rails.application.routes.draw do
       get "organizer_profile", to: "organizer_profiles#show"
       post "organizer_profile", to: "organizer_profiles#create_or_update"
       put "organizer_profile", to: "organizer_profiles#create_or_update"
+
+      # Public events
+      resources :events, only: [:index], param: :slug
+      get "events/:slug", to: "events#show", as: :event
+
+      # Organizer events (protected)
+      namespace :organizer do
+        resources :events, only: [:index, :show, :create, :update, :destroy] do
+          member do
+            post :publish
+          end
+        end
+      end
     end
   end
 end
