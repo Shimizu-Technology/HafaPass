@@ -5,6 +5,7 @@ import EventsPage from './pages/EventsPage'
 import EventDetailPage from './pages/EventDetailPage'
 import CheckoutPage from './pages/CheckoutPage'
 import OrderConfirmationPage from './pages/OrderConfirmationPage'
+import TicketPage from './pages/TicketPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 
@@ -17,6 +18,7 @@ function App() {
         <Route path="/events/:slug" element={<EventDetailPage />} />
         <Route path="/checkout/:slug" element={<CheckoutPage />} />
         <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+        <Route path="/tickets/:qrCode" element={<TicketPage />} />
         <Route path="/sign-in/*" element={<SignInPage />} />
         <Route path="/sign-up/*" element={<SignUpPage />} />
       </Route>
