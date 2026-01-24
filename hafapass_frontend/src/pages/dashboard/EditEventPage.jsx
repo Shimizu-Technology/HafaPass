@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
+import TicketTypesSection from '../../components/TicketTypesSection'
 
 const CATEGORIES = [
   { value: 'nightlife', label: 'Nightlife' },
@@ -522,6 +523,9 @@ export default function EditEventPage() {
           </button>
         </div>
       </form>
+
+      {/* Ticket Types Section */}
+      <TicketTypesSection eventId={id} />
     </div>
   )
 }

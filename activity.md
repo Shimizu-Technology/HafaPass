@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 28 / 38
-**Current Task:** Task 29 - Create ticket type management on event edit
+**Tasks Completed:** 29 / 38
+**Current Task:** Task 30 - Create event analytics page
 
 ---
 
@@ -908,3 +908,38 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 **Issues and resolutions:**
 - ESLint reported unused `navigate` import and missing `fetchEvent` in useEffect dependency array. Removed navigate (not needed since page doesn't redirect), wrapped fetchEvent in `useCallback` with `id` dependency.
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, RSpec test suite (152 passing), and Vite dev server transformation confirming component compiles and imports resolve.
+
+### 2026-01-24 — Task 29: Create ticket type management on event edit
+
+**Changes made:**
+- Created `src/components/TicketTypesSection.jsx` with three sub-components:
+  - `TicketTypesSection` (main): fetches ticket types from `GET /api/v1/organizer/events/:id/ticket_types`, displays list, manages add/edit/delete state
+  - `TicketTypeCard`: displays each ticket type with name, price, sold/available count; edit mode shows inline form with name, price ($ input converted to cents), quantity_available, max_per_order; delete button only shown when quantity_sold is 0
+  - `AddTicketTypeForm`: inline form for creating new ticket types with validation (name required, price >= 0, quantity >= 1)
+- Updated `src/pages/dashboard/EditEventPage.jsx`:
+  - Imported `TicketTypesSection` component
+  - Added `<TicketTypesSection eventId={id} />` below the event edit form
+- All CRUD operations use the existing API endpoints:
+  - GET `/api/v1/organizer/events/:event_id/ticket_types` (list)
+  - POST `/api/v1/organizer/events/:event_id/ticket_types` (create)
+  - PUT `/api/v1/organizer/events/:event_id/ticket_types/:id` (update)
+  - DELETE `/api/v1/organizer/events/:event_id/ticket_types/:id` (delete)
+- Loading state: spinner while fetching ticket types
+- Error state: red panel with retry button
+- Empty state: ticket icon with "Add your first ticket type" link
+- Delete confirmation: window.confirm dialog before deletion
+- Edit cancel: resets form to original values
+- Delete prevention: delete button hidden when quantity_sold > 0
+
+**Commands run:**
+- `npx eslint src/components/TicketTypesSection.jsx src/pages/dashboard/EditEventPage.jsx` — 0 errors
+- `npx vite build` — 170 modules, builds clean (368.05 kB JS)
+- `bundle exec rspec` — 152 examples, 0 failures
+- `curl http://localhost:3000/api/v1/events/full-moon-beach-party` — returns event with 3 ticket types
+- `curl http://localhost:3000/api/v1/organizer/events/11/ticket_types` — returns 401 without auth (correct)
+- `curl http://localhost:5173/src/components/TicketTypesSection.jsx` — Vite transforms and serves component
+- `curl http://localhost:5173/src/pages/dashboard/EditEventPage.jsx` — confirms 2 TicketTypesSection references (import + usage)
+- `curl http://localhost:5173/dashboard/events/11/edit` — Vite serves SPA HTML correctly
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build (170 modules), ESLint, RSpec test suite (152 passing), API endpoint verification, and Vite dev server transformation confirming all components compile and imports resolve.
