@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 7 / 38
-**Current Task:** Task 8 - Create TicketType model and API
+**Tasks Completed:** 8 / 38
+**Current Task:** Task 9 - Create Order and Ticket models
 
 ---
 
@@ -229,3 +229,35 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 - TicketType model doesn't exist yet (Task 8), so `has_many :ticket_types` in Event model caused NameError. Removed the association from Event model; controllers use `respond_to?(:ticket_types)` to gracefully return empty array until Task 8 adds the association.
 - Stale Rails servers on ports 3000-3005. Started fresh server on port 3010 for testing.
 - Rails runner choked on shell-escaped bang methods. Used file-based runner scripts instead.
+
+### 2026-01-24 — Task 8: Create TicketType model and API
+
+**Changes made:**
+- Generated TicketType model with migration: `event:references`, `name:string` (not null), `description:text`, `price_cents:integer`, `quantity_available:integer`, `quantity_sold:integer` (default 0, not null), `max_per_order:integer` (default 10), `sales_start_at:datetime`, `sales_end_at:datetime`, `sort_order:integer` (default 0)
+- Added `belongs_to :event` to TicketType, `has_many :ticket_types, dependent: :destroy` to Event
+- Added validations: `name` presence, `price_cents` presence + numericality (>= 0), `quantity_available` presence + numericality (> 0)
+- Added `sold_out?` method: returns true when quantity_sold >= quantity_available
+- Added `available_quantity` method: returns quantity_available - quantity_sold
+- Created `Api::V1::Organizer::TicketTypesController` with full CRUD:
+  - `index`: lists ticket types for event ordered by sort_order
+  - `show`: returns single ticket type
+  - `create`: creates ticket type for event with validation
+  - `update`: updates ticket type attributes
+  - `destroy`: only allows deletion if quantity_sold == 0
+  - Requires authentication and organizer profile (403 if missing)
+  - Scopes events to current organizer (returns 404 if event not theirs)
+- Added nested route: `/api/v1/organizer/events/:event_id/ticket_types` (CRUD)
+- Simplified `respond_to?(:ticket_types)` checks in both events controllers to direct association access now that TicketType model exists
+
+**Commands run:**
+- `bundle exec rails generate model TicketType ...` — generated model, migration, spec, factory
+- `bundle exec rails db:migrate` — created ticket_types table (development + test)
+- `bundle exec rails routes | grep ticket` — verified 6 routes (GET, POST, GET/:id, PATCH/:id, PUT/:id, DELETE/:id)
+- `bundle exec rails runner tmp/test_ticket_types.rb` — verified model validations, methods, associations
+- `bundle exec rails runner tmp/test_tt_controller.rb` — verified CRUD logic, destroy prevention
+- `curl http://localhost:3030/api/v1/events/api-test-event` — returns event with ticket_types array
+- `curl http://localhost:3030/api/v1/organizer/events/6/ticket_types` — returns 401 without auth
+- `bundle exec rspec` — 3 examples, 0 failures, 3 pending
+
+**Issues and resolutions:**
+- Stale Rails server on port 3000 (PID 24176, started before routes existed). Started fresh server on port 3030 for testing.

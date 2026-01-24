@@ -22,6 +22,7 @@ Rails.application.routes.draw do
           member do
             post :publish
           end
+          resources :ticket_types, only: [:index, :show, :create, :update, :destroy]
         end
       end
     end

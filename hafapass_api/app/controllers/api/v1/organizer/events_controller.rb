@@ -98,22 +98,18 @@ module Api
           }
 
           if include_ticket_types
-            json[:ticket_types] = if event.respond_to?(:ticket_types)
-              event.ticket_types.order(:sort_order, :id).map do |tt|
-                {
-                  id: tt.id,
-                  name: tt.name,
-                  description: tt.description,
-                  price_cents: tt.price_cents,
-                  quantity_available: tt.quantity_available,
-                  quantity_sold: tt.quantity_sold,
-                  max_per_order: tt.max_per_order,
-                  sales_start_at: tt.sales_start_at,
-                  sales_end_at: tt.sales_end_at
-                }
-              end
-            else
-              []
+            json[:ticket_types] = event.ticket_types.order(:sort_order, :id).map do |tt|
+              {
+                id: tt.id,
+                name: tt.name,
+                description: tt.description,
+                price_cents: tt.price_cents,
+                quantity_available: tt.quantity_available,
+                quantity_sold: tt.quantity_sold,
+                max_per_order: tt.max_per_order,
+                sales_start_at: tt.sales_start_at,
+                sales_end_at: tt.sales_end_at
+              }
             end
           end
 

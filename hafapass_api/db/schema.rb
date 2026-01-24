@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_24_052840) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_24_053543) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -54,6 +54,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_24_052840) do
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id"
   end
 
+  create_table "ticket_types", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.bigint "event_id", null: false
+    t.integer "max_per_order", default: 10
+    t.string "name", null: false
+    t.integer "price_cents"
+    t.integer "quantity_available"
+    t.integer "quantity_sold", default: 0, null: false
+    t.datetime "sales_end_at"
+    t.datetime "sales_start_at"
+    t.integer "sort_order", default: 0
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_ticket_types_on_event_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "clerk_id", null: false
     t.datetime "created_at", null: false
@@ -68,4 +84,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_24_052840) do
 
   add_foreign_key "events", "organizer_profiles"
   add_foreign_key "organizer_profiles", "users"
+  add_foreign_key "ticket_types", "events"
 end
