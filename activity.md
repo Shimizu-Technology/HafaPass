@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 21 / 38
-**Current Task:** Task 22 - Create checkout page - buyer form and submission
+**Tasks Completed:** 22 / 38
+**Current Task:** Task 23 - Create order confirmation page
 
 ---
 
@@ -670,3 +670,35 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 **Issues and resolutions:**
 - Initial lint error: `setLineItems` unused (lineItems doesn't need to be in state since it won't change). Changed to a plain variable from `location.state`.
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, API verification, and curl confirming both servers serve correct content.
+
+### 2026-01-24 — Task 22: Create checkout page - buyer form and submission
+
+**Changes made:**
+- Updated `src/pages/CheckoutPage.jsx` to add buyer information form and order submission:
+  - Added buyer form state: buyerName, buyerEmail, buyerPhone, formErrors, submitting, submitError
+  - Added `validateForm()` function: validates name is not empty, email is not empty and matches email pattern
+  - Added `handleSubmit()` async function:
+    - Validates form before submission
+    - POSTs to `/api/v1/orders` with event_id, buyer info, and line_items array
+    - On success: navigates to `/orders/:id/confirmation` with order and event in state
+    - On error: displays API error message in red alert, preserves form values
+  - Added buyer form UI with:
+    - Full Name (required) with validation error display
+    - Email Address (required) with email format validation
+    - Phone Number (optional)
+    - "Complete Purchase — $XX.XX" submit button (full width, orange CTA)
+    - "Processing..." loading text on button during submission
+    - Submit error alert above form
+    - Disabled inputs during submission
+    - Terms of service notice below button
+
+**Commands run:**
+- `npx eslint src/pages/CheckoutPage.jsx` — 0 errors
+- `npx vite build` — 160 modules, builds clean (303.93 kB JS)
+- `curl POST /api/v1/orders` — tested successful order creation (subtotal $125.00, fee $5.25, total $130.25, 3 tickets with UUIDs)
+- `curl POST /api/v1/orders` without buyer info — returns 422 "buyer_email and buyer_name are required"
+- `bundle exec rspec` — 152 examples, 0 failures
+- Verified Vite HMR serves updated component with cache-bust
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chrome/Chromium blocked by macOS sandbox mach port restrictions). Verified via successful production build, ESLint, API end-to-end testing, and Vite dev server cache-busted fetch confirming new code is served.

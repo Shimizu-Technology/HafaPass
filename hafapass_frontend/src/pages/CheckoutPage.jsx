@@ -12,6 +12,14 @@ export default function CheckoutPage() {
   const lineItems = location.state?.lineItems || null
   const [error, setError] = useState(null)
 
+  // Buyer form state
+  const [buyerName, setBuyerName] = useState('')
+  const [buyerEmail, setBuyerEmail] = useState('')
+  const [buyerPhone, setBuyerPhone] = useState('')
+  const [formErrors, setFormErrors] = useState({})
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
+
   useEffect(() => {
     if (!lineItems || lineItems.length === 0) {
       navigate(`/events/${slug}`, { replace: true })
@@ -52,6 +60,57 @@ export default function CheckoutPage() {
       hour: 'numeric',
       minute: '2-digit',
     })
+  }
+
+  const validateForm = () => {
+    const errors = {}
+    if (!buyerName.trim()) {
+      errors.name = 'Name is required'
+    }
+    if (!buyerEmail.trim()) {
+      errors.email = 'Email is required'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail.trim())) {
+      errors.email = 'Please enter a valid email address'
+    }
+    return errors
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSubmitError(null)
+
+    const errors = validateForm()
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const payload = {
+        event_id: event.id,
+        buyer_name: buyerName.trim(),
+        buyer_email: buyerEmail.trim(),
+        buyer_phone: buyerPhone.trim() || null,
+        line_items: lineItems.map(item => ({
+          ticket_type_id: item.ticket_type_id,
+          quantity: item.quantity,
+        })),
+      }
+
+      const response = await apiClient.post('/orders', payload)
+      const order = response.data
+
+      navigate(`/orders/${order.id}/confirmation`, {
+        state: { order, event },
+        replace: true,
+      })
+    } catch (err) {
+      const message = err.response?.data?.error || 'Something went wrong. Please try again.'
+      setSubmitError(message)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (loading) {
@@ -166,9 +225,82 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      {/* Placeholder for buyer form (Task 22) */}
-      <div className="text-sm text-gray-500 text-center">
-        Buyer information form will be added next.
+      {/* Buyer Information Form */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Your Information</h2>
+
+        {submitError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+            <p className="text-red-700 text-sm">{submitError}</p>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="space-y-4">
+            {/* Name */}
+            <div>
+              <label htmlFor="buyerName" className="block text-sm font-medium text-gray-700 mb-1">
+                Full Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="buyerName"
+                type="text"
+                value={buyerName}
+                onChange={(e) => { setBuyerName(e.target.value); setFormErrors(prev => ({ ...prev, name: null })) }}
+                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${formErrors.name ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
+                placeholder="Enter your full name"
+                disabled={submitting}
+              />
+              {formErrors.name && <p className="text-red-600 text-xs mt-1">{formErrors.name}</p>}
+            </div>
+
+            {/* Email */}
+            <div>
+              <label htmlFor="buyerEmail" className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="buyerEmail"
+                type="email"
+                value={buyerEmail}
+                onChange={(e) => { setBuyerEmail(e.target.value); setFormErrors(prev => ({ ...prev, email: null })) }}
+                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${formErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
+                placeholder="you@example.com"
+                disabled={submitting}
+              />
+              {formErrors.email && <p className="text-red-600 text-xs mt-1">{formErrors.email}</p>}
+            </div>
+
+            {/* Phone */}
+            <div>
+              <label htmlFor="buyerPhone" className="block text-sm font-medium text-gray-700 mb-1">
+                Phone Number <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                id="buyerPhone"
+                type="tel"
+                value={buyerPhone}
+                onChange={(e) => setBuyerPhone(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="(671) 555-0123"
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full mt-6 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-lg text-lg transition-colors duration-200"
+          >
+            {submitting ? 'Processing...' : `Complete Purchase — ${formatPrice(totalCents)}`}
+          </button>
+
+          <p className="text-xs text-gray-400 text-center mt-3">
+            By completing this purchase you agree to the HafaPass terms of service.
+          </p>
+        </form>
       </div>
     </div>
   )
