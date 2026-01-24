@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 14 / 38
-**Current Task:** Task 15 - RSpec request specs
+**Tasks Completed:** 15 / 38
+**Current Task:** Task 16 - Create seed data for development
 
 ---
 
@@ -455,3 +455,42 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - `freeze_time` not available without ActiveSupport::Testing::TimeHelpers inclusion. Replaced with `be_within(2.seconds).of(Time.current)` approach which is simpler and sufficient.
+
+### 2026-01-24 — Task 15: RSpec request specs
+
+**Changes made:**
+- Created `spec/support/auth_helpers.rb`:
+  - Defines `auth_headers(user)` helper that stubs `ClerkAuthenticator.verify` for a given user
+  - Returns proper Authorization Bearer headers for test requests
+  - Included in all request specs via RSpec config
+- Created `spec/requests/api/v1/events_spec.rb` (9 examples):
+  - GET /api/v1/events: returns only published upcoming events, orders by starts_at, includes organizer info, returns empty array
+  - GET /api/v1/events/:slug: returns event with ticket_types, 404 for non-existent/draft/cancelled, includes availability info
+- Created `spec/requests/api/v1/orders_spec.rb` (18 examples):
+  - POST /api/v1/orders with valid params: correct totals (subtotal, service_fee, total), creates tickets, unique QR codes, increments quantity_sold, sets attendee info, works as guest, attaches user when authenticated
+  - POST /api/v1/orders with insufficient inventory: exceeds available (422), exceeds max_per_order (422), no order/tickets created on failure, quantity_sold unchanged on failure
+  - POST /api/v1/orders with invalid params: missing buyer_email/buyer_name (422), missing line_items (422), event not found (404), draft event (404), wrong event ticket_type (422), zero quantity (422)
+- Created `spec/requests/api/v1/check_ins_spec.rb` (8 examples):
+  - POST /api/v1/check_in/:qr_code: success with issued ticket, updates status/timestamp, returns event/ticket_type details, returns attendee info
+  - Already checked-in: 422 with error message, doesn't update
+  - Cancelled ticket: 422
+  - Non-existent QR code: 404
+  - No auth required
+- Created `spec/requests/api/v1/organizer/events_spec.rb` (24 examples):
+  - GET index: returns organizer's events, excludes others', 401 without auth, 403 without profile, ordered by created_at desc
+  - GET show: returns with ticket_types, 404 for other organizer's event
+  - POST create: creates draft event, generates slug, 422 for invalid, associates with organizer
+  - PUT update: updates event, 404 for other organizer's
+  - DELETE destroy: deletes event, 404 for other organizer's
+  - POST publish: publishes draft, 422 for already published/cancelled
+  - GET stats: correct totals (tickets_sold, revenue, checked_in), tickets_by_type breakdown, recent_orders
+  - GET attendees: returns attendee list with check-in status
+
+**Commands run:**
+- `bundle exec rspec spec/requests/` — 59 examples, 0 failures
+- `bundle exec rspec` — 152 examples, 0 failures (93 model + 59 request specs)
+
+**Issues and resolutions:**
+- Initial run had 7 failures. Fixed by:
+  1. Empty `line_items: []` param wasn't properly handled by Rails param processing in test context (sends empty string instead of empty array). Changed test to use `except(:line_items)` which tests the same validation path.
+  2. Organizer event specs returned 403 because `organizer_profile` was a lazy `let` (not created before request). Changed to `let!` to eagerly create the profile before each test.
