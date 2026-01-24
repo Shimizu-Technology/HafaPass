@@ -1,12 +1,25 @@
 FactoryBot.define do
   factory :ticket do
-    order { nil }
-    ticket_type { nil }
-    event { nil }
-    qr_code { "MyString" }
-    status { 1 }
-    attendee_name { "MyString" }
-    attendee_email { "MyString" }
-    checked_in_at { "2026-01-24 15:41:08" }
+    association :order
+    association :ticket_type
+    event { order.event }
+    qr_code { nil }
+    status { :issued }
+    attendee_name { nil }
+    attendee_email { nil }
+    checked_in_at { nil }
+
+    trait :checked_in do
+      status { :checked_in }
+      checked_in_at { Time.current }
+    end
+
+    trait :cancelled do
+      status { :cancelled }
+    end
+
+    trait :transferred do
+      status { :transferred }
+    end
   end
 end

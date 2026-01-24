@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 13 / 38
-**Current Task:** Task 14 - RSpec model specs
+**Tasks Completed:** 14 / 38
+**Current Task:** Task 15 - RSpec request specs
 
 ---
 
@@ -428,3 +428,30 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - Rack::MockRequest approach for endpoint testing returned HTML error pages due to auth monkey-patching not propagating correctly in-process. Verified via Rails runner assertions instead, which test the exact same query logic the controller uses.
+
+### 2026-01-24 — Task 14: RSpec model specs
+
+**Changes made:**
+- Updated `spec/rails_helper.rb`:
+  - Uncommented `spec/support/**/*.rb` auto-require
+  - Added `config.include FactoryBot::Syntax::Methods` for cleaner syntax
+- Updated all factories with realistic data and proper associations:
+  - `spec/factories/users.rb` — sequences for clerk_id/email, role traits (organizer, admin)
+  - `spec/factories/organizer_profiles.rb` — proper user association with organizer trait
+  - `spec/factories/events.rb` — **new file** with status traits (published, cancelled, completed, upcoming, past, featured)
+  - `spec/factories/ticket_types.rb` — traits for vip, sold_out, free
+  - `spec/factories/orders.rb` — traits for pending, refunded, cancelled, with_user
+  - `spec/factories/tickets.rb` — traits for checked_in, cancelled, transferred; event from order
+- Wrote comprehensive model specs:
+  - `spec/models/user_spec.rb` — validations (clerk_id presence/uniqueness), role enum, associations (organizer_profile, orders, dependent destroy/nullify)
+  - `spec/models/event_spec.rb` — validations, slug generation (parameterize, uniqueness suffix, regeneration on title change), status/category/age_restriction enums, scopes (published, upcoming, past, featured, chaining), associations
+  - `spec/models/ticket_type_spec.rb` — validations (name, price_cents, quantity_available), sold_out?, available_quantity, associations, defaults
+  - `spec/models/order_spec.rb` — validations (buyer_email, buyer_name, optional user), status enum, associations (event, user, tickets, dependent destroy)
+  - `spec/models/ticket_spec.rb` — generate_qr_code! (UUID format, uniqueness), check_in! (updates status/timestamp, raises on non-issued), set_attendee_info callback, status enum, associations, qr_code uniqueness validation
+  - `spec/models/organizer_profile_spec.rb` — validations and associations (replaced pending placeholder)
+
+**Commands run:**
+- `bundle exec rspec spec/models/` — 93 examples, 0 failures
+
+**Issues and resolutions:**
+- `freeze_time` not available without ActiveSupport::Testing::TimeHelpers inclusion. Replaced with `be_within(2.seconds).of(Time.current)` approach which is simpler and sufficient.

@@ -359,7 +359,7 @@ HafaPass is a ticketing platform for Guam's hospitality industry, powered by Amb
       "Write Ticket model specs: generate_qr_code! produces UUID, check_in! updates status and timestamp, check_in! fails if not issued",
       "Run rspec and verify all specs pass"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 15,
