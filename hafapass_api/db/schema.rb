@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_24_053543) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_24_054108) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -42,6 +42,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_24_053543) do
     t.index ["status"], name: "index_events_on_status"
   end
 
+  create_table "orders", force: :cascade do |t|
+    t.string "buyer_email"
+    t.string "buyer_name"
+    t.string "buyer_phone"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.integer "service_fee_cents", default: 0, null: false
+    t.integer "status", default: 0, null: false
+    t.string "stripe_payment_intent_id"
+    t.integer "subtotal_cents", default: 0, null: false
+    t.integer "total_cents", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["event_id"], name: "index_orders_on_event_id"
+    t.index ["user_id"], name: "index_orders_on_user_id"
+  end
+
   create_table "organizer_profiles", force: :cascade do |t|
     t.text "business_description"
     t.string "business_name"
@@ -70,6 +88,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_24_053543) do
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
   end
 
+  create_table "tickets", force: :cascade do |t|
+    t.string "attendee_email"
+    t.string "attendee_name"
+    t.datetime "checked_in_at"
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.bigint "order_id", null: false
+    t.string "qr_code"
+    t.integer "status", default: 0, null: false
+    t.bigint "ticket_type_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_tickets_on_event_id"
+    t.index ["order_id"], name: "index_tickets_on_order_id"
+    t.index ["qr_code"], name: "index_tickets_on_qr_code", unique: true
+    t.index ["ticket_type_id"], name: "index_tickets_on_ticket_type_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "clerk_id", null: false
     t.datetime "created_at", null: false
@@ -83,6 +118,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_24_053543) do
   end
 
   add_foreign_key "events", "organizer_profiles"
+  add_foreign_key "orders", "events"
+  add_foreign_key "orders", "users"
   add_foreign_key "organizer_profiles", "users"
   add_foreign_key "ticket_types", "events"
+  add_foreign_key "tickets", "events"
+  add_foreign_key "tickets", "orders"
+  add_foreign_key "tickets", "ticket_types"
 end

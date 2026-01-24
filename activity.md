@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 8 / 38
-**Current Task:** Task 9 - Create Order and Ticket models
+**Tasks Completed:** 9 / 38
+**Current Task:** Task 10 - Create Orders API with mock checkout
 
 ---
 
@@ -261,3 +261,36 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - Stale Rails server on port 3000 (PID 24176, started before routes existed). Started fresh server on port 3030 for testing.
+
+### 2026-01-24 — Task 9: Create Order and Ticket models
+
+**Changes made:**
+- Generated Order model with migration: `user:references` (nullable for guest checkout), `event:references`, `status:integer` (default 0/pending), `subtotal_cents`, `service_fee_cents`, `total_cents` (all integer, not null, default 0), `buyer_email`, `buyer_name`, `buyer_phone`, `stripe_payment_intent_id`, `completed_at:datetime`
+- Generated Ticket model with migration: `order:references`, `ticket_type:references`, `event:references`, `qr_code:string` (unique index), `status:integer` (default 0/issued), `attendee_name`, `attendee_email`, `checked_in_at:datetime`
+- Order model: `belongs_to :user` (optional), `belongs_to :event`, `has_many :tickets`; enum status (pending:0, completed:1, refunded:2, cancelled:3); validates buyer_email and buyer_name presence
+- Ticket model: `belongs_to :order`, `belongs_to :ticket_type`, `belongs_to :event`; enum status (issued:0, checked_in:1, cancelled:2, transferred:3)
+- Added `generate_qr_code!` method (before_create callback) using `SecureRandom.uuid`
+- Added `check_in!` method that raises if ticket is not in `issued` status, then updates to `checked_in` with timestamp
+- Added `set_attendee_info` before_create callback that copies buyer_name/email from order if not explicitly set
+- Updated User model: added `has_many :orders, dependent: :nullify`
+- Updated Event model: added `has_many :orders, dependent: :destroy` and `has_many :tickets, dependent: :destroy`
+- Updated TicketType model: added `has_many :tickets, dependent: :restrict_with_error`
+
+**Commands run:**
+- `bundle exec rails generate model Order ...` — generated model, migration, factory, spec
+- `bundle exec rails generate model Ticket ...` — generated model, migration, factory, spec
+- `bundle exec rails db:migrate` — created orders and tickets tables (development + test)
+- `bundle exec rails runner tmp/test_orders_tickets.rb` — verified:
+  - Order creation with user and without (guest checkout)
+  - Order status enum values
+  - Ticket creation with auto-generated UUID qr_code
+  - Ticket `set_attendee_info` callback copies from order
+  - Ticket explicit attendee_name/email preserved when provided
+  - `check_in!` updates status to checked_in with timestamp
+  - `check_in!` raises error on already-checked-in ticket
+  - `check_in!` raises error on cancelled ticket
+  - All associations (Order→tickets, Event→orders, Event→tickets, User→orders, TicketType→tickets)
+- `bundle exec rspec` — 5 examples, 0 failures, 5 pending
+
+**Issues and resolutions:**
+- None. Clean implementation.
