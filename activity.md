@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 20 / 38
-**Current Task:** Task 21 - Create checkout page - order summary
+**Tasks Completed:** 21 / 38
+**Current Task:** Task 22 - Create checkout page - buyer form and submission
 
 ---
 
@@ -637,3 +637,36 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, and curl confirming both API and frontend serve correct content.
+
+### 2026-01-24 — Task 21: Create checkout page - order summary
+
+**Changes made:**
+- Created `src/pages/CheckoutPage.jsx` at `/checkout/:slug` route:
+  - Receives selected ticket quantities from navigation state (lineItems and event from EventDetailPage)
+  - Redirects back to event page if lineItems are missing or empty
+  - Fetches event details from API if not in navigation state
+  - Displays event info (title, date, time, venue) at top of page
+  - Order Summary card with:
+    - Line items: ticket type name × quantity = line total for each selected type
+    - Subtotal calculation
+    - Service fee calculation: (subtotal × 3%) + ($0.50 × total_tickets) — matches backend formula exactly
+    - Order total (subtotal + service fee)
+  - "Back to Event" link with arrow icon at top
+  - Loading spinner while fetching event data
+  - Error state with "Back to Event" link
+  - Clean card/panel layout with dividers between sections
+  - Placeholder text for buyer form (Task 22)
+- Updated `src/App.jsx`:
+  - Imported `CheckoutPage` component
+  - Added `<Route path="/checkout/:slug" element={<CheckoutPage />} />` inside Layout
+
+**Commands run:**
+- `npx eslint src/pages/CheckoutPage.jsx src/App.jsx` — 0 errors
+- `npx vite build` — 160 modules, builds clean (300.57 kB JS)
+- Verified fee calculation matches backend: 2×GA($25) + 1×VIP($75) = subtotal $125.00, fee $5.25, total $130.25
+- `curl http://localhost:5173/checkout/full-moon-beach-party` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/CheckoutPage.jsx` — Vite transforms and serves component
+
+**Issues and resolutions:**
+- Initial lint error: `setLineItems` unused (lineItems doesn't need to be in state since it won't change). Changed to a plain variable from `location.state`.
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, API verification, and curl confirming both servers serve correct content.
