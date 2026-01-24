@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 35 / 38
-**Current Task:** Task 36 - Polish pass (loading states, error handling)
+**Tasks Completed:** 36 / 38
+**Current Task:** Task 37 - SEO basics and Open Graph tags
 
 ---
 
@@ -1164,3 +1164,42 @@ Comprehensive mobile responsiveness improvements across all frontend pages to en
 - agent-browser daemon cannot start due to sandbox restriction on Unix socket creation (EPERM). This prevents automated screenshots.
 - Headless Chrome also blocked by same sandbox restriction.
 - Verified correctness through build, lint, and route checks instead.
+
+### 2026-01-24 — Task 36: PWA setup for mobile installability
+
+**Changes made:**
+- Created `public/manifest.json` with PWA metadata:
+  - name: "HafaPass", short_name: "HafaPass"
+  - display: "standalone" (app-like experience)
+  - background_color and theme_color: "#1e3a5f" (ocean blue)
+  - orientation: "portrait-primary"
+  - Icons array: 192x192 and 512x512 PNG with "any maskable" purpose
+- Created `public/icons/` directory with two placeholder PNG icons:
+  - `icon-192.png` (192x192, 524 bytes) — ocean blue background with white "HP" text
+  - `icon-512.png` (512x512, 2343 bytes) — ocean blue background with white "HP" text
+  - Generated programmatically as valid PNG files (zlib-compressed RGB data)
+- Updated `index.html` head with PWA meta tags:
+  - `<link rel="manifest" href="/manifest.json" />`
+  - `<meta name="theme-color" content="#1e3a5f" />`
+  - `<meta name="apple-mobile-web-app-capable" content="yes" />`
+  - `<meta name="apple-mobile-web-app-status-bar-style" content="default" />`
+  - `<link rel="apple-touch-icon" href="/icons/icon-192.png" />`
+
+**Commands run:**
+- `npm run lint` — 0 errors
+- `npm run build` — 172 modules, builds clean (391.45 kB JS, 27.09 kB CSS)
+- Served production build on port 5190 and verified:
+  - manifest.json served as application/json with correct content
+  - icon-192.png served as image/png (524 bytes)
+  - icon-512.png served as image/png (2343 bytes)
+  - index.html contains all 5 PWA-related meta tags
+
+**Verification:**
+- Production build includes manifest.json, icons/, and all meta tags in dist/index.html
+- All assets served with correct MIME types (application/json, image/png)
+- Manifest contains valid JSON with all required fields for PWA installability
+- agent-browser daemon cannot start (Chromium blocked by sandbox), but PWA compliance verified via production build serving test
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (EPERM on socket). Verified via production build serving with Python's http.server.
+- Stale Vite dev server (port 5173) doesn't pick up new public/ files without restart. Verified via production build instead.

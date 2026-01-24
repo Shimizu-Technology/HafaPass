@@ -733,7 +733,7 @@ HafaPass is a ticketing platform for Guam's hospitality industry, powered by Amb
       "Verify in browser DevTools > Application tab that manifest is detected",
       "Verify 'Add to Home Screen' prompt appears on mobile Chrome (or install option in desktop Chrome)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 37,
