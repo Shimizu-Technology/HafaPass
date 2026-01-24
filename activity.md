@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 27 / 38
-**Current Task:** Task 28 - Create event edit page
+**Tasks Completed:** 28 / 38
+**Current Task:** Task 29 - Create ticket type management on event edit
 
 ---
 
@@ -874,3 +874,37 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, API endpoint testing (401 on unauthorized POST), RSpec test suite (152 passing), and Vite dev server transformation confirming component compiles and all imports resolve correctly.
+
+### 2026-01-24 — Task 28: Create event edit page
+
+**Changes made:**
+- Created `src/pages/dashboard/EditEventPage.jsx` at `/dashboard/events/:id/edit` route (protected):
+  - Fetches event from `GET /api/v1/organizer/events/:id` and pre-populates form with existing values
+  - `formatDatetimeLocal()` helper converts ISO datetime strings to `datetime-local` input format
+  - Status badge at top: yellow "Draft", green "Published", red "Cancelled", gray "Completed"
+  - For draft events: blue info panel with "Publish Event" button
+  - Publish confirmation dialog (modal overlay) with "Yes, Publish" / "Cancel" buttons
+  - On publish: `POST /api/v1/organizer/events/:id/publish`, updates local event state, shows success message
+  - For published events: "View Analytics" link to `/dashboard/events/:id/analytics`
+  - Form fields identical to CreateEventPage: Basic Info, Venue, Date/Time, Settings sections
+  - On save: `PUT /api/v1/organizer/events/:id` with form data, shows success/error message
+  - Form validation: title, venue_name, starts_at required (inline error messages)
+  - Loading state: centered spinner while fetching event
+  - Error states: 401 ("Please sign in"), 404 ("Event not found"), generic error
+  - Submit states: "Saving..." on button during PUT, disabled inputs
+  - "Back to Dashboard" link at top
+- Updated `src/App.jsx`:
+  - Imported `EditEventPage` component
+  - Added `<Route path="/dashboard/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />`
+
+**Commands run:**
+- `npx eslint src/pages/dashboard/EditEventPage.jsx src/App.jsx` — 0 errors (fixed unused `navigate` and useEffect dependency)
+- `npx vite build` — 169 modules, builds clean (356.96 kB JS)
+- `bundle exec rspec` — 152 examples, 0 failures
+- `curl http://localhost:5173/dashboard/events/1/edit` — Vite serves SPA HTML correctly
+- `curl http://localhost:5173/src/pages/dashboard/EditEventPage.jsx` — Vite transforms and serves component with all imports resolved
+- Verified seed data: event IDs 11-16 exist (15 = draft for testing publish, 11-14 = published for analytics link)
+
+**Issues and resolutions:**
+- ESLint reported unused `navigate` import and missing `fetchEvent` in useEffect dependency array. Removed navigate (not needed since page doesn't redirect), wrapped fetchEvent in `useCallback` with `id` dependency.
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful production build, ESLint, RSpec test suite (152 passing), and Vite dev server transformation confirming component compiles and imports resolve.
