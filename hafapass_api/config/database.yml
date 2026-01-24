@@ -1,0 +1,17 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  host: localhost
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: hafapass_api_development
+
+test:
+  <<: *default
+  database: hafapass_api_test
+
+production:
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>

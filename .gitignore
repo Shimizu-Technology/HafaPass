@@ -1,0 +1,72 @@
+# Environment files (contain secrets!)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Cache directories
+.cache/
+node_modules/
+.npm/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+tmp/
+log/
+
+# Rails specific (will be in hafapass_api/)
+hafapass_api/.bundle/
+hafapass_api/vendor/bundle/
+hafapass_api/log/*
+hafapass_api/tmp/*
+hafapass_api/storage/*
+hafapass_api/.byebug_history
+hafapass_api/db/*.sqlite3
+hafapass_api/db/*.sqlite3-*
+hafapass_api/public/assets/
+hafapass_api/public/packs/
+hafapass_api/coverage/
+hafapass_api/.env
+hafapass_api/.env.*
+
+# React/Vite specific (will be in hafapass_frontend/)
+hafapass_frontend/node_modules/
+hafapass_frontend/dist/
+hafapass_frontend/.env.local
+hafapass_frontend/.env.*.local
+hafapass_frontend/coverage/
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# Screenshots (optional - remove this line if you want to commit screenshots)
+# screenshots/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+
+# Misc
+*.pem
+*.key
