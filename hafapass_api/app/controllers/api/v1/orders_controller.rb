@@ -101,6 +101,13 @@ class Api::V1::OrdersController < ApplicationController
     #   render json: order_json(@order), status: :created
     # end
 
+    # Send order confirmation email (never breaks checkout on failure)
+    begin
+      EmailService.send_order_confirmation(@order)
+    rescue => e
+      Rails.logger.error("Failed to send order confirmation email for order ##{@order.id}: #{e.message}")
+    end
+
     render json: order_json(@order), status: :created
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.message }, status: :unprocessable_entity

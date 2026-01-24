@@ -701,7 +701,7 @@ HafaPass is a ticketing platform for Guam's hospitality industry, powered by Amb
       "Add RESEND_API_KEY and MAILER_FROM_EMAIL to .env.example",
       "Verify app runs without Resend key and orders still complete successfully"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 35,
