@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-24
-**Tasks Completed:** 16 / 38
-**Current Task:** Task 17 - Create frontend layout and navigation
+**Tasks Completed:** 17 / 38
+**Current Task:** Task 18 - Create home page
 
 ---
 
@@ -522,3 +522,31 @@ HafaPass is a ticketing platform for Guam's hospitality industry. This MVP inclu
 
 **Issues and resolutions:**
 - None. Clean implementation.
+
+### 2026-01-24 — Task 17: Create frontend layout and navigation
+
+**Changes made:**
+- Created `src/components/Layout.jsx`:
+  - Uses React Router's `<Outlet>` pattern for nested route rendering
+  - Flexbox column layout: Navbar at top, main content fills space, footer at bottom
+  - Light gray background (bg-gray-50) for content area
+- Created `src/components/Navbar.jsx`:
+  - Ocean blue header (bg-blue-900) with white text
+  - Logo text "HafaPass" linking to home
+  - Desktop nav links: Events, My Tickets (auth), Dashboard (auth) with active state underline
+  - Auth buttons: Sign In (text) and Sign Up (orange CTA) for signed-out users, Clerk UserButton for signed-in
+  - Mobile hamburger menu with slide-down panel, proper touch targets
+  - Two variants: `ClerkNavbar` (uses Clerk hooks/components) and `BasicNavbar` (fallback without Clerk)
+  - Conditional rendering based on `VITE_CLERK_PUBLISHABLE_KEY` availability
+- Updated `src/App.jsx`:
+  - Wrapped all routes in `<Layout />` using React Router's nested route pattern
+  - HomePage retains gradient background with adjusted height calculation
+- Footer displays copyright year and "Powered by Shimizu Technology"
+
+**Commands run:**
+- `npx eslint src/` — 0 errors
+- `npx vite build` — 155 modules transformed, 285.86 kB JS bundle, builds clean
+- Verified Vite dev server serves all components correctly via curl
+
+**Issues and resolutions:**
+- agent-browser daemon failed to start (Chromium unavailable in sandbox). Verified via successful build (all modules compile) and curl (Vite serves transformed components).
