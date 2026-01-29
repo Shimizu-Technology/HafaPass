@@ -8,7 +8,7 @@
   "mcpServers": {
     "browserbase": {
       "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-browserbase"],
+      "args": ["-y", "@browserbasehq/mcp-server-browserbase"],
       "env": {
         "BROWSERBASE_API_KEY": "${BROWSERBASE_API_KEY}",
         "BROWSERBASE_PROJECT_ID": "${BROWSERBASE_PROJECT_ID}"

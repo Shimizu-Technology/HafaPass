@@ -63,6 +63,14 @@ fi
 # Create screenshots directory if it doesn't exist
 mkdir -p screenshots
 
+# Source .env file if it exists (for API keys like Browserbase)
+if [ -f ".env" ]; then
+  echo -e "${GREEN}Loading environment variables from .env...${NC}"
+  source .env
+  export BROWSERBASE_API_KEY
+  export BROWSERBASE_PROJECT_ID
+fi
+
 echo -e "${BLUE}======================================${NC}"
 echo -e "${BLUE}   Ralph Wiggum Autonomous Loop${NC}"
 echo -e "${BLUE}======================================${NC}"
