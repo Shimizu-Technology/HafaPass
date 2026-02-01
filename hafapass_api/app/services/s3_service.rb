@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class S3Service
   class << self
     # Returns true if AWS S3 is configured with all required environment variables.
@@ -8,19 +10,27 @@ class S3Service
     end
 
     # Generates a presigned POST URL for direct browser upload to S3.
-    # Returns a hash with :url (the S3 bucket endpoint) and :fields (form fields to include in the POST).
-    # The presigned post expires after 15 minutes.
-    #
-    # S3 key format: uploads/events/:event_id/:timestamp_:filename
-    #
-    # @param filename [String] the original filename
-    # @param content_type [String] the MIME type (e.g., "image/jpeg")
-    # @param event_id [Integer, String] optional event ID for key organization
-    # @return [Hash] { url: String, fields: Hash, key: String } or nil if not configured
+    # In simulate mode (no AWS keys), returns fake presigned data that the
+    # frontend can use to show the upload flow. When real keys are added, it just works.
     def generate_presigned_post(filename, content_type, event_id: nil)
-      return nil unless configured?
-
       key = build_key(filename, event_id: event_id)
+
+      unless configured?
+        Rails.logger.info("[S3Service SIMULATE] Presigned POST for key=#{key} content_type=#{content_type}")
+        return {
+          url: "https://simulated-bucket.s3.amazonaws.com",
+          fields: {
+            key: key,
+            "Content-Type" => content_type,
+            policy: "simulated_policy_#{SecureRandom.hex(8)}",
+            "x-amz-credential" => "SIMULATED/20260201/us-west-2/s3/aws4_request",
+            "x-amz-signature" => "sim_#{SecureRandom.hex(32)}"
+          },
+          key: key,
+          public_url: "https://simulated-bucket.s3.us-west-2.amazonaws.com/#{key}",
+          simulated: true
+        }
+      end
 
       presigned_post = s3_bucket.presigned_post(
         key: key,
@@ -32,16 +42,19 @@ class S3Service
       {
         url: presigned_post.url,
         fields: presigned_post.fields,
-        key: key
+        key: key,
+        public_url: "https://#{bucket_name}.s3.#{ENV.fetch('AWS_REGION', 'us-west-2')}.amazonaws.com/#{key}",
+        simulated: false
       }
     end
 
-    # Generates a time-limited (1 hour) presigned GET URL for downloading/viewing a file.
-    #
-    # @param key [String] the S3 object key
-    # @return [String] presigned URL or nil if not configured
+    # Generates a time-limited (1 hour) presigned GET URL.
+    # In simulate mode, returns a placeholder URL.
     def generate_presigned_get(key)
-      return nil unless configured?
+      unless configured?
+        Rails.logger.info("[S3Service SIMULATE] Presigned GET for key=#{key}")
+        return "https://simulated-bucket.s3.us-west-2.amazonaws.com/#{key}?simulated=true"
+      end
 
       signer = Aws::S3::Presigner.new(client: s3_client)
       signer.presigned_url(:get_object, bucket: bucket_name, key: key, expires_in: 3600)
