@@ -16,11 +16,14 @@ Rails.application.routes.draw do
       post "organizer_profile", to: "organizer_profiles#create_or_update"
       put "organizer_profile", to: "organizer_profiles#create_or_update"
 
-      # Presigned upload URL (authenticated)
+      # Presigned upload URL (authenticated) - works in simulate mode too
       post "uploads/presign", to: "uploads#presign"
 
       # Orders (public create for guest checkout)
       resources :orders, only: [:create]
+
+      # Promo code validation (public, for checkout)
+      post "promo_codes/validate", to: "promo_codes#validate"
 
       # Public ticket display (by QR code)
       get "tickets/:qr_code", to: "tickets#show", as: :ticket
@@ -47,6 +50,19 @@ Rails.application.routes.draw do
             get :attendees
           end
           resources :ticket_types, only: [:index, :show, :create, :update, :destroy]
+          resources :promo_codes, only: [:index, :show, :create, :update, :destroy]
+          resources :guest_list, only: [:index, :create, :update, :destroy],
+                    controller: "guest_list_entries" do
+            member do
+              post :redeem
+            end
+          end
+          # Refunds for specific orders
+          resources :orders, only: [] do
+            member do
+              post :refund, to: "refunds#create"
+            end
+          end
         end
       end
 

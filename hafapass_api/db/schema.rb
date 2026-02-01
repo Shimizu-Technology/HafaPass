@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_01_143324) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_01_150135) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -42,21 +42,48 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_143324) do
     t.index ["status"], name: "index_events_on_status"
   end
 
+  create_table "guest_list_entries", force: :cascade do |t|
+    t.string "added_by"
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.string "guest_email"
+    t.string "guest_name", null: false
+    t.string "guest_phone"
+    t.string "notes"
+    t.bigint "order_id"
+    t.integer "quantity", default: 1, null: false
+    t.boolean "redeemed", default: false, null: false
+    t.bigint "ticket_type_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id", "guest_email"], name: "index_guest_list_entries_on_event_id_and_guest_email"
+    t.index ["event_id"], name: "index_guest_list_entries_on_event_id"
+    t.index ["order_id"], name: "index_guest_list_entries_on_order_id"
+    t.index ["ticket_type_id"], name: "index_guest_list_entries_on_ticket_type_id"
+  end
+
   create_table "orders", force: :cascade do |t|
     t.string "buyer_email"
     t.string "buyer_name"
     t.string "buyer_phone"
     t.datetime "completed_at"
     t.datetime "created_at", null: false
+    t.integer "discount_cents", default: 0, null: false
     t.bigint "event_id", null: false
+    t.bigint "promo_code_id"
+    t.integer "refund_amount_cents", default: 0, null: false
+    t.string "refund_reason"
+    t.datetime "refunded_at"
     t.integer "service_fee_cents", default: 0, null: false
     t.integer "status", default: 0, null: false
     t.string "stripe_payment_intent_id"
+    t.string "stripe_refund_id"
     t.integer "subtotal_cents", default: 0, null: false
     t.integer "total_cents", default: 0, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.string "wallet_type"
     t.index ["event_id"], name: "index_orders_on_event_id"
+    t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
     t.index ["user_id"], name: "index_orders_on_user_id"
   end
 
@@ -70,6 +97,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_143324) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id"
+  end
+
+  create_table "promo_codes", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.string "code", null: false
+    t.datetime "created_at", null: false
+    t.integer "current_uses", default: 0, null: false
+    t.string "discount_type", default: "percentage", null: false
+    t.integer "discount_value", null: false
+    t.bigint "event_id", null: false
+    t.datetime "expires_at"
+    t.integer "max_uses"
+    t.datetime "starts_at"
+    t.datetime "updated_at", null: false
+    t.index ["event_id", "code"], name: "index_promo_codes_on_event_id_and_code", unique: true
+    t.index ["event_id"], name: "index_promo_codes_on_event_id"
   end
 
   create_table "site_settings", force: :cascade do |t|
@@ -129,9 +172,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_143324) do
   end
 
   add_foreign_key "events", "organizer_profiles"
+  add_foreign_key "guest_list_entries", "events"
+  add_foreign_key "guest_list_entries", "orders"
+  add_foreign_key "guest_list_entries", "ticket_types"
   add_foreign_key "orders", "events"
+  add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
   add_foreign_key "organizer_profiles", "users"
+  add_foreign_key "promo_codes", "events"
   add_foreign_key "ticket_types", "events"
   add_foreign_key "tickets", "events"
   add_foreign_key "tickets", "orders"
