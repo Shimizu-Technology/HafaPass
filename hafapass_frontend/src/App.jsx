@@ -14,6 +14,9 @@ import EditEventPage from './pages/dashboard/EditEventPage'
 import EventAnalyticsPage from './pages/dashboard/EventAnalyticsPage'
 import ScannerPage from './pages/dashboard/ScannerPage'
 import SettingsPage from './pages/dashboard/SettingsPage'
+import PromoCodesPage from './pages/dashboard/PromoCodesPage'
+import GuestListPage from './pages/dashboard/GuestListPage'
+import RefundsPage from './pages/dashboard/RefundsPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 
@@ -32,6 +35,9 @@ function App() {
         <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
         <Route path="/dashboard/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />
         <Route path="/dashboard/events/:id/analytics" element={<ProtectedRoute><EventAnalyticsPage /></ProtectedRoute>} />
+        <Route path="/dashboard/events/:id/promo-codes" element={<ProtectedRoute><PromoCodesPage /></ProtectedRoute>} />
+        <Route path="/dashboard/events/:id/guest-list" element={<ProtectedRoute><GuestListPage /></ProtectedRoute>} />
+        <Route path="/dashboard/events/:id/refunds" element={<ProtectedRoute><RefundsPage /></ProtectedRoute>} />
         <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
         <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="/sign-in/*" element={<SignInPage />} />

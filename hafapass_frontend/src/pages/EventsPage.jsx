@@ -1,64 +1,52 @@
 import { useState, useEffect } from 'react'
+import { Loader2, Search } from 'lucide-react'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
 
 export default function EventsPage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  const fetchEvents = () => {
-    setLoading(true)
-    setError(null)
-    apiClient.get('/events')
-      .then(res => {
-        setEvents(res.data)
-        setLoading(false)
-      })
-      .catch(() => {
-        setError('Unable to load events. Please try again later.')
-        setLoading(false)
-      })
-  }
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
-    fetchEvents()
+    apiClient.get('/events')
+      .then(res => { setEvents(res.data); setLoading(false) })
+      .catch(() => setLoading(false))
   }, [])
 
+  const filtered = events.filter(e =>
+    e.title.toLowerCase().includes(search.toLowerCase()) ||
+    e.venue_name?.toLowerCase().includes(search.toLowerCase())
+  )
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-8">Upcoming Events</h1>
-
-      {loading && (
-        <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-700"></div>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-neutral-900">Events</h1>
+          <p className="text-neutral-500 mt-1">Discover what's happening on Guam</p>
         </div>
-      )}
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <p className="text-red-700 mb-4">{error}</p>
-          <button
-            onClick={fetchEvents}
-            className="inline-block bg-red-600 hover:bg-red-700 text-white font-medium px-6 py-2 rounded-lg transition-colors duration-200"
-          >
-            Try Again
-          </button>
+        <div className="relative max-w-xs w-full">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+          <input
+            type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search events..." className="input !pl-10 !py-2.5 text-sm"
+          />
         </div>
-      )}
+      </div>
 
-      {!loading && !error && events.length === 0 && (
-        <div className="text-center py-16">
-          <div className="text-gray-400 text-5xl mb-4">🎉</div>
-          <p className="text-gray-500 text-lg">No events available right now. Check back soon!</p>
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
         </div>
-      )}
-
-      {!loading && !error && events.length > 0 && (
+      ) : filtered.length === 0 ? (
+        <div className="card p-16 text-center">
+          <p className="text-neutral-500 text-lg">No events found</p>
+          <p className="text-neutral-400 text-sm mt-1">Check back soon for upcoming events</p>
+        </div>
+      ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {events.map(event => (
-            <EventCard key={event.id} event={event} />
-          ))}
+          {filtered.map(event => <EventCard key={event.id} event={event} />)}
         </div>
       )}
     </div>

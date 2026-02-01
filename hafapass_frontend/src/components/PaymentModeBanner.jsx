@@ -1,42 +1,29 @@
-/**
- * Shows a colored banner when not in live mode.
- * - simulate: yellow — orders auto-complete, no real charges
- * - test: blue — real Stripe sandbox, test cards only
- * - live: nothing shown
- */
-export default function PaymentModeBanner({ mode }) {
-  if (!mode || mode === 'live') return null
+import { AlertTriangle, TestTube, CreditCard } from 'lucide-react'
 
-  const config = {
-    simulate: {
-      bg: 'bg-amber-50 border-amber-200',
-      icon: 'text-amber-600',
-      text: 'text-amber-800',
-      label: 'Simulate Mode',
-      description: 'Payments are simulated. No real charges will be made.',
-    },
-    test: {
-      bg: 'bg-blue-50 border-blue-200',
-      icon: 'text-blue-600',
-      text: 'text-blue-800',
-      label: 'Test Mode (Stripe Sandbox)',
-      description: 'Using Stripe test environment. Use card 4242 4242 4242 4242 to test.',
-    },
+export default function PaymentModeBanner({ mode }) {
+  if (mode === 'live') return null
+
+  if (mode === 'simulate') {
+    return (
+      <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200/60 rounded-xl px-4 py-2.5 mb-4">
+        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+        <p className="text-sm text-amber-700">
+          <span className="font-medium">Simulate Mode</span> - No real payments are processed. Tickets are issued immediately.
+        </p>
+      </div>
+    )
   }
 
-  const c = config[mode]
-  if (!c) return null
-
-  return (
-    <div className={`${c.bg} border rounded-lg p-3 mb-4 flex items-start gap-3`}>
-      <svg className={`w-5 h-5 ${c.icon} flex-shrink-0 mt-0.5`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      <div>
-        <p className={`${c.text} text-sm font-semibold`}>{c.label}</p>
-        <p className={`${c.text} text-xs opacity-80`}>{c.description}</p>
+  if (mode === 'test') {
+    return (
+      <div className="flex items-center gap-2.5 bg-blue-50 border border-blue-200/60 rounded-xl px-4 py-2.5 mb-4">
+        <TestTube className="w-4 h-4 text-blue-600 shrink-0" />
+        <p className="text-sm text-blue-700">
+          <span className="font-medium">Test Mode</span> - Use card <span className="font-mono text-xs bg-blue-100 px-1.5 py-0.5 rounded">4242 4242 4242 4242</span> with any future date.
+        </p>
       </div>
-    </div>
-  )
+    )
+  }
+
+  return null
 }
