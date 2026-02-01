@@ -3,6 +3,8 @@ class Event < ApplicationRecord
   has_many :ticket_types, dependent: :destroy
   has_many :orders, dependent: :destroy
   has_many :tickets, dependent: :destroy
+  has_many :promo_codes, dependent: :destroy
+  has_many :guest_list_entries, dependent: :destroy
 
   enum :status, { draft: 0, published: 1, cancelled: 2, completed: 3 }
   enum :category, { nightlife: 0, concert: 1, festival: 2, dining: 3, sports: 4, other: 5 }
@@ -24,7 +26,6 @@ class Event < ApplicationRecord
     base_slug = title.to_s.parameterize
     self.slug = base_slug
 
-    # If slug already exists, append a random suffix
     if Event.where(slug: self.slug).where.not(id: self.id).exists?
       self.slug = "#{base_slug}-#{SecureRandom.hex(3)}"
     end

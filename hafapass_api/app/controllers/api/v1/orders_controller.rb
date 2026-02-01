@@ -55,7 +55,18 @@ class Api::V1::OrdersController < ApplicationController
     subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].price_cents * s[:quantity] }
     total_ticket_count = ticket_selections.sum { |s| s[:quantity] }
     service_fee_cents = (subtotal_cents * (settings.service_fee_percent / 100.0)).round + (total_ticket_count * settings.service_fee_flat_cents)
-    total_cents = subtotal_cents + service_fee_cents
+
+    # HP-7: Apply promo code if provided
+    promo_code = nil
+    discount_cents = 0
+    if params[:promo_code_id].present?
+      promo_code = event.promo_codes.find_by(id: params[:promo_code_id])
+      if promo_code&.usable?
+        discount_cents = promo_code.calculate_discount(subtotal_cents)
+      end
+    end
+
+    total_cents = [subtotal_cents + service_fee_cents - discount_cents, 0].max
 
     stripe_mode = StripeService.payment_enabled?
 
@@ -64,14 +75,16 @@ class Api::V1::OrdersController < ApplicationController
       @order = Order.create!(
         user: @current_user,
         event: event,
-        status: stripe_mode ? :pending : :completed,
+        promo_code: promo_code,
+        status: (stripe_mode && total_cents > 0) ? :pending : :completed,
         subtotal_cents: subtotal_cents,
         service_fee_cents: service_fee_cents,
+        discount_cents: discount_cents,
         total_cents: total_cents,
         buyer_email: params[:buyer_email],
         buyer_name: params[:buyer_name],
         buyer_phone: params[:buyer_phone],
-        completed_at: stripe_mode ? nil : Time.current
+        completed_at: (stripe_mode && total_cents > 0) ? nil : Time.current
       )
 
       ticket_selections.each do |selection|
@@ -80,12 +93,14 @@ class Api::V1::OrdersController < ApplicationController
             ticket_type: selection[:ticket_type],
             event: event
           )
-          # Generate QR codes immediately in simulate mode
-          ticket.generate_qr_code! unless stripe_mode
+          ticket.generate_qr_code! unless (stripe_mode && total_cents > 0)
         end
 
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
       end
+
+      # Increment promo code usage
+      promo_code&.increment_usage! if discount_cents > 0
     end
 
     # Stripe mode (test or live): create PaymentIntent and return client_secret
@@ -101,7 +116,6 @@ class Api::V1::OrdersController < ApplicationController
         ), status: :created
         return
       rescue Stripe::StripeError, StripeService::PaymentError => e
-        # Stripe failed — cancel the order and restore quantities
         @order.tickets.includes(:ticket_type).each do |ticket|
           ticket.ticket_type.decrement!(:quantity_sold)
         end
@@ -145,11 +159,14 @@ class Api::V1::OrdersController < ApplicationController
       status: order.status,
       subtotal_cents: order.subtotal_cents,
       service_fee_cents: order.service_fee_cents,
+      discount_cents: order.discount_cents,
       total_cents: order.total_cents,
       buyer_email: order.buyer_email,
       buyer_name: order.buyer_name,
       buyer_phone: order.buyer_phone,
       completed_at: order.completed_at,
+      wallet_type: order.wallet_type,
+      promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,
       tickets: order.tickets.includes(:ticket_type).map { |ticket| ticket_json(ticket) }
     }
   end
