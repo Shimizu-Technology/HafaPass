@@ -33,6 +33,10 @@ class WebhooksController < ActionController::API
       handle_payment_intent_failed(event.data.object)
     when "charge.refunded"
       handle_charge_refunded(event.data.object)
+    when "checkout.session.completed"
+      handle_checkout_session_completed(event.data.object)
+    when "charge.dispute.created"
+      handle_dispute_created(event.data.object)
     else
       Rails.logger.info("Unhandled Stripe event type: #{event.type}")
     end
@@ -50,26 +54,32 @@ class WebhooksController < ActionController::API
       return
     end
 
-    return if order.completed? # Idempotency — don't process twice
+    return if order.completed? # Idempotency
 
     ActiveRecord::Base.transaction do
+      # Detect wallet type from payment method (HP-14)
+      wallet_type = detect_wallet_type(payment_intent)
+
       order.update!(
         status: :completed,
-        completed_at: Time.current
+        completed_at: Time.current,
+        wallet_type: wallet_type
       )
 
-      # Generate QR codes for all tickets
       order.tickets.each(&:generate_qr_code!)
     end
 
     # Send confirmation email (never breaks the webhook on failure)
     begin
       EmailService.send_order_confirmation(order)
+      order.tickets.each do |ticket|
+        EmailService.send_ticket_email(ticket) if ticket.attendee_email.present?
+      end
     rescue => e
-      Rails.logger.error("Failed to send confirmation email for order ##{order.id}: #{e.message}")
+      Rails.logger.error("Failed to send emails for order ##{order.id}: #{e.message}")
     end
 
-    Rails.logger.info("Order ##{order.id} completed via webhook (PI: #{payment_intent.id})")
+    Rails.logger.info("Order ##{order.id} completed via webhook (PI: #{payment_intent.id}, wallet: #{order.wallet_type || 'card'})")
   end
 
   def handle_payment_intent_failed(payment_intent)
@@ -80,11 +90,10 @@ class WebhooksController < ActionController::API
       return
     end
 
-    return unless order.pending? # Only update pending orders
+    return unless order.pending?
 
     order.update!(status: :cancelled)
 
-    # Restore ticket quantities
     order.tickets.includes(:ticket_type).each do |ticket|
       ticket.ticket_type.decrement!(:quantity_sold)
       ticket.update!(status: :cancelled)
@@ -102,17 +111,87 @@ class WebhooksController < ActionController::API
       return
     end
 
-    return if order.refunded? # Idempotency
+    # Determine if full or partial refund
+    refund_amount = charge.amount_refunded
+    is_full_refund = refund_amount >= order.total_cents
 
-    order.update!(status: :refunded)
+    if is_full_refund
+      return if order.refunded? # Idempotency
 
-    # Cancel all tickets and restore quantities
-    order.tickets.includes(:ticket_type).each do |ticket|
-      next if ticket.cancelled?
-      ticket.ticket_type.decrement!(:quantity_sold)
-      ticket.update!(status: :cancelled)
+      order.update!(
+        status: :refunded,
+        refund_amount_cents: refund_amount,
+        refunded_at: Time.current
+      )
+
+      order.tickets.includes(:ticket_type).each do |ticket|
+        next if ticket.cancelled?
+        ticket.ticket_type.decrement!(:quantity_sold)
+        ticket.update!(status: :cancelled)
+      end
+    else
+      order.update!(
+        status: :partially_refunded,
+        refund_amount_cents: refund_amount,
+        refunded_at: Time.current
+      )
     end
 
-    Rails.logger.info("Order ##{order.id} refunded via webhook (PI: #{payment_intent_id})")
+    # Send refund notification email
+    begin
+      EmailService.send_refund_notification(order)
+    rescue => e
+      Rails.logger.error("Failed to send refund email for order ##{order.id}: #{e.message}")
+    end
+
+    Rails.logger.info("Order ##{order.id} #{is_full_refund ? 'fully' : 'partially'} refunded via webhook (PI: #{payment_intent_id})")
+  end
+
+  def handle_checkout_session_completed(session)
+    # Handle Checkout Sessions (if used for future flows)
+    payment_intent_id = session.payment_intent
+    return unless payment_intent_id
+
+    order = Order.find_by(stripe_payment_intent_id: payment_intent_id)
+    return unless order
+    return if order.completed?
+
+    # Delegate to payment_intent.succeeded handler logic
+    handle_payment_intent_succeeded(
+      OpenStruct.new(id: payment_intent_id)
+    )
+  end
+
+  def handle_dispute_created(dispute)
+    payment_intent_id = dispute.payment_intent
+    order = Order.find_by(stripe_payment_intent_id: payment_intent_id)
+
+    if order
+      Rails.logger.warn("DISPUTE created for Order ##{order.id} (PI: #{payment_intent_id})")
+      # Future: notify organizer, freeze tickets, etc.
+    end
+  end
+
+  # HP-14: Detect Apple Pay / Google Pay from payment method details
+  def detect_wallet_type(payment_intent)
+    return nil unless payment_intent.respond_to?(:payment_method)
+
+    pm_id = payment_intent.payment_method
+    return nil if pm_id.blank?
+
+    begin
+      pm = Stripe::PaymentMethod.retrieve(pm_id)
+      wallet = pm&.card&.wallet
+      return nil unless wallet
+
+      case wallet.type
+      when "apple_pay" then "apple_pay"
+      when "google_pay" then "google_pay"
+      else wallet.type
+      end
+    rescue => e
+      Rails.logger.warn("Could not detect wallet type: #{e.message}")
+      nil
+    end
   end
 end
