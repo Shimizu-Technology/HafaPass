@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import apiClient from '../api/client'
 import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
+import PaymentModeBanner from '../components/PaymentModeBanner'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -14,6 +15,9 @@ export default function CheckoutPage() {
   const lineItems = location.state?.lineItems || null
   const [error, setError] = useState(null)
 
+  // Config from API
+  const [config, setConfig] = useState(null)
+
   // Buyer form state
   const [buyerName, setBuyerName] = useState('')
   const [buyerEmail, setBuyerEmail] = useState('')
@@ -24,9 +28,24 @@ export default function CheckoutPage() {
 
   // Stripe state
   const [clientSecret, setClientSecret] = useState(null)
+  const [stripePublishableKey, setStripePublishableKey] = useState(null)
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
   const [step, setStep] = useState('info') // 'info' | 'payment'
+
+  // Fetch config (payment mode, fees, etc.)
+  useEffect(() => {
+    apiClient.get('/config')
+      .then(res => setConfig(res.data))
+      .catch(() => {
+        // Fallback defaults if config fails
+        setConfig({
+          payment_mode: 'simulate',
+          service_fee_percent: '3.0',
+          service_fee_flat_cents: 50,
+        })
+      })
+  }, [])
 
   useEffect(() => {
     if (!lineItems || lineItems.length === 0) {
@@ -101,14 +120,15 @@ export default function CheckoutPage() {
       const response = await apiClient.post('/orders', payload)
       const order = response.data
 
-      if (order.client_secret) {
-        // Stripe mode: show payment form
+      if (order.client_secret && order.stripe_publishable_key) {
+        // Stripe mode (test or live): show payment form
         setClientSecret(order.client_secret)
+        setStripePublishableKey(order.stripe_publishable_key)
         setOrderId(order.id)
         setOrderData(order)
         setStep('payment')
       } else {
-        // Mock/free mode: go straight to confirmation
+        // Simulate mode or free: go straight to confirmation
         navigate(`/orders/${order.id}/confirmation`, {
           state: { order, event },
           replace: true,
@@ -152,7 +172,10 @@ export default function CheckoutPage() {
 
   if (!event || !lineItems) return null
 
-  // Build order summary
+  // Build order summary using config-driven fees
+  const feePercent = config ? parseFloat(config.service_fee_percent) : 3.0
+  const feeFlatCents = config ? config.service_fee_flat_cents : 50
+
   const orderLines = lineItems.map(item => {
     const ticketType = event.ticket_types.find(tt => tt.id === item.ticket_type_id)
     if (!ticketType) return null
@@ -162,8 +185,11 @@ export default function CheckoutPage() {
 
   const totalTickets = orderLines.reduce((sum, line) => sum + line.quantity, 0)
   const subtotalCents = orderLines.reduce((sum, line) => sum + line.lineTotal, 0)
-  const serviceFeeCents = Math.round(subtotalCents * 0.03) + (totalTickets * 50)
+  const serviceFeeCents = Math.round(subtotalCents * (feePercent / 100)) + (totalTickets * feeFlatCents)
   const totalCents = subtotalCents + serviceFeeCents
+
+  const paymentMode = config?.payment_mode || 'simulate'
+  const isSimulate = paymentMode === 'simulate'
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
@@ -175,6 +201,9 @@ export default function CheckoutPage() {
       </Link>
 
       <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Checkout</h1>
+
+      {/* Payment mode banner */}
+      <PaymentModeBanner mode={paymentMode} />
 
       {/* Progress indicator */}
       <div className="flex items-center gap-2 mb-6">
@@ -202,7 +231,7 @@ export default function CheckoutPage() {
         <p className="text-gray-700 font-medium">{event.title}</p>
         <p className="text-sm text-gray-500">
           {formatDate(event.starts_at)} &middot; {formatTime(event.starts_at)}
-          {event.venue_name && ` · ${event.venue_name}`}
+          {event.venue_name && ` \u00b7 ${event.venue_name}`}
         </p>
       </div>
 
@@ -215,7 +244,7 @@ export default function CheckoutPage() {
             <div key={line.ticket_type_id} className="flex justify-between items-center">
               <div>
                 <span className="text-gray-800 font-medium">{line.name}</span>
-                <span className="text-gray-500 ml-2">× {line.quantity}</span>
+                <span className="text-gray-500 ml-2">\u00d7 {line.quantity}</span>
               </div>
               <span className="text-gray-900 font-medium">{formatPrice(line.lineTotal)}</span>
             </div>
@@ -232,7 +261,7 @@ export default function CheckoutPage() {
         <div className="flex justify-between items-center mb-2">
           <span className="text-gray-600">
             Service fee
-            <span className="text-xs text-gray-400 ml-1 hidden sm:inline">(3% + $0.50/ticket)</span>
+            <span className="text-xs text-gray-400 ml-1 hidden sm:inline">({feePercent}% + ${(feeFlatCents / 100).toFixed(2)}/ticket)</span>
           </span>
           <span className="text-gray-900">{formatPrice(serviceFeeCents)}</span>
         </div>
@@ -301,19 +330,23 @@ export default function CheckoutPage() {
               type="submit" disabled={submitting}
               className="w-full mt-6 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-lg text-lg transition-colors duration-200"
             >
-              {submitting ? 'Setting up payment...' : `Continue to Payment — ${formatPrice(totalCents)}`}
+              {submitting
+                ? (isSimulate ? 'Placing order...' : 'Setting up payment...')
+                : (isSimulate
+                    ? `Place Order \u2014 ${formatPrice(totalCents)}`
+                    : `Continue to Payment \u2014 ${formatPrice(totalCents)}`)}
             </button>
           </form>
         </div>
       )}
 
-      {/* Step 2: Payment */}
-      {step === 'payment' && clientSecret && (
+      {/* Step 2: Payment (Stripe test or live only) */}
+      {step === 'payment' && clientSecret && stripePublishableKey && (
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 sm:p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Payment</h2>
             <button
-              onClick={() => { setStep('info'); setClientSecret(null); }}
+              onClick={() => { setStep('info'); setClientSecret(null); setStripePublishableKey(null); }}
               className="text-sm text-blue-600 hover:text-blue-800"
             >
               Edit info
@@ -321,10 +354,13 @@ export default function CheckoutPage() {
           </div>
 
           <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm text-gray-600">
-            <span className="font-medium">{buyerName}</span> · {buyerEmail}
+            <span className="font-medium">{buyerName}</span> \u00b7 {buyerEmail}
           </div>
 
-          <StripeProvider clientSecret={clientSecret}>
+          {/* Re-show mode banner in payment step */}
+          <PaymentModeBanner mode={paymentMode} />
+
+          <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret}>
             <PaymentForm
               totalCents={totalCents}
               onSuccess={handlePaymentSuccess}
