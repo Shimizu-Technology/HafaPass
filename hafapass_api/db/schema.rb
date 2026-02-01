@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_24_054108) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_01_143324) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -70,6 +70,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_24_054108) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id"
+  end
+
+  create_table "site_settings", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "payment_mode", default: "simulate", null: false
+    t.string "platform_email", default: "tickets@hafapass.com"
+    t.string "platform_name", default: "HafaPass"
+    t.string "platform_phone"
+    t.integer "service_fee_flat_cents", default: 50
+    t.decimal "service_fee_percent", precision: 5, scale: 2, default: "3.0"
+    t.datetime "updated_at", null: false
   end
 
   create_table "ticket_types", force: :cascade do |t|

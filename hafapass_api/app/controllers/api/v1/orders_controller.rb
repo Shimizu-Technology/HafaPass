@@ -50,25 +50,28 @@ class Api::V1::OrdersController < ApplicationController
       ticket_selections << { ticket_type: ticket_type, quantity: quantity }
     end
 
-    # Calculate totals
+    # Calculate totals (using SiteSetting fees)
+    settings = SiteSetting.instance
     subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].price_cents * s[:quantity] }
     total_ticket_count = ticket_selections.sum { |s| s[:quantity] }
-    service_fee_cents = (subtotal_cents * 0.03).round + (total_ticket_count * 50)
+    service_fee_cents = (subtotal_cents * (settings.service_fee_percent / 100.0)).round + (total_ticket_count * settings.service_fee_flat_cents)
     total_cents = subtotal_cents + service_fee_cents
+
+    stripe_mode = StripeService.payment_enabled?
 
     # Create order and tickets in a transaction
     ActiveRecord::Base.transaction do
       @order = Order.create!(
         user: @current_user,
         event: event,
-        status: StripeService.stripe_configured? ? :pending : :completed,
+        status: stripe_mode ? :pending : :completed,
         subtotal_cents: subtotal_cents,
         service_fee_cents: service_fee_cents,
         total_cents: total_cents,
         buyer_email: params[:buyer_email],
         buyer_name: params[:buyer_name],
         buyer_phone: params[:buyer_phone],
-        completed_at: StripeService.stripe_configured? ? nil : Time.current
+        completed_at: stripe_mode ? nil : Time.current
       )
 
       ticket_selections.each do |selection|
@@ -77,26 +80,27 @@ class Api::V1::OrdersController < ApplicationController
             ticket_type: selection[:ticket_type],
             event: event
           )
-          # Generate QR codes immediately in mock mode
-          ticket.generate_qr_code! unless StripeService.stripe_configured?
+          # Generate QR codes immediately in simulate mode
+          ticket.generate_qr_code! unless stripe_mode
         end
 
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
       end
     end
 
-    # Stripe mode: create PaymentIntent and return client_secret
-    if StripeService.stripe_configured? && total_cents > 0
+    # Stripe mode (test or live): create PaymentIntent and return client_secret
+    if stripe_mode && total_cents > 0
       begin
         intent = StripeService.create_payment_intent(@order)
         @order.update!(stripe_payment_intent_id: intent.id)
 
         render json: order_json(@order).merge(
           client_secret: intent.client_secret,
-          stripe_publishable_key: ENV["STRIPE_PUBLISHABLE_KEY"]
+          stripe_publishable_key: StripeService.publishable_key,
+          payment_mode: StripeService.payment_mode
         ), status: :created
         return
-      rescue Stripe::StripeError => e
+      rescue Stripe::StripeError, StripeService::PaymentError => e
         # Stripe failed — cancel the order and restore quantities
         @order.tickets.includes(:ticket_type).each do |ticket|
           ticket.ticket_type.decrement!(:quantity_sold)
@@ -107,16 +111,16 @@ class Api::V1::OrdersController < ApplicationController
       end
     end
 
-    # Free events or mock mode: complete immediately
-    unless StripeService.stripe_configured?
-      begin
-        EmailService.send_order_confirmation(@order)
-      rescue => e
-        Rails.logger.error("Failed to send order confirmation email for order ##{@order.id}: #{e.message}")
-      end
+    # Simulate mode or free events: order already completed
+    begin
+      EmailService.send_order_confirmation(@order)
+    rescue => e
+      Rails.logger.error("Failed to send order confirmation email for order ##{@order.id}: #{e.message}")
     end
 
-    render json: order_json(@order), status: :created
+    render json: order_json(@order).merge(
+      payment_mode: StripeService.payment_mode
+    ), status: :created
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.message }, status: :unprocessable_entity
   end

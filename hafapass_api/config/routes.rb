@@ -7,6 +7,7 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       get "health", to: "health#show"
+      get "config", to: "config#show"
       get "me", to: "me#show"
       post "users/sync", to: "users#sync"
 
@@ -47,6 +48,11 @@ Rails.application.routes.draw do
           end
           resources :ticket_types, only: [:index, :show, :create, :update, :destroy]
         end
+      end
+
+      # Admin endpoints
+      namespace :admin do
+        resource :settings, only: [:show, :update]
       end
     end
   end
