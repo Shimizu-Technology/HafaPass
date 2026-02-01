@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class Api::V1::OrdersController < ApplicationController
   skip_before_action :authenticate_user!
   before_action :optional_authenticate_user!
@@ -15,7 +17,6 @@ class Api::V1::OrdersController < ApplicationController
       return
     end
 
-    # Validate buyer info
     unless params[:buyer_email].present? && params[:buyer_name].present?
       render json: { error: "buyer_email and buyer_name are required" }, status: :unprocessable_entity
       return
@@ -60,52 +61,59 @@ class Api::V1::OrdersController < ApplicationController
       @order = Order.create!(
         user: @current_user,
         event: event,
-        # STRIPE INTEGRATION: When Stripe is configured, create order as :pending
-        # instead of :completed. The order transitions to :completed only after
-        # successful payment confirmation via webhook.
-        # Change to: status: :pending
-        status: :completed,
+        status: StripeService.stripe_configured? ? :pending : :completed,
         subtotal_cents: subtotal_cents,
         service_fee_cents: service_fee_cents,
         total_cents: total_cents,
         buyer_email: params[:buyer_email],
         buyer_name: params[:buyer_name],
         buyer_phone: params[:buyer_phone],
-        # STRIPE INTEGRATION: Remove completed_at here; set it in webhook handler
-        # when payment_intent.succeeded is received.
-        completed_at: Time.current
+        completed_at: StripeService.stripe_configured? ? nil : Time.current
       )
 
       ticket_selections.each do |selection|
         selection[:quantity].times do
-          @order.tickets.create!(
+          ticket = @order.tickets.create!(
             ticket_type: selection[:ticket_type],
             event: event
           )
+          # Generate QR codes immediately in mock mode
+          ticket.generate_qr_code! unless StripeService.stripe_configured?
         end
 
-        # Increment quantity_sold
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
       end
     end
 
-    # STRIPE INTEGRATION: When Stripe is configured, create a PaymentIntent
-    # and return the client_secret to the frontend instead of completing immediately.
-    #
-    # if StripeService.stripe_configured?
-    #   intent = StripeService.create_payment_intent(@order)
-    #   @order.update!(stripe_payment_intent_id: intent.id)
-    #   render json: order_json(@order).merge(client_secret: intent.client_secret), status: :created
-    # else
-    #   # Mock checkout: complete immediately (current behavior)
-    #   render json: order_json(@order), status: :created
-    # end
+    # Stripe mode: create PaymentIntent and return client_secret
+    if StripeService.stripe_configured? && total_cents > 0
+      begin
+        intent = StripeService.create_payment_intent(@order)
+        @order.update!(stripe_payment_intent_id: intent.id)
 
-    # Send order confirmation email (never breaks checkout on failure)
-    begin
-      EmailService.send_order_confirmation(@order)
-    rescue => e
-      Rails.logger.error("Failed to send order confirmation email for order ##{@order.id}: #{e.message}")
+        render json: order_json(@order).merge(
+          client_secret: intent.client_secret,
+          stripe_publishable_key: ENV["STRIPE_PUBLISHABLE_KEY"]
+        ), status: :created
+        return
+      rescue Stripe::StripeError => e
+        # Stripe failed — cancel the order and restore quantities
+        @order.tickets.includes(:ticket_type).each do |ticket|
+          ticket.ticket_type.decrement!(:quantity_sold)
+        end
+        @order.update!(status: :cancelled)
+        render json: { error: "Payment setup failed: #{e.message}" }, status: :unprocessable_entity
+        return
+      end
+    end
+
+    # Free events or mock mode: complete immediately
+    unless StripeService.stripe_configured?
+      begin
+        EmailService.send_order_confirmation(@order)
+      rescue => e
+        Rails.logger.error("Failed to send order confirmation email for order ##{@order.id}: #{e.message}")
+      end
     end
 
     render json: order_json(@order), status: :created

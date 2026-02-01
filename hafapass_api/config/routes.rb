@@ -1,6 +1,9 @@
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
+  # Stripe webhooks (outside API namespace, no auth)
+  post "webhooks/stripe", to: "webhooks#stripe"
+
   namespace :api do
     namespace :v1 do
       get "health", to: "health#show"
