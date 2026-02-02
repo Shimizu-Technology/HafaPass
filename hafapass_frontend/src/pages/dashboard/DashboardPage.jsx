@@ -53,7 +53,7 @@ function OrganizerProfileForm({ onSuccess }) {
        type="text"
        value={businessName}
        onChange={(e) => setBusinessName(e.target.value)}
-       className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+       className="input"
        placeholder="e.g., Island Nights Promotions"
        disabled={submitting}
       />
@@ -68,7 +68,7 @@ function OrganizerProfileForm({ onSuccess }) {
        value={businessDescription}
        onChange={(e) => setBusinessDescription(e.target.value)}
        rows={3}
-       className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+       className="input"
        placeholder="Tell attendees about your business..."
        disabled={submitting}
       />

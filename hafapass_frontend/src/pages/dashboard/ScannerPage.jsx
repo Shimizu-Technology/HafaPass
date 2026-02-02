@@ -314,7 +314,7 @@ export default function ScannerPage() {
       value={manualCode}
       onChange={(e) => setManualCode(e.target.value)}
       placeholder="Enter QR code (UUID)"
-      className="flex-1 border border-neutral-300 rounded-xl px-3 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+      className="input flex-1 min-h-[44px] text-sm"
       disabled={manualSubmitting}
      />
      <button
