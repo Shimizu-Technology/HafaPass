@@ -2,8 +2,6 @@ import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
-import TicketTypesSection from '../../components/TicketTypesSection'
-
 const CATEGORIES = [
  { value: 'nightlife', label: 'Nightlife' },
  { value: 'concert', label: 'Concert' },
@@ -525,8 +523,26 @@ export default function EditEventPage() {
     </div>
    </form>
 
-   {/* Ticket Types Section */}
-   <TicketTypesSection eventId={id} />
+   {/* Ticket Types — managed via the event's ticket types API */}
+   {event?.ticket_types?.length > 0 && (
+    <div className="card p-5 sm:p-6 mt-6">
+     <h2 className="text-lg font-semibold text-neutral-900 mb-4">Ticket Types</h2>
+     <div className="space-y-3">
+      {event.ticket_types.map(tt => (
+       <div key={tt.id} className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl">
+        <div>
+         <p className="font-medium text-neutral-900">{tt.name}</p>
+         {tt.description && <p className="text-sm text-neutral-500">{tt.description}</p>}
+        </div>
+        <div className="text-right">
+         <p className="font-semibold text-neutral-900">${(tt.price_cents / 100).toFixed(2)}</p>
+         <p className="text-xs text-neutral-500">{tt.quantity_sold}/{tt.quantity_available} sold</p>
+        </div>
+       </div>
+      ))}
+     </div>
+    </div>
+   )}
   </div>
  )
 }

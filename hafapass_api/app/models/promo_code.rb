@@ -50,6 +50,18 @@ class PromoCode < ApplicationRecord
     increment!(:current_uses)
   end
 
+  # Atomic increment that prevents exceeding max_uses under concurrency.
+  # Returns true if successfully incremented, false if limit reached.
+  def try_increment_usage!
+    return true if max_uses.nil?
+
+    rows_affected = self.class.where(id: id)
+      .where("max_uses IS NULL OR current_uses < max_uses")
+      .update_all("current_uses = current_uses + 1")
+
+    rows_affected > 0
+  end
+
   private
 
   def normalize_code

@@ -65,13 +65,21 @@ export default function CheckoutPage() {
   // Promo code validation
   const handlePromoValidate = async () => {
     if (!promoInput.trim()) return
+
+    // Compute subtotal locally (can't rely on the variable defined later in render)
+    const orderLines = lineItems?.map(item => {
+      const tt = event?.ticket_types?.find(t => t.id === item.ticket_type_id)
+      return tt ? tt.price_cents * item.quantity : 0
+    }) || []
+    const currentSubtotal = orderLines.reduce((s, l) => s + l, 0)
+
     setPromoLoading(true)
     setPromoError(null)
     try {
       const res = await apiClient.post('/promo_codes/validate', {
         event_id: event.id,
         code: promoInput.trim(),
-        subtotal_cents: subtotalCents,
+        subtotal_cents: currentSubtotal,
       })
       if (res.data.valid) {
         setPromoData(res.data)

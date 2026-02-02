@@ -7,14 +7,19 @@ class SiteSetting < ApplicationRecord
   validates :payment_mode, presence: true, inclusion: { in: PAYMENT_MODES }
 
   # ── Singleton accessor ──────────────────────────────────────────────
+  # Uses singleton_guard column with unique index to prevent duplicate records.
   def self.instance
     first_or_create!(
+      singleton_guard: 0,
       payment_mode: 'simulate',
       platform_name: 'HafaPass',
       platform_email: 'tickets@hafapass.com',
       service_fee_percent: 3.0,
       service_fee_flat_cents: 50
     )
+  rescue ActiveRecord::RecordNotUnique
+    # Another process beat us to it — just fetch the existing row
+    first!
   end
 
   # ── Mode helpers ────────────────────────────────────────────────────

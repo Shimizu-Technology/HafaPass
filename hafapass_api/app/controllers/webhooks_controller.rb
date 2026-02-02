@@ -14,9 +14,14 @@ class WebhooksController < ActionController::API
           payload, sig_header, ENV["STRIPE_WEBHOOK_SECRET"]
         )
       else
-        # Development: parse without signature verification
-        data = JSON.parse(payload, symbolize_names: true)
-        event = Stripe::Event.construct_from(data)
+        # Development/test only: parse without signature verification
+        if Rails.env.development? || Rails.env.test?
+          data = JSON.parse(payload, symbolize_names: true)
+          event = Stripe::Event.construct_from(data)
+        else
+          render json: { error: "Webhook secret not configured" }, status: :bad_request
+          return
+        end
       end
     rescue JSON::ParserError
       render json: { error: "Invalid payload" }, status: :bad_request

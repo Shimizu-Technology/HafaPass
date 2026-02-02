@@ -47,6 +47,7 @@ module Api
         def require_organizer_profile
           unless current_organizer_profile
             render json: { error: "Organizer profile required" }, status: :forbidden
+            return
           end
         end
 
@@ -55,6 +56,7 @@ module Api
         end
 
         def set_event
+          return if performed?
           @event = current_organizer_profile.events.find(params[:event_id])
         rescue ActiveRecord::RecordNotFound
           render json: { error: "Event not found" }, status: :not_found

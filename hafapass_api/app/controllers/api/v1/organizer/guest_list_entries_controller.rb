@@ -60,14 +60,15 @@ module Api
             return
           end
 
-          ticket_type = @entry.ticket_type
-
-          if @entry.quantity > ticket_type.available_quantity
-            render json: { error: "Not enough tickets available" }, status: :unprocessable_entity
-            return
-          end
-
           ActiveRecord::Base.transaction do
+            # Lock the ticket type row to prevent race conditions on availability
+            ticket_type = @entry.ticket_type.lock!
+
+            if @entry.quantity > ticket_type.available_quantity
+              render json: { error: "Not enough tickets available" }, status: :unprocessable_entity
+              return
+            end
+
             # Create a comp order (zero-cost)
             order = Order.create!(
               event: @event,
@@ -110,6 +111,7 @@ module Api
         def require_organizer_profile
           unless current_organizer_profile
             render json: { error: "Organizer profile required" }, status: :forbidden
+            return
           end
         end
 
@@ -118,6 +120,7 @@ module Api
         end
 
         def set_event
+          return if performed?
           @event = current_organizer_profile.events.find(params[:event_id])
         rescue ActiveRecord::RecordNotFound
           render json: { error: "Event not found" }, status: :not_found

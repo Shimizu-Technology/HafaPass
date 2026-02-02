@@ -9,13 +9,20 @@ export default function TicketTypesSection({ ticketTypes, onCheckout }) {
 
   const formatPrice = (cents) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
 
-  const totalSelected = Object.values(quantities).reduce((s, q) => s + q, 0)
-  const totalCents = ticketTypes.reduce((sum, tt) => sum + (getQty(tt.id) * tt.price_cents), 0)
+  // Clamp quantities to current availability to prevent stale totals
+  const getMaxQty = (tt) => Math.max(0, Math.min(tt.max_per_order || 10, tt.quantity_available - tt.quantity_sold))
+  const getClampedQty = (tt) => Math.min(getQty(tt.id), getMaxQty(tt))
+
+  const totalSelected = ticketTypes.reduce((sum, tt) => sum + getClampedQty(tt), 0)
+  const totalCents = ticketTypes.reduce((sum, tt) => sum + (getClampedQty(tt) * tt.price_cents), 0)
 
   const handleCheckout = () => {
-    const lineItems = Object.entries(quantities)
-      .filter(([, qty]) => qty > 0)
-      .map(([id, qty]) => ({ ticket_type_id: parseInt(id), quantity: qty }))
+    const lineItems = ticketTypes
+      .map(tt => {
+        const qty = getClampedQty(tt)
+        return qty > 0 ? { ticket_type_id: tt.id, quantity: qty } : null
+      })
+      .filter(Boolean)
     if (lineItems.length > 0) onCheckout(lineItems)
   }
 

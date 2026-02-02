@@ -84,31 +84,20 @@ export default function ScannerPage() {
    if ('BarcodeDetector' in window) {
     setUseBarcodeDetector(true)
     const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
+    let processing = false
     scanIntervalRef.current = setInterval(async () => {
+     if (processing) return
      if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
       try {
        const barcodes = await detector.detect(videoRef.current)
        if (barcodes.length > 0) {
         const code = barcodes[0].rawValue
         if (code) {
-         // Pause scanning while processing
-         clearInterval(scanIntervalRef.current)
+         processing = true
          await processCheckIn(code)
-         // Resume scanning after reset timer
+         // Resume scanning after cooldown
          setTimeout(() => {
-          if (streamRef.current) {
-           scanIntervalRef.current = setInterval(async () => {
-            if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-             try {
-              const results = await detector.detect(videoRef.current)
-              if (results.length > 0 && results[0].rawValue) {
-               clearInterval(scanIntervalRef.current)
-               await processCheckIn(results[0].rawValue)
-              }
-             } catch { /* ignore detection errors */ }
-            }
-           }, 500)
-          }
+          processing = false
          }, 3500)
         }
        }

@@ -14,19 +14,22 @@ class StripeService
       if settings.simulate_mode?
         simulate_payment_intent(order)
       else
-        configure_stripe!(settings)
+        api_key = resolve_api_key!(settings)
         Stripe::PaymentIntent.create(
-          amount: order.total_cents,
-          currency: "usd",
-          automatic_payment_methods: { enabled: true },
-          metadata: {
-            order_id: order.id,
-            event_id: order.event_id,
-            buyer_email: order.buyer_email,
-            hafapass: "true"
+          {
+            amount: order.total_cents,
+            currency: "usd",
+            automatic_payment_methods: { enabled: true },
+            metadata: {
+              order_id: order.id,
+              event_id: order.event_id,
+              buyer_email: order.buyer_email,
+              hafapass: "true"
+            },
+            receipt_email: order.buyer_email,
+            description: "HafaPass tickets for #{order.event.title}"
           },
-          receipt_email: order.buyer_email,
-          description: "HafaPass tickets for #{order.event.title}"
+          { api_key: api_key }
         )
       end
     end
@@ -40,11 +43,11 @@ class StripeService
       if settings.simulate_mode?
         simulate_refund(payment_intent_id, amount_cents)
       else
-        configure_stripe!(settings)
+        api_key = resolve_api_key!(settings)
         params = { payment_intent: payment_intent_id }
         params[:amount] = amount_cents if amount_cents.present?
         params[:reason] = reason if reason.present?
-        Stripe::Refund.create(params)
+        Stripe::Refund.create(params, { api_key: api_key })
       end
     end
 
@@ -67,13 +70,13 @@ class StripeService
 
     private
 
-    # Sets Stripe.api_key to the correct key for the current mode.
-    def configure_stripe!(settings)
+    # Returns the API key for per-request Stripe calls (thread-safe).
+    def resolve_api_key!(settings)
       key = settings.stripe_secret_key
       if key.blank?
         raise PaymentError, "Stripe secret key not configured for #{settings.payment_mode} mode"
       end
-      Stripe.api_key = key
+      key
     end
 
     # ── Simulate helpers ─────────────────────────────────────────────

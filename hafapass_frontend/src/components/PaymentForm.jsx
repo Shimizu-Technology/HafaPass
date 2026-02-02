@@ -10,6 +10,7 @@ export default function PaymentForm({ totalCents, onSuccess, onError, submitting
   const stripe = useStripe()
   const elements = useElements()
   const [paymentError, setPaymentError] = useState(null)
+  const [statusMessage, setStatusMessage] = useState(null)
 
   const formatPrice = (cents) => `$${(cents / 100).toFixed(2)}`
 
@@ -22,6 +23,7 @@ export default function PaymentForm({ totalCents, onSuccess, onError, submitting
 
     setSubmitting(true)
     setPaymentError(null)
+    setStatusMessage(null)
 
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
@@ -43,7 +45,7 @@ export default function PaymentForm({ totalCents, onSuccess, onError, submitting
       if (onSuccess) onSuccess(paymentIntent)
     } else {
       // Payment requires additional action or is processing
-      setPaymentError('Payment is processing. You will receive confirmation shortly.')
+      setStatusMessage('Payment is processing. You will receive confirmation shortly.')
       setSubmitting(false)
     }
   }
@@ -53,6 +55,11 @@ export default function PaymentForm({ totalCents, onSuccess, onError, submitting
       {paymentError && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
           <p className="text-red-700 text-sm">{paymentError}</p>
+        </div>
+      )}
+      {statusMessage && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
+          <p className="text-blue-700 text-sm">{statusMessage}</p>
         </div>
       )}
 
@@ -70,7 +77,7 @@ export default function PaymentForm({ totalCents, onSuccess, onError, submitting
 
       <button
         type="submit"
-        disabled={!stripe || submitting}
+        disabled={!stripe || !elements || submitting}
         className="w-full bg-accent-500 hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-xl text-lg transition-colors duration-200"
       >
         {submitting ? (

@@ -70,7 +70,8 @@ class Api::V1::OrdersController < ApplicationController
 
     stripe_mode = StripeService.payment_enabled?
 
-    # Create order and tickets in a transaction
+    # Create order, tickets, and Stripe intent atomically in one transaction
+    intent = nil
     ActiveRecord::Base.transaction do
       @order = Order.create!(
         user: @current_user,
@@ -89,40 +90,46 @@ class Api::V1::OrdersController < ApplicationController
 
       ticket_selections.each do |selection|
         selection[:quantity].times do
-          ticket = @order.tickets.create!(
+          @order.tickets.create!(
             ticket_type: selection[:ticket_type],
             event: event
           )
-          ticket.generate_qr_code! unless (stripe_mode && total_cents > 0)
         end
 
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
       end
 
-      # Increment promo code usage
-      promo_code&.increment_usage! if discount_cents > 0
-    end
+      # Atomic promo code usage increment (race-safe)
+      if discount_cents > 0 && promo_code
+        unless promo_code.try_increment_usage!
+          raise ActiveRecord::Rollback
+        end
+      end
 
-    # Stripe mode (test or live): create PaymentIntent and return client_secret
-    if stripe_mode && total_cents > 0
-      begin
+      # Stripe mode: create PaymentIntent within the transaction
+      if stripe_mode && total_cents > 0
         intent = StripeService.create_payment_intent(@order)
         @order.update!(stripe_payment_intent_id: intent.id)
-
-        render json: order_json(@order).merge(
-          client_secret: intent.client_secret,
-          stripe_publishable_key: StripeService.publishable_key,
-          payment_mode: StripeService.payment_mode
-        ), status: :created
-        return
-      rescue Stripe::StripeError, StripeService::PaymentError => e
-        @order.tickets.includes(:ticket_type).each do |ticket|
-          ticket.ticket_type.decrement!(:quantity_sold)
-        end
-        @order.update!(status: :cancelled)
-        render json: { error: "Payment setup failed: #{e.message}" }, status: :unprocessable_entity
-        return
+      else
+        # Generate QR codes for non-Stripe orders
+        @order.tickets.each(&:generate_qr_code!)
       end
+    end
+
+    # If transaction was rolled back (e.g., promo exhausted)
+    unless @order&.persisted?
+      render json: { error: "Order could not be completed. Promo code may be exhausted." }, status: :unprocessable_entity
+      return
+    end
+
+    # Stripe mode: return client_secret for frontend payment
+    if stripe_mode && total_cents > 0
+      render json: order_json(@order).merge(
+        client_secret: intent.client_secret,
+        stripe_publishable_key: StripeService.publishable_key,
+        payment_mode: StripeService.payment_mode
+      ), status: :created
+      return
     end
 
     # Simulate mode or free events: order already completed
@@ -135,6 +142,9 @@ class Api::V1::OrdersController < ApplicationController
     render json: order_json(@order).merge(
       payment_mode: StripeService.payment_mode
     ), status: :created
+  rescue Stripe::StripeError, StripeService::PaymentError => e
+    # Transaction automatically rolled back — no manual cleanup needed
+    render json: { error: "Payment setup failed: #{e.message}" }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.message }, status: :unprocessable_entity
   end

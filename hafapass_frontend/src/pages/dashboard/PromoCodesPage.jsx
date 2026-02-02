@@ -132,10 +132,19 @@ export default function PromoCodesPage() {
         </div>
        </div>
        <div className="flex items-center gap-2">
-        <button onClick={() => toggleActive(pc)} className="p-2 rounded-xl hover:bg-neutral-100 transition-colors" title={pc.active ? 'Deactivate' : 'Activate'}>
+        <button
+         onClick={() => toggleActive(pc)}
+         className="p-2 rounded-xl hover:bg-neutral-100 transition-colors"
+         title={pc.active ? 'Deactivate' : 'Activate'}
+         aria-label={pc.active ? `Deactivate promo code ${pc.code}` : `Activate promo code ${pc.code}`}
+        >
          {pc.active ? <ToggleRight className="w-5 h-5 text-emerald-500" /> : <ToggleLeft className="w-5 h-5 text-neutral-400" />}
         </button>
-        <button onClick={() => deleteCode(pc)} className="p-2 rounded-xl hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors">
+        <button
+         onClick={() => deleteCode(pc)}
+         className="p-2 rounded-xl hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors"
+         aria-label={`Delete promo code ${pc.code}`}
+        >
          <Trash2 className="w-4 h-4" />
         </button>
        </div>

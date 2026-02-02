@@ -56,6 +56,7 @@ export default function EventAnalyticsPage() {
  }, [fetchData])
 
  const fetchAttendees = async () => {
+  setError(null)
   setAttendeesLoading(true)
   try {
    const res = await apiClient.get(`/organizer/events/${id}/attendees`)
