@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Check, X, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -96,7 +97,7 @@ export default function SettingsPage() {
  if (loading) {
   return (
    <div className="flex justify-center py-16">
-    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div>
+    <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
    </div>
   )
  }

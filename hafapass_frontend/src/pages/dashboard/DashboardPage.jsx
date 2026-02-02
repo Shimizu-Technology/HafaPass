@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -176,7 +177,7 @@ export default function DashboardPage() {
  if (loading) {
   return (
    <div className="min-h-[60vh] flex items-center justify-center">
-    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-800"></div>
+    <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
    </div>
   )
  }
