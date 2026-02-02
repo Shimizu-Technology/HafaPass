@@ -320,7 +320,7 @@ export default function ScannerPage() {
      <button
       type="submit"
       disabled={!manualCode.trim() || manualSubmitting}
-      className="bg-accent-500 hover:bg-accent-600 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white font-medium px-4 py-3 min-h-[44px] rounded-xl transition-colors whitespace-nowrap"
+      className="bg-accent-500 hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium px-4 py-3 min-h-[44px] rounded-xl transition-colors whitespace-nowrap"
      >
       {manualSubmitting ? 'Checking...' : 'Check In'}
      </button>

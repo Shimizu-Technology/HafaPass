@@ -342,7 +342,7 @@ export default function CreateEventPage() {
      <button
       type="submit"
       disabled={submitting}
-      className="w-full sm:w-auto bg-accent-500 text-white py-2.5 px-6 rounded-xl font-medium hover:bg-brand-700 focus:outline-none focus:ring-2 focus: focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      className="btn-primary w-full sm:w-auto"
      >
       {submitting ? 'Creating Event...' : 'Create Event'}
      </button>
