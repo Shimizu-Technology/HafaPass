@@ -100,7 +100,7 @@ export default function EventAnalyticsPage() {
   )
  }
 
- const totalTickets = stats.tickets_by_type.reduce((sum, t) => sum + t.sold + t.available, 0)
+ const totalTickets = (stats.tickets_by_type || []).reduce((sum, t) => sum + t.sold + t.available, 0)
  const checkInRate = stats.total_tickets_sold > 0
   ? Math.round((stats.tickets_checked_in / stats.total_tickets_sold) * 100)
   : 0
@@ -193,7 +193,7 @@ export default function EventAnalyticsPage() {
        </tr>
       </thead>
       <tbody className="divide-y divide-neutral-200">
-       {stats.tickets_by_type.map((type, idx) => (
+       {(stats.tickets_by_type || []).map((type, idx) => (
         <tr key={idx}>
          <td className="px-3 sm:px-5 py-3 text-sm font-medium text-neutral-900">{type.name}</td>
          <td className="px-2 sm:px-5 py-3 text-sm text-neutral-600 text-right">{type.sold}</td>
@@ -201,7 +201,7 @@ export default function EventAnalyticsPage() {
          <td className="px-3 sm:px-5 py-3 text-sm text-neutral-900 text-right font-medium">{formatCents(type.revenue_cents)}</td>
         </tr>
        ))}
-       {stats.tickets_by_type.length === 0 && (
+       {(stats.tickets_by_type || []).length === 0 && (
         <tr>
          <td colSpan={4} className="px-3 sm:px-5 py-4 text-sm text-neutral-500 text-center">No ticket types yet.</td>
         </tr>

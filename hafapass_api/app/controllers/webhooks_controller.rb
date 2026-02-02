@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+require "ostruct"
 
 class WebhooksController < ActionController::API
   # Skip Clerk auth — Stripe sends webhooks directly
