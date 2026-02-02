@@ -62,7 +62,7 @@ export default function TicketTypesSection({ ticketTypes, onCheckout }) {
                     </button>
                     <span className="w-8 text-center text-sm font-semibold text-neutral-900">{qty}</span>
                     <button
-                      onClick={() => setQty(tt.id, Math.min(rawQty + 1, maxQty))}
+                      onClick={() => setQty(tt.id, Math.min(qty + 1, maxQty))}
                       disabled={qty >= maxQty}
                       className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label="Increase quantity"
                     >
