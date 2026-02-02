@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { Check, X } from 'lucide-react'
 import { Check, X, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -18,7 +19,7 @@ const MODES = [
   label: 'Test (Stripe Sandbox)',
   description: 'Real Stripe API with test keys. Use test card 4242 4242 4242 4242.',
   color: 'border-brand-300 bg-brand-50',
-  activeColor: 'border-brand-500 bg-brand-50 ring-2 ',
+  activeColor: 'border-brand-500 bg-brand-50 ring-2 ring-brand-500',
   dot: 'bg-brand-500',
  },
  {
@@ -205,8 +206,8 @@ export default function SettingsPage() {
       <div>
        <p className="text-neutral-500">Stripe Keys</p>
        <p className="text-neutral-900 font-medium">
-        Test: {settings.stripe_test_configured ? '\u2705' : '\u274c'}
-        {' '}Live: {settings.stripe_live_configured ? '\u2705' : '\u274c'}
+        Test: {settings.stripe_test_configured ? <Check className="w-4 h-4 text-emerald-500 inline" /> : <X className="w-4 h-4 text-red-400 inline" />}
+        {' '}Live: {settings.stripe_live_configured ? <Check className="w-4 h-4 text-emerald-500 inline" /> : <X className="w-4 h-4 text-red-400 inline" />}
        </p>
       </div>
      </div>
