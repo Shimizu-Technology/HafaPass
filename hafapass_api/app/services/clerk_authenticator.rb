@@ -1,8 +1,21 @@
 require "net/http"
 require "json"
+require "base64"
 
 class ClerkAuthenticator
-  JWKS_URL = "https://api.clerk.com/.well-known/jwks.json"
+  # Derive JWKS URL from CLERK_PUBLISHABLE_KEY (base64-encoded instance domain)
+  # Falls back to ENV var if set, or generic Clerk URL as last resort
+  JWKS_URL = ENV.fetch("CLERK_JWKS_URL") {
+    pk = ENV["CLERK_PUBLISHABLE_KEY"].to_s
+    # pk_test_<base64domain> or pk_live_<base64domain>
+    encoded = pk.split("_").last.to_s
+    if encoded.present?
+      domain = Base64.decode64(encoded).gsub(/\$\z/, "")
+      "https://#{domain}/.well-known/jwks.json"
+    else
+      "https://api.clerk.com/.well-known/jwks.json"
+    end
+  }
   JWKS_CACHE_TTL = 1.hour
 
   class << self
