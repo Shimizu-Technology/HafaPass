@@ -33,8 +33,9 @@ export default function TicketTypesSection({ ticketTypes, onCheckout }) {
         {ticketTypes.map(tt => {
           const available = tt.quantity_available - tt.quantity_sold
           const soldOut = available <= 0
-          const qty = getQty(tt.id)
+          const rawQty = getQty(tt.id)
           const maxQty = Math.min(tt.max_per_order || 10, available)
+          const qty = Math.min(rawQty, maxQty) // Clamped to current availability
 
           return (
             <div key={tt.id} className={`card p-4 transition-all duration-200 ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
@@ -53,7 +54,7 @@ export default function TicketTypesSection({ ticketTypes, onCheckout }) {
                 {!soldOut && (
                   <div className="flex items-center gap-2 ml-4">
                     <button
-                      onClick={() => setQty(tt.id, qty - 1)}
+                      onClick={() => setQty(tt.id, rawQty - 1)}
                       disabled={qty === 0}
                       className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label="Decrease quantity"
                     >
@@ -61,7 +62,7 @@ export default function TicketTypesSection({ ticketTypes, onCheckout }) {
                     </button>
                     <span className="w-8 text-center text-sm font-semibold text-neutral-900">{qty}</span>
                     <button
-                      onClick={() => setQty(tt.id, Math.min(qty + 1, maxQty))}
+                      onClick={() => setQty(tt.id, Math.min(rawQty + 1, maxQty))}
                       disabled={qty >= maxQty}
                       className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label="Increase quantity"
                     >

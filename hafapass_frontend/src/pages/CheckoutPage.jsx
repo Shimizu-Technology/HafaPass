@@ -16,6 +16,7 @@ export default function CheckoutPage() {
   const lineItems = location.state?.lineItems || null
   const [error, setError] = useState(null)
   const [config, setConfig] = useState(null)
+  const [configError, setConfigError] = useState(null)
 
   // Buyer form
   const [buyerName, setBuyerName] = useState('')
@@ -42,7 +43,10 @@ export default function CheckoutPage() {
   useEffect(() => {
     apiClient.get('/config')
       .then(res => setConfig(res.data))
-      .catch(() => setConfig({ payment_mode: 'simulate', service_fee_percent: '3.0', service_fee_flat_cents: 50 }))
+      .catch((err) => {
+        console.error('Failed to load payment config:', err)
+        setConfigError('Unable to load payment configuration. Please try again later.')
+      })
   }, [])
 
   useEffect(() => {
@@ -147,6 +151,15 @@ export default function CheckoutPage() {
   const handlePaymentSuccess = (paymentIntent) => {
     navigate(`/orders/${orderId}/confirmation`, { state: { order: orderData, event, paymentIntent }, replace: true })
   }
+
+  if (configError) return (
+    <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
+      <div className="text-center">
+        <p className="text-red-600 mb-4">{configError}</p>
+        <button onClick={() => window.location.reload()} className="btn-primary">Retry</button>
+      </div>
+    </div>
+  )
 
   if (loading) return (
     <div className="flex justify-center py-20">

@@ -124,16 +124,18 @@ class WebhooksController < ActionController::API
     if is_full_refund
       return if order.refunded? # Idempotency
 
-      order.update!(
-        status: :refunded,
-        refund_amount_cents: refund_amount,
-        refunded_at: Time.current
-      )
+      ActiveRecord::Base.transaction do
+        order.update!(
+          status: :refunded,
+          refund_amount_cents: refund_amount,
+          refunded_at: Time.current
+        )
 
-      order.tickets.includes(:ticket_type).each do |ticket|
-        next if ticket.cancelled?
-        ticket.ticket_type.decrement!(:quantity_sold)
-        ticket.update!(status: :cancelled)
+        order.tickets.includes(:ticket_type).each do |ticket|
+          next if ticket.cancelled?
+          ticket.ticket_type.decrement!(:quantity_sold)
+          ticket.update!(status: :cancelled)
+        end
       end
     else
       order.update!(

@@ -536,7 +536,7 @@ export default function EditEventPage() {
         </div>
         <div className="text-right">
          <p className="font-semibold text-neutral-900">${(tt.price_cents / 100).toFixed(2)}</p>
-         <p className="text-xs text-neutral-500">{tt.quantity_sold}/{tt.quantity_available} sold</p>
+         <p className="text-xs text-neutral-500">{tt.quantity_sold ?? 0}/{tt.quantity_available ?? "∞"} sold</p>
         </div>
        </div>
       ))}

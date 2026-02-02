@@ -4,7 +4,7 @@ module Api
       class GuestListEntriesController < ApplicationController
         before_action :require_organizer_profile
         before_action :set_event
-        before_action :set_entry, only: [:show, :update, :destroy, :redeem]
+        before_action :set_entry, only: [:update, :destroy, :redeem]
 
         # GET /api/v1/organizer/events/:event_id/guest_list
         def index
@@ -35,6 +35,11 @@ module Api
 
         # PATCH /api/v1/organizer/events/:event_id/guest_list/:id
         def update
+          if @entry.redeemed?
+            render json: { error: "Cannot modify a redeemed entry" }, status: :unprocessable_entity
+            return
+          end
+
           if @entry.update(entry_params)
             render json: entry_json(@entry)
           else

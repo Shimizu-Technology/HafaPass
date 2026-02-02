@@ -60,8 +60,9 @@ class Api::V1::OrdersController < ApplicationController
     promo_code = nil
     discount_cents = 0
     if params[:promo_code_id].present?
-      promo_code = event.promo_codes.find_by(id: params[:promo_code_id])
-      if promo_code&.usable?
+      candidate = event.promo_codes.find_by(id: params[:promo_code_id])
+      if candidate&.usable?
+        promo_code = candidate
         discount_cents = promo_code.calculate_discount(subtotal_cents)
       end
     end
