@@ -27,6 +27,7 @@ const STATUS_BADGES = {
 function formatDatetimeLocal(isoString) {
  if (!isoString) return ''
  const date = new Date(isoString)
+ if (Number.isNaN(date.valueOf())) return ''
  const year = date.getFullYear()
  const month = String(date.getMonth() + 1).padStart(2, '0')
  const day = String(date.getDate()).padStart(2, '0')
@@ -115,6 +116,33 @@ export default function EditEventPage() {
   if (!form.title.trim()) errors.title = 'Title is required'
   if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
   if (!form.starts_at) errors.starts_at = 'Start date/time is required'
+
+  // Cross-field validation: end time must be after start time
+  if (form.ends_at && form.starts_at) {
+   const startsAt = new Date(form.starts_at)
+   const endsAt = new Date(form.ends_at)
+   if (Number.isFinite(startsAt.valueOf()) && Number.isFinite(endsAt.valueOf()) && endsAt <= startsAt) {
+    errors.ends_at = 'End time must be after the start time'
+   }
+  }
+
+  // Cross-field validation: doors open must be before start time
+  if (form.doors_open_at && form.starts_at) {
+   const doorsAt = new Date(form.doors_open_at)
+   const startsAt = new Date(form.starts_at)
+   if (Number.isFinite(doorsAt.valueOf()) && Number.isFinite(startsAt.valueOf()) && doorsAt > startsAt) {
+    errors.doors_open_at = 'Doors open time must be before the start time'
+   }
+  }
+
+  // Max capacity must be a positive integer
+  if (form.max_capacity) {
+   const cap = Number(form.max_capacity)
+   if (!Number.isInteger(cap) || cap < 1) {
+    errors.max_capacity = 'Max capacity must be a positive integer'
+   }
+  }
+
   setFormErrors(errors)
   return Object.keys(errors).length === 0
  }
@@ -130,18 +158,18 @@ export default function EditEventPage() {
   try {
    const payload = {
     title: form.title.trim(),
-    short_description: form.short_description.trim() || undefined,
-    description: form.description.trim() || undefined,
+    short_description: form.short_description.trim() || null,
+    description: form.description.trim() || null,
     category: form.category,
     age_restriction: form.age_restriction,
     venue_name: form.venue_name.trim(),
-    venue_address: form.venue_address.trim() || undefined,
+    venue_address: form.venue_address.trim() || null,
     venue_city: form.venue_city.trim() || 'Guam',
     starts_at: form.starts_at || undefined,
     ends_at: form.ends_at || undefined,
     doors_open_at: form.doors_open_at || undefined,
     max_capacity: form.max_capacity ? parseInt(form.max_capacity, 10) : null,
-    cover_image_url: form.cover_image_url.trim() || undefined
+    cover_image_url: form.cover_image_url.trim() || null
    }
 
    const res = await apiClient.put(`/organizer/events/${id}`, payload)
@@ -452,9 +480,10 @@ export default function EditEventPage() {
         type="datetime-local"
         value={form.ends_at}
         onChange={(e) => updateField('ends_at', e.target.value)}
-        className="input"
+        className={`input ${formErrors.ends_at ? 'input-error' : ''}`}
         disabled={submitting}
        />
+       {formErrors.ends_at && <p className="mt-1 text-sm text-red-600">{formErrors.ends_at}</p>}
       </div>
 
       <div>
@@ -466,9 +495,10 @@ export default function EditEventPage() {
         type="datetime-local"
         value={form.doors_open_at}
         onChange={(e) => updateField('doors_open_at', e.target.value)}
-        className="input"
+        className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`}
         disabled={submitting}
        />
+       {formErrors.doors_open_at && <p className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
       </div>
      </div>
     </section>
@@ -487,10 +517,11 @@ export default function EditEventPage() {
         min="1"
         value={form.max_capacity}
         onChange={(e) => updateField('max_capacity', e.target.value)}
-        className="input"
+        className={`input ${formErrors.max_capacity ? 'input-error' : ''}`}
         placeholder="Leave blank for unlimited"
         disabled={submitting}
        />
+       {formErrors.max_capacity && <p className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
       </div>
 
       <div>

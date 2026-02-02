@@ -17,7 +17,7 @@ module Api
         # POST /api/v1/organizer/events/:event_id/guest_list
         def create
           entry = @event.guest_list_entries.build(entry_params)
-          entry.added_by = @current_user.email
+          entry.added_by = current_user.email
 
           if entry.save
             # Send notification email if guest has email

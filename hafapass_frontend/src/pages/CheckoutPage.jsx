@@ -352,7 +352,17 @@ export default function CheckoutPage() {
         <div className="card p-5 sm:p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-neutral-900">Payment</h2>
-            <button onClick={() => { setStep('info'); setClientSecret(null); setStripePublishableKey(null) }}
+            <button onClick={() => {
+              // Cancel the pending order to free up ticket inventory
+              if (orderId) {
+                apiClient.post(`/orders/${orderId}/cancel`).catch(() => {})
+              }
+              setStep('info')
+              setClientSecret(null)
+              setStripePublishableKey(null)
+              setOrderId(null)
+              setOrderData(null)
+            }}
               className="text-sm text-brand-500 hover:text-brand-600 font-medium">Edit info</button>
           </div>
           <div className="bg-neutral-50 rounded-xl p-3 mb-4 text-sm text-neutral-600">

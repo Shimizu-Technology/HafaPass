@@ -20,7 +20,11 @@ Rails.application.routes.draw do
       post "uploads/presign", to: "uploads#presign"
 
       # Orders (public create for guest checkout)
-      resources :orders, only: [:create]
+      resources :orders, only: [:create] do
+        member do
+          post :cancel
+        end
+      end
 
       # Promo code validation (public, for checkout)
       post "promo_codes/validate", to: "promo_codes#validate"

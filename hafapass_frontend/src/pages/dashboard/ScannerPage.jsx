@@ -124,7 +124,9 @@ export default function ScannerPage() {
    scanIntervalRef.current = null
   }
   if (streamRef.current) {
-   streamRef.current.getTracks().forEach(track => track.stop())
+   streamRef.current.getTracks().forEach(track => {
+    track.stop()
+   })
    streamRef.current = null
   }
   if (videoRef.current) {

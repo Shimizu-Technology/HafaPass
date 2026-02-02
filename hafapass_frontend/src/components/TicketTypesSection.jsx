@@ -54,7 +54,7 @@ export default function TicketTypesSection({ ticketTypes, onCheckout }) {
                 {!soldOut && (
                   <div className="flex items-center gap-2 ml-4">
                     <button
-                      onClick={() => setQty(tt.id, rawQty - 1)}
+                      onClick={() => setQty(tt.id, qty - 1)}
                       disabled={qty === 0}
                       className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label="Decrease quantity"
                     >

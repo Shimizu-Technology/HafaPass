@@ -140,6 +140,9 @@ class WebhooksController < ActionController::API
         end
       end
     else
+      # Don't downgrade from full refund to partial (idempotency)
+      return if order.refunded?
+
       order.update!(
         status: :partially_refunded,
         refund_amount_cents: refund_amount,
@@ -190,7 +193,7 @@ class WebhooksController < ActionController::API
     return nil if pm_id.blank?
 
     begin
-      pm = Stripe::PaymentMethod.retrieve(pm_id)
+      pm = Stripe::PaymentMethod.retrieve(pm_id, { api_key: SiteSetting.instance.stripe_secret_key })
       wallet = pm&.card&.wallet
       return nil unless wallet
 

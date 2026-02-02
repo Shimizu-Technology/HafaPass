@@ -73,6 +73,7 @@ class Api::V1::OrdersController < ApplicationController
 
     # Create order, tickets, and Stripe intent atomically in one transaction
     intent = nil
+    promo_exhausted = false
     ActiveRecord::Base.transaction do
       @order = Order.create!(
         user: @current_user,
@@ -103,6 +104,7 @@ class Api::V1::OrdersController < ApplicationController
       # Atomic promo code usage increment (race-safe)
       if discount_cents > 0 && promo_code
         unless promo_code.try_increment_usage!
+          promo_exhausted = true
           raise ActiveRecord::Rollback
         end
       end
@@ -117,8 +119,8 @@ class Api::V1::OrdersController < ApplicationController
       end
     end
 
-    # If transaction was rolled back (e.g., promo exhausted)
-    unless @order&.persisted?
+    # If transaction was rolled back (e.g., promo exhausted), verify via DB
+    if promo_exhausted || !@order || !Order.exists?(@order.id)
       render json: { error: "Order could not be completed. Promo code may be exhausted." }, status: :unprocessable_entity
       return
     end
@@ -148,6 +150,32 @@ class Api::V1::OrdersController < ApplicationController
     render json: { error: "Payment setup failed: #{e.message}" }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  # POST /api/v1/orders/:id/cancel
+  # Cancels a pending order and frees up ticket inventory
+  def cancel
+    order = Order.find_by(id: params[:id])
+    unless order
+      render json: { error: "Order not found" }, status: :not_found
+      return
+    end
+
+    unless order.pending?
+      render json: { error: "Only pending orders can be cancelled" }, status: :unprocessable_entity
+      return
+    end
+
+    ActiveRecord::Base.transaction do
+      order.update!(status: :cancelled)
+
+      order.tickets.includes(:ticket_type).each do |ticket|
+        ticket.ticket_type.decrement!(:quantity_sold)
+        ticket.update!(status: :cancelled)
+      end
+    end
+
+    render json: { status: "cancelled" }, status: :ok
   end
 
   private

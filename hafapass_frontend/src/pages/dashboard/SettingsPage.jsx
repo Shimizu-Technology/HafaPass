@@ -134,9 +134,10 @@ export default function SettingsPage() {
     <div className="space-y-3">
      {MODES.map(mode => {
       const isActive = settings?.payment_mode === mode.value
-      const isDisabled = saving ||
+      const missingKeys =
        (mode.value === 'test' && !settings?.stripe_test_configured) ||
        (mode.value === 'live' && !settings?.stripe_live_configured)
+      const isDisabled = saving || missingKeys
 
       return (
        <button
@@ -156,7 +157,7 @@ export default function SettingsPage() {
          <div>
           <p className="font-semibold text-neutral-900">{mode.label}</p>
           <p className="text-sm text-neutral-600 mt-0.5">{mode.description}</p>
-          {isDisabled && !isActive && (
+          {missingKeys && !isActive && (
            <p className="text-xs text-red-500 mt-1">
             {mode.value === 'test' ? 'Stripe test keys not configured' : 'Stripe live keys not configured'}
            </p>

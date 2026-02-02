@@ -4,7 +4,8 @@ import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 
 function formatCents(cents) {
- return `$${(cents / 100).toFixed(2)}`
+ const safe = Number.isFinite(cents) ? cents : 0
+ return `$${(safe / 100).toFixed(2)}`
 }
 
 function formatDate(isoString) {
@@ -216,7 +217,7 @@ export default function EventAnalyticsPage() {
     <div className="px-5 py-4 border-b border-neutral-200">
      <h2 className="text-lg font-semibold text-neutral-900">Recent Orders</h2>
     </div>
-    {stats.recent_orders.length > 0 ? (
+    {(stats.recent_orders || []).length > 0 ? (
      <>
       {/* Desktop table */}
       <div className="hidden sm:block overflow-x-auto">
@@ -231,7 +232,7 @@ export default function EventAnalyticsPage() {
          </tr>
         </thead>
         <tbody className="divide-y divide-neutral-200">
-         {stats.recent_orders.map((order) => (
+         {(stats.recent_orders || []).map((order) => (
           <tr key={order.id}>
            <td className="px-5 py-3 text-sm font-medium text-neutral-900">{order.buyer_name}</td>
            <td className="px-5 py-3 text-sm text-neutral-600">{order.buyer_email}</td>
@@ -245,7 +246,7 @@ export default function EventAnalyticsPage() {
       </div>
       {/* Mobile card layout */}
       <div className="sm:hidden divide-y divide-neutral-200">
-       {stats.recent_orders.map((order) => (
+       {(stats.recent_orders || []).map((order) => (
         <div key={order.id} className="px-4 py-3">
          <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-neutral-900">{order.buyer_name}</span>
