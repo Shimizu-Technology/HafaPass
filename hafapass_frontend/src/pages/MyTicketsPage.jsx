@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight } from 'lucide-react'
 import apiClient from '../api/client'
 
 export default function MyTicketsPage() {
@@ -31,7 +33,7 @@ export default function MyTicketsPage() {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-900"></div>
+        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
       </div>
     )
   }
@@ -39,7 +41,7 @@ export default function MyTicketsPage() {
   if (error) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-12">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
           <p className="text-red-700">{error}</p>
           <button
             onClick={fetchOrders}
@@ -85,21 +87,23 @@ export default function MyTicketsPage() {
 
   if (eventGroups.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-12 text-center">
-        <div className="bg-white rounded-lg shadow-sm p-8">
-          <svg className="mx-auto h-16 w-16 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-          </svg>
-          <h2 className="mt-4 text-xl font-semibold text-gray-800">No tickets yet</h2>
-          <p className="mt-2 text-gray-500">Browse events to get started!</p>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-2xl mx-auto px-4 py-12 text-center"
+      >
+        <div className="card p-8">
+          <Ticket className="mx-auto h-16 w-16 text-neutral-300" />
+          <h2 className="mt-4 text-xl font-semibold text-neutral-800">No tickets yet</h2>
+          <p className="mt-2 text-neutral-500">Browse events to get started!</p>
           <Link
             to="/events"
-            className="mt-6 inline-block bg-blue-900 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-800 transition-colors"
+            className="mt-6 inline-block btn-primary px-6 py-3"
           >
             Browse Events
           </Link>
         </div>
-      </div>
+      </motion.div>
     )
   }
 
@@ -124,9 +128,9 @@ export default function MyTicketsPage() {
   function getStatusBadge(status) {
     switch (status) {
       case 'issued':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Valid</span>
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700">Valid</span>
       case 'checked_in':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Used</span>
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600">Used</span>
       case 'cancelled':
         return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Cancelled</span>
       case 'transferred':
@@ -137,71 +141,83 @@ export default function MyTicketsPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">My Tickets</h1>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="max-w-3xl mx-auto px-4 py-8"
+    >
+      <h1 className="text-2xl font-bold text-neutral-900 mb-6">My Tickets</h1>
 
       <div className="space-y-6">
-        {eventGroups.map(({ event, tickets }) => {
+        {eventGroups.map(({ event, tickets }, index) => {
           const eventDate = new Date(event.starts_at)
           const isPast = eventDate < now
 
           return (
-            <div key={event.id} className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className={`px-4 sm:px-5 py-4 border-b ${isPast ? 'bg-gray-50' : 'bg-blue-50'}`}>
+            <motion.div
+              key={event.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className="card overflow-hidden"
+            >
+              <div className={`px-4 sm:px-5 py-4 border-b ${isPast ? 'bg-neutral-50' : 'bg-brand-50'}`}>
                 <div className="flex items-start justify-between">
                   <div>
                     <Link
                       to={`/events/${event.slug}`}
-                      className="text-lg font-semibold text-gray-900 hover:text-blue-700 transition-colors"
+                      className="text-lg font-semibold text-neutral-900 hover:text-brand-600 transition-colors"
                     >
                       {event.title}
                     </Link>
-                    <p className="text-sm text-gray-600 mt-0.5">
-                      {formatDate(event.starts_at)} at {formatTime(event.starts_at)}
+                    <p className="text-sm text-neutral-600 mt-0.5 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" />
+                      {formatDate(event.starts_at)}
+                      <Clock className="w-3.5 h-3.5 ml-1" />
+                      {formatTime(event.starts_at)}
                     </p>
                     {event.venue_name && (
-                      <p className="text-sm text-gray-500">{event.venue_name}</p>
+                      <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
+                        <MapPin className="w-3.5 h-3.5" />
+                        {event.venue_name}
+                      </p>
                     )}
                   </div>
                   {isPast && (
-                    <span className="text-xs font-medium text-gray-500 bg-gray-200 px-2 py-1 rounded">Past</span>
+                    <span className="text-xs font-medium text-neutral-500 bg-neutral-200 px-2 py-1 rounded-xl">Past</span>
                   )}
                 </div>
               </div>
 
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-neutral-100">
                 {tickets.map(ticket => (
                   <Link
                     key={ticket.id}
                     to={`/tickets/${ticket.qr_code}`}
-                    className="flex items-center justify-between px-4 sm:px-5 py-3 min-h-[52px] hover:bg-gray-50 transition-colors"
+                    className="flex items-center justify-between px-4 sm:px-5 py-3 min-h-[52px] hover:bg-neutral-50 transition-colors"
                   >
                     <div className="flex items-center space-x-3">
                       <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-                        </svg>
+                        <Ticket className="h-5 w-5 text-neutral-400" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{ticket.ticket_type.name}</p>
+                        <p className="text-sm font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                         {ticket.attendee_name && (
-                          <p className="text-xs text-gray-500">{ticket.attendee_name}</p>
+                          <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center space-x-3">
                       {getStatusBadge(ticket.status)}
-                      <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
+                      <ChevronRight className="h-4 w-4 text-neutral-400" />
                     </div>
                   </Link>
                 ))}
               </div>
-            </div>
+            </motion.div>
           )
         })}
       </div>
-    </div>
+    </motion.div>
   )
 }
