@@ -319,13 +319,13 @@ export default function ScannerPage() {
       value={manualCode}
       onChange={(e) => setManualCode(e.target.value)}
       placeholder="Enter QR code (UUID)"
-      className="flex-1 border border-neutral-300 rounded-xl px-3 py-3 min-h-[44px] text-sm focus:ring-2 focus: focus:border-brand-500 outline-none"
+      className="flex-1 border border-neutral-300 rounded-xl px-3 py-3 min-h-[44px] text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
       disabled={manualSubmitting}
      />
      <button
       type="submit"
       disabled={!manualCode.trim() || manualSubmitting}
-      className="bg-orange-500 hover:bg-orange-600 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white font-medium px-4 py-3 min-h-[44px] rounded-xl transition-colors whitespace-nowrap"
+      className="bg-accent-500 hover:bg-accent-600 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white font-medium px-4 py-3 min-h-[44px] rounded-xl transition-colors whitespace-nowrap"
      >
       {manualSubmitting ? 'Checking...' : 'Check In'}
      </button>

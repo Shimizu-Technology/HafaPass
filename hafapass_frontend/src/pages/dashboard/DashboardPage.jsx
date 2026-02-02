@@ -52,7 +52,7 @@ function OrganizerProfileForm({ onSuccess }) {
        type="text"
        value={businessName}
        onChange={(e) => setBusinessName(e.target.value)}
-       className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+       className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
        placeholder="e.g., Island Nights Promotions"
        disabled={submitting}
       />
@@ -67,7 +67,7 @@ function OrganizerProfileForm({ onSuccess }) {
        value={businessDescription}
        onChange={(e) => setBusinessDescription(e.target.value)}
        rows={3}
-       className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+       className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
        placeholder="Tell attendees about your business..."
        disabled={submitting}
       />
@@ -76,7 +76,7 @@ function OrganizerProfileForm({ onSuccess }) {
      <button
       type="submit"
       disabled={submitting}
-      className="w-full bg-brand-800 text-white py-2.5 px-4 rounded-xl font-medium hover:bg-brand-700 focus:outline-none focus:ring-2 focus: focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      className="w-full bg-accent-500 text-white py-2.5 px-4 rounded-xl font-medium hover:bg-brand-700 focus:outline-none focus:ring-2 focus: focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
      >
       {submitting ? 'Creating Profile...' : 'Create Organizer Profile'}
      </button>
@@ -224,7 +224,7 @@ export default function DashboardPage() {
      </Link>
      <Link
       to="/dashboard/events/new"
-      className="inline-flex items-center justify-center gap-2 bg-orange-500 text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-orange-600 transition-colors text-sm"
+      className="inline-flex items-center justify-center gap-2 bg-accent-500 text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-accent-600 transition-colors text-sm"
      >
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -253,7 +253,7 @@ export default function DashboardPage() {
      <p className="text-neutral-500 mb-4">Get started by creating your first event</p>
      <Link
       to="/dashboard/events/new"
-      className="inline-flex items-center gap-2 bg-brand-800 text-white px-4 py-2 rounded-xl font-medium hover:bg-brand-700 transition-colors"
+      className="inline-flex items-center gap-2 bg-accent-500 text-white px-4 py-2 rounded-xl font-medium hover:bg-brand-700 transition-colors"
      >
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

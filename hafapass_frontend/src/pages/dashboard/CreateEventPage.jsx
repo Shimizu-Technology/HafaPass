@@ -122,7 +122,7 @@ export default function CreateEventPage() {
         type="text"
         value={form.title}
         onChange={(e) => updateField('title', e.target.value)}
-        className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500 ${formErrors.title ? 'border-red-300' : 'border-neutral-300'}`}
+        className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 ${formErrors.title ? 'border-red-300' : 'border-neutral-300'}`}
         placeholder="e.g., Full Moon Beach Party"
         disabled={submitting}
        />
@@ -138,7 +138,7 @@ export default function CreateEventPage() {
         type="text"
         value={form.short_description}
         onChange={(e) => updateField('short_description', e.target.value)}
-        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
         placeholder="A brief tagline for your event"
         maxLength={200}
         disabled={submitting}
@@ -154,7 +154,7 @@ export default function CreateEventPage() {
         value={form.description}
         onChange={(e) => updateField('description', e.target.value)}
         rows={4}
-        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
         placeholder="Full event description..."
         disabled={submitting}
        />
@@ -169,7 +169,7 @@ export default function CreateEventPage() {
          id="category"
          value={form.category}
          onChange={(e) => updateField('category', e.target.value)}
-         className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+         className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
          disabled={submitting}
         >
          {CATEGORIES.map(cat => (
@@ -186,7 +186,7 @@ export default function CreateEventPage() {
          id="age_restriction"
          value={form.age_restriction}
          onChange={(e) => updateField('age_restriction', e.target.value)}
-         className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+         className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
          disabled={submitting}
         >
          {AGE_RESTRICTIONS.map(ar => (
@@ -211,7 +211,7 @@ export default function CreateEventPage() {
         type="text"
         value={form.venue_name}
         onChange={(e) => updateField('venue_name', e.target.value)}
-        className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500 ${formErrors.venue_name ? 'border-red-300' : 'border-neutral-300'}`}
+        className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 ${formErrors.venue_name ? 'border-red-300' : 'border-neutral-300'}`}
         placeholder="e.g., Tumon Beach Club"
         disabled={submitting}
        />
@@ -227,7 +227,7 @@ export default function CreateEventPage() {
         type="text"
         value={form.venue_address}
         onChange={(e) => updateField('venue_address', e.target.value)}
-        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
         placeholder="123 Pale San Vitores Rd, Tumon"
         disabled={submitting}
        />
@@ -242,7 +242,7 @@ export default function CreateEventPage() {
         type="text"
         value={form.venue_city}
         onChange={(e) => updateField('venue_city', e.target.value)}
-        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
         placeholder="Guam"
         disabled={submitting}
        />
@@ -263,7 +263,7 @@ export default function CreateEventPage() {
         type="datetime-local"
         value={form.starts_at}
         onChange={(e) => updateField('starts_at', e.target.value)}
-        className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500 ${formErrors.starts_at ? 'border-red-300' : 'border-neutral-300'}`}
+        className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 ${formErrors.starts_at ? 'border-red-300' : 'border-neutral-300'}`}
         disabled={submitting}
        />
        {formErrors.starts_at && <p className="mt-1 text-sm text-red-600">{formErrors.starts_at}</p>}
@@ -278,7 +278,7 @@ export default function CreateEventPage() {
         type="datetime-local"
         value={form.ends_at}
         onChange={(e) => updateField('ends_at', e.target.value)}
-        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
         disabled={submitting}
        />
       </div>
@@ -292,7 +292,7 @@ export default function CreateEventPage() {
         type="datetime-local"
         value={form.doors_open_at}
         onChange={(e) => updateField('doors_open_at', e.target.value)}
-        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
         disabled={submitting}
        />
       </div>
@@ -313,7 +313,7 @@ export default function CreateEventPage() {
         min="1"
         value={form.max_capacity}
         onChange={(e) => updateField('max_capacity', e.target.value)}
-        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
         placeholder="Leave blank for unlimited"
         disabled={submitting}
        />
@@ -328,7 +328,7 @@ export default function CreateEventPage() {
         type="url"
         value={form.cover_image_url}
         onChange={(e) => updateField('cover_image_url', e.target.value)}
-        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus: focus:border-brand-500"
+        className="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
         placeholder="https://example.com/image.jpg"
         disabled={submitting}
        />
@@ -342,7 +342,7 @@ export default function CreateEventPage() {
      <button
       type="submit"
       disabled={submitting}
-      className="w-full sm:w-auto bg-brand-800 text-white py-2.5 px-6 rounded-xl font-medium hover:bg-brand-700 focus:outline-none focus:ring-2 focus: focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      className="w-full sm:w-auto bg-accent-500 text-white py-2.5 px-6 rounded-xl font-medium hover:bg-brand-700 focus:outline-none focus:ring-2 focus: focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
      >
       {submitting ? 'Creating Event...' : 'Create Event'}
      </button>
