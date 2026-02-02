@@ -98,11 +98,13 @@ class WebhooksController < ActionController::API
 
     return unless order.pending?
 
-    order.update!(status: :cancelled)
+    ActiveRecord::Base.transaction do
+      order.update!(status: :cancelled)
 
-    order.tickets.includes(:ticket_type).each do |ticket|
-      ticket.ticket_type.decrement!(:quantity_sold)
-      ticket.update!(status: :cancelled)
+      order.tickets.includes(:ticket_type).each do |ticket|
+        ticket.ticket_type.decrement!(:quantity_sold)
+        ticket.update!(status: :cancelled)
+      end
     end
 
     Rails.logger.info("Order ##{order.id} cancelled due to payment failure (PI: #{payment_intent.id})")

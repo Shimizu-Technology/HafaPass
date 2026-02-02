@@ -15,8 +15,8 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(!location.state?.event)
   const lineItems = location.state?.lineItems || null
   const [error, setError] = useState(null)
-  const [config, setConfig] = useState(null)
   const [configError, setConfigError] = useState(null)
+  const [config, setConfig] = useState(null)
 
   // Buyer form
   const [buyerName, setBuyerName] = useState('')
