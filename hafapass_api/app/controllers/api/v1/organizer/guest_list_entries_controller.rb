@@ -55,12 +55,16 @@ module Api
         # POST /api/v1/organizer/events/:event_id/guest_list/:id/redeem
         # Converts guest list entry into actual tickets
         def redeem
-          if @entry.redeemed?
-            render json: { error: "Already redeemed" }, status: :unprocessable_entity
-            return
-          end
-
           ActiveRecord::Base.transaction do
+            # Lock the entry to prevent concurrent redemption
+            @entry.lock!
+
+            # Check redemption status after acquiring lock
+            if @entry.redeemed?
+              render json: { error: "Already redeemed" }, status: :unprocessable_entity
+              return
+            end
+
             # Lock the ticket type row to prevent race conditions on availability
             ticket_type = @entry.ticket_type.lock!
 
