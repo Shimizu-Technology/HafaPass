@@ -1073,7 +1073,123 @@ end
 
 ---
 
-## 15. Common Issues
+## 15. Guest Checkout Pattern (E-commerce / Ordering Apps)
+
+Not every user needs an account. For ordering, e-commerce, or event registration apps, **guest checkout** reduces friction and keeps Clerk costs low.
+
+### When to Use Guest Checkout
+
+| Use Case | Auth Approach |
+|----------|--------------|
+| Restaurant ordering | Guest checkout (name, phone, email) |
+| Event ticket purchase | Guest checkout |
+| Admin/staff dashboard | Full Clerk auth with roles |
+| SaaS with user data | Full Clerk auth |
+| Repeat customer features | Optional Clerk account |
+
+### Architecture: Clerk for Admins, Guest for Customers
+
+```
+Restaurant Admin/Staff → Clerk auth (invite-only, roles)
+Customer placing order  → Guest checkout (no account needed)
+                          └── Optional: "Save info for next time?" → creates Clerk account
+```
+
+### Backend Implementation
+
+```ruby
+# app/controllers/api/v1/base_controller.rb
+class Api::V1::BaseController < ApplicationController
+  include ClerkAuthenticatable
+
+  private
+
+  # Use for admin/staff endpoints
+  # before_action :require_staff!
+  # before_action :require_admin!
+
+  # Use for customer endpoints that work with OR without auth
+  def current_customer
+    if request.headers['Authorization'].present?
+      authenticate_user!  # Returns Clerk user if valid token
+      current_user
+    else
+      nil  # Guest checkout — no auth required
+    end
+  end
+end
+
+# app/controllers/api/v1/orders_controller.rb
+class Api::V1::OrdersController < Api::V1::BaseController
+  # No before_action auth — guests can order!
+
+  def create
+    @order = @restaurant.orders.new(order_params)
+    @order.user = current_customer  # nil for guests, User for logged-in
+    # ... process order
+  end
+end
+
+# app/controllers/api/v1/admin/orders_controller.rb
+class Api::V1::Admin::OrdersController < Api::V1::BaseController
+  before_action :require_staff!  # Only staff can manage orders
+
+  def index
+    @orders = @restaurant.orders.recent
+  end
+end
+```
+
+### Frontend Implementation
+
+```tsx
+// Guest checkout form — no Clerk required
+const GuestCheckoutForm = () => {
+  const [customerInfo, setCustomerInfo] = useState({
+    name: '',
+    phone: '',
+    email: '',
+  });
+
+  return (
+    <form>
+      <input placeholder="Your name" required />
+      <input placeholder="Phone number" required />
+      <input placeholder="Email (for receipt)" required />
+      {/* No sign-in needed! */}
+    </form>
+  );
+};
+
+// Optional: After checkout, offer account creation
+const PostCheckoutUpsell = () => {
+  const { isSignedIn } = useAuth();
+
+  if (isSignedIn) return null;
+
+  return (
+    <div>
+      <p>Want to save your info for faster checkout next time?</p>
+      <SignUpButton mode="modal">
+        <button>Create Account</button>
+      </SignUpButton>
+    </div>
+  );
+};
+```
+
+### Cost Optimization
+
+Clerk charges per Monthly Active User (MAU). With guest checkout:
+- **Admin/staff only:** 5-20 MAUs per restaurant (practically free)
+- **With optional customer accounts:** Only customers who CHOOSE to sign up count
+- **Without this pattern:** Every customer who orders = 1 MAU = $0.02 after free tier
+
+For a multi-tenant SaaS with many restaurants, this saves hundreds/month.
+
+---
+
+## 16. Common Issues
 
 ### "Missing authorization header" on every request
 

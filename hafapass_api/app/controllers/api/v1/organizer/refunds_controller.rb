@@ -70,12 +70,8 @@ module Api
               end
             end
 
-            # Send refund email
-            begin
-              EmailService.send_refund_notification(@order)
-            rescue => e
-              Rails.logger.error("Failed to send refund email: #{e.message}")
-            end
+            # Send refund email asynchronously
+            EmailService.send_refund_notification_async(@order)
 
             render json: {
               id: @order.id,

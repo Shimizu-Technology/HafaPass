@@ -1,10 +1,17 @@
 class Api::V1::Me::OrdersController < ApplicationController
+  include Paginatable
+
   def index
     orders = current_user.orders
       .includes(event: [], tickets: :ticket_type)
       .order(created_at: :desc)
 
-    render json: orders.map { |order| order_json(order) }
+    pagy, paginated_orders = paginate(orders)
+
+    render json: {
+      orders: paginated_orders.map { |order| order_json(order) },
+      meta: pagination_meta(pagy)
+    }
   end
 
   def show

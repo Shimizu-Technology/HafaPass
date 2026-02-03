@@ -155,7 +155,9 @@ export default function DashboardPage() {
    setProfile(profileRes.data)
 
    const eventsRes = await apiClient.get('/organizer/events')
-   setEvents(eventsRes.data)
+   // Handle both paginated { events: [...], meta: {...} } and legacy array response
+   const eventsData = eventsRes.data.events || eventsRes.data
+   setEvents(Array.isArray(eventsData) ? eventsData : [])
   } catch (err) {
    if (err.response?.status === 404) {
     // No organizer profile — show create form

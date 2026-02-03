@@ -30,7 +30,7 @@ export default function StripeProvider({ publishableKey, clientSecret, children 
     appearance: {
       theme: 'stripe',
       variables: {
-        colorPrimary: '#1e3a5f',
+        colorPrimary: '#0e7c7b',
         colorBackground: '#ffffff',
         colorText: '#1f2937',
         colorDanger: '#dc2626',

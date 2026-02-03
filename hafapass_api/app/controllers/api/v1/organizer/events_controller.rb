@@ -2,12 +2,19 @@ module Api
   module V1
     module Organizer
       class EventsController < ApplicationController
+        include Paginatable
+
         before_action :require_organizer_profile
         before_action :set_event, only: [:show, :update, :destroy, :publish, :stats, :attendees]
 
         def index
           events = current_organizer_profile.events.includes(:ticket_types).order(created_at: :desc)
-          render json: events.map { |event| event_json(event, include_ticket_types: true) }
+          pagy, paginated_events = paginate(events)
+
+          render json: {
+            events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
+            meta: pagination_meta(pagy)
+          }
         end
 
         def show
@@ -85,18 +92,22 @@ module Api
 
         def attendees
           tickets = @event.tickets.includes(:ticket_type, :order).order(created_at: :desc)
+          pagy, paginated_tickets = paginate(tickets)
 
-          render json: tickets.map { |ticket|
-            {
-              id: ticket.id,
-              attendee_name: ticket.attendee_name,
-              attendee_email: ticket.attendee_email,
-              ticket_type: ticket.ticket_type.name,
-              status: ticket.status,
-              checked_in_at: ticket.checked_in_at,
-              qr_code: ticket.qr_code,
-              order_id: ticket.order_id
-            }
+          render json: {
+            attendees: paginated_tickets.map { |ticket|
+              {
+                id: ticket.id,
+                attendee_name: ticket.attendee_name,
+                attendee_email: ticket.attendee_email,
+                ticket_type: ticket.ticket_type.name,
+                status: ticket.status,
+                checked_in_at: ticket.checked_in_at,
+                qr_code: ticket.qr_code,
+                order_id: ticket.order_id
+              }
+            },
+            meta: pagination_meta(pagy)
           }
         end
 

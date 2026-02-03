@@ -75,14 +75,10 @@ class WebhooksController < ActionController::API
       order.tickets.each(&:generate_qr_code!)
     end
 
-    # Send confirmation email (never breaks the webhook on failure)
-    begin
-      EmailService.send_order_confirmation(order)
-      order.tickets.each do |ticket|
-        EmailService.send_ticket_email(ticket) if ticket.attendee_email.present?
-      end
-    rescue => e
-      Rails.logger.error("Failed to send emails for order ##{order.id}: #{e.message}")
+    # Send confirmation emails asynchronously (never blocks the webhook)
+    EmailService.send_order_confirmation_async(order)
+    order.tickets.each do |ticket|
+      EmailService.send_ticket_email_async(ticket) if ticket.attendee_email.present?
     end
 
     Rails.logger.info("Order ##{order.id} completed via webhook (PI: #{payment_intent.id}, wallet: #{order.wallet_type || 'card'})")
@@ -150,12 +146,8 @@ class WebhooksController < ActionController::API
       )
     end
 
-    # Send refund notification email
-    begin
-      EmailService.send_refund_notification(order)
-    rescue => e
-      Rails.logger.error("Failed to send refund email for order ##{order.id}: #{e.message}")
-    end
+    # Send refund notification email asynchronously
+    EmailService.send_refund_notification_async(order)
 
     Rails.logger.info("Order ##{order.id} #{is_full_refund ? 'fully' : 'partially'} refunded via webhook (PI: #{payment_intent_id})")
   end

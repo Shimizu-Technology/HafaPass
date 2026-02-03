@@ -8,6 +8,25 @@ class EmailService
       ENV["RESEND_API_KEY"].present?
     end
 
+    # ── Async Methods (use these from controllers) ──────────────────
+    # These enqueue background jobs for better performance
+
+    def send_order_confirmation_async(order)
+      SendOrderConfirmationJob.perform_later(order.id)
+    end
+
+    def send_ticket_email_async(ticket)
+      SendTicketEmailJob.perform_later(ticket.id)
+    end
+
+    def send_refund_notification_async(order)
+      SendRefundNotificationJob.perform_later(order.id)
+    end
+
+    def send_guest_list_notification_async(guest_entry)
+      SendGuestListNotificationJob.perform_later(guest_entry.id)
+    end
+
     # ── Order Confirmation ──────────────────────────────────────────
     def send_order_confirmation(order)
       event = order.event
@@ -84,7 +103,7 @@ class EmailService
         </head>
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background-color: #f9fafb;">
           <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-            <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); padding: 28px; text-align: center;">
+            <div style="background: linear-gradient(135deg, #0e7c7b 0%, #14a3a1 100%); padding: 28px; text-align: center;">
               <h1 style="color: white; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px;">HafaPass</h1>
             </div>
             <div style="padding: 36px 28px;">
@@ -171,7 +190,7 @@ class EmailService
             </div>
 
             <p style="margin: 0 0 20px;">
-              <a href="#{ticket_url(ticket)}" style="display: inline-block; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: white; padding: 14px 32px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 16px;">View Your Ticket</a>
+              <a href="#{ticket_url(ticket)}" style="display: inline-block; background: linear-gradient(135deg, #e85a4f 0%, #d64545 100%); color: white; padding: 14px 32px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 16px;">View Your Ticket</a>
             </p>
 
             <p style="color: #6b7280; font-size: 14px; margin: 0;">Present your QR code at the door for entry.</p>

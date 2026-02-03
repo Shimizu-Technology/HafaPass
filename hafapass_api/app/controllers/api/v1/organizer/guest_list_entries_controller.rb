@@ -2,6 +2,8 @@ module Api
   module V1
     module Organizer
       class GuestListEntriesController < ApplicationController
+        include Paginatable
+
         before_action :require_organizer_profile
         before_action :set_event
         before_action :set_entry, only: [:update, :destroy, :redeem]
@@ -11,7 +13,13 @@ module Api
           entries = @event.guest_list_entries
             .includes(:ticket_type, :order)
             .order(created_at: :desc)
-          render json: entries.map { |e| entry_json(e) }
+
+          pagy, paginated_entries = paginate(entries)
+
+          render json: {
+            guest_list: paginated_entries.map { |e| entry_json(e) },
+            meta: pagination_meta(pagy)
+          }
         end
 
         # POST /api/v1/organizer/events/:event_id/guest_list
@@ -20,12 +28,8 @@ module Api
           entry.added_by = current_user.email
 
           if entry.save
-            # Send notification email if guest has email
-            begin
-              EmailService.send_guest_list_notification(entry)
-            rescue => e
-              Rails.logger.error("Failed to send guest list notification: #{e.message}")
-            end
+            # Send notification email asynchronously if guest has email
+            EmailService.send_guest_list_notification_async(entry)
 
             render json: entry_json(entry), status: :created
           else
@@ -105,12 +109,8 @@ module Api
             @entry.redeem!(order)
           end
 
-          # Send ticket emails
-          begin
-            EmailService.send_order_confirmation(@entry.order)
-          rescue => e
-            Rails.logger.error("Failed to send comp ticket email: #{e.message}")
-          end
+          # Send ticket emails asynchronously
+          EmailService.send_order_confirmation_async(@entry.order)
 
           render json: entry_json(@entry.reload)
         end

@@ -14,8 +14,9 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
-      expect(json.length).to eq(2)
-      titles = json.map { |e| e["title"] }
+      events = json["events"]
+      expect(events.length).to eq(2)
+      titles = events.map { |e| e["title"] }
       expect(titles).to include("Event 1", "Event 2")
     end
 
@@ -27,7 +28,8 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       get "/api/v1/organizer/events", headers: headers
 
       json = JSON.parse(response.body)
-      expect(json.length).to eq(1)
+      events = json["events"]
+      expect(events.length).to eq(1)
     end
 
     it "returns 401 without authentication" do
@@ -54,8 +56,9 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       get "/api/v1/organizer/events", headers: headers
 
       json = JSON.parse(response.body)
-      expect(json.first["id"]).to eq(new_event.id)
-      expect(json.last["id"]).to eq(old_event.id)
+      events = json["events"]
+      expect(events.first["id"]).to eq(new_event.id)
+      expect(events.last["id"]).to eq(old_event.id)
     end
   end
 
@@ -275,12 +278,13 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
-      expect(json.length).to eq(2)
-      statuses = json.map { |a| a["status"] }
+      attendees = json["attendees"]
+      expect(attendees.length).to eq(2)
+      statuses = attendees.map { |a| a["status"] }
       expect(statuses).to include("issued", "checked_in")
-      expect(json.first).to have_key("attendee_name")
-      expect(json.first).to have_key("qr_code")
-      expect(json.first).to have_key("ticket_type")
+      expect(attendees.first).to have_key("attendee_name")
+      expect(attendees.first).to have_key("qr_code")
+      expect(attendees.first).to have_key("ticket_type")
     end
   end
 end

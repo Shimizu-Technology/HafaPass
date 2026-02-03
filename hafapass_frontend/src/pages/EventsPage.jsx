@@ -10,7 +10,12 @@ export default function EventsPage() {
 
   useEffect(() => {
     apiClient.get('/events')
-      .then(res => { setEvents(res.data); setLoading(false) })
+      .then(res => {
+        // Handle both paginated { events: [...], meta: {...} } and legacy array response
+        const data = res.data.events || res.data
+        setEvents(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
   }, [])
 

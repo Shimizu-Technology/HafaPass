@@ -61,7 +61,9 @@ export default function EventAnalyticsPage() {
   setAttendeesLoading(true)
   try {
    const res = await apiClient.get(`/organizer/events/${id}/attendees`)
-   setAttendees(res.data)
+   // Handle both paginated { attendees: [...], meta: {...} } and legacy array response
+   const attendeesData = res.data.attendees || res.data
+   setAttendees(Array.isArray(attendeesData) ? attendeesData : [])
    setShowAttendees(true)
   } catch {
    setError('Failed to load attendees.')

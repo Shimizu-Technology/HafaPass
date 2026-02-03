@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_01_150135) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_02_004000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -123,7 +123,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_150135) do
     t.string "platform_phone"
     t.integer "service_fee_flat_cents", default: 50
     t.decimal "service_fee_percent", precision: 5, scale: 2, default: "3.0"
+    t.integer "singleton_guard", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
   end
 
   create_table "ticket_types", force: :cascade do |t|

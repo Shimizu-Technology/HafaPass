@@ -5,6 +5,12 @@ RSpec.describe "Api::V1::Orders", type: :request do
   let(:event) { create(:event, :published, organizer_profile: organizer_profile, starts_at: 5.days.from_now) }
   let!(:ga_ticket) { create(:ticket_type, event: event, name: "General Admission", price_cents: 2500, quantity_available: 100) }
   let!(:vip_ticket) { create(:ticket_type, :vip, event: event, price_cents: 7500, quantity_available: 20) }
+  let(:json_headers) { { "Content-Type" => "application/json" } }
+
+  # Helper for sending JSON POST requests
+  def post_json(path, params:, headers: {})
+    post path, params: params.to_json, headers: json_headers.merge(headers)
+  end
 
   describe "POST /api/v1/orders" do
     let(:valid_params) do
@@ -22,7 +28,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
 
     context "with valid params" do
       it "creates an order with correct totals" do
-        post "/api/v1/orders", params: valid_params
+        post_json "/api/v1/orders", params: valid_params
 
         expect(response).to have_http_status(:created)
         json = JSON.parse(response.body)
@@ -39,7 +45,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
 
       it "creates tickets for each line item" do
-        post "/api/v1/orders", params: valid_params
+        post_json "/api/v1/orders", params: valid_params
 
         json = JSON.parse(response.body)
         expect(json["tickets"].length).to eq(3)
@@ -48,7 +54,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
 
       it "generates unique QR codes for each ticket" do
-        post "/api/v1/orders", params: valid_params
+        post_json "/api/v1/orders", params: valid_params
 
         json = JSON.parse(response.body)
         qr_codes = json["tickets"].map { |t| t["qr_code"] }
@@ -59,14 +65,14 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
 
       it "increments quantity_sold on ticket types" do
-        post "/api/v1/orders", params: valid_params
+        post_json "/api/v1/orders", params: valid_params
 
         expect(ga_ticket.reload.quantity_sold).to eq(2)
         expect(vip_ticket.reload.quantity_sold).to eq(1)
       end
 
       it "sets attendee info from buyer info" do
-        post "/api/v1/orders", params: valid_params
+        post_json "/api/v1/orders", params: valid_params
 
         json = JSON.parse(response.body)
         json["tickets"].each do |ticket|
@@ -76,7 +82,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
 
       it "sets order to completed with completed_at" do
-        post "/api/v1/orders", params: valid_params
+        post_json "/api/v1/orders", params: valid_params
 
         json = JSON.parse(response.body)
         expect(json["status"]).to eq("completed")
@@ -84,7 +90,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
 
       it "works without authentication (guest checkout)" do
-        post "/api/v1/orders", params: valid_params
+        post_json "/api/v1/orders", params: valid_params
 
         expect(response).to have_http_status(:created)
         order = Order.last
@@ -95,7 +101,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         user = create(:user)
         headers = auth_headers(user)
 
-        post "/api/v1/orders", params: valid_params, headers: headers
+        post_json "/api/v1/orders", params: valid_params, headers: headers
 
         expect(response).to have_http_status(:created)
         order = Order.last
@@ -109,7 +115,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
           line_items: [{ ticket_type_id: ga_ticket.id, quantity: 101 }]
         )
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
@@ -121,7 +127,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
           line_items: [{ ticket_type_id: vip_ticket.id, quantity: 5 }]
         )
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
@@ -133,7 +139,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
           line_items: [{ ticket_type_id: ga_ticket.id, quantity: 101 }]
         )
 
-        expect { post "/api/v1/orders", params: params }
+        expect { post_json "/api/v1/orders", params: params }
           .not_to change { [Order.count, Ticket.count] }
       end
 
@@ -142,7 +148,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
           line_items: [{ ticket_type_id: ga_ticket.id, quantity: 101 }]
         )
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(ga_ticket.reload.quantity_sold).to eq(0)
       end
@@ -152,7 +158,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       it "returns 422 when buyer_email is missing" do
         params = valid_params.merge(buyer_email: nil)
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
@@ -162,7 +168,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       it "returns 422 when buyer_name is missing" do
         params = valid_params.merge(buyer_name: nil)
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
@@ -172,7 +178,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       it "returns 422 when line_items is missing" do
         params = valid_params.except(:line_items)
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
@@ -182,7 +188,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       it "returns 404 when event not found" do
         params = valid_params.merge(event_id: 99999)
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:not_found)
         json = JSON.parse(response.body)
@@ -193,7 +199,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         draft_event = create(:event, organizer_profile: organizer_profile)
         params = valid_params.merge(event_id: draft_event.id)
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:not_found)
       end
@@ -206,7 +212,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
           line_items: [{ ticket_type_id: other_tt.id, quantity: 1 }]
         )
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
@@ -218,7 +224,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
           line_items: [{ ticket_type_id: ga_ticket.id, quantity: 0 }]
         )
 
-        post "/api/v1/orders", params: params
+        post_json "/api/v1/orders", params: params
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)

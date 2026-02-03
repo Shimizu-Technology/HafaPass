@@ -136,11 +136,8 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     # Simulate mode or free events: order already completed
-    begin
-      EmailService.send_order_confirmation(@order)
-    rescue => e
-      Rails.logger.error("Failed to send order confirmation email for order ##{@order.id}: #{e.message}")
-    end
+    # Send confirmation email asynchronously
+    EmailService.send_order_confirmation_async(@order)
 
     render json: order_json(@order).merge(
       payment_mode: StripeService.payment_mode

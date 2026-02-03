@@ -15,7 +15,7 @@
   }
 
   ::selection {
-    background-color: rgb(30 58 95 / 0.2);
+    background-color: rgb(14 124 123 / 0.2);
     @apply text-brand-900;
   }
 }
@@ -45,7 +45,7 @@
     @apply w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl text-neutral-900
            placeholder:text-neutral-400 transition-all duration-200
            focus:outline-none focus:ring-2 focus:border-brand-500;
-    --tw-ring-color: rgb(30 58 95 / 0.2);
+    --tw-ring-color: rgb(14 124 123 / 0.2);
   }
 
   .input-error {

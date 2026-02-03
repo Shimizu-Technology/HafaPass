@@ -8,29 +8,29 @@ export default {
     extend: {
       colors: {
         brand: {
-          50:  '#f0f4f8',
-          100: '#d9e2ec',
-          200: '#bcccdc',
-          300: '#9fb3c8',
-          400: '#829ab1',
-          500: '#1e3a5f',  // deep ocean blue — primary
-          600: '#1a3354',
-          700: '#152b49',
-          800: '#10233e',
-          900: '#0b1a2e',
-          950: '#060f1a',
+          50:  '#f0fdfc',
+          100: '#ccfbf6',
+          200: '#9af5ed',
+          300: '#5fe9df',
+          400: '#2dd4c8',
+          500: '#0e7c7b',  // warm ocean teal — Tumon Bay
+          600: '#0a6362',
+          700: '#0a5c5b',
+          800: '#0c4a49',
+          900: '#0e3d3c',
+          950: '#042525',
         },
         accent: {
-          50:  '#fff8f0',
-          100: '#ffedd5',
-          200: '#fed7aa',
-          300: '#fdba74',
-          400: '#fb923c',
-          500: '#f97316',  // warm orange — Guam sunset
-          600: '#ea580c',
-          700: '#c2410c',
-          800: '#9a3412',
-          900: '#7c2d12',
+          50:  '#fef3f2',
+          100: '#ffe1df',
+          200: '#ffc9c5',
+          300: '#ffa39d',
+          400: '#fc7168',
+          500: '#e85a4f',  // coral-red — sunset + Ambros harmony
+          600: '#d64545',
+          700: '#b33a3a',
+          800: '#943434',
+          900: '#7c3232',
         },
         neutral: {
           50:  '#fafaf9',

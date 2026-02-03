@@ -18,7 +18,9 @@ export default function MyTicketsPage() {
     setError(null)
     try {
       const response = await apiClient.get('/me/orders')
-      setOrders(response.data)
+      // Handle both paginated { orders: [...], meta: {...} } and legacy array response
+      const data = response.data.orders || response.data
+      setOrders(Array.isArray(data) ? data : [])
     } catch (err) {
       if (err.response?.status === 401) {
         setError('Please sign in to view your tickets.')

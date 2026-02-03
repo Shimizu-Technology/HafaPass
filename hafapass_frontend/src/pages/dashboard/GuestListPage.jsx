@@ -18,7 +18,9 @@ export default function GuestListPage() {
     apiClient.get(`/organizer/events/${eventId}/guest_list`),
     apiClient.get(`/organizer/events/${eventId}`),
    ])
-   setEntries(entriesRes.data)
+   // Handle both paginated { guest_list: [...], meta: {...} } and legacy array response
+   const entriesData = entriesRes.data.guest_list || entriesRes.data
+   setEntries(Array.isArray(entriesData) ? entriesData : [])
    setTicketTypes(eventRes.data.ticket_types || [])
    if (!form.ticket_type_id && eventRes.data.ticket_types?.length > 0) {
     setForm(f => ({ ...f, ticket_type_id: eventRes.data.ticket_types[0].id }))
