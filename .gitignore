@@ -70,3 +70,6 @@ coverage/
 # Misc
 *.pem
 *.key
+
+# Local Netlify folder
+.netlify

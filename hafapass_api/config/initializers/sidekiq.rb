@@ -4,11 +4,7 @@
 # https://github.com/sidekiq/sidekiq
 
 if defined?(Sidekiq)
-  redis_url = if Rails.env.production?
-    ENV.fetch("REDIS_URL") # Fail loudly in production if REDIS_URL is missing
-  else
-    ENV.fetch("REDIS_URL", "redis://localhost:6379/0")
-  end
+  redis_url = ENV.fetch("REDIS_URL", "redis://localhost:6379/0")
 
   Sidekiq.configure_server do |config|
     config.redis = { url: redis_url }

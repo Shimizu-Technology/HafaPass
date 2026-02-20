@@ -10,3 +10,7 @@
 !.env.example
 /vendor/bundle
 .cache/
+
+# Ignore key files for decrypting credentials and more.
+/config/*.key
+
