@@ -140,7 +140,8 @@ module Api
             :title, :description, :short_description, :cover_image_url,
             :venue_name, :venue_address, :venue_city,
             :starts_at, :ends_at, :doors_open_at, :timezone,
-            :category, :age_restriction, :max_capacity, :is_featured
+            :category, :age_restriction, :max_capacity, :is_featured,
+            :status
           )
         end
 

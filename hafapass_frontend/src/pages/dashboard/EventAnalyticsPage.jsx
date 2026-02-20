@@ -274,13 +274,18 @@ export default function EventAnalyticsPage() {
    <div className="bg-white rounded-xl shadow-sm border border-neutral-200">
     <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
      <h2 className="text-lg font-semibold text-neutral-900">Attendees</h2>
-     <button
-      onClick={handleToggleAttendees}
-      disabled={attendeesLoading}
-      className="text-sm text-brand-500 hover:text-brand-700 font-medium disabled:opacity-50"
-     >
-      {attendeesLoading ? 'Loading...' : showAttendees ? 'Hide' : 'View All'}
-     </button>
+     <div className="flex items-center gap-3">
+      <Link to={`/dashboard/events/${id}/attendees`} className="text-sm text-brand-500 hover:text-brand-700 font-medium">
+       Full List →
+      </Link>
+      <button
+       onClick={handleToggleAttendees}
+       disabled={attendeesLoading}
+       className="text-sm text-brand-500 hover:text-brand-700 font-medium disabled:opacity-50"
+      >
+       {attendeesLoading ? 'Loading...' : showAttendees ? 'Hide' : 'View All'}
+      </button>
+     </div>
     </div>
     {showAttendees && attendees && (
      attendees.length > 0 ? (

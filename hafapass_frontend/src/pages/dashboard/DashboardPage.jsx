@@ -1,5 +1,5 @@
-import { Loader2 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { Loader2, Pencil, X, Upload } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 
@@ -141,11 +141,109 @@ function EventListCard({ event }) {
  )
 }
 
+function EditProfileModal({ profile, onClose, onSaved }) {
+ const [businessName, setBusinessName] = useState(profile.business_name || '')
+ const [description, setDescription] = useState(profile.business_description || '')
+ const [logoUrl, setLogoUrl] = useState(profile.logo_url || '')
+ const [saving, setSaving] = useState(false)
+ const [uploading, setUploading] = useState(false)
+ const [error, setError] = useState(null)
+ const fileRef = useRef(null)
+
+ const handleLogoUpload = async (file) => {
+  if (!file) return
+  const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
+  if (!ACCEPTED.includes(file.type)) { setError('Please upload JPG, PNG, or WebP'); return }
+  if (file.size > 5 * 1024 * 1024) { setError('Image must be under 5MB'); return }
+  setUploading(true)
+  setError(null)
+  try {
+   const presignRes = await apiClient.post('/uploads/presign', { filename: file.name, content_type: file.type })
+   const { url, fields, public_url } = presignRes.data
+   if (fields) {
+    const fd = new FormData()
+    Object.entries(fields).forEach(([k, v]) => fd.append(k, v))
+    fd.append('file', file)
+    await fetch(url, { method: 'POST', body: fd })
+   } else {
+    await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+   }
+   setLogoUrl(public_url || url.split('?')[0])
+  } catch {
+   setError('Logo upload failed')
+  } finally {
+   setUploading(false)
+  }
+ }
+
+ const handleSubmit = async (e) => {
+  e.preventDefault()
+  if (!businessName.trim()) { setError('Business name is required'); return }
+  setSaving(true)
+  setError(null)
+  try {
+   await apiClient.put('/organizer_profile', {
+    business_name: businessName.trim(),
+    business_description: description.trim(),
+    logo_url: logoUrl || null
+   })
+   onSaved()
+  } catch (err) {
+   setError(err.response?.data?.errors?.[0] || err.response?.data?.error || 'Failed to update profile')
+  } finally {
+   setSaving(false)
+  }
+ }
+
+ return (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+   <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+    <div className="flex items-center justify-between mb-4">
+     <h3 className="text-lg font-semibold text-neutral-900">Edit Profile</h3>
+     <button onClick={onClose} className="p-1 text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
+    </div>
+    {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+    <form onSubmit={handleSubmit} className="space-y-4">
+     <div>
+      <label className="block text-sm font-medium text-neutral-700 mb-1">Logo</label>
+      <div className="flex items-center gap-3">
+       {logoUrl ? (
+        <img src={logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover border border-neutral-200" />
+       ) : (
+        <div className="w-12 h-12 rounded-xl bg-neutral-100 flex items-center justify-center">
+         <Upload className="w-5 h-5 text-neutral-400" />
+        </div>
+       )}
+       <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="text-sm text-brand-500 hover:text-brand-700 font-medium">
+        {uploading ? 'Uploading...' : logoUrl ? 'Change' : 'Upload Logo'}
+       </button>
+       <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={e => handleLogoUpload(e.target.files[0])} />
+      </div>
+     </div>
+     <div>
+      <label className="block text-sm font-medium text-neutral-700 mb-1">Business Name <span className="text-red-500">*</span></label>
+      <input value={businessName} onChange={e => setBusinessName(e.target.value)} className="input" disabled={saving} />
+     </div>
+     <div>
+      <label className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
+      <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="input" disabled={saving} />
+     </div>
+     <div className="flex gap-3 justify-end">
+      <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm font-medium text-neutral-700 hover:text-neutral-900">Cancel</button>
+      <button type="submit" disabled={saving} className="btn-primary text-sm px-4 py-2">{saving ? 'Saving...' : 'Save'}</button>
+     </div>
+    </form>
+   </div>
+  </div>
+ )
+}
+
 export default function DashboardPage() {
  const [profile, setProfile] = useState(null)
  const [events, setEvents] = useState([])
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
+ const [showEditProfile, setShowEditProfile] = useState(false)
 
  const fetchDashboard = async () => {
   setLoading(true)
@@ -212,7 +310,12 @@ export default function DashboardPage() {
   <div className="max-w-4xl mx-auto px-4 py-8">
    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
     <div>
-     <h1 className="text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
+     <div className="flex items-center gap-2">
+      <h1 className="text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
+      <button onClick={() => setShowEditProfile(true)} className="p-1.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
+       <Pencil className="w-4 h-4" />
+      </button>
+     </div>
      <p className="text-neutral-600 mt-1">Manage your events and track ticket sales</p>
     </div>
     <div className="flex items-center gap-3">
@@ -246,6 +349,14 @@ export default function DashboardPage() {
      </Link>
     </div>
    </div>
+
+   {showEditProfile && (
+    <EditProfileModal
+     profile={profile}
+     onClose={() => setShowEditProfile(false)}
+     onSaved={() => { setShowEditProfile(false); fetchDashboard() }}
+    />
+   )}
 
    {events.length === 0 ? (
     <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-12 text-center">

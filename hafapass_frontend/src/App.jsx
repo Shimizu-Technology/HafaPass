@@ -25,6 +25,7 @@ const SettingsPage = lazy(() => import('./pages/dashboard/SettingsPage'))
 const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
 const GuestListPage = lazy(() => import('./pages/dashboard/GuestListPage'))
 const RefundsPage = lazy(() => import('./pages/dashboard/RefundsPage'))
+const AttendeesPage = lazy(() => import('./pages/dashboard/AttendeesPage'))
 
 function PageLoader() {
   return (
@@ -53,6 +54,7 @@ function App() {
           <Route path="/dashboard/events/:id/promo-codes" element={<ProtectedRoute><PromoCodesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/guest-list" element={<ProtectedRoute><GuestListPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/refunds" element={<ProtectedRoute><RefundsPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id/attendees" element={<ProtectedRoute><AttendeesPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
