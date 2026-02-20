@@ -6,9 +6,11 @@ RUN apt-get update -qq && \
 
 WORKDIR /app
 
+ENV RAILS_ENV=production \
+    BUNDLE_WITHOUT="development:test"
+
 COPY Gemfile Gemfile.lock ./
-RUN bundle config set --local without 'development test' && \
-    bundle install
+RUN bundle install --jobs 4
 
 COPY . .
 
