@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Loader2, Calendar, Users, DollarSign, Ticket, ArrowRight } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
+import { StaggerContainer, StaggerItem } from '../../components/ui/ScrollReveal'
 
 function StatCard({ label, value, icon: Icon, color }) {
   return (
@@ -47,12 +48,12 @@ export default function AdminDashboardPage() {
 
   return (
     <AdminLayout>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Events" value={totalEvents} icon={Calendar} color="bg-brand-500" />
-        <StatCard label="Total Users" value={totalUsers} icon={Users} color="bg-indigo-500" />
-        <StatCard label="Revenue" value={revenue} icon={DollarSign} color="bg-emerald-500" />
-        <StatCard label="Tickets Sold" value={data.total_tickets_sold} icon={Ticket} color="bg-coral-500" />
-      </div>
+      <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StaggerItem><StatCard label="Total Events" value={totalEvents} icon={Calendar} color="bg-brand-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Total Users" value={totalUsers} icon={Users} color="bg-indigo-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Revenue" value={revenue} icon={DollarSign} color="bg-emerald-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Tickets Sold" value={data.total_tickets_sold} icon={Ticket} color="bg-coral-500" /></StaggerItem>
+      </StaggerContainer>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Events */}

@@ -365,7 +365,7 @@ export default function CheckoutPage() {
                     className="input" placeholder="(671) 555-0123" disabled={submitting} />
                 </div>
               </div>
-              <button type="submit" disabled={submitting} className="w-full mt-6 btn-primary text-base !py-4">
+              <button type="submit" disabled={submitting} className="w-full mt-6 btn-primary text-base !py-4 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0 transition-all duration-200">
                 {submitting
                   ? (isSimulate ? 'Placing order...' : 'Setting up payment...')
                   : (isSimulate ? `Place Order \u2014 ${formatPrice(totalCents)}` : `Continue to Payment \u2014 ${formatPrice(totalCents)}`)}

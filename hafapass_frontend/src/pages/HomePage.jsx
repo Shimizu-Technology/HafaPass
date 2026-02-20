@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { Calendar, MapPin, ArrowRight, Clock, Sparkles } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
+import { FadeUp } from '../components/ui/ScrollReveal'
+import NoiseOverlay from '../components/ui/NoiseOverlay'
 
 const CATEGORY_IMAGES = [
   { name: 'Nightlife', slug: 'nightlife', image: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=800' },
@@ -45,7 +47,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiClient.get('/api/v1/events')
+    apiClient.get('/events')
       .then(res => {
         const data = res.data.events || res.data
         setEvents(Array.isArray(data) ? data : [])
@@ -92,6 +94,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-neutral-950">
       {/* ── Featured Event Hero ── */}
       <section className="relative h-[85vh] min-h-[560px] max-h-[800px] overflow-hidden">
+        <NoiseOverlay />
         {featuredEvent ? (
           <>
             <div
@@ -105,7 +108,7 @@ export default function HomePage() {
                   <Sparkles className="w-3.5 h-3.5 text-accent-400" />
                   Featured Event
                 </div>
-                <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-4 max-w-3xl">
+                <h1 className="font-display text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-4 max-w-3xl">
                   {featuredEvent.title}
                 </h1>
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-white/70 text-base lg:text-lg mb-8">
@@ -122,7 +125,7 @@ export default function HomePage() {
                 </div>
                 <Link
                   to={`/events/${featuredEvent.slug || featuredEvent.id}`}
-                  className="inline-flex items-center gap-2 px-8 py-4 bg-accent-500 hover:bg-accent-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:shadow-lg hover:shadow-accent-500/25"
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-accent-500 hover:bg-accent-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:-translate-y-0.5 hover:shadow-lg hover:shadow-accent-500/25 active:translate-y-0"
                 >
                   Get Tickets
                   <ArrowRight className="w-5 h-5" />
@@ -137,7 +140,7 @@ export default function HomePage() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(255,107,107,0.08),transparent_50%)]" />
             <div className="relative h-full flex items-center justify-center text-center px-6">
               <div>
-                <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-6 max-w-3xl">
+                <h1 className="font-display text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-6 max-w-3xl">
                   {hasEvents ? (
                     <>Discover Events on <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent">Guam</span></>
                   ) : (
@@ -151,7 +154,7 @@ export default function HomePage() {
                 </p>
                 <Link
                   to={hasEvents ? '/events' : '/sign-up'}
-                  className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg"
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0"
                 >
                   {hasEvents ? 'Browse Events' : 'Start Hosting'}
                   <ArrowRight className="w-5 h-5" />
@@ -167,8 +170,9 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto px-6 lg:px-8">
           {dayKeys.length > 0 ? (
             <>
+              <FadeUp>
               <div className="flex items-end justify-between mb-12">
-                <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight">
+                <h2 className="font-display text-3xl lg:text-4xl font-bold text-white tracking-tight">
                   {sectionTitle}
                 </h2>
                 <Link to="/events" className="hidden sm:flex items-center gap-1.5 text-brand-400 hover:text-brand-300 font-medium transition-colors">
@@ -235,11 +239,12 @@ export default function HomePage() {
               <Link to="/events" className="sm:hidden flex items-center justify-center gap-1.5 text-brand-400 hover:text-brand-300 font-medium mt-8 transition-colors">
                 View all events <ArrowRight className="w-4 h-4" />
               </Link>
+              </FadeUp>
             </>
           ) : (
             !loading && (
               <div className="text-center py-12">
-                <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">This Week on Guam</h2>
+                <h2 className="font-display text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">This Week on Guam</h2>
                 <p className="text-white/40 text-lg">No events yet — check back soon!</p>
               </div>
             )
@@ -250,7 +255,8 @@ export default function HomePage() {
       {/* ── Category Browsing ── */}
       <section className="py-16 lg:py-24 bg-neutral-900/50">
         <div className="max-w-6xl mx-auto px-6 lg:px-8">
-          <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-12">
+          <FadeUp>
+          <h2 className="font-display text-3xl lg:text-4xl font-bold text-white tracking-tight mb-12">
             Explore by Category
           </h2>
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
@@ -272,6 +278,7 @@ export default function HomePage() {
               </Link>
             ))}
           </div>
+          </FadeUp>
         </div>
       </section>
 
@@ -286,7 +293,7 @@ export default function HomePage() {
           </p>
           <Link
             to="/sign-up"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg"
+            className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0"
           >
             Start Hosting
             <ArrowRight className="w-5 h-5" />

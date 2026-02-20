@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
+import NoiseOverlay from './ui/NoiseOverlay'
 
 export default function Footer() {
   return (
-    <footer className="bg-brand-950 text-neutral-400 py-14">
-      <div className="max-w-6xl mx-auto px-6 lg:px-8">
+    <footer className="bg-brand-950 text-neutral-400 py-14 relative">
+      <NoiseOverlay />
+      <div className="max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 mb-10">
           {/* Brand */}
           <div className="lg:col-span-1">

@@ -1,10 +1,10 @@
 # HafaPass - Seed Data
-# Creates realistic sample data for development and frontend verification
+# Based on real Guam events and venues for realistic demonstration
 #
 # Usage: rails db:seed
 # To reset: rails db:reset (drops, creates, migrates, seeds)
 
-puts "Seeding HafaPass development data..."
+puts "Seeding HafaPass with real Guam event data..."
 
 # Clear existing data in correct order (respecting foreign keys)
 Ticket.destroy_all
@@ -16,9 +16,7 @@ User.destroy_all
 
 puts "  Cleared existing data."
 
-# --- Users ---
-
-# Platform Admin
+# --- Platform Admin ---
 admin_user = User.create!(
   clerk_id: "clerk_admin_leon",
   email: "shimizutechnology@gmail.com",
@@ -28,26 +26,55 @@ admin_user = User.create!(
   role: :admin
 )
 
-organizer1 = User.create!(
-  clerk_id: "clerk_organizer_island_nights",
-  email: "carlos@islandnights.gu",
+# --- Organizers (inspired by real Guam event promoters) ---
+org_guamtime = User.create!(
+  clerk_id: "clerk_org_guamtime",
+  email: "events@guamtime.net",
+  first_name: "Tony",
+  last_name: "Ada",
+  phone: "+1-671-888-0101",
+  role: :organizer
+)
+
+org_bwtc = User.create!(
+  clerk_id: "clerk_org_bwtc",
+  email: "info@bwtcguam.com",
+  first_name: "Ashley",
+  last_name: "Cruz",
+  phone: "+1-671-888-0202",
+  role: :organizer
+)
+
+org_heritage = User.create!(
+  clerk_id: "clerk_org_heritage",
+  email: "cultural@guamheritage.org",
+  first_name: "Carmen",
+  last_name: "Taitano",
+  phone: "+1-671-888-0303",
+  role: :organizer
+)
+
+org_nightlife = User.create!(
+  clerk_id: "clerk_org_nightlife",
+  email: "bookings@islandnightsgu.com",
   first_name: "Carlos",
   last_name: "Santos",
-  phone: "+1-671-555-0101",
+  phone: "+1-671-888-0404",
   role: :organizer
 )
 
-organizer2 = User.create!(
-  clerk_id: "clerk_organizer_beach_club",
-  email: "maria@guambeachclub.com",
-  first_name: "Maria",
-  last_name: "Cruz",
-  phone: "+1-671-555-0202",
+org_sports = User.create!(
+  clerk_id: "clerk_org_sports",
+  email: "events@guambasketball.com",
+  first_name: "John",
+  last_name: "Quinata",
+  phone: "+1-671-888-0505",
   role: :organizer
 )
 
+# --- Attendees ---
 attendee1 = User.create!(
-  clerk_id: "clerk_attendee_jake",
+  clerk_id: "clerk_att_jake",
   email: "jake.miller@navy.mil",
   first_name: "Jake",
   last_name: "Miller",
@@ -56,7 +83,7 @@ attendee1 = User.create!(
 )
 
 attendee2 = User.create!(
-  clerk_id: "clerk_attendee_sarah",
+  clerk_id: "clerk_att_sarah",
   email: "sarah.tanaka@gmail.com",
   first_name: "Sarah",
   last_name: "Tanaka",
@@ -65,7 +92,7 @@ attendee2 = User.create!(
 )
 
 attendee3 = User.create!(
-  clerk_id: "clerk_attendee_mike",
+  clerk_id: "clerk_att_mike",
   email: "mike.reyes@yahoo.com",
   first_name: "Mike",
   last_name: "Reyes",
@@ -73,61 +100,237 @@ attendee3 = User.create!(
   role: :attendee
 )
 
-puts "  Created #{User.count} users."
+attendee4 = User.create!(
+  clerk_id: "clerk_att_maria",
+  email: "maria.pangelinan@gmail.com",
+  first_name: "Maria",
+  last_name: "Pangelinan",
+  phone: "+1-671-555-0304",
+  role: :attendee
+)
+
+puts "  Created #{User.count} users (1 admin, #{User.where(role: :organizer).count} organizers, #{User.where(role: :attendee).count} attendees)."
 
 # --- Organizer Profiles ---
-
-profile1 = OrganizerProfile.create!(
-  user: organizer1,
-  business_name: "Island Nights Promotions",
-  business_description: "Guam's premier nightlife and event promotion company. We bring the best DJs, artists, and experiences to the island.",
+profile_guamtime = OrganizerProfile.create!(
+  user: org_guamtime,
+  business_name: "GuamTime Events",
+  business_description: "Guam's premier event promotion and ticketing platform. We bring the best concerts, festivals, and experiences to the island.",
   is_ambros_partner: true
 )
 
-profile2 = OrganizerProfile.create!(
-  user: organizer2,
-  business_name: "Guam Beach Club",
-  business_description: "Beachfront venue and event space in Tumon Bay. Perfect for concerts, festivals, and private events with stunning ocean views.",
+profile_bwtc = OrganizerProfile.create!(
+  user: org_bwtc,
+  business_name: "Breaking Wave Theatre Company",
+  business_description: "Guam's community theatre company dedicated to storytelling, creative arts, and bringing unique performance experiences to the island.",
+  is_ambros_partner: false
+)
+
+profile_heritage = OrganizerProfile.create!(
+  user: org_heritage,
+  business_name: "Humåtak Heritage Foundation",
+  business_description: "Preserving and celebrating CHamoru heritage through annual festivals, cultural events, and community gatherings in the historic village of Umatac.",
   is_ambros_partner: true
+)
+
+profile_nightlife = OrganizerProfile.create!(
+  user: org_nightlife,
+  business_name: "Island Nights Promotions",
+  business_description: "Guam's hottest nightlife events — beach parties, DJ nights, and premium club experiences across the island.",
+  is_ambros_partner: true
+)
+
+profile_sports = OrganizerProfile.create!(
+  user: org_sports,
+  business_name: "Guam Basketball Confederation",
+  business_description: "Official organizing body for basketball events on Guam, including FIBA World Cup qualifiers and local tournaments.",
+  is_ambros_partner: false
 )
 
 puts "  Created #{OrganizerProfile.count} organizer profiles."
 
-# --- Events ---
+# --- Events (based on real Guam events) ---
 
-# Event 1: Nightlife (published, upcoming, featured)
+# Event 1: Hafaloha Concert Series — J Boog (FEATURED, upcoming)
 event1 = Event.create!(
-  organizer_profile: profile1,
-  title: "Full Moon Beach Party",
-  description: "Dance under the full moon at Tumon Bay! Featuring DJ Kiko spinning tropical house, live fire dancers, and island cocktail specials all night long. The ultimate beach party experience on Guam.",
-  short_description: "Full moon beach party with DJ Kiko and fire dancers at Tumon Bay",
+  organizer_profile: profile_guamtime,
+  title: "Hafaloha Concert Series Part 5: featuring J Boog",
+  description: "The Hafaloha Concert Series returns with Part 5, headlined by island reggae superstar J Boog! Known for hits like 'Let's Do It Again' and 'Sunshine Girl,' J Boog brings his signature sound to Guam for an unforgettable evening under the stars at Ypao Beach Park. Local opening acts, food trucks, craft beer garden, and good vibes all night long. This is THE concert event of the spring — don't miss it!",
+  short_description: "Island reggae superstar J Boog live at Ypao Beach Park with local opening acts and food trucks",
+  venue_name: "Ypao Beach Park",
+  venue_address: "Ypao Road",
+  venue_city: "Tumon",
+  starts_at: 14.days.from_now.change(hour: 17, min: 0),
+  ends_at: 14.days.from_now.change(hour: 23, min: 0),
+  doors_open_at: 14.days.from_now.change(hour: 16, min: 0),
+  status: :published,
+  published_at: 7.days.ago,
+  category: :concert,
+  age_restriction: :all_ages,
+  max_capacity: 3000,
+  is_featured: true,
+  cover_image_url: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=1200"
+)
+
+# Event 2: Humåtak CHamoru Heritage Festival (FEATURED, upcoming)
+event2 = Event.create!(
+  organizer_profile: profile_heritage,
+  title: "Humåtak Guam History & CHamoru Heritage Day Festival 2026",
+  description: "Celebrate Culture at the 2026 Humåtak Guam History & CHamoru Heritage Day Festival! Located in the historic village of Umatac, this four-day celebration honors the island's indigenous roots. Explore historical landmarks around Umatac Bay, see displays of local craftsmanship including weaving and carving inspired by the ancient Latte Stone culture, enjoy authentic island cuisine, and experience live entertainment that captures the spirit of the Mariana Islands. A family-friendly event perfect for those interested in Guam history and community celebrations.",
+  short_description: "Four-day cultural celebration in historic Umatac honoring CHamoru heritage with food, music, and traditional crafts",
+  venue_name: "Umatac Festival Grounds",
+  venue_address: "Marine Corps Drive",
+  venue_city: "Umatac",
+  starts_at: 7.days.from_now.change(hour: 18, min: 0),
+  ends_at: 10.days.from_now.change(hour: 0, min: 0),
+  doors_open_at: 7.days.from_now.change(hour: 17, min: 30),
+  status: :published,
+  published_at: 14.days.ago,
+  category: :festival,
+  age_restriction: :all_ages,
+  max_capacity: 5000,
+  is_featured: true,
+  cover_image_url: "https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=1200"
+)
+
+# Event 3: FIBA World Cup Qualifiers (upcoming)
+event3 = Event.create!(
+  organizer_profile: profile_sports,
+  title: "FIBA World Cup Qualifiers: Guam vs Australia",
+  description: "Team Guam takes on Australia in FIBA Basketball World Cup 2027 Asian Qualifiers at the UOG Calvo Field House! Come support our island warriors as they compete on the world stage. The energy in the Field House is electric — this is Guam basketball at its finest. Food vendors outside, team merchandise available, and the loudest crowd in the Pacific!",
+  short_description: "Team Guam faces Australia in FIBA World Cup qualifying action at UOG Calvo Field House",
+  venue_name: "UOG Calvo Field House",
+  venue_address: "University of Guam",
+  venue_city: "Mangilao",
+  starts_at: 6.days.from_now.change(hour: 19, min: 0),
+  ends_at: 6.days.from_now.change(hour: 22, min: 0),
+  doors_open_at: 6.days.from_now.change(hour: 17, min: 30),
+  status: :published,
+  published_at: 10.days.ago,
+  category: :sports,
+  age_restriction: :all_ages,
+  max_capacity: 2500,
+  is_featured: false,
+  cover_image_url: "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=1200"
+)
+
+# Event 4: Scraps 6 — MMA/Boxing (upcoming)
+event4 = Event.create!(
+  organizer_profile: profile_guamtime,
+  title: "Scraps 6: Island Throwdown",
+  description: "Scraps is back for round 6! Guam's premier amateur MMA and boxing event returns to the Dusit Thani Resort with a stacked fight card featuring the island's toughest competitors. Full bar, ringside seating available, and an after-party to follow. This is the fight night Guam has been waiting for!",
+  short_description: "Amateur MMA and boxing event with a stacked fight card at Dusit Thani Resort",
+  venue_name: "Dusit Thani Guam Resort",
+  venue_address: "1227 Pale San Vitores Road",
+  venue_city: "Tumon",
+  starts_at: 28.days.from_now.change(hour: 19, min: 0),
+  ends_at: 28.days.from_now.change(hour: 23, min: 30),
+  doors_open_at: 28.days.from_now.change(hour: 18, min: 0),
+  status: :published,
+  published_at: 5.days.ago,
+  category: :sports,
+  age_restriction: :eighteen_plus,
+  max_capacity: 800,
+  is_featured: false,
+  cover_image_url: "https://images.unsplash.com/photo-1549719386-74dfcbf7dbed?w=1200"
+)
+
+# Event 5: Tides of Fantasy — Renaissance Faire (this weekend, almost sold out)
+event5 = Event.create!(
+  organizer_profile: profile_bwtc,
+  title: "Tides of Fantasy: A Renaissance Faire & Live Tabletop Adventure",
+  description: "Step into a world where imagination meets island storytelling! Tides of Fantasy is Guam's first Renaissance Faire, bringing classic medieval fantasy to life while weaving in oceanic imagery and island-rooted creativity. Saturday night features a Live Tabletop Roleplaying Adventure show. Sunday, wander the Renaissance Faire — themed vendors, medieval performances, interactive games, costume contests, and workshops. Dress in your finest fantasy, Renaissance, or island-inspired attire!",
+  short_description: "Guam's first Renaissance Faire with live tabletop RPG show, themed vendors, and performances",
+  venue_name: "Holiday Resort & Spa Guam",
+  venue_address: "946 Pale San Vitores Road",
+  venue_city: "Tumon",
+  starts_at: 1.day.from_now.change(hour: 18, min: 30),
+  ends_at: 2.days.from_now.change(hour: 19, min: 0),
+  doors_open_at: 1.day.from_now.change(hour: 18, min: 0),
+  status: :published,
+  published_at: 21.days.ago,
+  category: :festival,
+  age_restriction: :all_ages,
+  max_capacity: 500,
+  is_featured: true,
+  cover_image_url: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=1200"
+)
+
+# Event 6: Full Moon Beach Party (nightlife, upcoming)
+event6 = Event.create!(
+  organizer_profile: profile_nightlife,
+  title: "Full Moon Beach Party: March Edition",
+  description: "Dance under the full moon at Tumon Bay! Featuring DJ Kiko spinning tropical house, live fire dancers, and island cocktail specials all night long. The ultimate beach party experience on Guam. Full bar, glow accessories at the door, and the best sunset-to-moonrise views on the island.",
+  short_description: "Full moon beach party with DJ Kiko, fire dancers, and island cocktail specials at Tumon Bay",
   venue_name: "Tumon Bay Beach",
   venue_address: "1255 Pale San Vitores Road",
   venue_city: "Tumon",
-  starts_at: 3.days.from_now.change(hour: 21, min: 0),
-  ends_at: 3.days.from_now.change(hour: 2, min: 0) + 1.day,
-  doors_open_at: 3.days.from_now.change(hour: 20, min: 30),
+  starts_at: 10.days.from_now.change(hour: 21, min: 0),
+  ends_at: 10.days.from_now.change(hour: 2, min: 0) + 1.day,
+  doors_open_at: 10.days.from_now.change(hour: 20, min: 30),
   status: :published,
-  published_at: 2.days.ago,
+  published_at: 3.days.ago,
   category: :nightlife,
   age_restriction: :twenty_one_plus,
   max_capacity: 500,
-  is_featured: true,
+  is_featured: false,
   cover_image_url: "https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=1200"
 )
 
-# Event 2: Nightlife (published, upcoming)
-event2 = Event.create!(
-  organizer_profile: profile1,
+# Event 7: Safe Haven Gala (upcoming, formal)
+event7 = Event.create!(
+  organizer_profile: profile_guamtime,
+  title: "Safe Haven Gala 2026",
+  description: "An elegant evening supporting Guam's Safe Haven foundation. Join us at the beautiful Dusit Thani Resort for a night of fine dining, live entertainment, silent auction, and community spirit. Black tie optional. All proceeds support programs for women and children in need on Guam.",
+  short_description: "Formal gala benefiting Safe Haven foundation with fine dining, live entertainment, and silent auction",
+  venue_name: "Dusit Thani Guam Resort",
+  venue_address: "1227 Pale San Vitores Road",
+  venue_city: "Tumon",
+  starts_at: 63.days.from_now.change(hour: 18, min: 0),
+  ends_at: 63.days.from_now.change(hour: 23, min: 0),
+  doors_open_at: 63.days.from_now.change(hour: 17, min: 30),
+  status: :published,
+  published_at: 1.day.ago,
+  category: :other,
+  age_restriction: :twenty_one_plus,
+  max_capacity: 300,
+  is_featured: false,
+  cover_image_url: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=1200"
+)
+
+# Event 8: The Mad Collab Block Party (upcoming, community)
+event8 = Event.create!(
+  organizer_profile: profile_guamtime,
+  title: "The Mad Collab: Block Party 2026",
+  description: "The Mad Collab returns with the biggest block party of the year! Local artists, live music, food vendors, art installations, custom merch drops, and the best vibes on the island. This is where Guam's creative community comes together — DJs, painters, dancers, photographers, and everyone in between. Free entry, pay-as-you-go for food and drinks.",
+  short_description: "Guam's biggest creative block party with local artists, live music, food vendors, and art installations",
+  venue_name: "Tumon Night Market",
+  venue_address: "Pale San Vitores Road",
+  venue_city: "Tumon",
+  starts_at: 72.days.from_now.change(hour: 16, min: 0),
+  ends_at: 72.days.from_now.change(hour: 23, min: 0),
+  doors_open_at: 72.days.from_now.change(hour: 15, min: 30),
+  status: :published,
+  published_at: 2.days.ago,
+  category: :festival,
+  age_restriction: :all_ages,
+  max_capacity: 2000,
+  is_featured: false,
+  cover_image_url: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=1200"
+)
+
+# Event 9: Neon Nights UV Glow Party (nightlife)
+event9 = Event.create!(
+  organizer_profile: profile_nightlife,
   title: "Neon Nights: UV Glow Party",
-  description: "Get your glow on at Guam's biggest UV party! Body paint stations, neon decorations, and the best EDM DJs from across the Pacific. Wear white for maximum glow effect!",
-  short_description: "UV glow party with body paint stations and EDM DJs",
+  description: "Get your glow on at Guam's biggest UV party! Body paint stations, neon decorations, and the best EDM DJs from across the Pacific. Wear white for maximum glow effect! Glow accessories included with entry. VIP section with bottle service available.",
+  short_description: "UV glow party with body paint stations, EDM DJs, and neon decorations",
   venue_name: "Globe Nightclub",
   venue_address: "199 Chalan San Antonio",
   venue_city: "Tamuning",
-  starts_at: 7.days.from_now.change(hour: 22, min: 0),
-  ends_at: 7.days.from_now.change(hour: 3, min: 0) + 1.day,
-  doors_open_at: 7.days.from_now.change(hour: 21, min: 30),
+  starts_at: 21.days.from_now.change(hour: 22, min: 0),
+  ends_at: 21.days.from_now.change(hour: 3, min: 0) + 1.day,
+  doors_open_at: 21.days.from_now.change(hour: 21, min: 30),
   status: :published,
   published_at: 1.day.ago,
   category: :nightlife,
@@ -137,125 +340,72 @@ event2 = Event.create!(
   cover_image_url: "https://images.unsplash.com/photo-1574391884720-bbc3740c59d1?w=1200"
 )
 
-# Event 3: Concert (published, upcoming, featured)
-event3 = Event.create!(
-  organizer_profile: profile2,
-  title: "Sunset Sessions: Island Reggae Concert",
-  description: "Live island reggae featuring local artists and special guest performers from Hawaii. Enjoy the sunset from our beachfront stage with food trucks, craft beer garden, and family-friendly vibes until 8 PM.",
-  short_description: "Live island reggae concert at sunset with local and Hawaiian artists",
-  venue_name: "Guam Beach Club",
-  venue_address: "801 Pale San Vitores Road",
+# Event 10: Draft event (organizer hasn't published yet)
+event10 = Event.create!(
+  organizer_profile: profile_nightlife,
+  title: "Summer Kickoff Party 2026",
+  description: "The biggest party of the summer! Details coming soon...",
+  short_description: "Summer kickoff party — details TBA",
+  venue_name: "TBA",
   venue_city: "Tumon",
-  starts_at: 5.days.from_now.change(hour: 17, min: 0),
-  ends_at: 5.days.from_now.change(hour: 23, min: 0),
-  doors_open_at: 5.days.from_now.change(hour: 16, min: 0),
-  status: :published,
-  published_at: 3.days.ago,
-  category: :concert,
-  age_restriction: :all_ages,
-  max_capacity: 1000,
-  is_featured: true,
-  cover_image_url: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=1200"
-)
-
-# Event 4: Festival (published, upcoming)
-event4 = Event.create!(
-  organizer_profile: profile2,
-  title: "Taste of Guam Food Festival",
-  description: "Celebrate Guam's diverse culinary heritage! Over 30 local restaurants and food vendors serving chamorro BBQ, Filipino favorites, Japanese street food, and fusion dishes. Live cooking demos, eating contests, and live music all day.",
-  short_description: "Food festival with 30+ vendors celebrating Guam's culinary diversity",
-  venue_name: "Paseo de Susana Park",
-  venue_address: "Marine Corps Drive",
-  venue_city: "Hagatna",
-  starts_at: 10.days.from_now.change(hour: 11, min: 0),
-  ends_at: 10.days.from_now.change(hour: 21, min: 0),
-  doors_open_at: 10.days.from_now.change(hour: 10, min: 30),
-  status: :published,
-  published_at: 5.days.ago,
-  category: :festival,
-  age_restriction: :all_ages,
-  max_capacity: 2000,
-  is_featured: false,
-  cover_image_url: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1200"
-)
-
-# Event 5: Draft (not published, only visible to organizer)
-event5 = Event.create!(
-  organizer_profile: profile1,
-  title: "New Year's Eve Countdown",
-  description: "Ring in the new year with Guam's biggest countdown party! Premium open bar, champagne toast at midnight, live DJ, and spectacular fireworks view from our rooftop venue.",
-  short_description: "NYE countdown party with premium open bar and fireworks",
-  venue_name: "Dusit Thani Guam Resort",
-  venue_address: "1227 Pale San Vitores Road",
-  venue_city: "Tumon",
-  starts_at: 60.days.from_now.change(hour: 21, min: 0),
-  ends_at: 60.days.from_now.change(hour: 2, min: 0) + 1.day,
-  doors_open_at: 60.days.from_now.change(hour: 20, min: 0),
+  starts_at: 90.days.from_now.change(hour: 20, min: 0),
+  ends_at: 90.days.from_now.change(hour: 2, min: 0) + 1.day,
   status: :draft,
   category: :nightlife,
   age_restriction: :twenty_one_plus,
-  max_capacity: 200,
+  max_capacity: 1000,
   is_featured: false
 )
 
-# Event 6: Past/Completed event
-event6 = Event.create!(
-  organizer_profile: profile2,
-  title: "Beach Volleyball Tournament",
-  description: "Annual beach volleyball tournament at Gun Beach. Teams of 4, double elimination bracket. Cash prizes for top 3 teams. Registration includes tournament t-shirt and post-tournament BBQ.",
-  short_description: "Annual beach volleyball tournament with cash prizes",
-  venue_name: "Gun Beach",
-  venue_address: "Gun Beach Road",
-  venue_city: "Tumon",
-  starts_at: 14.days.ago.change(hour: 8, min: 0),
-  ends_at: 14.days.ago.change(hour: 18, min: 0),
-  doors_open_at: 14.days.ago.change(hour: 7, min: 30),
-  status: :completed,
-  published_at: 30.days.ago,
-  category: :sports,
-  age_restriction: :all_ages,
-  max_capacity: 200,
-  is_featured: false,
-  cover_image_url: "https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=1200"
-)
-
-puts "  Created #{Event.count} events (#{Event.published.count} published, #{Event.where(status: :draft).count} draft, #{Event.where(status: :completed).count} completed)."
+puts "  Created #{Event.count} events (#{Event.published.count} published, #{Event.where(status: :draft).count} draft)."
 
 # --- Ticket Types ---
 
-# Event 1: Full Moon Beach Party
-tt1_ga = TicketType.create!(event: event1, name: "General Admission", description: "Access to the beach party, one welcome drink included", price_cents: 2500, quantity_available: 400, max_per_order: 8, sort_order: 0)
-tt1_vip = TicketType.create!(event: event1, name: "VIP", description: "VIP lounge access, 3 premium cocktails, priority entry, and exclusive meet & greet", price_cents: 7500, quantity_available: 80, max_per_order: 4, sort_order: 1)
-tt1_table = TicketType.create!(event: event1, name: "VIP Table (4 guests)", description: "Reserved VIP table for 4, bottle service, dedicated server all night", price_cents: 30000, quantity_available: 20, max_per_order: 2, sort_order: 2)
+# J Boog Concert
+tt1_ga = TicketType.create!(event: event1, name: "General Admission", description: "Lawn access with food trucks and beer garden", price_cents: 4500, quantity_available: 2000, max_per_order: 8, sort_order: 0)
+tt1_vip = TicketType.create!(event: event1, name: "VIP Front Row", description: "Reserved front section, backstage meet & greet, 2 complimentary drinks", price_cents: 12000, quantity_available: 200, max_per_order: 4, sort_order: 1)
+tt1_table = TicketType.create!(event: event1, name: "VIP Table (6 guests)", description: "Reserved table for 6, bottle service, priority entry, dedicated server", price_cents: 50000, quantity_available: 20, max_per_order: 2, sort_order: 2)
 
-# Event 2: Neon Nights
-tt2_ga = TicketType.create!(event: event2, name: "General Admission", description: "Entry with one free glow accessory", price_cents: 2000, quantity_available: 250, max_per_order: 6, sort_order: 0)
-tt2_glow = TicketType.create!(event: event2, name: "Glow VIP", description: "Premium glow kit, VIP area access, 2 drinks included", price_cents: 5000, quantity_available: 50, max_per_order: 4, sort_order: 1)
+# Humåtak Heritage Festival
+tt2_free = TicketType.create!(event: event2, name: "General Entry", description: "Free entry to all festival grounds and performances", price_cents: 0, quantity_available: 5000, max_per_order: 10, sort_order: 0)
+tt2_vip = TicketType.create!(event: event2, name: "Cultural VIP Experience", description: "VIP seating for performances, exclusive crafting workshop, traditional lunch included", price_cents: 3500, quantity_available: 100, max_per_order: 6, sort_order: 1)
 
-# Event 3: Sunset Sessions
-tt3_ga = TicketType.create!(event: event3, name: "General Admission", description: "Lawn seating with access to food trucks and beer garden", price_cents: 3500, quantity_available: 700, max_per_order: 10, sort_order: 0)
-tt3_vip = TicketType.create!(event: event3, name: "VIP Front Row", description: "Reserved front-row seating, backstage access, complimentary drinks", price_cents: 10000, quantity_available: 100, max_per_order: 6, sort_order: 1)
-tt3_family = TicketType.create!(event: event3, name: "Family Pack (4)", description: "4 general admission tickets + kids activity area access", price_cents: 10000, quantity_available: 100, max_per_order: 4, sort_order: 2)
+# FIBA Qualifiers
+tt3_ga = TicketType.create!(event: event3, name: "General Admission", description: "Upper bowl seating", price_cents: 2500, quantity_available: 1500, max_per_order: 8, sort_order: 0)
+tt3_court = TicketType.create!(event: event3, name: "Courtside", description: "Floor-level seating, closest to the action", price_cents: 7500, quantity_available: 100, max_per_order: 4, sort_order: 1)
+tt3_vip = TicketType.create!(event: event3, name: "VIP Suite", description: "Private suite with catering, air conditioning, and premium views", price_cents: 15000, quantity_available: 20, max_per_order: 2, sort_order: 2)
 
-# Event 4: Taste of Guam
-tt4_ga = TicketType.create!(event: event4, name: "General Entry", description: "Festival entry with 5 food tasting tokens", price_cents: 1500, quantity_available: 1500, max_per_order: 10, sort_order: 0)
-tt4_foodie = TicketType.create!(event: event4, name: "Foodie Pass", description: "Festival entry with 15 tasting tokens and exclusive chef demo access", price_cents: 4500, quantity_available: 300, max_per_order: 6, sort_order: 1)
-tt4_vip = TicketType.create!(event: event4, name: "VIP Experience", description: "All-you-can-taste, private chef dinner, front-row seats for cooking demos", price_cents: 12000, quantity_available: 50, max_per_order: 4, sort_order: 2)
+# Scraps 6
+tt4_ga = TicketType.create!(event: event4, name: "General Admission", description: "Standing room and general seating", price_cents: 3500, quantity_available: 500, max_per_order: 6, sort_order: 0)
+tt4_ring = TicketType.create!(event: event4, name: "Ringside", description: "Front row seats next to the ring", price_cents: 8000, quantity_available: 80, max_per_order: 4, sort_order: 1)
+tt4_vip = TicketType.create!(event: event4, name: "VIP Table (4 guests)", description: "Reserved table for 4 with bottle service and ringside view", price_cents: 25000, quantity_available: 15, max_per_order: 2, sort_order: 2)
 
-# Event 5: NYE (draft, won't have sales yet)
-TicketType.create!(event: event5, name: "Early Bird", description: "Limited early bird pricing - open bar and champagne toast", price_cents: 15000, quantity_available: 50, max_per_order: 4, sort_order: 0)
-TicketType.create!(event: event5, name: "General Admission", description: "Open bar, champagne toast at midnight", price_cents: 20000, quantity_available: 120, max_per_order: 6, sort_order: 1)
-TicketType.create!(event: event5, name: "Platinum Table (6)", description: "Premium rooftop table for 6, dedicated server, premium spirits", price_cents: 100000, quantity_available: 10, max_per_order: 1, sort_order: 2)
+# Tides of Fantasy
+tt5_faire = TicketType.create!(event: event5, name: "Village Faire Pass", description: "Sunday Faire access only — vendors, performances, games", price_cents: 2000, quantity_available: 300, max_per_order: 6, sort_order: 0)
+tt5_show = TicketType.create!(event: event5, name: "Adventurer Pass", description: "Saturday Live Tabletop Show only", price_cents: 2000, quantity_available: 150, max_per_order: 4, sort_order: 1)
+tt5_explorer = TicketType.create!(event: event5, name: "Explorer Pass", description: "2-Day Pass — includes both the Show and the Faire", price_cents: 3000, quantity_available: 200, max_per_order: 4, sort_order: 2)
+tt5_noble = TicketType.create!(event: event5, name: "Noble Council VIP", description: "Sunday Faire + VIP lounge with appetizers + priority entry", price_cents: 7500, quantity_available: 30, max_per_order: 2, sort_order: 3)
+tt5_royal = TicketType.create!(event: event5, name: "Royal Court VIP", description: "2-Day VIP — VIP seating for Show + all Noble Council perks", price_cents: 10000, quantity_available: 15, max_per_order: 2, sort_order: 4)
 
-# Event 6: Beach Volleyball (past, had sales)
-tt6_team = TicketType.create!(event: event6, name: "Team Registration (4 players)", description: "Full team registration including t-shirts and BBQ", price_cents: 8000, quantity_available: 32, max_per_order: 1, sort_order: 0)
-tt6_spectator = TicketType.create!(event: event6, name: "Spectator", description: "Free spectator entry with access to BBQ area", price_cents: 0, quantity_available: 150, max_per_order: 10, sort_order: 1)
+# Full Moon Beach Party
+tt6_ga = TicketType.create!(event: event6, name: "General Admission", description: "Beach access, one welcome drink included", price_cents: 2500, quantity_available: 400, max_per_order: 8, sort_order: 0)
+tt6_vip = TicketType.create!(event: event6, name: "VIP", description: "VIP lounge, 3 premium cocktails, priority entry", price_cents: 7500, quantity_available: 80, max_per_order: 4, sort_order: 1)
+
+# Safe Haven Gala
+tt7_seat = TicketType.create!(event: event7, name: "Individual Seat", description: "Dinner, entertainment, and one drink ticket", price_cents: 15000, quantity_available: 200, max_per_order: 6, sort_order: 0)
+tt7_table = TicketType.create!(event: event7, name: "Table of 10", description: "Reserved table for 10 guests, premium wine service, event program recognition", price_cents: 125000, quantity_available: 15, max_per_order: 2, sort_order: 1)
+
+# Mad Collab Block Party
+tt8_free = TicketType.create!(event: event8, name: "Free Entry", description: "General entry — food and drinks pay-as-you-go", price_cents: 0, quantity_available: 2000, max_per_order: 10, sort_order: 0)
+
+# Neon Nights
+tt9_ga = TicketType.create!(event: event9, name: "General Admission", description: "Entry with one free glow accessory", price_cents: 2000, quantity_available: 250, max_per_order: 6, sort_order: 0)
+tt9_vip = TicketType.create!(event: event9, name: "Glow VIP", description: "Premium glow kit, VIP area, 2 drinks included", price_cents: 5000, quantity_available: 50, max_per_order: 4, sort_order: 1)
 
 puts "  Created #{TicketType.count} ticket types across #{Event.count} events."
 
-# --- Orders and Tickets (for published/completed events) ---
+# --- Orders and Tickets ---
 
-# Helper to calculate fees like the OrdersController does
 def create_order_with_tickets(event:, buyer_name:, buyer_email:, buyer_phone: nil, user: nil, line_items:, checked_in_tickets: [])
   subtotal = 0
   total_ticket_count = 0
@@ -297,10 +447,8 @@ def create_order_with_tickets(event:, buyer_name:, buyer_email:, buyer_phone: ni
         attendee_email: buyer_email
       )
 
-      # Update quantity_sold
       ticket_type.increment!(:quantity_sold)
 
-      # Check in specific tickets
       if checked_in_tickets.include?(ticket_index)
         ticket.check_in!
       end
@@ -311,90 +459,60 @@ def create_order_with_tickets(event:, buyer_name:, buyer_email:, buyer_phone: ni
   order
 end
 
-# Orders for Event 1: Full Moon Beach Party
-create_order_with_tickets(
-  event: event1, user: attendee1,
-  buyer_name: "Jake Miller", buyer_email: "jake.miller@navy.mil", buyer_phone: "+1-671-555-0301",
-  line_items: [{ ticket_type: tt1_ga, quantity: 3 }]
-)
+# J Boog Concert orders
+create_order_with_tickets(event: event1, user: attendee1, buyer_name: "Jake Miller", buyer_email: "jake.miller@navy.mil", line_items: [{ ticket_type: tt1_ga, quantity: 4 }])
+create_order_with_tickets(event: event1, user: attendee2, buyer_name: "Sarah Tanaka", buyer_email: "sarah.tanaka@gmail.com", line_items: [{ ticket_type: tt1_vip, quantity: 2 }])
+create_order_with_tickets(event: event1, buyer_name: "Tom Rodriguez", buyer_email: "tom.rod@gmail.com", line_items: [{ ticket_type: tt1_ga, quantity: 2 }, { ticket_type: tt1_vip, quantity: 1 }])
+create_order_with_tickets(event: event1, buyer_name: "Lisa Park", buyer_email: "lisa.park@hotmail.com", line_items: [{ ticket_type: tt1_table, quantity: 1 }])
+15.times do |i|
+  create_order_with_tickets(event: event1, buyer_name: "Guest #{i+1}", buyer_email: "guest#{i+1}@example.com", line_items: [{ ticket_type: tt1_ga, quantity: rand(1..4) }])
+end
 
-create_order_with_tickets(
-  event: event1, user: attendee2,
-  buyer_name: "Sarah Tanaka", buyer_email: "sarah.tanaka@gmail.com",
-  line_items: [{ ticket_type: tt1_vip, quantity: 2 }]
-)
+# Heritage Festival orders
+create_order_with_tickets(event: event2, user: attendee3, buyer_name: "Mike Reyes", buyer_email: "mike.reyes@yahoo.com", line_items: [{ ticket_type: tt2_free, quantity: 4 }])
+create_order_with_tickets(event: event2, user: attendee4, buyer_name: "Maria Pangelinan", buyer_email: "maria.pangelinan@gmail.com", line_items: [{ ticket_type: tt2_vip, quantity: 2 }])
+10.times do |i|
+  create_order_with_tickets(event: event2, buyer_name: "Family #{i+1}", buyer_email: "family#{i+1}@example.com", line_items: [{ ticket_type: tt2_free, quantity: rand(2..6) }])
+end
 
-create_order_with_tickets(
-  event: event1,
-  buyer_name: "Tom Rodriguez", buyer_email: "tom.rod@gmail.com",
-  line_items: [{ ticket_type: tt1_ga, quantity: 2 }, { ticket_type: tt1_vip, quantity: 1 }]
-)
+# FIBA orders
+create_order_with_tickets(event: event3, user: attendee1, buyer_name: "Jake Miller", buyer_email: "jake.miller@navy.mil", line_items: [{ ticket_type: tt3_ga, quantity: 2 }])
+create_order_with_tickets(event: event3, user: attendee3, buyer_name: "Mike Reyes", buyer_email: "mike.reyes@yahoo.com", line_items: [{ ticket_type: tt3_court, quantity: 4 }])
+8.times do |i|
+  create_order_with_tickets(event: event3, buyer_name: "Fan #{i+1}", buyer_email: "fan#{i+1}@example.com", line_items: [{ ticket_type: tt3_ga, quantity: rand(1..4) }])
+end
 
-# Orders for Event 3: Sunset Sessions
-create_order_with_tickets(
-  event: event3, user: attendee1,
-  buyer_name: "Jake Miller", buyer_email: "jake.miller@navy.mil",
-  line_items: [{ ticket_type: tt3_ga, quantity: 2 }]
-)
+# Tides of Fantasy orders (almost sold out!)
+create_order_with_tickets(event: event5, user: attendee2, buyer_name: "Sarah Tanaka", buyer_email: "sarah.tanaka@gmail.com", line_items: [{ ticket_type: tt5_explorer, quantity: 2 }])
+create_order_with_tickets(event: event5, user: attendee4, buyer_name: "Maria Pangelinan", buyer_email: "maria.pangelinan@gmail.com", line_items: [{ ticket_type: tt5_royal, quantity: 2 }])
+20.times do |i|
+  create_order_with_tickets(event: event5, buyer_name: "Adventurer #{i+1}", buyer_email: "adventurer#{i+1}@example.com", line_items: [{ ticket_type: [tt5_faire, tt5_show, tt5_explorer].sample, quantity: rand(1..3) }])
+end
 
-create_order_with_tickets(
-  event: event3, user: attendee3,
-  buyer_name: "Mike Reyes", buyer_email: "mike.reyes@yahoo.com",
-  line_items: [{ ticket_type: tt3_family, quantity: 1 }]
-)
+# Full Moon Beach Party orders
+create_order_with_tickets(event: event6, user: attendee1, buyer_name: "Jake Miller", buyer_email: "jake.miller@navy.mil", line_items: [{ ticket_type: tt6_ga, quantity: 3 }])
+5.times do |i|
+  create_order_with_tickets(event: event6, buyer_name: "Partygoer #{i+1}", buyer_email: "party#{i+1}@example.com", line_items: [{ ticket_type: tt6_ga, quantity: rand(1..4) }])
+end
 
-create_order_with_tickets(
-  event: event3,
-  buyer_name: "Linda Park", buyer_email: "linda.park@hotmail.com",
-  line_items: [{ ticket_type: tt3_vip, quantity: 2 }]
-)
-
-# Orders for Event 4: Taste of Guam
-create_order_with_tickets(
-  event: event4, user: attendee2,
-  buyer_name: "Sarah Tanaka", buyer_email: "sarah.tanaka@gmail.com",
-  line_items: [{ ticket_type: tt4_foodie, quantity: 2 }]
-)
-
-create_order_with_tickets(
-  event: event4,
-  buyer_name: "David Kim", buyer_email: "david.kim@outlook.com",
-  line_items: [{ ticket_type: tt4_ga, quantity: 4 }]
-)
-
-# Orders for Event 6: Beach Volleyball (past event, with check-ins)
-create_order_with_tickets(
-  event: event6, user: attendee3,
-  buyer_name: "Mike Reyes", buyer_email: "mike.reyes@yahoo.com",
-  line_items: [{ ticket_type: tt6_team, quantity: 1 }],
-  checked_in_tickets: [0]
-)
-
-create_order_with_tickets(
-  event: event6,
-  buyer_name: "Team Chamorro Fire", buyer_email: "chamorro.fire@gmail.com",
-  line_items: [{ ticket_type: tt6_team, quantity: 1 }],
-  checked_in_tickets: [0]
-)
-
-create_order_with_tickets(
-  event: event6, user: attendee1,
-  buyer_name: "Jake Miller", buyer_email: "jake.miller@navy.mil",
-  line_items: [{ ticket_type: tt6_spectator, quantity: 3 }],
-  checked_in_tickets: [0, 1]
-)
+# Neon Nights orders
+create_order_with_tickets(event: event9, user: attendee2, buyer_name: "Sarah Tanaka", buyer_email: "sarah.tanaka@gmail.com", line_items: [{ ticket_type: tt9_vip, quantity: 2 }])
+3.times do |i|
+  create_order_with_tickets(event: event9, buyer_name: "Raver #{i+1}", buyer_email: "raver#{i+1}@example.com", line_items: [{ ticket_type: tt9_ga, quantity: rand(1..3) }])
+end
 
 puts "  Created #{Order.count} orders with #{Ticket.count} tickets (#{Ticket.where(status: :checked_in).count} checked in)."
 
 # --- Summary ---
 puts ""
 puts "=== Seed Data Summary ==="
-puts "  Users:             #{User.count}"
+puts "  Users:              #{User.count} (#{User.where(role: :admin).count} admin, #{User.where(role: :organizer).count} organizers, #{User.where(role: :attendee).count} attendees)"
 puts "  Organizer Profiles: #{OrganizerProfile.count}"
-puts "  Events:            #{Event.count} (#{Event.published.count} published, #{Event.where(status: :draft).count} draft, #{Event.where(status: :completed).count} completed)"
-puts "  Ticket Types:      #{TicketType.count}"
-puts "  Orders:            #{Order.count}"
-puts "  Tickets:           #{Ticket.count} (#{Ticket.where(status: :issued).count} issued, #{Ticket.where(status: :checked_in).count} checked in)"
+puts "  Events:             #{Event.count} (#{Event.published.count} published, #{Event.where(status: :draft).count} draft)"
+puts "  Ticket Types:       #{TicketType.count}"
+puts "  Orders:             #{Order.count}"
+puts "  Tickets:            #{Ticket.count} (#{Ticket.where(status: :issued).count} issued, #{Ticket.where(status: :checked_in).count} checked in)"
 puts ""
+puts "Featured events: #{Event.featured.count}"
 puts "Published events available at: GET /api/v1/events"
-puts "Seeding complete!"
+puts "Seeding complete! 🎫"

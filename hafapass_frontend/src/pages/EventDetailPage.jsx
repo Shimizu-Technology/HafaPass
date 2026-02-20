@@ -4,6 +4,7 @@ import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlu
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
 import TicketTypesSection from '../components/TicketTypesSection'
+import { FadeUp } from '../components/ui/ScrollReveal'
 
 export default function EventDetailPage() {
   const { slug } = useParams()
@@ -98,7 +99,7 @@ export default function EventDetailPage() {
                 {event.category}
               </span>
             )}
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3">{event.title}</h1>
+            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3">{event.title}</h1>
 
             {/* Date & Venue on hero */}
             <div className="flex flex-wrap items-center gap-4 text-neutral-300 text-sm">
@@ -175,15 +176,15 @@ export default function EventDetailPage() {
 
               {/* Description */}
               {event.description && (
-                <div className="prose prose-neutral max-w-none mb-8">
+                <FadeUp><div className="prose prose-neutral max-w-none mb-8">
                   <h2 className="text-lg font-semibold text-neutral-900 mb-3">About</h2>
                   <p className="text-neutral-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
-                </div>
+                </div></FadeUp>
               )}
 
               {/* Venue Location Section */}
               {event.venue_address && (
-                <div className="mb-8">
+                <FadeUp delay={0.1}><div className="mb-8">
                   <h2 className="text-lg font-semibold text-neutral-900 mb-3">Location</h2>
                   <a
                     href={buildMapsUrl(event)}
@@ -200,7 +201,7 @@ export default function EventDetailPage() {
                       </div>
                     </div>
                   </a>
-                </div>
+                </div></FadeUp>
               )}
             </motion.div>
 

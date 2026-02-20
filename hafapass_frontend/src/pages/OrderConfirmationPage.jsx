@@ -132,7 +132,7 @@ export default function OrderConfirmationPage() {
             <CheckCircle className="w-10 h-10 text-emerald-600" />
           </motion.div>
           <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">
-            You're all set! 🎉
+            You're all set! <PartyPopper className="inline w-6 h-6 ml-1 text-emerald-500" />
           </h1>
           <p className="text-neutral-500">
             A confirmation has been sent to <span className="font-medium text-neutral-700">{order.buyer_email}</span>

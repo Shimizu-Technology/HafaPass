@@ -5,7 +5,7 @@
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
     # Default origins for development, override with ALLOWED_ORIGINS in production
-    allowed = ENV.fetch("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174")
+    allowed = ENV.fetch("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176")
     origins(*allowed.split(",").map(&:strip).reject(&:empty?))
 
     resource "*",

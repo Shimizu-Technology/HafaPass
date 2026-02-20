@@ -34,7 +34,7 @@ export default function StripeProvider({ publishableKey, clientSecret, children 
         colorBackground: '#ffffff',
         colorText: '#1f2937',
         colorDanger: '#dc2626',
-        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+        fontFamily: 'Plus Jakarta Sans, system-ui, -apple-system, sans-serif',
         borderRadius: '12px',
         spacingUnit: '4px',
       },

@@ -4,6 +4,9 @@ import { Loader2, Search, Music, UtensilsCrossed, Trophy, Users, Sparkles, Moon,
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
+import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
+import NoiseOverlay from '../components/ui/NoiseOverlay'
+import { EventCardSkeleton } from '../components/ui/Skeleton'
 
 const categories = [
   { key: 'all', label: 'All Events', icon: Ticket },
@@ -42,10 +45,11 @@ export default function EventsPage() {
   return (
     <div className="min-h-screen">
       {/* Dark Header Section */}
-      <div className="bg-neutral-950 pt-8 pb-12 sm:pb-16">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="bg-neutral-950 pt-8 pb-12 sm:pb-16 relative">
+        <NoiseOverlay />
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-[2]">
           <div className="text-center mb-8">
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">Events</h1>
+            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">Events</h1>
             <p className="text-neutral-400 text-lg">Discover what's happening on Guam</p>
           </div>
 
@@ -90,8 +94,8 @@ export default function EventsPage() {
           </div>
 
           {loading ? (
-            <div className="flex justify-center py-20">
-              <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array.from({ length: 6 }).map((_, i) => <EventCardSkeleton key={i} />)}
             </div>
           ) : filtered.length === 0 ? (
             <motion.div
@@ -150,9 +154,9 @@ export default function EventsPage() {
               )}
             </motion.div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filtered.map(event => <EventCard key={event.id} event={event} />)}
-            </div>
+            <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filtered.map(event => <StaggerItem key={event.id}><EventCard event={event} /></StaggerItem>)}
+            </StaggerContainer>
           )}
         </div>
       </div>

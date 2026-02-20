@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight } from 'lucide-react'
 import apiClient from '../api/client'
+import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
+import NoiseOverlay from '../components/ui/NoiseOverlay'
 
 export default function MyTicketsPage() {
   const [orders, setOrders] = useState([])
@@ -90,9 +92,10 @@ export default function MyTicketsPage() {
     return (
       <div>
         {/* Dark header */}
-        <div className="bg-neutral-950 pt-8 pb-12">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center">
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">My Tickets</h1>
+        <div className="bg-neutral-950 pt-8 pb-12 relative">
+          <NoiseOverlay />
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center relative z-[2]">
+            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">My Tickets</h1>
             <p className="text-neutral-400">Your event passes, all in one place</p>
           </div>
         </div>
@@ -156,9 +159,10 @@ export default function MyTicketsPage() {
   return (
     <div>
       {/* Dark header */}
-      <div className="bg-neutral-950 pt-8 pb-12">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center">
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">My Tickets</h1>
+      <div className="bg-neutral-950 pt-8 pb-12 relative">
+        <NoiseOverlay />
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center relative z-[2]">
+          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">My Tickets</h1>
           <p className="text-neutral-400">Your event passes, all in one place</p>
         </div>
       </div>
@@ -171,14 +175,14 @@ export default function MyTicketsPage() {
           animate={{ opacity: 1, y: 0 }}
           className="max-w-3xl mx-auto px-4 py-8"
         >
-          <div className="space-y-6">
+          <StaggerContainer className="space-y-6">
             {eventGroups.map(({ event, tickets }, index) => {
               const eventDate = new Date(event.starts_at)
               const isPast = eventDate < now
 
               return (
+                <StaggerItem key={event.id}>
                 <motion.div
-                  key={event.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
@@ -238,9 +242,10 @@ export default function MyTicketsPage() {
                     ))}
                   </div>
                 </motion.div>
+                </StaggerItem>
               )
             })}
-          </div>
+          </StaggerContainer>
         </motion.div>
       </div>
     </div>
