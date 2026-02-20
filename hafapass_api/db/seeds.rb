@@ -18,6 +18,16 @@ puts "  Cleared existing data."
 
 # --- Users ---
 
+# Platform Admin
+admin_user = User.create!(
+  clerk_id: "clerk_admin_leon",
+  email: "shimizutechnology@gmail.com",
+  first_name: "Leon",
+  last_name: "Shimizu",
+  phone: "+1-671-555-0001",
+  role: :admin
+)
+
 organizer1 = User.create!(
   clerk_id: "clerk_organizer_island_nights",
   email: "carlos@islandnights.gu",

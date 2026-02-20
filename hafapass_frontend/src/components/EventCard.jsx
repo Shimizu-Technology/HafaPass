@@ -30,7 +30,7 @@ export default function EventCard({ event }) {
   return (
     <Link
       to={`/events/${event.slug}`}
-      className="group block card card-hover overflow-hidden"
+      className="group flex flex-col card card-hover overflow-hidden h-full"
     >
       {/* Image */}
       <div className="aspect-[16/10] overflow-hidden bg-gradient-to-br from-brand-100 to-brand-200 relative rounded-t-2xl">
@@ -65,7 +65,7 @@ export default function EventCard({ event }) {
         )}
       </div>
 
-      <div className="p-5">
+      <div className="p-5 flex flex-col flex-1">
         {/* Category badge */}
         {event.category && event.category !== 'other' && (
           <span className="inline-block text-xs font-semibold text-brand-600 uppercase tracking-wider mb-2">
@@ -73,11 +73,11 @@ export default function EventCard({ event }) {
           </span>
         )}
 
-        <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-600 transition-colors duration-200 line-clamp-2">
+        <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-600 transition-colors duration-200 line-clamp-2 min-h-[3.5rem]">
           {event.title}
         </h3>
 
-        <div className="space-y-1.5 mb-4">
+        <div className="space-y-1.5 mb-4 flex-1">
           {event.starts_at && (
             <div className="flex items-center gap-2 text-sm text-neutral-500">
               <Calendar className="w-3.5 h-3.5 text-neutral-400" />
