@@ -370,6 +370,7 @@ export default function CheckoutPage() {
               // Cancel the pending order to free up ticket inventory
               if (orderId) {
                 apiClient.post(`/orders/${orderId}/cancel`).catch((err) => {
+                alert(`Warning: Could not cancel order. ${err.response?.data?.error || 'Please contact support.'}`)
                 console.warn('Failed to cancel order:', err.response?.data?.error || err.message)
               })
               }

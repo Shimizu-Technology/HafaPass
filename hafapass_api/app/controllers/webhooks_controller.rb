@@ -68,6 +68,7 @@ class WebhooksController < ActionController::API
 
   def handle_payment_intent_succeeded(payment_intent)
     order = Order.find_by(stripe_payment_intent_id: payment_intent.id)
+    return if order&.completed? || order&.completed_at.present? # Idempotency guard
 
     unless order
       Rails.logger.warn("No order found for PaymentIntent #{payment_intent.id}")
