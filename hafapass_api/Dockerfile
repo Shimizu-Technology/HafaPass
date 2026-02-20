@@ -7,10 +7,11 @@ RUN apt-get update -qq && \
 WORKDIR /app
 
 COPY Gemfile Gemfile.lock ./
-RUN bundle install --without development test
+RUN bundle config set --local without 'development test' && \
+    bundle install
 
 COPY . .
 
 EXPOSE 10000
 
-CMD bundle exec rails db:migrate && bundle exec rails server -b 0.0.0.0 -p ${PORT:-10000}
+CMD ["sh", "-c", "bundle exec rails db:migrate && bundle exec rails server -b 0.0.0.0 -p ${PORT:-10000}"]
