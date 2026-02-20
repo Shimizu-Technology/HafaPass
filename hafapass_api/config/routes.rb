@@ -73,6 +73,10 @@ Rails.application.routes.draw do
       # Admin endpoints
       namespace :admin do
         resource :settings, only: [:show, :update]
+        resource :dashboard, only: [:show], controller: 'dashboard'
+        resources :events, only: [:index, :update]
+        resources :users, only: [:index, :update]
+        resources :orders, only: [:index]
       end
     end
   end
