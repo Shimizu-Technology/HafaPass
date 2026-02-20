@@ -10,26 +10,40 @@ class WebhooksController < ActionController::API
     sig_header = request.env["HTTP_STRIPE_SIGNATURE"]
 
     begin
-      if ENV["STRIPE_WEBHOOK_SECRET"].present?
+      if ENV["STRIPE_WEBHOOK_SECRET"].present? && sig_header.present?
+        # Production path: verify webhook signature
         event = Stripe::Webhook.construct_event(
           payload, sig_header, ENV["STRIPE_WEBHOOK_SECRET"]
         )
+      elsif Rails.env.development? || Rails.env.test?
+        # Development/test: parse without signature verification
+        # This allows manual testing and Stripe CLI forwarding without a webhook secret
+        data = JSON.parse(payload, symbolize_names: true)
+        event = Stripe::Event.construct_from(data)
+        Rails.logger.info("⚠️  Webhook processed WITHOUT signature verification (dev mode)")
       else
-        # Development/test only: parse without signature verification
-        if Rails.env.development? || Rails.env.test?
-          data = JSON.parse(payload, symbolize_names: true)
-          event = Stripe::Event.construct_from(data)
-        else
-          render json: { error: "Webhook secret not configured" }, status: :bad_request
-          return
-        end
+        render json: { error: "Webhook secret not configured" }, status: :bad_request
+        return
       end
     rescue JSON::ParserError
       render json: { error: "Invalid payload" }, status: :bad_request
       return
     rescue Stripe::SignatureVerificationError
-      render json: { error: "Invalid signature" }, status: :bad_request
-      return
+      # In development, fall back to unsigned parsing if signature check fails
+      # (e.g., webhook secret is set but doesn't match — common with Stripe CLI)
+      if Rails.env.development? || Rails.env.test?
+        begin
+          data = JSON.parse(payload, symbolize_names: true)
+          event = Stripe::Event.construct_from(data)
+          Rails.logger.warn("⚠️  Webhook signature invalid — falling back to unsigned parsing (dev mode)")
+        rescue JSON::ParserError
+          render json: { error: "Invalid payload" }, status: :bad_request
+          return
+        end
+      else
+        render json: { error: "Invalid signature" }, status: :bad_request
+        return
+      end
     end
 
     case event.type

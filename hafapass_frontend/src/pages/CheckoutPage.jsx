@@ -369,9 +369,12 @@ export default function CheckoutPage() {
             <span className="font-medium">{buyerName}</span> &middot; {buyerEmail}
           </div>
           <PaymentModeBanner mode={paymentMode} />
-          <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret}>
-            <PaymentForm totalCents={totalCents} onSuccess={handlePaymentSuccess} submitting={submitting} setSubmitting={setSubmitting} />
-          </StripeProvider>
+          {/* Elevated z-index so Stripe Elements dropdowns render above the sticky navbar */}
+          <div className="relative z-[60]">
+            <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret}>
+              <PaymentForm totalCents={totalCents} onSuccess={handlePaymentSuccess} submitting={submitting} setSubmitting={setSubmitting} />
+            </StripeProvider>
+          </div>
         </div>
       )}
 
