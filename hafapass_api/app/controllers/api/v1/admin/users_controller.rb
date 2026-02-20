@@ -27,6 +27,19 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   # PATCH /api/v1/admin/users/:id
   def update
     user = User.find(params[:id])
+
+    # Prevent self-role-change
+    if user.id == @current_user.id
+      render json: { error: "Cannot modify your own role" }, status: :forbidden
+      return
+    end
+
+    # Prevent demoting the last admin
+    if user.admin? && params[:role] != "admin" && User.where(role: :admin).count == 1
+      render json: { error: "Cannot demote the last admin" }, status: :unprocessable_entity
+      return
+    end
+
     if user.update(user_params)
       render json: user_json(user)
     else
