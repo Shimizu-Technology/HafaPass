@@ -13,44 +13,81 @@
     html {
       scroll-behavior: auto;
     }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 
   body {
-    @apply bg-neutral-50 text-neutral-900;
+    @apply bg-surface text-neutral-900;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(13,158,150,0.03), transparent),
+      radial-gradient(circle at 100% 100%, rgba(240,86,74,0.02), transparent);
   }
 
   ::selection {
-    background-color: rgb(14 124 123 / 0.2);
+    background-color: rgb(13 158 150 / 0.15);
     @apply text-brand-900;
+  }
+
+  /* Smooth transitions on all interactive elements */
+  a, button, input, select, textarea {
+    @apply transition-colors duration-200;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center px-6 py-3 bg-accent-500 text-white font-semibold rounded-xl
-           transition-all duration-200 hover:bg-accent-600 hover:shadow-lg
-           hover:-translate-y-0.5 active:translate-y-0 active:shadow-md
+    @apply inline-flex items-center justify-center px-6 py-3 font-semibold rounded-xl
+           text-white transition-all duration-200
+           hover:shadow-glow-accent hover:-translate-y-0.5
+           active:translate-y-0 active:shadow-md
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2
            disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none;
+    background: linear-gradient(135deg, #f0564a 0%, #dd3d33 100%);
+    box-shadow: 0 1px 3px rgba(240,86,74,0.3), 0 1px 2px rgba(0,0,0,0.06);
+  }
+
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #ff7a6e 0%, #f0564a 100%);
   }
 
   .btn-secondary {
     @apply inline-flex items-center justify-center px-6 py-3 bg-white text-neutral-700 font-semibold rounded-xl
-           border border-neutral-200 transition-all duration-200
-           hover:bg-neutral-50 hover:border-neutral-300 hover:shadow-sm
+           border border-neutral-200/80 transition-all duration-200
+           hover:bg-neutral-50 hover:border-neutral-300 hover:shadow-soft hover:-translate-y-0.5
+           active:translate-y-0
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
+  .btn-ghost {
+    @apply inline-flex items-center justify-center px-6 py-3 text-neutral-600 font-semibold rounded-xl
+           transition-all duration-200
+           hover:text-neutral-900 hover:bg-neutral-100
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2;
+  }
+
   .card {
-    @apply bg-white rounded-2xl border border-neutral-200 shadow-sm;
+    @apply bg-white rounded-2xl border border-neutral-200/60 shadow-card;
+  }
+
+  .card-hover {
+    @apply hover:shadow-card-hover hover:border-neutral-300/60 hover:-translate-y-0.5 transition-all duration-300;
+  }
+
+  .glass {
+    @apply bg-white/70 backdrop-blur-xl border border-white/20;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
 
   .input {
     @apply w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl text-neutral-900
            placeholder:text-neutral-400 transition-all duration-200
-           focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500;
+           focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500
+           hover:border-neutral-300;
   }
 
   .input-error {

@@ -23,13 +23,17 @@ export default function EventCard({ event }) {
     ? 'Free'
     : `From $${(lowestPrice / 100).toFixed(2)}`
 
+  // Check ticket availability
+  const totalAvailable = event.ticket_types?.reduce((sum, tt) => sum + (tt.quantity_available ?? 0), 0)
+  const hasAvailability = totalAvailable === undefined || totalAvailable > 0
+
   return (
     <Link
       to={`/events/${event.slug}`}
-      className="group block card overflow-hidden hover:shadow-xl hover:shadow-neutral-200/50 hover:border-neutral-300 transition-all duration-300"
+      className="group flex flex-col card card-hover overflow-hidden h-full"
     >
       {/* Image */}
-      <div className="aspect-[16/10] overflow-hidden bg-gradient-to-br from-brand-100 to-brand-200">
+      <div className="aspect-[16/10] overflow-hidden bg-gradient-to-br from-brand-100 to-brand-200 relative rounded-t-2xl">
         {event.cover_image_url ? (
           <img
             src={event.cover_image_url}
@@ -44,21 +48,36 @@ export default function EventCard({ event }) {
             </svg>
           </div>
         )}
+        {/* Gradient overlay for depth */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+        {/* Price badge */}
+        {priceLabel && (
+          <div className="absolute top-3 right-3">
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-lg backdrop-blur-md ${
+              lowestPrice === 0
+                ? 'bg-emerald-500/90 text-white'
+                : 'bg-white/90 text-neutral-900'
+            }`}>
+              {priceLabel}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="p-5">
+      <div className="p-5 flex flex-col flex-1">
         {/* Category badge */}
         {event.category && event.category !== 'other' && (
-          <span className="inline-block text-xs font-medium text-brand-500 uppercase tracking-wider mb-2">
+          <span className="inline-block text-xs font-semibold text-brand-600 uppercase tracking-wider mb-2">
             {event.category}
           </span>
         )}
 
-        <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-500 transition-colors duration-200 line-clamp-2">
+        <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-600 transition-colors duration-200 line-clamp-2 min-h-[3.5rem]">
           {event.title}
         </h3>
 
-        <div className="space-y-1.5 mb-4">
+        <div className="space-y-1.5 mb-4 flex-1">
           {event.starts_at && (
             <div className="flex items-center gap-2 text-sm text-neutral-500">
               <Calendar className="w-3.5 h-3.5 text-neutral-400" />
@@ -75,13 +94,17 @@ export default function EventCard({ event }) {
           )}
         </div>
 
-        <div className="flex items-center justify-between">
-          {priceLabel && (
-            <span className="text-sm font-semibold text-accent-600">{priceLabel}</span>
-          )}
-          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-900 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <div className="flex items-center justify-between pt-3 border-t border-neutral-100">
+          {/* Availability indicator */}
+          <div className="flex items-center gap-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
+            <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-600' : 'text-neutral-400'}`}>
+              {hasAvailability ? 'Tickets Available' : 'Sold Out'}
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-400 group-hover:text-brand-500 transition-all duration-200 group-hover:translate-x-0.5">
             View
-            <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+            <ArrowRight className="w-3.5 h-3.5" />
           </span>
         </div>
       </div>
