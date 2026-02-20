@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { UserButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
-import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays } from 'lucide-react'
+import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield } from 'lucide-react'
+import apiClient from '../api/client'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 function NavContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [userRole, setUserRole] = useState(null)
   const location = useLocation()
   const { isSignedIn } = useUser ? useUser() : { isSignedIn: false }
 
@@ -16,6 +18,12 @@ function NavContent() {
     window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
+
+  useEffect(() => {
+    if (isSignedIn) {
+      apiClient.get('/me').then(res => setUserRole(res.data.role)).catch(() => {})
+    }
+  }, [isSignedIn])
 
   useEffect(() => {
     setMobileMenuOpen(false)
@@ -27,6 +35,9 @@ function NavContent() {
       { to: '/my-tickets', label: 'My Tickets', icon: Ticket },
       { to: '/dashboard/scanner', label: 'Scanner', icon: ScanLine },
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      ...(userRole === 'admin' ? [
+        { to: '/admin', label: 'Admin', icon: Shield },
+      ] : []),
     ] : []),
   ]
 

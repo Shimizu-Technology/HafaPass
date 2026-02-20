@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 
 // Eagerly loaded — initial page load paths
 import HomePage from './pages/HomePage'
@@ -26,6 +27,12 @@ const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
 const GuestListPage = lazy(() => import('./pages/dashboard/GuestListPage'))
 const RefundsPage = lazy(() => import('./pages/dashboard/RefundsPage'))
 const AttendeesPage = lazy(() => import('./pages/dashboard/AttendeesPage'))
+
+// Admin pages
+const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'))
+const AdminEventsPage = lazy(() => import('./pages/admin/AdminEventsPage'))
+const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'))
+const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'))
 
 function PageLoader() {
   return (
@@ -57,6 +64,11 @@ function App() {
           <Route path="/dashboard/events/:id/attendees" element={<ProtectedRoute><AttendeesPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          {/* Admin routes */}
+          <Route path="/admin" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
+          <Route path="/admin/events" element={<AdminRoute><AdminEventsPage /></AdminRoute>} />
+          <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
+          <Route path="/admin/orders" element={<AdminRoute><AdminOrdersPage /></AdminRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />
         </Route>

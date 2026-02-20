@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
-class Api::V1::Admin::SettingsController < ApplicationController
-  before_action :require_admin!
+class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
 
   # GET /api/v1/admin/settings
   def show
@@ -34,12 +33,6 @@ class Api::V1::Admin::SettingsController < ApplicationController
   end
 
   private
-
-  def require_admin!
-    unless @current_user&.admin?
-      render json: { error: "Admin access required" }, status: :forbidden
-    end
-  end
 
   def settings_params
     params.permit(:payment_mode, :platform_name, :platform_email, :platform_phone,
