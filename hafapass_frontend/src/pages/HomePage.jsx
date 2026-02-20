@@ -1,282 +1,296 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Search, Calendar, MapPin, Sparkles, Music, Moon, UtensilsCrossed, Trophy, Users, PartyPopper, ArrowRight } from 'lucide-react'
+import { Calendar, MapPin, ArrowRight, Clock, Sparkles } from 'lucide-react'
 import apiClient from '../api/client'
-import EventCard from '../components/EventCard'
 import Footer from '../components/Footer'
 
-const categories = [
-  { label: 'All', value: 'all', icon: Sparkles },
-  { label: 'Music', value: 'music', icon: Music },
-  { label: 'Nightlife', value: 'nightlife', icon: Moon },
-  { label: 'Food & Drink', value: 'food_and_drink', icon: UtensilsCrossed },
-  { label: 'Sports', value: 'sports', icon: Trophy },
-  { label: 'Community', value: 'community', icon: Users },
-  { label: 'Festivals', value: 'festivals', icon: PartyPopper },
+const CATEGORY_IMAGES = [
+  { name: 'Nightlife', slug: 'nightlife', image: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=800' },
+  { name: 'Food & Drink', slug: 'food_drink', image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800' },
+  { name: 'Music', slug: 'music', image: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=800' },
+  { name: 'Sports', slug: 'sports', image: 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=800' },
+  { name: 'Community', slug: 'community', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800' },
+  { name: 'Festivals', slug: 'festivals', image: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=800' },
 ]
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+}
+
+function formatTime(dateStr) {
+  const d = new Date(dateStr)
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+function getLowestPrice(ticketTypes) {
+  if (!ticketTypes?.length) return null
+  const prices = ticketTypes.map(t => t.price_cents).filter(p => p != null)
+  if (!prices.length) return null
+  const min = Math.min(...prices)
+  return min === 0 ? 'Free' : `$${(min / 100).toFixed(0)}`
+}
+
+function getThisWeekRange() {
+  const now = new Date()
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  return { start, end }
+}
 
 export default function HomePage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeCategory, setActiveCategory] = useState('all')
-  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    apiClient.get('/events')
+    apiClient.get('/api/v1/events')
       .then(res => {
-        const data = res.data.events || res.data || []
-        setEvents(data)
+        const data = res.data.events || res.data
+        setEvents(Array.isArray(data) ? data : [])
       })
       .catch(() => setEvents([]))
       .finally(() => setLoading(false))
   }, [])
 
-  const filtered = events.filter(e => {
-    const matchesCategory = activeCategory === 'all' || e.category === activeCategory
-    const matchesSearch = !searchQuery || e.title?.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesCategory && matchesSearch
-  })
+  const featuredEvent = useMemo(() => {
+    const featured = events
+      .filter(e => e.is_featured && new Date(e.starts_at) > new Date())
+      .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
+    return featured[0] || null
+  }, [events])
 
-  const featuredEvents = filtered.filter(e => e.is_featured).slice(0, 2)
-  const gridEvents = filtered.filter(e => !e.is_featured || !featuredEvents.includes(e))
+  const { groupedEvents, sectionTitle } = useMemo(() => {
+    const { start, end } = getThisWeekRange()
+    const upcoming = events
+      .filter(e => new Date(e.starts_at) >= start)
+      .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
 
-  const formatDate = (dateStr) => {
-    const d = new Date(dateStr)
-    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-  }
+    let filtered = upcoming.filter(e => new Date(e.starts_at) < end)
+    let title = 'This Week on Guam'
 
-  const formatTime = (dateStr) => {
-    const d = new Date(dateStr)
-    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  }
+    if (!filtered.length) {
+      filtered = upcoming.slice(0, 8)
+      title = filtered.length ? 'Next Up on Guam' : ''
+    }
 
-  const getPrice = (event) => {
-    const lowest = event.ticket_types?.reduce((min, tt) => {
-      const p = tt.price_cents ?? 0
-      return min === null ? p : Math.min(min, p)
-    }, null)
-    if (lowest === null) return ''
-    return lowest === 0 ? 'Free' : `From $${(lowest / 100).toFixed(0)}`
-  }
+    const grouped = {}
+    filtered.forEach(e => {
+      const key = formatDate(e.starts_at)
+      if (!grouped[key]) grouped[key] = []
+      grouped[key].push(e)
+    })
+
+    return { groupedEvents: grouped, sectionTitle: title }
+  }, [events])
+
+  const hasEvents = events.length > 0
+  const dayKeys = Object.keys(groupedEvents)
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* ── Minimal Hero ── */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-brand-50/60 via-white to-white" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(13,158,150,0.04)_1px,transparent_0)] bg-[size:32px_32px]" />
-
-        <div className="relative max-w-3xl mx-auto px-6 pt-24 pb-12 lg:pt-36 lg:pb-16 text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="mb-8"
-          >
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 shadow-lg mb-6">
-              <span className="text-white font-bold text-xl">H</span>
-            </div>
-          </motion.div>
-
-          <motion.h1
-            className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-neutral-900 mb-10"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-          >
-            What's happening on{' '}
-            <span className="bg-gradient-to-r from-brand-500 to-brand-600 bg-clip-text text-transparent">Guam</span>
-          </motion.h1>
-
-          <motion.div
-            className="max-w-lg mx-auto"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.25 }}
-          >
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" />
-              <input
-                type="text"
-                placeholder="Search events..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-neutral-200 shadow-soft text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all text-base"
-              />
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── Category Pills ── */}
-      <section className="sticky top-0 z-20 bg-white/80 backdrop-blur-lg border-b border-neutral-100">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="flex gap-2 py-3 overflow-x-auto scrollbar-hide">
-            {categories.map(cat => {
-              const Icon = cat.icon
-              const active = activeCategory === cat.value
-              return (
-                <button
-                  key={cat.value}
-                  onClick={() => setActiveCategory(cat.value)}
-                  className={`flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                    active
-                      ? 'bg-brand-500 text-white shadow-sm'
-                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                  }`}
+    <div className="min-h-screen bg-neutral-950">
+      {/* ── Featured Event Hero ── */}
+      <section className="relative h-[85vh] min-h-[560px] max-h-[800px] overflow-hidden">
+        {featuredEvent ? (
+          <>
+            <div
+              className="absolute inset-0 bg-cover bg-center transition-transform duration-[8s] ease-out hover:scale-105"
+              style={{ backgroundImage: `url(${featuredEvent.cover_image_url})` }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/50 to-neutral-950/20" />
+            <div className="relative h-full flex items-end">
+              <div className="max-w-6xl mx-auto w-full px-6 lg:px-8 pb-16 lg:pb-20">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white/80 text-xs font-medium mb-6 border border-white/10">
+                  <Sparkles className="w-3.5 h-3.5 text-accent-400" />
+                  Featured Event
+                </div>
+                <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-4 max-w-3xl">
+                  {featuredEvent.title}
+                </h1>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-white/70 text-base lg:text-lg mb-8">
+                  <span className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    {formatDate(featuredEvent.starts_at)} · {formatTime(featuredEvent.starts_at)}
+                  </span>
+                  {featuredEvent.venue_name && (
+                    <span className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      {featuredEvent.venue_name}{featuredEvent.venue_city ? `, ${featuredEvent.venue_city}` : ''}
+                    </span>
+                  )}
+                </div>
+                <Link
+                  to={`/events/${featuredEvent.slug || featuredEvent.id}`}
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-accent-500 hover:bg-accent-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:shadow-lg hover:shadow-accent-500/25"
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  {cat.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Main Content ── */}
-      <div className="max-w-6xl mx-auto px-6 py-10 lg:py-14">
-        {loading ? (
-          /* Loading skeleton */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="animate-pulse rounded-2xl bg-neutral-100 h-72" />
-            ))}
-          </div>
-        ) : filtered.length === 0 && events.length === 0 ? (
-          /* ── Empty State ── */
-          <motion.div
-            className="text-center py-24"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="inline-flex items-center justify-center gap-3 mb-8">
-              <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center">
-                <Calendar className="w-6 h-6 text-brand-500" />
-              </div>
-              <div className="w-12 h-12 rounded-2xl bg-accent-50 flex items-center justify-center">
-                <Music className="w-6 h-6 text-accent-500" />
-              </div>
-              <div className="w-12 h-12 rounded-2xl bg-violet-50 flex items-center justify-center">
-                <PartyPopper className="w-6 h-6 text-violet-500" />
+                  Get Tickets
+                  <ArrowRight className="w-5 h-5" />
+                </Link>
               </div>
             </div>
-            <h2 className="text-2xl font-bold text-neutral-900 mb-3">Events are coming to Guam</h2>
-            <p className="text-neutral-500 mb-8 max-w-md mx-auto">
-              Be the first to list yours. Create your organizer profile and start selling tickets in minutes.
-            </p>
-            <Link to="/sign-up" className="btn-primary text-base !px-8 !py-3">
-              Get Started Free
-            </Link>
-          </motion.div>
+          </>
         ) : (
           <>
-            {/* No results for filter */}
-            {filtered.length === 0 ? (
-              <div className="text-center py-16">
-                <p className="text-neutral-500 text-lg">No events found. Try a different search or category.</p>
+            <div className="absolute inset-0 bg-gradient-to-br from-brand-950 via-neutral-950 to-brand-900" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(13,158,150,0.15),transparent_60%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(255,107,107,0.08),transparent_50%)]" />
+            <div className="relative h-full flex items-center justify-center text-center px-6">
+              <div>
+                <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-6 max-w-3xl">
+                  {hasEvents ? (
+                    <>Discover Events on <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent">Guam</span></>
+                  ) : (
+                    <>Guam's Event Scene is About to <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent">Take Off</span></>
+                  )}
+                </h1>
+                <p className="text-lg lg:text-xl text-white/50 max-w-xl mx-auto mb-10">
+                  {hasEvents
+                    ? 'Your curated guide to everything happening on the island.'
+                    : 'The island\'s modern ticketing platform is here. Events are coming soon.'}
+                </p>
+                <Link
+                  to={hasEvents ? '/events' : '/sign-up'}
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg"
+                >
+                  {hasEvents ? 'Browse Events' : 'Start Hosting'}
+                  <ArrowRight className="w-5 h-5" />
+                </Link>
               </div>
-            ) : (
-              <>
-                {/* ── Featured Events ── */}
-                {featuredEvents.length > 0 && (
-                  <section className="mb-12">
-                    <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-5">Don't Miss</h2>
-                    <div className={`grid gap-6 ${featuredEvents.length === 1 ? 'grid-cols-1 max-w-2xl' : 'grid-cols-1 md:grid-cols-2'}`}>
-                      {featuredEvents.map((event, i) => (
-                        <motion.div
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* ── This Week on Guam ── */}
+      <section className="py-16 lg:py-24 bg-neutral-950">
+        <div className="max-w-6xl mx-auto px-6 lg:px-8">
+          {dayKeys.length > 0 ? (
+            <>
+              <div className="flex items-end justify-between mb-12">
+                <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight">
+                  {sectionTitle}
+                </h2>
+                <Link to="/events" className="hidden sm:flex items-center gap-1.5 text-brand-400 hover:text-brand-300 font-medium transition-colors">
+                  View all <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+              <div className="space-y-12">
+                {dayKeys.map(day => (
+                  <div key={day}>
+                    <h3 className="text-sm font-semibold uppercase tracking-widest text-brand-400 mb-5 pb-3 border-b border-white/10">
+                      {day}
+                    </h3>
+                    <div className="space-y-4">
+                      {groupedEvents[day].map(event => (
+                        <Link
                           key={event.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.5, delay: i * 0.1 }}
+                          to={`/events/${event.slug || event.id}`}
+                          className="group flex flex-col sm:flex-row gap-4 sm:gap-6 p-3 -mx-3 rounded-xl hover:bg-white/5 transition-colors duration-200"
                         >
-                          <Link
-                            to={`/events/${event.slug || event.id}`}
-                            className="group block relative rounded-2xl overflow-hidden h-72 md:h-80 bg-neutral-100"
-                          >
+                          <div className="sm:w-48 lg:w-56 flex-shrink-0 aspect-[16/10] sm:aspect-[16/11] rounded-lg overflow-hidden bg-neutral-800">
                             {event.cover_image_url ? (
                               <img
                                 src={event.cover_image_url}
                                 alt={event.title}
-                                className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                               />
                             ) : (
-                              <div className="absolute inset-0 bg-gradient-to-br from-brand-400 to-brand-600" />
+                              <div className="w-full h-full bg-gradient-to-br from-brand-800 to-brand-900 flex items-center justify-center">
+                                <Calendar className="w-8 h-8 text-brand-500/50" />
+                              </div>
                             )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                            <div className="absolute bottom-0 left-0 right-0 p-6">
-                              <div className="flex items-center gap-2 text-white/80 text-sm mb-2">
-                                <Calendar className="w-3.5 h-3.5" />
-                                {formatDate(event.starts_at)} · {formatTime(event.starts_at)}
-                              </div>
-                              <h3 className="text-xl md:text-2xl font-bold text-white mb-1 group-hover:underline decoration-2 underline-offset-4">
-                                {event.title}
-                              </h3>
-                              <div className="flex items-center gap-3 text-white/70 text-sm">
-                                {event.venue_name && (
-                                  <span className="flex items-center gap-1">
-                                    <MapPin className="w-3.5 h-3.5" />
-                                    {event.venue_name}
-                                  </span>
-                                )}
-                                {getPrice(event) && (
-                                  <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-xs font-medium">
-                                    {getPrice(event)}
-                                  </span>
-                                )}
-                              </div>
+                          </div>
+                          <div className="flex flex-col justify-center min-w-0 py-1">
+                            <div className="flex items-center gap-3 text-sm text-white/40 mb-2">
+                              <span className="flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5" />
+                                {formatTime(event.starts_at)}
+                              </span>
+                              {event.venue_name && (
+                                <span className="flex items-center gap-1.5">
+                                  <MapPin className="w-3.5 h-3.5" />
+                                  {event.venue_name}
+                                </span>
+                              )}
                             </div>
-                          </Link>
-                        </motion.div>
+                            <h4 className="text-lg lg:text-xl font-semibold text-white group-hover:text-brand-400 transition-colors truncate">
+                              {event.title}
+                            </h4>
+                            {event.short_description && (
+                              <p className="text-sm text-white/40 mt-1 line-clamp-1">{event.short_description}</p>
+                            )}
+                            {getLowestPrice(event.ticket_types) && (
+                              <span className="mt-2 text-sm font-medium text-accent-400">
+                                {getLowestPrice(event.ticket_types) === 'Free' ? 'Free' : `From ${getLowestPrice(event.ticket_types)}`}
+                              </span>
+                            )}
+                          </div>
+                        </Link>
                       ))}
                     </div>
-                  </section>
-                )}
+                  </div>
+                ))}
+              </div>
+              <Link to="/events" className="sm:hidden flex items-center justify-center gap-1.5 text-brand-400 hover:text-brand-300 font-medium mt-8 transition-colors">
+                View all events <ArrowRight className="w-4 h-4" />
+              </Link>
+            </>
+          ) : (
+            !loading && (
+              <div className="text-center py-12">
+                <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">This Week on Guam</h2>
+                <p className="text-white/40 text-lg">No events yet — check back soon!</p>
+              </div>
+            )
+          )}
+        </div>
+      </section>
 
-                {/* ── Event Grid ── */}
-                {gridEvents.length > 0 && (
-                  <section>
-                    {featuredEvents.length > 0 && (
-                      <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-5">All Events</h2>
-                    )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {gridEvents.map((event, i) => (
-                        <motion.div
-                          key={event.id}
-                          initial={{ opacity: 0, y: 16 }}
-                          whileInView={{ opacity: 1, y: 0 }}
-                          viewport={{ once: true, margin: '-5%' }}
-                          transition={{ duration: 0.4, delay: i * 0.05 }}
-                        >
-                          <EventCard event={event} />
-                        </motion.div>
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </>
-            )}
-          </>
-        )}
-      </div>
+      {/* ── Category Browsing ── */}
+      <section className="py-16 lg:py-24 bg-neutral-900/50">
+        <div className="max-w-6xl mx-auto px-6 lg:px-8">
+          <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-12">
+            Explore by Category
+          </h2>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
+            {CATEGORY_IMAGES.map(cat => (
+              <Link
+                key={cat.slug}
+                to={`/events?category=${cat.slug}`}
+                className="group relative aspect-[4/3] rounded-xl overflow-hidden"
+              >
+                <img
+                  src={cat.image}
+                  alt={cat.name}
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent group-hover:from-black/80 transition-colors duration-300" />
+                <div className="absolute bottom-0 left-0 right-0 p-5">
+                  <h3 className="text-lg lg:text-xl font-bold text-white">{cat.name}</h3>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ── Organizer CTA ── */}
-      <section className="py-16 lg:py-20">
-        <div className="max-w-6xl mx-auto px-6 text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
+      <section className="py-20 lg:py-28 bg-neutral-950">
+        <div className="max-w-3xl mx-auto px-6 lg:px-8 text-center">
+          <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">
+            {hasEvents ? 'Want to bring your event to Guam?' : 'Be the first to host an event on Guam'}
+          </h2>
+          <p className="text-white/40 text-lg mb-8">
+            Create your organizer profile and start selling tickets in minutes.
+          </p>
+          <Link
+            to="/sign-up"
+            className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg"
           >
-            <p className="text-lg text-neutral-500 mb-5">Hosting an event on Guam?</p>
-            <Link to="/sign-up" className="group inline-flex items-center gap-2 btn-primary text-base !px-8 !py-3">
-              Get Started Free
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-            </Link>
-          </motion.div>
+            Start Hosting
+            <ArrowRight className="w-5 h-5" />
+          </Link>
         </div>
       </section>
 
