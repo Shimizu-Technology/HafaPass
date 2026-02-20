@@ -12,6 +12,16 @@ gem "resend"
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false
 
+# Background jobs
+gem "sidekiq", "~> 7.0"
+gem "redis", "~> 5.0"
+
+# Rate limiting
+gem "rack-attack", "~> 6.7"
+
+# Pagination
+gem "pagy", "~> 9.0"
+
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
   gem "rspec-rails", "~> 7.0"

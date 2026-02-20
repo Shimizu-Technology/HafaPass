@@ -2,26 +2,6 @@ GEM
   remote: https://rubygems.org/
   specs:
     action_text-trix (2.1.15)
-    aws-eventstream (1.4.0)
-    aws-partitions (1.1206.0)
-    aws-sdk-core (3.241.4)
-      aws-eventstream (~> 1, >= 1.3.0)
-      aws-partitions (~> 1, >= 1.992.0)
-      aws-sigv4 (~> 1.9)
-      base64
-      bigdecimal
-      jmespath (~> 1, >= 1.6.1)
-      logger
-    aws-sdk-kms (1.121.0)
-      aws-sdk-core (~> 3, >= 3.241.4)
-      aws-sigv4 (~> 1.5)
-    aws-sdk-s3 (1.212.0)
-      aws-sdk-core (~> 3, >= 3.241.4)
-      aws-sdk-kms (~> 1)
-      aws-sigv4 (~> 1.5)
-    aws-sigv4 (1.12.1)
-      aws-eventstream (~> 1, >= 1.0.2)
-      railties
     actioncable (8.1.2)
       actionpack (= 8.1.2)
       activesupport (= 8.1.2)
@@ -94,6 +74,25 @@ GEM
       securerandom (>= 0.3)
       tzinfo (~> 2.0, >= 2.0.5)
       uri (>= 0.13.1)
+    aws-eventstream (1.4.0)
+    aws-partitions (1.1206.0)
+    aws-sdk-core (3.241.4)
+      aws-eventstream (~> 1, >= 1.3.0)
+      aws-partitions (~> 1, >= 1.992.0)
+      aws-sigv4 (~> 1.9)
+      base64
+      bigdecimal
+      jmespath (~> 1, >= 1.6.1)
+      logger
+    aws-sdk-kms (1.121.0)
+      aws-sdk-core (~> 3, >= 3.241.4)
+      aws-sigv4 (~> 1.5)
+    aws-sdk-s3 (1.212.0)
+      aws-sdk-core (~> 3, >= 3.241.4)
+      aws-sdk-kms (~> 1)
+      aws-sigv4 (~> 1.5)
+    aws-sigv4 (1.12.1)
+      aws-eventstream (~> 1, >= 1.0.2)
     base64 (0.3.0)
     bigdecimal (4.0.1)
     bootsnap (1.21.1)
@@ -133,8 +132,8 @@ GEM
       pp (>= 0.6.0)
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
-    json (2.18.0)
     jmespath (1.6.2)
+    json (2.18.0)
     jwt (2.10.2)
       base64
     logger (1.7.0)
@@ -148,7 +147,6 @@ GEM
       net-pop
       net-smtp
     marcel (1.1.0)
-    method_source (1.1.0)
     mini_mime (1.1.5)
     minitest (5.27.0)
     msgpack (1.8.0)
@@ -165,8 +163,12 @@ GEM
     nio4r (2.7.5)
     nokogiri (1.19.0-arm64-darwin)
       racc (~> 1.4)
+    nokogiri (1.19.0-x86_64-darwin)
+      racc (~> 1.4)
+    pagy (9.4.0)
     pg (1.6.3)
     pg (1.6.3-arm64-darwin)
+    pg (1.6.3-x86_64-darwin)
     pp (0.6.3)
       prettyprint
     prettyprint (0.2.0)
@@ -177,11 +179,13 @@ GEM
       nio4r (~> 2.0)
     racc (1.8.1)
     rack (3.2.4)
+    rack-attack (6.8.0)
+      rack (>= 1.0, < 4)
     rack-cors (3.0.0)
       logger
       rack (>= 3.0.14)
     rack-session (2.1.1)
-      base64 (>= 0.0.1)
+      base64 (>= 0.1.0)
       rack (>= 3.0.0)
     rack-test (2.2.0)
       rack (>= 1.3)
@@ -222,6 +226,10 @@ GEM
       erb
       psych (>= 4.0.0)
       tsort
+    redis (5.4.1)
+      redis-client (>= 0.22.0)
+    redis-client (0.26.4)
+      connection_pool
     reline (0.6.2)
       io-console (~> 0.5)
     resend (1.0.0)
@@ -244,8 +252,14 @@ GEM
       rspec-support (~> 3.13)
     rspec-support (3.13.6)
     securerandom (0.4.1)
-    stripe (18.0.1)
+    sidekiq (7.3.9)
+      base64
+      connection_pool (>= 2.3.0)
+      logger
+      rack (>= 2.2.4)
+      redis-client (>= 0.22.2)
     stringio (3.2.0)
+    stripe (18.0.1)
     thor (1.5.0)
     timeout (0.6.0)
     tsort (0.2.0)
@@ -261,6 +275,7 @@ GEM
 
 PLATFORMS
   arm64-darwin-24
+  x86_64-darwin-23
 
 DEPENDENCIES
   aws-sdk-s3
@@ -269,12 +284,16 @@ DEPENDENCIES
   dotenv-rails
   factory_bot_rails
   jwt
+  pagy (~> 9.0)
   pg (~> 1.1)
   puma (>= 5.0)
+  rack-attack (~> 6.7)
   rack-cors
   rails (~> 8.0)
+  redis (~> 5.0)
   resend
   rspec-rails (~> 7.0)
+  sidekiq (~> 7.0)
   stripe
   tzinfo-data
 

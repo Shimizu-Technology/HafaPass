@@ -1,4 +1,6 @@
 class Api::V1::Me::TicketsController < ApplicationController
+  include Paginatable
+
   def index
     tickets = Ticket
       .joins(:order)
@@ -6,7 +8,12 @@ class Api::V1::Me::TicketsController < ApplicationController
       .includes(:ticket_type, :event, :order)
       .order(created_at: :desc)
 
-    render json: tickets.map { |ticket| ticket_json(ticket) }
+    pagy, paginated_tickets = paginate(tickets)
+
+    render json: {
+      tickets: paginated_tickets.map { |ticket| ticket_json(ticket) },
+      meta: pagination_meta(pagy)
+    }
   end
 
   private

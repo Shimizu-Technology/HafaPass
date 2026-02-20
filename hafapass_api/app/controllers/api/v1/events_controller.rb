@@ -1,11 +1,18 @@
 module Api
   module V1
     class EventsController < ApplicationController
+      include Paginatable
+
       skip_before_action :authenticate_user!
 
       def index
         events = Event.published.upcoming.includes(:ticket_types, :organizer_profile).order(starts_at: :asc)
-        render json: events.map { |event| event_json(event, include_ticket_types: true) }
+        pagy, paginated_events = paginate(events)
+
+        render json: {
+          events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
+          meta: pagination_meta(pagy)
+        }
       end
 
       def show

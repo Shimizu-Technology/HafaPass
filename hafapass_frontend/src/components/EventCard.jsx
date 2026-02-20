@@ -1,61 +1,88 @@
 import { Link } from 'react-router-dom'
+import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 
 export default function EventCard({ event }) {
-  const startDate = new Date(event.starts_at)
-  const formattedDate = startDate.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })
-  const formattedTime = startDate.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-
-  const lowestPrice = event.ticket_types && event.ticket_types.length > 0
-    ? Math.min(...event.ticket_types.map(tt => tt.price_cents))
-    : null
-
-  const formatPrice = (cents) => {
-    if (cents === 0) return 'Free'
-    return `$${(cents / 100).toFixed(2)}`
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
+
+  const formatTime = (dateStr) => {
+    const date = new Date(dateStr)
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+
+  const lowestPrice = event.ticket_types?.reduce((min, tt) => {
+    if (tt.price_cents === 0) return min === null ? 0 : Math.min(min, 0)
+    return min === null ? tt.price_cents : Math.min(min, tt.price_cents)
+  }, null)
+
+  const priceLabel = lowestPrice === null
+    ? ''
+    : lowestPrice === 0
+    ? 'Free'
+    : `From $${(lowestPrice / 100).toFixed(2)}`
 
   return (
     <Link
       to={`/events/${event.slug}`}
-      className="block bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-200"
+      className="group block card overflow-hidden hover:shadow-xl hover:shadow-neutral-200/50 hover:border-neutral-300 transition-all duration-300"
     >
-      {event.cover_image_url ? (
-        <img
-          src={event.cover_image_url}
-          alt={event.title}
-          className="w-full h-48 object-cover"
-        />
-      ) : (
-        <div className="w-full h-48 bg-gradient-to-br from-blue-600 to-teal-500 flex items-center justify-center">
-          <span className="text-white text-4xl font-bold opacity-30">HP</span>
+      {/* Image */}
+      <div className="aspect-[16/10] overflow-hidden bg-gradient-to-br from-brand-100 to-brand-200">
+        {event.cover_image_url ? (
+          <img
+            src={event.cover_image_url}
+            alt={event.title}
+            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <svg className="w-16 h-16 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+              <path d="M13 5v2" /><path d="M13 17v2" /><path d="M13 11v2" />
+            </svg>
+          </div>
+        )}
+      </div>
+
+      <div className="p-5">
+        {/* Category badge */}
+        {event.category && event.category !== 'other' && (
+          <span className="inline-block text-xs font-medium text-brand-500 uppercase tracking-wider mb-2">
+            {event.category}
+          </span>
+        )}
+
+        <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-500 transition-colors duration-200 line-clamp-2">
+          {event.title}
+        </h3>
+
+        <div className="space-y-1.5 mb-4">
+          {event.starts_at && (
+            <div className="flex items-center gap-2 text-sm text-neutral-500">
+              <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+              <span>{formatDate(event.starts_at)}</span>
+              <Clock className="w-3.5 h-3.5 text-neutral-400 ml-1" />
+              <span>{formatTime(event.starts_at)}</span>
+            </div>
+          )}
+          {event.venue_name && (
+            <div className="flex items-center gap-2 text-sm text-neutral-500">
+              <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+              <span className="truncate">{event.venue_name}</span>
+            </div>
+          )}
         </div>
-      )}
-      <div className="p-4">
-        <h3 className="text-lg font-semibold text-gray-900 truncate">{event.title}</h3>
-        <p className="text-sm text-blue-700 font-medium mt-1">
-          {formattedDate} &middot; {formattedTime}
-        </p>
-        <p className="text-sm text-gray-500 mt-1 truncate">{event.venue_name}</p>
-        <div className="mt-3 flex items-center justify-between">
-          {lowestPrice !== null ? (
-            <span className="text-sm font-semibold text-teal-700">
-              {lowestPrice === 0 ? 'Free' : `From ${formatPrice(lowestPrice)}`}
-            </span>
-          ) : (
-            <span className="text-sm text-gray-400">No tickets listed</span>
+
+        <div className="flex items-center justify-between">
+          {priceLabel && (
+            <span className="text-sm font-semibold text-accent-600">{priceLabel}</span>
           )}
-          {event.is_featured && (
-            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
-              Featured
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-900 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            View
+            <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+          </span>
         </div>
       </div>
     </Link>

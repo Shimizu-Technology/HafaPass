@@ -57,26 +57,59 @@ Don't aim for 100% coverage. Focus on:
 | **P2** | Complex forms/wizards | Easy to break |
 | **P3** | Edge cases that have broken before | Prevent regressions |
 
-### The Testing Pyramid (Modified)
+### The Testing Pyramid — Priority Order
+
+When AI (or any developer) writes tests, write them in THIS order. The base of the pyramid catches the most bugs with the least effort:
 
 ```
         ┌─────────────────┐
-        │   Manual QA     │  ← You + stakeholders
+        │   Manual QA     │  ← You + stakeholders (final approval)
         ├─────────────────┤
-        │  AI Verification │  ← Agent Browser (quick checks)
+        │  AI Verification │  ← Agent Browser (quick sanity checks)
         ├─────────────────┤
-        │    E2E Tests     │  ← Playwright (critical flows)
+        │    E2E Tests     │  ← Playwright (critical flows ONLY)
         ├─────────────────┤
-        │   Unit Tests     │  ← Vitest/RSpec (logic-heavy code)
+   ★ → │ Request Specs    │  ← RSpec API contract tests (THE BACKBONE)
+        ├─────────────────┤
+   ★ → │ Model/Unit Tests │  ← Business logic, validations, calculations
         └─────────────────┘
+              ▲ START HERE
+```
+
+> **Key insight:** Request specs (API contract tests) and model specs catch ~70% of bugs, run in seconds, and never flake. E2E tests are important but slow, brittle, and should only cover critical user flows. Don't skip straight to E2E — build the foundation first.
+
+### Test Priority for AI Agents
+
+When an AI agent is writing tests for a feature, follow this order:
+
+| Priority | Test Type | What It Catches | Speed | Reliability |
+|----------|-----------|----------------|-------|-------------|
+| **1st** | **Request specs** (RSpec) | API contracts — does the endpoint return the right data? Does it reject bad input? Auth working? | ⚡ Fast | 🟢 Very reliable |
+| **2nd** | **Model specs** (RSpec) | Business logic — price calculations, validations, state transitions, edge cases | ⚡ Fast | 🟢 Very reliable |
+| **3rd** | **E2E tests** (Playwright) | Full user flows — can a user actually browse → add to cart → checkout? | 🐌 Slow | 🟡 Can be flaky |
+| **4th** | **AI Verification** | Visual/UX — does the page look right after changes? | ⚡ Fast | 🟡 Subjective |
+
+**Example for an ordering system:**
+```
+1st: Request spec — POST /api/v1/orders with valid items returns 201
+     Request spec — POST /api/v1/orders with missing required modifier returns 422
+     Request spec — GET /api/v1/menu returns all categories with items
+
+2nd: Model spec — Order#calculate_total sums base prices + modifier adjustments
+     Model spec — Order validates required modifier groups are selected
+     Model spec — MenuItem.available scope excludes disabled items
+
+3rd: E2E — User can browse menu → customize sandwich → add to cart → checkout → see confirmation
+     (This ONE test covers the critical path. Don't write 20 E2E tests.)
 ```
 
 ### When to Use Each
 
 | Layer | When | Examples |
 |-------|------|----------|
-| **Unit Tests** | Pure logic, utilities, calculations | `formatDate()`, model validations |
-| **E2E Tests** | Critical user flows, regressions | Login, form submission, checkout |
+| **Model/Unit Tests** | Pure logic, utilities, calculations, validations | Price calculation, modifier validation, `formatDate()` |
+| **Request Specs** | Every API endpoint, auth/permission checks | POST /orders, GET /menu, admin-only endpoints |
+| **E2E Tests** | Critical user flows only, regressions | Login, checkout, form submission |
 | **AI Verification** | After making changes, quick sanity check | "Does this page still render?" |
 | **Manual QA** | UX review, edge cases, final approval | Before major releases |
 

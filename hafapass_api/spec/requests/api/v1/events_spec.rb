@@ -14,8 +14,9 @@ RSpec.describe "Api::V1::Events", type: :request do
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
-      expect(json.length).to eq(1)
-      expect(json.first["id"]).to eq(published_upcoming.id)
+      events = json["events"]
+      expect(events.length).to eq(1)
+      expect(events.first["id"]).to eq(published_upcoming.id)
     end
 
     it "orders events by starts_at ascending" do
@@ -25,8 +26,9 @@ RSpec.describe "Api::V1::Events", type: :request do
       get "/api/v1/events"
 
       json = JSON.parse(response.body)
-      expect(json.first["id"]).to eq(sooner.id)
-      expect(json.last["id"]).to eq(later.id)
+      events = json["events"]
+      expect(events.first["id"]).to eq(sooner.id)
+      expect(events.last["id"]).to eq(later.id)
     end
 
     it "returns event attributes including organizer info" do
@@ -34,12 +36,13 @@ RSpec.describe "Api::V1::Events", type: :request do
 
       get "/api/v1/events"
 
-      json = JSON.parse(response.body).first
-      expect(json["title"]).to eq(event.title)
-      expect(json["slug"]).to eq(event.slug)
-      expect(json["venue_name"]).to eq(event.venue_name)
-      expect(json["status"]).to eq("published")
-      expect(json["organizer"]["business_name"]).to eq(organizer_profile.business_name)
+      json = JSON.parse(response.body)
+      first_event = json["events"].first
+      expect(first_event["title"]).to eq(event.title)
+      expect(first_event["slug"]).to eq(event.slug)
+      expect(first_event["venue_name"]).to eq(event.venue_name)
+      expect(first_event["status"]).to eq("published")
+      expect(first_event["organizer"]["business_name"]).to eq(organizer_profile.business_name)
     end
 
     it "returns empty array when no published events exist" do
@@ -48,7 +51,9 @@ RSpec.describe "Api::V1::Events", type: :request do
       get "/api/v1/events"
 
       expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body)).to eq([])
+      json = JSON.parse(response.body)
+      expect(json["events"]).to eq([])
+      expect(json["meta"]).to be_present
     end
   end
 

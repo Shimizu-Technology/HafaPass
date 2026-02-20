@@ -14,9 +14,10 @@ A guide for deploying React Native / Expo apps to the Apple App Store and Google
 7. [Deep Linking Setup](#7-deep-linking-setup)
 8. [Environment Variables](#8-environment-variables)
 9. [Version Management](#9-version-management)
-10. [Release Process Checklist](#10-release-process-checklist)
-11. [Common Issues & Solutions](#11-common-issues--solutions)
-12. [Cost Overview](#12-cost-overview)
+10. [Android Debugging with ADB](#10-android-debugging-with-adb)
+11. [Release Process Checklist](#11-release-process-checklist)
+12. [Common Issues & Solutions](#12-common-issues--solutions)
+13. [Cost Overview](#13-cost-overview)
 
 ---
 
@@ -522,17 +523,28 @@ OAuth on mobile requires special handling because:
 // In your sign-in screen
 import { useSSO } from '@clerk/clerk-expo';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { Platform } from 'react-native';
 
 // Required for OAuth to complete properly
 WebBrowser.maybeCompleteAuthSession();
+
+// Warm up browser on Android for faster OAuth (optional but recommended)
+if (Platform.OS === 'android') {
+  WebBrowser.warmUpAsync();
+}
 
 export default function SignInScreen() {
   const { startSSOFlow } = useSSO();
   
   const handleOAuthSignIn = async (strategy: 'oauth_apple' | 'oauth_google') => {
+    // IMPORTANT: Use Linking.createURL() instead of hardcoded strings
+    // This is required for Android on Expo SDK 53+
+    const redirectUrl = Linking.createURL('oauth-callback');
+    
     const { createdSessionId, setActive } = await startSSOFlow({
       strategy,
-      redirectUrl: 'yourapp://oauth-callback',  // Must match your scheme!
+      redirectUrl,
     });
     
     if (createdSessionId) {
@@ -541,6 +553,8 @@ export default function SignInScreen() {
   };
 }
 ```
+
+**Critical for Expo SDK 53+**: Using `Linking.createURL()` instead of a hardcoded string like `'yourapp://oauth-callback'` is essential for Android compatibility. The hardcoded approach stopped working reliably after SDK 53.
 
 ### 6.3 iOS Configuration
 
@@ -589,9 +603,9 @@ Android requires explicit `intentFilters`:
    - Verify redirect URIs include your scheme
    - For development: `yourapp://oauth-callback`
 
-### 6.6 Google OAuth Specific Setup
+### 6.6 Google OAuth Specific Setup (Web-Based)
 
-For Google Sign-In on Android:
+For web-based Google Sign-In on Android:
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
 2. Create or select project
@@ -610,6 +624,129 @@ eas credentials --platform android
 6. Add SHA-1 to Google Cloud Console OAuth client
 
 **Note**: If using Clerk's shared credentials, this may not be necessary.
+
+### 6.7 Native Google Sign-In (Alternative for Android)
+
+If web-based Google OAuth doesn't work reliably on Android, you can use the native Google Sign-In SDK instead. This provides a more native experience but requires additional setup.
+
+**Note**: Before implementing native Google Sign-In, make sure your issue is actually OAuth-related. Common Android crashes during sign-in navigation are often caused by other issues like [Reanimated exit animations](#app-crashes-on-navigation-with-reactviewgroup-contains-null-child-new-architecture), not OAuth itself.
+
+#### Step 1: Install the Package
+
+```bash
+npm install @react-native-google-signin/google-signin
+```
+
+#### Step 2: Add Plugin to app.json
+
+```json
+{
+  "expo": {
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
+    ]
+  }
+}
+```
+
+#### Step 3: Configure Google Cloud Console
+
+**Create Web Application OAuth Client** (for getting tokens):
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services** → **Credentials**
+2. Click **Create Credentials** → **OAuth client ID**
+3. Select **Web application**
+4. Name: `Your App Web Client`
+5. Add **Authorized redirect URI**: Your Clerk OAuth callback URL (e.g., `https://your-clerk-domain.clerk.accounts.dev/v1/oauth_callback`)
+6. Click **Create** and **copy the Client ID**
+
+**Create Android OAuth Client** (for app verification):
+
+1. Click **Create Credentials** → **OAuth client ID** again
+2. Select **Android**
+3. Name: `Your App Android`
+4. Package name: `com.yourcompany.appname`
+5. SHA-1 fingerprint: Get from `eas credentials --platform android`
+6. Click **Create**
+
+#### Step 4: Add Environment Variable
+
+Add the **Web Client ID** to EAS:
+
+1. Go to [expo.dev](https://expo.dev) → Your project → **Secrets**
+2. Add variable:
+   - Name: `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
+   - Value: Your Web Client ID (e.g., `123456789-xxx.apps.googleusercontent.com`)
+   - Environments: production (and preview/development if needed)
+
+#### Step 5: Configure Clerk with Custom Credentials
+
+1. Go to [Clerk Dashboard](https://dashboard.clerk.com) → **Configure** → **SSO Connections** → **Google**
+2. Enable **Use custom credentials**
+3. Enter:
+   - **Client ID**: Your Web Client ID
+   - **Client Secret**: Your Web Client Secret (from Google Cloud Console)
+4. **Copy the Authorized Redirect URI** shown in Clerk
+5. Add that URI to Google Cloud Console → Web Client → **Authorized redirect URIs**
+6. Save in both places
+
+#### Step 6: Update Sign-In Code
+
+```typescript
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import { useClerk } from '@clerk/clerk-expo';
+import { Platform } from 'react-native';
+
+// Configure at the top of your file
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  offlineAccess: true,
+});
+
+// In your component
+const { clerk } = useClerk();
+
+const handleGoogleSignIn = async () => {
+  if (Platform.OS === 'android') {
+    // Use native Google Sign-In on Android
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const userInfo = await GoogleSignin.signIn();
+    const idToken = userInfo.data?.idToken;
+    
+    if (!idToken) {
+      throw new Error('No ID token received from Google');
+    }
+
+    // Exchange token with Clerk
+    const clerkClient = clerk as any;
+    if (clerkClient.authenticateWithGoogleOneTap) {
+      const response = await clerkClient.authenticateWithGoogleOneTap({ token: idToken });
+      if (response.createdSessionId) {
+        await clerk.setActive({ session: response.createdSessionId });
+        // Navigate to home
+      }
+    }
+  } else {
+    // Use web-based SSO on iOS (works fine there)
+    // ... existing startSSOFlow code
+  }
+};
+```
+
+#### Step 7: Build and Test
+
+```bash
+# Must create a new build after adding native module
+eas build --platform android --profile production
+```
+
+**Important Notes**:
+- Native Google Sign-In requires a **new native build** - OTA updates won't work
+- The Android client in Google Cloud Console doesn't give you a client ID to use in code - it just registers your app
+- Always use the **Web Client ID** in your app code
 
 ---
 
@@ -807,7 +944,182 @@ This automatically increments `buildNumber`/`versionCode` on each build.
 
 ---
 
-## 10. Release Process Checklist
+## 10. Android Debugging with ADB
+
+When debugging Android-specific issues, **do not** repeatedly build and submit to Google Play. Instead, use ADB (Android Debug Bridge) with debug APK builds for fast local testing.
+
+### 10.1 Why This Matters
+
+| Approach | Time per Test | Feedback Loop |
+|----------|---------------|---------------|
+| Build + Submit to Play Store | 20-30 minutes | Very slow, frustrating |
+| Debug APK + ADB Install | 10-15 minutes | Fast, immediate |
+
+### 10.2 Prerequisites
+
+#### Install ADB
+
+```bash
+# macOS (via Homebrew)
+brew install android-platform-tools
+
+# Verify installation
+adb version
+```
+
+#### Enable USB Debugging on Android Device
+
+1. Go to **Settings** → **About phone**
+2. Tap **Build number** 7 times to enable Developer Mode
+3. Go back to **Settings** → **Developer options**
+4. Enable **USB debugging**
+
+**Samsung devices**: If USB debugging is grayed out and says "Blocked by Auto Blocker":
+1. Go to **Settings** → **Security and privacy** → **Auto Blocker**
+2. Turn off **Auto Blocker**
+3. Return to Developer options and enable USB debugging
+
+#### Connect Device
+
+```bash
+# Check connected devices
+adb devices
+
+# Should show your device:
+# List of devices attached
+# XXXXXXXX    device
+```
+
+If it shows "unauthorized", check your phone for a USB debugging permission prompt and tap "Allow".
+
+### 10.3 Create Debug APK Build Profile
+
+Add a debug profile to `eas.json` for faster APK builds:
+
+```json
+{
+  "build": {
+    "android-debug": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "SENTRY_ALLOW_FAILURE": "true"
+      }
+    }
+  }
+}
+```
+
+**Key differences from production**:
+- `buildType: "apk"` - Creates an APK file (not AAB) that can be installed directly
+- Faster to install on device than going through Play Store
+
+### 10.4 Build and Install Debug APK
+
+```bash
+# Build debug APK
+eas build --platform android --profile android-debug
+
+# Once complete, download the APK
+curl -L -o ~/debug-app.apk "APK_URL_FROM_BUILD"
+
+# Install on connected device (replace existing if installed)
+adb install -r ~/debug-app.apk
+```
+
+**Tip**: You can also open the APK URL directly on your phone's browser to download and install.
+
+### 10.5 Capture Crash Logs with Logcat
+
+This is the most important debugging tool. When your app crashes, logcat captures the exact error.
+
+#### Basic Crash Capture
+
+```bash
+# Clear old logs and start capturing
+adb logcat -c && adb logcat "AndroidRuntime:E" "ReactNative:E" "ReactNativeJS:E" "*:F" | tee ~/crash_log.txt
+```
+
+This command:
+- `-c` - Clears existing logs
+- `AndroidRuntime:E` - Shows Android runtime errors
+- `ReactNative:E` - Shows React Native bridge errors
+- `ReactNativeJS:E` - Shows JavaScript errors
+- `*:F` - Shows all fatal errors
+- `| tee ~/crash_log.txt` - Saves to file while also displaying
+
+#### Workflow
+
+1. Start the logcat command (it will wait for logs)
+2. Open your app on the Android device
+3. Trigger the crash
+4. The crash stack trace appears in terminal
+5. Press `Ctrl+C` to stop and review `~/crash_log.txt`
+
+#### Example Crash Output
+
+```
+--------- beginning of crash
+01-25 15:26:59.216 12683 12683 E AndroidRuntime: FATAL EXCEPTION: main
+01-25 15:26:59.216 12683 12683 E AndroidRuntime: Process: com.yourcompany.appname, PID: 12683
+01-25 15:26:59.216 12683 12683 E AndroidRuntime: java.lang.IllegalStateException: ReactViewGroup contains null child...
+01-25 15:26:59.216 12683 12683 E AndroidRuntime: 	at android.view.ViewGroup.dispatchGetDisplayList(ViewGroup.java:4761)
+...
+```
+
+### 10.6 Common ADB Commands
+
+```bash
+# List connected devices
+adb devices
+
+# Install APK (replace existing)
+adb install -r app.apk
+
+# Uninstall app
+adb uninstall com.yourcompany.appname
+
+# View all logs (verbose - lots of output!)
+adb logcat
+
+# View only error-level logs
+adb logcat '*:E'
+
+# Filter by your app's package
+adb logcat --pid=$(adb shell pidof com.yourcompany.appname)
+
+# Clear log buffer
+adb logcat -c
+
+# Take screenshot
+adb shell screencap /sdcard/screenshot.png && adb pull /sdcard/screenshot.png
+
+# Record screen
+adb shell screenrecord /sdcard/video.mp4
+# (Ctrl+C to stop, then: adb pull /sdcard/video.mp4)
+```
+
+### 10.7 Debugging Workflow Summary
+
+```
+1. Make code changes
+2. Build debug APK: eas build --platform android --profile android-debug
+3. Download APK
+4. Start logcat: adb logcat -c && adb logcat "AndroidRuntime:E" "*:F"
+5. Install APK: adb install -r app.apk
+6. Test and trigger crash
+7. Read crash logs in terminal
+8. Fix issue and repeat
+```
+
+**This workflow is 10x faster than submitting to Google Play each time!**
+
+---
+
+## 11. Release Process Checklist
 
 ### Pre-Release
 
@@ -868,7 +1180,7 @@ This automatically increments `buildNumber`/`versionCode` on each build.
 
 ---
 
-## 11. Common Issues & Solutions
+## 12. Common Issues & Solutions
 
 ### App Review Rejections
 
@@ -930,7 +1242,96 @@ eas build --platform ios --profile production
 
 ### Android Issues
 
-#### App crashes on Google Sign-In
+#### App crashes on navigation with "ReactViewGroup contains null child" (New Architecture)
+
+**Symptoms**: App crashes immediately when navigating to certain screens on Android. No crash on iOS.
+
+**Error in logcat**:
+```
+FATAL EXCEPTION: main
+java.lang.IllegalStateException: ReactViewGroup contains null child at index N when traversal in dispatchGetDisplayList, the view may have been removed.
+```
+
+**Cause**: This is a race condition in React Native's New Architecture (Fabric renderer) on Android. It occurs when:
+1. A component uses Reanimated's `exiting` animations (e.g., `exiting={FadeOut}`)
+2. The component conditionally renders (returns `null` based on state/route)
+3. During navigation, the component unmounts while Android's rendering system is still drawing
+
+The `exiting` animation tries to animate the view out, but Fabric's rendering pipeline has already removed the view from the hierarchy, causing the crash.
+
+**Fix**: Remove `exiting` animations from conditionally rendered components:
+
+```typescript
+// BAD - causes crash on Android with New Architecture
+import { FadeIn, FadeOut } from 'react-native-reanimated';
+
+function FloatingButton() {
+  if (!shouldShow) return null;
+  
+  return (
+    <Animated.View
+      entering={FadeIn}
+      exiting={FadeOut}  // ❌ This causes the crash!
+    >
+      {/* content */}
+    </Animated.View>
+  );
+}
+
+// GOOD - safe for New Architecture
+function FloatingButton() {
+  if (!shouldShow) return null;
+  
+  return (
+    <Animated.View
+      entering={FadeIn}
+      // No exiting animation - component just disappears
+    >
+      {/* content */}
+    </Animated.View>
+  );
+}
+```
+
+**Important notes**:
+- `entering` animations are safe (component is mounting, not unmounting)
+- This only affects Android with New Architecture (`newArchEnabled: true`)
+- iOS does not have this issue
+- You cannot disable New Architecture if using Reanimated 4.x (it requires Fabric)
+- Use [Section 10 (Android Debugging with ADB)](#10-android-debugging-with-adb) to diagnose these crashes locally
+
+#### App crashes/closes on Google Sign-In (Expo SDK 53+)
+
+**Cause**: Expo SDK 53+ changed how `expo-web-browser` handles OAuth redirects on Android. Hardcoded redirect URLs no longer work reliably.
+
+**Fix**: Use `Linking.createURL()` instead of hardcoded strings:
+
+```typescript
+// BAD - doesn't work on Android SDK 53+
+redirectUrl: 'yourapp://oauth-callback',
+
+// GOOD - works on all platforms
+import * as Linking from 'expo-linking';
+const redirectUrl = Linking.createURL('oauth-callback');
+```
+
+Also add browser warm-up for Android:
+
+```typescript
+import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
+
+// At top of file, outside component
+WebBrowser.maybeCompleteAuthSession();
+
+if (Platform.OS === 'android') {
+  WebBrowser.warmUpAsync();
+}
+```
+
+**Important**: This requires a new native build after making the change.
+
+#### App crashes on Google Sign-In (Missing Intent Filters)
 
 **Cause**: Missing `intentFilters` for deep linking  
 **Fix**: Add to `app.json`:
@@ -985,7 +1386,7 @@ eas build --platform ios --profile production
 3. Grant **Release apps to testing tracks** and **Release to production** permissions for your app
 4. Wait a few minutes for permissions to propagate
 
-See [Section 5.3](#53-service-account-for-automated-uploads) for complete setup.
+See [Section 5.3 (Service Account for Automated Uploads)](#53-service-account-for-automated-uploads) for complete setup.
 
 ### OAuth Issues
 
@@ -1043,7 +1444,7 @@ redirectUrl: 'yourapp://oauth-callback'
 
 ---
 
-## 12. Cost Overview
+## 13. Cost Overview
 
 ### Required Costs
 
@@ -1088,6 +1489,9 @@ eas build --platform android --profile production
 # Build both
 eas build --platform all --profile production
 
+# Build Android debug APK (for local testing with ADB)
+eas build --platform android --profile android-debug
+
 # Submit iOS
 eas submit --platform ios --latest
 
@@ -1100,6 +1504,11 @@ eas credentials --platform android
 
 # View builds
 eas build:list
+
+# Android debugging (see Section 10)
+adb devices                    # List connected devices
+adb install -r app.apk         # Install APK
+adb logcat '*:E'               # View error logs
 ```
 
 ### Key Files
@@ -1121,4 +1530,4 @@ eas build:list
 
 ---
 
-*Last updated: January 2026*
+*Last updated: January 25, 2026*

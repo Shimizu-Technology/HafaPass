@@ -39,6 +39,8 @@ A guide for deploying React frontends to Netlify, Rails backends to Render, and 
 | **Render** | Backend hosting, auto-deploy | 750 hours/month (sleeps after 15min) | $7/mo |
 | **Neon** | Serverless PostgreSQL | 0.5 GB storage, 190 hours compute/month | $19/mo |
 
+> ⚠️ **Important: Free tier is for demos and student projects ONLY.** For any client-facing or production application, always use at least Render's $7/month tier. The free tier sleeps after 15 minutes of inactivity, causing 30+ second cold starts — unacceptable for real users. A customer trying to place an order or load your app shouldn't wait half a minute.
+
 ### Alternatives
 
 | Component | Alternative | Notes |

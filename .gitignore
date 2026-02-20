@@ -55,8 +55,8 @@ hafapass_frontend/coverage/
 .Trashes
 Thumbs.db
 
-# Screenshots (optional - remove this line if you want to commit screenshots)
-# screenshots/
+# Screenshots (generated during testing)
+screenshots/
 
 # Logs
 *.log
