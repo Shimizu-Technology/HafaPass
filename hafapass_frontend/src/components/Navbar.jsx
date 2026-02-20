@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { UserButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
-import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield } from 'lucide-react'
+import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search } from 'lucide-react'
 import apiClient from '../api/client'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
@@ -10,7 +10,10 @@ function NavContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [userRole, setUserRole] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const location = useLocation()
+  const navigate = useNavigate()
   const { isSignedIn } = useUser ? useUser() : { isSignedIn: false }
 
   useEffect(() => {
@@ -82,6 +85,44 @@ function NavContent() {
               </Link>
             ))}
           </nav>
+
+          {/* Search */}
+          <div className="hidden md:flex items-center">
+            {searchOpen ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (searchQuery.trim()) {
+                    navigate(`/events?search=${encodeURIComponent(searchQuery.trim())}`)
+                    setSearchQuery('')
+                    setSearchOpen(false)
+                  }
+                }}
+                className="flex items-center gap-2"
+              >
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search events..."
+                    autoFocus
+                    onBlur={() => { if (!searchQuery) setSearchOpen(false) }}
+                    className="w-56 pl-9 pr-3 py-2 text-sm rounded-lg border border-neutral-200/80 bg-white/80 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all"
+                  />
+                </div>
+              </form>
+            ) : (
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="w-9 h-9 flex items-center justify-center rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100/80 transition-colors"
+                aria-label="Search events"
+              >
+                <Search className="w-4.5 h-4.5" />
+              </button>
+            )}
+          </div>
 
           {/* Right side */}
           <div className="hidden md:flex items-center gap-3">
