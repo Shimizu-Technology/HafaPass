@@ -140,7 +140,7 @@ class EmailService
       email_wrapper("Order Confirmed") do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Your tickets are confirmed!</h2>
-          <p style="color: #6b7280; margin: 0 0 28px;">Thank you for your purchase, #{order.buyer_name}.</p>
+          <p style="color: #6b7280; margin: 0 0 28px;">Thank you for your purchase, #{ERB::Util.html_escape(order.buyer_name)}.</p>
 
           <div style="background: #f3f4f6; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
             <h3 style="color: #1f2937; margin: 0 0 8px;">#{event.title}</h3>
@@ -216,7 +216,7 @@ class EmailService
             <p style="color: #166534; margin: 0;">$#{format_cents(order.refund_amount_cents)} will be returned to your original payment method within 5-10 business days.</p>
           </div>
 
-          #{order.refund_reason.present? ? "<p style=\"color: #6b7280; margin: 0 0 12px;\"><strong>Reason:</strong> #{order.refund_reason}</p>" : ""}
+          #{order.refund_reason.present? ? "<p style=\"color: #6b7280; margin: 0 0 12px;\"><strong>Reason:</strong> #{ERB::Util.html_escape(order.refund_reason)}</p>" : ""}
 
           <p style="color: #6b7280; font-size: 14px; margin: 0;">If you have any questions, please contact the event organizer.</p>
         HTML
@@ -228,7 +228,7 @@ class EmailService
         <<~HTML
           <div style="text-align: center;">
             <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">You're on the Guest List!</h2>
-            <p style="color: #6b7280; margin: 0 0 28px;">#{guest_entry.guest_name}, you've been added to the guest list for:</p>
+            <p style="color: #6b7280; margin: 0 0 28px;">#{ERB::Util.html_escape(guest_entry.guest_name)}, you've been added to the guest list for:</p>
 
             <div style="background: #f3f4f6; border-radius: 10px; padding: 28px; margin-bottom: 28px;">
               <h3 style="color: #1f2937; margin: 0 0 8px;">#{event.title}</h3>
@@ -237,7 +237,7 @@ class EmailService
               <p style="color: #1f2937; font-weight: 600; margin: 12px 0 0;">#{guest_entry.ticket_type.name} x #{guest_entry.quantity}</p>
             </div>
 
-            #{guest_entry.notes.present? ? "<p style=\"color: #6b7280; margin: 0 0 20px;\"><em>#{guest_entry.notes}</em></p>" : ""}
+            #{guest_entry.notes.present? ? "<p style=\"color: #6b7280; margin: 0 0 20px;\"><em>#{ERB::Util.html_escape(guest_entry.notes)}</em></p>" : ""}
 
             <p style="color: #6b7280; font-size: 14px; margin: 0;">Present your name at the door for entry. No ticket purchase required.</p>
           </div>

@@ -3,6 +3,7 @@
 # Pagy pagination configuration
 # https://ddnexus.github.io/pagy/
 
+require "pagy/extras/limit"
 require "pagy/extras/metadata"
 require "pagy/extras/overflow"
 

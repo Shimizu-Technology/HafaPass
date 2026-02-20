@@ -7,6 +7,8 @@ class Rack::Attack
   # Use Redis for throttle store if available, otherwise use memory store
   if ENV["REDIS_URL"].present?
     Rack::Attack.cache.store = ActiveSupport::Cache::RedisCacheStore.new(url: ENV["REDIS_URL"])
+  else
+    Rails.logger.warn("[Rack::Attack] REDIS_URL not set — falling back to in-memory store (not suitable for multi-process)")
   end
 
   # ─── Safelist ─────────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ class Rack::Attack
         body = JSON.parse(req.body.read)
         req.body.rewind
         body["buyer_email"]&.downcase
-      rescue
+      rescue JSON::ParserError
         nil
       end
     end

@@ -13,6 +13,7 @@ module Paginatable
   # Returns [pagy, paginated_records]
   def paginate(collection, items: nil)
     items ||= params[:per_page]&.to_i
+    items = nil if items && items < 1 # Guard against zero/negative values
     pagy, records = pagy(collection, limit: items)
     set_pagination_headers(pagy)
     [pagy, records]

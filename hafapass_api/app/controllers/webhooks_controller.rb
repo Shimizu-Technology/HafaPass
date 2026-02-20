@@ -152,6 +152,8 @@ class WebhooksController < ActionController::API
     else
       # Don't downgrade from full refund to partial (idempotency)
       return if order.refunded?
+      # Idempotency: skip if refund amount hasn't changed
+      return if order.partially_refunded? && order.refund_amount_cents == refund_amount
 
       order.update!(
         status: :partially_refunded,
@@ -208,7 +210,7 @@ class WebhooksController < ActionController::API
       when "google_pay" then "google_pay"
       else wallet.type
       end
-    rescue => e
+    rescue Stripe::StripeError => e
       Rails.logger.warn("Could not detect wallet type: #{e.message}")
       nil
     end

@@ -158,6 +158,12 @@ class Api::V1::OrdersController < ApplicationController
       return
     end
 
+    # Ownership check: order must belong to the current user or match by payment intent
+    if @current_user && order.user_id && order.user_id != @current_user.id
+      render json: { error: "Order not found" }, status: :not_found
+      return
+    end
+
     unless order.pending?
       render json: { error: "Only pending orders can be cancelled" }, status: :unprocessable_entity
       return

@@ -84,7 +84,7 @@ class StripeService
 
     def simulate_payment_intent(order)
       Rails.logger.info "\U0001f7e1 SIMULATE: PaymentIntent for Order ##{order.id} ($#{'%.2f' % (order.total_cents / 100.0)})"
-      sleep(0.3) # Mimic network latency
+      sleep(0.3) unless Rails.env.test? # Mimic network latency
 
       OpenStruct.new(
         id: "sim_pi_#{SecureRandom.hex(12)}",
@@ -95,7 +95,7 @@ class StripeService
     def simulate_refund(payment_intent_id, amount_cents)
       amount_str = amount_cents ? "$#{'%.2f' % (amount_cents / 100.0)}" : "full"
       Rails.logger.info "\U0001f7e1 SIMULATE: Refund #{amount_str} for #{payment_intent_id}"
-      sleep(0.2)
+      sleep(0.2) unless Rails.env.test?
 
       OpenStruct.new(
         id: "sim_re_#{SecureRandom.hex(12)}",
