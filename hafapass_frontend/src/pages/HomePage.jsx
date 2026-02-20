@@ -1,236 +1,281 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, Ticket, Shield, Zap, QrCode, Users, CreditCard } from 'lucide-react'
+import { Search, Calendar, MapPin, Sparkles, Music, Moon, UtensilsCrossed, Trophy, Users, PartyPopper, ArrowRight } from 'lucide-react'
+import apiClient from '../api/client'
+import EventCard from '../components/EventCard'
 import Footer from '../components/Footer'
 
-const features = [
-  {
-    icon: Ticket,
-    title: 'Digital Tickets',
-    description: 'Beautiful mobile tickets with QR codes. No more lost paper tickets or printing hassles.',
-    color: 'brand',
-  },
-  {
-    icon: Shield,
-    title: 'Secure Payments',
-    description: 'Stripe-powered checkout with Apple Pay, Google Pay, and all major cards.',
-    color: 'indigo',
-  },
-  {
-    icon: Zap,
-    title: 'Instant Delivery',
-    description: 'Tickets delivered to email instantly. Access them anytime from your phone.',
-    color: 'amber',
-  },
-  {
-    icon: QrCode,
-    title: 'QR Check-In',
-    description: 'Fast entry with QR code scanning. Real-time check-in tracking for organizers.',
-    color: 'emerald',
-  },
-  {
-    icon: Users,
-    title: 'Guest Lists',
-    description: 'Manage comp tickets and guest lists effortlessly. Perfect for VIPs and promotions.',
-    color: 'violet',
-  },
-  {
-    icon: CreditCard,
-    title: 'Promo Codes',
-    description: 'Create percentage or fixed-amount discounts. Drive sales with targeted promotions.',
-    color: 'rose',
-  },
+const categories = [
+  { label: 'All', value: 'all', icon: Sparkles },
+  { label: 'Music', value: 'music', icon: Music },
+  { label: 'Nightlife', value: 'nightlife', icon: Moon },
+  { label: 'Food & Drink', value: 'food_and_drink', icon: UtensilsCrossed },
+  { label: 'Sports', value: 'sports', icon: Trophy },
+  { label: 'Community', value: 'community', icon: Users },
+  { label: 'Festivals', value: 'festivals', icon: PartyPopper },
 ]
 
-const iconColorMap = {
-  brand:   { bg: 'bg-brand-50', icon: 'text-brand-500', hoverBg: 'group-hover:bg-brand-500' },
-  indigo:  { bg: 'bg-indigo-50', icon: 'text-indigo-500', hoverBg: 'group-hover:bg-indigo-500' },
-  amber:   { bg: 'bg-amber-50', icon: 'text-amber-500', hoverBg: 'group-hover:bg-amber-500' },
-  emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-500', hoverBg: 'group-hover:bg-emerald-500' },
-  violet:  { bg: 'bg-violet-50', icon: 'text-violet-500', hoverBg: 'group-hover:bg-violet-500' },
-  rose:    { bg: 'bg-rose-50', icon: 'text-rose-500', hoverBg: 'group-hover:bg-rose-500' },
-}
-
 export default function HomePage() {
+  const [events, setEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [activeCategory, setActiveCategory] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  useEffect(() => {
+    apiClient.get('/events')
+      .then(res => {
+        const data = res.data.events || res.data || []
+        setEvents(data)
+      })
+      .catch(() => setEvents([]))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const filtered = events.filter(e => {
+    const matchesCategory = activeCategory === 'all' || e.category === activeCategory
+    const matchesSearch = !searchQuery || e.title?.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesCategory && matchesSearch
+  })
+
+  const featuredEvents = filtered.filter(e => e.is_featured).slice(0, 2)
+  const gridEvents = filtered.filter(e => !e.is_featured || !featuredEvents.includes(e))
+
+  const formatDate = (dateStr) => {
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  }
+
+  const formatTime = (dateStr) => {
+    const d = new Date(dateStr)
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+
+  const getPrice = (event) => {
+    const lowest = event.ticket_types?.reduce((min, tt) => {
+      const p = tt.price_cents ?? 0
+      return min === null ? p : Math.min(min, p)
+    }, null)
+    if (lowest === null) return ''
+    return lowest === 0 ? 'Free' : `From $${(lowest / 100).toFixed(0)}`
+  }
+
   return (
-    <div className="min-h-screen">
-      {/* Hero */}
+    <div className="min-h-screen bg-white">
+      {/* ── Minimal Hero ── */}
       <section className="relative overflow-hidden">
-        {/* Gradient mesh background — light & sophisticated */}
-        <div className="absolute inset-0 bg-gradient-to-br from-neutral-50 via-white to-brand-50/30" />
-        <div className="absolute top-0 right-0 w-[800px] h-[600px] bg-gradient-to-bl from-brand-100/40 via-transparent to-transparent rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-[600px] h-[400px] bg-gradient-to-tr from-accent-100/20 via-transparent to-transparent rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-brand-200/10 rounded-full blur-[100px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-brand-50/60 via-white to-white" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(13,158,150,0.04)_1px,transparent_0)] bg-[size:32px_32px]" />
 
-        {/* Subtle dot pattern */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(13,158,150,0.05)_1px,transparent_0)] bg-[size:24px_24px]" />
-
-        <div className="relative max-w-6xl mx-auto px-6 lg:px-8 pt-20 pb-24 lg:pt-28 lg:pb-36">
-          <div className="max-w-3xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-neutral-200/80 text-sm text-neutral-600 mb-8 shadow-soft">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-soft" />
-                Now live on Guam
-              </div>
-            </motion.div>
-
-            <motion.h1
-              className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 text-neutral-900"
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-            >
-              Your pass to{' '}
-              <span className="bg-gradient-to-r from-brand-500 to-brand-600 bg-clip-text text-transparent">
-                every event
-              </span>
-              {' '}on the island
-            </motion.h1>
-
-            <motion.p
-              className="text-lg sm:text-xl text-neutral-500 max-w-xl mb-10 leading-relaxed"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            >
-              Discover events, buy tickets, and check in with your phone.
-              The modern ticketing platform built for Guam.
-            </motion.p>
-
-            <motion.div
-              className="flex flex-col sm:flex-row gap-4"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <Link
-                to="/events"
-                className="group btn-primary text-lg !px-8 !py-4"
-              >
-                Browse Events
-                <ArrowRight className="w-5 h-5 ml-2 transition-transform group-hover:translate-x-1" />
-              </Link>
-              <Link
-                to="/sign-up"
-                className="btn-secondary text-lg !px-8 !py-4"
-              >
-                Create an Event
-              </Link>
-            </motion.div>
-          </div>
-
-          {/* Floating card mockup for visual interest */}
+        <div className="relative max-w-3xl mx-auto px-6 pt-24 pb-12 lg:pt-36 lg:pb-16 text-center">
           <motion.div
-            className="hidden lg:block absolute right-8 top-1/2 -translate-y-1/2"
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8, delay: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mb-8"
           >
-            <div className="animate-float">
-              <div className="w-72 bg-white rounded-2xl shadow-float border border-neutral-200/60 overflow-hidden">
-                <div className="h-36 bg-gradient-to-br from-brand-400 via-brand-500 to-brand-600 relative">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(255,255,255,0.15),transparent)]" />
-                  <div className="absolute bottom-3 left-4 right-4">
-                    <div className="text-white/80 text-xs font-medium">Featured Event</div>
-                    <div className="text-white text-sm font-bold">Island Music Festival</div>
-                  </div>
-                </div>
-                <div className="p-4 space-y-2.5">
-                  <div className="flex items-center gap-2 text-xs text-neutral-500">
-                    <span className="w-3 h-3 rounded-full bg-brand-100 flex items-center justify-center">
-                      <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
-                    </span>
-                    Sat, Mar 15 · 6:00 PM
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-neutral-500">
-                    <span className="w-3 h-3 rounded-full bg-accent-100 flex items-center justify-center">
-                      <span className="w-1.5 h-1.5 rounded-full bg-accent-500" />
-                    </span>
-                    Tumon Bay, Guam
-                  </div>
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-xs font-bold text-accent-500">From $25</span>
-                    <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Tickets Available</span>
-                  </div>
-                </div>
-              </div>
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 shadow-lg mb-6">
+              <span className="text-white font-bold text-xl">H</span>
+            </div>
+          </motion.div>
+
+          <motion.h1
+            className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-neutral-900 mb-10"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+          >
+            What's happening on{' '}
+            <span className="bg-gradient-to-r from-brand-500 to-brand-600 bg-clip-text text-transparent">Guam</span>
+          </motion.h1>
+
+          <motion.div
+            className="max-w-lg mx-auto"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.25 }}
+          >
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search events..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-neutral-200 shadow-soft text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all text-base"
+              />
             </div>
           </motion.div>
         </div>
       </section>
 
-      {/* Features */}
-      <section className="py-20 lg:py-28 relative">
-        <div className="max-w-6xl mx-auto px-6 lg:px-8">
-          <div className="max-w-2xl mb-14">
-            <h2 className="text-3xl lg:text-4xl font-bold tracking-tight text-neutral-900 mb-4">
-              Everything you need,{' '}
-              <span className="text-neutral-400">nothing you don't</span>
-            </h2>
-            <p className="text-lg text-neutral-500">
-              From discovery to check-in, HafaPass handles the entire event experience.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {features.map((feature, i) => {
-              const Icon = feature.icon
-              const colors = iconColorMap[feature.color]
+      {/* ── Category Pills ── */}
+      <section className="sticky top-0 z-20 bg-white/80 backdrop-blur-lg border-b border-neutral-100">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex gap-2 py-3 overflow-x-auto scrollbar-hide">
+            {categories.map(cat => {
+              const Icon = cat.icon
+              const active = activeCategory === cat.value
               return (
-                <motion.div
-                  key={feature.title}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: '-10%' }}
-                  transition={{ duration: 0.5, delay: i * 0.08 }}
-                  className="group p-7 rounded-2xl bg-white border border-neutral-200/60 hover:border-neutral-300/80 hover:shadow-card-hover transition-all duration-300 hover:-translate-y-0.5"
+                <button
+                  key={cat.value}
+                  onClick={() => setActiveCategory(cat.value)}
+                  className={`flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    active
+                      ? 'bg-brand-500 text-white shadow-sm'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  }`}
                 >
-                  <div className={`w-11 h-11 rounded-xl ${colors.bg} flex items-center justify-center mb-5 ${colors.hoverBg} transition-colors duration-300`}>
-                    <Icon className={`w-5 h-5 ${colors.icon} group-hover:text-white transition-colors duration-300`} />
-                  </div>
-                  <h3 className="text-lg font-semibold text-neutral-900 mb-2">{feature.title}</h3>
-                  <p className="text-neutral-500 text-sm leading-relaxed">{feature.description}</p>
-                </motion.div>
+                  <Icon className="w-3.5 h-3.5" />
+                  {cat.label}
+                </button>
               )
             })}
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="py-20 lg:py-28 relative">
-        {/* Subtle background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-neutral-100/50 to-transparent" />
-
-        <div className="relative max-w-4xl mx-auto px-6 lg:px-8 text-center">
+      {/* ── Main Content ── */}
+      <div className="max-w-6xl mx-auto px-6 py-10 lg:py-14">
+        {loading ? (
+          /* Loading skeleton */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="animate-pulse rounded-2xl bg-neutral-100 h-72" />
+            ))}
+          </div>
+        ) : filtered.length === 0 && events.length === 0 ? (
+          /* ── Empty State ── */
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            className="text-center py-24"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="inline-flex items-center justify-center gap-3 mb-8">
+              <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center">
+                <Calendar className="w-6 h-6 text-brand-500" />
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-accent-50 flex items-center justify-center">
+                <Music className="w-6 h-6 text-accent-500" />
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-violet-50 flex items-center justify-center">
+                <PartyPopper className="w-6 h-6 text-violet-500" />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-neutral-900 mb-3">Events are coming to Guam</h2>
+            <p className="text-neutral-500 mb-8 max-w-md mx-auto">
+              Be the first to list yours. Create your organizer profile and start selling tickets in minutes.
+            </p>
+            <Link to="/sign-up" className="btn-primary text-base !px-8 !py-3">
+              Get Started Free
+            </Link>
+          </motion.div>
+        ) : (
+          <>
+            {/* No results for filter */}
+            {filtered.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-neutral-500 text-lg">No events found. Try a different search or category.</p>
+              </div>
+            ) : (
+              <>
+                {/* ── Featured Events ── */}
+                {featuredEvents.length > 0 && (
+                  <section className="mb-12">
+                    <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-5">Don't Miss</h2>
+                    <div className={`grid gap-6 ${featuredEvents.length === 1 ? 'grid-cols-1 max-w-2xl' : 'grid-cols-1 md:grid-cols-2'}`}>
+                      {featuredEvents.map((event, i) => (
+                        <motion.div
+                          key={event.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.5, delay: i * 0.1 }}
+                        >
+                          <Link
+                            to={`/events/${event.slug || event.id}`}
+                            className="group block relative rounded-2xl overflow-hidden h-72 md:h-80 bg-neutral-100"
+                          >
+                            {event.cover_image_url ? (
+                              <img
+                                src={event.cover_image_url}
+                                alt={event.title}
+                                className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                              />
+                            ) : (
+                              <div className="absolute inset-0 bg-gradient-to-br from-brand-400 to-brand-600" />
+                            )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                            <div className="absolute bottom-0 left-0 right-0 p-6">
+                              <div className="flex items-center gap-2 text-white/80 text-sm mb-2">
+                                <Calendar className="w-3.5 h-3.5" />
+                                {formatDate(event.starts_at)} · {formatTime(event.starts_at)}
+                              </div>
+                              <h3 className="text-xl md:text-2xl font-bold text-white mb-1 group-hover:underline decoration-2 underline-offset-4">
+                                {event.title}
+                              </h3>
+                              <div className="flex items-center gap-3 text-white/70 text-sm">
+                                {event.venue_name && (
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="w-3.5 h-3.5" />
+                                    {event.venue_name}
+                                  </span>
+                                )}
+                                {getPrice(event) && (
+                                  <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-xs font-medium">
+                                    {getPrice(event)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </Link>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* ── Event Grid ── */}
+                {gridEvents.length > 0 && (
+                  <section>
+                    {featuredEvents.length > 0 && (
+                      <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-5">All Events</h2>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {gridEvents.map((event, i) => (
+                        <motion.div
+                          key={event.id}
+                          initial={{ opacity: 0, y: 16 }}
+                          whileInView={{ opacity: 1, y: 0 }}
+                          viewport={{ once: true, margin: '-5%' }}
+                          transition={{ duration: 0.4, delay: i * 0.05 }}
+                        >
+                          <EventCard event={event} />
+                        </motion.div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Organizer CTA ── */}
+      <section className="py-16 lg:py-20">
+        <div className="max-w-6xl mx-auto px-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
+            transition={{ duration: 0.5 }}
           >
-            <h2 className="text-3xl lg:text-5xl font-bold tracking-tight text-neutral-900 mb-6">
-              Ready to host your{' '}
-              <span className="bg-gradient-to-r from-accent-500 to-accent-600 bg-clip-text text-transparent">
-                next event
-              </span>
-              ?
-            </h2>
-            <p className="text-lg text-neutral-500 max-w-xl mx-auto mb-10">
-              Create your organizer profile and start selling tickets in minutes. No setup fees.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link to="/sign-up" className="btn-primary text-lg !px-8 !py-4">
-                Get Started Free
-              </Link>
-              <Link to="/events" className="btn-ghost text-lg">
-                View Events
-              </Link>
-            </div>
+            <p className="text-lg text-neutral-500 mb-5">Hosting an event on Guam?</p>
+            <Link to="/sign-up" className="group inline-flex items-center gap-2 btn-primary text-base !px-8 !py-3">
+              Get Started Free
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+            </Link>
           </motion.div>
         </div>
       </section>
