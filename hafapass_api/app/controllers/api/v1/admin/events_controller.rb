@@ -39,8 +39,12 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   end
 
   def event_json(e)
-    tickets_sold = e.ticket_types.sum(&:quantity_sold)
-    revenue = e.orders.select { |o| %w[completed partially_refunded].include?(o.status) }.sum(&:total_cents)
+    tickets_sold = e.ticket_types.loaded? ? e.ticket_types.sum(&:quantity_sold) : e.ticket_types.sum(:quantity_sold)
+    revenue = if e.orders.loaded?
+      e.orders.select { |o| %w[completed partially_refunded].include?(o.status) }.sum(&:total_cents)
+    else
+      e.orders.where(status: %w[completed partially_refunded]).sum(:total_cents)
+    end
     {
       id: e.id,
       title: e.title,
