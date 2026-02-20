@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
+import CoverImageUpload from '../../components/CoverImageUpload'
 
 const CATEGORIES = [
  { value: 'nightlife', label: 'Nightlife' },
@@ -349,21 +350,11 @@ export default function CreateEventPage() {
        {formErrors.max_capacity && <p className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
       </div>
 
-      <div>
-       <label htmlFor="cover_image_url" className="block text-sm font-medium text-neutral-700 mb-1">
-        Cover Image URL
-       </label>
-       <input
-        id="cover_image_url"
-        type="url"
-        value={form.cover_image_url}
-        onChange={(e) => updateField('cover_image_url', e.target.value)}
-        className="input"
-        placeholder="https://example.com/image.jpg"
-        disabled={submitting}
-       />
-       <p className="mt-1 text-xs text-neutral-500">Paste a URL for your event cover image</p>
-      </div>
+      <CoverImageUpload
+       currentUrl={form.cover_image_url}
+       onUploaded={(url) => updateField('cover_image_url', url)}
+       disabled={submitting}
+      />
      </div>
     </section>
 
@@ -376,7 +367,9 @@ export default function CreateEventPage() {
      >
       {submitting ? 'Creating Event...' : 'Create Event'}
      </button>
-     <p className="mt-2 text-xs text-neutral-500">Your event will be created as a draft. You can add ticket types and publish it from the edit page.</p>
+     <div className="mt-3 p-3 bg-brand-50 border border-brand-200 rounded-xl">
+      <p className="text-sm text-brand-700">📋 <strong>You&apos;ll add ticket types on the next step.</strong> After creating the event, you&apos;ll be taken to the edit page where you can set up ticket types, upload a cover image, and publish.</p>
+     </div>
     </div>
    </form>
   </div>
