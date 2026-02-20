@@ -242,7 +242,7 @@ export default function ScannerPage() {
        />
        {/* Scanning overlay */}
        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="relative w-48 h-48 border-2 border-white/70 rounded-xl">
+        <div className="relative w-48 h-48 border-2 border-white/70 rounded-xl" role="presentation">
          <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-brand-400 rounded-tl-lg" />
          <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-brand-400 rounded-tr-lg" />
          <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-brand-400 rounded-bl-lg" />

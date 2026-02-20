@@ -10,7 +10,7 @@ function formatCents(cents) {
 
 function formatDate(isoString) {
  if (!isoString) return ''
- return new Date(isoString).toLocaleDateString('en-US', {
+ return new Date(isoString).toLocaleString('en-US', {
   month: 'short',
   day: 'numeric',
   year: 'numeric',

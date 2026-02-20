@@ -94,13 +94,13 @@ export default function GuestListPage() {
       </div>
       <div>
        <label className="block text-sm font-medium text-neutral-700 mb-1.5">Ticket Type</label>
-       <select value={form.ticket_type_id} onChange={e => setForm({...form, ticket_type_id: parseInt(e.target.value)})} className="input">
+       <select value={form.ticket_type_id} onChange={e => setForm({...form, ticket_type_id: parseInt(e.target.value, 10) || ''})} className="input">
         {ticketTypes.map(tt => <option key={tt.id} value={tt.id}>{tt.name}</option>)}
        </select>
       </div>
       <div>
        <label className="block text-sm font-medium text-neutral-700 mb-1.5">Quantity</label>
-       <input type="number" min="1" max="10" value={form.quantity} onChange={e => setForm({...form, quantity: parseInt(e.target.value)})} className="input" />
+       <input type="number" min="1" max="10" value={form.quantity} onChange={e => setForm({...form, quantity: parseInt(e.target.value, 10) || 1})} className="input" />
       </div>
       <div className="sm:col-span-2">
        <label className="block text-sm font-medium text-neutral-700 mb-1.5">Notes <span className="text-neutral-400 font-normal">(optional)</span></label>

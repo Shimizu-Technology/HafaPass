@@ -26,7 +26,13 @@ export default function RefundsPage() {
   try {
    const payload = { reason: refundForm.reason || null }
    if (refundForm.type === 'partial' && refundForm.amount) {
-    payload.amount_cents = Math.round(parseFloat(refundForm.amount) * 100)
+    const parsed = parseFloat(refundForm.amount)
+    if (Number.isNaN(parsed) || parsed <= 0) {
+     alert('Please enter a valid refund amount')
+     setProcessing(false)
+     return
+    }
+    payload.amount_cents = Math.round(parsed * 100)
    }
    await apiClient.post(`/organizer/events/${eventId}/orders/${orderId}/refund`, payload)
    setRefundingId(null)
@@ -73,7 +79,7 @@ export default function RefundsPage() {
          </div>
         </div>
         {refundingId !== order.id ? (
-         <button onClick={() => setRefundingId(order.id)} className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50">
+         <button onClick={() => { setRefundingId(order.id); setRefundForm({ amount: '', reason: '', type: 'full' }) }} className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50">
           <RotateCcw className="w-3 h-3" /> Refund
          </button>
         ) : (

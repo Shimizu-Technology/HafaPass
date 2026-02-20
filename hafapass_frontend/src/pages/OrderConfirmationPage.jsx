@@ -14,8 +14,10 @@ export default function OrderConfirmationPage() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    if (!order) {
+    // Refetch if navigating to a different order or if no order data
+    if (!order || String(order.id) !== String(id)) {
       setLoading(true)
+      setError(null)
       apiClient.get(`/me/orders/${id}`)
         .then(res => {
           setOrder(res.data)
@@ -27,7 +29,7 @@ export default function OrderConfirmationPage() {
           setLoading(false)
         })
     }
-  }, [id, order])
+  }, [id])
 
   const formatPrice = (cents) => {
     if (cents === 0) return 'Free'

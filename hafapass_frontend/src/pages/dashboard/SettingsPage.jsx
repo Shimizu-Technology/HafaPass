@@ -1,5 +1,5 @@
-import { Loader2, Check, X } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { Check, X } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 
@@ -36,6 +36,13 @@ export default function SettingsPage() {
  const [saving, setSaving] = useState(false)
  const [error, setError] = useState(null)
  const [success, setSuccess] = useState(null)
+ const successTimeoutRef = useRef(null)
+
+ useEffect(() => {
+  return () => {
+   if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
+  }
+ }, [])
 
  useEffect(() => {
   apiClient.get('/admin/settings')
@@ -84,7 +91,8 @@ export default function SettingsPage() {
    setSettings(res.data)
    const labels = { simulate: 'Simulate', test: 'Test (Stripe Sandbox)', live: 'Live' }
    setSuccess(`Payment mode changed to ${labels[newMode]}`)
-   setTimeout(() => setSuccess(null), 4000)
+   if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
+   successTimeoutRef.current = setTimeout(() => setSuccess(null), 4000)
   } catch (err) {
    const msg = err.response?.data?.error || 'Failed to update settings.'
    setError(msg)

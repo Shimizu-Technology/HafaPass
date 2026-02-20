@@ -63,8 +63,16 @@ export default function CheckoutPage() {
   }, [slug, event, lineItems, navigate])
 
   const formatPrice = (cents) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
-  const formatDate = (dateStr) => new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-  const formatTime = (dateStr) => new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  const formatDate = (dateStr) => {
+    if (!dateStr) return ''
+    const d = new Date(dateStr)
+    return Number.isNaN(d.valueOf()) ? '' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  }
+  const formatTime = (dateStr) => {
+    if (!dateStr) return ''
+    const d = new Date(dateStr)
+    return Number.isNaN(d.valueOf()) ? '' : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
 
   // Promo code validation
   const handlePromoValidate = async () => {
@@ -178,7 +186,13 @@ export default function CheckoutPage() {
 
   if (!event || !lineItems) return null
 
-  const feePercent = config ? parseFloat(config.service_fee_percent) : 3.0
+  if (!config) return (
+    <div className="flex justify-center py-20">
+      <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+    </div>
+  )
+
+  const feePercent = parseFloat(config.service_fee_percent) || 3.0
   const feeFlatCents = config ? config.service_fee_flat_cents : 50
 
   const orderLines = lineItems.map(item => {
@@ -355,7 +369,9 @@ export default function CheckoutPage() {
             <button onClick={() => {
               // Cancel the pending order to free up ticket inventory
               if (orderId) {
-                apiClient.post(`/orders/${orderId}/cancel`).catch(() => {})
+                apiClient.post(`/orders/${orderId}/cancel`).catch((err) => {
+                console.warn('Failed to cancel order:', err.response?.data?.error || err.message)
+              })
               }
               setStep('info')
               setClientSecret(null)

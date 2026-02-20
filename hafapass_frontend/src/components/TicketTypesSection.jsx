@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Minus, Plus, ShoppingCart } from 'lucide-react'
 
-export default function TicketTypesSection({ ticketTypes, onCheckout }) {
+export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
   const [quantities, setQuantities] = useState({})
 
   const setQty = (id, qty) => setQuantities(prev => ({ ...prev, [id]: Math.max(0, qty) }))
