@@ -70,160 +70,159 @@ export default function EventDetailPage() {
   if (!event) return null
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <Link to="/events" className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
-        <ArrowLeft className="w-4 h-4" /> All Events
-      </Link>
+    <div>
+      {/* Hero Section — full-width cover image with dark overlay */}
+      <div className="relative w-full h-[50vh] sm:h-[55vh] lg:h-[60vh] min-h-[340px] max-h-[600px] overflow-hidden bg-neutral-950">
+        {event.cover_image_url ? (
+          <img
+            src={event.cover_image_url}
+            alt={event.title}
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-brand-900 to-neutral-950" />
+        )}
+        {/* Dark gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/60 to-neutral-950/30" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main content */}
-        <motion.div
-          className="lg:col-span-2"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          {/* Cover image */}
-          <div className="aspect-[2/1] rounded-2xl overflow-hidden bg-gradient-to-br from-brand-100 to-brand-200 mb-6">
-            {event.cover_image_url ? (
-              <img src={event.cover_image_url} alt={event.title} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <svg className="w-24 h-24 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
-                </svg>
-              </div>
+        {/* Content overlaid on hero */}
+        <div className="absolute inset-0 flex flex-col justify-end">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 sm:pb-10 w-full">
+            {/* Back link */}
+            <Link to="/events" className="inline-flex items-center gap-1.5 text-neutral-400 hover:text-white mb-4 text-sm font-medium transition-colors">
+              <ArrowLeft className="w-4 h-4" /> All Events
+            </Link>
+
+            {event.category && event.category !== 'other' && (
+              <span className="inline-block text-xs font-medium text-brand-400 uppercase tracking-wider mb-2">
+                {event.category}
+              </span>
             )}
-          </div>
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3">{event.title}</h1>
 
-          {/* Event info */}
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <div>
-              {event.category && event.category !== 'other' && (
-                <span className="inline-block text-xs font-medium text-brand-500 uppercase tracking-wider mb-2">
-                  {event.category}
-                </span>
-              )}
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900">{event.title}</h1>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Date & Venue on hero */}
+            <div className="flex flex-wrap items-center gap-4 text-neutral-300 text-sm">
               {event.starts_at && (
-                <a
-                  href={buildGoogleCalendarUrl(event)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2.5 rounded-xl border border-neutral-200 text-neutral-500 hover:text-brand-600 hover:border-brand-300 transition-colors"
-                  title="Add to Calendar"
-                >
-                  <CalendarPlus className="w-4 h-4" />
-                </a>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-brand-400" />
+                  <span>{formatDate(event.starts_at)}</span>
+                  <span className="text-neutral-500">·</span>
+                  <span>{formatTime(event.starts_at)}{event.ends_at && ` – ${formatTime(event.ends_at)}`}</span>
+                </div>
               )}
-              <button
-                onClick={handleShare}
-                className="p-2.5 rounded-xl border border-neutral-200 text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 transition-colors"
-                title={copied ? 'Copied!' : 'Share'}
-              >
-                {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
-              </button>
+              {event.venue_name && (
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-brand-400" />
+                  <span>{event.venue_name}</span>
+                </div>
+              )}
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Meta */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
-            {event.starts_at && (
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-neutral-50">
-                <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-                  <Calendar className="w-5 h-5 text-brand-500" />
+      {/* Gradient transition */}
+      <div className="h-px bg-gradient-to-r from-transparent via-brand-500/20 to-transparent" />
+
+      {/* Light content area */}
+      <div className="bg-white">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Main content */}
+            <motion.div
+              className="lg:col-span-2"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              {/* Action buttons */}
+              <div className="flex items-center gap-2 mb-6">
+                {event.starts_at && (
+                  <a
+                    href={buildGoogleCalendarUrl(event)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:text-brand-600 hover:border-brand-300 transition-colors text-sm font-medium"
+                  >
+                    <CalendarPlus className="w-4 h-4" />
+                    Add to Calendar
+                  </a>
+                )}
+                <button
+                  onClick={handleShare}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:text-neutral-700 hover:border-neutral-300 transition-colors text-sm font-medium"
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
+                  {copied ? 'Copied!' : 'Share'}
+                </button>
+              </div>
+
+              {/* Badges */}
+              <div className="flex flex-wrap gap-2 mb-6">
+                {event.age_restriction && event.age_restriction !== 'all_ages' && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
+                    <Users className="w-3 h-3" />
+                    {ageLabels[event.age_restriction] || event.age_restriction}
+                  </span>
+                )}
+                {event.doors_open_at && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
+                    <Clock className="w-3 h-3" />
+                    Doors {formatTime(event.doors_open_at)}
+                  </span>
+                )}
+              </div>
+
+              {/* Description */}
+              {event.description && (
+                <div className="prose prose-neutral max-w-none mb-8">
+                  <h2 className="text-lg font-semibold text-neutral-900 mb-3">About</h2>
+                  <p className="text-neutral-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-neutral-900">{formatDate(event.starts_at)}</p>
-                  <p className="text-xs text-neutral-500">{formatTime(event.starts_at)}{event.ends_at && ` - ${formatTime(event.ends_at)}`}</p>
+              )}
+
+              {/* Venue Location Section */}
+              {event.venue_address && (
+                <div className="mb-8">
+                  <h2 className="text-lg font-semibold text-neutral-900 mb-3">Location</h2>
+                  <a
+                    href={buildMapsUrl(event)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-2xl overflow-hidden border border-neutral-200 hover:border-brand-300 transition-colors group"
+                  >
+                    <div className="aspect-[3/1] bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center">
+                      <div className="text-center">
+                        <MapPin className="w-8 h-8 text-brand-400 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-brand-700">{event.venue_name}</p>
+                        <p className="text-xs text-brand-500 mt-0.5">{event.venue_address}</p>
+                        <p className="text-xs text-brand-400 mt-2 group-hover:underline">Open in Google Maps</p>
+                      </div>
+                    </div>
+                  </a>
+                </div>
+              )}
+            </motion.div>
+
+            {/* Sidebar - Tickets */}
+            <motion.div
+              className="lg:col-span-1"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.15 }}
+            >
+              <div className="lg:sticky lg:top-24">
+                <div className="card p-5">
+                  {event.ticket_types && event.ticket_types.length > 0 ? (
+                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />
+                  ) : (
+                    <p className="text-neutral-500 text-center py-4">No tickets available</p>
+                  )}
                 </div>
               </div>
-            )}
-            {event.venue_name && (
-              <a
-                href={buildMapsUrl(event)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-3 p-3 rounded-xl bg-neutral-50 hover:bg-brand-50/50 transition-colors group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-                  <MapPin className="w-5 h-5 text-brand-500" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-neutral-900 group-hover:text-brand-600 transition-colors">{event.venue_name}</p>
-                  {event.venue_address && <p className="text-xs text-neutral-500 truncate">{event.venue_address}</p>}
-                </div>
-                <ExternalLink className="w-3.5 h-3.5 text-neutral-400 group-hover:text-brand-500 transition-colors shrink-0" />
-              </a>
-            )}
+            </motion.div>
           </div>
-
-          {/* Badges */}
-          <div className="flex flex-wrap gap-2 mb-6">
-            {event.age_restriction && event.age_restriction !== 'all_ages' && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
-                <Users className="w-3 h-3" />
-                {ageLabels[event.age_restriction] || event.age_restriction}
-              </span>
-            )}
-            {event.doors_open_at && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
-                <Clock className="w-3 h-3" />
-                Doors {formatTime(event.doors_open_at)}
-              </span>
-            )}
-          </div>
-
-          {/* Description */}
-          {event.description && (
-            <div className="prose prose-neutral max-w-none mb-8">
-              <h2 className="text-lg font-semibold text-neutral-900 mb-3">About</h2>
-              <p className="text-neutral-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
-            </div>
-          )}
-
-          {/* Venue Location Section */}
-          {event.venue_address && (
-            <div className="mb-8">
-              <h2 className="text-lg font-semibold text-neutral-900 mb-3">Location</h2>
-              <a
-                href={buildMapsUrl(event)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block rounded-2xl overflow-hidden border border-neutral-200 hover:border-brand-300 transition-colors group"
-              >
-                <div className="aspect-[3/1] bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center">
-                  <div className="text-center">
-                    <MapPin className="w-8 h-8 text-brand-400 mx-auto mb-2" />
-                    <p className="text-sm font-medium text-brand-700">{event.venue_name}</p>
-                    <p className="text-xs text-brand-500 mt-0.5">{event.venue_address}</p>
-                    <p className="text-xs text-brand-400 mt-2 group-hover:underline">Open in Google Maps</p>
-                  </div>
-                </div>
-              </a>
-            </div>
-          )}
-        </motion.div>
-
-        {/* Sidebar - Tickets */}
-        <motion.div
-          className="lg:col-span-1"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.15 }}
-        >
-          <div className="lg:sticky lg:top-24">
-            <div className="card p-5">
-              {event.ticket_types && event.ticket_types.length > 0 ? (
-                <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />
-              ) : (
-                <p className="text-neutral-500 text-center py-4">No tickets available</p>
-              )}
-            </div>
-          </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   )

@@ -18,7 +18,6 @@ export default function MyTicketsPage() {
     setError(null)
     try {
       const response = await apiClient.get('/me/orders')
-      // Handle both paginated { orders: [...], meta: {...} } and legacy array response
       const data = response.data.orders || response.data
       setOrders(Array.isArray(data) ? data : [])
     } catch (err) {
@@ -89,23 +88,35 @@ export default function MyTicketsPage() {
 
   if (eventGroups.length === 0) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl mx-auto px-4 py-12 text-center"
-      >
-        <div className="card p-8">
-          <Ticket className="mx-auto h-16 w-16 text-neutral-300" />
-          <h2 className="mt-4 text-xl font-semibold text-neutral-800">No tickets yet</h2>
-          <p className="mt-2 text-neutral-500">Browse events to get started!</p>
-          <Link
-            to="/events"
-            className="mt-6 inline-block btn-primary px-6 py-3"
-          >
-            Browse Events
-          </Link>
+      <div>
+        {/* Dark header */}
+        <div className="bg-neutral-950 pt-8 pb-12">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">My Tickets</h1>
+            <p className="text-neutral-400">Your event passes, all in one place</p>
+          </div>
         </div>
-      </motion.div>
+        <div className="h-px bg-gradient-to-r from-transparent via-brand-500/20 to-transparent" />
+        <div className="bg-neutral-50 min-h-[40vh]">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-2xl mx-auto px-4 py-12 text-center"
+          >
+            <div className="card p-8">
+              <Ticket className="mx-auto h-16 w-16 text-neutral-300" />
+              <h2 className="mt-4 text-xl font-semibold text-neutral-800">No tickets yet</h2>
+              <p className="mt-2 text-neutral-500">Browse events to get started!</p>
+              <Link
+                to="/events"
+                className="mt-6 inline-block btn-primary px-6 py-3"
+              >
+                Browse Events
+              </Link>
+            </div>
+          </motion.div>
+        </div>
+      </div>
     )
   }
 
@@ -143,83 +154,95 @@ export default function MyTicketsPage() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="max-w-3xl mx-auto px-4 py-8"
-    >
-      <h1 className="text-2xl font-bold text-neutral-900 mb-6">My Tickets</h1>
+    <div>
+      {/* Dark header */}
+      <div className="bg-neutral-950 pt-8 pb-12">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">My Tickets</h1>
+          <p className="text-neutral-400">Your event passes, all in one place</p>
+        </div>
+      </div>
+      <div className="h-px bg-gradient-to-r from-transparent via-brand-500/20 to-transparent" />
 
-      <div className="space-y-6">
-        {eventGroups.map(({ event, tickets }, index) => {
-          const eventDate = new Date(event.starts_at)
-          const isPast = eventDate < now
+      {/* Light content */}
+      <div className="bg-neutral-50 min-h-[40vh]">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-3xl mx-auto px-4 py-8"
+        >
+          <div className="space-y-6">
+            {eventGroups.map(({ event, tickets }, index) => {
+              const eventDate = new Date(event.starts_at)
+              const isPast = eventDate < now
 
-          return (
-            <motion.div
-              key={event.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="card overflow-hidden"
-            >
-              <div className={`px-4 sm:px-5 py-4 border-b ${isPast ? 'bg-neutral-50' : 'bg-brand-50'}`}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <Link
-                      to={`/events/${event.slug}`}
-                      className="text-lg font-semibold text-neutral-900 hover:text-brand-600 transition-colors"
-                    >
-                      {event.title}
-                    </Link>
-                    <p className="text-sm text-neutral-600 mt-0.5 flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5" />
-                      {formatDate(event.starts_at)}
-                      <Clock className="w-3.5 h-3.5 ml-1" />
-                      {formatTime(event.starts_at)}
-                    </p>
-                    {event.venue_name && (
-                      <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
-                        <MapPin className="w-3.5 h-3.5" />
-                        {event.venue_name}
-                      </p>
-                    )}
-                  </div>
-                  {isPast && (
-                    <span className="text-xs font-medium text-neutral-500 bg-neutral-200 px-2 py-1 rounded-xl">Past</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="divide-y divide-neutral-100">
-                {tickets.map(ticket => (
-                  <Link
-                    key={ticket.id}
-                    to={`/tickets/${ticket.qr_code}`}
-                    className="flex items-center justify-between px-4 sm:px-5 py-3 min-h-[52px] hover:bg-neutral-50 transition-colors"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="flex-shrink-0">
-                        <Ticket className="h-5 w-5 text-neutral-400" />
-                      </div>
+              return (
+                <motion.div
+                  key={event.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="card overflow-hidden"
+                >
+                  <div className={`px-4 sm:px-5 py-4 border-b ${isPast ? 'bg-neutral-50' : 'bg-brand-50'}`}>
+                    <div className="flex items-start justify-between">
                       <div>
-                        <p className="text-sm font-medium text-neutral-900">{ticket.ticket_type.name}</p>
-                        {ticket.attendee_name && (
-                          <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
+                        <Link
+                          to={`/events/${event.slug}`}
+                          className="text-lg font-semibold text-neutral-900 hover:text-brand-600 transition-colors"
+                        >
+                          {event.title}
+                        </Link>
+                        <p className="text-sm text-neutral-600 mt-0.5 flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5" />
+                          {formatDate(event.starts_at)}
+                          <Clock className="w-3.5 h-3.5 ml-1" />
+                          {formatTime(event.starts_at)}
+                        </p>
+                        {event.venue_name && (
+                          <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
+                            <MapPin className="w-3.5 h-3.5" />
+                            {event.venue_name}
+                          </p>
                         )}
                       </div>
+                      {isPast && (
+                        <span className="text-xs font-medium text-neutral-500 bg-neutral-200 px-2 py-1 rounded-xl">Past</span>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-3">
-                      {getStatusBadge(ticket.status)}
-                      <ChevronRight className="h-4 w-4 text-neutral-400" />
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </motion.div>
-          )
-        })}
+                  </div>
+
+                  <div className="divide-y divide-neutral-100">
+                    {tickets.map(ticket => (
+                      <Link
+                        key={ticket.id}
+                        to={`/tickets/${ticket.qr_code}`}
+                        className="flex items-center justify-between px-4 sm:px-5 py-3 min-h-[52px] hover:bg-neutral-50 transition-colors"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="flex-shrink-0">
+                            <Ticket className="h-5 w-5 text-neutral-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-neutral-900">{ticket.ticket_type.name}</p>
+                            {ticket.attendee_name && (
+                              <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          {getStatusBadge(ticket.status)}
+                          <ChevronRight className="h-4 w-4 text-neutral-400" />
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </motion.div>
+              )
+            })}
+          </div>
+        </motion.div>
       </div>
-    </motion.div>
+    </div>
   )
 }

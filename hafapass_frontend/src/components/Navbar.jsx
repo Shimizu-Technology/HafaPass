@@ -16,6 +16,8 @@ function NavContent() {
   const navigate = useNavigate()
   const { isSignedIn } = useUser ? useUser() : { isSignedIn: false }
 
+  const isHomepage = location.pathname === '/'
+
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10)
     window.addEventListener('scroll', handleScroll, { passive: true })
@@ -46,12 +48,17 @@ function NavContent() {
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/')
 
+  // Determine if navbar should be in "dark/transparent" mode
+  const isDarkMode = isHomepage && !scrolled
+
   return (
     <header
       className={`sticky top-0 z-50 transition-all duration-500 ${
-        scrolled
-          ? 'bg-white/80 backdrop-blur-2xl border-b border-neutral-200/50 shadow-soft'
-          : 'bg-white/50 backdrop-blur-xl border-b border-transparent'
+        isDarkMode
+          ? 'bg-transparent border-b border-transparent'
+          : scrolled
+            ? 'bg-white/80 backdrop-blur-2xl border-b border-neutral-200/50 shadow-soft'
+            : 'bg-white/50 backdrop-blur-xl border-b border-transparent'
       }`}
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -64,7 +71,7 @@ function NavContent() {
                 <path d="M13 5v2" /><path d="M13 17v2" /><path d="M13 11v2" />
               </svg>
             </div>
-            <span className="text-xl font-bold tracking-tight text-neutral-900">
+            <span className={`text-xl font-bold tracking-tight transition-colors duration-300 ${isDarkMode ? 'text-white' : 'text-neutral-900'}`}>
               Hafa<span className="text-brand-500">Pass</span>
             </span>
           </Link>
@@ -77,8 +84,12 @@ function NavContent() {
                 to={link.to}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                   isActive(link.to)
-                    ? 'text-brand-600 bg-brand-50/80'
-                    : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100/80'
+                    ? isDarkMode
+                      ? 'text-white bg-white/15'
+                      : 'text-brand-600 bg-brand-50/80'
+                    : isDarkMode
+                      ? 'text-neutral-300 hover:text-white hover:bg-white/10'
+                      : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100/80'
                 }`}
               >
                 {link.label}
@@ -109,14 +120,22 @@ function NavContent() {
                     placeholder="Search events..."
                     autoFocus
                     onBlur={() => { if (!searchQuery) setSearchOpen(false) }}
-                    className="w-56 pl-9 pr-3 py-2 text-sm rounded-lg border border-neutral-200/80 bg-white/80 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all"
+                    className={`w-56 pl-9 pr-3 py-2 text-sm rounded-lg border transition-all ${
+                      isDarkMode
+                        ? 'border-white/20 bg-white/10 backdrop-blur-sm text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400'
+                        : 'border-neutral-200/80 bg-white/80 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400'
+                    }`}
                   />
                 </div>
               </form>
             ) : (
               <button
                 onClick={() => setSearchOpen(true)}
-                className="w-9 h-9 flex items-center justify-center rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100/80 transition-colors"
+                className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${
+                  isDarkMode
+                    ? 'text-neutral-300 hover:text-white hover:bg-white/10'
+                    : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100/80'
+                }`}
                 aria-label="Search events"
               >
                 <Search className="w-4.5 h-4.5" />
@@ -130,7 +149,9 @@ function NavContent() {
               <UserButton afterSignOutUrl="/" />
             </SignedIn>
             <SignedOut>
-              <Link to="/sign-in" className="text-sm font-medium text-neutral-500 hover:text-neutral-900 transition-colors px-3 py-2">
+              <Link to="/sign-in" className={`text-sm font-medium transition-colors px-3 py-2 ${
+                isDarkMode ? 'text-neutral-300 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
+              }`}>
                 Sign In
               </Link>
               <Link to="/sign-up" className="btn-primary text-sm !py-2.5 !px-5">
@@ -142,7 +163,11 @@ function NavContent() {
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden w-10 h-10 flex items-center justify-center rounded-xl text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100/80 transition-colors"
+            className={`md:hidden w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+              isDarkMode
+                ? 'text-neutral-300 hover:text-white hover:bg-white/10'
+                : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100/80'
+            }`}
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -152,7 +177,11 @@ function NavContent() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-neutral-200/50 bg-white/90 backdrop-blur-2xl">
+        <div className={`md:hidden border-t ${
+          isDarkMode
+            ? 'border-white/10 bg-neutral-950/95 backdrop-blur-2xl'
+            : 'border-neutral-200/50 bg-white/90 backdrop-blur-2xl'
+        }`}>
           <div className="px-4 py-3 space-y-1">
             {navLinks.map(link => {
               const Icon = link.icon
@@ -162,8 +191,12 @@ function NavContent() {
                   to={link.to}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
                     isActive(link.to)
-                      ? 'bg-brand-50/80 text-brand-600'
-                      : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'
+                      ? isDarkMode
+                        ? 'bg-white/10 text-white'
+                        : 'bg-brand-50/80 text-brand-600'
+                      : isDarkMode
+                        ? 'text-neutral-400 hover:bg-white/5 hover:text-white'
+                        : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -172,8 +205,10 @@ function NavContent() {
               )
             })}
             <SignedOut>
-              <div className="pt-3 border-t border-neutral-200/50 space-y-2">
-                <Link to="/sign-in" className="block px-4 py-3 rounded-xl text-sm font-medium text-neutral-500 hover:bg-neutral-50">
+              <div className={`pt-3 border-t space-y-2 ${isDarkMode ? 'border-white/10' : 'border-neutral-200/50'}`}>
+                <Link to="/sign-in" className={`block px-4 py-3 rounded-xl text-sm font-medium ${
+                  isDarkMode ? 'text-neutral-400 hover:bg-white/5' : 'text-neutral-500 hover:bg-neutral-50'
+                }`}>
                   Sign In
                 </Link>
                 <Link to="/sign-up" className="block btn-primary text-center text-sm">
@@ -182,7 +217,7 @@ function NavContent() {
               </div>
             </SignedOut>
             <SignedIn>
-              <div className="pt-3 border-t border-neutral-200/50 px-4 py-3">
+              <div className={`pt-3 border-t px-4 py-3 ${isDarkMode ? 'border-white/10' : 'border-neutral-200/50'}`}>
                 <UserButton afterSignOutUrl="/" />
               </div>
             </SignedIn>
