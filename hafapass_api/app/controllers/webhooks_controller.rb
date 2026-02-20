@@ -68,14 +68,12 @@ class WebhooksController < ActionController::API
 
   def handle_payment_intent_succeeded(payment_intent)
     order = Order.find_by(stripe_payment_intent_id: payment_intent.id)
-    return if order&.completed? || order&.completed_at.present? # Idempotency guard
-
     unless order
       Rails.logger.warn("No order found for PaymentIntent #{payment_intent.id}")
       return
     end
 
-    return if order.completed? # Idempotency
+    return if order.completed? || order.completed_at.present? # Idempotency guard
 
     ActiveRecord::Base.transaction do
       # Detect wallet type from payment method (HP-14)
@@ -178,10 +176,9 @@ class WebhooksController < ActionController::API
     return unless order
     return if order.completed?
 
-    # Delegate to payment_intent.succeeded handler logic
-    handle_payment_intent_succeeded(
-      OpenStruct.new(id: payment_intent_id)
-    )
+    # Retrieve the full PaymentIntent so detect_wallet_type can access payment_method
+    pi = Stripe::PaymentIntent.retrieve(payment_intent_id, { api_key: SiteSetting.instance.stripe_secret_key })
+    handle_payment_intent_succeeded(pi)
   end
 
   def handle_dispute_created(dispute)

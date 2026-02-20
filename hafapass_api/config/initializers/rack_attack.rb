@@ -43,10 +43,11 @@ class Rack::Attack
     if req.path == "/api/v1/orders" && req.post?
       # Extract email from request body
       begin
-        body = JSON.parse(req.body.read)
+        raw = req.body.read
         req.body.rewind
+        body = JSON.parse(raw)
         body["buyer_email"]&.downcase
-      rescue JSON::ParserError
+      rescue JSON::ParserError, IOError
         nil
       end
     end

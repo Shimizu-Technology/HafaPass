@@ -120,7 +120,7 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     # If transaction was rolled back (e.g., promo exhausted), verify via DB
-    if promo_exhausted || !@order || !Order.exists?(@order.id)
+    if promo_exhausted || !@order || @order.id.nil? || !Order.exists?(@order.id)
       render json: { error: "Order could not be completed. Promo code may be exhausted." }, status: :unprocessable_entity
       return
     end
