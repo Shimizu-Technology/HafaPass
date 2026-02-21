@@ -23,7 +23,7 @@ class SitemapsController < ApplicationController
         # Individual published events
         @events.each do |event|
           xml.url do
-            xml.loc "https://hafapass.netlify.app/events/#{event.slug}"
+            xml.loc { xml.text "https://hafapass.netlify.app/events/#{event.slug}" }
             xml.lastmod event.updated_at.strftime("%Y-%m-%d")
             xml.changefreq "weekly"
             xml.priority "0.7"
