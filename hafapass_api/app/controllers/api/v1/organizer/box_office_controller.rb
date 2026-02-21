@@ -75,18 +75,20 @@ module Api
             )
 
             ticket_selections.each do |selection|
+              active_tier = selection[:ticket_type].active_pricing_tier
+
               selection[:quantity].times do
                 @order.tickets.create!(
                   ticket_type: selection[:ticket_type],
                   event: @event,
                   attendee_name: buyer_name,
-                  attendee_email: buyer_email
+                  attendee_email: buyer_email,
+                  pricing_tier: active_tier&.quantity_based? ? active_tier : nil
                 )
               end
               selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
 
               # Increment active pricing tier quantity_sold if applicable
-              active_tier = selection[:ticket_type].active_pricing_tier
               if active_tier&.quantity_based?
                 active_tier.lock!
                 active_tier.increment!(:quantity_sold, selection[:quantity])

@@ -101,17 +101,20 @@ class Api::V1::OrdersController < ApplicationController
       )
 
       ticket_selections.each do |selection|
+        # Capture the active pricing tier before creating tickets
+        active_tier = selection[:ticket_type].active_pricing_tier
+
         selection[:quantity].times do
           @order.tickets.create!(
             ticket_type: selection[:ticket_type],
-            event: event
+            event: event,
+            pricing_tier: active_tier&.quantity_based? ? active_tier : nil
           )
         end
 
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
 
         # Increment the active pricing tier's quantity_sold if applicable
-        active_tier = selection[:ticket_type].active_pricing_tier
         if active_tier&.quantity_based?
           active_tier.lock!
           active_tier.increment!(:quantity_sold, selection[:quantity])
@@ -189,12 +192,13 @@ class Api::V1::OrdersController < ApplicationController
     ActiveRecord::Base.transaction do
       order.update!(status: :cancelled)
 
-      order.tickets.includes(ticket_type: :pricing_tiers).each do |ticket|
+      order.tickets.includes(:pricing_tier, :ticket_type).each do |ticket|
         ticket.ticket_type.decrement!(:quantity_sold)
 
-        # Decrement the active pricing tier's quantity_sold to keep inventory in sync
-        active_tier = ticket.ticket_type.pricing_tiers.find { |pt| pt.quantity_based? && pt.quantity_sold > 0 }
-        active_tier&.decrement!(:quantity_sold)
+        # Decrement the pricing tier that was active at purchase time
+        if ticket.pricing_tier&.quantity_sold&.positive?
+          ticket.pricing_tier.decrement!(:quantity_sold)
+        end
 
         ticket.update!(status: :cancelled)
       end
