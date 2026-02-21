@@ -1,7 +1,7 @@
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart } from 'lucide-react'
+import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart, Copy, RefreshCw } from 'lucide-react'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
@@ -75,6 +75,10 @@ export default function EditEventPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
   const [dangerLoading, setDangerLoading] = useState(false)
+  const [cloning, setCloning] = useState(false)
+  const [recurrenceCount, setRecurrenceCount] = useState(4)
+  const [generatingRecurrences, setGeneratingRecurrences] = useState(false)
+  const [recurrenceChildren, setRecurrenceChildren] = useState([])
 
   const [form, setForm] = useState({
     title: '',
@@ -89,7 +93,10 @@ export default function EditEventPage() {
     ends_at: '',
     doors_open_at: '',
     max_capacity: '',
-    cover_image_url: ''
+    cover_image_url: '',
+    recurrence_rule: '',
+    recurrence_end_date: '',
+    show_attendees: true
   })
 
   const fetchEvent = useCallback(async () => {
@@ -112,7 +119,10 @@ export default function EditEventPage() {
         ends_at: formatDatetimeLocal(e.ends_at),
         doors_open_at: formatDatetimeLocal(e.doors_open_at),
         max_capacity: e.max_capacity ? String(e.max_capacity) : '',
-        cover_image_url: e.cover_image_url || ''
+        cover_image_url: e.cover_image_url || '',
+        recurrence_rule: e.recurrence_rule || '',
+        recurrence_end_date: e.recurrence_end_date || '',
+        show_attendees: e.show_attendees !== false
       })
     } catch (err) {
       if (err.response?.status === 401) {
@@ -188,7 +198,10 @@ export default function EditEventPage() {
         ends_at: form.ends_at || undefined,
         doors_open_at: form.doors_open_at || undefined,
         max_capacity: form.max_capacity ? parseInt(form.max_capacity, 10) : null,
-        cover_image_url: form.cover_image_url.trim() || null
+        cover_image_url: form.cover_image_url.trim() || null,
+        recurrence_rule: form.recurrence_rule || null,
+        recurrence_end_date: form.recurrence_end_date || null,
+        show_attendees: form.show_attendees
       }
       const res = await apiClient.put(`/organizer/events/${id}`, payload)
       setEvent(res.data)
@@ -303,6 +316,24 @@ export default function EditEventPage() {
               <Eye className="w-4 h-4" /> Preview
             </a>
           )}
+          <button
+            onClick={async () => {
+              setCloning(true)
+              try {
+                const res = await apiClient.post(`/organizer/events/${id}/clone`)
+                setSuccessMessage('Event cloned! Update the details and publish when ready.')
+                navigate(`/dashboard/events/${res.data.id}/edit`)
+              } catch (err) {
+                setSubmitError(err.response?.data?.errors?.join(', ') || 'Failed to clone event')
+              } finally {
+                setCloning(false)
+              }
+            }}
+            disabled={cloning}
+            className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1 disabled:opacity-50"
+          >
+            <Copy className="w-4 h-4" /> {cloning ? 'Cloning...' : 'Clone'}
+          </button>
           <Link to={`/dashboard/events/${id}/box-office`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ShoppingCart className="w-4 h-4" /> Box Office
           </Link>
@@ -496,6 +527,89 @@ export default function EditEventPage() {
               <input id="max_capacity" type="number" min="1" value={form.max_capacity} onChange={(e) => updateField('max_capacity', e.target.value)} className={`input ${formErrors.max_capacity ? 'input-error' : ''}`} placeholder="Leave blank for unlimited" disabled={submitting} />
               {formErrors.max_capacity && <p className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
             </div>
+            <div className="flex items-center gap-3">
+              <input
+                id="show_attendees"
+                type="checkbox"
+                checked={form.show_attendees}
+                onChange={(e) => updateField('show_attendees', e.target.checked)}
+                className="w-4 h-4 rounded border-neutral-300 text-brand-500 focus:ring-brand-500"
+                disabled={submitting}
+              />
+              <label htmlFor="show_attendees" className="text-sm font-medium text-neutral-700">
+                Show attendees on event page
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {/* Recurring Event Section */}
+        <section>
+          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Recurring Event</h2>
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="recurrence_rule" className="block text-sm font-medium text-neutral-700 mb-1">Recurrence Pattern</label>
+              <select id="recurrence_rule" value={form.recurrence_rule} onChange={(e) => updateField('recurrence_rule', e.target.value)} className="input" disabled={submitting}>
+                <option value="">None (one-time event)</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Bi-weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            {form.recurrence_rule && (
+              <>
+                <div>
+                  <label htmlFor="recurrence_end_date" className="block text-sm font-medium text-neutral-700 mb-1">Recurrence End Date (optional)</label>
+                  <input id="recurrence_end_date" type="date" value={form.recurrence_end_date} onChange={(e) => updateField('recurrence_end_date', e.target.value)} className="input" disabled={submitting} />
+                </div>
+                <div>
+                  <label htmlFor="recurrence_count" className="block text-sm font-medium text-neutral-700 mb-1">Number of Instances to Generate</label>
+                  <input id="recurrence_count" type="number" min="1" max="12" value={recurrenceCount} onChange={(e) => setRecurrenceCount(Math.min(12, Math.max(1, parseInt(e.target.value) || 1)))} className="input" disabled={submitting} />
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setGeneratingRecurrences(true)
+                    setSubmitError(null)
+                    try {
+                      const res = await apiClient.post(`/organizer/events/${id}/generate_recurrences`, { count: recurrenceCount })
+                      setSuccessMessage(`Generated ${res.data.generated_count} recurring event(s).`)
+                      setRecurrenceChildren(res.data.events || [])
+                    } catch (err) {
+                      setSubmitError(err.response?.data?.error || 'Failed to generate recurring events')
+                    } finally {
+                      setGeneratingRecurrences(false)
+                    }
+                  }}
+                  disabled={generatingRecurrences || !form.starts_at}
+                  className="btn-primary text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${generatingRecurrences ? 'animate-spin' : ''}`} />
+                  {generatingRecurrences ? 'Generating...' : 'Generate Upcoming Events'}
+                </button>
+                {!form.starts_at && (
+                  <p className="text-xs text-amber-600">Save the event with start/end dates first before generating recurring instances.</p>
+                )}
+              </>
+            )}
+            {/* Show linked recurring events */}
+            {(recurrenceChildren.length > 0 || (event?.recurrence_parent_id)) && (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium text-neutral-700 mb-2">Linked Recurring Events</h3>
+                <div className="space-y-2">
+                  {event?.recurrence_parent_id && (
+                    <Link to={`/dashboard/events/${event.recurrence_parent_id}/edit`} className="block text-sm text-brand-500 hover:text-brand-700">
+                      ← View Parent Event
+                    </Link>
+                  )}
+                  {recurrenceChildren.map(child => (
+                    <Link key={child.id} to={`/dashboard/events/${child.id}/edit`} className="block p-2 rounded-lg bg-neutral-50 hover:bg-neutral-100 text-sm text-neutral-700 transition-colors">
+                      {child.title} — {child.starts_at ? new Date(child.starts_at).toLocaleDateString() : 'No date set'}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

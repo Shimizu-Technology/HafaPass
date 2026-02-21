@@ -1,10 +1,15 @@
 class Event < ApplicationRecord
   belongs_to :organizer_profile
+  belongs_to :recurrence_parent, class_name: 'Event', optional: true
+  has_many :recurrence_children, class_name: 'Event', foreign_key: 'recurrence_parent_id', dependent: :nullify
   has_many :ticket_types, dependent: :destroy
   has_many :orders, dependent: :destroy
   has_many :tickets, dependent: :destroy
   has_many :promo_codes, dependent: :destroy
   has_many :guest_list_entries, dependent: :destroy
+
+  RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
+  validates :recurrence_rule, inclusion: { in: RECURRENCE_RULES }, allow_nil: true
 
   enum :status, { draft: 0, published: 1, cancelled: 2, completed: 3 }
   enum :category, { nightlife: 0, concert: 1, festival: 2, dining: 3, sports: 4, other: 5 }

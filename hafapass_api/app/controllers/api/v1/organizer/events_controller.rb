@@ -5,7 +5,7 @@ module Api
         include Paginatable
 
         before_action :require_organizer_profile
-        before_action :set_event, only: [:show, :update, :destroy, :publish, :stats, :attendees]
+        before_action :set_event, only: [:show, :update, :destroy, :publish, :clone, :generate_recurrences, :stats, :attendees]
 
         def index
           events = current_organizer_profile.events.includes(:ticket_types).order(created_at: :desc)
@@ -50,6 +50,59 @@ module Api
           else
             render json: { error: "Only draft events can be published" }, status: :unprocessable_entity
           end
+        end
+
+        def clone
+          cloned = clone_event(@event, title: "#{@event.title} (Copy)", starts_at: nil, ends_at: nil, doors_open_at: nil)
+          if cloned.persisted?
+            render json: event_json(cloned, include_ticket_types: true), status: :created
+          else
+            render json: { errors: cloned.errors.full_messages }, status: :unprocessable_entity
+          end
+        end
+
+        def generate_recurrences
+          unless @event.recurrence_rule.present?
+            return render json: { error: "Event must have a recurrence rule" }, status: :unprocessable_entity
+          end
+          unless @event.starts_at.present? && @event.ends_at.present?
+            return render json: { error: "Event must have start and end dates" }, status: :unprocessable_entity
+          end
+
+          count = [params[:count].to_i.clamp(1, 12), 1].max
+          interval = case @event.recurrence_rule
+                     when "weekly" then 1.week
+                     when "biweekly" then 2.weeks
+                     when "monthly" then 1.month
+                     else return render json: { error: "Unsupported recurrence rule" }, status: :unprocessable_entity
+                     end
+
+          duration = @event.ends_at - @event.starts_at
+          doors_offset = @event.doors_open_at ? @event.doors_open_at - @event.starts_at : nil
+          generated = []
+
+          count.times do |i|
+            offset = interval * (i + 1)
+            new_starts_at = @event.starts_at + offset
+            new_ends_at = new_starts_at + duration
+            new_doors = doors_offset ? new_starts_at + doors_offset : nil
+
+            break if @event.recurrence_end_date && new_starts_at.to_date > @event.recurrence_end_date
+
+            cloned = clone_event(@event,
+              starts_at: new_starts_at,
+              ends_at: new_ends_at,
+              doors_open_at: new_doors,
+              recurrence_parent_id: @event.id,
+              recurrence_rule: @event.recurrence_rule
+            )
+            generated << cloned if cloned.persisted?
+          end
+
+          render json: {
+            generated_count: generated.size,
+            events: generated.map { |e| event_json(e) }
+          }, status: :created
         end
 
         def stats
@@ -130,19 +183,57 @@ module Api
         end
 
         def event_params
-          # NOTE: cover_image_url currently accepts a direct URL string.
-          # With S3 integration, the flow would be:
-          #   1. Frontend calls POST /api/v1/uploads/presign to get a presigned POST URL
-          #   2. Frontend uploads the image directly to S3 using the presigned URL
-          #   3. Frontend sends the resulting S3 key back here as cover_image_url
-          #   4. Backend could use S3Service.generate_presigned_get(key) to serve time-limited URLs
           params.permit(
             :title, :description, :short_description, :cover_image_url,
             :venue_name, :venue_address, :venue_city,
             :starts_at, :ends_at, :doors_open_at, :timezone,
             :category, :age_restriction, :max_capacity, :is_featured,
-            :status
+            :status, :recurrence_rule, :recurrence_end_date, :show_attendees
           )
+        end
+
+        def clone_event(source, overrides = {})
+          attrs = source.attributes.slice(
+            'title', 'description', 'short_description', 'cover_image_url',
+            'venue_name', 'venue_address', 'venue_city', 'timezone',
+            'category', 'age_restriction', 'max_capacity', 'is_featured',
+            'show_attendees'
+          ).merge(
+            'organizer_profile_id' => source.organizer_profile_id,
+            'status' => 'draft',
+            'slug' => nil,
+            'published_at' => nil
+          ).merge(overrides.stringify_keys)
+
+          new_event = Event.new(attrs)
+          if new_event.save
+            source.ticket_types.each do |tt|
+              new_event.ticket_types.create!(
+                name: tt.name,
+                description: tt.description,
+                price_cents: tt.price_cents,
+                quantity_available: tt.quantity_available,
+                quantity_sold: 0,
+                max_per_order: tt.max_per_order,
+                sort_order: tt.sort_order,
+                sales_start_at: tt.sales_start_at,
+                sales_end_at: tt.sales_end_at
+              )
+            end
+            source.promo_codes.each do |pc|
+              new_event.promo_codes.create!(
+                code: pc.code,
+                discount_type: pc.discount_type,
+                discount_value: pc.discount_value,
+                max_uses: pc.max_uses,
+                current_uses: 0,
+                active: pc.active,
+                starts_at: pc.starts_at,
+                expires_at: pc.expires_at
+              )
+            end
+          end
+          new_event
         end
 
         def event_json(event, include_ticket_types: false)
@@ -166,6 +257,10 @@ module Api
             max_capacity: event.max_capacity,
             is_featured: event.is_featured,
             published_at: event.published_at,
+            recurrence_rule: event.recurrence_rule,
+            recurrence_parent_id: event.recurrence_parent_id,
+            recurrence_end_date: event.recurrence_end_date,
+            show_attendees: event.show_attendees,
             created_at: event.created_at,
             updated_at: event.updated_at
           }

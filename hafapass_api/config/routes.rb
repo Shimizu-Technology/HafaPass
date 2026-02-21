@@ -53,6 +53,8 @@ Rails.application.routes.draw do
         resources :events, only: [:index, :show, :create, :update, :destroy] do
           member do
             post :publish
+            post :clone
+            post :generate_recurrences
             get :stats
             get :attendees
           end

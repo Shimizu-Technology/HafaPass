@@ -46,7 +46,20 @@ module Api
         @current_user = current_user
       end
 
+      def anonymize_name(name)
+        return "Guest" if name.blank?
+        parts = name.strip.split(/\s+/)
+        if parts.length > 1
+          "#{parts.first} #{parts.last[0]}."
+        else
+          parts.first
+        end
+      end
+
       def event_json(event, include_ticket_types: false)
+        completed_orders = event.orders.where(status: :completed)
+        attendee_count = completed_orders.count
+
         json = {
           id: event.id,
           title: event.title,
@@ -67,6 +80,9 @@ module Api
           max_capacity: event.max_capacity,
           is_featured: event.is_featured,
           published_at: event.published_at,
+          show_attendees: event.show_attendees,
+          attendee_count: attendee_count,
+          attendees_preview: event.show_attendees ? completed_orders.limit(10).pluck(:buyer_name).map { |n| anonymize_name(n) } : [],
           organizer: {
             business_name: event.organizer_profile.business_name,
             logo_url: event.organizer_profile.logo_url

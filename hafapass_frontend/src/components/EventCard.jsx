@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
+import { WhosGoingBadge } from './WhosGoing'
 
 export default function EventCard({ event }) {
   const formatDate = (dateStr) => {
@@ -101,6 +102,12 @@ export default function EventCard({ event }) {
             </div>
           )}
         </div>
+
+        {event.attendee_count > 0 && (
+          <div className="mb-3">
+            <WhosGoingBadge attendeeCount={event.attendee_count} />
+          </div>
+        )}
 
         <div className="flex items-center justify-between pt-3 border-t border-neutral-100">
           {/* Availability indicator */}

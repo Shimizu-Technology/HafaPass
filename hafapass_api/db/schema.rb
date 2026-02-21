@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_21_051829) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_21_070639) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -26,7 +26,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_051829) do
     t.integer "max_capacity"
     t.bigint "organizer_profile_id", null: false
     t.datetime "published_at"
+    t.date "recurrence_end_date"
+    t.integer "recurrence_parent_id"
+    t.string "recurrence_rule"
     t.string "short_description"
+    t.boolean "show_attendees", default: true
     t.string "slug", null: false
     t.datetime "starts_at"
     t.integer "status", default: 0
@@ -37,6 +41,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_051829) do
     t.string "venue_city"
     t.string "venue_name"
     t.index ["organizer_profile_id"], name: "index_events_on_organizer_profile_id"
+    t.index ["recurrence_parent_id"], name: "index_events_on_recurrence_parent_id"
     t.index ["slug"], name: "index_events_on_slug", unique: true
     t.index ["starts_at"], name: "index_events_on_starts_at"
     t.index ["status"], name: "index_events_on_status"
