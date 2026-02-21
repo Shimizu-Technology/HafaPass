@@ -104,7 +104,7 @@ export default function EventDetailPage() {
         lowPrice: Math.min(...prices).toFixed(2),
         highPrice: Math.max(...prices).toFixed(2),
         priceCurrency: 'USD',
-        availability: 'https://schema.org/InStock',
+        availability: ticketTypes.some(tt => (tt.quantity_available - tt.quantity_sold) > 0) ? 'https://schema.org/InStock' : 'https://schema.org/SoldOut',
         url: eventUrl,
       },
     }),
