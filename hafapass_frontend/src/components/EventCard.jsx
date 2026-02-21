@@ -48,6 +48,14 @@ export default function EventCard({ event }) {
             </svg>
           </div>
         )}
+        {/* Completed overlay */}
+        {event.status === 'completed' && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <span className="bg-neutral-900/80 text-white text-sm font-bold px-4 py-1.5 rounded-full backdrop-blur-sm">
+              Past Event
+            </span>
+          </div>
+        )}
         {/* Gradient overlay for depth */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
@@ -97,10 +105,19 @@ export default function EventCard({ event }) {
         <div className="flex items-center justify-between pt-3 border-t border-neutral-100">
           {/* Availability indicator */}
           <div className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
-            <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-600' : 'text-neutral-400'}`}>
-              {hasAvailability ? 'Tickets Available' : 'Sold Out'}
-            </span>
+            {event.status === 'completed' ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />
+                <span className="text-xs font-medium text-neutral-400">Completed</span>
+              </>
+            ) : (
+              <>
+                <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
+                <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-600' : 'text-neutral-400'}`}>
+                  {hasAvailability ? 'Tickets Available' : 'Sold Out'}
+                </span>
+              </>
+            )}
           </div>
           <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-400 group-hover:text-brand-500 transition-all duration-200 group-hover:translate-x-0.5">
             View

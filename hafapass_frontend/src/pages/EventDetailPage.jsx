@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, ExternalLink, Check, Copy } from 'lucide-react'
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
@@ -9,16 +9,19 @@ import { FadeUp } from '../components/ui/ScrollReveal'
 export default function EventDetailPage() {
   const { slug } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const isPreview = searchParams.get('preview') === 'true'
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    apiClient.get(`/events/${slug}`)
+    const url = isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`
+    apiClient.get(url)
       .then(res => { setEvent(res.data); setLoading(false) })
       .catch(() => { setError('Event not found.'); setLoading(false) })
-  }, [slug])
+  }, [slug, isPreview])
 
   const handleCheckout = (lineItems) => {
     navigate(`/checkout/${slug}`, { state: { event, lineItems } })

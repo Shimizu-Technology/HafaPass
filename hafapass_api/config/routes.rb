@@ -55,6 +55,10 @@ Rails.application.routes.draw do
           end
           resources :ticket_types, only: [:index, :show, :create, :update, :destroy]
           resources :promo_codes, only: [:index, :show, :create, :update, :destroy]
+          # Box Office (door sales)
+          resource :box_office, only: [:create], controller: "box_office" do
+            get :summary
+          end
           resources :guest_list, only: [:index, :create, :update, :destroy],
                     controller: "guest_list_entries" do
             member do
@@ -77,6 +81,9 @@ Rails.application.routes.draw do
         resources :events, only: [:index, :update]
         resources :users, only: [:index, :update]
         resources :orders, only: [:index]
+
+        # Maintenance
+        post "maintenance/complete_past_events", to: "maintenance#complete_past_events"
       end
     end
   end

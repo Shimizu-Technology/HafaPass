@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_02_004000) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_21_050752) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -69,11 +69,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_004000) do
     t.datetime "created_at", null: false
     t.integer "discount_cents", default: 0, null: false
     t.bigint "event_id", null: false
+    t.string "payment_method"
     t.bigint "promo_code_id"
     t.integer "refund_amount_cents", default: 0, null: false
     t.string "refund_reason"
     t.datetime "refunded_at"
     t.integer "service_fee_cents", default: 0, null: false
+    t.string "source"
     t.integer "status", default: 0, null: false
     t.string "stripe_payment_intent_id"
     t.string "stripe_refund_id"
