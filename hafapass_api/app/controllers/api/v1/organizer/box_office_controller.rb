@@ -24,7 +24,7 @@ module Api
           buyer_name = params[:buyer_name].presence || "Walk-in"
           buyer_email = params[:buyer_email].presence || "walkin-#{SecureRandom.hex(4)}@boxoffice.local"
 
-          # Validate ticket types and availability
+          # Validate ticket types exist (availability checked inside transaction with locking)
           ticket_selections = []
           line_items.each do |item|
             ticket_type = @event.ticket_types.find_by(id: item[:ticket_type_id])
@@ -34,17 +34,30 @@ module Api
             end
 
             quantity = item[:quantity].to_i
-            if quantity <= 0 || quantity > ticket_type.available_quantity
-              render json: { error: "Invalid quantity for #{ticket_type.name}. Available: #{ticket_type.available_quantity}" }, status: :unprocessable_entity
+            if quantity <= 0
+              render json: { error: "Invalid quantity for #{ticket_type.name}" }, status: :unprocessable_entity
               return
             end
 
             ticket_selections << { ticket_type: ticket_type, quantity: quantity }
           end
 
-          subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].price_cents * s[:quantity] }
+          availability_error = nil
 
           ActiveRecord::Base.transaction do
+            # Re-check availability with pessimistic locking to prevent overselling
+            ticket_selections.each do |selection|
+              locked_tt = TicketType.lock.find(selection[:ticket_type].id)
+              if selection[:quantity] > locked_tt.available_quantity
+                availability_error = "Not enough tickets for #{locked_tt.name}. Available: #{locked_tt.available_quantity}"
+                raise ActiveRecord::Rollback
+              end
+              selection[:ticket_type] = locked_tt
+            end
+
+            next if availability_error
+
+            subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].price_cents * s[:quantity] }
             @order = Order.create!(
               user: current_user,
               event: @event,
@@ -72,6 +85,11 @@ module Api
               end
               selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
             end
+          end
+
+          if availability_error
+            render json: { error: availability_error }, status: :unprocessable_entity
+            return
           end
 
           render json: order_json(@order), status: :created
