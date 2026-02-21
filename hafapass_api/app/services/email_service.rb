@@ -27,6 +27,10 @@ class EmailService
       SendGuestListNotificationJob.perform_later(guest_entry.id)
     end
 
+    def send_waitlist_notification_async(waitlist_entry)
+      SendWaitlistNotificationJob.perform_later(waitlist_entry.id)
+    end
+
     # ── Order Confirmation ──────────────────────────────────────────
     def send_order_confirmation(order)
       event = order.event
@@ -54,6 +58,19 @@ class EmailService
       subject = "Refund Processed - #{event.title}"
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "refund_notification", order_id: order.id)
+    end
+
+    # ── Waitlist Notification ──────────────────────────────────────
+    def send_waitlist_notification(waitlist_entry)
+      return unless waitlist_entry.email.present?
+
+      event = waitlist_entry.event
+      frontend_url = ENV.fetch("FRONTEND_URL", "http://localhost:5173")
+      event_url = "#{frontend_url}/events/#{event.slug}"
+      html = build_waitlist_notification_html(waitlist_entry, event, event_url)
+      subject = "Tickets Available - #{event.title}"
+
+      deliver(to: waitlist_entry.email, subject: subject, html: html, tag: "waitlist_notification", entry_id: waitlist_entry.id)
     end
 
     # ── Guest List Notification ─────────────────────────────────────
@@ -240,6 +257,27 @@ class EmailService
             #{guest_entry.notes.present? ? "<p style=\"color: #6b7280; margin: 0 0 20px;\"><em>#{ERB::Util.html_escape(guest_entry.notes)}</em></p>" : ""}
 
             <p style="color: #6b7280; font-size: 14px; margin: 0;">Present your name at the door for entry. No ticket purchase required.</p>
+          </div>
+        HTML
+      end
+    end
+
+    def build_waitlist_notification_html(entry, event, event_url)
+      email_wrapper("Tickets Available") do
+        <<~HTML
+          <div style="text-align: center;">
+            <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Tickets Are Available!</h2>
+            <p style="color: #6b7280; margin: 0 0 28px;">#{ERB::Util.html_escape(entry.name || 'Hi there')}, great news — tickets are now available for:</p>
+
+            <div style="background: #f3f4f6; border-radius: 10px; padding: 28px; margin-bottom: 28px;">
+              <h3 style="color: #1f2937; margin: 0 0 8px;">#{ERB::Util.html_escape(event.title)}</h3>
+              <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
+              <p style="color: #6b7280; margin: 0;">#{ERB::Util.html_escape(event.venue_name || '')}</p>
+            </div>
+
+            <p style="color: #6b7280; margin: 0 0 24px;">You have <strong>24 hours</strong> to purchase your tickets before your spot expires.</p>
+
+            <a href="#{event_url}" style="display: inline-block; background: linear-gradient(135deg, #0e7c7b 0%, #14a3a1 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-weight: 600; font-size: 16px;">Get Your Tickets</a>
           </div>
         HTML
       end

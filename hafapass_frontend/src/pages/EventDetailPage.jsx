@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import apiClient from '../api/client'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
+import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
 
@@ -240,6 +241,13 @@ export default function EventDetailPage() {
                     <p className="text-neutral-500 text-center py-4">No tickets available</p>
                   )}
                 </div>
+                {/* Waitlist form when all ticket types are sold out */}
+                {event.ticket_types?.length > 0 &&
+                  event.ticket_types.every(tt => (tt.quantity_available - tt.quantity_sold) <= 0) && (
+                  <div className="mt-4">
+                    <WaitlistForm event={event} ticketTypes={event.ticket_types} />
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
