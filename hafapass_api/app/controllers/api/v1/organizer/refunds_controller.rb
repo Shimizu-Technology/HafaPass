@@ -73,6 +73,9 @@ module Api
             # Send refund email asynchronously
             EmailService.send_refund_notification_async(@order)
 
+            # Notify waitlisted people if tickets became available
+            @event.notify_waitlist_if_available if is_full_refund
+
             render json: {
               id: @order.id,
               status: @order.status,

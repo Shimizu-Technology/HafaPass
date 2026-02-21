@@ -7,6 +7,7 @@ class Event < ApplicationRecord
   has_many :tickets, dependent: :destroy
   has_many :promo_codes, dependent: :destroy
   has_many :guest_list_entries, dependent: :destroy
+  has_many :waitlist_entries, dependent: :destroy
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   validates :recurrence_rule, inclusion: { in: RECURRENCE_RULES }, allow_nil: true
@@ -24,6 +25,24 @@ class Event < ApplicationRecord
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
   scope :past, -> { where("starts_at <= ?", Time.current) }
   scope :featured, -> { where(is_featured: true) }
+
+  # Check if tickets are available and notify next waitlisted people
+  def notify_waitlist_if_available
+    ticket_types.each do |tt|
+      next unless tt.available_quantity > 0
+
+      entries = waitlist_entries
+        .where(status: :waiting)
+        .where("ticket_type_id = ? OR ticket_type_id IS NULL", tt.id)
+        .order(:position)
+        .limit(tt.available_quantity)
+
+      entries.each do |entry|
+        entry.notify!
+        EmailService.send_waitlist_notification_async(entry)
+      end
+    end
+  end
 
   private
 

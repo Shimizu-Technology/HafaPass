@@ -44,7 +44,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                   <div className="flex items-center gap-2">
                     <h3 className="font-medium text-neutral-900">{tt.name}</h3>
                     {soldOut && (
-                      <span className="text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full font-medium">Sold Out</span>
+                      <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">Waitlist Open</span>
                     )}
                   </div>
                   {tt.description && <p className="text-sm text-neutral-500 mt-0.5">{tt.description}</p>}

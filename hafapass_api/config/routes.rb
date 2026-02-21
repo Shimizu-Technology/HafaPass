@@ -45,7 +45,13 @@ Rails.application.routes.draw do
       end
 
       # Public events
-      resources :events, only: [:index], param: :slug
+      resources :events, only: [:index], param: :slug do
+        member do
+          post 'waitlist', to: 'waitlist#create'
+          get 'waitlist/status', to: 'waitlist#status'
+          delete 'waitlist', to: 'waitlist#destroy'
+        end
+      end
       get "events/:slug", to: "events#show", as: :event
 
       # Organizer events (protected)
@@ -68,6 +74,15 @@ Rails.application.routes.draw do
                     controller: "guest_list_entries" do
             member do
               post :redeem
+            end
+          end
+          # Waitlist management
+          resources :waitlist, only: [:index, :destroy], controller: "waitlist" do
+            member do
+              post :notify
+            end
+            collection do
+              post :notify_next
             end
           end
           # Refunds for specific orders

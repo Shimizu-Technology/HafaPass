@@ -28,6 +28,7 @@ const GuestListPage = lazy(() => import('./pages/dashboard/GuestListPage'))
 const RefundsPage = lazy(() => import('./pages/dashboard/RefundsPage'))
 const AttendeesPage = lazy(() => import('./pages/dashboard/AttendeesPage'))
 const BoxOfficePage = lazy(() => import('./pages/dashboard/BoxOfficePage'))
+const WaitlistPage = lazy(() => import('./pages/dashboard/WaitlistPage'))
 
 // Admin pages
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'))
@@ -64,6 +65,7 @@ function App() {
           <Route path="/dashboard/events/:id/refunds" element={<ProtectedRoute><RefundsPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/attendees" element={<ProtectedRoute><AttendeesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/box-office" element={<ProtectedRoute><BoxOfficePage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id/waitlist" element={<ProtectedRoute><WaitlistPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           {/* Admin routes */}

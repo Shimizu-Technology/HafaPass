@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_21_070639) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_21_072937) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -182,6 +182,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_070639) do
     t.index ["clerk_id"], name: "index_users_on_clerk_id", unique: true
   end
 
+  create_table "waitlist_entries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "email", null: false
+    t.bigint "event_id", null: false
+    t.datetime "expires_at"
+    t.string "name"
+    t.datetime "notified_at"
+    t.string "phone"
+    t.integer "position", null: false
+    t.integer "quantity", default: 1, null: false
+    t.integer "status", default: 0, null: false
+    t.bigint "ticket_type_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["event_id", "ticket_type_id", "email"], name: "idx_waitlist_unique_entry", unique: true
+    t.index ["event_id", "ticket_type_id", "position"], name: "idx_on_event_id_ticket_type_id_position_e28bca8bda"
+    t.index ["event_id"], name: "index_waitlist_entries_on_event_id"
+    t.index ["ticket_type_id"], name: "index_waitlist_entries_on_ticket_type_id"
+    t.index ["user_id"], name: "index_waitlist_entries_on_user_id"
+  end
+
   add_foreign_key "events", "organizer_profiles"
   add_foreign_key "guest_list_entries", "events"
   add_foreign_key "guest_list_entries", "orders"
@@ -195,4 +216,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_070639) do
   add_foreign_key "tickets", "events"
   add_foreign_key "tickets", "orders"
   add_foreign_key "tickets", "ticket_types"
+  add_foreign_key "waitlist_entries", "events"
+  add_foreign_key "waitlist_entries", "ticket_types"
+  add_foreign_key "waitlist_entries", "users"
 end
