@@ -111,28 +111,28 @@ export default function BoxOfficePage() {
           {event.ticket_types?.map(tt => {
             const available = tt.quantity_available - tt.quantity_sold
             return (
-              <div key={tt.id} className="flex items-center justify-between p-4 bg-white border border-neutral-200 rounded-xl">
-                <div>
-                  <p className="font-medium text-neutral-900">{tt.name}</p>
+              <div key={tt.id} className="flex items-center justify-between p-4 sm:p-5 bg-white border border-neutral-200 rounded-xl">
+                <div className="min-w-0 mr-4">
+                  <p className="font-medium text-neutral-900 truncate">{tt.name}</p>
                   <p className="text-sm text-neutral-500">
                     ${(tt.price_cents / 100).toFixed(2)} · {available} left
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0">
                   <button
                     onClick={() => updateQty(tt.id, -1)}
                     disabled={!quantities[tt.id]}
-                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-neutral-100 hover:bg-neutral-200 disabled:opacity-30 transition"
+                    className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-neutral-100 hover:bg-neutral-200 disabled:opacity-30 transition"
                   >
-                    <Minus className="w-4 h-4" />
+                    <Minus className="w-5 h-5" />
                   </button>
-                  <span className="w-8 text-center text-lg font-semibold tabular-nums">{quantities[tt.id] || 0}</span>
+                  <span className="w-10 text-center text-xl font-semibold tabular-nums">{quantities[tt.id] || 0}</span>
                   <button
                     onClick={() => updateQty(tt.id, 1)}
                     disabled={(quantities[tt.id] || 0) >= available}
-                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-30 transition"
+                    className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-30 transition"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-5 h-5" />
                   </button>
                 </div>
               </div>
@@ -163,7 +163,7 @@ export default function BoxOfficePage() {
           {/* Payment Method */}
           <div className="mt-6">
             <h2 className="text-lg font-semibold text-neutral-900 mb-3">Payment Method</h2>
-            <div className="flex gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => setPaymentMethod('door_cash')}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${

@@ -4,6 +4,7 @@ import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlu
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
 import TicketTypesSection from '../components/TicketTypesSection'
+import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
 
 export default function EventDetailPage() {
@@ -73,8 +74,16 @@ export default function EventDetailPage() {
   )
   if (!event) return null
 
+  const truncatedDescription = (event.short_description || event.description || '').slice(0, 160)
+
   return (
     <div>
+      <SEO
+        title={event.title}
+        description={truncatedDescription}
+        image={event.cover_image_url || undefined}
+        url={`https://hafapass.netlify.app/events/${event.slug}`}
+      />
       {/* Hero Section — full-width cover image with dark overlay */}
       <div className="relative w-full h-[50vh] sm:h-[55vh] lg:h-[60vh] min-h-[340px] max-h-[600px] overflow-hidden bg-neutral-950">
         {event.cover_image_url ? (

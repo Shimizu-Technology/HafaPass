@@ -4,6 +4,7 @@ import { Loader2, Search, Music, UtensilsCrossed, Trophy, Users, Sparkles, Moon,
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
+import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
@@ -44,6 +45,11 @@ export default function EventsPage() {
 
   return (
     <div className="min-h-screen">
+      <SEO
+        title="Browse Events"
+        description="Discover what's happening on Guam. Browse concerts, nightlife, festivals, dining, sports, and more."
+        url="https://hafapass.netlify.app/events"
+      />
       {/* Dark Header Section */}
       <div className="bg-neutral-950 pt-8 pb-12 sm:pb-16 relative">
         <NoiseOverlay />

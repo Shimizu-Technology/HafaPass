@@ -5,6 +5,7 @@ import apiClient from '../api/client'
 import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
+import SEO from '../components/SEO'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -211,6 +212,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="bg-neutral-50 min-h-screen">
+      <SEO title={event ? `Checkout — ${event.title}` : 'Checkout'} />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
         <Link to={`/events/${slug}`} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">

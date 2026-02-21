@@ -1,6 +1,9 @@
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
+  # OG meta tags for social media crawlers (serves HTML with OG tags + JS redirect)
+  get "og/events/:slug", to: "og#event", as: :og_event
+
   # Stripe webhooks (outside API namespace, no auth)
   post "webhooks/stripe", to: "webhooks#stripe"
 
