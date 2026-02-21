@@ -12,6 +12,7 @@ export default function SEO({
   image = DEFAULT_IMAGE,
   url,
   type = 'website',
+  jsonLd,
 }) {
   const fullTitle = title ? `${title} | ${SITE_NAME}` : DEFAULT_TITLE
   const canonicalUrl = url || SITE_URL
@@ -36,6 +37,13 @@ export default function SEO({
       <meta name="twitter:image" content={image} />
 
       <link rel="canonical" href={canonicalUrl} />
+
+      {/* JSON-LD Structured Data */}
+      {jsonLd && (
+        <script type="application/ld+json">
+          {JSON.stringify(jsonLd)}
+        </script>
+      )}
     </Helmet>
   )
 }

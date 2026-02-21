@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Offline — HafaPass</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        background: #0a0a0a;
+        color: #e5e5e5;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      }
+      .container {
+        text-align: center;
+        max-width: 420px;
+      }
+      .icon {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 1.5rem;
+        color: #0e7c7b;
+      }
+      h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 0.75rem;
+      }
+      p {
+        font-size: 1rem;
+        line-height: 1.6;
+        color: #a3a3a3;
+        margin-bottom: 1.5rem;
+      }
+      .highlight {
+        color: #0d9488;
+        font-weight: 600;
+      }
+      a {
+        display: inline-block;
+        background: #0e7c7b;
+        color: #fff;
+        text-decoration: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.5rem;
+        font-weight: 600;
+        font-size: 0.95rem;
+        transition: background 0.2s;
+      }
+      a:hover { background: #0d9488; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>
+        <path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>
+      </svg>
+      <h1>You're Offline</h1>
+      <p>No worries — <span class="highlight">your tickets are still available</span>. Open your tickets to show them at the door.</p>
+      <a href="/my-tickets">View My Tickets</a>
+    </div>
+  </body>
+</html>

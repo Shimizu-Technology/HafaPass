@@ -3,4 +3,4 @@ Allow: /
 Disallow: /dashboard
 Disallow: /api/
 
-Sitemap: https://hafapass.com/sitemap.xml
+Sitemap: https://hafapass.netlify.app/sitemap.xml

@@ -1,6 +1,9 @@
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
+  # Dynamic sitemap for search engines
+  get "sitemap.xml", to: "sitemaps#show", defaults: { format: :xml }
+
   # OG meta tags for social media crawlers (serves HTML with OG tags + JS redirect)
   get "og/events/:slug", to: "og#event", as: :og_event
 
