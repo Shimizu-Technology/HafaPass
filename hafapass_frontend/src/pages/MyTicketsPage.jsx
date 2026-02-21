@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight } from 'lucide-react'
 import apiClient from '../api/client'
+import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
 
@@ -91,6 +92,7 @@ export default function MyTicketsPage() {
   if (eventGroups.length === 0) {
     return (
       <div>
+        <SEO title="My Tickets" />
         {/* Dark header */}
         <div className="bg-neutral-950 pt-8 pb-12 relative">
           <NoiseOverlay />
@@ -158,6 +160,7 @@ export default function MyTicketsPage() {
 
   return (
     <div>
+      <SEO title="My Tickets" />
       {/* Dark header */}
       <div className="bg-neutral-950 pt-8 pb-12 relative">
         <NoiseOverlay />

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Calendar, MapPin, ArrowRight, Clock, Sparkles } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
+import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
 
@@ -92,8 +93,9 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-neutral-950">
+      <SEO />
       {/* ── Featured Event Hero ── */}
-      <section className="relative h-[85vh] min-h-[560px] max-h-[800px] overflow-hidden">
+      <section className="relative h-[85vh] min-h-[480px] sm:min-h-[560px] max-h-[800px] overflow-hidden">
         <NoiseOverlay />
         {featuredEvent ? (
           <>

@@ -66,24 +66,24 @@ export default function RefundsPage() {
     <div className="space-y-3">
      {orders.map(order => (
       <div key={order.id} className="card p-5">
-       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-         <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
+       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-4 min-w-0">
+         <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
           <DollarSign className="w-5 h-5 text-brand-500" />
          </div>
-         <div>
-          <p className="font-medium text-neutral-900">Order #{order.id} &middot; {order.buyer_name}</p>
-          <p className="text-sm text-neutral-500">
+         <div className="min-w-0">
+          <p className="font-medium text-neutral-900 truncate">Order #{order.id} &middot; {order.buyer_name}</p>
+          <p className="text-sm text-neutral-500 truncate">
            {order.buyer_email} &middot; {order.ticket_count} ticket(s) &middot; ${(order.total_cents / 100).toFixed(2)}
           </p>
          </div>
         </div>
         {refundingId !== order.id ? (
-         <button onClick={() => { setRefundingId(order.id); setRefundForm({ amount: '', reason: '', type: 'full' }) }} className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50">
+         <button onClick={() => { setRefundingId(order.id); setRefundForm({ amount: '', reason: '', type: 'full' }) }} className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50 shrink-0 self-start sm:self-auto">
           <RotateCcw className="w-3 h-3" /> Refund
          </button>
         ) : (
-         <button onClick={() => setRefundingId(null)} className="text-sm text-neutral-500 hover:text-neutral-700">Cancel</button>
+         <button onClick={() => setRefundingId(null)} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
         )}
        </div>
 

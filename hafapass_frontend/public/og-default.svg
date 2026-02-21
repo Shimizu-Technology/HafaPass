@@ -1,0 +1,48 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="50%" style="stop-color:#134e4a"/>
+      <stop offset="100%" style="stop-color:#0f172a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#0d9488"/>
+      <stop offset="100%" style="stop-color:#f97316"/>
+    </linearGradient>
+  </defs>
+  
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  
+  <!-- Decorative circles -->
+  <circle cx="1050" cy="120" r="200" fill="#0d9488" opacity="0.08"/>
+  <circle cx="150" cy="500" r="150" fill="#f97316" opacity="0.06"/>
+  
+  <!-- Accent line -->
+  <rect x="100" y="260" width="120" height="4" rx="2" fill="url(#accent)"/>
+  
+  <!-- Ticket icon -->
+  <g transform="translate(100, 180)" fill="none" stroke="#0d9488" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.6">
+    <path d="M2 12a4 4 0 0 1 0 8v2.67A2.67 2.67 0 0 0 4.67 25.33h21.33A2.67 2.67 0 0 0 28.67 22.67V20a4 4 0 0 1 0-8V9.33A2.67 2.67 0 0 0 26 6.67H4.67A2.67 2.67 0 0 0 2 9.33Z"/>
+    <path d="M17.33 6.67v2.67"/>
+    <path d="M17.33 22.67v2.67"/>
+    <path d="M17.33 14.67v2.67"/>
+  </g>
+  
+  <!-- Title -->
+  <text x="100" y="330" font-family="'Space Grotesk', 'SF Pro Display', system-ui, sans-serif" font-size="72" font-weight="700" fill="white">
+    <tspan>Hafa</tspan><tspan fill="#0d9488">Pass</tspan>
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="100" y="400" font-family="'Plus Jakarta Sans', 'SF Pro Text', system-ui, sans-serif" font-size="32" font-weight="400" fill="#94a3b8">
+    Your Pass to Every Event on Guam
+  </text>
+  
+  <!-- Bottom tagline -->
+  <text x="100" y="530" font-family="'Plus Jakarta Sans', 'SF Pro Text', system-ui, sans-serif" font-size="20" font-weight="500" fill="#64748b">
+    Concerts · Nightlife · Festivals · Dining · Sports
+  </text>
+  
+  <!-- Bottom accent line -->
+  <rect x="0" y="620" width="1200" height="10" fill="url(#accent)"/>
+</svg>
