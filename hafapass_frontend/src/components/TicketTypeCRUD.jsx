@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, X, Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
+import PricingTiersCRUD from './PricingTiersCRUD'
 
 const EMPTY_FORM = { name: '', description: '', price: '', quantity_available: '', max_per_order: '' }
 
@@ -147,16 +148,20 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh })
                   saving={saving}
                 />
               ) : (
-                <div className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl">
-                  <div>
-                    <p className="font-medium text-neutral-900">{tt.name}</p>
-                    {tt.description && <p className="text-sm text-neutral-500">{tt.description}</p>}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right mr-2">
-                      <p className="font-semibold text-neutral-900">${(tt.price_cents / 100).toFixed(2)}</p>
-                      <p className="text-xs text-neutral-500">{tt.quantity_sold ?? 0}/{tt.quantity_available ?? '∞'} sold</p>
+                <div>
+                  <div className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl">
+                    <div>
+                      <p className="font-medium text-neutral-900">{tt.name}</p>
+                      {tt.description && <p className="text-sm text-neutral-500">{tt.description}</p>}
                     </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right mr-2">
+                        <p className="font-semibold text-neutral-900">${(tt.price_cents / 100).toFixed(2)}</p>
+                        {tt.current_price_cents != null && tt.current_price_cents !== tt.price_cents && (
+                          <p className="text-xs text-emerald-600">Current: ${(tt.current_price_cents / 100).toFixed(2)}</p>
+                        )}
+                        <p className="text-xs text-neutral-500">{tt.quantity_sold ?? 0}/{tt.quantity_available ?? '∞'} sold</p>
+                      </div>
                     {confirmDeleteId === tt.id ? (
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-red-600 mr-1">Delete?</span>
@@ -176,6 +181,8 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh })
                       </>
                     )}
                   </div>
+                </div>
+                  <PricingTiersCRUD eventId={eventId} ticketTypeId={tt.id} />
                 </div>
               )}
             </div>

@@ -70,7 +70,9 @@ Rails.application.routes.draw do
             get :stats
             get :attendees
           end
-          resources :ticket_types, only: [:index, :show, :create, :update, :destroy]
+          resources :ticket_types, only: [:index, :show, :create, :update, :destroy] do
+            resources :pricing_tiers, only: [:index, :create, :update, :destroy]
+          end
           resources :promo_codes, only: [:index, :show, :create, :update, :destroy]
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do

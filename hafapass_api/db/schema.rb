@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_21_072937) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_21_112913) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -108,6 +108,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_072937) do
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id"
   end
 
+  create_table "pricing_tiers", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "ends_at"
+    t.string "name"
+    t.integer "position", default: 0, null: false
+    t.integer "price_cents"
+    t.integer "quantity_limit"
+    t.integer "quantity_sold", default: 0, null: false
+    t.datetime "starts_at"
+    t.bigint "ticket_type_id", null: false
+    t.integer "tier_type"
+    t.datetime "updated_at", null: false
+    t.index ["ticket_type_id"], name: "index_pricing_tiers_on_ticket_type_id"
+  end
+
   create_table "promo_codes", force: :cascade do |t|
     t.boolean "active", default: true, null: false
     t.string "code", null: false
@@ -160,12 +175,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_072937) do
     t.datetime "created_at", null: false
     t.bigint "event_id", null: false
     t.bigint "order_id", null: false
+    t.bigint "pricing_tier_id"
     t.string "qr_code"
     t.integer "status", default: 0, null: false
     t.bigint "ticket_type_id", null: false
     t.datetime "updated_at", null: false
     t.index ["event_id"], name: "index_tickets_on_event_id"
     t.index ["order_id"], name: "index_tickets_on_order_id"
+    t.index ["pricing_tier_id"], name: "index_tickets_on_pricing_tier_id"
     t.index ["qr_code"], name: "index_tickets_on_qr_code", unique: true
     t.index ["ticket_type_id"], name: "index_tickets_on_ticket_type_id"
   end
@@ -211,10 +228,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_072937) do
   add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
   add_foreign_key "organizer_profiles", "users"
+  add_foreign_key "pricing_tiers", "ticket_types"
   add_foreign_key "promo_codes", "events"
   add_foreign_key "ticket_types", "events"
   add_foreign_key "tickets", "events"
   add_foreign_key "tickets", "orders"
+  add_foreign_key "tickets", "pricing_tiers"
   add_foreign_key "tickets", "ticket_types"
   add_foreign_key "waitlist_entries", "events"
   add_foreign_key "waitlist_entries", "ticket_types"

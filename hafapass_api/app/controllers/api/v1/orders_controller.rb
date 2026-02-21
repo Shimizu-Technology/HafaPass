@@ -51,8 +51,9 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     # Calculate totals (using SiteSetting fees)
+    # Note: prices are recalculated inside the transaction with locking for race safety
     settings = SiteSetting.instance
-    subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].price_cents * s[:quantity] }
+    subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].current_price_cents * s[:quantity] }
     total_ticket_count = ticket_selections.sum { |s| s[:quantity] }
     service_fee_cents = (subtotal_cents * (settings.service_fee_percent / 100.0)).round + (total_ticket_count * settings.service_fee_flat_cents)
 
@@ -75,6 +76,15 @@ class Api::V1::OrdersController < ApplicationController
     intent = nil
     promo_exhausted = false
     ActiveRecord::Base.transaction do
+      # Recalculate prices with locked ticket types to prevent race conditions
+      ticket_selections.each { |s| s[:ticket_type].reload.lock! }
+      subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].current_price_cents * s[:quantity] }
+      service_fee_cents = (subtotal_cents * (settings.service_fee_percent / 100.0)).round + (total_ticket_count * settings.service_fee_flat_cents)
+      if discount_cents > 0 && promo_code
+        discount_cents = promo_code.calculate_discount(subtotal_cents)
+      end
+      total_cents = [subtotal_cents + service_fee_cents - discount_cents, 0].max
+
       @order = Order.create!(
         user: @current_user,
         event: event,
@@ -91,14 +101,24 @@ class Api::V1::OrdersController < ApplicationController
       )
 
       ticket_selections.each do |selection|
+        # Capture the active pricing tier before creating tickets
+        active_tier = selection[:ticket_type].active_pricing_tier
+
         selection[:quantity].times do
           @order.tickets.create!(
             ticket_type: selection[:ticket_type],
-            event: event
+            event: event,
+            pricing_tier: active_tier&.quantity_based? ? active_tier : nil
           )
         end
 
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
+
+        # Increment the active pricing tier's quantity_sold if applicable
+        if active_tier&.quantity_based?
+          active_tier.lock!
+          active_tier.increment!(:quantity_sold, selection[:quantity])
+        end
       end
 
       # Atomic promo code usage increment (race-safe)
@@ -172,8 +192,14 @@ class Api::V1::OrdersController < ApplicationController
     ActiveRecord::Base.transaction do
       order.update!(status: :cancelled)
 
-      order.tickets.includes(:ticket_type).each do |ticket|
+      order.tickets.includes(:pricing_tier, :ticket_type).each do |ticket|
         ticket.ticket_type.decrement!(:quantity_sold)
+
+        # Decrement the pricing tier that was active at purchase time
+        if ticket.pricing_tier&.quantity_sold&.positive?
+          ticket.pricing_tier.decrement!(:quantity_sold)
+        end
+
         ticket.update!(status: :cancelled)
       end
     end

@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
 
 export default function EventCard({ event }) {
+  const { t } = useTranslation()
   const formatDate = (dateStr) => {
     const date = new Date(dateStr)
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -14,15 +16,16 @@ export default function EventCard({ event }) {
   }
 
   const lowestPrice = event.ticket_types?.reduce((min, tt) => {
-    if (tt.price_cents === 0) return min === null ? 0 : Math.min(min, 0)
-    return min === null ? tt.price_cents : Math.min(min, tt.price_cents)
+    const price = tt.current_price_cents ?? tt.price_cents
+    if (price === 0) return min === null ? 0 : Math.min(min, 0)
+    return min === null ? price : Math.min(min, price)
   }, null)
 
   const priceLabel = lowestPrice === null
     ? ''
     : lowestPrice === 0
-    ? 'Free'
-    : `From $${(lowestPrice / 100).toFixed(2)}`
+    ? t('events.free')
+    : `${t('events.from')} $${(lowestPrice / 100).toFixed(2)}`
 
   // Check ticket availability
   const totalAvailable = event.ticket_types?.reduce((sum, tt) => sum + (tt.quantity_available ?? 0), 0)
@@ -53,7 +56,7 @@ export default function EventCard({ event }) {
         {event.status === 'completed' && (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
             <span className="bg-neutral-900/80 text-white text-sm font-bold px-4 py-1.5 rounded-full backdrop-blur-sm">
-              Past Event
+              {t('events.pastEvent')}
             </span>
           </div>
         )}
@@ -115,19 +118,19 @@ export default function EventCard({ event }) {
             {event.status === 'completed' ? (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />
-                <span className="text-xs font-medium text-neutral-400">Completed</span>
+                <span className="text-xs font-medium text-neutral-400">{t('events.completed')}</span>
               </>
             ) : (
               <>
                 <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
                 <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-600' : 'text-neutral-400'}`}>
-                  {hasAvailability ? 'Tickets Available' : 'Sold Out'}
+                  {hasAvailability ? t('events.ticketsAvailable') : t('events.soldOut')}
                 </span>
               </>
             )}
           </div>
           <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-400 group-hover:text-brand-500 transition-all duration-200 group-hover:translate-x-0.5">
-            View
+            {t('common.view')}
             <ArrowRight className="w-3.5 h-3.5" />
           </span>
         </div>

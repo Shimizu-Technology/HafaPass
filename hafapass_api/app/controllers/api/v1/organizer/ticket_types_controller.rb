@@ -7,7 +7,7 @@ module Api
         before_action :set_ticket_type, only: [:show, :update, :destroy]
 
         def index
-          ticket_types = @event.ticket_types.order(:sort_order, :id)
+          ticket_types = @event.ticket_types.includes(:pricing_tiers).order(:sort_order, :id)
           render json: ticket_types.map { |tt| ticket_type_json(tt) }
         end
 
@@ -79,6 +79,7 @@ module Api
             name: tt.name,
             description: tt.description,
             price_cents: tt.price_cents,
+            current_price_cents: tt.current_price_cents,
             quantity_available: tt.quantity_available,
             quantity_sold: tt.quantity_sold,
             available_quantity: tt.available_quantity,
@@ -87,6 +88,20 @@ module Api
             sales_start_at: tt.sales_start_at,
             sales_end_at: tt.sales_end_at,
             sort_order: tt.sort_order,
+            pricing_tiers: tt.pricing_tiers.ordered.map { |t|
+              {
+                id: t.id,
+                name: t.name,
+                price_cents: t.price_cents,
+                tier_type: t.tier_type,
+                quantity_limit: t.quantity_limit,
+                quantity_sold: t.quantity_sold,
+                starts_at: t.starts_at,
+                ends_at: t.ends_at,
+                position: t.position,
+                active: t.active?
+              }
+            },
             created_at: tt.created_at,
             updated_at: tt.updated_at
           }

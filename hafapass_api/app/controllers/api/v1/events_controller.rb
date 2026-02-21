@@ -92,18 +92,37 @@ module Api
         }
 
         if include_ticket_types
-          json[:ticket_types] = event.ticket_types.order(:sort_order, :id).map do |tt|
-            {
+          json[:ticket_types] = event.ticket_types.includes(:pricing_tiers).order(:sort_order, :id).map do |tt|
+            active_tier = tt.active_pricing_tier
+            next_tier = tt.next_pricing_tier
+            tt_json = {
               id: tt.id,
               name: tt.name,
               description: tt.description,
               price_cents: tt.price_cents,
+              current_price_cents: tt.current_price_cents,
+              original_price_cents: tt.price_cents,
               quantity_available: tt.quantity_available,
               quantity_sold: tt.quantity_sold,
               max_per_order: tt.max_per_order,
               sales_start_at: tt.sales_start_at,
               sales_end_at: tt.sales_end_at
             }
+            if active_tier
+              tt_json[:active_tier] = {
+                name: active_tier.name,
+                tier_type: active_tier.tier_type,
+                remaining: active_tier.quantity_based? ? (active_tier.quantity_limit - active_tier.quantity_sold) : nil,
+                ends_at: active_tier.ends_at
+              }
+            end
+            if next_tier
+              tt_json[:next_tier] = {
+                name: next_tier.name,
+                price_cents: next_tier.price_cents
+              }
+            end
+            tt_json
           end
         end
 

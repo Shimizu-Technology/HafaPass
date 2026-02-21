@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { UserButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
 import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import apiClient from '../api/client'
+import LanguageSwitcher from './LanguageSwitcher'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -16,6 +18,7 @@ function NavContent() {
   const navigate = useNavigate()
   const { isSignedIn } = useUser ? useUser() : { isSignedIn: false }
 
+  const { t } = useTranslation()
   const isHomepage = location.pathname === '/'
 
   useEffect(() => {
@@ -35,13 +38,13 @@ function NavContent() {
   }, [location.pathname])
 
   const navLinks = [
-    { to: '/events', label: 'Events', icon: CalendarDays },
+    { to: '/events', label: t('nav.events'), icon: CalendarDays },
     ...(isSignedIn ? [
-      { to: '/my-tickets', label: 'My Tickets', icon: Ticket },
-      { to: '/dashboard/scanner', label: 'Scanner', icon: ScanLine },
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/my-tickets', label: t('nav.myTickets'), icon: Ticket },
+      { to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine },
+      { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
       ...(userRole === 'admin' ? [
-        { to: '/admin', label: 'Admin', icon: Shield },
+        { to: '/admin', label: t('nav.admin'), icon: Shield },
       ] : []),
     ] : []),
   ]
@@ -117,7 +120,7 @@ function NavContent() {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search events..."
+                    placeholder={t('nav.search')}
                     autoFocus
                     onBlur={() => { if (!searchQuery) setSearchOpen(false) }}
                     className={`w-56 pl-9 pr-3 py-2 text-sm rounded-lg border transition-all ${
@@ -145,6 +148,7 @@ function NavContent() {
 
           {/* Right side */}
           <div className="hidden md:flex items-center gap-3">
+            <LanguageSwitcher isDarkMode={isDarkMode} />
             <SignedIn>
               <UserButton afterSignOutUrl="/" />
             </SignedIn>
@@ -152,10 +156,10 @@ function NavContent() {
               <Link to="/sign-in" className={`text-sm font-medium transition-colors px-3 py-2 ${
                 isDarkMode ? 'text-neutral-300 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
               }`}>
-                Sign In
+                {t('nav.signIn')}
               </Link>
               <Link to="/sign-up" className="btn-primary text-sm !py-2.5 !px-5">
-                Get Started
+                {t('nav.getStarted')}
               </Link>
             </SignedOut>
           </div>
@@ -209,10 +213,10 @@ function NavContent() {
                 <Link to="/sign-in" className={`block px-4 py-3 rounded-xl text-sm font-medium ${
                   isDarkMode ? 'text-neutral-400 hover:bg-white/5' : 'text-neutral-500 hover:bg-neutral-50'
                 }`}>
-                  Sign In
+                  {t('nav.signIn')}
                 </Link>
                 <Link to="/sign-up" className="block btn-primary text-center text-sm">
-                  Get Started
+                  {t('nav.getStarted')}
                 </Link>
               </div>
             </SignedOut>
