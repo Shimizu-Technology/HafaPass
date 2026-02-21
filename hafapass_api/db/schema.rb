@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_21_072937) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_21_103243) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -106,6 +106,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_072937) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id"
+  end
+
+  create_table "pricing_tiers", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "ends_at"
+    t.string "name"
+    t.integer "position", default: 0, null: false
+    t.integer "price_cents"
+    t.integer "quantity_limit"
+    t.integer "quantity_sold", default: 0, null: false
+    t.datetime "starts_at"
+    t.bigint "ticket_type_id", null: false
+    t.integer "tier_type"
+    t.datetime "updated_at", null: false
+    t.index ["ticket_type_id"], name: "index_pricing_tiers_on_ticket_type_id"
   end
 
   create_table "promo_codes", force: :cascade do |t|
@@ -211,6 +226,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_21_072937) do
   add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
   add_foreign_key "organizer_profiles", "users"
+  add_foreign_key "pricing_tiers", "ticket_types"
   add_foreign_key "promo_codes", "events"
   add_foreign_key "ticket_types", "events"
   add_foreign_key "tickets", "events"

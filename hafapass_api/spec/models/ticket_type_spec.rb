@@ -98,6 +98,53 @@ RSpec.describe TicketType, type: :model do
     end
   end
 
+  describe "#current_price_cents" do
+    let(:event) { create(:event) }
+    let(:ticket_type) { create(:ticket_type, event: event, price_cents: 3000) }
+
+    it "returns base price when no pricing tiers exist" do
+      expect(ticket_type.current_price_cents).to eq(3000)
+    end
+
+    it "returns quantity_based tier price when tier has capacity" do
+      create(:pricing_tier, ticket_type: ticket_type, tier_type: :quantity_based,
+             price_cents: 2000, quantity_limit: 50, quantity_sold: 10, position: 0)
+      expect(ticket_type.current_price_cents).to eq(2000)
+    end
+
+    it "falls back to base price when quantity_based tier is exhausted" do
+      create(:pricing_tier, ticket_type: ticket_type, tier_type: :quantity_based,
+             price_cents: 2000, quantity_limit: 50, quantity_sold: 50, position: 0)
+      expect(ticket_type.current_price_cents).to eq(3000)
+    end
+
+    it "returns time_based tier price when within date range" do
+      create(:pricing_tier, ticket_type: ticket_type, tier_type: :time_based,
+             price_cents: 1500, starts_at: 1.day.ago, ends_at: 1.week.from_now, position: 0)
+      expect(ticket_type.current_price_cents).to eq(1500)
+    end
+
+    it "falls back to base price when time_based tier has expired" do
+      create(:pricing_tier, ticket_type: ticket_type, tier_type: :time_based,
+             price_cents: 1500, starts_at: 2.weeks.ago, ends_at: 1.week.ago, position: 0)
+      expect(ticket_type.current_price_cents).to eq(3000)
+    end
+
+    it "evaluates tiers in position order" do
+      create(:pricing_tier, ticket_type: ticket_type, tier_type: :quantity_based,
+             price_cents: 2000, quantity_limit: 50, quantity_sold: 50, position: 0)
+      create(:pricing_tier, ticket_type: ticket_type, tier_type: :quantity_based,
+             price_cents: 2500, quantity_limit: 100, quantity_sold: 10, position: 1)
+      expect(ticket_type.current_price_cents).to eq(2500)
+    end
+
+    it "returns time_based tier price with only ends_at set" do
+      create(:pricing_tier, ticket_type: ticket_type, tier_type: :time_based,
+             price_cents: 1800, starts_at: nil, ends_at: 1.week.from_now, position: 0)
+      expect(ticket_type.current_price_cents).to eq(1800)
+    end
+  end
+
   describe "defaults" do
     it "defaults quantity_sold to 0" do
       event = create(:event)

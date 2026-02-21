@@ -57,7 +57,7 @@ module Api
 
             next if availability_error
 
-            subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].price_cents * s[:quantity] }
+            subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].current_price_cents * s[:quantity] }
             @order = Order.create!(
               user: current_user,
               event: @event,
@@ -84,6 +84,12 @@ module Api
                 )
               end
               selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
+
+              # Increment active pricing tier quantity_sold if applicable
+              active_tier = selection[:ticket_type].active_pricing_tier
+              if active_tier&.quantity_based?
+                active_tier.increment!(:quantity_sold, selection[:quantity])
+              end
             end
           end
 

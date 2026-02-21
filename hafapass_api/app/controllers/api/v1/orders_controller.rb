@@ -52,7 +52,7 @@ class Api::V1::OrdersController < ApplicationController
 
     # Calculate totals (using SiteSetting fees)
     settings = SiteSetting.instance
-    subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].price_cents * s[:quantity] }
+    subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].current_price_cents * s[:quantity] }
     total_ticket_count = ticket_selections.sum { |s| s[:quantity] }
     service_fee_cents = (subtotal_cents * (settings.service_fee_percent / 100.0)).round + (total_ticket_count * settings.service_fee_flat_cents)
 
@@ -99,6 +99,12 @@ class Api::V1::OrdersController < ApplicationController
         end
 
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
+
+        # Increment the active pricing tier's quantity_sold if applicable
+        active_tier = selection[:ticket_type].active_pricing_tier
+        if active_tier&.quantity_based?
+          active_tier.increment!(:quantity_sold, selection[:quantity])
+        end
       end
 
       # Atomic promo code usage increment (race-safe)

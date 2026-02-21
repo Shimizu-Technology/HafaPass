@@ -1,7 +1,10 @@
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import NoiseOverlay from './ui/NoiseOverlay'
 
 export default function Footer() {
+  const { t } = useTranslation()
+
   return (
     <footer className="bg-brand-950 text-neutral-400 py-14 relative">
       <NoiseOverlay />
@@ -18,33 +21,33 @@ export default function Footer() {
               <span className="text-base font-bold text-neutral-200 tracking-tight">HafaPass</span>
             </div>
             <p className="text-sm text-neutral-500 leading-relaxed">
-              Your pass to every event on Guam. Discover, book, and experience the island's best.
+              {t('footer.tagline')}
             </p>
           </div>
 
           {/* Platform */}
           <div>
-            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">Platform</h3>
+            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">{t('footer.platform')}</h3>
             <ul className="space-y-2.5">
-              <li><Link to="/events" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">Browse Events</Link></li>
-              <li><Link to="/sign-up" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">For Organizers</Link></li>
-              <li><Link to="/sign-in" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">Sign In</Link></li>
+              <li><Link to="/events" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.browseEvents')}</Link></li>
+              <li><Link to="/sign-up" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.forOrganizers')}</Link></li>
+              <li><Link to="/sign-in" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.signIn')}</Link></li>
             </ul>
           </div>
 
           {/* Company */}
           <div>
-            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">Company</h3>
+            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">{t('footer.company')}</h3>
             <ul className="space-y-2.5">
-              <li><a href="https://shimizu-technology.com" target="_blank" rel="noopener noreferrer" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">About</a></li>
-              <li><a href="mailto:contact@hafapass.com" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">Contact</a></li>
-              <li><Link to="/" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">Privacy Policy</Link></li>
+              <li><a href="https://shimizu-technology.com" target="_blank" rel="noopener noreferrer" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.about')}</a></li>
+              <li><a href="mailto:contact@hafapass.com" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.contact')}</a></li>
+              <li><Link to="/" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.privacy')}</Link></li>
             </ul>
           </div>
 
           {/* Social */}
           <div>
-            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">Connect</h3>
+            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">{t('footer.connect')}</h3>
             <div className="flex items-center gap-3">
               {/* Instagram */}
               <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors" aria-label="Instagram">
@@ -71,10 +74,10 @@ export default function Footer() {
         {/* Divider + Copyright */}
         <div className="border-t border-white/5 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-neutral-600">
-            &copy; {new Date().getFullYear()} Shimizu Technology. All rights reserved.
+            &copy; {new Date().getFullYear()} {t('footer.copyright')}
           </p>
           <p className="text-xs text-neutral-600">
-            Made with aloha on Guam
+            {t('footer.madeWith')}
           </p>
         </div>
       </div>
