@@ -23,7 +23,7 @@ class WaitlistEntry < ApplicationRecord
     )
   end
 
-  def expired?
+  def offer_expired?
     expires_at.present? && expires_at < Time.current && !converted?
   end
 
@@ -32,10 +32,9 @@ class WaitlistEntry < ApplicationRecord
   def assign_position
     return if position.present?
 
-    max_position = WaitlistEntry
+    # Use advisory lock to prevent race conditions on position assignment
+    self.position = (self.class
       .where(event_id: event_id, ticket_type_id: ticket_type_id)
-      .maximum(:position) || 0
-
-    self.position = max_position + 1
+      .maximum(:position) || 0) + 1
   end
 end

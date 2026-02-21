@@ -19,7 +19,7 @@ module Api
               user = User.find_by(clerk_id: payload["sub"])
               entry.user = user if user
             end
-          rescue
+          rescue StandardError
             # Ignore auth errors for this optional attachment
           end
         end
@@ -41,7 +41,7 @@ module Api
 
         entries = @event.waitlist_entries.where(email: email).order(:position)
         if entries.any?
-          render json: { entries: entries.map { |e| entry_json(e) } }
+          render json: { entries: entries.map { |e| public_entry_json(e) } }
         else
           render json: { entries: [], message: "No waitlist entries found for this email" }
         end
@@ -83,12 +83,22 @@ module Api
           ticket_type_id: entry.ticket_type_id,
           email: entry.email,
           name: entry.name,
-          phone: entry.phone,
           quantity: entry.quantity,
           position: entry.position,
           status: entry.status,
           notified_at: entry.notified_at,
           expires_at: entry.expires_at,
+          created_at: entry.created_at
+        }
+      end
+
+      # Limited response for unauthenticated status checks — no personal data exposed
+      def public_entry_json(entry)
+        {
+          position: entry.position,
+          status: entry.status,
+          quantity: entry.quantity,
+          ticket_type_id: entry.ticket_type_id,
           created_at: entry.created_at
         }
       end
