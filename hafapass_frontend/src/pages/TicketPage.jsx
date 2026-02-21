@@ -54,7 +54,7 @@ function AddToHomeScreenInstructions() {
   )
 }
 
-function WalletButton({ label, disabled, icon }) {
+function WalletButton({ label, icon }) {
   return (
     <div className="relative group">
       <button
