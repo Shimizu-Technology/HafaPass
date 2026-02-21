@@ -4,9 +4,10 @@
   "description": "Discover and purchase tickets for events across Guam",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1e3a5f",
-  "theme_color": "#1e3a5f",
+  "background_color": "#0e7c7b",
+  "theme_color": "#0e7c7b",
   "orientation": "portrait-primary",
+  "scope": "/",
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -20,5 +21,7 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "categories": ["entertainment", "events"],
+  "lang": "en-US"
 }

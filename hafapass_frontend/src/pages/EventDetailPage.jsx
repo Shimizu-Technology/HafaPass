@@ -77,6 +77,44 @@ export default function EventDetailPage() {
   if (!event) return null
 
   const truncatedDescription = (event.short_description || event.description || '').slice(0, 160)
+  const eventUrl = `https://hafapass.netlify.app/events/${event.slug}`
+
+  // Build JSON-LD structured data for the event
+  const ticketTypes = event.ticket_types || []
+  const prices = ticketTypes.map(t => parseFloat(t.price)).filter(p => !isNaN(p) && p > 0)
+  const eventJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Event',
+    name: event.title,
+    startDate: event.starts_at,
+    ...(event.ends_at && { endDate: event.ends_at }),
+    description: truncatedDescription,
+    ...(event.cover_image_url && { image: event.cover_image_url }),
+    url: eventUrl,
+    ...(event.venue_name && {
+      location: {
+        '@type': 'Place',
+        name: event.venue_name,
+        ...(event.venue_address && { address: event.venue_address }),
+      },
+    }),
+    ...(prices.length > 0 && {
+      offers: {
+        '@type': 'AggregateOffer',
+        lowPrice: Math.min(...prices).toFixed(2),
+        highPrice: Math.max(...prices).toFixed(2),
+        priceCurrency: 'USD',
+        availability: ticketTypes.some(tt => (tt.quantity_available - tt.quantity_sold) > 0) ? 'https://schema.org/InStock' : 'https://schema.org/SoldOut',
+        url: eventUrl,
+      },
+    }),
+    ...(event.organizer_name && {
+      organizer: {
+        '@type': 'Organization',
+        name: event.organizer_name,
+      },
+    }),
+  }
 
   return (
     <div>
@@ -84,7 +122,8 @@ export default function EventDetailPage() {
         title={event.title}
         description={truncatedDescription}
         image={event.cover_image_url || undefined}
-        url={`https://hafapass.netlify.app/events/${event.slug}`}
+        url={eventUrl}
+        jsonLd={eventJsonLd}
       />
       {/* Hero Section — full-width cover image with dark overlay */}
       <div className="relative w-full h-[50vh] sm:h-[55vh] lg:h-[60vh] min-h-[340px] max-h-[600px] overflow-hidden bg-neutral-950">
