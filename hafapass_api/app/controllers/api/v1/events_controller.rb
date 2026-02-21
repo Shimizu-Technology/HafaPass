@@ -4,9 +4,10 @@ module Api
       include Paginatable
 
       skip_before_action :authenticate_user!
+      before_action :optional_authenticate!, only: [:show]
 
       def index
-        events = Event.published.upcoming.includes(:ticket_types, :organizer_profile).order(starts_at: :asc)
+        events = Event.where(status: [:published, :completed]).includes(:ticket_types, :organizer_profile).order(starts_at: :asc)
         pagy, paginated_events = paginate(events)
 
         render json: {
@@ -16,13 +17,34 @@ module Api
       end
 
       def show
-        event = Event.published.find_by!(slug: params[:slug])
+        # Allow organizers to preview their own draft events
+        if params[:preview] == "true" && @current_user
+          event = Event.find_by!(slug: params[:slug])
+          organizer_profile = @current_user.organizer_profile
+          if organizer_profile && event.organizer_profile_id == organizer_profile.id
+            render json: event_json(event, include_ticket_types: true)
+            return
+          end
+        end
+
+        event = Event.where(status: [:published, :completed]).find_by!(slug: params[:slug])
         render json: event_json(event, include_ticket_types: true)
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end
 
       private
+
+      def optional_authenticate!
+        token = extract_bearer_token
+        return if token.nil?
+
+        payload = ClerkAuthenticator.verify(token)
+        return if payload.nil?
+
+        @clerk_payload = payload
+        @current_user = current_user
+      end
 
       def event_json(event, include_ticket_types: false)
         json = {

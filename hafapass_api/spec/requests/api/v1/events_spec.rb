@@ -4,19 +4,23 @@ RSpec.describe "Api::V1::Events", type: :request do
   let(:organizer_profile) { create(:organizer_profile) }
 
   describe "GET /api/v1/events" do
-    it "returns only published upcoming events" do
+    it "returns published and completed events, excludes drafts and cancelled" do
       published_upcoming = create(:event, :published, organizer_profile: organizer_profile, starts_at: 3.days.from_now)
       create(:event, organizer_profile: organizer_profile) # draft
-      create(:event, :published, organizer_profile: organizer_profile, starts_at: 3.days.ago) # past
+      past_published = create(:event, :published, organizer_profile: organizer_profile, starts_at: 3.days.ago) # past but still published
       create(:event, :cancelled, organizer_profile: organizer_profile) # cancelled
+      completed = create(:event, :completed, organizer_profile: organizer_profile, starts_at: 5.days.ago) # completed
 
       get "/api/v1/events"
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
       events = json["events"]
-      expect(events.length).to eq(1)
-      expect(events.first["id"]).to eq(published_upcoming.id)
+      event_ids = events.map { |e| e["id"] }
+      expect(event_ids).to include(published_upcoming.id)
+      expect(event_ids).to include(past_published.id)
+      expect(event_ids).to include(completed.id)
+      expect(events.length).to eq(3)
     end
 
     it "orders events by starts_at ascending" do
@@ -97,6 +101,28 @@ RSpec.describe "Api::V1::Events", type: :request do
       get "/api/v1/events/#{event.slug}"
 
       expect(response).to have_http_status(:not_found)
+    end
+
+    it "allows organizer to preview their own draft events" do
+      user = create(:user, :organizer)
+      org_profile = create(:organizer_profile, user: user)
+      draft_event = create(:event, organizer_profile: org_profile)
+
+      get "/api/v1/events/#{draft_event.slug}?preview=true", headers: auth_headers(user)
+
+      expect(response).to have_http_status(:ok)
+      json = JSON.parse(response.body)
+      expect(json["id"]).to eq(draft_event.id)
+    end
+
+    it "returns completed events publicly" do
+      event = create(:event, :completed, organizer_profile: organizer_profile, starts_at: 5.days.ago)
+
+      get "/api/v1/events/#{event.slug}"
+
+      expect(response).to have_http_status(:ok)
+      json = JSON.parse(response.body)
+      expect(json["status"]).to eq("completed")
     end
 
     it "includes ticket type availability info" do

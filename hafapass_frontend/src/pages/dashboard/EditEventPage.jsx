@@ -1,7 +1,7 @@
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users } from 'lucide-react'
+import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart } from 'lucide-react'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
@@ -293,6 +293,19 @@ export default function EditEventPage() {
           Back to Dashboard
         </Link>
         <div className="flex items-center gap-3">
+          {event?.slug && (
+            <a
+              href={`/events/${event.slug}${event.status === 'draft' ? '?preview=true' : ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1"
+            >
+              <Eye className="w-4 h-4" /> Preview
+            </a>
+          )}
+          <Link to={`/dashboard/events/${id}/box-office`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+            <ShoppingCart className="w-4 h-4" /> Box Office
+          </Link>
           <Link to={`/dashboard/events/${id}/attendees`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <Users className="w-4 h-4" /> Attendees
           </Link>
