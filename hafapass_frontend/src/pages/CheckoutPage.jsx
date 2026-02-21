@@ -83,7 +83,7 @@ export default function CheckoutPage() {
 
     const orderLines = lineItems?.map(item => {
       const tt = event?.ticket_types?.find(t => t.id === item.ticket_type_id)
-      return tt ? tt.price_cents * item.quantity : 0
+      return tt ? (tt.current_price_cents ?? tt.price_cents) * item.quantity : 0
     }) || []
     const currentSubtotal = orderLines.reduce((s, l) => s + l, 0)
 

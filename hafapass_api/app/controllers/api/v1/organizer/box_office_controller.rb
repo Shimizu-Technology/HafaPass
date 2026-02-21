@@ -88,6 +88,7 @@ module Api
               # Increment active pricing tier quantity_sold if applicable
               active_tier = selection[:ticket_type].active_pricing_tier
               if active_tier&.quantity_based?
+                active_tier.lock!
                 active_tier.increment!(:quantity_sold, selection[:quantity])
               end
             end

@@ -189,8 +189,13 @@ class Api::V1::OrdersController < ApplicationController
     ActiveRecord::Base.transaction do
       order.update!(status: :cancelled)
 
-      order.tickets.includes(:ticket_type).each do |ticket|
+      order.tickets.includes(ticket_type: :pricing_tiers).each do |ticket|
         ticket.ticket_type.decrement!(:quantity_sold)
+
+        # Decrement the active pricing tier's quantity_sold to keep inventory in sync
+        active_tier = ticket.ticket_type.pricing_tiers.find { |pt| pt.quantity_based? && pt.quantity_sold > 0 }
+        active_tier&.decrement!(:quantity_sold)
+
         ticket.update!(status: :cancelled)
       end
     end
