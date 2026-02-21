@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, ExternalLink, Check, Copy } from 'lucide-react'
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
+import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
 import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
@@ -185,6 +186,13 @@ export default function EventDetailPage() {
                   </span>
                 )}
               </div>
+
+              {/* Who's Going */}
+              <WhosGoing
+                attendeeCount={event.attendee_count}
+                attendeesPreview={event.attendees_preview}
+                showAttendees={event.show_attendees}
+              />
 
               {/* Description */}
               {event.description && (
