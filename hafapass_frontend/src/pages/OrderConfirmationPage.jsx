@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useLocation, Link } from 'react-router-dom'
-import { CheckCircle, ChevronRight, Loader2, PartyPopper } from 'lucide-react'
+import { CheckCircle, ChevronRight, Loader2, PartyPopper, Download } from 'lucide-react'
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
 
@@ -223,10 +223,20 @@ export default function OrderConfirmationPage() {
                   <p className="text-neutral-900 font-medium text-sm">{ticket.ticket_type?.name}</p>
                   <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
                 </div>
-                <span className="inline-flex items-center text-brand-500 group-hover:text-brand-600 text-sm font-medium transition-colors">
-                  View
-                  <ChevronRight className="w-4 h-4 ml-0.5 transition-transform group-hover:translate-x-0.5" />
-                </span>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${ticket.qr_code}/download`}
+                    className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
+                    title="Download PDF"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Download className="w-4 h-4" />
+                  </a>
+                  <span className="inline-flex items-center text-brand-500 group-hover:text-brand-600 text-sm font-medium transition-colors">
+                    View
+                    <ChevronRight className="w-4 h-4 ml-0.5 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </div>
               </Link>
             ))}
           </div>
