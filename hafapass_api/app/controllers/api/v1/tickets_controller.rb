@@ -2,17 +2,48 @@ class Api::V1::TicketsController < ApplicationController
   skip_before_action :authenticate_user!
 
   def show
-    ticket = Ticket.includes(:ticket_type, :event).find_by(qr_code: params[:qr_code])
-
-    unless ticket
-      render json: { error: "Ticket not found" }, status: :not_found
-      return
-    end
+    ticket = find_ticket
+    return render_not_found unless ticket
 
     render json: ticket_json(ticket)
   end
 
+  def download
+    ticket = find_ticket
+    return render_not_found unless ticket
+
+    pdf_data = TicketPdfGenerator.new(ticket).generate
+    filename = "hafapass-ticket-#{ticket.qr_code[0..7]}.pdf"
+
+    send_data pdf_data,
+              filename: filename,
+              type: "application/pdf",
+              disposition: "attachment"
+  end
+
+  def apple_wallet
+    render json: {
+      error: "Coming soon! Add to home screen for now.",
+      status: "not_implemented"
+    }, status: :not_implemented
+  end
+
+  def google_wallet
+    render json: {
+      error: "Coming soon! Add to home screen for now.",
+      status: "not_implemented"
+    }, status: :not_implemented
+  end
+
   private
+
+  def find_ticket
+    Ticket.includes(:ticket_type, :event).find_by(qr_code: params[:qr_code])
+  end
+
+  def render_not_found
+    render json: { error: "Ticket not found" }, status: :not_found
+  end
 
   def ticket_json(ticket)
     {

@@ -34,6 +34,9 @@ Rails.application.routes.draw do
 
       # Public ticket display (by QR code)
       get "tickets/:qr_code", to: "tickets#show", as: :ticket
+      get "tickets/:qr_code/download", to: "tickets#download", as: :ticket_download
+      get "tickets/:qr_code/wallet/apple", to: "tickets#apple_wallet", as: :ticket_apple_wallet
+      get "tickets/:qr_code/wallet/google", to: "tickets#google_wallet", as: :ticket_google_wallet
 
       # Ticket check-in
       post "check_in/:qr_code", to: "check_ins#create", as: :check_in

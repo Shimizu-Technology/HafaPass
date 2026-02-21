@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight } from 'lucide-react'
+import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight, Download } from 'lucide-react'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
@@ -221,12 +221,14 @@ export default function MyTicketsPage() {
 
                   <div className="divide-y divide-neutral-100">
                     {tickets.map(ticket => (
-                      <Link
+                      <div
                         key={ticket.id}
-                        to={`/tickets/${ticket.qr_code}`}
                         className="flex items-center justify-between px-4 sm:px-5 py-3 min-h-[52px] hover:bg-neutral-50 transition-colors"
                       >
-                        <div className="flex items-center space-x-3">
+                        <Link
+                          to={`/tickets/${ticket.qr_code}`}
+                          className="flex items-center space-x-3 flex-1 min-w-0"
+                        >
                           <div className="flex-shrink-0">
                             <Ticket className="h-5 w-5 text-neutral-400" />
                           </div>
@@ -236,12 +238,22 @@ export default function MyTicketsPage() {
                               <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
                             )}
                           </div>
-                        </div>
-                        <div className="flex items-center space-x-3">
+                        </Link>
+                        <div className="flex items-center space-x-2">
                           {getStatusBadge(ticket.status)}
-                          <ChevronRight className="h-4 w-4 text-neutral-400" />
+                          <a
+                            href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${ticket.qr_code}/download`}
+                            className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
+                            title="Download PDF"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Download className="h-4 w-4" />
+                          </a>
+                          <Link to={`/tickets/${ticket.qr_code}`}>
+                            <ChevronRight className="h-4 w-4 text-neutral-400" />
+                          </Link>
                         </div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 </motion.div>
