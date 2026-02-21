@@ -7,7 +7,7 @@ module Api
         before_action :set_ticket_type, only: [:show, :update, :destroy]
 
         def index
-          ticket_types = @event.ticket_types.order(:sort_order, :id)
+          ticket_types = @event.ticket_types.includes(:pricing_tiers).order(:sort_order, :id)
           render json: ticket_types.map { |tt| ticket_type_json(tt) }
         end
 

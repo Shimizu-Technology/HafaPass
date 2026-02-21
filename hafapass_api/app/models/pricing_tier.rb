@@ -18,6 +18,8 @@ class PricingTier < ApplicationRecord
     when 'time_based'
       if starts_at.present? && ends_at.present?
         Time.current.between?(starts_at, ends_at)
+      elsif starts_at.present?
+        Time.current >= starts_at
       elsif ends_at.present?
         Time.current < ends_at
       else

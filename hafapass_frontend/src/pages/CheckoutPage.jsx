@@ -65,7 +65,7 @@ export default function CheckoutPage() {
     }
   }, [slug, event, lineItems, navigate])
 
-  const formatPrice = (cents) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
+  const formatPrice = (cents) => cents === 0 ? t('events.free') : `$${(cents / 100).toFixed(2)}`
   const formatDate = (dateStr) => {
     if (!dateStr) return ''
     const d = new Date(dateStr)

@@ -24,6 +24,8 @@ class TicketType < ApplicationRecord
       when 'time_based'
         if tier.starts_at.present? && tier.ends_at.present?
           return tier.price_cents if Time.current.between?(tier.starts_at, tier.ends_at)
+        elsif tier.starts_at.present?
+          return tier.price_cents if Time.current >= tier.starts_at
         elsif tier.ends_at.present?
           return tier.price_cents if Time.current < tier.ends_at
         end
