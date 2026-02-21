@@ -5,7 +5,7 @@ class Api::V1::Admin::MaintenanceController < Api::V1::Admin::BaseController
     cutoff = 6.hours.ago
     events = Event.published.where("starts_at < ?", cutoff)
     count = events.count
-    events.update_all(status: Event.statuses[:completed])
+    events.update_all(status: Event.statuses[:completed], updated_at: Time.current)
 
     render json: { message: "Marked #{count} past events as completed." }
   end
