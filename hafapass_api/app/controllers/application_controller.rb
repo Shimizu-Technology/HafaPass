@@ -17,7 +17,10 @@ class ApplicationController < ActionController::API
     end
 
     @clerk_payload = payload
-    current_user # Ensure user is found or created
+    unless current_user
+      render json: { error: "Unauthorized" }, status: :unauthorized
+      return
+    end
   end
 
   def current_user
@@ -40,9 +43,16 @@ class ApplicationController < ActionController::API
 
   def initial_role_for(email)
     return :admin if admin_email?(email)
-    return :admin if (Rails.env.development? || Rails.env.test?) && User.count.zero?
+    return :admin if first_user_admin_bootstrap_enabled?
 
     :attendee
+  end
+
+  def first_user_admin_bootstrap_enabled?
+    return false unless User.count.zero?
+    return true if Rails.env.development? || Rails.env.test?
+
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch("ENABLE_FIRST_USER_ADMIN_BOOTSTRAP", "false"))
   end
 
   def admin_email?(email)

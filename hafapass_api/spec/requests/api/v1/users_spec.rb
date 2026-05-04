@@ -26,5 +26,43 @@ RSpec.describe "Api::V1::Users", type: :request do
       expect(user.first_name).to eq("Jane")
       expect(User.find_by(clerk_id: "spoofed_clerk_id")).to be_nil
     end
+
+    it "can intentionally bootstrap the first production admin when enabled" do
+      allow(Rails.env).to receive(:development?).and_return(false)
+      allow(Rails.env).to receive(:test?).and_return(false)
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("ADMIN_EMAILS", "").and_return("")
+      allow(ENV).to receive(:fetch).with("ENABLE_FIRST_USER_ADMIN_BOOTSTRAP", "false").and_return("true")
+      allow(ClerkAuthenticator).to receive(:verify).with("bootstrap_token").and_return({
+        "sub" => "bootstrap_clerk_id",
+        "email" => "owner@example.com"
+      })
+
+      post "/api/v1/users/sync",
+        params: { email: "owner@example.com" }.to_json,
+        headers: { "Content-Type" => "application/json", "Authorization" => "Bearer bootstrap_token" }
+
+      expect(response).to have_http_status(:ok)
+      expect(User.find_by(clerk_id: "bootstrap_clerk_id")).to be_admin
+    end
+
+    it "does not bootstrap the first production admin unless explicitly enabled" do
+      allow(Rails.env).to receive(:development?).and_return(false)
+      allow(Rails.env).to receive(:test?).and_return(false)
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("ADMIN_EMAILS", "").and_return("")
+      allow(ENV).to receive(:fetch).with("ENABLE_FIRST_USER_ADMIN_BOOTSTRAP", "false").and_return("false")
+      allow(ClerkAuthenticator).to receive(:verify).with("regular_token").and_return({
+        "sub" => "regular_clerk_id",
+        "email" => "first@example.com"
+      })
+
+      post "/api/v1/users/sync",
+        params: { email: "first@example.com" }.to_json,
+        headers: { "Content-Type" => "application/json", "Authorization" => "Bearer regular_token" }
+
+      expect(response).to have_http_status(:ok)
+      expect(User.find_by(clerk_id: "regular_clerk_id")).to be_attendee
+    end
   end
 end

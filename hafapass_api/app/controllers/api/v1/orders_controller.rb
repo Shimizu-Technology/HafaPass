@@ -145,7 +145,7 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     # Ownership check: only the buyer or an admin can cancel a pending order.
-    unless @current_user.admin? || (order.user_id.present? && order.user_id == @current_user.id)
+    unless @current_user&.admin? || (order.user_id.present? && order.user_id == @current_user&.id)
       render json: { error: "Order not found" }, status: :not_found
       return
     end

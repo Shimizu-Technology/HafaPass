@@ -11,10 +11,6 @@ class Ticket < ApplicationRecord
 
   validates :qr_code, uniqueness: true, allow_nil: true
 
-  def assign_qr_code
-    self.qr_code = SecureRandom.uuid
-  end
-
   def issue_qr_code!
     return if qr_code.present?
 
@@ -29,6 +25,10 @@ class Ticket < ApplicationRecord
   end
 
   private
+
+  def assign_qr_code
+    self.qr_code = SecureRandom.uuid
+  end
 
   def generate_qr_code_if_order_completed
     assign_qr_code if order&.completed?

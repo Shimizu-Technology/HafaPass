@@ -48,6 +48,8 @@ export default function OrderConfirmationPage() {
   const [loading, setLoading] = useState(!location.state?.order)
   const [error, setError] = useState(null)
   const [showConfetti, setShowConfetti] = useState(true)
+  const orderId = order?.id
+  const orderStatus = order?.status
 
   useEffect(() => {
     const timer = setTimeout(() => setShowConfetti(false), 4000)
@@ -55,21 +57,47 @@ export default function OrderConfirmationPage() {
   }, [])
 
   useEffect(() => {
-    if (!order || String(order.id) !== String(id)) {
-      setLoading(true)
+    const orderMatchesRoute = orderId && String(orderId) === String(id)
+    const shouldFetchOrder = !orderMatchesRoute || orderStatus === 'pending'
+    if (!shouldFetchOrder) return undefined
+
+    let cancelled = false
+
+    const fetchOrder = ({ showLoading = false } = {}) => {
+      if (showLoading) {
+        setLoading(true)
+      }
       setError(null)
-      apiClient.get(`/me/orders/${id}`)
+
+      return apiClient.get(`/me/orders/${id}`)
         .then(res => {
+          if (cancelled) return
+
           setOrder(res.data)
           setEvent(res.data.event)
           setLoading(false)
         })
         .catch(() => {
+          if (cancelled) return
+
           setError('Unable to load order details. Please check your email for confirmation.')
           setLoading(false)
         })
     }
-  }, [id, order])
+
+    fetchOrder({ showLoading: !orderMatchesRoute })
+
+    if (orderStatus !== 'pending') return () => { cancelled = true }
+
+    const intervalId = window.setInterval(() => {
+      fetchOrder()
+    }, 3000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [id, orderId, orderStatus])
 
   const formatPrice = (cents) => {
     if (cents === 0) return 'Free'

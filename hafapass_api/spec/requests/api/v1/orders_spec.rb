@@ -300,6 +300,20 @@ RSpec.describe "Api::V1::Orders", type: :request do
       expect(response).to have_http_status(:unauthorized)
     end
 
+    it "rejects a verified token without a Clerk subject instead of raising" do
+      order = create(:order, :pending, event: event)
+      allow(ClerkAuthenticator).to receive(:verify).with("blank_sub").and_return({
+        "sub" => "",
+        "email" => "blank@example.com"
+      })
+
+      expect do
+        post "/api/v1/orders/#{order.id}/cancel", headers: { "Authorization" => "Bearer blank_sub" }
+      end.not_to change { order.reload.status }
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
     it "allows the authenticated buyer to cancel a pending order" do
       user = create(:user)
       order = create(:order, :pending, event: event, user: user)

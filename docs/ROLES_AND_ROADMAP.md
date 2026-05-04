@@ -64,7 +64,7 @@ Cannot do:
 
 ### Admin
 
-An admin is a platform-level operator. In production, admins should be explicitly configured with `ADMIN_EMAILS`.
+An admin is a platform-level operator. In production, admins should be explicitly configured with `ADMIN_EMAILS`. If `ADMIN_EMAILS` was missed during first deployment, set `ENABLE_FIRST_USER_ADMIN_BOOTSTRAP=true` only long enough for the intended owner to sign in once, confirm that user is admin, then turn the flag back off.
 
 Can do:
 
@@ -198,7 +198,7 @@ Can do:
 - Staff invitations with expiration and event-level scoping.
 - Audit log for check-ins, refunds, settings changes, role changes, and ticket re-sends.
 - Monitoring and error tracking.
-- Production `ADMIN_EMAILS`, Clerk production instance, Stripe webhook secret, Redis, and locked CORS origins.
+- Production `ADMIN_EMAILS` or a one-time `ENABLE_FIRST_USER_ADMIN_BOOTSTRAP=true` owner sign-in, Clerk production instance, Stripe webhook secret, Redis, and locked CORS origins.
 
 ### Ticketing Operations
 
