@@ -1,16 +1,8 @@
 module Api
   module V1
     class UsersController < ApplicationController
-      skip_before_action :authenticate_user!, only: [:sync]
-
       def sync
-        clerk_id = sync_params[:clerk_id] || sync_params[:id]
-        if clerk_id.blank?
-          render json: { error: "clerk_id or id is required" }, status: :unprocessable_entity
-          return
-        end
-
-        user = User.find_or_initialize_by(clerk_id: clerk_id)
+        user = current_user
 
         # Only update attributes that are actually present in the request
         # to avoid wiping existing data on partial syncs
@@ -23,11 +15,6 @@ module Api
         attrs[:phone] = phone if phone.present?
 
         user.assign_attributes(attrs)
-
-        # First user created becomes admin
-        if user.new_record? && User.count.zero?
-          user.role = :admin
-        end
 
         if user.save
           render json: {

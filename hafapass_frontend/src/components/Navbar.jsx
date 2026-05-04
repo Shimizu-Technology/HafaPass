@@ -16,7 +16,7 @@ function NavContent() {
   const [searchOpen, setSearchOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
-  const { isSignedIn } = useUser ? useUser() : { isSignedIn: false }
+  const { isSignedIn } = useUser()
 
   const { t } = useTranslation()
   const isHomepage = location.pathname === '/'

@@ -85,7 +85,7 @@ class WebhooksController < ActionController::API
         wallet_type: wallet_type
       )
 
-      order.tickets.each(&:generate_qr_code!)
+      order.tickets.each(&:issue_qr_code!)
     end
 
     # Send confirmation emails asynchronously (never blocks the webhook)

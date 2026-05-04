@@ -15,7 +15,12 @@ class TicketType < ApplicationRecord
     quantity_available - quantity_sold
   end
 
-  # Evaluates pricing tiers in order and returns the current effective price
+  def on_sale?
+    (sales_start_at.nil? || sales_start_at <= Time.current) &&
+      (sales_end_at.nil? || sales_end_at > Time.current)
+  end
+
+  # Evaluates pricing tiers in order and returns the current effective price.
   def current_price_cents
     pricing_tiers.each do |tier|
       case tier.tier_type
@@ -31,10 +36,10 @@ class TicketType < ApplicationRecord
         end
       end
     end
-    price_cents # fallback to base price
+    price_cents
   end
 
-  # Returns the currently active pricing tier, or nil if using base price
+  # Returns the currently active pricing tier, or nil if using base price.
   def active_pricing_tier
     pricing_tiers.each do |tier|
       return tier if tier.active?
@@ -42,7 +47,7 @@ class TicketType < ApplicationRecord
     nil
   end
 
-  # Returns the next tier that will become active after the current one
+  # Returns the next tier that will become active after the current one.
   def next_pricing_tier
     found_active = false
     pricing_tiers.each do |tier|

@@ -54,7 +54,9 @@ export default function EventDetailPage() {
     if (navigator.share) {
       try {
         await navigator.share({ title: event.title, text: event.short_description || event.description?.slice(0, 120), url })
-      } catch {}
+      } catch {
+        // Share cancellation is user-driven; no visible error needed.
+      }
     } else {
       await navigator.clipboard.writeText(url)
       setCopied(true)

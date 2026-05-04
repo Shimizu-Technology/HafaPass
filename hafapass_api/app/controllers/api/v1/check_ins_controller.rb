@@ -1,11 +1,19 @@
 class Api::V1::CheckInsController < ApplicationController
-  skip_before_action :authenticate_user!
-
   def create
-    ticket = Ticket.includes(:ticket_type, :event).find_by(qr_code: params[:qr_code])
+    ticket = Ticket.includes(:order, :ticket_type, event: :organizer_profile).find_by(qr_code: params[:qr_code])
 
     unless ticket
       render json: { error: "Ticket not found" }, status: :not_found
+      return
+    end
+
+    unless authorized_to_check_in?(ticket)
+      render json: { error: "Not authorized to check in this ticket" }, status: :forbidden
+      return
+    end
+
+    unless ticket.order.completed?
+      render json: { error: "Ticket order is not completed" }, status: :unprocessable_entity
       return
     end
 
@@ -31,6 +39,12 @@ class Api::V1::CheckInsController < ApplicationController
   end
 
   private
+
+  def authorized_to_check_in?(ticket)
+    return true if current_user.admin?
+
+    current_user.organizer_profile&.id == ticket.event.organizer_profile_id
+  end
 
   def ticket_json(ticket)
     {

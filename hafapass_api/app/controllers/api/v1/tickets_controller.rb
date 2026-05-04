@@ -4,6 +4,7 @@ class Api::V1::TicketsController < ApplicationController
   def show
     ticket = find_ticket
     return render_not_found unless ticket
+    return render_not_found unless ticket.order.completed?
 
     render json: ticket_json(ticket)
   end
@@ -11,6 +12,7 @@ class Api::V1::TicketsController < ApplicationController
   def download
     ticket = find_ticket
     return render_not_found unless ticket
+    return render_not_found unless ticket.order.completed?
 
     pdf_data = TicketPdfGenerator.new(ticket).generate
     filename = "hafapass-ticket-#{ticket.qr_code[0..7]}.pdf"
@@ -38,7 +40,7 @@ class Api::V1::TicketsController < ApplicationController
   private
 
   def find_ticket
-    Ticket.includes(:ticket_type, :event).find_by(qr_code: params[:qr_code])
+    Ticket.includes(:order, :ticket_type, :event).find_by(qr_code: params[:qr_code])
   end
 
   def render_not_found

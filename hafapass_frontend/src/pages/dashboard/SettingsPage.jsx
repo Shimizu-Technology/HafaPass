@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react'
+import { Check, Loader2, X } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'

@@ -27,12 +27,31 @@ class ApplicationController < ActionController::API
     return nil if clerk_id.blank?
 
     @current_user = User.find_or_create_by!(clerk_id: clerk_id) do |user|
-      user.email = @clerk_payload["email"] || @clerk_payload.dig("email_addresses", 0, "email_address")
+      user.email = clerk_email
       user.first_name = @clerk_payload["first_name"]
       user.last_name = @clerk_payload["last_name"]
-      # First user created becomes admin
-      user.role = User.count.zero? ? :admin : :attendee
+      user.role = initial_role_for(user.email)
     end
+  end
+
+  def clerk_email
+    @clerk_payload["email"] || @clerk_payload.dig("email_addresses", 0, "email_address")
+  end
+
+  def initial_role_for(email)
+    return :admin if admin_email?(email)
+    return :admin if (Rails.env.development? || Rails.env.test?) && User.count.zero?
+
+    :attendee
+  end
+
+  def admin_email?(email)
+    return false if email.blank?
+
+    ENV.fetch("ADMIN_EMAILS", "")
+      .split(",")
+      .map { |value| value.strip.downcase }
+      .include?(email.downcase)
   end
 
   def extract_bearer_token
