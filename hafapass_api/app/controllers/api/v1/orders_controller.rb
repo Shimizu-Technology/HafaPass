@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 class Api::V1::OrdersController < ApplicationController
-  skip_before_action :authenticate_user!
-  before_action :optional_authenticate_user!
+  skip_before_action :authenticate_user!, only: [:create]
+  before_action :optional_authenticate_user!, only: [:create]
 
   def create
     event = Event.published.find_by(id: params[:event_id])
@@ -22,67 +22,32 @@ class Api::V1::OrdersController < ApplicationController
       return
     end
 
-    # Validate and collect ticket types with quantities
-    ticket_selections = []
-    line_items.each do |item|
-      ticket_type = event.ticket_types.find_by(id: item[:ticket_type_id])
-      unless ticket_type
-        render json: { error: "Ticket type #{item[:ticket_type_id]} not found for this event" }, status: :unprocessable_entity
-        return
-      end
-
-      quantity = item[:quantity].to_i
-      if quantity <= 0
-        render json: { error: "Quantity must be greater than 0 for #{ticket_type.name}" }, status: :unprocessable_entity
-        return
-      end
-
-      if quantity > ticket_type.available_quantity
-        render json: { error: "Only #{ticket_type.available_quantity} tickets available for #{ticket_type.name}" }, status: :unprocessable_entity
-        return
-      end
-
-      if ticket_type.max_per_order && quantity > ticket_type.max_per_order
-        render json: { error: "Maximum #{ticket_type.max_per_order} tickets per order for #{ticket_type.name}" }, status: :unprocessable_entity
-        return
-      end
-
-      ticket_selections << { ticket_type: ticket_type, quantity: quantity }
-    end
-
-    # Calculate totals (using SiteSetting fees)
-    # Note: prices are recalculated inside the transaction with locking for race safety
-    settings = SiteSetting.instance
-    subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].current_price_cents * s[:quantity] }
-    total_ticket_count = ticket_selections.sum { |s| s[:quantity] }
-    service_fee_cents = (subtotal_cents * (settings.service_fee_percent / 100.0)).round + (total_ticket_count * settings.service_fee_flat_cents)
-
-    # HP-7: Apply promo code if provided
-    promo_code = nil
-    discount_cents = 0
-    if params[:promo_code_id].present?
-      candidate = event.promo_codes.find_by(id: params[:promo_code_id])
-      if candidate&.usable?
-        promo_code = candidate
-        discount_cents = promo_code.calculate_discount(subtotal_cents)
-      end
-    end
-
-    total_cents = [subtotal_cents + service_fee_cents - discount_cents, 0].max
-
     stripe_mode = StripeService.payment_enabled?
 
-    # Create order, tickets, and Stripe intent atomically in one transaction
+    # Create order, tickets, and Stripe intent atomically in one transaction.
     intent = nil
     promo_exhausted = false
+    validation_error = nil
+    total_cents = nil
     ActiveRecord::Base.transaction do
-      # Recalculate prices with locked ticket types to prevent race conditions
-      ticket_selections.each { |s| s[:ticket_type].reload.lock! }
+      ticket_selections, validation_error = locked_ticket_selections(event, line_items)
+      raise ActiveRecord::Rollback if validation_error
+
+      settings = SiteSetting.instance
       subtotal_cents = ticket_selections.sum { |s| s[:ticket_type].current_price_cents * s[:quantity] }
+      total_ticket_count = ticket_selections.sum { |s| s[:quantity] }
       service_fee_cents = (subtotal_cents * (settings.service_fee_percent / 100.0)).round + (total_ticket_count * settings.service_fee_flat_cents)
-      if discount_cents > 0 && promo_code
-        discount_cents = promo_code.calculate_discount(subtotal_cents)
+
+      promo_code = nil
+      discount_cents = 0
+      if params[:promo_code_id].present?
+        candidate = event.promo_codes.find_by(id: params[:promo_code_id])
+        if candidate&.usable?
+          promo_code = candidate
+          discount_cents = promo_code.calculate_discount(subtotal_cents)
+        end
       end
+
       total_cents = [subtotal_cents + service_fee_cents - discount_cents, 0].max
 
       @order = Order.create!(
@@ -101,7 +66,7 @@ class Api::V1::OrdersController < ApplicationController
       )
 
       ticket_selections.each do |selection|
-        # Capture the active pricing tier before creating tickets
+        # Capture the active pricing tier before creating tickets.
         active_tier = selection[:ticket_type].active_pricing_tier
 
         selection[:quantity].times do
@@ -114,14 +79,14 @@ class Api::V1::OrdersController < ApplicationController
 
         selection[:ticket_type].increment!(:quantity_sold, selection[:quantity])
 
-        # Increment the active pricing tier's quantity_sold if applicable
+        # Increment the active pricing tier's quantity_sold if applicable.
         if active_tier&.quantity_based?
           active_tier.lock!
           active_tier.increment!(:quantity_sold, selection[:quantity])
         end
       end
 
-      # Atomic promo code usage increment (race-safe)
+      # Atomic promo code usage increment (race-safe).
       if discount_cents > 0 && promo_code
         unless promo_code.try_increment_usage!
           promo_exhausted = true
@@ -129,25 +94,27 @@ class Api::V1::OrdersController < ApplicationController
         end
       end
 
-      # Stripe mode: create PaymentIntent within the transaction
+      # Stripe mode: create PaymentIntent within the transaction.
       if stripe_mode && total_cents > 0
         intent = StripeService.create_payment_intent(@order)
         @order.update!(stripe_payment_intent_id: intent.id)
-      else
-        # Generate QR codes for non-Stripe orders
-        @order.tickets.each(&:generate_qr_code!)
       end
     end
 
-    # If transaction was rolled back (e.g., promo exhausted), verify via DB
+    if validation_error
+      render json: { error: validation_error }, status: :unprocessable_entity
+      return
+    end
+
+    # If transaction was rolled back (e.g., promo exhausted), verify via DB.
     if promo_exhausted || !@order || @order.id.nil? || !Order.exists?(@order.id)
       render json: { error: "Order could not be completed. Promo code may be exhausted." }, status: :unprocessable_entity
       return
     end
 
-    # Stripe mode: return client_secret for frontend payment
+    # Stripe mode: return client_secret for frontend payment, but never expose ticket QR codes before completion.
     if stripe_mode && total_cents > 0
-      render json: order_json(@order).merge(
+      render json: order_json(@order, include_tickets: false).merge(
         client_secret: intent.client_secret,
         stripe_publishable_key: StripeService.publishable_key,
         payment_mode: StripeService.payment_mode
@@ -155,22 +122,21 @@ class Api::V1::OrdersController < ApplicationController
       return
     end
 
-    # Simulate mode or free events: order already completed
-    # Send confirmation email asynchronously
+    # Simulate mode or free events: order already completed.
     EmailService.send_order_confirmation_async(@order)
 
     render json: order_json(@order).merge(
       payment_mode: StripeService.payment_mode
     ), status: :created
   rescue Stripe::StripeError, StripeService::PaymentError => e
-    # Transaction automatically rolled back — no manual cleanup needed
+    # Transaction automatically rolled back; no manual cleanup needed.
     render json: { error: "Payment setup failed: #{e.message}" }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
   # POST /api/v1/orders/:id/cancel
-  # Cancels a pending order and frees up ticket inventory
+  # Cancels a pending order and frees up ticket inventory.
   def cancel
     order = Order.find_by(id: params[:id])
     unless order
@@ -178,8 +144,8 @@ class Api::V1::OrdersController < ApplicationController
       return
     end
 
-    # Ownership check: order must belong to the current user or match by payment intent
-    if @current_user && order.user_id && order.user_id != @current_user.id
+    # Ownership check: only the buyer or an admin can cancel a pending order.
+    unless @current_user&.admin? || (order.user_id.present? && order.user_id == @current_user&.id)
       render json: { error: "Order not found" }, status: :not_found
       return
     end
@@ -192,13 +158,8 @@ class Api::V1::OrdersController < ApplicationController
     ActiveRecord::Base.transaction do
       order.update!(status: :cancelled)
 
-      order.tickets.includes(:pricing_tier, :ticket_type).each do |ticket|
-        ticket.ticket_type.decrement!(:quantity_sold)
-
-        # Decrement the pricing tier that was active at purchase time
-        if ticket.pricing_tier&.quantity_sold&.positive?
-          ticket.pricing_tier.decrement!(:quantity_sold)
-        end
+      order.tickets.includes(:ticket_type, :pricing_tier).each do |ticket|
+        ticket.release_inventory!
 
         ticket.update!(status: :cancelled)
       end
@@ -220,7 +181,37 @@ class Api::V1::OrdersController < ApplicationController
     @current_user = current_user
   end
 
-  def order_json(order)
+  def locked_ticket_selections(event, line_items)
+    quantities_by_ticket_type = Hash.new(0)
+    line_items.each do |item|
+      ticket_type_id = item[:ticket_type_id]
+      quantity = item[:quantity].to_i
+      return [nil, "Quantity must be greater than 0"] if quantity <= 0
+
+      quantities_by_ticket_type[ticket_type_id] += quantity
+    end
+
+    quantities_by_ticket_type.map do |ticket_type_id, quantity|
+      ticket_type = event.ticket_types.lock.find_by(id: ticket_type_id)
+      return [nil, "Ticket type #{ticket_type_id} not found for this event"] unless ticket_type
+
+      unless ticket_type.on_sale?
+        return [nil, "#{ticket_type.name} is not currently on sale"]
+      end
+
+      if quantity > ticket_type.available_quantity
+        return [nil, "Only #{ticket_type.available_quantity} tickets available for #{ticket_type.name}"]
+      end
+
+      if ticket_type.max_per_order && quantity > ticket_type.max_per_order
+        return [nil, "Maximum #{ticket_type.max_per_order} tickets per order for #{ticket_type.name}"]
+      end
+
+      { ticket_type: ticket_type, quantity: quantity }
+    end.then { |selections| [selections, nil] }
+  end
+
+  def order_json(order, include_tickets: order.completed?)
     {
       id: order.id,
       event_id: order.event_id,
@@ -235,7 +226,7 @@ class Api::V1::OrdersController < ApplicationController
       completed_at: order.completed_at,
       wallet_type: order.wallet_type,
       promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,
-      tickets: order.tickets.includes(:ticket_type).map { |ticket| ticket_json(ticket) }
+      tickets: include_tickets ? order.tickets.includes(:ticket_type).map { |ticket| ticket_json(ticket) } : []
     }
   end
 

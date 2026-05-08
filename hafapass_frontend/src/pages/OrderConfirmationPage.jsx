@@ -48,6 +48,8 @@ export default function OrderConfirmationPage() {
   const [loading, setLoading] = useState(!location.state?.order)
   const [error, setError] = useState(null)
   const [showConfetti, setShowConfetti] = useState(true)
+  const orderId = order?.id
+  const orderStatus = order?.status
 
   useEffect(() => {
     const timer = setTimeout(() => setShowConfetti(false), 4000)
@@ -55,21 +57,47 @@ export default function OrderConfirmationPage() {
   }, [])
 
   useEffect(() => {
-    if (!order || String(order.id) !== String(id)) {
-      setLoading(true)
+    const orderMatchesRoute = orderId && String(orderId) === String(id)
+    const shouldFetchOrder = !orderMatchesRoute || orderStatus === 'pending'
+    if (!shouldFetchOrder) return undefined
+
+    let cancelled = false
+
+    const fetchOrder = ({ showLoading = false } = {}) => {
+      if (showLoading) {
+        setLoading(true)
+      }
       setError(null)
-      apiClient.get(`/me/orders/${id}`)
+
+      return apiClient.get(`/me/orders/${id}`)
         .then(res => {
+          if (cancelled) return
+
           setOrder(res.data)
           setEvent(res.data.event)
           setLoading(false)
         })
         .catch(() => {
+          if (cancelled) return
+
           setError('Unable to load order details. Please check your email for confirmation.')
           setLoading(false)
         })
     }
-  }, [id])
+
+    fetchOrder({ showLoading: !orderMatchesRoute })
+
+    if (orderStatus !== 'pending') return () => { cancelled = true }
+
+    const intervalId = window.setInterval(() => {
+      fetchOrder()
+    }, 3000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [id, orderId, orderStatus])
 
   const formatPrice = (cents) => {
     if (cents === 0) return 'Free'
@@ -111,9 +139,11 @@ export default function OrderConfirmationPage() {
 
   if (!order) return null
 
+  const isPending = order.status === 'pending'
+
   return (
     <div className="bg-neutral-50 min-h-screen">
-      {showConfetti && <ConfettiParticles />}
+      {showConfetti && !isPending && <ConfettiParticles />}
 
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Success header */}
@@ -132,15 +162,29 @@ export default function OrderConfirmationPage() {
             <CheckCircle className="w-10 h-10 text-emerald-600" />
           </motion.div>
           <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">
-            You're all set! <PartyPopper className="inline w-6 h-6 ml-1 text-emerald-500" />
+            {isPending ? (
+              'Your payment is processing'
+            ) : (
+              <>
+                You're all set! <PartyPopper className="inline w-6 h-6 ml-1 text-emerald-500" />
+              </>
+            )}
           </h1>
           <p className="text-neutral-500">
-            A confirmation has been sent to <span className="font-medium text-neutral-700">{order.buyer_email}</span>
+            {isPending ? (
+              <>
+                Your tickets will be emailed to <span className="font-medium text-neutral-700">{order.buyer_email}</span> as soon as payment is confirmed.
+              </>
+            ) : (
+              <>
+                A confirmation has been sent to <span className="font-medium text-neutral-700">{order.buyer_email}</span>
+              </>
+            )}
           </p>
         </motion.div>
 
-        {/* View Tickets CTA — prominent */}
-        {order.tickets && order.tickets.length > 0 && (
+        {/* View Tickets CTA - only after tickets are paid and confirmed */}
+        {!isPending && order.tickets && order.tickets.length > 0 && (
           <motion.div
             className="mb-6"
             initial={{ opacity: 0, y: 20 }}
@@ -202,45 +246,47 @@ export default function OrderConfirmationPage() {
         </motion.div>
 
         {/* Tickets list */}
-        <motion.div
-          className="card p-6 mb-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-        >
-          <h2 className="text-base font-semibold text-neutral-900 mb-4">
-            Your Tickets ({order.tickets?.length || 0})
-          </h2>
+        {!isPending && (
+          <motion.div
+            className="card p-6 mb-6"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+          >
+            <h2 className="text-base font-semibold text-neutral-900 mb-4">
+              Your Tickets ({order.tickets?.length || 0})
+            </h2>
 
-          <div className="space-y-3">
-            {order.tickets?.map(ticket => (
-              <Link
-                key={ticket.id}
-                to={`/tickets/${ticket.qr_code}`}
-                className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl hover:bg-neutral-100 transition-colors group"
-              >
-                <div>
-                  <p className="text-neutral-900 font-medium text-sm">{ticket.ticket_type?.name}</p>
-                  <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${ticket.qr_code}/download`}
-                    className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
-                    title="Download PDF"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Download className="w-4 h-4" />
-                  </a>
-                  <span className="inline-flex items-center text-brand-500 group-hover:text-brand-600 text-sm font-medium transition-colors">
-                    View
-                    <ChevronRight className="w-4 h-4 ml-0.5 transition-transform group-hover:translate-x-0.5" />
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </motion.div>
+            <div className="space-y-3">
+              {order.tickets?.map(ticket => (
+                <Link
+                  key={ticket.id}
+                  to={`/tickets/${ticket.qr_code}`}
+                  className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl hover:bg-neutral-100 transition-colors group"
+                >
+                  <div>
+                    <p className="text-neutral-900 font-medium text-sm">{ticket.ticket_type?.name}</p>
+                    <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${ticket.qr_code}/download`}
+                      className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
+                      title="Download PDF"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                    <span className="inline-flex items-center text-brand-500 group-hover:text-brand-600 text-sm font-medium transition-colors">
+                      View
+                      <ChevronRight className="w-4 h-4 ml-0.5 transition-transform group-hover:translate-x-0.5" />
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* Browse more events button */}
         <motion.div

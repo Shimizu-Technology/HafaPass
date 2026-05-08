@@ -134,6 +134,43 @@ RSpec.describe "Api::V1::Orders", type: :request do
         expect(json["error"]).to include("Maximum")
       end
 
+      it "returns 422 before sales start" do
+        ga_ticket.update!(sales_start_at: 1.day.from_now)
+
+        post_json "/api/v1/orders", params: valid_params.merge(
+          line_items: [{ ticket_type_id: ga_ticket.id, quantity: 1 }]
+        )
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(JSON.parse(response.body)["error"]).to include("not currently on sale")
+      end
+
+      it "returns 422 after sales end" do
+        ga_ticket.update!(sales_end_at: 1.minute.ago)
+
+        post_json "/api/v1/orders", params: valid_params.merge(
+          line_items: [{ ticket_type_id: ga_ticket.id, quantity: 1 }]
+        )
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(JSON.parse(response.body)["error"]).to include("not currently on sale")
+      end
+
+      it "combines duplicate line items before checking limits" do
+        params = valid_params.merge(
+          line_items: [
+            { ticket_type_id: vip_ticket.id, quantity: 3 },
+            { ticket_type_id: vip_ticket.id, quantity: 2 }
+          ]
+        )
+
+        post_json "/api/v1/orders", params: params
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(JSON.parse(response.body)["error"]).to include("Maximum")
+        expect(vip_ticket.reload.quantity_sold).to eq(0)
+      end
+
       it "does not create order or tickets on validation failure" do
         params = valid_params.merge(
           line_items: [{ ticket_type_id: ga_ticket.id, quantity: 101 }]
@@ -230,6 +267,76 @@ RSpec.describe "Api::V1::Orders", type: :request do
         json = JSON.parse(response.body)
         expect(json["error"]).to include("greater than 0")
       end
+    end
+
+    context "with Stripe enabled" do
+      before do
+        allow(StripeService).to receive(:payment_enabled?).and_return(true)
+        allow(StripeService).to receive(:payment_mode).and_return("test")
+        allow(StripeService).to receive(:publishable_key).and_return("pk_test_123")
+        allow(StripeService).to receive(:create_payment_intent).and_return(
+          OpenStruct.new(id: "pi_test_123", client_secret: "pi_test_123_secret_abc")
+        )
+      end
+
+      it "does not expose ticket QR codes before payment completes" do
+        post_json "/api/v1/orders", params: valid_params
+
+        expect(response).to have_http_status(:created)
+        json = JSON.parse(response.body)
+        expect(json["status"]).to eq("pending")
+        expect(json["tickets"]).to eq([])
+        expect(Order.last.tickets.pluck(:qr_code)).to all(be_nil)
+      end
+    end
+  end
+
+  describe "POST /api/v1/orders/:id/cancel" do
+    it "requires authentication" do
+      order = create(:order, :pending, event: event)
+
+      post "/api/v1/orders/#{order.id}/cancel"
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "rejects a verified token without a Clerk subject instead of raising" do
+      order = create(:order, :pending, event: event)
+      allow(ClerkAuthenticator).to receive(:verify).with("blank_sub").and_return({
+        "sub" => "",
+        "email" => "blank@example.com"
+      })
+
+      expect do
+        post "/api/v1/orders/#{order.id}/cancel", headers: { "Authorization" => "Bearer blank_sub" }
+      end.not_to change { order.reload.status }
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "allows the authenticated buyer to cancel a pending order" do
+      user = create(:user)
+      order = create(:order, :pending, event: event, user: user)
+      ticket = create(:ticket, order: order, ticket_type: ga_ticket, event: event)
+      ga_ticket.update!(quantity_sold: 1)
+
+      post "/api/v1/orders/#{order.id}/cancel", headers: auth_headers(user)
+
+      expect(response).to have_http_status(:ok)
+      expect(order.reload).to be_cancelled
+      expect(ticket.reload).to be_cancelled
+      expect(ga_ticket.reload.quantity_sold).to eq(0)
+    end
+
+    it "does not allow a different user to cancel a pending order" do
+      owner = create(:user)
+      other_user = create(:user)
+      order = create(:order, :pending, event: event, user: owner)
+
+      post "/api/v1/orders/#{order.id}/cancel", headers: auth_headers(other_user)
+
+      expect(response).to have_http_status(:not_found)
+      expect(order.reload).to be_pending
     end
   end
 end

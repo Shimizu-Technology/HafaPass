@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Users, UserPlus, Check, Loader2, Trash2 } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -12,7 +12,7 @@ export default function GuestListPage() {
  const [saving, setSaving] = useState(false)
  const [form, setForm] = useState({ guest_name: '', guest_email: '', guest_phone: '', notes: '', quantity: 1, ticket_type_id: '' })
 
- const fetchData = async () => {
+ const fetchData = useCallback(async () => {
   try {
    const [entriesRes, eventRes] = await Promise.all([
     apiClient.get(`/organizer/events/${eventId}/guest_list`),
@@ -21,15 +21,16 @@ export default function GuestListPage() {
    // Handle both paginated { guest_list: [...], meta: {...} } and legacy array response
    const entriesData = entriesRes.data.guest_list || entriesRes.data
    setEntries(Array.isArray(entriesData) ? entriesData : [])
-   setTicketTypes(eventRes.data.ticket_types || [])
-   if (!form.ticket_type_id && eventRes.data.ticket_types?.length > 0) {
-    setForm(f => ({ ...f, ticket_type_id: eventRes.data.ticket_types[0].id }))
-   }
+   const nextTicketTypes = eventRes.data.ticket_types || []
+   setTicketTypes(nextTicketTypes)
+   setForm(f => (f.ticket_type_id || nextTicketTypes.length === 0)
+    ? f
+    : { ...f, ticket_type_id: nextTicketTypes[0].id })
   } catch (e) { console.error(e) }
   setLoading(false)
- }
+ }, [eventId])
 
- useEffect(() => { fetchData() }, [eventId])
+ useEffect(() => { fetchData() }, [fetchData])
 
  const handleCreate = async (e) => {
   e.preventDefault()

@@ -107,8 +107,8 @@ module Api
 
             ticket_type.increment!(:quantity_sold, @entry.quantity)
 
-            # Generate QR codes for comp tickets
-            order.tickets.each(&:generate_qr_code!)
+            # Comp orders are completed immediately, so ensure tickets have QR codes.
+            order.tickets.each(&:issue_qr_code!)
 
             @entry.redeem!(order)
           end

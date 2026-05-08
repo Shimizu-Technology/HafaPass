@@ -5,13 +5,14 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
   let(:event) { create(:event, :published, organizer_profile: organizer_profile, starts_at: 1.day.from_now) }
   let(:ticket_type) { create(:ticket_type, event: event) }
   let(:order) { create(:order, event: event) }
+  let(:headers) { auth_headers(organizer_profile.user) }
 
   describe "POST /api/v1/check_in/:qr_code" do
     context "with a valid issued ticket" do
       let(:ticket) { create(:ticket, order: order, ticket_type: ticket_type, event: event) }
 
       it "checks in the ticket successfully" do
-        post "/api/v1/check_in/#{ticket.qr_code}"
+        post "/api/v1/check_in/#{ticket.qr_code}", headers: headers
 
         expect(response).to have_http_status(:ok)
         json = JSON.parse(response.body)
@@ -21,7 +22,7 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
       end
 
       it "updates the ticket status to checked_in" do
-        post "/api/v1/check_in/#{ticket.qr_code}"
+        post "/api/v1/check_in/#{ticket.qr_code}", headers: headers
 
         ticket.reload
         expect(ticket.status).to eq("checked_in")
@@ -29,7 +30,7 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
       end
 
       it "returns event and ticket_type details" do
-        post "/api/v1/check_in/#{ticket.qr_code}"
+        post "/api/v1/check_in/#{ticket.qr_code}", headers: headers
 
         json = JSON.parse(response.body)
         expect(json["ticket"]["event"]["id"]).to eq(event.id)
@@ -40,7 +41,7 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
       end
 
       it "returns attendee information" do
-        post "/api/v1/check_in/#{ticket.qr_code}"
+        post "/api/v1/check_in/#{ticket.qr_code}", headers: headers
 
         json = JSON.parse(response.body)
         expect(json["ticket"]["attendee_name"]).to eq(ticket.attendee_name)
@@ -52,7 +53,7 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
       let(:ticket) { create(:ticket, :checked_in, order: order, ticket_type: ticket_type, event: event) }
 
       it "returns 422 with error message" do
-        post "/api/v1/check_in/#{ticket.qr_code}"
+        post "/api/v1/check_in/#{ticket.qr_code}", headers: headers
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
@@ -63,7 +64,7 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
       it "does not update the ticket" do
         original_checked_in_at = ticket.checked_in_at
 
-        post "/api/v1/check_in/#{ticket.qr_code}"
+        post "/api/v1/check_in/#{ticket.qr_code}", headers: headers
 
         expect(ticket.reload.checked_in_at).to eq(original_checked_in_at)
       end
@@ -73,7 +74,7 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
       let(:ticket) { create(:ticket, :cancelled, order: order, ticket_type: ticket_type, event: event) }
 
       it "returns 422 with error message" do
-        post "/api/v1/check_in/#{ticket.qr_code}"
+        post "/api/v1/check_in/#{ticket.qr_code}", headers: headers
 
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
@@ -83,7 +84,7 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
 
     context "with a non-existent QR code" do
       it "returns 404" do
-        post "/api/v1/check_in/nonexistent-qr-code"
+        post "/api/v1/check_in/nonexistent-qr-code", headers: headers
 
         expect(response).to have_http_status(:not_found)
         json = JSON.parse(response.body)
@@ -91,12 +92,32 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
       end
     end
 
-    it "does not require authentication" do
+    it "requires authentication" do
       ticket = create(:ticket, order: order, ticket_type: ticket_type, event: event)
 
       post "/api/v1/check_in/#{ticket.qr_code}"
 
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "rejects organizers for other events" do
+      other_profile = create(:organizer_profile)
+      ticket = create(:ticket, order: order, ticket_type: ticket_type, event: event)
+
+      post "/api/v1/check_in/#{ticket.qr_code}", headers: auth_headers(other_profile.user)
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "rejects tickets from incomplete orders" do
+      pending_order = create(:order, :pending, event: event)
+      ticket = create(:ticket, order: pending_order, ticket_type: ticket_type, event: event)
+      ticket.update!(qr_code: SecureRandom.uuid)
+
+      post "/api/v1/check_in/#{ticket.qr_code}", headers: headers
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(JSON.parse(response.body)["error"]).to eq("Ticket order is not completed")
     end
   end
 end

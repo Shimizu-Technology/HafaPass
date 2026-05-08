@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -11,15 +11,15 @@ export default function RefundsPage() {
  const [refundForm, setRefundForm] = useState({ amount: '', reason: '', type: 'full' })
  const [processing, setProcessing] = useState(false)
 
- const fetchOrders = async () => {
+ const fetchOrders = useCallback(async () => {
   try {
    const res = await apiClient.get(`/organizer/events/${eventId}/stats`)
    setOrders(res.data.recent_orders || [])
   } catch (e) { console.error(e) }
   setLoading(false)
- }
+ }, [eventId])
 
- useEffect(() => { fetchOrders() }, [eventId])
+ useEffect(() => { fetchOrders() }, [fetchOrders])
 
  const handleRefund = async (orderId) => {
   setProcessing(true)

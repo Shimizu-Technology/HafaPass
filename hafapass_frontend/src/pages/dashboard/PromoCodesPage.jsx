@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Tag, Trash2, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -11,15 +11,15 @@ export default function PromoCodesPage() {
  const [saving, setSaving] = useState(false)
  const [form, setForm] = useState({ code: '', discount_type: 'percentage', discount_value: '', max_uses: '', expires_at: '' })
 
- const fetchCodes = async () => {
+ const fetchCodes = useCallback(async () => {
   try {
    const res = await apiClient.get(`/organizer/events/${eventId}/promo_codes`)
    setCodes(res.data)
   } catch (e) { console.error(e) }
   setLoading(false)
- }
+ }, [eventId])
 
- useEffect(() => { fetchCodes() }, [eventId])
+ useEffect(() => { fetchCodes() }, [fetchCodes])
 
  const handleCreate = async (e) => {
   e.preventDefault()
