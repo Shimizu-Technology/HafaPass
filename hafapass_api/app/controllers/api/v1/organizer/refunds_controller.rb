@@ -62,9 +62,9 @@ module Api
 
               # Cancel tickets on full refund
               if is_full_refund
-                @order.tickets.includes(:ticket_type).each do |ticket|
+                @order.tickets.includes(:ticket_type, :pricing_tier).each do |ticket|
                   next if ticket.cancelled?
-                  ticket.ticket_type.decrement!(:quantity_sold)
+                  ticket.release_inventory!
                   ticket.update!(status: :cancelled)
                 end
               end

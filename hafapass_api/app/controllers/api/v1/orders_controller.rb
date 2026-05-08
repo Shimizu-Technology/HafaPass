@@ -158,13 +158,8 @@ class Api::V1::OrdersController < ApplicationController
     ActiveRecord::Base.transaction do
       order.update!(status: :cancelled)
 
-      order.tickets.includes(:pricing_tier, :ticket_type).each do |ticket|
-        ticket.ticket_type.decrement!(:quantity_sold)
-
-        # Decrement the pricing tier that was active at purchase time.
-        if ticket.pricing_tier&.quantity_sold&.positive?
-          ticket.pricing_tier.decrement!(:quantity_sold)
-        end
+      order.tickets.includes(:ticket_type, :pricing_tier).each do |ticket|
+        ticket.release_inventory!
 
         ticket.update!(status: :cancelled)
       end

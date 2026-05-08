@@ -24,6 +24,16 @@ class Ticket < ApplicationRecord
     update!(status: :checked_in, checked_in_at: Time.current)
   end
 
+  def release_inventory!
+    ticket_type.with_lock do
+      ticket_type.decrement!(:quantity_sold) if ticket_type.quantity_sold.positive?
+    end
+
+    pricing_tier&.with_lock do
+      pricing_tier.decrement!(:quantity_sold) if pricing_tier.quantity_sold.positive?
+    end
+  end
+
   private
 
   def assign_qr_code

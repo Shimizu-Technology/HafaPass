@@ -110,8 +110,8 @@ class WebhooksController < ActionController::API
     ActiveRecord::Base.transaction do
       order.update!(status: :cancelled)
 
-      order.tickets.includes(:ticket_type).each do |ticket|
-        ticket.ticket_type.decrement!(:quantity_sold)
+      order.tickets.includes(:ticket_type, :pricing_tier).each do |ticket|
+        ticket.release_inventory!
         ticket.update!(status: :cancelled)
       end
     end
@@ -142,9 +142,9 @@ class WebhooksController < ActionController::API
           refunded_at: Time.current
         )
 
-        order.tickets.includes(:ticket_type).each do |ticket|
+        order.tickets.includes(:ticket_type, :pricing_tier).each do |ticket|
           next if ticket.cancelled?
-          ticket.ticket_type.decrement!(:quantity_sold)
+          ticket.release_inventory!
           ticket.update!(status: :cancelled)
         end
       end
