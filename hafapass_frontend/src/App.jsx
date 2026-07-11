@@ -11,6 +11,9 @@ import EventsPage from './pages/EventsPage'
 import EventDetailPage from './pages/EventDetailPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
+import PrivatePreviewPage from './pages/PrivatePreviewPage'
+
+const serviceMode = import.meta.env.VITE_SERVICE_MODE || 'paused'
 
 // Lazy-loaded — heavier pages loaded on demand
 const CheckoutPage = lazy(() => import('./pages/CheckoutPage'))
@@ -45,6 +48,10 @@ function PageLoader() {
 }
 
 function App() {
+  if (serviceMode !== 'live') {
+    return <PrivatePreviewPage />
+  }
+
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
