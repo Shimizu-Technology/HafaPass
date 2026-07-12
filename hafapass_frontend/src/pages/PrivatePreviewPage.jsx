@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, Mail, QrCode, ShieldCheck, TicketCheck } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Mail, QrCode, RefreshCw, ShieldCheck, TicketCheck } from 'lucide-react'
 import SEO from '../components/SEO'
 
 const capabilities = [
@@ -7,7 +7,7 @@ const capabilities = [
   { icon: ShieldCheck, title: 'Built for Guam', text: 'Local support, practical workflows, and plans for unreliable venue connectivity.' },
 ]
 
-export default function PrivatePreviewPage() {
+export default function PrivatePreviewPage({ onRetry }) {
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
       <SEO title="HåfaPass | Private Preview" description="HåfaPass is a Guam-first event ticketing platform currently in private preview." />
@@ -30,12 +30,19 @@ export default function PrivatePreviewPage() {
           <p className="mx-auto mt-7 max-w-2xl text-lg leading-8 text-white/55">
             HåfaPass is not accepting event listings or ticket purchases right now. We are keeping the product in private preview while we focus on the right launch experience for organizers and guests.
           </p>
-          <a
-            href="mailto:shimizutechnology@gmail.com?subject=HafaPass%20Private%20Preview%20Updates"
-            className="mt-10 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-7 py-4 font-semibold text-white shadow-lg shadow-brand-500/20 transition hover:-translate-y-0.5 hover:bg-brand-600"
-          >
-            <Mail className="h-5 w-5" /> Request launch updates
-          </a>
+          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <a
+              href="mailto:shimizutechnology@gmail.com?subject=HafaPass%20Private%20Preview%20Updates"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-7 py-4 font-semibold text-white shadow-lg shadow-brand-500/20 transition hover:-translate-y-0.5 hover:bg-brand-600"
+            >
+              <Mail className="h-5 w-5" /> Request launch updates
+            </a>
+            {onRetry ? (
+              <button type="button" onClick={onRetry} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 px-7 py-4 font-semibold text-white transition hover:bg-white/10">
+                <RefreshCw className="h-5 w-5" /> Check services again
+              </button>
+            ) : null}
+          </div>
         </div>
       </section>
 

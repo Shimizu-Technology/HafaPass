@@ -5,11 +5,6 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 
-// Preview mode's only eager page; live-mode routes are split into separate chunks.
-import PrivatePreviewPage from './pages/PrivatePreviewPage'
-
-const serviceMode = import.meta.env.VITE_SERVICE_MODE || 'paused'
-
 // Lazy-loaded — heavier pages loaded on demand
 const HomePage = lazy(() => import('./pages/HomePage'))
 const EventsPage = lazy(() => import('./pages/EventsPage'))
@@ -48,10 +43,6 @@ function PageLoader() {
 }
 
 function App() {
-  if (serviceMode !== 'live') {
-    return <PrivatePreviewPage />
-  }
-
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
