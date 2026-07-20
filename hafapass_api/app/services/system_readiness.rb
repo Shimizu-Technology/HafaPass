@@ -35,7 +35,7 @@ class SystemReadiness
       return { ready: true, status: "test", adapter: adapter } if adapter == "test"
       return { ready: false, status: "redis_not_configured", adapter: adapter } if ENV["REDIS_URL"].blank?
 
-      Redis.new(url: ENV.fetch("REDIS_URL")).ping
+      Sidekiq.redis { |connection| connection.call("PING") }
       { ready: true, status: "connected", adapter: adapter }
     rescue StandardError => e
       failure("unavailable", e, adapter: adapter)
@@ -72,8 +72,15 @@ class SystemReadiness
     end
 
     def failure(status, error, extra = {})
-      Sentry.capture_exception(error)
-      { ready: false, status: status, error: error.class.name }.merge(extra)
+      Rails.logger.error(
+        {
+          event: "readiness_check_failed",
+          error_class: error.class.name,
+          status: status
+        }.merge(extra).to_json
+      )
+
+      { ready: false, status: status }.merge(extra)
     end
   end
 end

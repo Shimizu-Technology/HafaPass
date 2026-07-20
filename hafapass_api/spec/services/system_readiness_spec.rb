@@ -41,7 +41,7 @@ RSpec.describe SystemReadiness do
         require "sidekiq/api"
         allow(Rails.env).to receive(:production?).and_return(true)
         allow(ActiveJob::Base).to receive(:queue_adapter_name).and_return("sidekiq")
-        allow(Redis).to receive(:new).and_return(instance_double(Redis, ping: "PONG"))
+        allow(Sidekiq).to receive(:redis).and_yield(instance_double(RedisClient, call: "PONG"))
       end
 
       it "is not ready when no worker process is registered" do
@@ -68,6 +68,36 @@ RSpec.describe SystemReadiness do
           status: "active",
           processes: 1
         )
+      end
+
+      it "checks Redis through Sidekiq's shared connection pool" do
+        connection = instance_double(RedisClient)
+        allow(connection).to receive(:call).with("PING").and_return("PONG")
+        allow(Sidekiq).to receive(:redis).and_yield(connection)
+        allow(Sidekiq::ProcessSet).to receive(:new).and_return(instance_double(Sidekiq::ProcessSet, size: 1))
+
+        described_class.call
+
+        expect(Sidekiq).to have_received(:redis).at_least(:once)
+        expect(connection).to have_received(:call).with("PING")
+      end
+
+      it "logs dependency failures without reporting each probe to Sentry or exposing the exception" do
+        connection = instance_double(RedisClient)
+        allow(connection).to receive(:call).and_raise(RedisClient::CannotConnectError, "connection refused")
+        allow(Sidekiq).to receive(:redis).and_yield(connection)
+        allow(Sidekiq::ProcessSet).to receive(:new).and_return(instance_double(Sidekiq::ProcessSet, size: 1))
+        allow(Rails.logger).to receive(:error)
+        allow(Sentry).to receive(:capture_exception)
+
+        result = described_class.call
+
+        expect(result[:status]).to eq("not_ready")
+        expect(result.dig(:checks, :job_queue)).to eq(ready: false, status: "unavailable", adapter: "sidekiq")
+        expect(result.dig(:checks, :job_queue)).not_to have_key(:error)
+        expect(result.to_json).not_to include("RedisClient", "connection refused")
+        expect(Rails.logger).to have_received(:error).with(include("readiness_check_failed", "RedisClient"))
+        expect(Sentry).not_to have_received(:capture_exception)
       end
     end
   end
