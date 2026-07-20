@@ -47,7 +47,7 @@ Rules:
 - Verify that a borrowed credential is compatible with the intended service and environment before using it.
 - Do not send production email/SMS, create live charges, upload private customer files, or change production infrastructure during local verification.
 - Before production launch, replace every borrowed key with a dedicated HafaPass key and rotate any credential that was unnecessarily exposed.
-- Continue following `AGENTS.md`: Clerk browser testing uses `TEST_USER_EMAIL`, `TEST_USER_PASSWORD`, and `TEST_BASE_URL` without reading or exposing `.env` contents.
+- Continue following the tracked [CLAUDE.md](../CLAUDE.md): Clerk browser testing uses `TEST_USER_EMAIL`, `TEST_USER_PASSWORD`, and `TEST_BASE_URL` without reading or exposing `.env` contents.
 
 ## 4. Required verification layers
 
