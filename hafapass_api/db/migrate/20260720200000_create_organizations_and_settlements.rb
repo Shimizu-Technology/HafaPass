@@ -209,7 +209,7 @@ class CreateOrganizationsAndSettlements < ActiveRecord::Migration[8.1]
     add_check_constraint :settlements, "status IN (0, 1)", name: "settlements_status_valid"
     add_check_constraint :settlements, "version > 0", name: "settlements_version_positive"
     add_check_constraint :settlements, "char_length(currency) = 3", name: "settlements_currency_length"
-    %w[gross discount refund net platform_fee processing_fee organizer_proceeds reserve paid negative_balance].each do |name|
+    %w[gross discount refund net platform_fee processing_fee organizer_proceeds reserve payable paid negative_balance].each do |name|
       add_check_constraint :settlements, "#{name}_cents >= 0", name: "settlements_#{name}_nonnegative"
     end
 

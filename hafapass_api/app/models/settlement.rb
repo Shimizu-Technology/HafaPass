@@ -17,8 +17,8 @@ class Settlement < ApplicationRecord
   validates :source_digest, presence: true, uniqueness: { scope: :event_id }
   validates :currency, length: { is: 3 }
   validates :calculated_at, presence: true
-  validates(*MONEY_COLUMNS - [:adjustment_cents, :payable_cents], numericality: { only_integer: true, greater_than_or_equal_to: 0 })
-  validates :adjustment_cents, :payable_cents, numericality: { only_integer: true }
+  validates(*MONEY_COLUMNS - [:adjustment_cents], numericality: { only_integer: true, greater_than_or_equal_to: 0 })
+  validates :adjustment_cents, numericality: { only_integer: true }
   validate :event_matches_organization
 
   before_update :prevent_finalized_mutation

@@ -683,6 +683,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200000) do
     t.check_constraint "net_cents >= 0", name: "settlements_net_nonnegative"
     t.check_constraint "organizer_proceeds_cents >= 0", name: "settlements_organizer_proceeds_nonnegative"
     t.check_constraint "paid_cents >= 0", name: "settlements_paid_nonnegative"
+    t.check_constraint "payable_cents >= 0", name: "settlements_payable_nonnegative"
     t.check_constraint "platform_fee_cents >= 0", name: "settlements_platform_fee_nonnegative"
     t.check_constraint "processing_fee_cents >= 0", name: "settlements_processing_fee_nonnegative"
     t.check_constraint "refund_cents >= 0", name: "settlements_refund_nonnegative"

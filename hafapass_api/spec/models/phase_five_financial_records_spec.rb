@@ -27,4 +27,15 @@ RSpec.describe "Phase 5 financial record integrity", type: :model do
     expect(payout).not_to be_valid
     expect(payout.errors.full_messages).to include(/share an organization/)
   end
+
+  it "rejects negative payable amounts in both the model and database" do
+    invalid_settlement = build(:settlement, payable_cents: -1)
+    expect(invalid_settlement).not_to be_valid
+    expect(invalid_settlement.errors[:payable_cents]).to be_present
+
+    settlement = create(:settlement)
+    expect do
+      Settlement.where(id: settlement.id).update_all(payable_cents: -1)
+    end.to raise_error(ActiveRecord::StatementInvalid, /settlements_payable_nonnegative/)
+  end
 end
