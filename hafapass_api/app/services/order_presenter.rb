@@ -107,6 +107,7 @@ class OrderPresenter
     {
       id: ticket.id,
       display_credential: ticket.display_credential,
+      scan_credential: ticket.admission_allowed? ? ticket.scan_credential : nil,
       status: ticket.status,
       attendee_name: ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,

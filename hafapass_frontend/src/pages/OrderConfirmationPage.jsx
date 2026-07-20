@@ -196,7 +196,7 @@ export default function OrderConfirmationPage() {
             <div className="divide-y divide-neutral-100">
               {order.tickets.map(ticket => (
                 <div key={ticket.id} className="flex items-center justify-between gap-3 py-3">
-                  <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}`} className="min-w-0 flex-1">
+                  <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="min-w-0 flex-1">
                     <p className="truncate font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                     <p className="text-xs capitalize text-neutral-500">{ticket.attendee_name} · {ticket.status.replace('_', ' ')}</p>
                   </Link>
@@ -208,9 +208,9 @@ export default function OrderConfirmationPage() {
                       <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id} className="text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Cancelling…' : ticket.refundable_cents > 0 ? 'Refund' : 'Cancel'}</button>
                     )}
                     {ticket.status === 'issued' && !order.ticket_access_blocked && (
-                      <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${encodeURIComponent(ticket.display_credential)}/download`} aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></a>
+                      <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
                     )}
-                    <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}`} aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>
+                    <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>
                   </div>
                 </div>
               ))}

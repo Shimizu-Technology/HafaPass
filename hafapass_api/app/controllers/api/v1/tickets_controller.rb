@@ -1,5 +1,6 @@
 class Api::V1::TicketsController < ApplicationController
   skip_before_action :authenticate_user!
+  before_action :optional_authenticate_user!
 
   def show
     ticket = find_ticket
@@ -12,7 +13,7 @@ class Api::V1::TicketsController < ApplicationController
   def download
     ticket = find_ticket
     return render_not_found unless ticket
-    return render_not_found unless downloadable?(ticket)
+    return render_not_found unless downloadable?(ticket) && admission_access?(ticket)
 
     pdf_data = TicketPdfGenerator.new(ticket).generate
     filename = "hafapass-ticket-#{ticket.id}.pdf"
@@ -55,7 +56,7 @@ class Api::V1::TicketsController < ApplicationController
   def ticket_json(ticket)
     {
       id: ticket.id,
-      scan_credential: downloadable?(ticket) ? ticket.scan_credential : nil,
+      scan_credential: downloadable?(ticket) && admission_access?(ticket) ? ticket.scan_credential : nil,
       status: ticket.status,
       checked_in_at: ticket.checked_in_at,
       admission_allowed: ticket.admission_allowed?,
@@ -80,5 +81,13 @@ class Api::V1::TicketsController < ApplicationController
         price_cents: ticket.ticket_type.price_cents
       }
     }
+  end
+
+  def admission_access?(ticket)
+    return true if @current_user&.admin?
+    return true if ticket.order.user_id.present? && ticket.order.user_id == @current_user&.id
+
+    token = request.headers["X-Guest-Order-Token"].presence
+    token.present? && GuestOrderAccess.find(token)&.id == ticket.order_id
   end
 end

@@ -205,17 +205,6 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def guest_access_token
-    request.headers["X-Guest-Order-Token"].presence || params[:guest_token].presence
-  end
-
-  def optional_authenticate_user!
-    token = extract_bearer_token
-    return if token.nil?
-
-    payload = ClerkAuthenticator.verify(token)
-    return if payload.nil?
-
-    @clerk_payload = payload
-    @current_user = current_user
+    request.headers["X-Guest-Order-Token"].presence || (params[:guest_token].presence if action_name == "show")
   end
 end

@@ -211,6 +211,15 @@ RSpec.describe "Stripe webhooks", type: :request do
 
     expect(Dispute.find_by(provider_dispute_id: "dp_won")).to be_won
     expect(checkout.order.reload.ticket_access_blocked?).to be(false)
+
+    post_stripe_event(
+      "charge.dispute.updated",
+      dispute.merge(status: "needs_response"),
+      event_id: "evt_dispute_stale_update"
+    )
+
+    expect(Dispute.find_by(provider_dispute_id: "dp_won")).to be_won
+    expect(checkout.order.reload.ticket_access_blocked?).to be(false)
   end
 
   it "revokes tickets and releases inventory when a dispute is lost, idempotently" do

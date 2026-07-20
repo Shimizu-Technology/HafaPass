@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useLocation, useParams, Link } from 'react-router-dom'
 import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import api from '../api/client'
 import QRCode from '../components/QRCode'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { orderAccessHeaders } from '../utils/orderAccess'
 
 function AddToHomeScreenInstructions() {
   const [expanded, setExpanded] = useState(false)
@@ -96,6 +97,8 @@ function GoogleWalletIcon() {
 
 export default function TicketPage() {
   const { credential } = useParams()
+  const location = useLocation()
+  const orderId = new URLSearchParams(location.search).get('order')
   const [ticket, setTicket] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -106,7 +109,9 @@ export default function TicketPage() {
       try {
         setLoading(true)
         setError(null)
-        const response = await api.get(`/tickets/${encodeURIComponent(credential)}`)
+        const response = await api.get(`/tickets/${encodeURIComponent(credential)}`, {
+          headers: orderAccessHeaders(orderId),
+        })
         setTicket(response.data)
       } catch (err) {
         if (err.response?.status === 404) {
@@ -119,12 +124,13 @@ export default function TicketPage() {
       }
     }
     fetchTicket()
-  }, [credential])
+  }, [credential, orderId])
 
   async function handleDownload() {
     try {
       setDownloading(true)
       const response = await api.get(`/tickets/${encodeURIComponent(credential)}/download`, {
+        headers: orderAccessHeaders(orderId),
         responseType: 'blob',
       })
       const url = window.URL.createObjectURL(new Blob([response.data]))
@@ -191,7 +197,7 @@ export default function TicketPage() {
   }
 
   const status = statusConfig[ticket.status] || statusConfig.issued
-  const showCredential = ticket.status === 'issued' && !ticket.admission_block_reason
+  const showCredential = ticket.status === 'issued' && !ticket.admission_block_reason && Boolean(ticket.scan_credential)
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center px-3 sm:px-4 py-8">
@@ -255,7 +261,7 @@ export default function TicketPage() {
             <div className="px-6 py-8 text-center">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
               <p className="text-sm font-medium text-neutral-700">Entry code unavailable</p>
-              <p className="mt-1 text-xs text-neutral-500">This ticket cannot currently be used for admission.</p>
+              <p className="mt-1 text-xs text-neutral-500">Open this ticket from your secure order confirmation or signed-in account.</p>
             </div>
           )}
 

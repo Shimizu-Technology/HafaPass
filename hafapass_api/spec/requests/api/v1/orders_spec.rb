@@ -53,14 +53,17 @@ RSpec.describe "Api::V1::Orders", type: :request do
           .to eq(["General Admission", "General Admission", "VIP"])
       end
 
-      it "generates unique display credentials without exposing scan credentials" do
+      it "returns separate display and admission credentials to the creating buyer" do
         post_json "/api/v1/orders", params: valid_params
 
         json = JSON.parse(response.body)
         credentials = json["tickets"].map { |ticket| ticket["display_credential"] }
+        scan_credentials = json["tickets"].map { |ticket| ticket["scan_credential"] }
         expect(credentials.uniq.length).to eq(3)
         expect(credentials).to all(be_present)
-        expect(json["tickets"]).to all(satisfy { |ticket| !ticket.key?("scan_credential") && !ticket.key?("qr_code") })
+        expect(scan_credentials).to all(be_present)
+        expect(scan_credentials).not_to match_array(credentials)
+        expect(json["tickets"]).to all(satisfy { |ticket| !ticket.key?("qr_code") })
       end
 
       it "increments quantity_sold on ticket types" do

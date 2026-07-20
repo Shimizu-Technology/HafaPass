@@ -232,14 +232,14 @@ export default function MyTicketsPage() {
                         </Link>
                         <div className="flex items-center space-x-2">
                           {getStatusBadge(ticket.status)}
-                          <a
-                            href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${encodeURIComponent(ticket.display_credential)}/download`}
+                          <Link
+                            to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
                             className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
-                            title="Download PDF"
+                            title="Open ticket to download"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Download className="h-4 w-4" />
-                          </a>
+                          </Link>
                           <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}>
                             <ChevronRight className="h-4 w-4 text-neutral-400" />
                           </Link>

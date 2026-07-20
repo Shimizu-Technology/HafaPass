@@ -17,6 +17,14 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "accepts a URL token only for read-only bootstrap access" do
+    get "/api/v1/orders/#{order.id}", params: { guest_token: token }
+    expect(response).to have_http_status(:ok)
+
+    post "/api/v1/orders/#{order.id}/resend", params: { guest_token: token }
+    expect(response).to have_http_status(:not_found)
+  end
+
   it "resends fulfillment through the delivery service" do
     delivery = create(:message_delivery, order: order, template: "fulfillment_resend")
     allow(FulfillmentResender).to receive(:call).and_return(delivery)

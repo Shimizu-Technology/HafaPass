@@ -8,17 +8,25 @@ RSpec.describe "Api::V1::Tickets", type: :request do
   let(:ticket) { create(:ticket, order: order, ticket_type: ticket_type, event: event, attendee_name: "Jane Doe") }
 
   describe "GET /api/v1/tickets/:credential" do
-    it "returns ticket details and a separate scan credential without public PII" do
+    it "returns ticket details without admission authority or public PII" do
       get "/api/v1/tickets/#{ticket.display_credential}"
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
-      expect(json["scan_credential"]).to be_present
-      expect(json["scan_credential"]).not_to eq(ticket.display_credential)
+      expect(json["scan_credential"]).to be_nil
       expect(json).not_to have_key("attendee_name")
       expect(json).not_to have_key("attendee_email")
       expect(json["event"]["title"]).to eq(event.title)
       expect(json["ticket_type"]["name"]).to eq(ticket_type.name)
+    end
+
+    it "returns the scan credential only with access to the owning order" do
+      token = GuestOrderAccess.issue!(order)
+
+      get "/api/v1/tickets/#{ticket.display_credential}", headers: { "X-Guest-Order-Token" => token }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["scan_credential"]).to eq(ticket.scan_credential)
     end
 
     it "returns 404 for unknown qr_code" do
@@ -59,13 +67,21 @@ RSpec.describe "Api::V1::Tickets", type: :request do
   end
 
   describe "GET /api/v1/tickets/:credential/download" do
-    it "returns a PDF file" do
-      get "/api/v1/tickets/#{ticket.display_credential}/download"
+    it "returns a PDF file only with access to the owning order" do
+      token = GuestOrderAccess.issue!(order)
+      get "/api/v1/tickets/#{ticket.display_credential}/download",
+        headers: { "X-Guest-Order-Token" => token }
 
       expect(response).to have_http_status(:ok)
       expect(response.content_type).to include("application/pdf")
       expect(response.headers["Content-Disposition"]).to include("attachment")
       expect(response.headers["Content-Disposition"]).to include(".pdf")
+    end
+
+    it "does not expose a PDF admission credential to a public display link" do
+      get "/api/v1/tickets/#{ticket.display_credential}/download"
+
+      expect(response).to have_http_status(:not_found)
     end
 
     it "returns 404 for unknown qr_code" do

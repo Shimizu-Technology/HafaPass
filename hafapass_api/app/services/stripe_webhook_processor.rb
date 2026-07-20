@@ -191,6 +191,8 @@ class StripeWebhookProcessor
 
     provider_id = value(object, :id)
     dispute = Dispute.find_or_initialize_by(provider: "stripe", provider_dispute_id: provider_id)
+    return if dispute.persisted? && (dispute.won? || dispute.lost?)
+
     provider_status = value(object, :status).to_s
     status = if event.type == "charge.dispute.closed"
       provider_status == "won" ? :won : :lost
