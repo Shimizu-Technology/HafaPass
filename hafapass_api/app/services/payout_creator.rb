@@ -20,7 +20,7 @@ class PayoutCreator
     return validate_idempotent_replay!(existing) if existing
 
     payout = reserve!
-    result = PayoutGateway.submit(payout)
+    result = submit_payout!(payout)
     payout.update!(
       provider_payout_id: result.provider_payout_id,
       status: result.status,
@@ -36,9 +36,6 @@ class PayoutCreator
       request: request
     )
     payout
-  rescue PayoutGateway::PayoutError => e
-    payout&.update!(status: :failed, failure_code: "provider_unavailable", failure_message: e.message)
-    raise PayoutError, e.message
   rescue ActiveRecord::RecordInvalid => e
     raise PayoutError, e.record.errors.full_messages.to_sentence
   end
@@ -46,6 +43,51 @@ class PayoutCreator
   private
 
   attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request
+
+  def submit_payout!(payout)
+    PayoutGateway.submit(payout)
+  rescue PayoutGateway::PayoutError => e
+    record_submission_error!(
+      payout,
+      status: :failed,
+      failure_code: "provider_unavailable",
+      failure_message: e.message
+    )
+    raise PayoutError, e.message
+  rescue StandardError => e
+    # A timeout or unexpected adapter exception can leave the provider result
+    # ambiguous. Keep the amount committed until finance reconciles it so a
+    # retry cannot create a duplicate payout.
+    record_submission_error!(
+      payout,
+      status: :processing,
+      failure_code: "provider_result_unknown",
+      failure_message: e.message
+    )
+    Sentry.capture_exception(e)
+    raise PayoutError, "Payout provider result is unknown; reconcile this payout before retrying"
+  end
+
+  def record_submission_error!(payout, status:, failure_code:, failure_message:)
+    payout.update!(
+      status: status,
+      initiated_at: Time.current,
+      failure_code: failure_code,
+      failure_message: failure_message
+    )
+    AuditLogger.record!(
+      action: "payout.#{status}",
+      auditable: payout,
+      actor: actor,
+      organization: payout.organization,
+      metadata: {
+        amount_cents: payout.amount_cents,
+        settlement_id: settlement.id,
+        failure_code: failure_code
+      },
+      request: request
+    )
+  end
 
   def reserve!
     Payout.transaction do

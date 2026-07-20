@@ -116,4 +116,40 @@ RSpec.describe Settlements::Finalizer do
     expect(carried_payout).to be_status_paid
     expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
   end
+
+  it "calculates organization balance from only the latest finalized settlement per event" do
+    record_sale!(event)
+    described_class.call(event: event, actor: actor)
+    create(:balance_adjustment, organization: organization, event: event, created_by_user: actor,
+      kind: "manual_debit", amount_cents: -100, status: :posted, reason: "Final adjustment",
+      effective_at: Time.current)
+    described_class.call(event: event, actor: actor)
+
+    second_event = create(:event, :completed, organizer_profile: profile)
+    record_sale!(second_event)
+    described_class.call(event: second_event, actor: actor)
+
+    expect(Settlements::Calculator).not_to receive(:call)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(9534)
+  end
+
+  it "keeps an unexpectedly ambiguous provider result committed for reconciliation" do
+    record_sale!(event)
+    create(:connected_account, organization: organization)
+    settlement = described_class.call(event: event, actor: actor)
+    allow(PayoutGateway).to receive(:submit).and_raise(StandardError, "socket closed")
+    allow(Sentry).to receive(:capture_exception)
+
+    expect do
+      PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "ambiguous-provider")
+    end.to raise_error(PayoutCreator::PayoutError, /result is unknown/)
+
+    payout = Payout.find_by!(idempotency_key: "ambiguous-provider")
+    expect(payout).to be_status_processing
+    expect(payout).to have_attributes(failure_code: "provider_result_unknown", failure_message: "socket closed")
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
+    expect(AuditLog.where(auditable: payout, action: "payout.processing")).to exist
+    expect(PayoutCreator.call(settlement: settlement, actor: actor,
+      idempotency_key: "ambiguous-provider")).to eq(payout)
+  end
 end

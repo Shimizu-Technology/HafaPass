@@ -74,8 +74,6 @@ class OrganizationAuthorization
   def assignment_roles
     return [] unless event
 
-    @assignment_roles ||= event.event_staff_assignments
-      .select { |assignment| assignment.user_id == user.id && assignment.effective?(at: at) }
-      .map(&:role)
+    @assignment_roles ||= event.event_staff_assignments.where(user_id: user.id).effective(at).pluck(:role)
   end
 end

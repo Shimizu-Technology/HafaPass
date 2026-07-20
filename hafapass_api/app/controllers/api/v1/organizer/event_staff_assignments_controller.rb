@@ -23,8 +23,11 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
   end
 
   def create
+    role = validated_role
+    return unless role
+
     membership = current_organization.organization_memberships.effective.find_by!(user_id: params[:user_id])
-    assignment = @event.event_staff_assignments.find_or_initialize_by(user: membership.user, role: params[:role])
+    assignment = @event.event_staff_assignments.find_or_initialize_by(user: membership.user, role: role)
     assignment.assign_attributes(
       organization: current_organization,
       assigned_by_user: current_user,
@@ -41,7 +44,10 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
   end
 
   def update
-    @assignment.update!(role: params[:role], expires_at: params[:expires_at], status: :active)
+    role = validated_role
+    return unless role
+
+    @assignment.update!(role: role, expires_at: params[:expires_at], status: :active)
     audit_assignment!("event_staff.updated", @assignment)
     render json: assignment_json(@assignment)
   rescue ActiveRecord::RecordInvalid => e
@@ -68,6 +74,15 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
     @assignment = @event.event_staff_assignments.find(params[:id])
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Staff assignment not found" }, status: :not_found
+  end
+
+  def validated_role
+    role = params[:role].to_s
+    return role if EventStaffAssignment.roles.key?(role)
+
+    render json: { error: "role must be one of: #{EventStaffAssignment.roles.keys.join(", ")}" },
+      status: :unprocessable_entity
+    nil
   end
 
   def audit_assignment!(action, assignment)

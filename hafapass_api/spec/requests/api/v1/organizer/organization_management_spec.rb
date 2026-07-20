@@ -81,6 +81,26 @@ RSpec.describe "Organizer organization management", type: :request do
     expect(response.parsed_body.fetch("events").pluck("id")).to eq([assigned.id])
   end
 
+  it "rejects invalid event staff roles without raising or changing an assignment" do
+    event = create(:event, organizer_profile: profile)
+    staff = create(:user)
+    create(:organization_membership, organization: organization, user: staff, role: :scanner)
+
+    post "/api/v1/organizer/events/#{event.id}/staff_assignments",
+      params: { user_id: staff.id, role: "owner" }, headers: headers
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to include("box_office, scanner, manager")
+    expect(event.event_staff_assignments).to be_empty
+
+    assignment = create(:event_staff_assignment, organization: organization, event: event, user: staff, role: :scanner)
+    patch "/api/v1/organizer/events/#{event.id}/staff_assignments/#{assignment.id}",
+      params: { role: "finance" }, headers: headers
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(assignment.reload).to be_scanner
+  end
+
   it "lets finance members view and finalize event statements but not edit event content" do
     finance = create(:user)
     create(:organization_membership, organization: organization, user: finance, role: :finance)
