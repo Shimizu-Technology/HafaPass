@@ -71,11 +71,11 @@ module Api
 
           count = [params[:count].to_i.clamp(1, 12), 1].max
           interval = case @event.recurrence_rule
-                     when "weekly" then 1.week
-                     when "biweekly" then 2.weeks
-                     when "monthly" then 1.month
-                     else return render json: { error: "Unsupported recurrence rule" }, status: :unprocessable_entity
-                     end
+          when "weekly" then 1.week
+          when "biweekly" then 2.weeks
+          when "monthly" then 1.month
+          else return render json: { error: "Unsupported recurrence rule" }, status: :unprocessable_entity
+          end
 
           duration = @event.ends_at - @event.starts_at
           doors_offset = @event.doors_open_at ? @event.doors_open_at - @event.starts_at : nil
@@ -194,15 +194,15 @@ module Api
 
         def clone_event(source, overrides = {})
           attrs = source.attributes.slice(
-            'title', 'description', 'short_description', 'cover_image_url',
-            'venue_name', 'venue_address', 'venue_city', 'timezone',
-            'category', 'age_restriction', 'max_capacity', 'is_featured',
-            'show_attendees'
+            "title", "description", "short_description", "cover_image_url",
+            "venue_name", "venue_address", "venue_city", "timezone",
+            "category", "age_restriction", "max_capacity", "is_featured",
+            "show_attendees"
           ).merge(
-            'organizer_profile_id' => source.organizer_profile_id,
-            'status' => 'draft',
-            'slug' => nil,
-            'published_at' => nil
+            "organizer_profile_id" => source.organizer_profile_id,
+            "status" => "draft",
+            "slug" => nil,
+            "published_at" => nil
           ).merge(overrides.stringify_keys)
 
           new_event = Event.new(attrs)

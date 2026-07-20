@@ -7,4 +7,15 @@ class ApplicationJob < ActiveJob::Base
 
   # Default queue
   queue_as :default
+
+  around_perform do |job, block|
+    Sentry.with_scope do |scope|
+      scope.set_tags(
+        job_class: job.class.name,
+        job_id: job.job_id,
+        queue: job.queue_name
+      )
+      block.call
+    end
+  end
 end

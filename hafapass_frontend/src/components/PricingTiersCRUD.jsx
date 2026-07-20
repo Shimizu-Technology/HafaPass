@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Loader2, Clock, Hash } from 'lucide-react'
 import apiClient from '../api/client'
 
@@ -115,18 +115,18 @@ export default function PricingTiersCRUD({ eventId, ticketTypeId }) {
 
   const basePath = `/organizer/events/${eventId}/ticket_types/${ticketTypeId}/pricing_tiers`
 
-  const fetchTiers = async () => {
+  const fetchTiers = useCallback(async () => {
     try {
-      const res = await apiClient.get(basePath)
+      const res = await apiClient.get(`/organizer/events/${eventId}/ticket_types/${ticketTypeId}/pricing_tiers`)
       setTiers(res.data)
     } catch {
       setError('Failed to load pricing tiers')
     } finally {
       setLoading(false)
     }
-  }
+  }, [eventId, ticketTypeId])
 
-  useEffect(() => { fetchTiers() }, [eventId, ticketTypeId])
+  useEffect(() => { fetchTiers() }, [fetchTiers])
 
   const handleCreate = async (data) => {
     setSaving(true)

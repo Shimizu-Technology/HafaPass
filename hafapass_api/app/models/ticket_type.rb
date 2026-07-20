@@ -24,9 +24,9 @@ class TicketType < ApplicationRecord
   def current_price_cents
     pricing_tiers.each do |tier|
       case tier.tier_type
-      when 'quantity_based'
+      when "quantity_based"
         return tier.price_cents if tier.quantity_sold < tier.quantity_limit
-      when 'time_based'
+      when "time_based"
         if tier.starts_at.present? && tier.ends_at.present?
           return tier.price_cents if Time.current.between?(tier.starts_at, tier.ends_at)
         elsif tier.starts_at.present?

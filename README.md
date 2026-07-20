@@ -58,8 +58,8 @@ The current application is a strong prototype, not yet a production-safe real-mo
 
 ### Prerequisites
 
-- Ruby 3.2+ and Rails 8+
-- Node.js 18+
+- Ruby 3.3.4 and Rails 8+
+- Node.js 20.19+
 - PostgreSQL
 - Redis (for background jobs - optional in development)
 - Clerk account with test application
@@ -93,12 +93,12 @@ The current application is a strong prototype, not yet a production-safe real-mo
    npm run dev  # Runs on localhost:5173
    ```
 
-5. **Start background jobs** (optional, in another terminal)
+5. **Start background jobs** (in another terminal when testing queued work)
    ```bash
    cd hafapass_api
    bundle exec sidekiq
    ```
-   > Note: Without Sidekiq running, emails are processed inline (synchronously). With Sidekiq + Redis, emails are processed asynchronously for better performance.
+   Development uses Rails' in-process async adapter when `REDIS_URL` is absent. Production requires Redis and a separately running Sidekiq worker; it does not silently fall back to non-durable work.
 
 6. **Open the app**
    Visit http://localhost:5173
@@ -140,7 +140,7 @@ Emails are processed asynchronously using Sidekiq. Job queues:
 
 Jobs automatically retry with exponential backoff (up to 5 attempts).
 
-**Without Redis:** Falls back to inline processing (synchronous).
+Production boot requires `REDIS_URL`. Readiness reports Redis connectivity and whether a Sidekiq process is active.
 
 ### Rate Limiting
 
@@ -191,12 +191,18 @@ Query params: `?page=2&per_page=10`
 | `RESEND_API_KEY` | No | Resend email API key |
 | `MAILER_FROM_EMAIL` | No | From address for emails (default: tickets@hafapass.com) |
 | `FRONTEND_URL` | No | Frontend URL for email links (default: http://localhost:5173) |
+| `SENTRY_DSN` | Production | Backend error-monitoring DSN |
+| `SENTRY_ENVIRONMENT` | No | Monitoring environment label (defaults to Rails environment) |
+| `SENTRY_TRACES_SAMPLE_RATE` | No | Backend performance trace sample rate (default: `0.1`) |
 
 ### Frontend (`hafapass_frontend/.env.local`)
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
 | `VITE_API_URL` | No | API base URL (default: http://localhost:3000/api/v1) |
+| `VITE_SENTRY_DSN` | Production | Frontend error-monitoring DSN |
+| `VITE_SENTRY_ENVIRONMENT` | No | Frontend monitoring environment label |
+| `VITE_SENTRY_RELEASE` | Production | Release identifier shared with source-map upload |
 
 ## Seed Data
 
@@ -217,20 +223,14 @@ This creates:
 ## Testing
 
 ```bash
-# Backend - RSpec (baseline on July 20, 2026: 260 examples)
-cd hafapass_api
-RBENV_VERSION=3.3.4 rbenv exec bundle exec rspec
+# Full local contract: tests, lint, security, build, audit, and browser smoke
+./scripts/gate.sh
 
-# Frontend - ESLint
-cd hafapass_frontend
-npm run lint
-
-# Frontend - Production build
-cd hafapass_frontend
-npm run build
+# Skip only the browser portion when Playwright is unavailable locally
+SKIP_E2E=1 ./scripts/gate.sh
 ```
 
-Phase 1 adds the repository-level `./scripts/gate.sh`, frontend automated tests, security scans, and CI. Once merged, the gate is the required pre-PR command.
+The root CI workflow runs the same concerns in parallel. See the [operations runbook](docs/OPERATIONS_RUNBOOK.md) for readiness, worker, monitoring, and incident procedures.
 
 ## Production Checklist
 

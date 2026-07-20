@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-test:
+    name: Backend / RSpec
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hafapass_api_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hafapass_api_test
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3.4"
+          bundler-cache: true
+          working-directory: hafapass_api
+      - name: Prepare database
+        working-directory: hafapass_api
+        run: bundle exec rails db:prepare
+      - name: Run RSpec
+        working-directory: hafapass_api
+        run: bundle exec rspec --format progress --format RspecJunitFormatter --out tmp/rspec.xml
+      - name: Upload RSpec results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rspec-results
+          path: hafapass_api/tmp/rspec.xml
+          if-no-files-found: ignore
+
+  backend-quality:
+    name: Backend / Quality and security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3.4"
+          bundler-cache: true
+          working-directory: hafapass_api
+      - name: RuboCop
+        working-directory: hafapass_api
+        run: bundle exec rubocop --format github
+      - name: Brakeman
+        working-directory: hafapass_api
+        run: bundle exec brakeman --no-pager --quiet
+      - name: Bundler Audit
+        working-directory: hafapass_api
+        run: bundle exec bundler-audit check --update
+
+  frontend-quality:
+    name: Frontend / Test, build, and security
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hafapass_frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hafapass_frontend/package-lock.json
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Production dependency audit
+        run: npm run audit:prod
+
+  browser-smoke:
+    name: Browser / Service recovery smoke tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hafapass_frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hafapass_frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Upload browser report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: hafapass_frontend/playwright-report
+          if-no-files-found: ignore
+
+  hygiene:
+    name: Repository / Secret and debug hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check tracked application files
+        run: scripts/check_hygiene.sh

@@ -11,9 +11,9 @@ class SiteSetting < ApplicationRecord
   def self.instance
     first_or_create!(
       singleton_guard: 0,
-      payment_mode: 'simulate',
-      platform_name: 'HafaPass',
-      platform_email: 'tickets@hafapass.com',
+      payment_mode: "simulate",
+      platform_name: "HafaPass",
+      platform_email: "tickets@hafapass.com",
       service_fee_percent: 3.0,
       service_fee_flat_cents: 50
     )
@@ -24,15 +24,15 @@ class SiteSetting < ApplicationRecord
 
   # ── Mode helpers ────────────────────────────────────────────────────
   def simulate_mode?
-    payment_mode == 'simulate'
+    payment_mode == "simulate"
   end
 
   def test_mode?
-    payment_mode == 'test'
+    payment_mode == "test"
   end
 
   def live_mode?
-    payment_mode == 'live'
+    payment_mode == "live"
   end
 
   # True when Stripe API calls will actually be made (test or live)
@@ -45,26 +45,26 @@ class SiteSetting < ApplicationRecord
   # Falls back: STRIPE_TEST_SECRET_KEY → STRIPE_SECRET_KEY (for test mode)
   def stripe_secret_key
     case payment_mode
-    when 'test'  then ENV['STRIPE_TEST_SECRET_KEY'].presence || ENV['STRIPE_SECRET_KEY']
-    when 'live'  then ENV['STRIPE_LIVE_SECRET_KEY']
+    when "test"  then ENV["STRIPE_TEST_SECRET_KEY"].presence || ENV["STRIPE_SECRET_KEY"]
+    when "live"  then ENV["STRIPE_LIVE_SECRET_KEY"]
     end
   end
 
   # Returns the correct publishable key for the current mode.
   def stripe_publishable_key
     case payment_mode
-    when 'test'  then ENV['STRIPE_TEST_PUBLISHABLE_KEY'].presence || ENV['STRIPE_PUBLISHABLE_KEY']
-    when 'live'  then ENV['STRIPE_LIVE_PUBLISHABLE_KEY']
+    when "test"  then ENV["STRIPE_TEST_PUBLISHABLE_KEY"].presence || ENV["STRIPE_PUBLISHABLE_KEY"]
+    when "live"  then ENV["STRIPE_LIVE_PUBLISHABLE_KEY"]
     end
   end
 
   # ── Safety checks ───────────────────────────────────────────────────
   def can_enable_test?
-    (ENV['STRIPE_TEST_SECRET_KEY'].presence || ENV['STRIPE_SECRET_KEY']).present?
+    (ENV["STRIPE_TEST_SECRET_KEY"].presence || ENV["STRIPE_SECRET_KEY"]).present?
   end
 
   def can_enable_live?
-    ENV['STRIPE_LIVE_SECRET_KEY'].present?
+    ENV["STRIPE_LIVE_SECRET_KEY"].present?
   end
 
   # ── Guards ──────────────────────────────────────────────────────────

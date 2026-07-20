@@ -11,8 +11,8 @@
 # so we don't set Stripe.api_key globally here.
 
 # Log which keys are available at boot
-test_key = ENV['STRIPE_TEST_SECRET_KEY'].presence || ENV['STRIPE_SECRET_KEY']
-live_key = ENV['STRIPE_LIVE_SECRET_KEY']
+test_key = ENV["STRIPE_TEST_SECRET_KEY"].presence || ENV["STRIPE_SECRET_KEY"]
+live_key = ENV["STRIPE_LIVE_SECRET_KEY"]
 
 if test_key.present?
   Rails.logger.info "\u2705 Stripe test keys available"

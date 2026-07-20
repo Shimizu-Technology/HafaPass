@@ -27,6 +27,12 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   # PATCH /api/v1/admin/users/:id
   def update
     user = User.find(params[:id])
+    requested_role = params[:role].to_s
+
+    unless User.roles.key?(requested_role)
+      render json: { error: "Invalid role" }, status: :unprocessable_entity
+      return
+    end
 
     # Prevent self-role-change
     if user.id == @current_user.id
@@ -35,12 +41,12 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
     end
 
     # Prevent demoting the last admin
-    if user.admin? && params[:role] != "admin" && User.where(role: :admin).count == 1
+    if user.admin? && requested_role != "admin" && User.where(role: :admin).count == 1
       render json: { error: "Cannot demote the last admin" }, status: :unprocessable_entity
       return
     end
 
-    if user.update(user_params)
+    if user.update(role: requested_role)
       render json: user_json(user)
     else
       render json: { errors: user.errors.full_messages }, status: :unprocessable_entity
@@ -48,10 +54,6 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   end
 
   private
-
-  def user_params
-    params.permit(:role)
-  end
 
   def user_json(u)
     {
