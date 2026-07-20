@@ -13,7 +13,7 @@ const EMPTY_FORM = {
   position: '0'
 }
 
-function TierForm({ initial, onSave, onCancel, saving }) {
+function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
   const [form, setForm] = useState(initial || EMPTY_FORM)
   const [error, setError] = useState(null)
 
@@ -72,7 +72,7 @@ function TierForm({ initial, onSave, onCancel, saving }) {
         </div>
       )}
       {form.tier_type === 'time_based' && (
-        <div><p className="text-xs text-neutral-500 mb-2">Times use Guam time (Pacific/Guam).</p><div className="grid grid-cols-2 gap-3">
+        <div><p className="text-xs text-neutral-500 mb-2">Times use {eventTimezone || 'Pacific/Guam'}.</p><div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1">Starts At</label>
             <input type="datetime-local" value={form.starts_at} onChange={e => setForm(f => ({...f, starts_at: e.target.value}))} className="input" disabled={saving} />
@@ -93,7 +93,7 @@ function TierForm({ initial, onSave, onCancel, saving }) {
   )
 }
 
-export default function PricingTiersCRUD({ eventId, ticketTypeId }) {
+export default function PricingTiersCRUD({ eventId, ticketTypeId, eventTimezone = 'Pacific/Guam' }) {
   const [tiers, setTiers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -174,7 +174,7 @@ export default function PricingTiersCRUD({ eventId, ticketTypeId }) {
 
       {showForm && (
         <div className="mb-3">
-          <TierForm onSave={handleCreate} onCancel={() => setShowForm(false)} saving={saving} />
+          <TierForm onSave={handleCreate} onCancel={() => setShowForm(false)} saving={saving} eventTimezone={eventTimezone} />
         </div>
       )}
 
@@ -192,13 +192,14 @@ export default function PricingTiersCRUD({ eventId, ticketTypeId }) {
                   price: (tier.price_cents / 100).toFixed(2),
                   tier_type: tier.tier_type,
                   quantity_limit: tier.quantity_limit ? String(tier.quantity_limit) : '',
-                  starts_at: toEventLocalInput(tier.starts_at),
-                  ends_at: toEventLocalInput(tier.ends_at),
+                  starts_at: toEventLocalInput(tier.starts_at, eventTimezone),
+                  ends_at: toEventLocalInput(tier.ends_at, eventTimezone),
                   position: String(tier.position)
                 }}
                 onSave={handleUpdate}
                 onCancel={() => setEditingId(null)}
                 saving={saving}
+                eventTimezone={eventTimezone}
               />
             ) : (
               <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm">

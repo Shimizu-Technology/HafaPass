@@ -58,18 +58,18 @@ class TicketType < ApplicationRecord
 
   # Returns the next tier that will become active after the current one.
   def next_pricing_tier
-    found_active = false
-    pricing_tiers.each do |tier|
-      return tier if found_active
-      found_active = true if tier.active?
-    end
-    nil
+    tiers = pricing_tiers.to_a
+    active_index = tiers.index(&:active?)
+    return tiers[active_index + 1] if active_index
+
+    tiers.find { |tier| tier.time_based? && tier.starts_at.present? && tier.starts_at > Time.current }
   end
 
   private
 
   def chronological_sales_window
     errors.add(:sales_end_at, "must be after sales start") if sales_start_at && sales_end_at && sales_end_at <= sales_start_at
+    errors.add(:sales_start_at, "must be before the event ends") if sales_start_at && event&.ends_at && sales_start_at >= event.ends_at
     errors.add(:sales_end_at, "must be at or before the event end") if sales_end_at && event&.ends_at && sales_end_at > event.ends_at
   end
 

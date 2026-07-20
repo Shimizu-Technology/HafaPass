@@ -2,7 +2,7 @@ class SitemapsController < ApplicationController
   skip_before_action :authenticate_user!
 
   def show
-    @events = Event.discoverable.order(updated_at: :desc)
+    @events = Event.published.where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current).order(updated_at: :desc)
     base_url = PublicSiteUrl.base
 
     builder = Nokogiri::XML::Builder.new(encoding: "UTF-8") do |xml|

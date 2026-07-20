@@ -145,6 +145,29 @@ RSpec.describe TicketType, type: :model do
     end
   end
 
+  describe "#next_pricing_tier" do
+    let(:event) { create(:event) }
+    let(:ticket_type) { create(:ticket_type, event: event) }
+
+    it "returns the first future time tier when no tier is active yet" do
+      future_tier = create(:pricing_tier, ticket_type: ticket_type, tier_type: :time_based,
+        starts_at: 1.day.from_now, ends_at: 1.week.from_now, position: 0)
+
+      expect(ticket_type.next_pricing_tier).to eq(future_tier)
+    end
+  end
+
+  describe "sales window validations" do
+    let(:event) { create(:event, starts_at: 1.week.from_now, ends_at: 1.week.from_now + 4.hours) }
+
+    it "rejects a sales start at or after the event ends" do
+      ticket_type = build(:ticket_type, event: event, sales_start_at: event.ends_at)
+
+      expect(ticket_type).not_to be_valid
+      expect(ticket_type.errors[:sales_start_at]).to include("must be before the event ends")
+    end
+  end
+
   describe "defaults" do
     it "defaults quantity_sold to 0" do
       event = create(:event)

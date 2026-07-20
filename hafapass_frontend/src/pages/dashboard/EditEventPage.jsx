@@ -632,7 +632,7 @@ export default function EditEventPage() {
       </form>
 
       {/* Ticket Types CRUD */}
-      <TicketTypeCRUD eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} />
+      <TicketTypeCRUD eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} />
 
       {/* Danger Zone — HP-28 */}
       {event && event.status !== 'archived' && (

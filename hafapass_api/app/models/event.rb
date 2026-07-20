@@ -156,9 +156,11 @@ class Event < ApplicationRecord
     ticket_types.all? do |ticket_type|
       starts_before_end = ticket_type.sales_start_at.blank? || ticket_type.sales_end_at.blank? ||
         ticket_type.sales_start_at < ticket_type.sales_end_at
+      starts_before_event_end = ticket_type.sales_start_at.blank? || ends_at.blank? ||
+        ticket_type.sales_start_at < ends_at
       ends_before_event = ticket_type.sales_end_at.blank? || ends_at.blank? || ticket_type.sales_end_at <= ends_at
       sale_still_possible = ticket_type.sales_end_at.blank? || ticket_type.sales_end_at > at
-      starts_before_end && ends_before_event && sale_still_possible
+      starts_before_end && starts_before_event_end && ends_before_event && sale_still_possible
     end
   end
 
