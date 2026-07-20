@@ -1,4 +1,5 @@
 require "rails_helper"
+require "timeout"
 
 RSpec.describe "Commerce concurrency", :non_transactional do
   self.use_transactional_tests = false
@@ -101,10 +102,14 @@ RSpec.describe "Commerce concurrency", :non_transactional do
         end
       end
     end
-    count.times { ready.pop }
-    count.times { start << true }
-    threads.each(&:join)
-    count.times.map { results.pop }
+    Timeout.timeout(15) do
+      count.times { ready.pop }
+      count.times { start << true }
+      threads.each(&:join)
+      count.times.map { results.pop }
+    end
+  ensure
+    threads&.each { |thread| thread.kill if thread.alive? }
   end
 
   def clean_test_data
