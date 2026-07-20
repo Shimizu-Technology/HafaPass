@@ -81,6 +81,7 @@ export default function ScannerPage() {
   const detectorTimerRef = useRef(null)
   const zxingControlsRef = useRef(null)
   const scanCooldownRef = useRef(false)
+  const syncingRef = useRef(false)
 
   const ticketsByHash = useMemo(
     () => new Map((manifest?.payload?.tickets || []).map(ticket => [ticket.credential_hash, ticket])),
@@ -110,14 +111,15 @@ export default function ScannerPage() {
   }, [])
 
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
-    if (!selectedEventId || !selectedDevice || !navigator.onLine || syncing) return
-    let remaining = await queuedActions(selectedEventId, selectedDevice.id)
-    if (!remaining.length) {
-      if (!quiet) await Promise.all([downloadManifest(selectedEventId, selectedDevice), fetchDashboard(selectedEventId)])
-      return
-    }
+    if (!selectedEventId || !selectedDevice || !navigator.onLine || syncingRef.current) return
+    syncingRef.current = true
     setSyncing(true)
     try {
+      let remaining = await queuedActions(selectedEventId, selectedDevice.id)
+      if (!remaining.length) {
+        if (!quiet) await Promise.all([downloadManifest(selectedEventId, selectedDevice), fetchDashboard(selectedEventId)])
+        return
+      }
       let currentDevice = selectedDevice
       while (remaining.length) {
         const batch = remaining.slice(0, 500)
@@ -136,9 +138,10 @@ export default function ScannerPage() {
     } catch (syncError) {
       if (!quiet) setError(syncError.response?.data?.error || 'Queued scans could not be synchronized.')
     } finally {
+      syncingRef.current = false
       setSyncing(false)
     }
-  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending, syncing])
+  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending])
 
   const configureEvent = useCallback(async selectedEventId => {
     if (!selectedEventId) return

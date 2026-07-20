@@ -56,10 +56,11 @@ module Admissions
             raise ConfigurationError, "ADMISSION_MANIFEST_PRIVATE_KEY_PEM is required in production"
           end
 
-          @private_key = pem ? OpenSSL::PKey::RSA.new(pem) : OpenSSL::PKey::RSA.generate(2048)
-          unless @private_key.private?
+          candidate = pem ? OpenSSL::PKey::RSA.new(pem) : OpenSSL::PKey::RSA.generate(2048)
+          unless candidate.private?
             raise ConfigurationError, "Admission manifest signing key must contain an RSA private key"
           end
+          @private_key = candidate
         rescue OpenSSL::PKey::PKeyError => e
           raise ConfigurationError, "Admission manifest signing key is invalid: #{e.message}"
         end
