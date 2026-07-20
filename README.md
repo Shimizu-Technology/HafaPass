@@ -36,11 +36,23 @@ HafaPass/
 │       ├── pages/           # Route-level pages
 │       └── api/             # API client
 ├── starter-app/             # Setup guides (Clerk, Stripe, S3, etc.)
-├── potential.md             # Full PRD & database schema
-├── COMPETITIVE_ANALYSIS.md  # Market research
-├── FUTURE_IMPROVEMENTS.md   # Technical debt & roadmap
+├── docs/
+│   ├── TICKETING_PLATFORM_BLUEPRINT.md # Authoritative product/engineering requirements
+│   ├── PHASE_DELIVERY_PLAYBOOK.md       # Branch, test, review, and merge process
+│   └── MVP_TEST_PLAN.md                 # Full pilot manual test gate
+├── COMPETITIVE_ANALYSIS.md  # Current market research and positioning
+├── FUTURE_IMPROVEMENTS.md   # Pointer to the authoritative roadmap
 └── screenshots/             # Visual verification screenshots
 ```
+
+## Product and Delivery Roadmap
+
+The current application is a strong prototype, not yet a production-safe real-money ticketing platform. Use these documents as the source of truth:
+
+- [Ticketing Platform Blueprint](docs/TICKETING_PLATFORM_BLUEPRINT.md) — what HafaPass is, verified risks, required capabilities, architecture, compliance, metrics, and completion criteria.
+- [Phase Delivery Playbook](docs/PHASE_DELIVERY_PLAYBOOK.md) — the exact phase branches, implementation scope, automated/runtime testing, Greptile 5/5 loop, and merge gates.
+- [Pilot Manual Test Plan](docs/MVP_TEST_PLAN.md) — the end-to-end release-candidate validation.
+- [Competitive Analysis](COMPETITIVE_ANALYSIS.md) — current GuamTime, Ticketmaster, and alternative-platform findings.
 
 ## Getting Started
 
@@ -205,9 +217,9 @@ This creates:
 ## Testing
 
 ```bash
-# Backend - RSpec (152 specs)
+# Backend - RSpec (baseline on July 20, 2026: 260 examples)
 cd hafapass_api
-bundle exec rspec
+RBENV_VERSION=3.3.4 rbenv exec bundle exec rspec
 
 # Frontend - ESLint
 cd hafapass_frontend
@@ -218,26 +230,13 @@ cd hafapass_frontend
 npm run build
 ```
 
+Phase 1 adds the repository-level `./scripts/gate.sh`, frontend automated tests, security scans, and CI. Once merged, the gate is the required pre-PR command.
+
 ## Production Checklist
 
-### Required for Launch
+Production readiness is defined by the blueprint pilot gate—not by configuring credentials alone. Launch requires, among other items, the immutable commerce ledger, expiring inventory holds, safe webhook/payment transitions, organizer payout architecture, ChST correctness, recoverable guest checkout, offline admissions, durable workers, monitoring, backup/restore proof, security/accessibility testing, and approved legal/accounting policies.
 
-| Item | Status | Notes |
-|------|--------|-------|
-| Stripe API keys | ⚪ Configure | Set `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` |
-| Redis | ⚪ Configure | Set `REDIS_URL` for background jobs |
-| CORS origins | ⚪ Configure | Set `ALLOWED_ORIGINS` to production domains |
-| Database | ⚪ Configure | Set `DATABASE_URL` (Neon or similar) |
-| Clerk production | ⚪ Configure | Switch to production Clerk instance |
-| Domain & SSL | ⚪ Configure | Point domain to deployed services |
-
-### Optional Enhancements
-
-| Item | Status | Notes |
-|------|--------|-------|
-| AWS S3 uploads | ⚪ Optional | Set S3 credentials for image uploads |
-| Resend emails | ⚪ Optional | Set `RESEND_API_KEY` for real emails |
-| Monitoring | ⚪ Recommended | Add Sentry for error tracking |
+Do not reuse another project’s production credentials. Compatible sandbox credentials may be used locally only under the secret policy in the [Phase Delivery Playbook](docs/PHASE_DELIVERY_PLAYBOOK.md), and every borrowed credential must be replaced with a dedicated HafaPass key before production.
 
 ### Deployment
 
