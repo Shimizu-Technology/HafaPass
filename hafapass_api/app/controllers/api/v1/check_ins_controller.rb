@@ -1,6 +1,8 @@
 class Api::V1::CheckInsController < ApplicationController
   def create
-    ticket = Ticket.includes(:order, :ticket_type, event: :organizer_profile).find_by(qr_code: params[:qr_code])
+    credential = params[:credential] || params[:qr_code]
+    resolved_ticket = TicketCredential.find_scan(credential)
+    ticket = Ticket.includes(:order, :ticket_type, event: :organizer_profile).find_by(id: resolved_ticket&.id)
 
     unless ticket
       render json: { error: "Ticket not found" }, status: :not_found
@@ -12,8 +14,14 @@ class Api::V1::CheckInsController < ApplicationController
       return
     end
 
-    unless ticket.order.completed?
-      render json: { error: "Ticket order is not completed" }, status: :unprocessable_entity
+    unless ticket.order.ticket_fulfilled?
+      render json: { error: "Ticket order is not fulfilled" }, status: :unprocessable_entity
+      return
+    end
+
+    if ticket.order.ticket_access_blocked?
+      render json: { error: "Ticket access is suspended while a payment dispute is reviewed", ticket: ticket_json(ticket) },
+        status: :unprocessable_entity
       return
     end
 
@@ -55,10 +63,8 @@ class Api::V1::CheckInsController < ApplicationController
   def ticket_json(ticket)
     {
       id: ticket.id,
-      qr_code: ticket.qr_code,
       status: ticket.status,
       attendee_name: ticket.attendee_name,
-      attendee_email: ticket.attendee_email,
       checked_in_at: ticket.checked_in_at,
       event: {
         id: ticket.event.id,

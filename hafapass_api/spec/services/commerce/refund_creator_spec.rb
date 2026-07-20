@@ -118,4 +118,32 @@ RSpec.describe Commerce::RefundCreator do
     expect(ticket_type.reload.quantity_sold).to eq(0)
     expect(payment.reload).to be_refunded
   end
+
+  it "refunds and revokes only the selected unused ticket" do
+    selected, remaining = order.tickets.order(:id).to_a
+    old_scan = selected.scan_credential
+
+    refund = described_class.call(order: order, tickets: [selected], reason: "buyer choice", idempotency_key: "one-ticket")
+
+    expect(refund).to be_succeeded
+    expect(refund.amount_cents).to eq(2625)
+    expect(refund.tickets).to contain_exactly(selected)
+    expect(selected.reload).to be_cancelled
+    expect(remaining.reload).to be_issued
+    expect(order.reload).to be_partially_refunded
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(TicketCredential.find_scan(old_scan)).to be_nil
+  end
+
+  it "rejects a selective refund for a used ticket before contacting the provider" do
+    used = order.tickets.first
+    used.update!(status: :checked_in, checked_in_at: Time.current)
+    allow(StripeService).to receive(:refund_payment)
+
+    expect do
+      described_class.call(order: order, tickets: [used], idempotency_key: "used-ticket")
+    end.to raise_error(described_class::RefundError, /unused active/)
+
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
 end

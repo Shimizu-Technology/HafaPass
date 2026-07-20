@@ -182,6 +182,35 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(event.reload).to be_draft
       expect(event.is_featured).to be(false)
     end
+
+    it "requires a buyer-facing reason to reschedule a published event" do
+      event.update!(status: :published, published_at: Time.current)
+      original_start = event.starts_at
+
+      put "/api/v1/organizer/events/#{event.id}", params: { starts_at: (original_start + 1.hour).iso8601 }, headers: headers
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to include("reason is required")
+      expect(event.reload.starts_at).to eq(original_start)
+    end
+
+    it "records and notifies a valid published-event reschedule" do
+      event.update!(status: :published, published_at: Time.current)
+      allow(EmailService).to receive(:send_event_change_notifications_async)
+      new_start = event.starts_at + 1.hour
+
+      put "/api/v1/organizer/events/#{event.id}", params: {
+        starts_at: new_start.iso8601,
+        ends_at: (new_start + 4.hours).iso8601,
+        doors_open_at: (new_start - 30.minutes).iso8601,
+        change_reason: "Venue requested a later start"
+      }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      change = event.reload.event_changes.last
+      expect(change).to have_attributes(change_type: "rescheduled", reason: "Venue requested a later start")
+      expect(EmailService).to have_received(:send_event_change_notifications_async).with(change)
+    end
   end
 
   describe "DELETE /api/v1/organizer/events/:id" do
@@ -337,7 +366,7 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       statuses = attendees.map { |a| a["status"] }
       expect(statuses).to include("issued", "checked_in")
       expect(attendees.first).to have_key("attendee_name")
-      expect(attendees.first).to have_key("qr_code")
+      expect(attendees.first).not_to have_key("qr_code")
       expect(attendees.first).to have_key("ticket_type")
     end
   end

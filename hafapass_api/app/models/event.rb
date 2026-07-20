@@ -10,6 +10,7 @@ class Event < ApplicationRecord
   has_many :guest_list_entries, dependent: :destroy
   has_many :waitlist_entries, dependent: :destroy
   has_many :event_state_changes, dependent: :restrict_with_error
+  has_many :event_changes, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {

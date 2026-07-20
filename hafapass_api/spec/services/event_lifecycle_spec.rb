@@ -46,10 +46,13 @@ RSpec.describe EventLifecycle do
       described_class.call(event: event, action: :postpone, actor: actor)
     }.to raise_error(described_class::TransitionError, /reason is required/)
 
+    allow(EmailService).to receive(:send_event_change_notifications_async)
     described_class.call(event: event, action: :postpone, actor: actor, reason: "Venue closure")
     expect(event.reload).to be_postponed
     expect(event).not_to be_sales_open
     expect(event.event_state_changes.last.reason).to eq("Venue closure")
+    expect(event.event_changes.last).to have_attributes(change_type: "postponed", reason: "Venue closure")
+    expect(EmailService).to have_received(:send_event_change_notifications_async).with(event.event_changes.last)
   end
 
   it "does not complete an event before its end time" do

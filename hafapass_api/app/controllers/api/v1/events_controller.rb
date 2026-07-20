@@ -140,6 +140,7 @@ module Api
               quantity_remaining: tt.available_quantity,
               on_sale: event.sales_open? && tt.on_sale?,
               max_per_order: tt.max_per_order,
+              max_per_buyer: tt.max_per_buyer,
               sales_start_at: tt.sales_start_at,
               sales_end_at: tt.sales_end_at
             }

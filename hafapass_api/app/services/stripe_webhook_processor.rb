@@ -56,6 +56,8 @@ class StripeWebhookProcessor
       process_cancellation!(payment)
     when "charge.refunded"
       process_refund!(receipt, payment, object)
+    when "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"
+      process_dispute!(receipt, payment, object)
     else
       receipt.update!(status: :ignored, processed_at: Time.current)
       return
@@ -179,6 +181,53 @@ class StripeWebhookProcessor
       provider_refund_id: provider_refund_id(object) || "webhook_re_#{receipt.provider_event_id}",
       idempotency_key: "webhook:#{receipt.provider_event_id}:refund",
     )
+  end
+
+  def process_dispute!(receipt, payment, object)
+    unless payment
+      ReconciliationException.create!(webhook_event: receipt, code: "disputed_payment_not_found")
+      return
+    end
+
+    provider_id = value(object, :id)
+    dispute = Dispute.find_or_initialize_by(provider: "stripe", provider_dispute_id: provider_id)
+    provider_status = value(object, :status).to_s
+    status = if event.type == "charge.dispute.closed"
+      provider_status == "won" ? :won : :lost
+    else
+      :open
+    end
+    if dispute.new_record?
+      dispute.assign_attributes(
+        order: payment.order,
+        payment: payment,
+        amount_cents: value(object, :amount).to_i,
+        currency: value(object, :currency).to_s.downcase.presence || payment.currency,
+        opened_at: receipt.provider_created_at || Time.current
+      )
+    end
+    dispute.assign_attributes(
+      reason: value(object, :reason),
+      status: status,
+      closed_at: status == :open ? nil : Time.current,
+      provider_payload: { status: provider_status }.compact
+    )
+    dispute.save!
+    cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
+  end
+
+  def cancel_disputed_tickets!(order, dispute)
+    order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).find_each do |ticket|
+      ticket.release_inventory!
+      ticket.update!(
+        status: :cancelled,
+        cancelled_at: Time.current,
+        cancellation_reason: "payment_dispute_lost",
+        scan_credential_version: ticket.scan_credential_version + 1
+      )
+    end
+    order.event.notify_waitlist_if_available
+    dispute
   end
 
   def provider_refund_id(object)

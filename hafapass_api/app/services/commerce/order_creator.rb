@@ -6,7 +6,7 @@ module Commerce
 
     class CheckoutError < StandardError; end
 
-    Result = Data.define(:order, :payment, :payment_intent)
+    Result = Data.define(:order, :payment, :payment_intent, :guest_access_token)
 
     def self.call(**)
       new(**).call
@@ -91,7 +91,9 @@ module Commerce
       end
 
       intent = create_provider_payment!(order, payment)
-      Result.new(order: order.reload, payment: payment&.reload, payment_intent: intent)
+      order.reload
+      guest_access_token = GuestOrderAccess.issue!(order) if order.user_id.nil?
+      Result.new(order: order, payment: payment&.reload, payment_intent: intent, guest_access_token: guest_access_token)
     rescue ActiveRecord::RecordInvalid => e
       raise CheckoutError, e.record.errors.full_messages.to_sentence
     end
@@ -124,6 +126,7 @@ module Commerce
         if ticket_type.max_per_order && quantity > ticket_type.max_per_order
           raise CheckoutError, "Maximum #{ticket_type.max_per_order} tickets per order for #{ticket_type.name}"
         end
+        enforce_buyer_limit!(ticket_type, quantity)
 
         tier = complimentary ? nil : ticket_type.active_pricing_tier
         tier&.lock!
@@ -135,6 +138,24 @@ module Commerce
           quantity: quantity
         }
       end
+    end
+
+    def enforce_buyer_limit!(ticket_type, requested_quantity)
+      return if ticket_type.max_per_buyer.blank?
+
+      normalized_email = buyer_email.to_s.strip.downcase
+      completed_quantity = Ticket.joins(:order)
+        .where(ticket_type: ticket_type, status: [:issued, :checked_in])
+        .where("LOWER(orders.buyer_email) = ?", normalized_email)
+        .count
+      held_quantity = InventoryHold.joins(:order).current
+        .where(ticket_type: ticket_type)
+        .where("LOWER(orders.buyer_email) = ?", normalized_email)
+        .sum(:quantity)
+      remaining = [ticket_type.max_per_buyer - completed_quantity - held_quantity, 0].max
+      return if requested_quantity <= remaining
+
+      raise CheckoutError, "Purchase limit is #{ticket_type.max_per_buyer} tickets per buyer for #{ticket_type.name}"
     end
 
     def enforce_pricing_tier_capacity!(tier, requested_quantity)
@@ -159,7 +180,7 @@ module Commerce
       subtotal_cents = selections.sum { |selection| selection[:unit_price_cents] * selection[:quantity] }
       settings = SiteSetting.instance
       ticket_count = selections.sum { |selection| selection[:quantity] }
-      service_fee_cents = if service_fee
+      service_fee_cents = if service_fee && subtotal_cents.positive?
         (subtotal_cents * (settings.service_fee_percent / 100.0)).round +
           (ticket_count * settings.service_fee_flat_cents)
       else

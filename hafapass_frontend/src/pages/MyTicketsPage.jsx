@@ -217,7 +217,7 @@ export default function MyTicketsPage() {
                         className="flex items-center justify-between px-4 sm:px-5 py-3 min-h-[52px] hover:bg-neutral-50 transition-colors"
                       >
                         <Link
-                          to={`/tickets/${ticket.qr_code}`}
+                          to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
                           className="flex items-center space-x-3 flex-1 min-w-0"
                         >
                           <div className="flex-shrink-0">
@@ -233,14 +233,14 @@ export default function MyTicketsPage() {
                         <div className="flex items-center space-x-2">
                           {getStatusBadge(ticket.status)}
                           <a
-                            href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${ticket.qr_code}/download`}
+                            href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${encodeURIComponent(ticket.display_credential)}/download`}
                             className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
                             title="Download PDF"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Download className="h-4 w-4" />
                           </a>
-                          <Link to={`/tickets/${ticket.qr_code}`}>
+                          <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}>
                             <ChevronRight className="h-4 w-4 text-neutral-400" />
                           </Link>
                         </div>

@@ -6,7 +6,7 @@ import {
   useElements,
 } from '@stripe/react-stripe-js'
 
-export default function PaymentForm({ totalCents, onSuccess, onError, submitting, setSubmitting }) {
+export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError, submitting, setSubmitting }) {
   const stripe = useStripe()
   const elements = useElements()
   const [paymentError, setPaymentError] = useState(null)
@@ -28,7 +28,7 @@ export default function PaymentForm({ totalCents, onSuccess, onError, submitting
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: window.location.origin + '/orders/confirmation',
+        return_url: returnUrl,
       },
       redirect: 'if_required',
     })
@@ -41,11 +41,13 @@ export default function PaymentForm({ totalCents, onSuccess, onError, submitting
       }
       setSubmitting(false)
       if (onError) onError(error)
-    } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+    } else if (paymentIntent) {
+      // Stripe may return a processing intent while the webhook is still
+      // authoritative. Move the buyer to the confirmation page so it can poll
+      // the order instead of leaving them on a form they might submit twice.
       if (onSuccess) onSuccess(paymentIntent)
     } else {
-      // Payment requires additional action or is processing
-      setStatusMessage('Payment is processing. You will receive confirmation shortly.')
+      setStatusMessage('We could not confirm the payment status. Please refresh before trying again.')
       setSubmitting(false)
     }
   }

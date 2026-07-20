@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, Tag, X, Loader2, Calendar, MapPin } from 'lucide-react'
+import { ArrowLeft, Check, Tag, X, Loader2, Calendar, MapPin, Timer } from 'lucide-react'
 import apiClient from '../api/client'
 import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { clearActiveCheckout, getActiveCheckout, orderAccessHeaders, saveActiveCheckout, saveOrderAccess } from '../utils/orderAccess'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -43,6 +44,12 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
   const [step, setStep] = useState('info')
+  const [secondsRemaining, setSecondsRemaining] = useState(null)
+
+  useEffect(() => {
+    const activeOrderId = getActiveCheckout(slug)
+    if (activeOrderId) navigate(`/orders/${activeOrderId}/confirmation`, { replace: true })
+  }, [navigate, slug])
 
   useEffect(() => {
     apiClient.get('/config')
@@ -65,6 +72,17 @@ export default function CheckoutPage() {
         .catch(() => { setError('Unable to load event details.'); setLoading(false) })
     }
   }, [slug, event, lineItems, navigate])
+
+  useEffect(() => {
+    if (!orderData?.expires_at || step !== 'payment') return undefined
+
+    const updateCountdown = () => {
+      setSecondsRemaining(Math.max(0, Math.ceil((new Date(orderData.expires_at).getTime() - Date.now()) / 1000)))
+    }
+    updateCountdown()
+    const timer = window.setInterval(updateCountdown, 1000)
+    return () => window.clearInterval(timer)
+  }, [orderData?.expires_at, step])
 
   const formatPrice = (cents) => cents === 0 ? t('events.free') : `$${(cents / 100).toFixed(2)}`
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
@@ -134,6 +152,8 @@ export default function CheckoutPage() {
       }
       const response = await apiClient.post('/orders', payload)
       const order = response.data
+      saveOrderAccess(order.id, order.guest_access_token)
+      saveActiveCheckout(slug, order.id)
 
       if (order.client_secret && order.stripe_publishable_key) {
         setClientSecret(order.client_secret)
@@ -199,9 +219,17 @@ export default function CheckoutPage() {
 
   const totalTickets = orderLines.reduce((s, l) => s + l.quantity, 0)
   const subtotalCents = orderLines.reduce((s, l) => s + l.lineTotal, 0)
-  const serviceFeeCents = Math.round(subtotalCents * (feePercent / 100)) + (totalTickets * feeFlatCents)
+  const serviceFeeCents = subtotalCents === 0 ? 0 : Math.round(subtotalCents * (feePercent / 100)) + (totalTickets * feeFlatCents)
   const discountCents = promoData?.discount_cents || 0
   const totalCents = Math.max(subtotalCents + serviceFeeCents - discountCents, 0)
+  const displayedSubtotal = orderData?.subtotal_cents ?? subtotalCents
+  const displayedFee = orderData?.service_fee_cents ?? serviceFeeCents
+  const displayedDiscount = orderData?.discount_cents ?? discountCents
+  const displayedTotal = orderData?.total_cents ?? totalCents
+  const checkoutExpired = secondsRemaining === 0
+  const countdownLabel = secondsRemaining === null
+    ? null
+    : `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, '0')}`
 
   const paymentMode = config?.payment_mode || 'simulate'
   const isSimulate = paymentMode === 'simulate'
@@ -273,19 +301,19 @@ export default function CheckoutPage() {
           </div>
           <hr className="border-neutral-100 my-4" />
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.subtotal')}</span><span>{formatPrice(subtotalCents)}</span></div>
-            <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.serviceFee')}</span><span>{formatPrice(serviceFeeCents)}</span></div>
-            {discountCents > 0 && (
+            <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
+            <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.serviceFee')}</span><span>{formatPrice(displayedFee)}</span></div>
+            {displayedDiscount > 0 && (
               <div className="flex justify-between text-emerald-600">
                 <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {promoData.code}</span>
-                <span>-{formatPrice(discountCents)}</span>
+                <span>-{formatPrice(displayedDiscount)}</span>
               </div>
             )}
           </div>
           <hr className="border-neutral-100 my-4" />
           <div className="flex justify-between items-center">
             <span className="font-bold text-lg text-neutral-900">{t('checkout.total')}</span>
-            <span className="font-bold text-lg text-neutral-900">{formatPrice(totalCents)}</span>
+            <span className="font-bold text-lg text-neutral-900">{formatPrice(displayedTotal)}</span>
           </div>
         </div>
 
@@ -366,7 +394,7 @@ export default function CheckoutPage() {
               <button type="submit" disabled={submitting} className="w-full mt-6 btn-primary text-base !py-4 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0 transition-all duration-200">
                 {submitting
                   ? (isSimulate ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
-                  : (isSimulate ? `${t('checkout.placeOrder')} \u2014 ${formatPrice(totalCents)}` : `${t('checkout.continueToPayment')} \u2014 ${formatPrice(totalCents)}`)}
+                  : (isSimulate ? `${t('checkout.placeOrder')} \u2014 ${formatPrice(displayedTotal)}` : `${t('checkout.continueToPayment')} \u2014 ${formatPrice(displayedTotal)}`)}
               </button>
             </form>
           </div>
@@ -379,11 +407,12 @@ export default function CheckoutPage() {
               <h2 className="text-base font-semibold text-neutral-900">Payment</h2>
               <button onClick={() => {
                 if (orderId) {
-                  apiClient.post(`/orders/${orderId}/cancel`).catch((err) => {
+                  apiClient.post(`/orders/${orderId}/cancel`, {}, { headers: orderAccessHeaders(orderId) }).catch((err) => {
                   alert(`Warning: Could not cancel order. ${err.response?.data?.error || 'Please contact support.'}`)
                   console.warn('Failed to cancel order:', err.response?.data?.error || err.message)
                 })
                 }
+                clearActiveCheckout(slug)
                 setStep('info')
                 setClientSecret(null)
                 setStripePublishableKey(null)
@@ -395,10 +424,24 @@ export default function CheckoutPage() {
             <div className="bg-neutral-50 rounded-xl p-3 mb-4 text-sm text-neutral-600">
               <span className="font-medium">{buyerName}</span> &middot; {buyerEmail}
             </div>
+            {countdownLabel && (
+              <div className={`mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${checkoutExpired ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                <Timer className="h-4 w-4" />
+                {checkoutExpired ? 'Your ticket hold expired. Return to the event to start again.' : `Tickets held for ${countdownLabel}`}
+              </div>
+            )}
             <PaymentModeBanner mode={paymentMode} />
             <div className="relative z-[60]">
               <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret}>
-                <PaymentForm totalCents={totalCents} onSuccess={handlePaymentSuccess} submitting={submitting} setSubmitting={setSubmitting} />
+                {!checkoutExpired && (
+                  <PaymentForm
+                    totalCents={displayedTotal}
+                    returnUrl={`${window.location.origin}/orders/${orderId}/confirmation`}
+                    onSuccess={handlePaymentSuccess}
+                    submitting={submitting}
+                    setSubmitting={setSubmitting}
+                  />
+                )}
               </StripeProvider>
             </div>
           </div>

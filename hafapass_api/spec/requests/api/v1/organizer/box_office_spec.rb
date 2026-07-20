@@ -26,7 +26,8 @@ RSpec.describe "Api::V1::Organizer::BoxOffice", type: :request do
       expect(json["payment_method"]).to eq("door_cash")
       expect(json["status"]).to eq("completed")
       expect(json["tickets"].length).to eq(2)
-      expect(json["tickets"].first["qr_code"]).to be_present
+      expect(json["tickets"].first["scan_credential"]).to be_present
+      expect(json["tickets"].first["display_credential"]).to be_present
     end
 
     it "creates order with walk-in defaults when no buyer info provided" do

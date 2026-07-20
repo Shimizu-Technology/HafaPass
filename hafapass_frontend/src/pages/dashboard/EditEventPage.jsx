@@ -71,6 +71,7 @@ export default function EditEventPage() {
   const [recurrenceCount, setRecurrenceCount] = useState(4)
   const [generatingRecurrences, setGeneratingRecurrences] = useState(false)
   const [recurrenceChildren, setRecurrenceChildren] = useState([])
+  const [changeReason, setChangeReason] = useState('')
 
   const [form, setForm] = useState({
     title: '',
@@ -141,6 +142,12 @@ export default function EditEventPage() {
     setSuccessMessage(null)
   }
 
+  const scheduleChanged = Boolean(event) && (
+    form.starts_at !== toEventLocalInput(event.starts_at, event.timezone) ||
+    form.ends_at !== toEventLocalInput(event.ends_at, event.timezone) ||
+    form.doors_open_at !== toEventLocalInput(event.doors_open_at, event.timezone)
+  )
+
   const validate = () => {
     const errors = {}
     if (!form.title.trim()) errors.title = 'Title is required'
@@ -161,6 +168,9 @@ export default function EditEventPage() {
       if (!Number.isInteger(cap) || cap < 1) {
         errors.max_capacity = 'Max capacity must be a positive integer'
       }
+    }
+    if (scheduleChanged && ['published', 'postponed'].includes(event?.status) && !changeReason.trim()) {
+      errors.change_reason = 'Explain the schedule change for ticket holders'
     }
     setFormErrors(errors)
     return Object.keys(errors).length === 0
@@ -192,8 +202,10 @@ export default function EditEventPage() {
         recurrence_end_date: form.recurrence_end_date || null,
         show_attendees: form.show_attendees
       }
+      if (scheduleChanged) payload.change_reason = changeReason.trim() || undefined
       const res = await apiClient.put(`/organizer/events/${id}`, payload)
       setEvent(res.data)
+      setChangeReason('')
       setSuccessMessage('Event updated successfully.')
     } catch (err) {
       const msg = err.response?.data?.errors?.join(', ') || err.response?.data?.error || 'Failed to update event'
@@ -525,6 +537,14 @@ export default function EditEventPage() {
               <input id="doors_open_at" type="datetime-local" value={form.doors_open_at} onChange={(e) => updateField('doors_open_at', e.target.value)} className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`} disabled={submitting} />
               {formErrors.doors_open_at && <p className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
             </div>
+            {scheduleChanged && ['published', 'postponed'].includes(event?.status) && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <label htmlFor="change_reason" className="block text-sm font-semibold text-amber-950">Reason for schedule change <span className="text-red-500">*</span></label>
+                <p className="mb-2 mt-1 text-xs text-amber-800">Ticket holders will see this explanation and can keep their tickets or request a refund.</p>
+                <textarea id="change_reason" rows="3" value={changeReason} onChange={(e) => { setChangeReason(e.target.value); setFormErrors(prev => ({ ...prev, change_reason: null })) }} className={`input ${formErrors.change_reason ? 'input-error' : ''}`} placeholder="Explain what changed and why" disabled={submitting} />
+                {formErrors.change_reason && <p className="mt-1 text-sm text-red-600">{formErrors.change_reason}</p>}
+              </div>
+            )}
           </div>
         </section>
 

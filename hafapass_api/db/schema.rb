@@ -14,6 +14,55 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
+  create_table "disputes", force: :cascade do |t|
+    t.integer "amount_cents", null: false
+    t.datetime "closed_at"
+    t.datetime "created_at", null: false
+    t.string "currency", default: "usd", null: false
+    t.datetime "opened_at", null: false
+    t.bigint "order_id", null: false
+    t.bigint "payment_id"
+    t.string "provider", default: "stripe", null: false
+    t.string "provider_dispute_id", null: false
+    t.jsonb "provider_payload", default: {}, null: false
+    t.string "reason"
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["order_id"], name: "index_disputes_on_order_id"
+    t.index ["payment_id"], name: "index_disputes_on_payment_id"
+    t.index ["provider", "provider_dispute_id"], name: "index_disputes_on_provider_and_provider_dispute_id", unique: true
+    t.check_constraint "amount_cents >= 0", name: "disputes_amount_nonnegative"
+    t.check_constraint "char_length(currency::text) = 3", name: "disputes_currency_length"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "disputes_status_valid"
+  end
+
+  create_table "event_change_responses", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "decision", null: false
+    t.bigint "event_change_id", null: false
+    t.bigint "order_id", null: false
+    t.datetime "responded_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_change_id", "order_id"], name: "idx_event_change_responses_unique", unique: true
+    t.index ["event_change_id"], name: "index_event_change_responses_on_event_change_id"
+    t.index ["order_id"], name: "index_event_change_responses_on_order_id"
+  end
+
+  create_table "event_changes", force: :cascade do |t|
+    t.bigint "actor_user_id"
+    t.jsonb "after_data", default: {}, null: false
+    t.jsonb "before_data", default: {}, null: false
+    t.string "change_type", null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.datetime "occurred_at", null: false
+    t.string "reason"
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_event_changes_on_actor_user_id"
+    t.index ["event_id", "occurred_at"], name: "index_event_changes_on_event_id_and_occurred_at"
+    t.index ["event_id"], name: "index_event_changes_on_event_id"
+  end
+
   create_table "event_state_changes", force: :cascade do |t|
     t.string "action", null: false
     t.bigint "actor_user_id", null: false
@@ -124,6 +173,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "inventory_holds_status_valid"
   end
 
+  create_table "message_deliveries", force: :cascade do |t|
+    t.integer "attempts", default: 0, null: false
+    t.string "channel", default: "email", null: false
+    t.datetime "created_at", null: false
+    t.text "last_error"
+    t.bigint "order_id"
+    t.string "provider_id"
+    t.string "recipient", null: false
+    t.bigint "requested_by_id"
+    t.datetime "sent_at"
+    t.integer "status", default: 0, null: false
+    t.string "template", null: false
+    t.bigint "ticket_id"
+    t.datetime "updated_at", null: false
+    t.index ["order_id", "created_at"], name: "index_message_deliveries_on_order_id_and_created_at"
+    t.index ["order_id"], name: "index_message_deliveries_on_order_id"
+    t.index ["requested_by_id"], name: "index_message_deliveries_on_requested_by_id"
+    t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
+    t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
+    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL", name: "message_deliveries_subject_present"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "message_deliveries_status_valid"
+  end
+
   create_table "order_items", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "currency", default: "usd", null: false
@@ -166,8 +238,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.bigint "event_id", null: false
     t.datetime "expired_at"
     t.datetime "expires_at"
+    t.datetime "guest_access_expires_at"
+    t.datetime "guest_access_revoked_at"
+    t.integer "guest_access_version", default: 1, null: false
     t.string "payment_method"
     t.bigint "promo_code_id"
+    t.string "reference", null: false
     t.integer "refund_amount_cents", default: 0, null: false
     t.string "refund_reason"
     t.datetime "refunded_at"
@@ -184,12 +260,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.index ["event_id"], name: "index_orders_on_event_id"
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
+    t.index ["reference"], name: "index_orders_on_reference", unique: true
     t.index ["source"], name: "index_orders_on_source"
     t.index ["stripe_payment_intent_id"], name: "index_orders_on_unique_payment_intent", unique: true, where: "(stripe_payment_intent_id IS NOT NULL)"
     t.index ["user_id"], name: "index_orders_on_user_id"
     t.check_constraint "char_length(currency::text) = 3", name: "orders_currency_length"
     t.check_constraint "discount_cents <= (subtotal_cents + service_fee_cents)", name: "orders_discount_within_charge"
     t.check_constraint "discount_cents >= 0", name: "orders_discount_nonnegative"
+    t.check_constraint "guest_access_version > 0", name: "orders_guest_access_version_positive"
     t.check_constraint "refund_amount_cents <= total_cents", name: "orders_refund_within_total"
     t.check_constraint "refund_amount_cents >= 0", name: "orders_refund_nonnegative"
     t.check_constraint "service_fee_cents >= 0", name: "orders_service_fee_nonnegative"
@@ -354,6 +432,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.check_constraint "tax_cents >= 0", name: "refund_items_tax_nonnegative"
   end
 
+  create_table "refund_tickets", force: :cascade do |t|
+    t.integer "amount_cents", null: false
+    t.datetime "created_at", null: false
+    t.bigint "refund_id", null: false
+    t.bigint "ticket_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["refund_id"], name: "index_refund_tickets_on_refund_id"
+    t.index ["ticket_id"], name: "index_refund_tickets_on_ticket_id", unique: true
+    t.check_constraint "amount_cents >= 0", name: "refund_tickets_amount_nonnegative"
+  end
+
   create_table "refunds", force: :cascade do |t|
     t.integer "amount_cents", null: false
     t.datetime "created_at", null: false
@@ -399,6 +488,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.datetime "created_at", null: false
     t.text "description"
     t.bigint "event_id", null: false
+    t.integer "max_per_buyer"
     t.integer "max_per_order", default: 10
     t.string "name", null: false
     t.integer "price_cents"
@@ -409,6 +499,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.integer "sort_order", default: 0
     t.datetime "updated_at", null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
+    t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
     t.check_constraint "max_per_order IS NULL OR max_per_order > 0", name: "ticket_types_max_per_order_positive"
     t.check_constraint "price_cents >= 0", name: "ticket_types_price_nonnegative"
     t.check_constraint "quantity_available > 0", name: "ticket_types_quantity_positive"
@@ -419,13 +510,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
   create_table "tickets", force: :cascade do |t|
     t.string "attendee_email"
     t.string "attendee_name"
+    t.string "cancellation_reason"
+    t.datetime "cancelled_at"
     t.datetime "checked_in_at"
     t.datetime "created_at", null: false
+    t.integer "display_credential_version", default: 1, null: false
     t.bigint "event_id", null: false
     t.bigint "order_id", null: false
     t.bigint "order_item_id"
     t.bigint "pricing_tier_id"
     t.string "qr_code"
+    t.integer "scan_credential_version", default: 1, null: false
     t.integer "status", default: 0, null: false
     t.bigint "ticket_type_id", null: false
     t.datetime "updated_at", null: false
@@ -435,6 +530,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.index ["pricing_tier_id"], name: "index_tickets_on_pricing_tier_id"
     t.index ["qr_code"], name: "index_tickets_on_qr_code", unique: true
     t.index ["ticket_type_id"], name: "index_tickets_on_ticket_type_id"
+    t.check_constraint "display_credential_version > 0", name: "tickets_display_version_positive"
+    t.check_constraint "scan_credential_version > 0", name: "tickets_scan_version_positive"
   end
 
   create_table "users", force: :cascade do |t|
@@ -488,6 +585,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "webhook_events_status_valid"
   end
 
+  add_foreign_key "disputes", "orders", on_delete: :restrict
+  add_foreign_key "disputes", "payments", on_delete: :restrict
+  add_foreign_key "event_change_responses", "event_changes", on_delete: :restrict
+  add_foreign_key "event_change_responses", "orders", on_delete: :restrict
+  add_foreign_key "event_changes", "events", on_delete: :restrict
+  add_foreign_key "event_changes", "users", column: "actor_user_id", on_delete: :nullify
   add_foreign_key "event_state_changes", "events"
   add_foreign_key "event_state_changes", "users", column: "actor_user_id"
   add_foreign_key "events", "organizer_profiles"
@@ -501,6 +604,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
   add_foreign_key "inventory_holds", "orders", on_delete: :restrict
   add_foreign_key "inventory_holds", "pricing_tiers", on_delete: :restrict
   add_foreign_key "inventory_holds", "ticket_types", on_delete: :restrict
+  add_foreign_key "message_deliveries", "orders", on_delete: :restrict
+  add_foreign_key "message_deliveries", "tickets", on_delete: :restrict
+  add_foreign_key "message_deliveries", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "order_items", "orders", on_delete: :restrict
   add_foreign_key "order_items", "pricing_tiers", on_delete: :restrict
   add_foreign_key "order_items", "ticket_types", on_delete: :restrict
@@ -521,6 +627,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
   add_foreign_key "reconciliation_exceptions", "webhook_events", on_delete: :restrict
   add_foreign_key "refund_items", "order_items", on_delete: :restrict
   add_foreign_key "refund_items", "refunds", on_delete: :restrict
+  add_foreign_key "refund_tickets", "refunds", on_delete: :restrict
+  add_foreign_key "refund_tickets", "tickets", on_delete: :restrict
   add_foreign_key "refunds", "orders", on_delete: :restrict
   add_foreign_key "refunds", "payments", on_delete: :restrict
   add_foreign_key "refunds", "users", column: "requested_by_id", on_delete: :nullify

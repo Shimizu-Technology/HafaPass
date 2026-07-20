@@ -13,7 +13,7 @@ class InventoryHold < ApplicationRecord
   validates :expires_at, presence: true
   validates :order_item_id, uniqueness: true
 
-  scope :current, -> { active.where("expires_at > ?", Time.current) }
+  scope :current, -> { active.where("inventory_holds.expires_at > ?", Time.current) }
   scope :due, -> { active.where(expires_at: ..Time.current) }
 
   def consume!(at: Time.current)

@@ -68,7 +68,7 @@ module Api
         def ticket_type_params
           params.permit(
             :name, :description, :price_cents, :quantity_available,
-            :max_per_order, :sales_start_at, :sales_end_at, :sort_order
+            :max_per_order, :max_per_buyer, :sales_start_at, :sales_end_at, :sort_order
           )
         end
 
@@ -95,6 +95,7 @@ module Api
             available_quantity: tt.available_quantity,
             sold_out: tt.sold_out?,
             max_per_order: tt.max_per_order,
+            max_per_buyer: tt.max_per_buyer,
             sales_start_at: tt.sales_start_at,
             sales_end_at: tt.sales_end_at,
             sort_order: tt.sort_order,

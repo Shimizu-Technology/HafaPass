@@ -11,12 +11,45 @@ class EmailService
     # ── Async Methods (use these from controllers) ──────────────────
     # These enqueue background jobs for better performance
 
-    def send_order_confirmation_async(order)
-      SendOrderConfirmationJob.perform_later(order.id)
+    def send_order_confirmation_async(order, requested_by: nil, template: "order_confirmation")
+      delivery = create_delivery(order: order, requested_by: requested_by, template: template, recipient: order.buyer_email)
+      SendOrderConfirmationJob.perform_later(order.id, delivery.id)
+      delivery
+    rescue StandardError => e
+      record_enqueue_failure(delivery, e)
+      raise
     end
 
-    def send_ticket_email_async(ticket)
-      SendTicketEmailJob.perform_later(ticket.id)
+    def send_ticket_email_async(ticket, requested_by: nil)
+      delivery = create_delivery(ticket: ticket, order: ticket.order, requested_by: requested_by,
+        template: "ticket_delivery", recipient: ticket.attendee_email)
+      SendTicketEmailJob.perform_later(ticket.id, delivery.id)
+      delivery
+    rescue StandardError => e
+      record_enqueue_failure(delivery, e)
+      raise
+    end
+
+    def send_order_recovery_async(order)
+      delivery = create_delivery(order: order, template: "order_recovery", recipient: order.buyer_email)
+      SendOrderRecoveryJob.perform_later(order.id, delivery.id)
+      delivery
+    rescue StandardError => e
+      record_enqueue_failure(delivery, e)
+      raise
+    end
+
+    def send_event_change_notifications_async(change)
+      change.event.orders.where(status: [:completed, :partially_refunded]).find_each do |order|
+        delivery = nil
+        delivery = create_delivery(order: order, template: "event_change", recipient: order.buyer_email)
+        SendEventChangeNotificationJob.perform_later(change.id, order.id, delivery.id)
+      rescue StandardError => e
+        record_enqueue_failure(delivery, e)
+        Rails.logger.error(
+          "[EventChangeNotification] Unable to queue change=#{change.id} order=#{order.id}: #{e.class}"
+        )
+      end
     end
 
     def send_refund_notification_async(order)
@@ -41,6 +74,31 @@ class EmailService
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "order_confirmation", order_id: order.id)
     end
 
+    def send_order_recovery(order)
+      html = build_order_recovery_html(order)
+      deliver(
+        to: order.buyer_email,
+        subject: "Access your HafaPass order #{order.reference}",
+        html: html,
+        tag: "order_recovery",
+        order_id: order.id
+      )
+    end
+
+    def send_event_change_notification(change, order)
+      action = change.change_type.humanize.downcase
+      html = email_wrapper("Event #{action}") do
+        <<~HTML
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ERB::Util.html_escape(change.event.title)} was #{action}</h2>
+          <p style="color: #6b7280; margin: 0 0 20px;">#{ERB::Util.html_escape(change.reason || 'The organizer updated this event.')}</p>
+          <p style="color: #6b7280; margin: 0 0 24px;">Review the latest details and choose whether to keep your tickets or request an eligible refund.</p>
+          <a href="#{order_access_url(order)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">Review order #{order.reference}</a>
+        HTML
+      end
+      deliver(to: order.buyer_email, subject: "Important update: #{change.event.title}", html: html,
+        tag: "event_change", order_id: order.id)
+    end
+
     # ── Individual Ticket Email ─────────────────────────────────────
     def send_ticket_email(ticket)
       event = ticket.event
@@ -48,7 +106,7 @@ class EmailService
       html = build_ticket_email_html(ticket, event, ticket_type)
       subject = "Your Ticket - #{event.title}"
 
-      deliver(to: ticket.attendee_email, subject: subject, html: html, tag: "ticket_delivery", ticket_qr: ticket.qr_code)
+      deliver(to: ticket.attendee_email, subject: subject, html: html, tag: "ticket_delivery", ticket_id: ticket.id)
     end
 
     # ── Refund Notification ─────────────────────────────────────────
@@ -85,6 +143,22 @@ class EmailService
     end
 
     private
+
+    def create_delivery(order: nil, ticket: nil, requested_by: nil, template:, recipient:)
+      MessageDelivery.create!(
+        order: order,
+        ticket: ticket,
+        requested_by: requested_by,
+        channel: "email",
+        template: template,
+        recipient: recipient,
+        status: :queued
+      )
+    end
+
+    def record_enqueue_failure(delivery, error)
+      delivery&.update(status: :failed, last_error: "#{error.class}: #{error.message}")
+    end
 
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, **log_meta)
@@ -216,6 +290,20 @@ class EmailService
       end
     end
 
+    def build_order_recovery_html(order)
+      link = order_access_url(order)
+      email_wrapper("Order access") do
+        <<~HTML
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Access your HafaPass order</h2>
+          <p style="color: #6b7280; margin: 0 0 24px;">Use the secure link below to view the latest payment and ticket status for order #{ERB::Util.html_escape(order.reference)}.</p>
+          <p style="margin: 0 0 20px;">
+            <a href="#{link}" style="display: inline-block; background: #0e7c7b; color: white; padding: 14px 28px; border-radius: 10px; text-decoration: none; font-weight: 600;">View Order</a>
+          </p>
+          <p style="color: #6b7280; font-size: 13px; margin: 0;">This link expires in 30 days. Request a new one if it stops working.</p>
+        HTML
+      end
+    end
+
     def build_refund_notification_html(order, event)
       amount_str = if order.refund_amount_cents >= order.total_cents
         "Full refund"
@@ -284,7 +372,13 @@ class EmailService
     end
 
     def ticket_url(ticket)
-      "#{frontend_url}/tickets/#{ticket.qr_code}"
+      "#{frontend_url}/tickets/#{ticket.display_credential}"
+    end
+
+    def order_access_url(order)
+      token = order.user_id.nil? ? GuestOrderAccess.issue!(order) : nil
+      base = "#{frontend_url}/orders/#{order.id}/confirmation"
+      token ? "#{base}?guest_token=#{ERB::Util.url_encode(token)}" : base
     end
 
     def frontend_url

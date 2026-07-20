@@ -118,4 +118,36 @@ RSpec.describe Commerce::OrderCreator do
 
     expect(item.reload).to have_attributes(name: purchased_name, unit_price_cents: 1000)
   end
+
+  it "keeps a free ticket fully free with no flat service fee" do
+    ticket_type.update!(price_cents: 0)
+    allow(StripeService).to receive(:payment_enabled?).and_return(true)
+
+    result = described_class.call(
+      event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 2 }],
+      buyer_email: "free@example.com",
+      buyer_name: "Free Buyer"
+    )
+
+    expect(result.order).to have_attributes(subtotal_cents: 0, service_fee_cents: 0, total_cents: 0, status: "completed")
+    expect(result.payment).to be_nil
+    expect(result.payment_intent).to be_nil
+  end
+
+  it "enforces a buyer limit across prior purchases using normalized email" do
+    ticket_type.update!(max_per_buyer: 2, quantity_sold: 1)
+    previous_order = create(:order, event: event, buyer_email: "BUYER@EXAMPLE.COM")
+    create(:ticket, order: previous_order, event: event, ticket_type: ticket_type)
+    allow(StripeService).to receive(:payment_enabled?).and_return(false)
+
+    expect do
+      described_class.call(
+        event: event,
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 2 }],
+        buyer_email: " buyer@example.com ",
+        buyer_name: "Buyer"
+      )
+    end.to raise_error(described_class::CheckoutError, /Purchase limit is 2/)
+  end
 end
