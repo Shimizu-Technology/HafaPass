@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_20_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -204,7 +204,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_210000) do
     t.index ["organization_id"], name: "index_connected_accounts_on_organization_id"
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
-    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying::text, 'manual'::character varying::text, 'stripe'::character varying::text, 'legacy_manual'::character varying::text])", name: "connected_accounts_provider_valid"
+    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying]::text[])", name: "connected_accounts_provider_valid"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
   end
 
@@ -390,25 +390,58 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_210000) do
 
   create_table "message_deliveries", force: :cascade do |t|
     t.integer "attempts", default: 0, null: false
+    t.datetime "bounced_at"
     t.string "channel", default: "email", null: false
+    t.datetime "complained_at"
     t.datetime "created_at", null: false
+    t.datetime "delivered_at"
+    t.bigint "event_id"
+    t.datetime "failed_at"
+    t.string "idempotency_key", null: false
     t.text "last_error"
+    t.datetime "last_event_at"
+    t.jsonb "metadata", default: {}, null: false
     t.bigint "order_id"
+    t.string "payload_digest"
+    t.string "provider", default: "resend", null: false
     t.string "provider_id"
     t.string "recipient", null: false
     t.bigint "requested_by_id"
     t.datetime "sent_at"
     t.integer "status", default: 0, null: false
+    t.datetime "suppressed_at"
     t.string "template", null: false
     t.bigint "ticket_id"
     t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_message_deliveries_on_event_id"
+    t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
     t.index ["order_id", "created_at"], name: "index_message_deliveries_on_order_id_and_created_at"
     t.index ["order_id"], name: "index_message_deliveries_on_order_id"
+    t.index ["provider_id"], name: "index_message_deliveries_on_provider_id"
     t.index ["requested_by_id"], name: "index_message_deliveries_on_requested_by_id"
+    t.index ["status", "updated_at"], name: "index_message_deliveries_on_status_and_updated_at"
     t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
     t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
-    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL", name: "message_deliveries_subject_present"
-    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "message_deliveries_status_valid"
+    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "message_deliveries_subject_present"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7])", name: "message_deliveries_status_valid"
+  end
+
+  create_table "message_provider_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_type", null: false
+    t.bigint "message_delivery_id"
+    t.datetime "occurred_at", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "processed_at"
+    t.text "processing_error"
+    t.string "provider", default: "resend", null: false
+    t.string "provider_event_id", null: false
+    t.string "provider_message_id"
+    t.datetime "received_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_delivery_id"], name: "index_message_provider_events_on_message_delivery_id"
+    t.index ["provider", "provider_event_id"], name: "index_message_provider_events_on_provider_event", unique: true
+    t.index ["provider_message_id", "occurred_at"], name: "idx_on_provider_message_id_occurred_at_71bff7dab0"
   end
 
   create_table "order_items", force: :cascade do |t|
@@ -445,6 +478,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_210000) do
     t.string "buyer_email"
     t.string "buyer_name"
     t.string "buyer_phone"
+    t.datetime "buyer_terms_accepted_at"
+    t.string "buyer_terms_digest"
+    t.string "buyer_terms_version"
     t.datetime "cancelled_at"
     t.datetime "completed_at"
     t.datetime "created_at", null: false
@@ -538,6 +574,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_210000) do
     t.bigint "organization_id", null: false
     t.boolean "payout_ready", default: false, null: false
     t.datetime "policy_accepted_at"
+    t.string "policy_digest"
+    t.string "policy_version"
     t.string "stripe_account_id"
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
@@ -855,6 +893,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_210000) do
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
   end
 
+  create_table "support_notes", force: :cascade do |t|
+    t.bigint "author_user_id", null: false
+    t.text "body", null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id"
+    t.bigint "order_id"
+    t.bigint "ticket_id"
+    t.datetime "updated_at", null: false
+    t.index ["author_user_id"], name: "index_support_notes_on_author_user_id"
+    t.index ["event_id", "created_at"], name: "index_support_notes_on_event_id_and_created_at"
+    t.index ["event_id"], name: "index_support_notes_on_event_id"
+    t.index ["order_id", "created_at"], name: "index_support_notes_on_order_id_and_created_at"
+    t.index ["order_id"], name: "index_support_notes_on_order_id"
+    t.index ["ticket_id", "created_at"], name: "index_support_notes_on_ticket_id_and_created_at"
+    t.index ["ticket_id"], name: "index_support_notes_on_ticket_id"
+    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "support_notes_subject_present"
+  end
+
   create_table "ticket_types", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "description"
@@ -1009,9 +1065,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_210000) do
   add_foreign_key "inventory_holds", "orders", on_delete: :restrict
   add_foreign_key "inventory_holds", "pricing_tiers", on_delete: :restrict
   add_foreign_key "inventory_holds", "ticket_types", on_delete: :restrict
+  add_foreign_key "message_deliveries", "events", on_delete: :restrict
   add_foreign_key "message_deliveries", "orders", on_delete: :restrict
   add_foreign_key "message_deliveries", "tickets", on_delete: :restrict
   add_foreign_key "message_deliveries", "users", column: "requested_by_id", on_delete: :nullify
+  add_foreign_key "message_provider_events", "message_deliveries", on_delete: :nullify
   add_foreign_key "order_items", "orders", on_delete: :restrict
   add_foreign_key "order_items", "pricing_tiers", on_delete: :restrict
   add_foreign_key "order_items", "ticket_types", on_delete: :restrict
@@ -1051,6 +1109,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_210000) do
   add_foreign_key "settlement_items", "settlements", on_delete: :restrict
   add_foreign_key "settlements", "events", on_delete: :restrict
   add_foreign_key "settlements", "organizations", on_delete: :restrict
+  add_foreign_key "support_notes", "events", on_delete: :restrict
+  add_foreign_key "support_notes", "orders", on_delete: :restrict
+  add_foreign_key "support_notes", "tickets", on_delete: :restrict
+  add_foreign_key "support_notes", "users", column: "author_user_id", on_delete: :restrict
   add_foreign_key "ticket_types", "events"
   add_foreign_key "tickets", "events"
   add_foreign_key "tickets", "order_items", on_delete: :restrict

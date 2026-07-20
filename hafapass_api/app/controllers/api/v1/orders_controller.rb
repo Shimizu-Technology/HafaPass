@@ -23,6 +23,13 @@ class Api::V1::OrdersController < ApplicationController
       return
     end
 
+    unless ActiveModel::Type::Boolean.new.cast(params[:terms_accepted]) &&
+        params[:terms_version].to_s == PolicyRegistry.buyer_terms[:version]
+      return render json: { error: "Accept the current HafaPass buyer terms before checkout" },
+        status: :unprocessable_entity
+    end
+
+    buyer_terms = PolicyRegistry.buyer_terms
     result = Commerce::OrderCreator.call(
       event: event,
       line_items: params[:line_items],
@@ -30,7 +37,10 @@ class Api::V1::OrdersController < ApplicationController
       buyer_name: params[:buyer_name],
       buyer_phone: params[:buyer_phone],
       user: @current_user,
-      promo_code_id: params[:promo_code_id]
+      promo_code_id: params[:promo_code_id],
+      buyer_terms_version: buyer_terms[:version],
+      buyer_terms_digest: buyer_terms[:digest],
+      buyer_terms_accepted_at: Time.current
     )
 
     response_payload = OrderPresenter.call(

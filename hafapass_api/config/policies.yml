@@ -1,0 +1,72 @@
+version: 2026-07-pilot-draft
+documents:
+  buyer-terms:
+    title: Buyer Terms
+    summary: The rules for purchasing, receiving, using, transferring, and requesting help with HafaPass tickets.
+    sections:
+      - heading: Your purchase
+        body: Event details, prices, fees, refund eligibility, and the organizer identity are shown before checkout. A ticket is issued only after payment is confirmed or a free or approved order is completed.
+      - heading: Ticket use
+        body: Keep ticket links and entry codes private. A ticket may be refused when it is cancelled, refunded, transferred, disputed, already used, or otherwise invalid.
+      - heading: Event responsibility
+        body: The event organizer is responsible for event content, venue access, schedules, age rules, and delivery of the event. HafaPass operates the ticketing platform and support tools.
+      - heading: Changes and disputes
+        body: Cancellation, postponement, reschedule, and refund rights follow the disclosed event policy and applicable law. Contact support promptly when an order or charge is incorrect.
+  organizer-agreement:
+    title: Organizer Agreement
+    summary: The operating responsibilities an organizer must accept before publishing on HafaPass.
+    sections:
+      - heading: Accurate listings
+        body: Organizers must publish accurate dates, Guam time, venue, accessibility, age, inventory, pricing, fee, and refund information and must have authority to operate the event.
+      - heading: Buyer obligations
+        body: Organizers must honor valid tickets, cooperate with support, communicate material changes, and fund refunds, disputes, taxes, reserves, and negative balances according to approved terms.
+      - heading: Operations and safety
+        body: Organizers remain responsible for permits, staffing, security, accessibility, emergency planning, venue rules, and legal compliance.
+      - heading: Platform controls
+        body: HafaPass may pause sales, hold payouts, preserve records, investigate risk, or remove prohibited events where needed to protect buyers or the platform.
+  privacy:
+    title: Privacy Policy
+    summary: What HafaPass collects, why it is used, and the controls around personal information.
+    sections:
+      - heading: Information collected
+        body: Account identifiers, contact details, order and ticket records, event interactions, support history, device and security signals, and provider references are collected as needed to operate the service. Card details remain with approved payment providers.
+      - heading: Use and sharing
+        body: Information is used for checkout, fulfillment, admission, fraud prevention, support, accounting, legal compliance, and privacy-safe analytics. It is shared only with relevant organizers and contracted providers for those purposes.
+      - heading: Security and choices
+        body: Access is role-limited and sensitive actions are audited. Buyers may request access, correction, export, or deletion where retention duties do not require preservation.
+      - heading: Contact
+        body: Privacy requests and suspected misuse should be sent to privacy@hafapass.com. Production launch remains gated on professional Guam and US privacy review.
+  refunds:
+    title: Refund & Cancellation Policy
+    summary: How event changes, ticket cancellations, refunds, fees, and timing are handled.
+    sections:
+      - heading: Before purchase
+        body: Each event must disclose its refund rules. HafaPass shows totals and fees before payment and records the version accepted at checkout.
+      - heading: Event cancellation or change
+        body: Cancelled events require an organizer-approved refund workflow. Postponed or materially rescheduled events provide an accept-or-request-refund path when eligible.
+      - heading: Ticket-level requests
+        body: Unused active tickets may be cancelled or refunded only when the event policy and platform controls allow it. Used, transferred, disputed, or already-refunded value cannot be refunded twice.
+      - heading: Timing
+        body: Approved refunds return through the original supported payment path. Provider and bank processing time may apply, and unknown provider results must be reconciled before another refund is attempted.
+  acceptable-use:
+    title: Acceptable Use Policy
+    summary: Events and behavior that are not allowed on HafaPass.
+    sections:
+      - heading: Prohibited activity
+        body: No unlawful, deceptive, unsafe, hateful, exploitative, infringing, sanctions-evading, or unauthorized events, sales, content, or account access.
+      - heading: Ticket integrity
+        body: No speculative inventory, credential harvesting, automated abuse, duplicate admission, payment manipulation, or attempts to bypass holds, limits, refunds, or access controls.
+      - heading: Enforcement
+        body: HafaPass may investigate, preserve evidence, restrict access, pause sales or payouts, cancel invalid credentials, and cooperate with affected parties and authorities as legally appropriate.
+  retention:
+    title: Data Retention Schedule
+    summary: The pilot retention baseline for operational, financial, security, and support records.
+    sections:
+      - heading: Financial and audit records
+        body: Orders, payments, refunds, settlements, payouts, disputes, admissions, and append-only audit evidence are retained for the legally and contractually approved accounting and dispute period.
+      - heading: Operational data
+        body: Provider events, delivery history, support notes, and security evidence are retained only as long as needed for delivery, incident response, disputes, and abuse prevention.
+      - heading: Device data
+        body: Offline scanner manifests and queues must be removed from devices after event closeout and the approved dispute window. Lost devices must be revoked immediately.
+      - heading: Deletion and holds
+        body: Deletion requests are honored where possible. Legal holds, active disputes, fraud investigations, and statutory duties may pause deletion for specifically required records.

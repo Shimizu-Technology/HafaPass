@@ -11,7 +11,8 @@ class OrganizerProfile < ApplicationRecord
   validates :verification_notes, presence: true, if: -> { verification_status_rejected? || verification_status_suspended? }
 
   def policy_accepted?
-    policy_accepted_at.present?
+    current = PolicyRegistry.organizer_agreement
+    policy_accepted_at.present? && policy_version == current[:version] && policy_digest == current[:digest]
   end
 
   def ready_to_publish_free_events?

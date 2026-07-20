@@ -47,6 +47,10 @@ export default function AdminDashboardPage() {
   const revenue = (data.total_revenue_cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
   const financials = data.financials || {}
   const formatMoney = (value = 0) => (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+  const signals = data.operational_signals || {}
+  const operationalIssueCount = (signals.failed_messages_last_hour || 0) + (signals.stale_message_events || 0) +
+    (signals.failed_payment_webhooks || 0) + (signals.open_reconciliation_exceptions || 0) +
+    (signals.unknown_card_present_results || 0)
 
   return (
     <AdminLayout>
@@ -77,6 +81,13 @@ export default function AdminDashboardPage() {
           {data.open_reconciliation_exceptions} payment reconciliation {data.open_reconciliation_exceptions === 1 ? 'exception requires' : 'exceptions require'} review.
         </div>
       )}
+
+      <div className={`mb-8 rounded-xl border px-4 py-3 text-sm ${operationalIssueCount > 0 ? 'border-red-200 bg-red-50 text-red-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`} role="status">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span>{operationalIssueCount > 0 ? `${operationalIssueCount} operational signal${operationalIssueCount === 1 ? '' : 's'} require review across messages, webhooks, reconciliation, or card-present results.` : 'No persisted operational failure signals require review.'}</span>
+          <Link to="/support" className="font-semibold underline">Open support console</Link>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Events */}

@@ -1,11 +1,12 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BarChart3, Calendar, Users, ShoppingCart, Shield } from 'lucide-react'
+import { BarChart3, Calendar, Users, ShoppingCart, Shield, LifeBuoy } from 'lucide-react'
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: BarChart3, exact: true },
   { to: '/admin/events', label: 'Events', icon: Calendar },
   { to: '/admin/users', label: 'Users', icon: Users },
   { to: '/admin/orders', label: 'Orders', icon: ShoppingCart },
+  { to: '/support', label: 'Support', icon: LifeBuoy },
 ]
 
 export default function AdminLayout({ children }) {

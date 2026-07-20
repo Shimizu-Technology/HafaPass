@@ -19,6 +19,8 @@ RSpec.describe "Api::V1::Orders", type: :request do
         buyer_email: "buyer@example.com",
         buyer_name: "Jane Smith",
         buyer_phone: "671-555-0100",
+        terms_accepted: true,
+        terms_version: PolicyRegistry.buyer_terms[:version],
         line_items: [
           { ticket_type_id: ga_ticket.id, quantity: 2 },
           { ticket_type_id: vip_ticket.id, quantity: 1 }
@@ -195,6 +197,14 @@ RSpec.describe "Api::V1::Orders", type: :request do
     end
 
     context "with invalid params" do
+      it "rejects checkout without a current buyer-terms acceptance" do
+        post_json "/api/v1/orders", params: valid_params.merge(terms_version: "stale-version")
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to include("current HafaPass buyer terms")
+        expect(event.orders).to be_empty
+      end
+
       it "returns 422 when buyer_email is missing" do
         params = valid_params.merge(buyer_email: nil)
 

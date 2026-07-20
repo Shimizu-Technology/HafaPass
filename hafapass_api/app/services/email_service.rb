@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 class EmailService
   FROM_EMAIL = ENV.fetch("MAILER_FROM_EMAIL", "tickets@hafapass.com")
 
@@ -12,8 +14,9 @@ class EmailService
     # These enqueue background jobs for better performance
 
     def send_order_confirmation_async(order, requested_by: nil, template: "order_confirmation")
-      delivery = create_delivery(order: order, requested_by: requested_by, template: template, recipient: order.buyer_email)
-      SendOrderConfirmationJob.perform_later(order.id, delivery.id)
+      delivery = create_delivery(order: order, event: order.event, requested_by: requested_by, template: template,
+        recipient: order.buyer_email)
+      MessageDeliveryJob.perform_later(delivery.id)
       delivery
     rescue StandardError => e
       record_enqueue_failure(delivery, e)
@@ -21,9 +24,9 @@ class EmailService
     end
 
     def send_ticket_email_async(ticket, requested_by: nil)
-      delivery = create_delivery(ticket: ticket, order: ticket.order, requested_by: requested_by,
+      delivery = create_delivery(ticket: ticket, order: ticket.order, event: ticket.event, requested_by: requested_by,
         template: "ticket_delivery", recipient: ticket.attendee_email)
-      SendTicketEmailJob.perform_later(ticket.id, delivery.id)
+      MessageDeliveryJob.perform_later(delivery.id)
       delivery
     rescue StandardError => e
       record_enqueue_failure(delivery, e)
@@ -31,8 +34,8 @@ class EmailService
     end
 
     def send_order_recovery_async(order)
-      delivery = create_delivery(order: order, template: "order_recovery", recipient: order.buyer_email)
-      SendOrderRecoveryJob.perform_later(order.id, delivery.id)
+      delivery = create_delivery(order: order, event: order.event, template: "order_recovery", recipient: order.buyer_email)
+      MessageDeliveryJob.perform_later(delivery.id)
       delivery
     rescue StandardError => e
       record_enqueue_failure(delivery, e)
@@ -42,8 +45,9 @@ class EmailService
     def send_event_change_notifications_async(change)
       change.event.orders.where(status: [:completed, :partially_refunded]).find_each do |order|
         delivery = nil
-        delivery = create_delivery(order: order, template: "event_change", recipient: order.buyer_email)
-        SendEventChangeNotificationJob.perform_later(change.id, order.id, delivery.id)
+        delivery = create_delivery(order: order, event: change.event, template: "event_change",
+          recipient: order.buyer_email, metadata: { event_change_id: change.id })
+        MessageDeliveryJob.perform_later(delivery.id)
       rescue StandardError => e
         record_enqueue_failure(delivery, e)
         Rails.logger.error(
@@ -53,39 +57,53 @@ class EmailService
     end
 
     def send_refund_notification_async(order)
-      SendRefundNotificationJob.perform_later(order.id)
+      delivery = create_delivery(order: order, event: order.event, template: "refund_notification",
+        recipient: order.buyer_email)
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
     end
 
     def send_guest_list_notification_async(guest_entry)
-      SendGuestListNotificationJob.perform_later(guest_entry.id)
+      return unless guest_entry.guest_email.present?
+
+      delivery = create_delivery(event: guest_entry.event, template: "guest_list", recipient: guest_entry.guest_email,
+        metadata: { guest_list_entry_id: guest_entry.id })
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
     end
 
     def send_waitlist_notification_async(waitlist_entry)
-      SendWaitlistNotificationJob.perform_later(waitlist_entry.id)
+      return unless waitlist_entry.email.present?
+
+      delivery = create_delivery(event: waitlist_entry.event, template: "waitlist_notification",
+        recipient: waitlist_entry.email, metadata: { waitlist_entry_id: waitlist_entry.id })
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
     end
 
     # ── Order Confirmation ──────────────────────────────────────────
-    def send_order_confirmation(order)
+    def send_order_confirmation(order, delivery: nil)
       event = order.event
       tickets = order.tickets.includes(:ticket_type)
       html = build_order_confirmation_html(order, event, tickets)
-      subject = "Your HafaPass Tickets - #{event.title}"
+      subject = safe_subject("Your HafaPass Tickets - #{event.title}")
 
-      deliver(to: order.buyer_email, subject: subject, html: html, tag: "order_confirmation", order_id: order.id)
+      deliver(to: order.buyer_email, subject: subject, html: html, tag: "order_confirmation", delivery: delivery,
+        order_id: order.id)
     end
 
-    def send_order_recovery(order)
+    def send_order_recovery(order, delivery: nil)
       html = build_order_recovery_html(order)
       deliver(
         to: order.buyer_email,
         subject: "Access your HafaPass order #{order.reference}",
         html: html,
         tag: "order_recovery",
-        order_id: order.id
+        delivery: delivery, order_id: order.id
       )
     end
 
-    def send_event_change_notification(change, order)
+    def send_event_change_notification(change, order, delivery: nil)
       action = change.change_type.humanize.downcase
       html = email_wrapper("Event #{action}") do
         <<~HTML
@@ -95,63 +113,73 @@ class EmailService
           <a href="#{order_access_url(order)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">Review order #{order.reference}</a>
         HTML
       end
-      deliver(to: order.buyer_email, subject: "Important update: #{change.event.title}", html: html,
-        tag: "event_change", order_id: order.id)
+      deliver(to: order.buyer_email, subject: safe_subject("Important update: #{change.event.title}"), html: html,
+        tag: "event_change", delivery: delivery, order_id: order.id)
     end
 
     # ── Individual Ticket Email ─────────────────────────────────────
-    def send_ticket_email(ticket)
+    def send_ticket_email(ticket, delivery: nil)
       event = ticket.event
       ticket_type = ticket.ticket_type
       html = build_ticket_email_html(ticket, event, ticket_type)
-      subject = "Your Ticket - #{event.title}"
+      subject = safe_subject("Your Ticket - #{event.title}")
 
-      deliver(to: ticket.attendee_email, subject: subject, html: html, tag: "ticket_delivery", ticket_id: ticket.id)
+      deliver(to: ticket.attendee_email, subject: subject, html: html, tag: "ticket_delivery", delivery: delivery,
+        ticket_id: ticket.id)
     end
 
     # ── Refund Notification ─────────────────────────────────────────
-    def send_refund_notification(order)
+    def send_refund_notification(order, delivery: nil)
       event = order.event
       html = build_refund_notification_html(order, event)
-      subject = "Refund Processed - #{event.title}"
+      subject = safe_subject("Refund Processed - #{event.title}")
 
-      deliver(to: order.buyer_email, subject: subject, html: html, tag: "refund_notification", order_id: order.id)
+      deliver(to: order.buyer_email, subject: subject, html: html, tag: "refund_notification", delivery: delivery,
+        order_id: order.id)
     end
 
     # ── Waitlist Notification ──────────────────────────────────────
-    def send_waitlist_notification(waitlist_entry)
+    def send_waitlist_notification(waitlist_entry, delivery: nil)
       return unless waitlist_entry.email.present?
 
       event = waitlist_entry.event
       frontend_url = ENV.fetch("FRONTEND_URL", "http://localhost:5173")
       event_url = "#{frontend_url}/events/#{event.slug}"
       html = build_waitlist_notification_html(waitlist_entry, event, event_url)
-      subject = "Tickets Available - #{event.title}"
+      subject = safe_subject("Tickets Available - #{event.title}")
 
-      deliver(to: waitlist_entry.email, subject: subject, html: html, tag: "waitlist_notification", entry_id: waitlist_entry.id)
+      deliver(to: waitlist_entry.email, subject: subject, html: html, tag: "waitlist_notification", delivery: delivery,
+        entry_id: waitlist_entry.id)
     end
 
     # ── Guest List Notification ─────────────────────────────────────
-    def send_guest_list_notification(guest_entry)
+    def send_guest_list_notification(guest_entry, delivery: nil)
       return unless guest_entry.guest_email.present?
 
       event = guest_entry.event
       html = build_guest_list_html(guest_entry, event)
-      subject = "You're on the Guest List - #{event.title}"
+      subject = safe_subject("You're on the Guest List - #{event.title}")
 
-      deliver(to: guest_entry.guest_email, subject: subject, html: html, tag: "guest_list", entry_id: guest_entry.id)
+      deliver(to: guest_entry.guest_email, subject: subject, html: html, tag: "guest_list", delivery: delivery,
+        entry_id: guest_entry.id)
     end
 
     private
 
-    def create_delivery(order: nil, ticket: nil, requested_by: nil, template:, recipient:)
+    def create_delivery(order: nil, ticket: nil, event: nil, requested_by: nil, template:, recipient:, metadata: {})
+      digest_source = [template, recipient.to_s.downcase, order&.cache_key_with_version,
+        ticket&.cache_key_with_version, event&.cache_key_with_version, metadata.to_json].join("|")
       MessageDelivery.create!(
         order: order,
         ticket: ticket,
+        event: event,
         requested_by: requested_by,
         channel: "email",
         template: template,
-        recipient: recipient,
+        recipient: recipient.to_s.strip.downcase,
+        provider: configured? ? "resend" : "simulated",
+        payload_digest: Digest::SHA256.hexdigest(digest_source),
+        metadata: metadata,
         status: :queued
       )
     end
@@ -163,7 +191,7 @@ class EmailService
     end
 
     # ── Unified delivery method ─────────────────────────────────────
-    def deliver(to:, subject:, html:, tag: nil, **log_meta)
+    def deliver(to:, subject:, html:, tag: nil, delivery: nil, **log_meta)
       unless configured?
         meta_str = log_meta.map { |k, v| "#{k}=#{v}" }.join(", ")
         Rails.logger.info(
@@ -180,7 +208,8 @@ class EmailService
       }
       params[:tags] = [{ name: "category", value: tag }] if tag.present?
 
-      Resend::Emails.send(params)
+      options = delivery ? { idempotency_key: delivery.idempotency_key } : {}
+      Resend::Emails.send(params, options: options)
     end
 
     # ── HTML Builders ───────────────────────────────────────────────
@@ -215,8 +244,8 @@ class EmailService
       ticket_rows = tickets.map do |ticket|
         <<~HTML
           <tr>
-            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{ticket.ticket_type.name}</td>
-            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{ticket.attendee_name}</td>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h(ticket.ticket_type.name)}</td>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h(ticket.attendee_name)}</td>
             <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">
               <a href="#{ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">View Ticket</a>
             </td>
@@ -236,9 +265,9 @@ class EmailService
           <p style="color: #6b7280; margin: 0 0 28px;">Thank you for your purchase, #{ERB::Util.html_escape(order.buyer_name)}.</p>
 
           <div style="background: #f3f4f6; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
-            <h3 style="color: #1f2937; margin: 0 0 8px;">#{event.title}</h3>
+            <h3 style="color: #1f2937; margin: 0 0 8px;">#{h(event.title)}</h3>
             <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
-            <p style="color: #6b7280; margin: 0;">#{event.venue_name}</p>
+            <p style="color: #6b7280; margin: 0;">#{h(event.venue_name)}</p>
           </div>
 
           <div style="margin-bottom: 28px;">
@@ -274,12 +303,12 @@ class EmailService
         <<~HTML
           <div style="text-align: center;">
             <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Your Ticket</h2>
-            <p style="color: #6b7280; margin: 0 0 28px;">#{event.title}</p>
+            <p style="color: #6b7280; margin: 0 0 28px;">#{h(event.title)}</p>
 
             <div style="background: #f3f4f6; border-radius: 10px; padding: 28px; margin-bottom: 28px;">
-              <p style="color: #1f2937; font-weight: 600; margin: 0 0 4px;">#{ticket_type.name}</p>
+              <p style="color: #1f2937; font-weight: 600; margin: 0 0 4px;">#{h(ticket_type.name)}</p>
               <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
-              <p style="color: #6b7280; margin: 0;">#{event.venue_name}</p>
+              <p style="color: #6b7280; margin: 0;">#{h(event.venue_name)}</p>
             </div>
 
             <p style="margin: 0 0 20px;">
@@ -316,7 +345,7 @@ class EmailService
       email_wrapper("Refund Processed") do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Refund Processed</h2>
-          <p style="color: #6b7280; margin: 0 0 28px;">Your refund for #{event.title} has been processed.</p>
+          <p style="color: #6b7280; margin: 0 0 28px;">Your refund for #{h(event.title)} has been processed.</p>
 
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
             <p style="color: #166534; font-weight: 600; margin: 0 0 8px;">#{amount_str}</p>
@@ -338,10 +367,10 @@ class EmailService
             <p style="color: #6b7280; margin: 0 0 28px;">#{ERB::Util.html_escape(guest_entry.guest_name)}, you've been added to the guest list for:</p>
 
             <div style="background: #f3f4f6; border-radius: 10px; padding: 28px; margin-bottom: 28px;">
-              <h3 style="color: #1f2937; margin: 0 0 8px;">#{event.title}</h3>
+              <h3 style="color: #1f2937; margin: 0 0 8px;">#{h(event.title)}</h3>
               <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
-              <p style="color: #6b7280; margin: 0;">#{event.venue_name}</p>
-              <p style="color: #1f2937; font-weight: 600; margin: 12px 0 0;">#{guest_entry.ticket_type.name} x #{guest_entry.quantity}</p>
+              <p style="color: #6b7280; margin: 0;">#{h(event.venue_name)}</p>
+              <p style="color: #1f2937; font-weight: 600; margin: 12px 0 0;">#{h(guest_entry.ticket_type.name)} x #{guest_entry.quantity}</p>
             </div>
 
             #{guest_entry.notes.present? ? "<p style=\"color: #6b7280; margin: 0 0 20px;\"><em>#{ERB::Util.html_escape(guest_entry.notes)}</em></p>" : ""}
@@ -393,6 +422,14 @@ class EmailService
 
     def format_cents(cents)
       format("%.2f", cents / 100.0)
+    end
+
+    def h(value)
+      ERB::Util.html_escape(value.to_s)
+    end
+
+    def safe_subject(value)
+      value.to_s.gsub(/[\r\n]+/, " ").strip.first(240)
     end
   end
 end

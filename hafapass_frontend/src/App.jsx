@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
+import SupportRoute from './components/SupportRoute'
 
 // Lazy-loaded — heavier pages loaded on demand
 const HomePage = lazy(() => import('./pages/HomePage'))
@@ -15,6 +16,7 @@ const CheckoutPage = lazy(() => import('./pages/CheckoutPage'))
 const OrderConfirmationPage = lazy(() => import('./pages/OrderConfirmationPage'))
 const OrderRecoveryPage = lazy(() => import('./pages/OrderRecoveryPage'))
 const TicketPage = lazy(() => import('./pages/TicketPage'))
+const PolicyPage = lazy(() => import('./pages/PolicyPage'))
 const MyTicketsPage = lazy(() => import('./pages/MyTicketsPage'))
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
 const CreateEventPage = lazy(() => import('./pages/dashboard/CreateEventPage'))
@@ -36,6 +38,7 @@ const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage')
 const AdminEventsPage = lazy(() => import('./pages/admin/AdminEventsPage'))
 const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'))
 const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'))
+const SupportPage = lazy(() => import('./pages/support/SupportPage'))
 
 function PageLoader() {
   return (
@@ -57,6 +60,7 @@ function App() {
           <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
           <Route path="/orders/recover" element={<OrderRecoveryPage />} />
           <Route path="/tickets/:credential" element={<TicketPage />} />
+          <Route path="/policies/:policy" element={<PolicyPage />} />
           <Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
@@ -77,6 +81,7 @@ function App() {
           <Route path="/admin/events" element={<AdminRoute><AdminEventsPage /></AdminRoute>} />
           <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
           <Route path="/admin/orders" element={<AdminRoute><AdminOrdersPage /></AdminRoute>} />
+          <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />
         </Route>

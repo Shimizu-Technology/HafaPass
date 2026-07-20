@@ -9,6 +9,7 @@ Rails.application.routes.draw do
 
   # Stripe webhooks (outside API namespace, no auth)
   post "webhooks/stripe", to: "webhooks#stripe"
+  post "webhooks/resend", to: "resend_webhooks#create"
 
   namespace :api do
     namespace :v1 do
@@ -153,6 +154,15 @@ Rails.application.routes.draw do
 
         # Maintenance
         post "maintenance/complete_past_events", to: "maintenance#complete_past_events"
+      end
+
+      namespace :support do
+        get "search", to: "search#index"
+        resources :message_deliveries, only: [:index] do
+          member { post :resend }
+          collection { post "orders/:order_id/fulfill", to: "message_deliveries#fulfill" }
+        end
+        resources :notes, only: [:index, :create]
       end
     end
   end

@@ -16,7 +16,12 @@ RSpec.describe "Api::V1::OrganizerProfiles", type: :request do
     post "/api/v1/organizer_profile/accept_policy", headers: headers
 
     expect(response).to have_http_status(:ok)
-    expect(profile.reload.policy_accepted_at).to be_present
+    expect(profile.reload).to have_attributes(
+      policy_version: PolicyRegistry.organizer_agreement[:version],
+      policy_digest: PolicyRegistry.organizer_agreement[:digest]
+    )
+    expect(profile.policy_accepted_at).to be_present
+    expect(profile).to be_policy_accepted
   end
 
   it "submits a complete profile for verification" do

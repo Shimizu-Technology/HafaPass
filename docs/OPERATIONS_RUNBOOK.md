@@ -102,3 +102,7 @@ Every release must pass `./scripts/gate.sh` and CI before merge. After deploymen
 ## Event-day operations
 
 Signed offline admissions, device reconciliation, emergency door lists, door inventory, cash sales, and the guarded BOH/Clover card-present path are operated through [Event-Day Operations](EVENT_DAY_OPERATIONS.md). Treat an unknown terminal result like an unknown webhook result: preserve provider identifiers and the original idempotency key, do not duplicate the side effect, and reconcile before issuing inventory.
+
+## Pilot readiness
+
+Communications, support, provider outage, incident, weather, refund, rollback, backup/restore, alert, accessibility, and device/browser pilot procedures are in [Pilot Readiness and Incident Runbook](PILOT_READINESS_RUNBOOK.md). Draft legal artifacts and their required professional approvals are tracked in [Policy and Professional Review Register](POLICY_REVIEW_REGISTER.md). Pending external evidence is a hard release gate, not an engineering test failure to waive.

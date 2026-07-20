@@ -20,6 +20,8 @@ FactoryBot.define do
       verification_status { :verified }
       verified_at { Time.current }
       policy_accepted_at { Time.current }
+      policy_version { PolicyRegistry.organizer_agreement[:version] }
+      policy_digest { PolicyRegistry.organizer_agreement[:digest] }
     end
 
     trait :payout_ready do
