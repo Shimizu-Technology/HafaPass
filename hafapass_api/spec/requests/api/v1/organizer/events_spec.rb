@@ -136,6 +136,23 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       event = Event.last
       expect(event.organizer_profile_id).to eq(organizer_profile.id)
     end
+
+    it "ignores organizer attempts to self-publish or feature an event" do
+      post "/api/v1/organizer/events", params: valid_event_params.merge(status: "published", is_featured: true), headers: headers
+
+      expect(response).to have_http_status(:created)
+      expect(Event.last).to be_draft
+      expect(Event.last.is_featured).to be(false)
+    end
+
+    it "interprets datetime-local input in Pacific/Guam" do
+      post "/api/v1/organizer/events", params: valid_event_params.merge(
+        starts_at: "2026-08-15T19:00", ends_at: "2026-08-15T22:00", timezone: "Pacific/Guam"
+      ), headers: headers
+
+      expect(response).to have_http_status(:created)
+      expect(Event.last.starts_at).to eq(Time.utc(2026, 8, 15, 9, 0))
+    end
   end
 
   describe "PUT /api/v1/organizer/events/:id" do
@@ -156,6 +173,14 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       put "/api/v1/organizer/events/#{other_event.id}", params: { title: "Hacked" }, headers: headers
 
       expect(response).to have_http_status(:not_found)
+    end
+
+    it "ignores organizer attempts to change status or curation" do
+      put "/api/v1/organizer/events/#{event.id}", params: { status: "published", is_featured: true }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(event.reload).to be_draft
+      expect(event.is_featured).to be(false)
     end
   end
 
@@ -183,7 +208,9 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
   describe "POST /api/v1/organizer/events/:id/publish" do
     it "publishes a draft event" do
+      organizer_profile.update!(verification_status: :verified, verified_at: Time.current, policy_accepted_at: Time.current)
       event = create(:event, organizer_profile: organizer_profile)
+      create(:ticket_type, :free, event: event, quantity_available: 100)
 
       post "/api/v1/organizer/events/#{event.id}/publish", headers: headers
 
@@ -191,6 +218,19 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       json = JSON.parse(response.body)
       expect(json["status"]).to eq("published")
       expect(json["published_at"]).not_to be_nil
+      expect(event.reload.event_state_changes.last.action).to eq("publish")
+    end
+
+    it "returns an actionable checklist when publishing prerequisites are incomplete" do
+      event = create(:event, organizer_profile: organizer_profile)
+
+      post "/api/v1/organizer/events/#{event.id}/publish", headers: headers
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["publish_checklist"]).to include(
+        include("code" => "organizer_verified", "complete" => false),
+        include("code" => "tickets", "complete" => false)
+      )
     end
 
     it "returns 422 for already published events" do
@@ -200,7 +240,7 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
       expect(response).to have_http_status(:unprocessable_entity)
       json = JSON.parse(response.body)
-      expect(json["error"]).to include("Only draft events")
+      expect(json["error"]).to include("Cannot publish")
     end
 
     it "returns 422 for cancelled events" do

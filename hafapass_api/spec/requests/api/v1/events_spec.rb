@@ -4,12 +4,19 @@ RSpec.describe "Api::V1::Events", type: :request do
   let(:organizer_profile) { create(:organizer_profile) }
 
   describe "GET /api/v1/events" do
-    it "returns published and completed events, excludes drafts and cancelled" do
+    it "returns upcoming purchasable events and excludes non-purchasable inventory" do
       published_upcoming = create(:event, :published, organizer_profile: organizer_profile, starts_at: 3.days.from_now)
+      create(:ticket_type, event: published_upcoming)
       create(:event, organizer_profile: organizer_profile) # draft
       past_published = create(:event, :published, organizer_profile: organizer_profile, starts_at: 3.days.ago) # past but still published
+      create(:ticket_type, event: past_published)
       create(:event, :cancelled, organizer_profile: organizer_profile) # cancelled
       completed = create(:event, :completed, organizer_profile: organizer_profile, starts_at: 5.days.ago) # completed
+      create(:ticket_type, event: completed)
+      sold_out = create(:event, :published, organizer_profile: organizer_profile, starts_at: 4.days.from_now)
+      create(:ticket_type, :sold_out, event: sold_out)
+      capacity_full = create(:event, :published, organizer_profile: organizer_profile, starts_at: 5.days.from_now, max_capacity: 1)
+      create(:ticket_type, event: capacity_full, quantity_available: 10, quantity_sold: 1)
 
       get "/api/v1/events"
 
@@ -18,14 +25,15 @@ RSpec.describe "Api::V1::Events", type: :request do
       events = json["events"]
       event_ids = events.map { |e| e["id"] }
       expect(event_ids).to include(published_upcoming.id)
-      expect(event_ids).to include(past_published.id)
-      expect(event_ids).to include(completed.id)
-      expect(events.length).to eq(3)
+      expect(event_ids).not_to include(past_published.id, completed.id, sold_out.id, capacity_full.id)
+      expect(events.length).to eq(1)
     end
 
     it "orders events by starts_at ascending" do
       later = create(:event, :published, organizer_profile: organizer_profile, starts_at: 10.days.from_now)
       sooner = create(:event, :published, organizer_profile: organizer_profile, starts_at: 2.days.from_now)
+      create(:ticket_type, event: later)
+      create(:ticket_type, event: sooner)
 
       get "/api/v1/events"
 
@@ -37,6 +45,7 @@ RSpec.describe "Api::V1::Events", type: :request do
 
     it "returns event attributes including organizer info" do
       event = create(:event, :published, organizer_profile: organizer_profile, starts_at: 5.days.from_now)
+      create(:ticket_type, event: event)
 
       get "/api/v1/events"
 
@@ -47,6 +56,24 @@ RSpec.describe "Api::V1::Events", type: :request do
       expect(first_event["venue_name"]).to eq(event.venue_name)
       expect(first_event["status"]).to eq("published")
       expect(first_event["organizer"]["business_name"]).to eq(organizer_profile.business_name)
+      expect(first_event["category_label"]).to eq("Nightlife")
+    end
+
+
+    it "applies search and category filters before pagination" do
+      3.times do |index|
+        event = create(:event, :published, organizer_profile: organizer_profile, title: "Guam Jazz #{index}", category: :concert)
+        create(:ticket_type, event: event)
+      end
+      other = create(:event, :published, organizer_profile: organizer_profile, title: "Guam Run", category: :sports)
+      create(:ticket_type, event: other)
+
+      get "/api/v1/events", params: { q: "Guam", category: "concert", per_page: 2, page: 2 }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("meta", "total_count")).to eq(3)
+      expect(response.parsed_body["events"].length).to eq(1)
+      expect(response.parsed_body["events"].first["category"]).to eq("concert")
     end
 
     it "returns empty array when no published events exist" do

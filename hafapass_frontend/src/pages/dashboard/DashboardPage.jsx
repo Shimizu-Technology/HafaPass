@@ -1,7 +1,8 @@
-import { Loader2, Pencil, X, Upload } from 'lucide-react'
+import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
+import { formatEventDate } from '../../utils/eventTime'
 
 function OrganizerProfileForm({ onSuccess }) {
  const [businessName, setBusinessName] = useState('')
@@ -92,7 +93,9 @@ function StatusBadge({ status }) {
   draft: 'bg-yellow-100 text-yellow-800',
   published: 'bg-green-100 text-green-800',
   cancelled: 'bg-red-100 text-red-800',
-  completed: 'bg-neutral-100 text-neutral-800'
+  completed: 'bg-neutral-100 text-neutral-800',
+  postponed: 'bg-orange-100 text-orange-800',
+  archived: 'bg-neutral-200 text-neutral-700'
  }
  return (
   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] || 'bg-neutral-100 text-neutral-800'}`}>
@@ -106,12 +109,6 @@ function EventListCard({ event }) {
   ? event.ticket_types.reduce((sum, tt) => sum + (tt.quantity_sold || 0), 0)
   : 0
 
- const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
- }
-
  return (
   <Link
    to={`/dashboard/events/${event.id}/edit`}
@@ -121,7 +118,7 @@ function EventListCard({ event }) {
     <div className="min-w-0 flex-1">
      <h3 className="text-lg font-semibold text-neutral-900 truncate">{event.title}</h3>
      <p className="text-sm text-neutral-500 mt-0.5">
-      {formatDate(event.starts_at)} {event.venue_name && `· ${event.venue_name}`}
+      {formatEventDate(event.starts_at, event.timezone)} {event.venue_name && `· ${event.venue_name}`}
      </p>
     </div>
     <StatusBadge status={event.status} />
@@ -244,6 +241,20 @@ export default function DashboardPage() {
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
  const [showEditProfile, setShowEditProfile] = useState(false)
+ const [readinessLoading, setReadinessLoading] = useState(false)
+
+ const updateReadiness = async (path) => {
+  setReadinessLoading(true)
+  setError(null)
+  try {
+   const response = await apiClient.post(`/organizer_profile/${path}`)
+   setProfile(response.data)
+  } catch (err) {
+   setError(err.response?.data?.error || 'Could not update organizer readiness.')
+  } finally {
+   setReadinessLoading(false)
+  }
+ }
 
  const fetchDashboard = async () => {
   setLoading(true)
@@ -357,6 +368,28 @@ export default function DashboardPage() {
      onSaved={() => { setShowEditProfile(false); fetchDashboard() }}
     />
    )}
+
+   <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="organizer-readiness-title">
+    <div className="flex items-start gap-3">
+     <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5 text-brand-600" /></div>
+     <div className="flex-1">
+      <h2 id="organizer-readiness-title" className="font-semibold text-neutral-900">Organizer readiness</h2>
+      <p className="text-sm text-neutral-500 mt-1">These platform checks protect attendees and are required before an event can be published.</p>
+      <ul className="mt-4 space-y-3">
+       <li className="flex items-center justify-between gap-4">
+        <span className="flex items-center gap-2 text-sm text-neutral-700">{profile.policy_accepted ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Organizer policy accepted</span>
+        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => window.confirm('I agree to follow HafaPass organizer policies, publish accurate event information, and honor attendee purchases and refunds.') && updateReadiness('accept_policy')} className="btn-secondary text-xs !py-2">Accept policy</button>}
+       </li>
+       <li className="flex items-center justify-between gap-4">
+        <span className="flex items-center gap-2 text-sm text-neutral-700">{profile.verification_status === 'verified' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Identity verification: <strong className="capitalize">{profile.verification_status}</strong></span>
+        {['unverified', 'rejected'].includes(profile.verification_status) && <button type="button" disabled={readinessLoading} onClick={() => updateReadiness('submit_verification')} className="btn-secondary text-xs !py-2">Submit for review</button>}
+       </li>
+       <li className="flex items-center gap-2 text-sm text-neutral-700">{profile.payout_ready ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Paid-event payouts {profile.payout_ready ? 'ready' : 'not ready'}</li>
+      </ul>
+      {profile.verification_notes && <p className="mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3">Review note: {profile.verification_notes}</p>}
+     </div>
+    </div>
+   </section>
 
    {events.length === 0 ? (
     <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-12 text-center">

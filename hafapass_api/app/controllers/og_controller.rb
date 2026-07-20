@@ -2,12 +2,12 @@ class OgController < ApplicationController
   skip_before_action :authenticate_user!
 
   def event
-    event = Event.where(status: [:published, :completed]).find_by!(slug: params[:slug])
+    event = Event.publicly_visible.find_by!(slug: params[:slug])
 
     title = event.title
     description = (event.short_description || event.description || "Get tickets on HafaPass").truncate(160)
-    image_url = event.cover_image_url || "https://hafapass.netlify.app/og-default.jpg"
-    canonical_url = "https://hafapass.netlify.app/events/#{event.slug}"
+    image_url = event.cover_image_url || "#{PublicSiteUrl.base}/og-default.jpg"
+    canonical_url = PublicSiteUrl.event(event)
 
     html = <<~HTML
       <!DOCTYPE html>
@@ -39,7 +39,7 @@ class OgController < ApplicationController
 
     render html: html.html_safe, content_type: "text/html"
   rescue ActiveRecord::RecordNotFound
-    render html: '<script>window.location.replace("https://hafapass.netlify.app/events");</script>'.html_safe,
+    render html: %(<script>window.location.replace("#{PublicSiteUrl.base}/events");</script>).html_safe,
            content_type: "text/html", status: :not_found
   end
 end

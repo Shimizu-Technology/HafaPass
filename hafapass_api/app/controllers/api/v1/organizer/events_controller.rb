@@ -5,7 +5,10 @@ module Api
         include Paginatable
 
         before_action :require_organizer_profile
-        before_action :set_event, only: [:show, :update, :destroy, :publish, :clone, :generate_recurrences, :stats, :attendees]
+        before_action :set_event, only: [
+          :show, :update, :destroy, :publish, :postpone, :resume, :cancel, :complete, :archive,
+          :clone, :generate_recurrences, :stats, :attendees
+        ]
 
         def index
           events = current_organizer_profile.events.includes(:ticket_types).order(created_at: :desc)
@@ -22,7 +25,7 @@ module Api
         end
 
         def create
-          event = current_organizer_profile.events.build(event_params)
+          event = current_organizer_profile.events.build(parsed_event_params)
           if event.save
             render json: event_json(event), status: :created
           else
@@ -31,7 +34,7 @@ module Api
         end
 
         def update
-          if @event.update(event_params)
+          if @event.update(parsed_event_params)
             render json: event_json(@event)
           else
             render json: { errors: @event.errors.full_messages }, status: :unprocessable_entity
@@ -39,6 +42,11 @@ module Api
         end
 
         def destroy
+          unless @event.draft?
+            return render json: { error: "Only draft events can be deleted; archive or cancel this event instead" },
+              status: :unprocessable_entity
+          end
+
           if @event.destroy
             head :no_content
           else
@@ -47,12 +55,27 @@ module Api
         end
 
         def publish
-          if @event.draft?
-            @event.update!(status: :published, published_at: Time.current)
-            render json: event_json(@event)
-          else
-            render json: { error: "Only draft events can be published" }, status: :unprocessable_entity
-          end
+          transition_event(:publish)
+        end
+
+        def postpone
+          transition_event(:postpone)
+        end
+
+        def resume
+          transition_event(:resume)
+        end
+
+        def cancel
+          transition_event(:cancel)
+        end
+
+        def complete
+          transition_event(:complete)
+        end
+
+        def archive
+          transition_event(:archive)
         end
 
         def clone
@@ -73,22 +96,17 @@ module Api
           end
 
           count = [params[:count].to_i.clamp(1, 12), 1].max
-          interval = case @event.recurrence_rule
-          when "weekly" then 1.week
-          when "biweekly" then 2.weeks
-          when "monthly" then 1.month
-          else return render json: { error: "Unsupported recurrence rule" }, status: :unprocessable_entity
-          end
-
-          duration = @event.ends_at - @event.starts_at
-          doors_offset = @event.doors_open_at ? @event.doors_open_at - @event.starts_at : nil
+          timezone = ActiveSupport::TimeZone[@event.timezone]
+          local_start = @event.starts_at.in_time_zone(timezone)
+          local_end = @event.ends_at.in_time_zone(timezone)
+          local_doors = @event.doors_open_at&.in_time_zone(timezone)
           generated = []
 
           count.times do |i|
-            offset = interval * (i + 1)
-            new_starts_at = @event.starts_at + offset
-            new_ends_at = new_starts_at + duration
-            new_doors = doors_offset ? new_starts_at + doors_offset : nil
+            occurrence_number = i + 1
+            new_starts_at = advance_local_time(local_start, occurrence_number)
+            new_ends_at = advance_local_time(local_end, occurrence_number)
+            new_doors = local_doors ? advance_local_time(local_doors, occurrence_number) : nil
 
             break if @event.recurrence_end_date && new_starts_at.to_date > @event.recurrence_end_date
 
@@ -183,6 +201,13 @@ module Api
 
         private
 
+        def transition_event(action)
+          EventLifecycle.call(event: @event, action: action, actor: current_user, reason: params[:reason])
+          render json: event_json(@event.reload, include_ticket_types: true)
+        rescue EventLifecycle::TransitionError => e
+          render json: { error: e.message, publish_checklist: e.checklist }, status: :unprocessable_entity
+        end
+
         def require_organizer_profile
           unless current_organizer_profile
             render json: { error: "Organizer profile required" }, status: :forbidden
@@ -204,16 +229,27 @@ module Api
             :title, :description, :short_description, :cover_image_url,
             :venue_name, :venue_address, :venue_city,
             :starts_at, :ends_at, :doors_open_at, :timezone,
-            :category, :age_restriction, :max_capacity, :is_featured,
-            :status, :recurrence_rule, :recurrence_end_date, :show_attendees
+            :category, :age_restriction, :max_capacity,
+            :recurrence_rule, :recurrence_end_date, :show_attendees
           )
+        end
+
+        def parsed_event_params
+          attributes = event_params.to_h
+          timezone = attributes["timezone"].presence || @event&.timezone || "Pacific/Guam"
+          %w[starts_at ends_at doors_open_at].each do |key|
+            attributes[key] = EventTimeParser.call(attributes[key], timezone: timezone) if attributes.key?(key)
+          end
+          attributes
+        rescue EventTimeParser::ParseError => e
+          raise ActionController::BadRequest, e.message
         end
 
         def clone_event(source, overrides = {})
           attrs = source.attributes.slice(
             "title", "description", "short_description", "cover_image_url",
             "venue_name", "venue_address", "venue_city", "timezone",
-            "category", "age_restriction", "max_capacity", "is_featured",
+            "category", "age_restriction", "max_capacity",
             "show_attendees"
           ).merge(
             "organizer_profile_id" => source.organizer_profile_id,
@@ -225,7 +261,7 @@ module Api
           new_event = Event.new(attrs)
           if new_event.save
             source.ticket_types.each do |tt|
-              new_event.ticket_types.create!(
+              cloned_ticket_type = new_event.ticket_types.create!(
                 name: tt.name,
                 description: tt.description,
                 price_cents: tt.price_cents,
@@ -233,24 +269,51 @@ module Api
                 quantity_sold: 0,
                 max_per_order: tt.max_per_order,
                 sort_order: tt.sort_order,
-                sales_start_at: tt.sales_start_at,
-                sales_end_at: tt.sales_end_at
+                sales_start_at: shifted_relative_time(tt.sales_start_at, source, new_event),
+                sales_end_at: shifted_relative_time(tt.sales_end_at, source, new_event)
               )
+              tt.pricing_tiers.each do |tier|
+                cloned_ticket_type.pricing_tiers.create!(
+                  name: tier.name,
+                  price_cents: tier.price_cents,
+                  tier_type: tier.tier_type,
+                  quantity_limit: tier.quantity_limit,
+                  quantity_sold: 0,
+                  starts_at: shifted_relative_time(tier.starts_at, source, new_event),
+                  ends_at: shifted_relative_time(tier.ends_at, source, new_event),
+                  position: tier.position
+                )
+              end
             end
-            source.promo_codes.each do |pc|
+            source.promo_codes.each do |promo|
               new_event.promo_codes.create!(
-                code: pc.code,
-                discount_type: pc.discount_type,
-                discount_value: pc.discount_value,
-                max_uses: pc.max_uses,
+                code: promo.code,
+                discount_type: promo.discount_type,
+                discount_value: promo.discount_value,
+                max_uses: promo.max_uses,
                 current_uses: 0,
-                active: pc.active,
-                starts_at: pc.starts_at,
-                expires_at: pc.expires_at
+                active: false,
+                starts_at: shifted_relative_time(promo.starts_at, source, new_event),
+                expires_at: shifted_relative_time(promo.expires_at, source, new_event)
               )
             end
           end
           new_event
+        end
+
+        def shifted_relative_time(value, source, destination)
+          return if value.blank? || source.starts_at.blank? || destination.starts_at.blank?
+
+          destination.starts_at + (value - source.starts_at)
+        end
+
+        def advance_local_time(value, occurrence_number)
+          case @event.recurrence_rule
+          when "weekly" then value.advance(weeks: occurrence_number)
+          when "biweekly" then value.advance(weeks: occurrence_number * 2)
+          when "monthly" then value.advance(months: occurrence_number)
+          else raise EventLifecycle::TransitionError, "Unsupported recurrence rule"
+          end
         end
 
         def event_json(event, include_ticket_types: false)
@@ -270,6 +333,7 @@ module Api
             timezone: event.timezone,
             status: event.status,
             category: event.category,
+            category_label: event.category_label,
             age_restriction: event.age_restriction,
             max_capacity: event.max_capacity,
             is_featured: event.is_featured,
@@ -281,6 +345,17 @@ module Api
             created_at: event.created_at,
             updated_at: event.updated_at
           }
+
+          json[:publish_checklist] = event.publish_checklist
+          json[:state_history] = event.event_state_changes.order(occurred_at: :desc).limit(20).map do |change|
+            {
+              action: change.action,
+              from_status: change.from_status,
+              to_status: change.to_status,
+              reason: change.reason,
+              occurred_at: change.occurred_at
+            }
+          end
 
           if include_ticket_types
             json[:ticket_types] = event.ticket_types.order(:sort_order, :id).map do |tt|

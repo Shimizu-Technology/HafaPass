@@ -22,6 +22,8 @@ Rails.application.routes.draw do
       get "organizer_profile", to: "organizer_profiles#show"
       post "organizer_profile", to: "organizer_profiles#create_or_update"
       put "organizer_profile", to: "organizer_profiles#create_or_update"
+      post "organizer_profile/accept_policy", to: "organizer_profiles#accept_policy"
+      post "organizer_profile/submit_verification", to: "organizer_profiles#submit_verification"
 
       # Presigned upload URL (authenticated) - works in simulate mode too
       post "uploads/presign", to: "uploads#presign"
@@ -59,6 +61,7 @@ Rails.application.routes.draw do
           delete "waitlist", to: "waitlist#destroy"
         end
       end
+      get "event_categories", to: "events#categories"
       get "events/:slug", to: "events#show", as: :event
 
       # Organizer events (protected)
@@ -66,6 +69,11 @@ Rails.application.routes.draw do
         resources :events, only: [:index, :show, :create, :update, :destroy] do
           member do
             post :publish
+            post :postpone
+            post :resume
+            post :cancel
+            post :complete
+            post :archive
             post :clone
             post :generate_recurrences
             get :stats
@@ -109,6 +117,7 @@ Rails.application.routes.draw do
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update]
         resources :users, only: [:index, :update]
+        resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]
 
         # Maintenance

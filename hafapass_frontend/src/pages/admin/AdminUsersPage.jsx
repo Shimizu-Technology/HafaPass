@@ -34,6 +34,25 @@ export default function AdminUsersPage() {
     } catch (err) { console.error(err) }
   }
 
+  const updateOrganizer = async (user, updates) => {
+    const profile = user.organizer_profile
+    if (!profile) return
+    try {
+      const response = await apiClient.patch(`/admin/organizer_profiles/${profile.id}`, updates)
+      setUsers(current => current.map(item => item.id === user.id ? { ...item, organizer_profile: { ...profile, ...response.data } } : item))
+    } catch (err) { console.error(err) }
+  }
+
+  const reviewOrganizer = (user, verificationStatus) => {
+    let verificationNotes = user.organizer_profile?.verification_notes || ''
+    if (['rejected', 'suspended'].includes(verificationStatus)) {
+      const note = window.prompt('Add a review note explaining what the organizer must address:', verificationNotes)
+      if (note === null) return
+      verificationNotes = note
+    }
+    updateOrganizer(user, { verification_status: verificationStatus, verification_notes: verificationNotes })
+  }
+
   const roleBadge = (role) => {
     const styles = {
       admin: 'bg-brand-50 text-brand-600',
@@ -73,7 +92,7 @@ export default function AdminUsersPage() {
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Email</th>
                   <th className="px-4 py-3 font-medium">Role</th>
-                  <th className="px-4 py-3 font-medium hidden lg:table-cell">Organizer</th>
+                  <th className="px-4 py-3 font-medium hidden lg:table-cell">Organizer readiness</th>
                   <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Orders</th>
                   <th className="px-4 py-3 font-medium hidden md:table-cell">Created</th>
                 </tr>
@@ -92,7 +111,17 @@ export default function AdminUsersPage() {
                         {roles.filter(Boolean).map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </td>
-                    <td className="px-4 py-3 text-neutral-500 hidden lg:table-cell">{user.organizer_profile?.business_name || '—'}</td>
+                    <td className="px-4 py-3 text-neutral-500 hidden lg:table-cell">
+                      {user.organizer_profile ? (
+                        <div className="space-y-2 min-w-[13rem]">
+                          <p className="font-medium text-neutral-800">{user.organizer_profile.business_name}</p>
+                          <select value={user.organizer_profile.verification_status} onChange={event => reviewOrganizer(user, event.target.value)} className="input !py-1 !text-xs">
+                            {['unverified', 'pending', 'verified', 'rejected', 'suspended'].map(status => <option key={status} value={status}>{status}</option>)}
+                          </select>
+                          <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={user.organizer_profile.payout_ready} onChange={event => updateOrganizer(user, { payout_ready: event.target.checked })} /> Payout ready</label>
+                        </div>
+                      ) : '—'}
+                    </td>
                     <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">{user.orders_count}</td>
                     <td className="px-4 py-3 text-neutral-500 hidden md:table-cell">{new Date(user.created_at).toLocaleDateString()}</td>
                   </tr>

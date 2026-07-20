@@ -2,19 +2,10 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
+import { formatEventDate, formatEventTime } from '../utils/eventTime'
 
 export default function EventCard({ event }) {
   const { t } = useTranslation()
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  }
-
-  const formatTime = (dateStr) => {
-    const date = new Date(dateStr)
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  }
-
   const lowestPrice = event.ticket_types?.reduce((min, tt) => {
     const price = tt.current_price_cents ?? tt.price_cents
     if (price === 0) return min === null ? 0 : Math.min(min, 0)
@@ -28,7 +19,7 @@ export default function EventCard({ event }) {
     : `${t('events.from')} $${(lowestPrice / 100).toFixed(2)}`
 
   // Check ticket availability
-  const totalAvailable = event.ticket_types?.reduce((sum, tt) => sum + (tt.quantity_available ?? 0), 0)
+  const totalAvailable = event.ticket_types?.reduce((sum, tt) => sum + (tt.quantity_remaining ?? 0), 0)
   const hasAvailability = totalAvailable === undefined || totalAvailable > 0
 
   return (
@@ -81,7 +72,7 @@ export default function EventCard({ event }) {
         {/* Category badge */}
         {event.category && event.category !== 'other' && (
           <span className="inline-block text-xs font-semibold text-brand-600 uppercase tracking-wider mb-2">
-            {event.category}
+            {event.category_label || event.category}
           </span>
         )}
 
@@ -93,9 +84,9 @@ export default function EventCard({ event }) {
           {event.starts_at && (
             <div className="flex items-center gap-2 text-sm text-neutral-500">
               <Calendar className="w-3.5 h-3.5 text-neutral-400" />
-              <span>{formatDate(event.starts_at)}</span>
+              <span>{formatEventDate(event.starts_at, event.timezone)}</span>
               <Clock className="w-3.5 h-3.5 text-neutral-400 ml-1" />
-              <span>{formatTime(event.starts_at)}</span>
+              <span>{formatEventTime(event.starts_at, event.timezone)}</span>
             </div>
           )}
           {event.venue_name && (

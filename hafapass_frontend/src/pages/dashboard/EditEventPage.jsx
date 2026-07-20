@@ -1,19 +1,12 @@
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart, Copy, RefreshCw, ClipboardList } from 'lucide-react'
+import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart, Copy, RefreshCw, ClipboardList, PauseCircle, Archive } from 'lucide-react'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
-
-const CATEGORIES = [
-  { value: 'nightlife', label: 'Nightlife' },
-  { value: 'concert', label: 'Concert' },
-  { value: 'festival', label: 'Festival' },
-  { value: 'dining', label: 'Dining' },
-  { value: 'sports', label: 'Sports' },
-  { value: 'other', label: 'Other' }
-]
+import useEventCategories from '../../hooks/useEventCategories'
+import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
 
 const AGE_RESTRICTIONS = [
   { value: 'all_ages', label: 'All Ages' },
@@ -25,30 +18,26 @@ const STATUS_BADGES = {
   draft: { label: 'Draft', className: 'bg-yellow-100 text-yellow-800' },
   published: { label: 'Published', className: 'bg-green-100 text-green-800' },
   cancelled: { label: 'Cancelled', className: 'bg-red-100 text-red-800' },
-  completed: { label: 'Completed', className: 'bg-neutral-100 text-neutral-800' }
+  completed: { label: 'Completed', className: 'bg-neutral-100 text-neutral-800' },
+  postponed: { label: 'Postponed', className: 'bg-orange-100 text-orange-800' },
+  archived: { label: 'Archived', className: 'bg-neutral-200 text-neutral-700' }
 }
 
-function formatDatetimeLocal(isoString) {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  if (Number.isNaN(date.valueOf())) return ''
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${year}-${month}-${day}T${hours}:${minutes}`
-}
-
-function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading }) {
+function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading, reason, onReasonChange, requireReason = false }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
       <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
         <h3 className="text-lg font-semibold text-neutral-900 mb-2">{title}</h3>
         <p className="text-sm text-neutral-600 mb-4">{message}</p>
+        {requireReason && (
+          <div className="mb-4">
+            <label htmlFor="lifecycle-reason" className="block text-sm font-medium text-neutral-700 mb-1">Reason <span className="text-red-500">*</span></label>
+            <textarea id="lifecycle-reason" value={reason} onChange={event => onReasonChange(event.target.value)} className="input" rows={3} placeholder="Explain this change for attendees and the audit record" />
+          </div>
+        )}
         <div className="flex gap-3 justify-end">
           <button onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-neutral-700 hover:text-neutral-900 disabled:opacity-50">Cancel</button>
-          <button onClick={onConfirm} disabled={loading} className={`px-4 py-2 text-sm font-medium rounded-xl text-white ${confirmClass || 'bg-red-600 hover:bg-red-700'} disabled:opacity-50`}>
+          <button onClick={onConfirm} disabled={loading || (requireReason && !reason?.trim())} className={`px-4 py-2 text-sm font-medium rounded-xl text-white ${confirmClass || 'bg-red-600 hover:bg-red-700'} disabled:opacity-50`}>
             {loading ? 'Processing...' : confirmLabel}
           </button>
         </div>
@@ -60,6 +49,7 @@ function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, o
 export default function EditEventPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const categories = useEventCategories()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [event, setEvent] = useState(null)
@@ -74,6 +64,8 @@ export default function EditEventPage() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
+  const [showPostponeConfirm, setShowPostponeConfirm] = useState(false)
+  const [lifecycleReason, setLifecycleReason] = useState('')
   const [dangerLoading, setDangerLoading] = useState(false)
   const [cloning, setCloning] = useState(false)
   const [recurrenceCount, setRecurrenceCount] = useState(4)
@@ -115,9 +107,9 @@ export default function EditEventPage() {
         venue_name: e.venue_name || '',
         venue_address: e.venue_address || '',
         venue_city: e.venue_city || 'Guam',
-        starts_at: formatDatetimeLocal(e.starts_at),
-        ends_at: formatDatetimeLocal(e.ends_at),
-        doors_open_at: formatDatetimeLocal(e.doors_open_at),
+        starts_at: toEventLocalInput(e.starts_at, e.timezone),
+        ends_at: toEventLocalInput(e.ends_at, e.timezone),
+        doors_open_at: toEventLocalInput(e.doors_open_at, e.timezone),
         max_capacity: e.max_capacity ? String(e.max_capacity) : '',
         cover_image_url: e.cover_image_url || '',
         recurrence_rule: e.recurrence_rule || '',
@@ -155,16 +147,12 @@ export default function EditEventPage() {
     if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
     if (!form.starts_at) errors.starts_at = 'Start date/time is required'
     if (form.ends_at && form.starts_at) {
-      const startsAt = new Date(form.starts_at)
-      const endsAt = new Date(form.ends_at)
-      if (Number.isFinite(startsAt.valueOf()) && Number.isFinite(endsAt.valueOf()) && endsAt <= startsAt) {
+      if (compareLocalDateTimes(form.ends_at, form.starts_at) <= 0) {
         errors.ends_at = 'End time must be after the start time'
       }
     }
     if (form.doors_open_at && form.starts_at) {
-      const doorsAt = new Date(form.doors_open_at)
-      const startsAt = new Date(form.starts_at)
-      if (Number.isFinite(doorsAt.valueOf()) && Number.isFinite(startsAt.valueOf()) && doorsAt > startsAt) {
+      if (compareLocalDateTimes(form.doors_open_at, form.starts_at) > 0) {
         errors.doors_open_at = 'Doors open time must be before the start time'
       }
     }
@@ -194,6 +182,7 @@ export default function EditEventPage() {
         venue_name: form.venue_name.trim(),
         venue_address: form.venue_address.trim() || null,
         venue_city: form.venue_city.trim() || 'Guam',
+        timezone: event?.timezone || 'Pacific/Guam',
         starts_at: form.starts_at || undefined,
         ends_at: form.ends_at || undefined,
         doors_open_at: form.doors_open_at || undefined,
@@ -232,16 +221,21 @@ export default function EditEventPage() {
   }
 
   // Danger zone actions
-  const handleCancelEvent = async () => {
+  const handleLifecycle = async (action, success) => {
     setDangerLoading(true)
     try {
-      const res = await apiClient.put(`/organizer/events/${id}`, { status: 'cancelled' })
+      const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined })
       setEvent(res.data)
       setShowCancelConfirm(false)
-      setSuccessMessage('Event has been cancelled.')
+      setShowCompleteConfirm(false)
+      setShowPostponeConfirm(false)
+      setLifecycleReason('')
+      setSuccessMessage(success)
     } catch (err) {
-      setSubmitError(err.response?.data?.errors?.join(', ') || 'Failed to cancel event')
+      setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
       setShowCancelConfirm(false)
+      setShowCompleteConfirm(false)
+      setShowPostponeConfirm(false)
     } finally {
       setDangerLoading(false)
     }
@@ -260,22 +254,9 @@ export default function EditEventPage() {
     }
   }
 
-  const handleCompleteEvent = async () => {
-    setDangerLoading(true)
-    try {
-      const res = await apiClient.put(`/organizer/events/${id}`, { status: 'completed' })
-      setEvent(res.data)
-      setShowCompleteConfirm(false)
-      setSuccessMessage('Event marked as completed.')
-    } catch (err) {
-      setSubmitError(err.response?.data?.errors?.join(', ') || 'Failed to complete event')
-      setShowCompleteConfirm(false)
-    } finally {
-      setDangerLoading(false)
-    }
-  }
-
   const eventEndedInPast = event?.ends_at && new Date(event.ends_at) < new Date()
+  const publishChecklist = event?.publish_checklist || []
+  const readyToPublish = publishChecklist.length > 0 && publishChecklist.every(item => item.complete)
 
   if (loading) {
     return (
@@ -308,7 +289,7 @@ export default function EditEventPage() {
         <div className="flex items-center gap-3">
           {event?.slug && (
             <a
-              href={`/events/${event.slug}${event.status === 'draft' ? '?preview=true' : ''}`}
+              href={`/events/${event.slug}${event.status === 'published' || event.status === 'completed' ? '' : '?preview=true'}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1"
@@ -369,8 +350,16 @@ export default function EditEventPage() {
               <p className="text-sm font-medium text-brand-800">Ready to go live?</p>
               <p className="text-xs text-brand-600 mt-0.5">Publishing will make this event visible to the public.</p>
             </div>
-            <button onClick={() => setShowPublishConfirm(true)} className="btn-primary text-sm px-4 py-2">Publish Event</button>
+            <button onClick={() => setShowPublishConfirm(true)} disabled={!readyToPublish} className="btn-primary text-sm px-4 py-2 disabled:opacity-50">Publish Event</button>
           </div>
+          <ul className="grid sm:grid-cols-2 gap-2 mt-4" aria-label="Publishing checklist">
+            {publishChecklist.map(item => (
+              <li key={item.code} className={`flex items-center gap-2 text-xs ${item.complete ? 'text-emerald-700' : 'text-neutral-600'}`}>
+                {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                {item.label}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -391,11 +380,14 @@ export default function EditEventPage() {
       {showCancelConfirm && (
         <ConfirmModal
           title="Cancel Event?"
-          message="This will cancel the event and notify ticket holders. This action cannot be undone."
+          message="Ticket sales and public discovery will stop immediately. The reason is retained in the event history."
           confirmLabel="Yes, Cancel Event"
-          onConfirm={handleCancelEvent}
-          onCancel={() => setShowCancelConfirm(false)}
+          onConfirm={() => handleLifecycle('cancel', 'Event has been cancelled.')}
+          onCancel={() => { setShowCancelConfirm(false); setLifecycleReason('') }}
           loading={dangerLoading}
+          reason={lifecycleReason}
+          onReasonChange={setLifecycleReason}
+          requireReason
         />
       )}
       {showDeleteConfirm && (
@@ -414,9 +406,23 @@ export default function EditEventPage() {
           message="This will mark the event as completed. No more ticket sales will be allowed."
           confirmLabel="Yes, Complete"
           confirmClass="bg-neutral-700 hover:bg-neutral-800"
-          onConfirm={handleCompleteEvent}
+          onConfirm={() => handleLifecycle('complete', 'Event marked as completed.')}
           onCancel={() => setShowCompleteConfirm(false)}
           loading={dangerLoading}
+        />
+      )}
+      {showPostponeConfirm && (
+        <ConfirmModal
+          title="Postpone Event?"
+          message="Ticket sales will stop immediately. Update the schedule before resuming the event."
+          confirmLabel="Yes, Postpone"
+          confirmClass="bg-orange-600 hover:bg-orange-700"
+          onConfirm={() => handleLifecycle('postpone', 'Event has been postponed and sales are paused.')}
+          onCancel={() => { setShowPostponeConfirm(false); setLifecycleReason('') }}
+          loading={dangerLoading}
+          reason={lifecycleReason}
+          onReasonChange={setLifecycleReason}
+          requireReason
         />
       )}
 
@@ -462,7 +468,7 @@ export default function EditEventPage() {
               <div>
                 <label htmlFor="category" className="block text-sm font-medium text-neutral-700 mb-1">Category</label>
                 <select id="category" value={form.category} onChange={(e) => updateField('category', e.target.value)} className="input" disabled={submitting}>
-                  {CATEGORIES.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
+                  {categories.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
                 </select>
               </div>
               <div>
@@ -500,6 +506,7 @@ export default function EditEventPage() {
         {/* Date/Time Section */}
         <section>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Date & Time</h2>
+          <p className="text-sm text-neutral-500 mb-4">All event times are entered and displayed in Guam time (Pacific/Guam).</p>
           <div className="space-y-4">
             <div>
               <label htmlFor="starts_at" className="block text-sm font-medium text-neutral-700 mb-1">
@@ -607,7 +614,7 @@ export default function EditEventPage() {
                   )}
                   {recurrenceChildren.map(child => (
                     <Link key={child.id} to={`/dashboard/events/${child.id}/edit`} className="block p-2 rounded-lg bg-neutral-50 hover:bg-neutral-100 text-sm text-neutral-700 transition-colors">
-                      {child.title} — {child.starts_at ? new Date(child.starts_at).toLocaleDateString() : 'No date set'}
+                      {child.title} — {child.starts_at ? formatEventDate(child.starts_at, child.timezone) : 'No date set'}
                     </Link>
                   ))}
                 </div>
@@ -628,22 +635,42 @@ export default function EditEventPage() {
       <TicketTypeCRUD eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} />
 
       {/* Danger Zone — HP-28 */}
-      {event && event.status !== 'cancelled' && event.status !== 'completed' && (
+      {event && event.status !== 'archived' && (
         <div className="mt-8 border border-red-200 rounded-xl p-5 sm:p-6">
           <h2 className="text-lg font-semibold text-red-700 mb-1 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5" /> Danger Zone
           </h2>
-          <p className="text-sm text-neutral-500 mb-4">These actions are irreversible. Please proceed with caution.</p>
+          <p className="text-sm text-neutral-500 mb-4">These actions affect sales and public visibility and are recorded in event history.</p>
           <div className="space-y-3">
-            {(event.status === 'draft' || event.status === 'published') && (
+            {(event.status === 'published' || event.status === 'postponed') && (
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
                 <div>
                   <p className="text-sm font-medium text-neutral-900">Cancel Event</p>
-                  <p className="text-xs text-neutral-500">Cancel this event and notify ticket holders.</p>
+                  <p className="text-xs text-neutral-500">Stop sales and remove the event from public discovery.</p>
                 </div>
                 <button onClick={() => setShowCancelConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5">
                   <XCircle className="w-4 h-4" /> Cancel Event
                 </button>
+              </div>
+            )}
+            {event.status === 'published' && (
+              <div className="flex items-center justify-between p-3 bg-orange-50 rounded-xl">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900">Postpone Event</p>
+                  <p className="text-xs text-neutral-500">Pause sales while a new date is arranged.</p>
+                </div>
+                <button onClick={() => setShowPostponeConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-orange-700 border border-orange-300 rounded-lg hover:bg-orange-100 transition-colors flex items-center gap-1.5">
+                  <PauseCircle className="w-4 h-4" /> Postpone
+                </button>
+              </div>
+            )}
+            {event.status === 'postponed' && (
+              <div className="flex items-center justify-between p-3 bg-brand-50 rounded-xl">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900">Resume Event</p>
+                  <p className="text-xs text-neutral-500">Restore public visibility and ticket sales using the updated schedule.</p>
+                </div>
+                <button onClick={() => handleLifecycle('resume', 'Event resumed and ticket sales restored.')} className="btn-primary text-sm px-3 py-1.5">Resume</button>
               </div>
             )}
             {event.status === 'published' && eventEndedInPast && (
@@ -665,6 +692,17 @@ export default function EditEventPage() {
                 </div>
                 <button onClick={() => setShowDeleteConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5">
                   <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </div>
+            )}
+            {['draft', 'cancelled', 'completed'].includes(event.status) && (
+              <div className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900">Archive Event</p>
+                  <p className="text-xs text-neutral-500">Keep its record while removing it from active work.</p>
+                </div>
+                <button onClick={() => handleLifecycle('archive', 'Event archived.')} className="px-3 py-1.5 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-100 transition-colors flex items-center gap-1.5">
+                  <Archive className="w-4 h-4" /> Archive
                 </button>
               </div>
             )}

@@ -28,7 +28,7 @@ RSpec.describe "OG Meta Endpoints", type: :request do
       expect(body).to include(event.cover_image_url)
       expect(body).to include('twitter:card')
       expect(body).to include('summary_large_image')
-      expect(body).to include("hafapass.netlify.app/events/#{event.slug}")
+      expect(body).to include("hafapass.com/events/#{event.slug}")
     end
 
     it "returns 404 for non-existent event" do

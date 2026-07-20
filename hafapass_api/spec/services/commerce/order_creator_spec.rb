@@ -5,6 +5,26 @@ RSpec.describe Commerce::OrderCreator do
   let(:event) { create(:event, :published) }
   let(:ticket_type) { create(:ticket_type, event: event, price_cents: 1000) }
 
+  it "rejects checkout for events that ended or are no longer published" do
+    allow(StripeService).to receive(:payment_enabled?).and_return(false)
+    checkout = lambda do
+      described_class.call(
+        event: event,
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+        buyer_email: "buyer@example.com",
+        buyer_name: "Buyer"
+      )
+    end
+
+    event.update!(starts_at: 2.days.ago, ends_at: 1.day.ago, doors_open_at: 2.days.ago - 30.minutes)
+    expect(&checkout).to raise_error(described_class::CheckoutError, /not currently on sale/)
+
+    event.update!(starts_at: 2.days.from_now, ends_at: 2.days.from_now + 2.hours,
+      doors_open_at: 2.days.from_now - 30.minutes, status: :postponed)
+    expect(&checkout).to raise_error(described_class::CheckoutError, /not currently on sale/)
+    expect(event.orders).to be_empty
+  end
+
   it "does not create a Stripe intent for an immediately settled box-office payment" do
     allow(StripeService).to receive(:payment_enabled?).and_return(true)
     allow(StripeService).to receive(:create_payment_intent)

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Loader2, Clock, Hash } from 'lucide-react'
 import apiClient from '../api/client'
+import { toEventLocalInput } from '../utils/eventTime'
 
 const EMPTY_FORM = {
   name: '',
@@ -10,18 +11,6 @@ const EMPTY_FORM = {
   starts_at: '',
   ends_at: '',
   position: '0'
-}
-
-function formatDatetimeLocal(isoString) {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  if (Number.isNaN(date.valueOf())) return ''
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
 function TierForm({ initial, onSave, onCancel, saving }) {
@@ -83,7 +72,7 @@ function TierForm({ initial, onSave, onCancel, saving }) {
         </div>
       )}
       {form.tier_type === 'time_based' && (
-        <div className="grid grid-cols-2 gap-3">
+        <div><p className="text-xs text-neutral-500 mb-2">Times use Guam time (Pacific/Guam).</p><div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1">Starts At</label>
             <input type="datetime-local" value={form.starts_at} onChange={e => setForm(f => ({...f, starts_at: e.target.value}))} className="input" disabled={saving} />
@@ -92,7 +81,7 @@ function TierForm({ initial, onSave, onCancel, saving }) {
             <label className="block text-sm font-medium text-neutral-700 mb-1">Ends At</label>
             <input type="datetime-local" value={form.ends_at} onChange={e => setForm(f => ({...f, ends_at: e.target.value}))} className="input" disabled={saving} />
           </div>
-        </div>
+        </div></div>
       )}
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} disabled={saving} className="px-3 py-1.5 text-sm text-neutral-600 hover:text-neutral-800">Cancel</button>
@@ -203,8 +192,8 @@ export default function PricingTiersCRUD({ eventId, ticketTypeId }) {
                   price: (tier.price_cents / 100).toFixed(2),
                   tier_type: tier.tier_type,
                   quantity_limit: tier.quantity_limit ? String(tier.quantity_limit) : '',
-                  starts_at: formatDatetimeLocal(tier.starts_at),
-                  ends_at: formatDatetimeLocal(tier.ends_at),
+                  starts_at: toEventLocalInput(tier.starts_at),
+                  ends_at: toEventLocalInput(tier.ends_at),
                   position: String(tier.position)
                 }}
                 onSave={handleUpdate}

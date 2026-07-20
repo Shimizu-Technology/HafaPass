@@ -35,7 +35,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   private
 
   def event_params
-    params.permit(:is_featured, :status)
+    params.permit(:is_featured)
   end
 
   def event_json(e)

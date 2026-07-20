@@ -35,6 +35,7 @@ module Commerce
 
       Order.transaction do
         event.lock!
+        raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
         selections = locked_selections!
         enforce_event_capacity!(selections.sum { |selection| selection[:quantity] })
         totals = calculate_totals(selections)

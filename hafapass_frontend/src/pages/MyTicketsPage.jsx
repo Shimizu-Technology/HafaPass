@@ -6,6 +6,7 @@ import apiClient from '../api/client'
 import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
+import { formatEventDate, formatEventTime } from '../utils/eventTime'
 
 export default function MyTicketsPage() {
   const [orders, setOrders] = useState([])
@@ -125,22 +126,12 @@ export default function MyTicketsPage() {
     )
   }
 
-  function formatDate(dateStr) {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    })
+  function formatDate(dateStr, event) {
+    return formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
   }
 
-  function formatTime(dateStr) {
-    const date = new Date(dateStr)
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit'
-    })
+  function formatTime(dateStr, event) {
+    return formatEventTime(dateStr, event?.timezone)
   }
 
   function getStatusBadge(status) {
@@ -202,9 +193,9 @@ export default function MyTicketsPage() {
                         </Link>
                         <p className="text-sm text-neutral-600 mt-0.5 flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5" />
-                          {formatDate(event.starts_at)}
+                          {formatDate(event.starts_at, event)}
                           <Clock className="w-3.5 h-3.5 ml-1" />
-                          {formatTime(event.starts_at)}
+                          {formatTime(event.starts_at, event)}
                         </p>
                         {event.venue_name && (
                           <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">

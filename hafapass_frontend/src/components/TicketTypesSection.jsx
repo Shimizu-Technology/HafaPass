@@ -11,7 +11,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
 
   const formatPrice = (cents) => cents === 0 ? t('events.free') : `$${(cents / 100).toFixed(2)}`
 
-  const getMaxQty = (tt) => Math.max(0, Math.min(tt.max_per_order || 10, tt.quantity_available - tt.quantity_sold))
+  const getMaxQty = (tt) => Math.max(0, Math.min(tt.max_per_order || 10, tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)))
   const getClampedQty = (tt) => Math.min(getQty(tt.id), getMaxQty(tt))
 
   // Use current_price_cents if available, fallback to price_cents
@@ -41,8 +41,8 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
       <h2 className="text-lg font-semibold text-neutral-900 mb-4">{t('eventDetail.buyTickets')}</h2>
       <div className="space-y-3">
         {ticketTypes.map(tt => {
-          const available = tt.quantity_available - tt.quantity_sold
-          const soldOut = available <= 0
+          const available = tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)
+          const soldOut = available <= 0 || tt.on_sale === false
           const rawQty = getQty(tt.id)
           const maxQty = Math.min(tt.max_per_order || 10, available)
           const qty = Math.min(rawQty, maxQty)
@@ -56,7 +56,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                   <div className="flex items-center gap-2">
                     <h3 className="font-medium text-neutral-900">{tt.name}</h3>
                     {soldOut && (
-                      <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{t('events.soldOut')}</span>
+                      <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : 'Sales unavailable'}</span>
                     )}
                   </div>
                   {tt.description && <p className="text-sm text-neutral-500 mt-0.5">{tt.description}</p>}

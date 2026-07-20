@@ -26,25 +26,25 @@ function TicketTypeForm({ initial, onSave, onCancel, saving }) {
     <form onSubmit={handleSubmit} className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div>
-        <label className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
-        <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., General Admission" disabled={saving} />
+        <label htmlFor="ticket-type-name" className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
+        <input id="ticket-type-name" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., General Admission" disabled={saving} />
       </div>
       <div>
-        <label className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
-        <input value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} className="input" placeholder="Optional description" disabled={saving} />
+        <label htmlFor="ticket-type-description" className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
+        <input id="ticket-type-description" value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} className="input" placeholder="Optional description" disabled={saving} />
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-1">Price ($)</label>
-          <input type="number" step="0.01" min="0" value={form.price} onChange={e => setForm(f => ({...f, price: e.target.value}))} className="input" placeholder="0.00" disabled={saving} />
+          <label htmlFor="ticket-type-price" className="block text-sm font-medium text-neutral-700 mb-1">Price ($)</label>
+          <input id="ticket-type-price" type="number" step="0.01" min="0" value={form.price} onChange={e => setForm(f => ({...f, price: e.target.value}))} className="input" placeholder="0.00" disabled={saving} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-1">Qty Available</label>
-          <input type="number" min="1" value={form.quantity_available} onChange={e => setForm(f => ({...f, quantity_available: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
+          <label htmlFor="ticket-type-quantity" className="block text-sm font-medium text-neutral-700 mb-1">Qty Available</label>
+          <input id="ticket-type-quantity" type="number" min="1" value={form.quantity_available} onChange={e => setForm(f => ({...f, quantity_available: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-1">Max/Order</label>
-          <input type="number" min="1" value={form.max_per_order} onChange={e => setForm(f => ({...f, max_per_order: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
+          <label htmlFor="ticket-type-max-order" className="block text-sm font-medium text-neutral-700 mb-1">Max/Order</label>
+          <input id="ticket-type-max-order" type="number" min="1" value={form.max_per_order} onChange={e => setForm(f => ({...f, max_per_order: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
         </div>
       </div>
       <div className="flex gap-2 justify-end">

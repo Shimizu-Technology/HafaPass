@@ -66,7 +66,12 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
       orders_count: u.orders.size,
       organizer_profile: u.organizer_profile ? {
         id: u.organizer_profile.id,
-        business_name: u.organizer_profile.business_name
+        business_name: u.organizer_profile.business_name,
+        verification_status: u.organizer_profile.verification_status,
+        verification_requested_at: u.organizer_profile.verification_requested_at,
+        policy_accepted: u.organizer_profile.policy_accepted?,
+        payout_ready: u.organizer_profile.payout_ready,
+        verification_notes: u.organizer_profile.verification_notes
       } : nil
     }
   end

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Tag, Trash2, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
 import apiClient from '../../api/client'
+import { formatEventDate } from '../../utils/eventTime'
 
 export default function PromoCodesPage() {
  const { id: eventId } = useParams()
@@ -127,7 +128,7 @@ export default function PromoCodesPage() {
          <p className="text-sm text-neutral-500">
           {pc.discount_type === 'percentage' ? `${pc.discount_value}% off` : `$${(pc.discount_value / 100).toFixed(2)} off`}
           {' '}&middot; {pc.current_uses}{pc.max_uses ? `/${pc.max_uses}` : ''} used
-          {pc.expires_at && ` · Expires ${new Date(pc.expires_at).toLocaleDateString()}`}
+          {pc.expires_at && ` · Expires ${formatEventDate(pc.expires_at)}`}
          </p>
         </div>
        </div>

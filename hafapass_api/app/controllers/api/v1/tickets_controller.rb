@@ -59,6 +59,7 @@ class Api::V1::TicketsController < ApplicationController
         id: ticket.event.id,
         title: ticket.event.title,
         slug: ticket.event.slug,
+        status: ticket.event.status,
         venue_name: ticket.event.venue_name,
         venue_address: ticket.event.venue_address,
         starts_at: ticket.event.starts_at,

@@ -12,6 +12,7 @@ class PromoCode < ApplicationRecord
   validates :discount_type, inclusion: { in: DISCOUNT_TYPES }
   validates :discount_value, presence: true, numericality: { greater_than: 0 }
   validates :discount_value, numericality: { less_than_or_equal_to: 100 }, if: :percentage?
+  validate :chronological_redemption_window
 
   before_validation :normalize_code
 
@@ -68,6 +69,10 @@ class PromoCode < ApplicationRecord
   end
 
   private
+
+  def chronological_redemption_window
+    errors.add(:expires_at, "must be after the start") if starts_at && expires_at && expires_at <= starts_at
+  end
 
   def normalize_code
     self.code = code&.strip&.upcase

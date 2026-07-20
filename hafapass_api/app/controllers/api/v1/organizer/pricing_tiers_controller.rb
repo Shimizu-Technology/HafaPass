@@ -13,7 +13,7 @@ module Api
         end
 
         def create
-          tier = @ticket_type.pricing_tiers.build(tier_params)
+          tier = @ticket_type.pricing_tiers.build(parsed_tier_params)
           if tier.save
             render json: tier_json(tier), status: :created
           else
@@ -22,7 +22,7 @@ module Api
         end
 
         def update
-          if @tier.update(tier_params)
+          if @tier.update(parsed_tier_params)
             render json: tier_json(@tier)
           else
             render json: { errors: @tier.errors.full_messages }, status: :unprocessable_entity
@@ -70,6 +70,16 @@ module Api
 
         def tier_params
           params.permit(:name, :price_cents, :tier_type, :quantity_limit, :starts_at, :ends_at, :position)
+        end
+
+        def parsed_tier_params
+          attributes = tier_params.to_h
+          %w[starts_at ends_at].each do |key|
+            attributes[key] = EventTimeParser.call(attributes[key], timezone: @event.timezone) if attributes.key?(key)
+          end
+          attributes
+        rescue EventTimeParser::ParseError => e
+          raise ActionController::BadRequest, e.message
         end
 
         def tier_json(tier)

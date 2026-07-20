@@ -10,6 +10,7 @@ class TicketType < ApplicationRecord
   validates :quantity_available, presence: true, numericality: { greater_than: 0 }
   validates :quantity_sold, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :sold_quantity_within_capacity
+  validate :chronological_sales_window
 
   def sold_out?
     available_quantity.zero?
@@ -23,9 +24,9 @@ class TicketType < ApplicationRecord
     inventory_holds.current.sum(:quantity)
   end
 
-  def on_sale?
-    (sales_start_at.nil? || sales_start_at <= Time.current) &&
-      (sales_end_at.nil? || sales_end_at > Time.current)
+  def on_sale?(at: Time.current)
+    (sales_start_at.nil? || sales_start_at <= at) &&
+      (sales_end_at.nil? || sales_end_at > at)
   end
 
   # Evaluates pricing tiers in order and returns the current effective price.
@@ -66,6 +67,11 @@ class TicketType < ApplicationRecord
   end
 
   private
+
+  def chronological_sales_window
+    errors.add(:sales_end_at, "must be after sales start") if sales_start_at && sales_end_at && sales_end_at <= sales_start_at
+    errors.add(:sales_end_at, "must be at or before the event end") if sales_end_at && event&.ends_at && sales_end_at > event.ends_at
+  end
 
   def sold_quantity_within_capacity
     return if quantity_sold.blank? || quantity_available.blank?

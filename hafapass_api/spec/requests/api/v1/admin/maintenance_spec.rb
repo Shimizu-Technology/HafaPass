@@ -15,6 +15,7 @@ RSpec.describe "Api::V1::Admin::Maintenance", type: :request do
       expect(response).to have_http_status(:ok)
       expect(past_event.reload.status).to eq("completed")
       expect(upcoming_event.reload.status).to eq("published")
+      expect(past_event.event_state_changes.last).to have_attributes(action: "complete", actor_user: admin)
     end
 
     it "requires admin access" do
