@@ -197,7 +197,7 @@ export default function TicketPage() {
   }
 
   const status = statusConfig[ticket.status] || statusConfig.issued
-  const showCredential = ticket.status === 'issued' && !ticket.admission_block_reason && Boolean(ticket.scan_credential)
+  const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center px-3 sm:px-4 py-8">
