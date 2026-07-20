@@ -13,6 +13,7 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       get "health", to: "health#show"
+      get "readiness", to: "health#readiness"
       get "config", to: "config#show"
       get "me", to: "me#show"
       post "users/sync", to: "users#sync"
@@ -53,9 +54,9 @@ Rails.application.routes.draw do
       # Public events
       resources :events, only: [:index], param: :slug do
         member do
-          post 'waitlist', to: 'waitlist#create'
-          get 'waitlist/status', to: 'waitlist#status'
-          delete 'waitlist', to: 'waitlist#destroy'
+          post "waitlist", to: "waitlist#create"
+          get "waitlist/status", to: "waitlist#status"
+          delete "waitlist", to: "waitlist#destroy"
         end
       end
       get "events/:slug", to: "events#show", as: :event
@@ -105,7 +106,7 @@ Rails.application.routes.draw do
       # Admin endpoints
       namespace :admin do
         resource :settings, only: [:show, :update]
-        resource :dashboard, only: [:show], controller: 'dashboard'
+        resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update]
         resources :users, only: [:index, :update]
         resources :orders, only: [:index]

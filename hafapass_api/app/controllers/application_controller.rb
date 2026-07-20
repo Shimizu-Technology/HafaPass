@@ -1,7 +1,21 @@
 class ApplicationController < ActionController::API
   before_action :authenticate_user!
+  before_action :set_observability_context
+
+  def append_info_to_payload(payload)
+    super
+    payload[:request_id] = request.request_id
+    payload[:user_id] = @current_user.id if defined?(@current_user) && @current_user
+  end
 
   private
+
+  def set_observability_context
+    Sentry.set_tags(request_id: request.request_id)
+    return unless defined?(@current_user) && @current_user
+
+    Sentry.set_user(id: @current_user.id)
+  end
 
   def authenticate_user!
     token = extract_bearer_token
@@ -17,10 +31,9 @@ class ApplicationController < ActionController::API
     end
 
     @clerk_payload = payload
-    unless current_user
-      render json: { error: "Unauthorized" }, status: :unauthorized
-      return
-    end
+    return if current_user
+
+    render json: { error: "Unauthorized" }, status: :unauthorized
   end
 
   def current_user

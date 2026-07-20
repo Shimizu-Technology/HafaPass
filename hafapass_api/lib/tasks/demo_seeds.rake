@@ -38,7 +38,7 @@ namespace :db do
         max_capacity: 500,
         ticket_types: [
           { name: "General Admission", price_cents: 2500, quantity: 400, description: "Full festival access with all performances" },
-          { name: "VIP Experience", price_cents: 7500, quantity: 100, description: "Front-stage area, complimentary drinks, VIP lounge access" },
+          { name: "VIP Experience", price_cents: 7500, quantity: 100, description: "Front-stage area, complimentary drinks, VIP lounge access" }
         ]
       },
       {
@@ -58,7 +58,7 @@ namespace :db do
         is_featured: false,
         max_capacity: 1000,
         ticket_types: [
-          { name: "Free Entry", price_cents: 0, quantity: 1000, description: "Free admission — just show up and eat!" },
+          { name: "Free Entry", price_cents: 0, quantity: 1000, description: "Free admission — just show up and eat!" }
         ]
       },
       {
@@ -79,7 +79,7 @@ namespace :db do
         is_featured: false,
         max_capacity: 150,
         ticket_types: [
-          { name: "General Admission", price_cents: 1500, quantity: 150, description: "Includes entry and seating" },
+          { name: "General Admission", price_cents: 1500, quantity: 150, description: "Includes entry and seating" }
         ]
       },
       {
@@ -99,7 +99,7 @@ namespace :db do
         is_featured: false,
         max_capacity: 40,
         ticket_types: [
-          { name: "Yoga Pass", price_cents: 1000, quantity: 40, description: "Includes mat rental and guided session" },
+          { name: "Yoga Pass", price_cents: 1000, quantity: 40, description: "Includes mat rental and guided session" }
         ]
       },
       {
@@ -121,9 +121,9 @@ namespace :db do
         max_capacity: 200,
         ticket_types: [
           { name: "General Admission", price_cents: 2000, quantity: 150, description: "Cultural show and fiesta dinner" },
-          { name: "VIP Table", price_cents: 4000, quantity: 50, description: "Reserved front-row seating, priority dinner service, souvenir program" },
+          { name: "VIP Table", price_cents: 4000, quantity: 50, description: "Reserved front-row seating, priority dinner service, souvenir program" }
         ]
-      },
+      }
     ]
 
     events_data.each do |event_data|

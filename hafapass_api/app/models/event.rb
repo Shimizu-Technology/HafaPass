@@ -1,7 +1,7 @@
 class Event < ApplicationRecord
   belongs_to :organizer_profile
-  belongs_to :recurrence_parent, class_name: 'Event', optional: true
-  has_many :recurrence_children, class_name: 'Event', foreign_key: 'recurrence_parent_id', dependent: :nullify
+  belongs_to :recurrence_parent, class_name: "Event", optional: true
+  has_many :recurrence_children, class_name: "Event", foreign_key: "recurrence_parent_id", dependent: :nullify
   has_many :ticket_types, dependent: :destroy
   has_many :orders, dependent: :destroy
   has_many :tickets, dependent: :destroy

@@ -122,10 +122,9 @@ module Api
         private
 
         def require_organizer_profile
-          unless current_organizer_profile
-            render json: { error: "Organizer profile required" }, status: :forbidden
-            return
-          end
+          return if current_organizer_profile
+
+          render json: { error: "Organizer profile required" }, status: :forbidden
         end
 
         def current_organizer_profile

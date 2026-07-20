@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Bell, Trash2, Loader2, ClipboardList, Send } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -21,7 +21,7 @@ export default function WaitlistPage() {
   const [notifyCount, setNotifyCount] = useState(1)
   const [notifying, setNotifying] = useState(false)
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const params = filter ? { status: filter } : {}
       const res = await apiClient.get(`/organizer/events/${eventId}/waitlist`, { params })
@@ -31,9 +31,9 @@ export default function WaitlistPage() {
       console.error(e)
     }
     setLoading(false)
-  }
+  }, [eventId, filter])
 
-  useEffect(() => { fetchData() }, [eventId, filter])
+  useEffect(() => { fetchData() }, [fetchData])
 
   const handleNotify = async (entry) => {
     if (!confirm(`Notify ${entry.name || entry.email} that tickets are available?`)) return

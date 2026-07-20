@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { UserButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
+import { UserButton, SignedIn, useUser } from '@clerk/clerk-react'
 import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import apiClient from '../api/client'
@@ -8,7 +8,7 @@ import LanguageSwitcher from './LanguageSwitcher'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
-function NavContent() {
+function NavContent({ isSignedIn, clerkEnabled }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [userRole, setUserRole] = useState(null)
@@ -16,8 +16,6 @@ function NavContent() {
   const [searchOpen, setSearchOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
-  const { isSignedIn } = useUser()
-
   const { t } = useTranslation()
   const isHomepage = location.pathname === '/'
 
@@ -149,19 +147,22 @@ function NavContent() {
           {/* Right side */}
           <div className="hidden md:flex items-center gap-3">
             <LanguageSwitcher isDarkMode={isDarkMode} />
-            <SignedIn>
-              <UserButton afterSignOutUrl="/" />
-            </SignedIn>
-            <SignedOut>
-              <Link to="/sign-in" className={`text-sm font-medium transition-colors px-3 py-2 ${
-                isDarkMode ? 'text-neutral-300 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
-              }`}>
-                {t('nav.signIn')}
-              </Link>
-              <Link to="/sign-up" className="btn-primary text-sm !py-2.5 !px-5">
-                {t('nav.getStarted')}
-              </Link>
-            </SignedOut>
+            {clerkEnabled && isSignedIn ? (
+              <SignedIn>
+                <UserButton afterSignOutUrl="/" />
+              </SignedIn>
+            ) : (
+              <>
+                <Link to="/sign-in" className={`text-sm font-medium transition-colors px-3 py-2 ${
+                  isDarkMode ? 'text-neutral-300 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
+                }`}>
+                  {t('nav.signIn')}
+                </Link>
+                <Link to="/sign-up" className="btn-primary text-sm !py-2.5 !px-5">
+                  {t('nav.getStarted')}
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -208,7 +209,7 @@ function NavContent() {
                 </Link>
               )
             })}
-            <SignedOut>
+            {!isSignedIn && (
               <div className={`pt-3 border-t space-y-2 ${isDarkMode ? 'border-white/10' : 'border-neutral-200/50'}`}>
                 <Link to="/sign-in" className={`block px-4 py-3 rounded-xl text-sm font-medium ${
                   isDarkMode ? 'text-neutral-400 hover:bg-white/5' : 'text-neutral-500 hover:bg-neutral-50'
@@ -219,12 +220,14 @@ function NavContent() {
                   {t('nav.getStarted')}
                 </Link>
               </div>
-            </SignedOut>
-            <SignedIn>
+            )}
+            {clerkEnabled && isSignedIn && (
+              <SignedIn>
               <div className={`pt-3 border-t px-4 py-3 ${isDarkMode ? 'border-white/10' : 'border-neutral-200/50'}`}>
                 <UserButton afterSignOutUrl="/" />
               </div>
-            </SignedIn>
+              </SignedIn>
+            )}
           </div>
         </div>
       )}
@@ -232,9 +235,14 @@ function NavContent() {
   )
 }
 
+function ClerkNavContent() {
+  const { isSignedIn } = useUser()
+  return <NavContent isSignedIn={Boolean(isSignedIn)} clerkEnabled />
+}
+
 export default function Navbar() {
   if (clerkPubKey) {
-    return <NavContent />
+    return <ClerkNavContent />
   }
-  return <NavContent />
+  return <NavContent isSignedIn={false} clerkEnabled={false} />
 }

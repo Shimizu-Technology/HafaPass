@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
+
+const hasSentryUploadConfig = Boolean(
+  process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT,
+)
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -74,5 +79,33 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api/, /^\/robots\.txt$/, /^\/sitemap\.xml$/],
       },
     }),
+    hasSentryUploadConfig && sentryVitePlugin({
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      release: { name: process.env.VITE_SENTRY_RELEASE || process.env.COMMIT_REF },
+      sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+    }),
   ],
+  build: {
+    sourcemap: hasSentryUploadConfig,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          clerk: ['@clerk/clerk-react'],
+          monitoring: ['@sentry/react'],
+          payments: ['@stripe/react-stripe-js', '@stripe/stripe-js'],
+          react: ['react', 'react-dom', 'react-router-dom'],
+          translations: ['i18next', 'i18next-browser-languagedetector', 'react-i18next'],
+        },
+      },
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    include: ['src/**/*.test.{js,jsx}'],
+    setupFiles: './src/test/setup.js',
+    css: true,
+  },
 })

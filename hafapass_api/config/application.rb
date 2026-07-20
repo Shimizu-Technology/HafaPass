@@ -16,9 +16,16 @@ module HafapassApi
     config.autoload_lib(ignore: %w[assets tasks])
     config.api_only = true
 
-    # Use Sidekiq for background jobs
-    # Falls back to async (in-process) if Redis is not available
-    config.active_job.queue_adapter = ENV["REDIS_URL"].present? ? :sidekiq : :async
+    # Production jobs must be durable and processed by the separately deployed
+    # Sidekiq worker. Development may use the in-process adapter when Redis is
+    # intentionally absent; tests configure Active Job's test adapter.
+    config.active_job.queue_adapter = if Rails.env.test?
+      :test
+    elsif Rails.env.development? && ENV["REDIS_URL"].blank?
+      :async
+    else
+      :sidekiq
+    end
 
     # Enable Rack::Attack for rate limiting
     config.middleware.use Rack::Attack

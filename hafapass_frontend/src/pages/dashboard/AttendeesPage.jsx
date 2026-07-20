@@ -26,6 +26,23 @@ export default function AttendeesPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [ticketTypeFilter, setTicketTypeFilter] = useState('')
 
+  useEffect(() => {
+    let active = true
+
+    apiClient.get(`/organizer/events/${id}`)
+      .then((response) => {
+        if (active) setEvent(response.data)
+      })
+      .catch((err) => {
+        if (!active) return
+        if (err.response?.status === 401) setError('Please sign in.')
+        else if (err.response?.status === 404) setError('Event not found.')
+        else setError('Failed to load event details.')
+      })
+
+    return () => { active = false }
+  }, [id])
+
   const fetchAttendees = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -35,15 +52,11 @@ export default function AttendeesPage() {
       if (statusFilter) params.set('status', statusFilter)
       if (ticketTypeFilter) params.set('ticket_type', ticketTypeFilter)
 
-      const [attRes, eventRes] = await Promise.all([
-        apiClient.get(`/organizer/events/${id}/attendees?${params}`),
-        event ? Promise.resolve({ data: event }) : apiClient.get(`/organizer/events/${id}`)
-      ])
+      const attRes = await apiClient.get(`/organizer/events/${id}/attendees?${params}`)
 
       const data = attRes.data.attendees || attRes.data
       setAttendees(Array.isArray(data) ? data : [])
       setMeta(attRes.data.meta || null)
-      if (!event) setEvent(eventRes.data)
     } catch (err) {
       if (err.response?.status === 401) setError('Please sign in.')
       else if (err.response?.status === 404) setError('Event not found.')

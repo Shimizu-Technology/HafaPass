@@ -13,9 +13,9 @@ class PricingTier < ApplicationRecord
 
   def active?
     case tier_type
-    when 'quantity_based'
+    when "quantity_based"
       quantity_sold < quantity_limit
-    when 'time_based'
+    when "time_based"
       if starts_at.present? && ends_at.present?
         Time.current.between?(starts_at, ends_at)
       elsif starts_at.present?
