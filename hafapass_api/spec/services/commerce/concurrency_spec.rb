@@ -58,6 +58,35 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(InventoryHold.current.sum(:quantity)).to eq(1)
   end
 
+  it "allows exactly one box-office sale to consume the final door allocation" do
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    ticket_type = create(
+      :ticket_type,
+      event: event,
+      quantity_available: 10,
+      door_allocation: 1,
+      max_per_order: 1
+    )
+
+    outcomes = run_concurrently(2) do |index|
+      Commerce::OrderCreator.call(
+        event: Event.find(event.id),
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+        buyer_email: "door#{index}@example.com",
+        buyer_name: "Door Buyer #{index}",
+        payment_required: false,
+        service_fee: false,
+        source: "box_office",
+        payment_method: "door_cash"
+      )
+    end
+
+    expect(outcomes.count { |outcome| outcome.is_a?(Commerce::OrderCreator::Result) }).to eq(1)
+    expect(outcomes.count { |outcome| outcome.is_a?(Commerce::OrderCreator::CheckoutError) }).to eq(1)
+    expect(ticket_type.reload.door_sold_quantity).to eq(1)
+    expect(ticket_type.door_available_quantity).to eq(0)
+  end
+
   it "serializes competing refund requests so committed value cannot exceed the charge" do
     event = create(:event, :published, starts_at: 5.days.from_now)
     ticket_type = create(:ticket_type, event: event, quantity_sold: 1)
