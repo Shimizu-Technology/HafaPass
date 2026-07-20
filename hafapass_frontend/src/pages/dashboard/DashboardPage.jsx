@@ -403,8 +403,8 @@ export default function DashboardPage() {
       <p className="text-sm text-neutral-500 mt-1">These platform checks protect attendees and are required before an event can be published.</p>
       <ul className="mt-4 space-y-3">
        <li className="flex items-center justify-between gap-4">
-        <span className="flex items-center gap-2 text-sm text-neutral-700">{profile.policy_accepted ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Organizer policy accepted</span>
-        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => window.confirm('I agree to follow HafaPass organizer policies, publish accurate event information, and honor attendee purchases and refunds.') && updateReadiness('accept_policy')} className="btn-secondary text-xs !py-2">Accept policy</button>}
+        <span className="flex items-center gap-2 text-sm text-neutral-700">{profile.policy_accepted ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} <Link className="underline" to="/policies/organizer-agreement" target="_blank">Organizer agreement</Link> {profile.policy_accepted ? 'accepted' : 'requires acceptance'}</span>
+        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => window.confirm(`I accept organizer agreement ${profile.current_policy_version} and agree to publish accurate event information and honor attendee purchases and refunds.`) && updateReadiness('accept_policy')} className="btn-secondary text-xs !py-2">Accept policy</button>}
        </li>
        <li className="flex items-center justify-between gap-4">
         <span className="flex items-center gap-2 text-sm text-neutral-700">{profile.verification_status === 'verified' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Identity verification: <strong className="capitalize">{profile.verification_status}</strong></span>

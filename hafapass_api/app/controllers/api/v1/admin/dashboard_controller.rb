@@ -11,6 +11,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
       total_revenue_cents: financials[:net_cents],
       financials: financials,
       open_reconciliation_exceptions: ReconciliationException.open.count,
+      operational_signals: SystemReadiness.call.dig(:checks, :operations),
       total_tickets_sold: Ticket.where(status: [:issued, :checked_in]).count,
       recent_events: recent_events_json,
       recent_orders: recent_orders_json

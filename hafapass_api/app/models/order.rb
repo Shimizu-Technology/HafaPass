@@ -11,6 +11,7 @@ class Order < ApplicationRecord
   has_many :event_change_responses, dependent: :restrict_with_error
   has_many :disputes, dependent: :restrict_with_error
   has_many :message_deliveries, dependent: :restrict_with_error
+  has_many :support_notes, dependent: :restrict_with_error
   has_one :promo_redemption, dependent: :restrict_with_error
   has_many :reconciliation_exceptions, dependent: :restrict_with_error
   has_many :card_present_payment_attempts, dependent: :restrict_with_error

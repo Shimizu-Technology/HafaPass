@@ -54,7 +54,8 @@ module Api
         return render json: { error: "Organizer profile not found" }, status: :not_found unless profile
         return render json: { error: "Owner permission required" }, status: :forbidden unless owner?(profile)
 
-        profile.update!(policy_accepted_at: Time.current)
+        policy = PolicyRegistry.organizer_agreement
+        profile.update!(policy_accepted_at: Time.current, policy_version: policy[:version], policy_digest: policy[:digest])
         AuditLogger.record!(action: "organizer.policy_accepted", auditable: profile, actor: current_user, request: request)
         render json: profile_json(profile)
       end
@@ -125,6 +126,8 @@ module Api
           verified_at: profile.verified_at,
           verification_notes: owner?(profile) ? profile.verification_notes : nil,
           policy_accepted_at: profile.policy_accepted_at,
+          policy_version: profile.policy_version,
+          current_policy_version: PolicyRegistry.organizer_agreement[:version],
           policy_accepted: profile.policy_accepted?,
           payout_ready: profile.organization.payout_ready?,
           connected_account: financial_access?(profile) ? connected_account_json(

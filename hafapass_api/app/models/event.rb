@@ -1,4 +1,6 @@
 class Event < ApplicationRecord
+  has_many :message_deliveries, dependent: :restrict_with_error
+  has_many :support_notes, dependent: :restrict_with_error
   belongs_to :organizer_profile
   belongs_to :organization
   belongs_to :recurrence_parent, class_name: "Event", optional: true

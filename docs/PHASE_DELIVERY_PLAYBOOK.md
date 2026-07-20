@@ -413,6 +413,8 @@ Runtime/pilot acceptance:
 - Full manual pilot plan on desktop and mobile.
 - No open P0 findings.
 
+Implementation and operating details live in [Pilot Readiness and Incident Runbook](PILOT_READINESS_RUNBOOK.md) and [Policy and Professional Review Register](POLICY_REVIEW_REGISTER.md). Automated tests prove durable/idempotent delivery, signed and deduplicated provider events, early-event reconciliation, bounce suppression, safe replay, consolidated fulfillment, HTML escaping, policy snapshots, least-privilege support access, and serious/critical accessibility checks. Professional policy approval, real provider exercises, backup/rollback/alert drills, named backup on-call confirmation, and the full device/browser matrix remain explicit production release gates.
+
 ### Phase 8 — Competitive general-admission platform
 
 Branch: `codex/phase-08-competitive-features`

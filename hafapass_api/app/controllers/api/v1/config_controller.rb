@@ -15,6 +15,7 @@ class Api::V1::ConfigController < ApplicationController
       service_fee_percent: settings.service_fee_percent,
       service_fee_flat_cents: settings.service_fee_flat_cents,
       public_web_url: PublicSiteUrl.base,
+      buyer_terms_version: PolicyRegistry.buyer_terms[:version],
       event_categories: Event::CATEGORY_LABELS.map { |value, label| { value: value, label: label } }
     }
   end

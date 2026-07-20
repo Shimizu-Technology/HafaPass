@@ -105,7 +105,7 @@ Required production configuration:
 1. Reconnect every scanner, sync until each queue is zero, and download the final dashboard/door totals.
 2. Resolve conflicts, rejections, unknown card results, cash variance, and open reconciliation exceptions before settlement finalization.
 3. Revoke devices that will not be reused. Do not clear browser storage until the server proves its queue was received.
-4. Preserve append-only admission and payment audit records under the production retention policy. Purge browser offline data after the operational dispute window; Phase 7 must finalize the duration and remote-wipe/support procedure.
+4. Preserve append-only admission and payment audit records under the approved production retention policy. At event closeout, confirm every device is synced, export evidence, revoke its assignment, and use **Reset this device** to remove the IndexedDB manifest, device token, queue, and local scan state. Complete this within 24 hours after closeout unless an active incident/legal hold requires specifically documented evidence; a lost device is revoked immediately. Final server-side retention remains blocked on the professional review register.
 5. Record any printed-list exceptions, device failures, network outage, card ambiguity, and attendee-impacting decision in the incident log.
 
 ## Release checklist

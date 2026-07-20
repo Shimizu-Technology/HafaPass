@@ -27,6 +27,7 @@ export default function CheckoutPage() {
   const [buyerName, setBuyerName] = useState('')
   const [buyerEmail, setBuyerEmail] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [formErrors, setFormErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -131,6 +132,7 @@ export default function CheckoutPage() {
     if (!buyerName.trim()) errors.name = 'Name is required'
     if (!buyerEmail.trim()) errors.email = 'Email is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail.trim())) errors.email = 'Please enter a valid email'
+    if (!termsAccepted) errors.terms = 'You must accept the buyer terms to continue'
     return errors
   }
 
@@ -149,6 +151,8 @@ export default function CheckoutPage() {
         buyer_phone: buyerPhone.trim() || null,
         line_items: lineItems.map(item => ({ ticket_type_id: item.ticket_type_id, quantity: item.quantity })),
         promo_code_id: promoData?.promo_code_id || null,
+        terms_accepted: termsAccepted,
+        terms_version: config.buyer_terms_version,
       }
       const response = await apiClient.post('/orders', payload)
       const order = response.data
@@ -389,6 +393,27 @@ export default function CheckoutPage() {
                   <input id="buyerPhone" type="tel" value={buyerPhone}
                     onChange={(e) => setBuyerPhone(e.target.value)}
                     className="input" placeholder="(671) 555-0123" disabled={submitting} />
+                </div>
+                <div>
+                  <label className="flex items-start gap-3 text-sm text-neutral-600" htmlFor="termsAccepted">
+                    <input
+                      id="termsAccepted"
+                      type="checkbox"
+                      checked={termsAccepted}
+                      onChange={(event) => {
+                        setTermsAccepted(event.target.checked)
+                        setFormErrors(previous => ({ ...previous, terms: null }))
+                      }}
+                      className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
+                      disabled={submitting}
+                    />
+                    <span>
+                      I agree to the <Link className="text-brand-600 underline" to="/policies/buyer-terms" target="_blank">Buyer Terms</Link>,{' '}
+                      <Link className="text-brand-600 underline" to="/policies/refunds" target="_blank">refund and cancellation policy</Link>, and{' '}
+                      <Link className="text-brand-600 underline" to="/policies/privacy" target="_blank">Privacy Policy</Link>.
+                    </span>
+                  </label>
+                  {formErrors.terms && <p className="text-red-500 text-xs mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
               </div>
               <button type="submit" disabled={submitting} className="w-full mt-6 btn-primary text-base !py-4 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0 transition-all duration-200">

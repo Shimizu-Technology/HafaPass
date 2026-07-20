@@ -7,7 +7,8 @@ class SystemReadiness
         database: database_check,
         job_queue: job_queue_check,
         worker: worker_check,
-        providers: provider_configuration
+        providers: provider_configuration,
+        operations: operational_signals
       }
 
       required_checks = checks.values_at(:database, :job_queue)
@@ -60,6 +61,7 @@ class SystemReadiness
       {
         clerk: configured?("CLERK_SECRET_KEY"),
         email: configured?("RESEND_API_KEY"),
+        email_webhook: configured?("RESEND_WEBHOOK_SECRET"),
         error_monitoring: configured?("SENTRY_DSN"),
         object_storage: %w[AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET].all? { |key| ENV[key].present? },
         stripe_test: %w[STRIPE_TEST_SECRET_KEY STRIPE_TEST_PUBLISHABLE_KEY].all? { |key| ENV[key].present? },
@@ -69,6 +71,20 @@ class SystemReadiness
 
     def configured?(key)
       ENV[key].present?
+    end
+
+    def operational_signals
+      {
+        ready: true,
+        status: "observable",
+        failed_messages_last_hour: MessageDelivery.failed.where(updated_at: 1.hour.ago..).count,
+        stale_message_events: MessageProviderEvent.where(processed_at: nil).where("received_at < ?", 5.minutes.ago).count,
+        failed_payment_webhooks: WebhookEvent.failed.count,
+        open_reconciliation_exceptions: ReconciliationException.open.count,
+        unknown_card_present_results: CardPresentPaymentAttempt.status_result_unknown.count
+      }
+    rescue ActiveRecord::StatementInvalid
+      { ready: true, status: "migration_pending" }
     end
 
     def failure(status, error, extra = {})

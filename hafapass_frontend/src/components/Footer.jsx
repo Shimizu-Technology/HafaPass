@@ -41,7 +41,9 @@ export default function Footer() {
             <ul className="space-y-2.5">
               <li><a href="https://shimizu-technology.com" target="_blank" rel="noopener noreferrer" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.about')}</a></li>
               <li><a href="mailto:contact@hafapass.com" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.contact')}</a></li>
-              <li><Link to="/" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.privacy')}</Link></li>
+              <li><Link to="/policies/privacy" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.privacy')}</Link></li>
+              <li><Link to="/policies/buyer-terms" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">Buyer Terms</Link></li>
+              <li><Link to="/policies/refunds" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">Refunds</Link></li>
             </ul>
           </div>
 

@@ -7,6 +7,7 @@ class Ticket < ApplicationRecord
   has_many :refund_tickets, dependent: :restrict_with_error
   has_many :refunds, through: :refund_tickets
   has_many :message_deliveries, dependent: :restrict_with_error
+  has_many :support_notes, dependent: :restrict_with_error
   has_many :admission_actions, dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }

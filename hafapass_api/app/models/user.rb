@@ -11,8 +11,9 @@ class User < ApplicationRecord
     dependent: :restrict_with_error, inverse_of: :verified_by_user
   has_many :card_present_payment_attempts, foreign_key: :initiated_by_user_id,
     dependent: :restrict_with_error, inverse_of: :initiated_by_user
+  has_many :support_notes, foreign_key: :author_user_id, dependent: :restrict_with_error, inverse_of: :author_user
 
-  enum :role, { attendee: 0, organizer: 1, admin: 2 }
+  enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
 
   validates :clerk_id, presence: true, uniqueness: true
 end

@@ -14,7 +14,7 @@ module Commerce
 
     def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, user: nil, promo_code_id: nil,
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
-      payment_provider: nil)
+      payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -28,6 +28,9 @@ module Commerce
       @source = source
       @payment_method = payment_method
       @payment_provider = payment_provider
+      @buyer_terms_version = buyer_terms_version
+      @buyer_terms_digest = buyer_terms_digest
+      @buyer_terms_accepted_at = buyer_terms_accepted_at
     end
 
     def call
@@ -58,6 +61,9 @@ module Commerce
           buyer_phone: buyer_phone,
           source: source,
           payment_method: payment_method,
+          buyer_terms_version: buyer_terms_version,
+          buyer_terms_digest: buyer_terms_digest,
+          buyer_terms_accepted_at: buyer_terms_accepted_at,
           expires_at: expires_at
         )
 
@@ -105,6 +111,7 @@ module Commerce
 
     attr_reader :event, :line_items, :buyer_email, :buyer_name, :buyer_phone, :user, :promo_code_id,
       :payment_required, :service_fee, :complimentary, :source, :payment_method, :payment_provider
+    attr_reader :buyer_terms_version, :buyer_terms_digest, :buyer_terms_accepted_at
 
     def normalized_quantities
       raise CheckoutError, "line_items is required and must be a non-empty array" unless line_items.is_a?(Array) && line_items.any?

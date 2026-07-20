@@ -23,9 +23,23 @@ RSpec.describe SystemReadiness do
       providers = result.dig(:checks, :providers)
 
       expect(providers.keys).to contain_exactly(
-        :clerk, :email, :error_monitoring, :object_storage, :stripe_test, :stripe_live
+        :clerk, :email, :email_webhook, :error_monitoring, :object_storage, :stripe_test, :stripe_live
       )
       expect(providers.values).to all(be(true).or(be(false)))
+    end
+
+    it "exposes persisted operational failure signals" do
+      result = described_class.call
+
+      expect(result.dig(:checks, :operations)).to include(
+        ready: true,
+        status: "observable",
+        failed_messages_last_hour: 0,
+        stale_message_events: 0,
+        failed_payment_webhooks: 0,
+        open_reconciliation_exceptions: 0,
+        unknown_card_present_results: 0
+      )
     end
 
     context "with the production Sidekiq adapter" do

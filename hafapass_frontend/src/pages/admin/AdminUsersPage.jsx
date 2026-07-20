@@ -3,7 +3,7 @@ import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 
-const roles = ['', 'attendee', 'organizer', 'admin']
+const roles = ['', 'attendee', 'organizer', 'support', 'admin']
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState([])
@@ -73,6 +73,7 @@ export default function AdminUsersPage() {
     const styles = {
       admin: 'bg-brand-50 text-brand-600',
       organizer: 'bg-indigo-50 text-indigo-600',
+      support: 'bg-amber-50 text-amber-700',
       attendee: 'bg-neutral-100 text-neutral-600',
     }
     return styles[role] || styles.attendee

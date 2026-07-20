@@ -66,9 +66,6 @@ module Commerce
 
         if completed_now
           EmailService.send_order_confirmation_async(order)
-          order.tickets.each do |ticket|
-            EmailService.send_ticket_email_async(ticket) if ticket.attendee_email.present?
-          end
         end
 
         completed_now ? :completed : :unchanged

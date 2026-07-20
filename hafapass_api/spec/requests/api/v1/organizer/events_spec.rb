@@ -237,7 +237,9 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
   describe "POST /api/v1/organizer/events/:id/publish" do
     it "publishes a draft event" do
-      organizer_profile.update!(verification_status: :verified, verified_at: Time.current, policy_accepted_at: Time.current)
+      policy = PolicyRegistry.organizer_agreement
+      organizer_profile.update!(verification_status: :verified, verified_at: Time.current, policy_accepted_at: Time.current,
+        policy_version: policy[:version], policy_digest: policy[:digest])
       event = create(:event, organizer_profile: organizer_profile)
       create(:ticket_type, :free, event: event, quantity_available: 100)
 
@@ -264,7 +266,8 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
     it "requires evidence-backed connected-account readiness for paid events" do
       organizer_profile.update!(verification_status: :verified, verified_at: Time.current,
-        policy_accepted_at: Time.current, payout_ready: true)
+        policy_accepted_at: Time.current, policy_version: PolicyRegistry.organizer_agreement[:version],
+        policy_digest: PolicyRegistry.organizer_agreement[:digest], payout_ready: true)
       event = create(:event, organizer_profile: organizer_profile)
       create(:ticket_type, event: event, price_cents: 2500, quantity_available: 100)
 

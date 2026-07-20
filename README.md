@@ -195,6 +195,7 @@ Query params: `?page=2&per_page=10`
 | `AWS_BUCKET` | No | S3 bucket name |
 | `AWS_REGION` | No | AWS region (default: us-west-2) |
 | `RESEND_API_KEY` | No | Resend email API key |
+| `RESEND_WEBHOOK_SECRET` | Production email | Resend/Svix webhook signing secret |
 | `MAILER_FROM_EMAIL` | No | From address for emails (default: tickets@hafapass.com) |
 | `FRONTEND_URL` | No | Frontend URL for email links (default: http://localhost:5173) |
 | `PUBLIC_WEB_URL` | No | Canonical public site URL for SEO and sitemaps (default: https://hafapass.com) |
@@ -238,7 +239,7 @@ This creates:
 SKIP_E2E=1 ./scripts/gate.sh
 ```
 
-The root CI workflow runs the same concerns in parallel. See the [operations runbook](docs/OPERATIONS_RUNBOOK.md) for readiness, worker, monitoring, and incident procedures.
+The root CI workflow runs the same concerns in parallel. See the [operations runbook](docs/OPERATIONS_RUNBOOK.md) for readiness, worker, monitoring, and incident procedures; [pilot readiness](docs/PILOT_READINESS_RUNBOOK.md) for communications, support, backup/restore, alerts, accessibility, and release drills; and the [professional review register](docs/POLICY_REVIEW_REGISTER.md) for legal/privacy/accounting gates.
 
 ## Production Checklist
 

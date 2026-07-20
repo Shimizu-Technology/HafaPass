@@ -71,6 +71,8 @@ RSpec.describe "Commerce order lifecycle" do
     expect(result.order.inventory_holds).to all(be_consumed)
     expect(ticket_type.reload.quantity_sold).to eq(2)
     expect(result.order.tickets.pluck(:qr_code)).to all(be_present)
+    expect(EmailService).to have_received(:send_order_confirmation_async).with(result.order).once
+    expect(EmailService).not_to have_received(:send_ticket_email_async)
 
     expect do
       Commerce::OrderLifecycle.complete!(
