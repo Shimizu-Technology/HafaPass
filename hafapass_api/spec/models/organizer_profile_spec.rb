@@ -12,6 +12,13 @@ RSpec.describe OrganizerProfile, type: :model do
       expect(profile).not_to be_valid
       expect(profile.errors[:business_name]).to include("can't be blank")
     end
+
+    it "allows only one organization profile per user" do
+      user = create(:user, :organizer)
+      create(:organizer_profile, user: user)
+
+      expect(build(:organizer_profile, user: user)).not_to be_valid
+    end
   end
 
   describe "associations" do

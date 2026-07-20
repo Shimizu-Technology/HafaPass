@@ -3,11 +3,14 @@
 class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
   # GET /api/v1/admin/dashboard
   def show
+    financials = Commerce::LedgerTotals.call(Order.where(status: [:completed, :partially_refunded, :refunded]))
     render json: {
       total_events: Event.group(:status).count,
       total_users: User.group(:role).count,
       total_orders: Order.count,
-      total_revenue_cents: Order.where(status: [:completed, :partially_refunded]).sum(:total_cents),
+      total_revenue_cents: financials[:net_cents],
+      financials: financials,
+      open_reconciliation_exceptions: ReconciliationException.open.count,
       total_tickets_sold: Ticket.where(status: [:issued, :checked_in]).count,
       recent_events: recent_events_json,
       recent_orders: recent_orders_json

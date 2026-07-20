@@ -218,20 +218,32 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
     let(:vip_type) { create(:ticket_type, :vip, event: event, price_cents: 7500, quantity_available: 20) }
 
     before do
-      order1 = create(:order, event: event, total_cents: 5525)
-      create(:ticket, order: order1, ticket_type: ga_type, event: event)
-      create(:ticket, order: order1, ticket_type: ga_type, event: event)
+      order1 = create(:order, event: event, subtotal_cents: 5500, service_fee_cents: 0, total_cents: 5500)
+      item1 = create(:order_item, order: order1, ticket_type: ga_type, unit_price_cents: 2750, quantity: 2,
+        subtotal_cents: 5500, fee_cents: 0, organizer_proceeds_cents: 5500)
+      create(:ticket, order: order1, order_item: item1, ticket_type: ga_type, event: event)
+      create(:ticket, order: order1, order_item: item1, ticket_type: ga_type, event: event)
+      refund = create(:refund, order: order1, amount_cents: 1000)
+      create(:refund_item, refund: refund, order_item: item1, amount_cents: 1000,
+        organizer_proceeds_cents: 1000)
+      order1.update!(status: :partially_refunded, refund_amount_cents: 1000)
 
-      order2 = create(:order, event: event, total_cents: 8025)
-      create(:ticket, order: order2, ticket_type: vip_type, event: event)
+      order2 = create(:order, event: event, subtotal_cents: 8000, service_fee_cents: 0, total_cents: 8000)
+      item2 = create(:order_item, order: order2, ticket_type: vip_type, unit_price_cents: 8000,
+        subtotal_cents: 8000, fee_cents: 0, organizer_proceeds_cents: 8000)
+      create(:ticket, order: order2, order_item: item2, ticket_type: vip_type, event: event)
 
       # Checked-in ticket
-      order3 = create(:order, event: event, total_cents: 3025)
-      create(:ticket, :checked_in, order: order3, ticket_type: ga_type, event: event)
+      order3 = create(:order, event: event, subtotal_cents: 3000, service_fee_cents: 0, total_cents: 3000)
+      item3 = create(:order_item, order: order3, ticket_type: ga_type, unit_price_cents: 3000,
+        subtotal_cents: 3000, fee_cents: 0, organizer_proceeds_cents: 3000)
+      create(:ticket, :checked_in, order: order3, order_item: item3, ticket_type: ga_type, event: event)
 
       # Cancelled ticket (shouldn't count)
-      order4 = create(:order, event: event, total_cents: 3025)
-      create(:ticket, :cancelled, order: order4, ticket_type: ga_type, event: event)
+      order4 = create(:order, event: event, subtotal_cents: 3000, service_fee_cents: 0, total_cents: 3000)
+      item4 = create(:order_item, order: order4, ticket_type: ga_type, unit_price_cents: 3000,
+        subtotal_cents: 3000, fee_cents: 0, organizer_proceeds_cents: 3000)
+      create(:ticket, :cancelled, order: order4, order_item: item4, ticket_type: ga_type, event: event)
     end
 
     it "returns correct stats" do
@@ -240,7 +252,7 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
       expect(json["total_tickets_sold"]).to eq(4) # excludes cancelled
-      expect(json["total_revenue_cents"]).to eq(5525 + 8025 + 3025 + 3025)
+      expect(json["total_revenue_cents"]).to eq(18_500)
       expect(json["tickets_checked_in"]).to eq(1)
     end
 
@@ -253,6 +265,8 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
       expect(ga["sold"]).to eq(3) # 2 issued + 1 checked_in (excludes cancelled)
       expect(vip["sold"]).to eq(1)
+      expect(ga["revenue_cents"]).to eq(10_500)
+      expect(vip["revenue_cents"]).to eq(8000)
     end
 
     it "returns recent_orders" do

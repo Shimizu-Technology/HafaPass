@@ -1,4 +1,8 @@
 class ApplicationJob < ActiveJob::Base
+  # Jobs that reference newly committed records must never race the transaction
+  # that created them (checkout, guest-list redemption, refunds, and waitlists).
+  self.enqueue_after_transaction_commit = true
+
   # Automatically retry jobs that encountered a deadlock
   retry_on ActiveRecord::Deadlocked, wait: 5.seconds, attempts: 3
 

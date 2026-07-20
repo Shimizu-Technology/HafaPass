@@ -74,49 +74,24 @@ module Api
               return
             end
 
-            # Lock the ticket type row to prevent race conditions on availability
-            ticket_type = @entry.ticket_type.lock!
-
-            if @entry.quantity > ticket_type.available_quantity
-              render json: { error: "Not enough tickets available" }, status: :unprocessable_entity
-              return
-            end
-
-            # Create a comp order (zero-cost)
-            order = Order.create!(
+            result = Commerce::OrderCreator.call(
               event: @event,
-              status: :completed,
-              subtotal_cents: 0,
-              service_fee_cents: 0,
-              discount_cents: 0,
-              total_cents: 0,
+              line_items: [{ ticket_type_id: @entry.ticket_type_id, quantity: @entry.quantity }],
               buyer_email: @entry.guest_email || "guest@hafapass.com",
               buyer_name: @entry.guest_name,
               buyer_phone: @entry.guest_phone,
-              completed_at: Time.current
+              payment_required: false,
+              service_fee: false,
+              complimentary: true,
+              source: "guest_list"
             )
 
-            @entry.quantity.times do
-              order.tickets.create!(
-                ticket_type: ticket_type,
-                event: @event,
-                attendee_name: @entry.guest_name,
-                attendee_email: @entry.guest_email
-              )
-            end
-
-            ticket_type.increment!(:quantity_sold, @entry.quantity)
-
-            # Comp orders are completed immediately, so ensure tickets have QR codes.
-            order.tickets.each(&:issue_qr_code!)
-
-            @entry.redeem!(order)
+            @entry.redeem!(result.order)
           end
 
-          # Send ticket emails asynchronously
-          EmailService.send_order_confirmation_async(@entry.order)
-
           render json: entry_json(@entry.reload)
+        rescue Commerce::OrderCreator::CheckoutError => e
+          render json: { error: e.message }, status: :unprocessable_entity
         end
 
         private

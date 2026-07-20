@@ -40,11 +40,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
 
   def event_json(e)
     tickets_sold = e.ticket_types.loaded? ? e.ticket_types.sum(&:quantity_sold) : e.ticket_types.sum(:quantity_sold)
-    revenue = if e.orders.loaded?
-      e.orders.select { |o| %w[completed partially_refunded].include?(o.status) }.sum(&:total_cents)
-    else
-      e.orders.where(status: %w[completed partially_refunded]).sum(:total_cents)
-    end
+    financials = Commerce::LedgerTotals.call(e.orders.where(status: [:completed, :partially_refunded, :refunded]))
     {
       id: e.id,
       title: e.title,
@@ -55,7 +51,8 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       starts_at: e.starts_at,
       created_at: e.created_at,
       tickets_sold: tickets_sold,
-      revenue_cents: revenue,
+      revenue_cents: financials[:net_cents],
+      financials: financials,
       organizer_name: e.organizer_profile&.business_name,
       organizer_email: e.organizer_profile&.user&.email
     }

@@ -38,8 +38,11 @@ module Api
 
         # DELETE /api/v1/organizer/events/:event_id/promo_codes/:id
         def destroy
-          @promo_code.destroy
-          head :no_content
+          if @promo_code.destroy
+            head :no_content
+          else
+            render json: { error: "Promo codes with redemption history cannot be deleted" }, status: :unprocessable_entity
+          end
         end
 
         private

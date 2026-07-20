@@ -33,11 +33,11 @@ module Api
         end
 
         def destroy
-          if @ticket_type.quantity_sold > 0
-            render json: { error: "Cannot delete a ticket type that has sold tickets" }, status: :unprocessable_entity
-          else
-            @ticket_type.destroy
+          if @ticket_type.destroy
             head :no_content
+          else
+            render json: { error: "Ticket types with inventory or financial history cannot be deleted" },
+              status: :unprocessable_entity
           end
         end
 

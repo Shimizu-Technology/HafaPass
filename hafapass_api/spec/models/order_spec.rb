@@ -78,12 +78,14 @@ RSpec.describe Order, type: :model do
       expect(order.tickets).to include(ticket)
     end
 
-    it "destroys tickets when destroyed" do
+    it "prevents destructive deletion when tickets exist" do
       event = create(:event, :published)
       ticket_type = create(:ticket_type, event: event)
       order = create(:order, event: event)
       create(:ticket, order: order, ticket_type: ticket_type, event: event)
-      expect { order.destroy }.to change(Ticket, :count).by(-1)
+      expect { order.destroy }.not_to change(Ticket, :count)
+      expect(order).not_to be_destroyed
+      expect(order.errors[:base]).to be_present
     end
   end
 end

@@ -3,8 +3,9 @@ class Event < ApplicationRecord
   belongs_to :recurrence_parent, class_name: "Event", optional: true
   has_many :recurrence_children, class_name: "Event", foreign_key: "recurrence_parent_id", dependent: :nullify
   has_many :ticket_types, dependent: :destroy
-  has_many :orders, dependent: :destroy
-  has_many :tickets, dependent: :destroy
+  has_many :orders, dependent: :restrict_with_error
+  has_many :tickets, dependent: :restrict_with_error
+  has_many :inventory_holds, dependent: :restrict_with_error
   has_many :promo_codes, dependent: :destroy
   has_many :guest_list_entries, dependent: :destroy
   has_many :waitlist_entries, dependent: :destroy
@@ -18,6 +19,8 @@ class Event < ApplicationRecord
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
+  validates :max_capacity, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
+  validate :capacity_covers_committed_inventory
 
   before_validation :generate_slug, if: -> { slug.blank? || title_changed? }
 
@@ -45,6 +48,13 @@ class Event < ApplicationRecord
   end
 
   private
+
+  def capacity_covers_committed_inventory
+    return if max_capacity.blank? || !persisted?
+
+    committed = ticket_types.sum(:quantity_sold) + inventory_holds.current.sum(:quantity)
+    errors.add(:max_capacity, "cannot be less than sold and actively held inventory") if max_capacity < committed
+  end
 
   def generate_slug
     base_slug = title.to_s.parameterize
