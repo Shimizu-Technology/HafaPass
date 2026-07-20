@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
 import { Loader2, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 
-const orderStatuses = ['', 'pending', 'completed', 'refunded', 'cancelled', 'partially_refunded']
+const orderStatuses = ['', 'pending', 'completed', 'refunded', 'cancelled', 'partially_refunded', 'expired']
+
+const money = (cents = 0) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState([])
@@ -33,6 +35,7 @@ export default function AdminOrdersPage() {
       pending: 'bg-amber-50 text-amber-600',
       refunded: 'bg-red-50 text-red-600',
       cancelled: 'bg-neutral-100 text-neutral-500',
+      expired: 'bg-neutral-100 text-neutral-500',
       partially_refunded: 'bg-orange-50 text-orange-600',
     }
     return styles[s] || 'bg-neutral-100 text-neutral-600'
@@ -77,8 +80,8 @@ export default function AdminOrdersPage() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {orders.map(order => (
-                  <>
-                    <tr key={order.id} className="hover:bg-neutral-50/50 transition-colors cursor-pointer" onClick={() => setExpanded(expanded === order.id ? null : order.id)}>
+                  <Fragment key={order.id}>
+                    <tr className="hover:bg-neutral-50/50 transition-colors cursor-pointer" onClick={() => setExpanded(expanded === order.id ? null : order.id)}>
                       <td className="px-4 py-3">
                         {expanded === order.id ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
                       </td>
@@ -89,7 +92,7 @@ export default function AdminOrdersPage() {
                       </td>
                       <td className="px-4 py-3 text-neutral-500 hidden md:table-cell">{order.event_title}</td>
                       <td className="px-4 py-3 text-right text-neutral-700">{order.tickets.length}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-neutral-900">${(order.total_cents / 100).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-neutral-900">{money(order.net_cents)}</td>
                       <td className="px-4 py-3">
                         <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusBadge(order.status)}`}>{order.status.replace('_', ' ')}</span>
                       </td>
@@ -98,8 +101,74 @@ export default function AdminOrdersPage() {
                     {expanded === order.id && (
                       <tr key={`${order.id}-detail`}>
                         <td colSpan={8} className="px-4 py-3 bg-neutral-50/50">
-                          <div className="pl-8">
-                            <p className="text-xs font-medium text-neutral-500 mb-2">Tickets</p>
+                          <div className="pl-8 space-y-5">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Financial ledger</p>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                                {[
+                                  ['Gross', order.subtotal_cents],
+                                  ['Discount', order.discount_cents],
+                                  ['Fees', order.fee_cents],
+                                  ['Refunds', order.refund_cents],
+                                  ['Net', order.net_cents],
+                                  ['Organizer', order.organizer_proceeds_cents],
+                                ].map(([label, value]) => (
+                                  <div key={label} className="rounded-lg border border-neutral-200 bg-white p-2.5">
+                                    <p className="text-[10px] uppercase tracking-wide text-neutral-400">{label}</p>
+                                    <p className="mt-1 font-semibold text-neutral-800">{money(value)}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Immutable order items</p>
+                              <div className="space-y-1">
+                                {order.order_items.map(item => (
+                                  <div key={item.id} className="grid grid-cols-[1fr_auto_auto] gap-4 rounded-lg bg-white px-3 py-2 text-xs text-neutral-600">
+                                    <span><strong className="text-neutral-800">{item.name}</strong>{item.tier_name ? ` · ${item.tier_name}` : ''}</span>
+                                    <span>{item.quantity} × {money(item.unit_price_cents)}</span>
+                                    <span className="font-medium text-neutral-800">{money(item.subtotal_cents + item.fee_cents - item.discount_cents)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="grid md:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Payments & refunds</p>
+                                <div className="space-y-1 text-xs text-neutral-600">
+                                  {order.payments.map(payment => (
+                                    <div key={`payment-${payment.id}`} className="flex justify-between rounded-lg bg-white px-3 py-2">
+                                      <span>{payment.provider_payment_id || `Payment #${payment.id}`} · {payment.status}</span>
+                                      <span>{money(payment.amount_cents)}</span>
+                                    </div>
+                                  ))}
+                                  {order.refunds.map(refund => (
+                                    <div key={`refund-${refund.id}`} className="flex justify-between rounded-lg bg-red-50/60 px-3 py-2 text-red-700">
+                                      <span>{refund.provider_refund_id || `Refund #${refund.id}`} · {refund.status}</span>
+                                      <span>−{money(refund.amount_cents)}</span>
+                                    </div>
+                                  ))}
+                                  {order.payments.length === 0 && order.refunds.length === 0 && <p>No provider attempts recorded.</p>}
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Reconciliation</p>
+                                {order.reconciliation_exceptions.length > 0 ? (
+                                  <div className="space-y-1">
+                                    {order.reconciliation_exceptions.map(exception => (
+                                      <div key={exception.id} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                        {exception.code.replaceAll('_', ' ')} · {exception.status}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : <p className="text-xs text-emerald-600">No reconciliation exceptions.</p>}
+                              </div>
+                            </div>
+
+                            <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Tickets</p>
                             <div className="space-y-1">
                               {order.tickets.map(t => (
                                 <div key={t.id} className="flex items-center gap-4 text-xs text-neutral-600">
@@ -112,12 +181,14 @@ export default function AdminOrdersPage() {
                                   }`}>{t.status}</span>
                                 </div>
                               ))}
+                              {order.tickets.length === 0 && <p className="text-xs text-neutral-400">No entitlements issued yet.</p>}
+                            </div>
                             </div>
                           </div>
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

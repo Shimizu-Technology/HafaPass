@@ -30,11 +30,11 @@ module Api
         end
 
         def destroy
-          if Ticket.where(pricing_tier_id: @tier.id).exists?
-            render json: { error: "Cannot delete tier with existing tickets. Disable it instead." }, status: :unprocessable_entity
-          else
-            @tier.destroy
+          if @tier.destroy
             head :no_content
+          else
+            render json: { error: "Pricing tiers with inventory or financial history cannot be deleted" },
+              status: :unprocessable_entity
           end
         end
 

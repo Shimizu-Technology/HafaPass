@@ -98,7 +98,7 @@ The current application is a strong prototype, not yet a production-safe real-mo
    cd hafapass_api
    bundle exec sidekiq
    ```
-   Development uses Rails' in-process async adapter when `REDIS_URL` is absent. Production requires Redis and a separately running Sidekiq worker; it does not silently fall back to non-durable work.
+   Development uses Rails' in-process async adapter when `REDIS_URL` is absent. Production requires Redis, a separately running Sidekiq worker, and exactly one commerce clock process; it does not silently fall back to non-durable work. The clock enqueues idempotent inventory-hold expiry every minute.
 
 6. **Open the app**
    Visit http://localhost:5173
@@ -141,6 +141,8 @@ Emails are processed asynchronously using Sidekiq. Job queues:
 Jobs automatically retry with exponential backoff (up to 5 attempts).
 
 Production boot requires `REDIS_URL`. Readiness reports Redis connectivity and whether a Sidekiq process is active.
+
+Commerce-ledger deployment, backfill, reconciliation, and rollback-forward procedures are documented in [docs/COMMERCE_LEDGER_OPERATIONS.md](docs/COMMERCE_LEDGER_OPERATIONS.md).
 
 ### Rate Limiting
 

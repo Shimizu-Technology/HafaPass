@@ -45,6 +45,8 @@ export default function AdminDashboardPage() {
   const totalEvents = Object.values(data.total_events).reduce((a, b) => a + b, 0)
   const totalUsers = Object.values(data.total_users).reduce((a, b) => a + b, 0)
   const revenue = (data.total_revenue_cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+  const financials = data.financials || {}
+  const formatMoney = (value = 0) => (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
   return (
     <AdminLayout>
@@ -54,6 +56,27 @@ export default function AdminDashboardPage() {
         <StaggerItem><StatCard label="Revenue" value={revenue} icon={DollarSign} color="bg-emerald-500" /></StaggerItem>
         <StaggerItem><StatCard label="Tickets Sold" value={data.total_tickets_sold} icon={Ticket} color="bg-coral-500" /></StaggerItem>
       </StaggerContainer>
+
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8" aria-label="Financial ledger summary">
+        {[
+          ['Gross sales', financials.gross_cents],
+          ['Discounts', financials.discount_cents],
+          ['Refunds', financials.refund_cents],
+          ['Platform fees', financials.fee_cents],
+          ['Payout ready', financials.payout_ready_cents],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-neutral-200/60 bg-white/70 p-4">
+            <p className="text-xs font-medium text-neutral-500">{label}</p>
+            <p className="mt-1 text-lg font-bold text-neutral-900">{formatMoney(value)}</p>
+          </div>
+        ))}
+      </div>
+
+      {data.open_reconciliation_exceptions > 0 && (
+        <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+          {data.open_reconciliation_exceptions} payment reconciliation {data.open_reconciliation_exceptions === 1 ? 'exception requires' : 'exceptions require'} review.
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Events */}

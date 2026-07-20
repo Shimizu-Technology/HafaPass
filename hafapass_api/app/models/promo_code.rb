@@ -2,7 +2,8 @@
 
 class PromoCode < ApplicationRecord
   belongs_to :event
-  has_many :orders
+  has_many :orders, dependent: :restrict_with_error
+  has_many :promo_redemptions, dependent: :restrict_with_error
 
   DISCOUNT_TYPES = %w[percentage fixed].freeze
 
@@ -60,6 +61,10 @@ class PromoCode < ApplicationRecord
       .update_all("current_uses = current_uses + 1")
 
     rows_affected > 0
+  end
+
+  def reserved_and_finalized_uses
+    promo_redemptions.capacity_consuming.count
   end
 
   private

@@ -12,6 +12,7 @@ jobs:
   backend-test:
     name: Backend / RSpec
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     services:
       postgres:
         image: postgres:16
@@ -41,7 +42,7 @@ jobs:
         run: bundle exec rails db:test:prepare
       - name: Run RSpec
         working-directory: hafapass_api
-        run: bundle exec rspec --format progress --format RspecJunitFormatter --out tmp/rspec.xml
+        run: bundle exec rspec --format documentation --format RspecJunitFormatter --out tmp/rspec.xml
       - name: Upload RSpec results
         if: always()
         uses: actions/upload-artifact@v7

@@ -3,6 +3,7 @@ class Ticket < ApplicationRecord
   belongs_to :ticket_type
   belongs_to :event
   belongs_to :pricing_tier, optional: true
+  belongs_to :order_item, optional: true
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
 

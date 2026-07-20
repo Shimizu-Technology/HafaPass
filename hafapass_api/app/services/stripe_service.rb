@@ -10,7 +10,7 @@ class StripeService
 
     # Creates a PaymentIntent (real or simulated based on SiteSetting).
     # Returns an object responding to .id and .client_secret
-    def create_payment_intent(order)
+    def create_payment_intent(order, idempotency_key:)
       settings = SiteSetting.instance
 
       if settings.simulate_mode?
@@ -31,7 +31,7 @@ class StripeService
             receipt_email: order.buyer_email,
             description: "HafaPass tickets for #{order.event.title}"
           },
-          { api_key: api_key }
+          { api_key: api_key, idempotency_key: idempotency_key }
         )
       end
     end
@@ -39,7 +39,7 @@ class StripeService
     # ── Refunds ──────────────────────────────────────────────────────
 
     # Refunds a PaymentIntent (full or partial).
-    def refund_payment(payment_intent_id, amount_cents: nil, reason: nil)
+    def refund_payment(payment_intent_id, amount_cents: nil, reason: nil, idempotency_key:)
       settings = SiteSetting.instance
 
       if settings.simulate_mode?
@@ -48,9 +48,23 @@ class StripeService
         api_key = resolve_api_key!(settings)
         params = { payment_intent: payment_intent_id }
         params[:amount] = amount_cents if amount_cents.present?
-        params[:reason] = reason if reason.present?
-        Stripe::Refund.create(params, { api_key: api_key })
+        params[:reason] = stripe_refund_reason(reason) if reason.present?
+        Stripe::Refund.create(params, { api_key: api_key, idempotency_key: idempotency_key })
       end
+    end
+
+    def cancel_payment_intent(payment_intent_id, idempotency_key:)
+      settings = SiteSetting.instance
+      if settings.simulate_mode? || payment_intent_id.start_with?("sim_")
+        return OpenStruct.new(id: payment_intent_id, status: "canceled")
+      end
+
+      api_key = resolve_api_key!(settings)
+      Stripe::PaymentIntent.cancel(
+        payment_intent_id,
+        {},
+        { api_key: api_key, idempotency_key: idempotency_key }
+      )
     end
 
     # ── Query helpers ────────────────────────────────────────────────
@@ -79,6 +93,11 @@ class StripeService
         raise PaymentError, "Stripe secret key not configured for #{settings.payment_mode} mode"
       end
       key
+    end
+
+    def stripe_refund_reason(reason)
+      allowed_reasons = %w[duplicate fraudulent requested_by_customer]
+      allowed_reasons.include?(reason) ? reason : "requested_by_customer"
     end
 
     # ── Simulate helpers ─────────────────────────────────────────────

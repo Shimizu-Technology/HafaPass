@@ -3,12 +3,15 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
 
+const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
+
 export default function RefundsPage() {
  const { id: eventId } = useParams()
  const [orders, setOrders] = useState([])
  const [loading, setLoading] = useState(true)
  const [refundingId, setRefundingId] = useState(null)
  const [refundForm, setRefundForm] = useState({ amount: '', reason: '', type: 'full' })
+ const [refundRequestKey, setRefundRequestKey] = useState(null)
  const [processing, setProcessing] = useState(false)
 
  const fetchOrders = useCallback(async () => {
@@ -34,8 +37,11 @@ export default function RefundsPage() {
     }
     payload.amount_cents = Math.round(parsed * 100)
    }
-   await apiClient.post(`/organizer/events/${eventId}/orders/${orderId}/refund`, payload)
+   await apiClient.post(`/organizer/events/${eventId}/orders/${orderId}/refund`, payload, {
+    headers: { 'Idempotency-Key': refundRequestKey },
+   })
    setRefundingId(null)
+   setRefundRequestKey(null)
    setRefundForm({ amount: '', reason: '', type: 'full' })
    fetchOrders()
   } catch (e) {
@@ -75,15 +81,18 @@ export default function RefundsPage() {
           <p className="font-medium text-neutral-900 truncate">Order #{order.id} &middot; {order.buyer_name}</p>
           <p className="text-sm text-neutral-500 truncate">
            {order.buyer_email} &middot; {order.ticket_count} ticket(s) &middot; ${(order.total_cents / 100).toFixed(2)}
+           {order.refunded_cents > 0 && <> &middot; ${(order.refunded_cents / 100).toFixed(2)} refunded</>}
           </p>
          </div>
         </div>
         {refundingId !== order.id ? (
-         <button onClick={() => { setRefundingId(order.id); setRefundForm({ amount: '', reason: '', type: 'full' }) }} className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50 shrink-0 self-start sm:self-auto">
+         <button onClick={() => { setRefundingId(order.id); setRefundRequestKey(newRefundRequestKey()); setRefundForm({ amount: '', reason: '', type: 'full' }) }}
+          disabled={order.refundable_cents <= 0}
+          className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50 shrink-0 self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed">
           <RotateCcw className="w-3 h-3" /> Refund
          </button>
         ) : (
-         <button onClick={() => setRefundingId(null)} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
+         <button onClick={() => { setRefundingId(null); setRefundRequestKey(null) }} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
         )}
        </div>
 
@@ -104,7 +113,7 @@ export default function RefundsPage() {
           {refundForm.type === 'partial' && (
            <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1.5">Amount ($)</label>
-            <input type="number" step="0.01" min="0.01" max={(order.total_cents / 100).toFixed(2)}
+            <input type="number" step="0.01" min="0.01" max={(order.refundable_cents / 100).toFixed(2)}
              value={refundForm.amount} onChange={e => setRefundForm({...refundForm, amount: e.target.value})}
              className="input !py-2 text-sm w-28" placeholder="0.00" />
            </div>

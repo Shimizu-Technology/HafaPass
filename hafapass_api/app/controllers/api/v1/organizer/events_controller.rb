@@ -39,8 +39,11 @@ module Api
         end
 
         def destroy
-          @event.destroy
-          head :no_content
+          if @event.destroy
+            head :no_content
+          else
+            render json: { error: "Events with financial or ticket history cannot be deleted" }, status: :unprocessable_entity
+          end
         end
 
         def publish
@@ -107,10 +110,11 @@ module Api
 
         def stats
           tickets = @event.tickets
-          orders = @event.orders.where(status: :completed)
+          orders = @event.orders.where(status: [:completed, :partially_refunded, :refunded])
+          financials = Commerce::LedgerTotals.call(orders)
 
           total_tickets_sold = tickets.where.not(status: :cancelled).count
-          total_revenue_cents = orders.sum(:total_cents)
+          total_revenue_cents = financials[:net_cents]
           tickets_checked_in = tickets.where(status: :checked_in).count
 
           tickets_by_type = @event.ticket_types.order(:sort_order, :id).map do |tt|
@@ -119,7 +123,7 @@ module Api
               name: tt.name,
               sold: type_tickets.count,
               available: tt.available_quantity,
-              revenue_cents: tt.price_cents * type_tickets.count
+              revenue_cents: ticket_type_net_revenue(tt, orders)
             }
           end
 
@@ -130,6 +134,9 @@ module Api
               buyer_email: order.buyer_email,
               ticket_count: order.tickets.count,
               total_cents: order.total_cents,
+              status: order.status,
+              refunded_cents: order.refunded_cents,
+              refundable_cents: order.refundable_cents,
               created_at: order.created_at
             }
           end
@@ -137,10 +144,20 @@ module Api
           render json: {
             total_tickets_sold: total_tickets_sold,
             total_revenue_cents: total_revenue_cents,
+            financials: financials,
             tickets_checked_in: tickets_checked_in,
             tickets_by_type: tickets_by_type,
             recent_orders: recent_orders
           }
+        end
+
+        def ticket_type_net_revenue(ticket_type, settled_orders)
+          items = OrderItem.where(order_id: settled_orders.select(:id), ticket_type_id: ticket_type.id)
+          charged = items.sum(:subtotal_cents) + items.sum(:fee_cents) + items.sum(:tax_cents) - items.sum(:discount_cents)
+          refunded = RefundItem.joins(:refund)
+            .where(order_item_id: items.select(:id), refunds: { status: Refund.statuses[:succeeded] })
+            .sum(:amount_cents)
+          charged - refunded
         end
 
         def attendees
