@@ -11,7 +11,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
 
   const formatPrice = (cents) => cents === 0 ? t('events.free') : `$${(cents / 100).toFixed(2)}`
 
-  const getMaxQty = (tt) => Math.max(0, Math.min(tt.max_per_order || 10, tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)))
+  const getMaxQty = (tt) => Math.max(0, Math.min(tt.max_per_order || 10, tt.max_per_buyer || Infinity, tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)))
   const getClampedQty = (tt) => Math.min(getQty(tt.id), getMaxQty(tt))
 
   // Use current_price_cents if available, fallback to price_cents
@@ -44,7 +44,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
           const available = tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)
           const soldOut = available <= 0 || tt.on_sale === false
           const rawQty = getQty(tt.id)
-          const maxQty = Math.min(tt.max_per_order || 10, available)
+          const maxQty = Math.min(tt.max_per_order || 10, tt.max_per_buyer || Infinity, available)
           const qty = Math.min(rawQty, maxQty)
           const currentPrice = getPrice(tt)
           const hasDiscount = tt.active_tier && currentPrice < tt.price_cents

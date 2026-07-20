@@ -91,7 +91,8 @@ module Api
             tickets: order.tickets.includes(:ticket_type).map { |t|
               {
                 id: t.id,
-                qr_code: t.qr_code,
+                scan_credential: t.scan_credential,
+                display_credential: t.display_credential,
                 status: t.status,
                 attendee_name: t.attendee_name,
                 ticket_type: { id: t.ticket_type.id, name: t.ticket_type.name, price_cents: t.ticket_type.price_cents }

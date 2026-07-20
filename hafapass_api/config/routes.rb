@@ -29,23 +29,28 @@ Rails.application.routes.draw do
       post "uploads/presign", to: "uploads#presign"
 
       # Orders (public create for guest checkout)
-      resources :orders, only: [:create] do
+      resources :orders, only: [:create, :show] do
         member do
           post :cancel
+          post :resend
+          post :event_change_response
+          post "tickets/:ticket_id/rotate_scan", to: "orders#rotate_scan", as: :rotate_ticket_scan
+          post "tickets/:ticket_id/cancel", to: "orders#cancel_ticket", as: :cancel_ticket
         end
       end
+      post "order_lookup", to: "order_recovery#create"
 
       # Promo code validation (public, for checkout)
       post "promo_codes/validate", to: "promo_codes#validate"
 
       # Public ticket display (by QR code)
-      get "tickets/:qr_code", to: "tickets#show", as: :ticket
-      get "tickets/:qr_code/download", to: "tickets#download", as: :ticket_download
-      get "tickets/:qr_code/wallet/apple", to: "tickets#apple_wallet", as: :ticket_apple_wallet
-      get "tickets/:qr_code/wallet/google", to: "tickets#google_wallet", as: :ticket_google_wallet
+      get "tickets/:credential", to: "tickets#show", as: :ticket
+      get "tickets/:credential/download", to: "tickets#download", as: :ticket_download
+      get "tickets/:credential/wallet/apple", to: "tickets#apple_wallet", as: :ticket_apple_wallet
+      get "tickets/:credential/wallet/google", to: "tickets#google_wallet", as: :ticket_google_wallet
 
       # Ticket check-in
-      post "check_in/:qr_code", to: "check_ins#create", as: :check_in
+      post "check_in/:credential", to: "check_ins#create", as: :check_in
 
       # Authenticated user endpoints
       namespace :me do

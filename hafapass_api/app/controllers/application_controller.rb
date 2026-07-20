@@ -40,6 +40,17 @@ class ApplicationController < ActionController::API
     render json: { error: "Unauthorized" }, status: :unauthorized
   end
 
+  def optional_authenticate_user!
+    token = extract_bearer_token
+    return if token.nil?
+
+    payload = ClerkAuthenticator.verify(token)
+    return if payload.nil?
+
+    @clerk_payload = payload
+    @current_user = current_user
+  end
+
   def current_user
     return @current_user if defined?(@current_user)
 

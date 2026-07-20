@@ -33,6 +33,7 @@ class EventLifecycle
 
   def call
     transition = TRANSITIONS.fetch(action) { raise TransitionError, "Unsupported event action" }
+    buyer_change = nil
 
     event.with_lock do
       unless transition[:from].include?(event.status)
@@ -41,6 +42,7 @@ class EventLifecycle
       validate_action!
 
       from_status = event.status
+      before_data = event_snapshot
       attributes = { status: transition[:to] }
       attributes[:published_at] = at if action == :publish && event.published_at.blank?
       event.update!(attributes)
@@ -52,7 +54,10 @@ class EventLifecycle
         reason: reason,
         occurred_at: at
       )
+      buyer_change = record_buyer_change!(before_data) if %i[postpone cancel].include?(action)
     end
+
+    EmailService.send_event_change_notifications_async(buyer_change) if buyer_change
 
     event
   rescue ActiveRecord::RecordInvalid => e
@@ -78,5 +83,27 @@ class EventLifecycle
     if action == :complete && (event.ends_at.blank? || event.ends_at > at)
       raise TransitionError, "An event cannot be completed before it ends"
     end
+  end
+
+  def record_buyer_change!(before_data)
+    event.event_changes.create!(
+      actor_user: actor,
+      change_type: action == :postpone ? "postponed" : "cancelled",
+      reason: reason,
+      before_data: before_data,
+      after_data: event_snapshot,
+      occurred_at: at
+    )
+  end
+
+  def event_snapshot
+    {
+      status: event.status,
+      starts_at: event.starts_at&.iso8601,
+      ends_at: event.ends_at&.iso8601,
+      doors_open_at: event.doors_open_at&.iso8601,
+      venue_name: event.venue_name,
+      venue_address: event.venue_address
+    }
   end
 end

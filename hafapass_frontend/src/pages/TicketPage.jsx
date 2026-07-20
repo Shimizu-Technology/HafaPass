@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useLocation, useParams, Link } from 'react-router-dom'
 import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import api from '../api/client'
 import QRCode from '../components/QRCode'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { orderAccessHeaders } from '../utils/orderAccess'
 
 function AddToHomeScreenInstructions() {
   const [expanded, setExpanded] = useState(false)
@@ -95,7 +96,9 @@ function GoogleWalletIcon() {
 }
 
 export default function TicketPage() {
-  const { qrCode } = useParams()
+  const { credential } = useParams()
+  const location = useLocation()
+  const orderId = new URLSearchParams(location.search).get('order')
   const [ticket, setTicket] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -106,7 +109,9 @@ export default function TicketPage() {
       try {
         setLoading(true)
         setError(null)
-        const response = await api.get(`/tickets/${qrCode}`)
+        const response = await api.get(`/tickets/${encodeURIComponent(credential)}`, {
+          headers: orderAccessHeaders(orderId),
+        })
         setTicket(response.data)
       } catch (err) {
         if (err.response?.status === 404) {
@@ -119,18 +124,19 @@ export default function TicketPage() {
       }
     }
     fetchTicket()
-  }, [qrCode])
+  }, [credential, orderId])
 
   async function handleDownload() {
     try {
       setDownloading(true)
-      const response = await api.get(`/tickets/${qrCode}/download`, {
+      const response = await api.get(`/tickets/${encodeURIComponent(credential)}/download`, {
+        headers: orderAccessHeaders(orderId),
         responseType: 'blob',
       })
       const url = window.URL.createObjectURL(new Blob([response.data]))
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `hafapass-ticket-${qrCode.slice(0, 8)}.pdf`)
+      link.setAttribute('download', `hafapass-ticket-${ticket.id}.pdf`)
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -191,6 +197,7 @@ export default function TicketPage() {
   }
 
   const status = statusConfig[ticket.status] || statusConfig.issued
+  const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center px-3 sm:px-4 py-8">
@@ -203,6 +210,11 @@ export default function TicketPage() {
         {['postponed', 'cancelled'].includes(event.status) && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
             <strong className="capitalize">Event {event.status}.</strong> Keep this ticket and watch your email for organizer updates.
+          </div>
+        )}
+        {!ticket.admission_allowed && !['postponed', 'cancelled'].includes(event.status) && (
+          <div className="mb-4 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+            <strong>Ticket unavailable.</strong> {ticket.admission_block_reason || 'This ticket is not currently valid for entry.'}
           </div>
         )}
         {/* Main Ticket Card */}
@@ -233,19 +245,25 @@ export default function TicketPage() {
           </div>
 
           {/* QR Code Section */}
-          <motion.div
+          {showCredential ? <motion.div
             className="px-4 sm:px-6 pt-6 pb-4 flex flex-col items-center"
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.4, delay: 0.2 }}
           >
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
-              <QRCode value={ticket.qr_code} size={220} />
+              <QRCode value={ticket.scan_credential} size={220} />
             </div>
             <p className="mt-2 text-[10px] sm:text-xs text-neutral-400 font-mono break-all text-center select-all">
-              {ticket.qr_code}
+              Ticket HP-T{ticket.id}
             </p>
-          </motion.div>
+          </motion.div> : (
+            <div className="px-6 py-8 text-center">
+              <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
+              <p className="text-sm font-medium text-neutral-700">Entry code unavailable</p>
+              <p className="mt-1 text-xs text-neutral-500">Open this ticket from your secure order confirmation or signed-in account.</p>
+            </div>
+          )}
 
           {/* Ticket-style divider */}
           <div className="relative px-6">
@@ -291,13 +309,6 @@ export default function TicketPage() {
               )}
             </div>
 
-            {/* Attendee Info */}
-            {ticket.attendee_name && (
-              <div className="pt-3 border-t border-neutral-100">
-                <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium font-sans">Attendee</p>
-                <p className="text-sm font-semibold text-neutral-800 mt-0.5 font-sans">{ticket.attendee_name}</p>
-              </div>
-            )}
           </div>
 
           {/* Action Buttons */}
@@ -305,7 +316,7 @@ export default function TicketPage() {
             {/* Download PDF */}
             <button
               onClick={handleDownload}
-              disabled={downloading}
+              disabled={downloading || !showCredential}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-colors disabled:opacity-60"
             >
               {downloading ? (
@@ -336,7 +347,9 @@ export default function TicketPage() {
 
           {/* Footer */}
           <div className="px-4 sm:px-6 py-3 bg-neutral-50 text-center border-t border-neutral-100">
-            <p className="text-xs text-neutral-400 font-sans">Present this QR code at the door</p>
+            <p className="text-xs text-neutral-400 font-sans">
+              {showCredential ? 'Present this QR code at the door' : 'This ticket has no active entry code'}
+            </p>
           </div>
         </div>
 

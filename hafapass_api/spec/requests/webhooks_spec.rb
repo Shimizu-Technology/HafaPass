@@ -191,4 +191,80 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(checkout.order.refunds.succeeded.last.provider_refund_id).to eq("re_actual_provider_refund")
     expect(checkout.order.tickets.reload).to all(be_cancelled)
   end
+
+  it "suspends ticket access during a dispute and restores it when the dispute is won" do
+    checkout = create_pending_checkout(intent_id: "pi_disputed_won")
+    post_stripe_event(
+      "payment_intent.succeeded",
+      { id: "pi_disputed_won", amount_received: checkout.payment.amount_cents, currency: "usd" },
+      event_id: "evt_disputed_payment"
+    )
+
+    dispute = { id: "dp_won", payment_intent: "pi_disputed_won", amount: checkout.payment.amount_cents,
+                currency: "usd", reason: "fraudulent", status: "needs_response" }
+    post_stripe_event("charge.dispute.created", dispute, event_id: "evt_dispute_open")
+
+    expect(checkout.order.reload.ticket_access_blocked?).to be(true)
+    expect(checkout.order.tickets.first).to be_issued
+
+    post_stripe_event("charge.dispute.closed", dispute.merge(status: "won"), event_id: "evt_dispute_won")
+
+    expect(Dispute.find_by(provider_dispute_id: "dp_won")).to be_won
+    expect(checkout.order.reload.ticket_access_blocked?).to be(false)
+
+    post_stripe_event(
+      "charge.dispute.updated",
+      dispute.merge(status: "needs_response"),
+      event_id: "evt_dispute_stale_update"
+    )
+
+    expect(Dispute.find_by(provider_dispute_id: "dp_won")).to be_won
+    expect(checkout.order.reload.ticket_access_blocked?).to be(false)
+  end
+
+  it "revokes tickets and releases inventory when a dispute is lost, idempotently" do
+    checkout = create_pending_checkout(intent_id: "pi_disputed_lost")
+    post_stripe_event(
+      "payment_intent.succeeded",
+      { id: "pi_disputed_lost", amount_received: checkout.payment.amount_cents, currency: "usd" },
+      event_id: "evt_lost_payment"
+    )
+    ticket = checkout.order.reload.tickets.first
+    old_scan = ticket.scan_credential
+    sold_before = ticket_type.reload.quantity_sold
+    dispute = { id: "dp_lost", payment_intent: "pi_disputed_lost", amount: checkout.payment.amount_cents,
+                currency: "usd", reason: "fraudulent", status: "lost" }
+
+    post_stripe_event("charge.dispute.closed", dispute, event_id: "evt_dispute_lost")
+
+    expect(response).to have_http_status(:ok)
+    expect(ticket.reload).to be_cancelled
+    expect(ticket_type.reload.quantity_sold).to eq(sold_before - 1)
+    expect(TicketCredential.find_scan(old_scan)).to be_nil
+
+    expect do
+      post_stripe_event("charge.dispute.closed", dispute, event_id: "evt_dispute_lost")
+    end.not_to change { ticket_type.reload.quantity_sold }
+  end
+
+  it "does not treat a closed warning inquiry as a lost chargeback" do
+    checkout = create_pending_checkout(intent_id: "pi_warning_closed")
+    post_stripe_event(
+      "payment_intent.succeeded",
+      { id: "pi_warning_closed", amount_received: checkout.payment.amount_cents, currency: "usd" },
+      event_id: "evt_warning_payment"
+    )
+    ticket = checkout.order.reload.tickets.first
+
+    post_stripe_event(
+      "charge.dispute.closed",
+      { id: "dp_warning", payment_intent: "pi_warning_closed", amount: checkout.payment.amount_cents,
+        currency: "usd", reason: "fraudulent", status: "warning_closed" },
+      event_id: "evt_warning_closed"
+    )
+
+    expect(Dispute.find_by(provider_dispute_id: "dp_warning")).to be_won
+    expect(ticket.reload).to be_issued
+    expect(checkout.order.reload.ticket_access_blocked?).to be(false)
+  end
 end

@@ -9,6 +9,7 @@ class TicketType < ApplicationRecord
   validates :price_cents, presence: true, numericality: { greater_than_or_equal_to: 0 }
   validates :quantity_available, presence: true, numericality: { greater_than: 0 }
   validates :quantity_sold, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :max_per_buyer, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validate :sold_quantity_within_capacity
   validate :chronological_sales_window
 

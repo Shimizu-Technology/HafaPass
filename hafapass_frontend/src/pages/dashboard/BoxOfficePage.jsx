@@ -245,9 +245,9 @@ export default function BoxOfficePage() {
                   <div key={ticket.id} className="bg-white p-3 rounded-lg border border-emerald-100">
                     <p className="text-xs text-neutral-500 mb-1">{ticket.ticket_type.name}</p>
                     <div className="flex justify-center">
-                      <QRCode value={ticket.qr_code} size={120} />
+                      <QRCode value={ticket.scan_credential} size={120} />
                     </div>
-                    <p className="text-xs text-center text-neutral-400 mt-1 font-mono">{ticket.qr_code}</p>
+                    <p className="text-xs text-center text-neutral-400 mt-1 font-mono">HP-T{ticket.id}</p>
                   </div>
                 ))}
               </div>

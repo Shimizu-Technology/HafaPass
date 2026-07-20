@@ -4,6 +4,9 @@ class Ticket < ApplicationRecord
   belongs_to :event
   belongs_to :pricing_tier, optional: true
   belongs_to :order_item, optional: true
+  has_many :refund_tickets, dependent: :restrict_with_error
+  has_many :refunds, through: :refund_tickets
+  has_many :message_deliveries, dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
 
@@ -18,9 +21,37 @@ class Ticket < ApplicationRecord
     update!(qr_code: SecureRandom.uuid)
   end
 
+  def display_credential
+    TicketCredential.display(self)
+  end
+
+  def scan_credential
+    TicketCredential.scan(self)
+  end
+
+  def rotate_scan_credential!
+    increment!(:scan_credential_version)
+  end
+
+  def revoke_display_credential!
+    increment!(:display_credential_version)
+  end
+
+  def admission_allowed?
+    issued? && order.ticket_fulfilled? && !order.ticket_access_blocked? && event.published?
+  end
+
+  def refundable_cents
+    return 0 unless order_item
+
+    tickets = order_item.tickets.order(:id).pluck(:id)
+    allocation = Commerce::MoneyAllocator.call(order_item_total_cents, Array.new(tickets.length, 1))
+    allocation[tickets.index(id)] || 0
+  end
+
   def check_in!
     raise "Ticket is not in issued status" unless issued?
-    raise "Ticket order is not completed" unless order&.completed?
+    raise "Ticket order is not fulfilled" unless order&.ticket_fulfilled?
 
     update!(status: :checked_in, checked_in_at: Time.current)
   end
@@ -36,6 +67,10 @@ class Ticket < ApplicationRecord
   end
 
   private
+
+  def order_item_total_cents
+    order_item.subtotal_cents + order_item.fee_cents + order_item.tax_cents - order_item.discount_cents
+  end
 
   def assign_qr_code
     self.qr_code = SecureRandom.uuid

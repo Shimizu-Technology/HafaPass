@@ -1,8 +1,15 @@
 # frozen_string_literal: true
 
 class Api::V1::OrdersController < ApplicationController
-  skip_before_action :authenticate_user!, only: [:create]
-  before_action :optional_authenticate_user!, only: [:create]
+  skip_before_action :authenticate_user!, only: [
+    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket
+  ]
+  before_action :optional_authenticate_user!, only: [
+    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket
+  ]
+  before_action :set_accessible_order, only: [
+    :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket
+  ]
 
   def create
     event = Event.published.find_by(id: params[:event_id])
@@ -26,7 +33,11 @@ class Api::V1::OrdersController < ApplicationController
       promo_code_id: params[:promo_code_id]
     )
 
-    response_payload = order_json(result.order, include_tickets: result.payment_intent.nil?).merge(
+    response_payload = OrderPresenter.call(
+      result.order,
+      include_tickets: result.payment_intent.nil?,
+      guest_access_token: result.guest_access_token
+    ).merge(
       payment_mode: StripeService.payment_mode
     )
     if result.payment_intent
@@ -41,86 +52,159 @@ class Api::V1::OrdersController < ApplicationController
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
+  def show
+    render json: OrderPresenter.call(
+      @order,
+      include_tickets: @order.completed? || @order.partially_refunded? || @order.refunded? || @order.cancelled?
+    )
+  end
+
   def cancel
-    order = Order.find_by(id: params[:id])
-    unless order
-      render json: { error: "Order not found" }, status: :not_found
-      return
-    end
-
-    unless @current_user&.admin? || (order.user_id.present? && order.user_id == @current_user&.id)
-      render json: { error: "Order not found" }, status: :not_found
-      return
-    end
-
-    Commerce::OrderLifecycle.cancel!(order)
+    Commerce::OrderLifecycle.cancel!(@order)
     render json: { status: "cancelled" }, status: :ok
   rescue Commerce::OrderLifecycle::InvalidTransition => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
+  def resend
+    delivery = FulfillmentResender.call(order: @order, requested_by: @current_user)
+    render json: { message: "Tickets sent", delivery_id: delivery.id }, status: :accepted
+  rescue FulfillmentResender::Cooldown => e
+    render json: { error: e.message }, status: :too_many_requests
+  rescue FulfillmentResender::NotAvailable => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def rotate_scan
+    ticket = @order.tickets.find_by(id: params[:ticket_id])
+    return render json: { error: "Ticket not found" }, status: :not_found unless ticket
+
+    rotated = ticket.with_lock do
+      next false unless ticket.issued? && !@order.ticket_access_blocked?
+
+      ticket.rotate_scan_credential!
+      true
+    end
+    return render json: { error: "Only active tickets can refresh their entry code" }, status: :unprocessable_entity unless rotated
+
+    render json: { scan_credential: ticket.scan_credential }
+  end
+
+  def cancel_ticket
+    ticket = @order.tickets.find_by(id: params[:ticket_id])
+    return render json: { error: "Ticket not found" }, status: :not_found unless ticket
+    return render json: { error: "Ticket is already cancelled" }, status: :unprocessable_entity if ticket.cancelled?
+    return render json: { error: "Used or transferred tickets cannot be cancelled" }, status: :unprocessable_entity unless ticket.issued?
+
+    if ticket.refundable_cents.zero?
+      cancel_free_ticket!(ticket, reason: "buyer_cancelled")
+      return render json: OrderPresenter.call(@order.reload, include_tickets: true)
+    end
+
+    unless @order.event.cancelled? || @order.event.postponed?
+      return render json: { error: "Paid self-service refunds are available after an event is cancelled or postponed" },
+        status: :unprocessable_entity
+    end
+
+    idempotency_key = request.headers["Idempotency-Key"].presence
+    return render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity unless idempotency_key
+
+    refund = Commerce::RefundCreator.call(
+      order: @order,
+      tickets: [ticket],
+      reason: "buyer_ticket_cancellation",
+      requested_by: @current_user,
+      idempotency_key: idempotency_key
+    )
+    render json: { refund_id: refund.id, order: OrderPresenter.call(@order.reload, include_tickets: true) }, status: :created
+  rescue Commerce::RefundCreator::RefundError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def event_change_response
+    change = @order.event.event_changes.find_by(id: params[:event_change_id])
+    return render json: { error: "Event change not found" }, status: :not_found unless change
+
+    decision = params[:decision].to_s
+    unless EventChangeResponse::DECISIONS.include?(decision)
+      return render json: { error: "Decision must be accepted or refund_requested" }, status: :unprocessable_entity
+    end
+
+    existing_response = change.event_change_responses.find_by(order: @order)
+    if existing_response && existing_response.decision != decision
+      return render json: { error: "This event-change response has already been recorded" }, status: :unprocessable_entity
+    end
+
+    if decision == "refund_requested"
+      idempotency_key = request.headers["Idempotency-Key"].presence
+      return render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity unless idempotency_key
+    end
+
+    response = existing_response || change.event_change_responses.create!(
+      order: @order,
+      decision: decision,
+      responded_at: Time.current
+    )
+
+    if decision == "refund_requested"
+      refundable_tickets = @order.tickets.where(status: :issued).to_a
+      paid_tickets = refundable_tickets.select { |ticket| ticket.refundable_cents.positive? }
+      free_tickets = refundable_tickets - paid_tickets
+      Commerce::RefundCreator.call(
+        order: @order,
+        tickets: paid_tickets,
+        reason: "event_change_refund",
+        requested_by: @current_user,
+        idempotency_key: idempotency_key
+      ) if paid_tickets.any?
+      free_tickets.each do |ticket|
+        cancel_free_ticket!(ticket, reason: "event_change_refund")
+      end
+    end
+
+    render json: { decision: response.decision, order: OrderPresenter.call(@order.reload, include_tickets: true) }
+  rescue ActiveRecord::RecordNotUnique
+    render json: { error: "This event-change response has already been recorded" }, status: :unprocessable_entity
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
+  rescue Commerce::RefundCreator::RefundError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   private
 
-  def optional_authenticate_user!
-    token = extract_bearer_token
-    return if token.nil?
+  def cancel_free_ticket!(ticket, reason:)
+    ticket.order.with_lock do
+      ticket.lock!
+      raise Commerce::RefundCreator::RefundError, "Only unused active tickets can be cancelled" unless ticket.issued?
 
-    payload = ClerkAuthenticator.verify(token)
-    return if payload.nil?
-
-    @clerk_payload = payload
-    @current_user = current_user
+      ticket.release_inventory!
+      ticket.update!(
+        status: :cancelled,
+        cancelled_at: Time.current,
+        cancellation_reason: reason,
+        scan_credential_version: ticket.scan_credential_version + 1
+      )
+      unless ticket.order.tickets.where.not(id: ticket.id).where.not(status: :cancelled).exists?
+        ticket.order.update!(status: :cancelled)
+      end
+    end
+    ticket.event.notify_waitlist_if_available
   end
 
-  def order_json(order, include_tickets: order.completed?)
-    {
-      id: order.id,
-      event_id: order.event_id,
-      status: order.status,
-      currency: order.currency,
-      subtotal_cents: order.subtotal_cents,
-      service_fee_cents: order.service_fee_cents,
-      discount_cents: order.discount_cents,
-      total_cents: order.total_cents,
-      buyer_email: order.buyer_email,
-      buyer_name: order.buyer_name,
-      buyer_phone: order.buyer_phone,
-      completed_at: order.completed_at,
-      expires_at: order.expires_at,
-      wallet_type: order.wallet_type,
-      promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,
-      order_items: order.order_items.order(:id).map { |item| order_item_json(item) },
-      tickets: include_tickets ? order.tickets.includes(:ticket_type).map { |ticket| ticket_json(ticket) } : []
-    }
+  def set_accessible_order
+    order = Order.find_by(id: params[:id])
+    authorized = order && (
+      @current_user&.admin? ||
+      (order.user_id.present? && order.user_id == @current_user&.id) ||
+      GuestOrderAccess.find(guest_access_token)&.id == order.id
+    )
+    return @order = order if authorized
+
+    render json: { error: "Order not found" }, status: :not_found
   end
 
-  def order_item_json(item)
-    {
-      id: item.id,
-      name: item.name,
-      tier_name: item.tier_name,
-      unit_price_cents: item.unit_price_cents,
-      quantity: item.quantity,
-      subtotal_cents: item.subtotal_cents,
-      discount_cents: item.discount_cents,
-      fee_cents: item.fee_cents,
-      tax_cents: item.tax_cents,
-      organizer_proceeds_cents: item.organizer_proceeds_cents
-    }
-  end
-
-  def ticket_json(ticket)
-    {
-      id: ticket.id,
-      qr_code: ticket.qr_code,
-      status: ticket.status,
-      attendee_name: ticket.attendee_name,
-      attendee_email: ticket.attendee_email,
-      ticket_type: {
-        id: ticket.ticket_type.id,
-        name: ticket.ticket_type.name,
-        price_cents: ticket.order_item&.unit_price_cents || ticket.ticket_type.price_cents
-      }
-    }
+  def guest_access_token
+    request.headers["X-Guest-Order-Token"].presence || (params[:guest_token].presence if action_name == "show")
   end
 end

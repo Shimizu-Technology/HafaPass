@@ -12,6 +12,7 @@ class TicketPdfGenerator
     @ticket = ticket
     @event = ticket.event
     @ticket_type = ticket.ticket_type
+    @scan_credential = ticket.scan_credential
   end
 
   def generate
@@ -87,28 +88,18 @@ class TicketPdfGenerator
     pdf.font "Helvetica", style: :bold, size: 11
     pdf.text @ticket_type.name
 
-    if @ticket.attendee_name.present?
-      pdf.move_down 4
-      pdf.fill_color MUTED_TEXT
-      pdf.font "Helvetica", size: 9
-      pdf.text "ATTENDEE"
-      pdf.fill_color DARK_TEXT
-      pdf.font "Helvetica", size: 10
-      pdf.text @ticket.attendee_name
-    end
-
     pdf.move_down 4
     pdf.fill_color MUTED_TEXT
     pdf.font "Helvetica", size: 9
     pdf.text "TICKET #"
     pdf.fill_color DARK_TEXT
     pdf.font "Courier", size: 8
-    pdf.text @ticket.qr_code
+    pdf.text "HP-T#{@ticket.id}"
     pdf.move_down 16
   end
 
   def render_qr_code(pdf)
-    qr = RQRCode::QRCode.new(@ticket.qr_code, level: :m)
+    qr = RQRCode::QRCode.new(@scan_credential, level: :m)
     png = qr.as_png(size: 600, border_modules: 2)
 
     # Write to tempfile and embed
@@ -125,7 +116,7 @@ class TicketPdfGenerator
     # Barcode text
     pdf.fill_color MUTED_TEXT
     pdf.font "Courier", size: 7
-    pdf.text @ticket.qr_code, align: :center
+    pdf.text "HP-T#{@ticket.id}", align: :center
     pdf.move_down 12
   ensure
     tempfile&.close

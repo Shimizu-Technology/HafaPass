@@ -92,7 +92,7 @@ class Api::V1::Admin::OrdersController < Api::V1::Admin::BaseController
           attendee_name: t.attendee_name,
           attendee_email: t.attendee_email,
           status: t.status,
-          qr_code: t.qr_code
+          display_credential: t.display_credential
         }
       }
     }

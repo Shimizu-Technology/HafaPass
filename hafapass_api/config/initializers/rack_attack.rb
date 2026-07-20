@@ -53,6 +53,27 @@ class Rack::Attack
     end
   end
 
+  # Recovery is intentionally enumeration-safe, but still expensive because it may queue email.
+  throttle("order-recovery/ip", limit: 5, period: 10.minutes) do |req|
+    req.ip if req.path == "/api/v1/order_lookup" && req.post?
+  end
+
+  throttle("order-recovery/email", limit: 3, period: 10.minutes) do |req|
+    if req.path == "/api/v1/order_lookup" && req.post?
+      begin
+        raw = req.body.read
+        req.body.rewind
+        JSON.parse(raw)["buyer_email"]&.strip&.downcase
+      rescue JSON::ParserError, IOError
+        nil
+      end
+    end
+  end
+
+  throttle("order-resend/ip", limit: 10, period: 10.minutes) do |req|
+    req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/resend\z}) && req.post?
+  end
+
   # ─── Check-in Throttles ───────────────────────────────────────────────────
 
   # Throttle check-in attempts (60 per minute per IP - for scanning)

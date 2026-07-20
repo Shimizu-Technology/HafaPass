@@ -13,6 +13,7 @@ const SignInPage = lazy(() => import('./pages/SignInPage'))
 const SignUpPage = lazy(() => import('./pages/SignUpPage'))
 const CheckoutPage = lazy(() => import('./pages/CheckoutPage'))
 const OrderConfirmationPage = lazy(() => import('./pages/OrderConfirmationPage'))
+const OrderRecoveryPage = lazy(() => import('./pages/OrderRecoveryPage'))
 const TicketPage = lazy(() => import('./pages/TicketPage'))
 const MyTicketsPage = lazy(() => import('./pages/MyTicketsPage'))
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
@@ -52,7 +53,8 @@ function App() {
           <Route path="/events/:slug" element={<EventDetailPage />} />
           <Route path="/checkout/:slug" element={<CheckoutPage />} />
           <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
-          <Route path="/tickets/:qrCode" element={<TicketPage />} />
+          <Route path="/orders/recover" element={<OrderRecoveryPage />} />
+          <Route path="/tickets/:credential" element={<TicketPage />} />
           <Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />

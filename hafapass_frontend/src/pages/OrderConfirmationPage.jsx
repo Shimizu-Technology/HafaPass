@@ -1,294 +1,228 @@
-import { useState, useEffect } from 'react'
-import { useParams, useLocation, Link } from 'react-router-dom'
-import { CheckCircle, ChevronRight, Loader2, PartyPopper, Download } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { AlertTriangle, CheckCircle, ChevronRight, Clock3, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
+import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { clearActiveCheckout, getOrderAccess, orderAccessHeaders, saveOrderAccess } from '../utils/orderAccess'
 
-// Simple confetti particles
-function ConfettiParticles() {
-  const colors = ['#14b8a6', '#f97316', '#eab308', '#8b5cf6', '#ec4899', '#06b6d4']
-  const particles = Array.from({ length: 40 }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    delay: Math.random() * 0.8,
-    duration: 1.5 + Math.random() * 1.5,
-    color: colors[i % colors.length],
-    size: 4 + Math.random() * 6,
-    rotation: Math.random() * 360,
-  }))
-
-  return (
-    <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
-      {particles.map(p => (
-        <motion.div
-          key={p.id}
-          className="absolute rounded-sm"
-          style={{
-            left: `${p.x}%`,
-            top: -10,
-            width: p.size,
-            height: p.size,
-            backgroundColor: p.color,
-          }}
-          initial={{ y: -20, opacity: 1, rotate: 0 }}
-          animate={{ y: '100vh', opacity: 0, rotate: p.rotation + 360 }}
-          transition={{ duration: p.duration, delay: p.delay, ease: 'easeIn' }}
-        />
-      ))}
-    </div>
-  )
-}
+const finalStatuses = new Set(['completed', 'partially_refunded', 'refunded', 'cancelled', 'expired'])
 
 export default function OrderConfirmationPage() {
   const { id } = useParams()
   const location = useLocation()
-
-  const [order, setOrder] = useState(location.state?.order || null)
-  const [event, setEvent] = useState(location.state?.event || null)
-  const [loading, setLoading] = useState(!location.state?.order)
+  const navigate = useNavigate()
+  const [order, setOrder] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [showConfetti, setShowConfetti] = useState(true)
-  const orderId = order?.id
-  const orderStatus = order?.status
+  const [resendState, setResendState] = useState('idle')
+  const [decisionState, setDecisionState] = useState('idle')
+  const [cancellingTicketId, setCancellingTicketId] = useState(null)
+  const [rotatingTicketId, setRotatingTicketId] = useState(null)
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowConfetti(false), 4000)
-    return () => clearTimeout(timer)
-  }, [])
+    const params = new URLSearchParams(location.search)
+    const token = params.get('guest_token')
+    if (!token) return
+    saveOrderAccess(id, token)
+    params.delete('guest_token')
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '' }, { replace: true })
+  }, [id, location.pathname, location.search, navigate])
 
-  useEffect(() => {
-    const orderMatchesRoute = orderId && String(orderId) === String(id)
-    const shouldFetchOrder = !orderMatchesRoute || orderStatus === 'pending'
-    if (!shouldFetchOrder) return undefined
-
-    let cancelled = false
-
-    const fetchOrder = ({ showLoading = false } = {}) => {
-      if (showLoading) {
-        setLoading(true)
-      }
+  const fetchOrder = useCallback(async () => {
+    try {
+      const response = await apiClient.get(`/orders/${id}`, { headers: orderAccessHeaders(id) })
+      setOrder(response.data)
       setError(null)
-
-      return apiClient.get(`/me/orders/${id}`)
-        .then(res => {
-          if (cancelled) return
-
-          setOrder(res.data)
-          setEvent(res.data.event)
-          setLoading(false)
-        })
-        .catch(() => {
-          if (cancelled) return
-
-          setError('Unable to load order details. Please check your email for confirmation.')
-          setLoading(false)
-        })
+      if (response.data.event?.slug) clearActiveCheckout(response.data.event.slug)
+    } catch (err) {
+      setError(err.response?.status === 404
+        ? 'We could not securely open this order. Use the recovery page with your order reference and email.'
+        : 'Unable to refresh this order right now. Please try again.')
+    } finally {
+      setLoading(false)
     }
+  }, [id])
 
-    fetchOrder({ showLoading: !orderMatchesRoute })
+  useEffect(() => {
+    fetchOrder()
+  }, [fetchOrder, location.search])
 
-    if (orderStatus !== 'pending') return () => { cancelled = true }
+  useEffect(() => {
+    if (!order || finalStatuses.has(order.status)) return undefined
+    const interval = window.setInterval(fetchOrder, 3000)
+    return () => window.clearInterval(interval)
+  }, [fetchOrder, order])
 
-    const intervalId = window.setInterval(() => {
-      fetchOrder()
-    }, 3000)
+  const formatPrice = (cents = 0) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
+  const event = order?.event
+  const isProcessing = order && !finalStatuses.has(order.status)
+  const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
+  const change = order?.latest_event_change
+  const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
+    ticket.status === 'issued' && ticket.refundable_cents >= 0
+  ))
+  const canRespondToChange = change && (!change.response || refundNeedsRetry) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
+  const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
+  const orderHeaders = useMemo(() => orderAccessHeaders(id), [id])
 
-    return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
+  async function resend() {
+    setResendState('sending')
+    try {
+      await apiClient.post(`/orders/${id}/resend`, {}, { headers: orderHeaders })
+      setResendState('sent')
+    } catch (err) {
+      setResendState(err.response?.status === 429 ? 'cooldown' : 'error')
     }
-  }, [id, orderId, orderStatus])
-
-  const formatPrice = (cents) => {
-    if (cents === 0) return 'Free'
-    return `$${(cents / 100).toFixed(2)}`
   }
 
-  const formatDate = (dateStr) => formatEventDate(dateStr, order?.event?.timezone, { weekday: 'short' })
-  const formatTime = (dateStr) => formatEventTime(dateStr, order?.event?.timezone)
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-20">
-        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-      </div>
-    )
+  async function respondToChange(decision) {
+    setDecisionState(decision)
+    try {
+      await apiClient.post(`/orders/${id}/event_change_response`, {
+        event_change_id: change.id,
+        decision,
+      }, {
+        headers: {
+          ...orderHeaders,
+          ...(decision === 'refund_requested' ? { 'Idempotency-Key': crypto.randomUUID() } : {}),
+        },
+      })
+      await fetchOrder()
+      setDecisionState('done')
+    } catch {
+      setDecisionState('error')
+    }
   }
 
-  if (error) {
+  async function cancelTicket(ticket) {
+    if (!window.confirm(`Cancel this ${ticket.ticket_type.name} ticket? This cannot be undone.`)) return
+    setCancellingTicketId(ticket.id)
+    try {
+      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/cancel`, {}, {
+        headers: { ...orderHeaders, 'Idempotency-Key': crypto.randomUUID() },
+      })
+      await fetchOrder()
+    } finally {
+      setCancellingTicketId(null)
+    }
+  }
+
+  async function rotateTicket(ticket) {
+    if (!window.confirm('Replace this ticket’s entry QR? Any saved copy of the old QR will stop working.')) return
+    setRotatingTicketId(ticket.id)
+    try {
+      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/rotate_scan`, {}, { headers: orderHeaders })
+    } finally {
+      setRotatingTicketId(null)
+    }
+  }
+
+  if (loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+
+  if (error || !order) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-16">
+      <div className="mx-auto max-w-lg px-4 py-16">
         <div className="card p-8 text-center">
-          <p className="text-red-600 mb-4">{error}</p>
-          <Link to="/events" className="btn-primary">Browse Events</Link>
+          <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-500" />
+          <p className="mb-5 text-neutral-700">{error}</p>
+          <Link to="/orders/recover" className="btn-primary">Recover my order</Link>
         </div>
       </div>
     )
   }
 
-  if (!order) return null
-
-  const isPending = order.status === 'pending'
-
   return (
-    <div className="bg-neutral-50 min-h-screen">
-      {showConfetti && !isPending && <ConfettiParticles />}
-
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
-        {/* Success header */}
-        <motion.div
-          className="text-center mb-8"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <motion.div
-            className="inline-flex items-center justify-center w-20 h-20 bg-emerald-100 rounded-full mb-4"
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.2, type: 'spring', stiffness: 200 }}
-          >
-            <CheckCircle className="w-10 h-10 text-emerald-600" />
-          </motion.div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">
-            {isPending ? (
-              'Your payment is processing'
-            ) : (
-              <>
-                You're all set! <PartyPopper className="inline w-6 h-6 ml-1 text-emerald-500" />
-              </>
-            )}
+    <div className="min-h-screen bg-neutral-50">
+      <SEO title={`Order ${order.reference}`} />
+      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
+        <div className="mb-7 text-center">
+          <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing ? 'bg-amber-100' : 'bg-emerald-100'}`}>
+            {isProcessing ? <Clock3 className="h-8 w-8 text-amber-700" /> : <CheckCircle className="h-8 w-8 text-emerald-700" />}
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-neutral-950">
+            {isProcessing ? 'Payment is processing' : order.status === 'cancelled' || order.status === 'expired' ? 'Order closed' : 'Your order is confirmed'}
           </h1>
-          <p className="text-neutral-500">
-            {isPending ? (
-              <>
-                Your tickets will be emailed to <span className="font-medium text-neutral-700">{order.buyer_email}</span> as soon as payment is confirmed.
-              </>
-            ) : (
-              <>
-                A confirmation has been sent to <span className="font-medium text-neutral-700">{order.buyer_email}</span>
-              </>
-            )}
-          </p>
-        </motion.div>
+          <p className="mt-2 text-neutral-500">Order {order.reference} · {order.buyer_email}</p>
+          {isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
+        </div>
 
-        {/* View Tickets CTA - only after tickets are paid and confirmed */}
-        {!isPending && order.tickets && order.tickets.length > 0 && (
-          <motion.div
-            className="mb-6"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-          >
-            <Link
-              to={`/tickets/${order.tickets[0].qr_code}`}
-              className="block w-full btn-primary text-center text-lg !py-4 !rounded-2xl"
-            >
-              View Your Tickets
-            </Link>
-          </motion.div>
-        )}
-
-        {/* Order summary card */}
-        <motion.div
-          className="card p-6 mb-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.15 }}
-        >
-          <h2 className="text-base font-semibold text-neutral-900 mb-4">Order Summary</h2>
-
-          {/* Event info */}
-          {event && (
-            <div className="mb-4 pb-4 border-b border-neutral-100">
-              <p className="text-neutral-900 font-medium">{event.title}</p>
-              {event.starts_at && (
-                <p className="text-sm text-neutral-500 mt-1">
-                  {formatDate(event.starts_at)} &middot; {formatTime(event.starts_at)}
-                </p>
-              )}
-              {event.venue_name && (
-                <p className="text-sm text-neutral-500">{event.venue_name}</p>
-              )}
-            </div>
-          )}
-
-          {/* Buyer info */}
-          <div className="mb-4 pb-4 border-b border-neutral-100 space-y-1">
-            <div className="flex justify-between text-sm">
-              <span className="text-neutral-500">Name</span>
-              <span className="text-neutral-900">{order.buyer_name}</span>
-            </div>
-            {order.buyer_phone && (
-              <div className="flex justify-between text-sm">
-                <span className="text-neutral-500">Phone</span>
-                <span className="text-neutral-900">{order.buyer_phone}</span>
+        {change && (
+          <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <h2 className="font-semibold text-amber-950">Event {change.change_type}</h2>
+            <p className="mt-1 text-sm text-amber-900">{change.reason || 'The organizer changed this event. Review the updated details below.'}</p>
+            {change.response && <p className="mt-3 text-sm font-medium text-amber-950">Your response: {change.response.replace('_', ' ')}</p>}
+            {canRespondToChange && (
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                {!change.response && (
+                  <button className="btn-secondary" disabled={decisionBusy} onClick={() => respondToChange('accepted')}>Keep my tickets</button>
+                )}
+                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy} onClick={() => respondToChange('refund_requested')}>{refundNeedsRetry ? 'Retry refund' : 'Request refund'}</button>
               </div>
             )}
-          </div>
-
-          {/* Total paid */}
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-900 font-bold">Total Paid</span>
-            <span className="text-neutral-900 font-bold text-lg">{formatPrice(order.total_cents)}</span>
-          </div>
-        </motion.div>
-
-        {/* Tickets list */}
-        {!isPending && (
-          <motion.div
-            className="card p-6 mb-6"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <h2 className="text-base font-semibold text-neutral-900 mb-4">
-              Your Tickets ({order.tickets?.length || 0})
-            </h2>
-
-            <div className="space-y-3">
-              {order.tickets?.map(ticket => (
-                <Link
-                  key={ticket.id}
-                  to={`/tickets/${ticket.qr_code}`}
-                  className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl hover:bg-neutral-100 transition-colors group"
-                >
-                  <div>
-                    <p className="text-neutral-900 font-medium text-sm">{ticket.ticket_type?.name}</p>
-                    <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'}/tickets/${ticket.qr_code}/download`}
-                      className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
-                      title="Download PDF"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Download className="w-4 h-4" />
-                    </a>
-                    <span className="inline-flex items-center text-brand-500 group-hover:text-brand-600 text-sm font-medium transition-colors">
-                      View
-                      <ChevronRight className="w-4 h-4 ml-0.5 transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </motion.div>
+            {decisionState === 'error' && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
+          </section>
         )}
 
-        {/* Browse more events button */}
-        <motion.div
-          className="text-center"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.45 }}
-        >
-          <Link to="/events" className="text-brand-500 hover:text-brand-600 font-medium transition-colors">
-            Browse More Events
-          </Link>
-        </motion.div>
+        <section className="card mb-6 overflow-hidden">
+          <div className="border-b border-neutral-100 p-5 sm:p-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-brand-600">{event.status}</p>
+            <h2 className="mt-1 text-xl font-bold text-neutral-950">{event.title}</h2>
+            <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
+            <p className="text-sm text-neutral-500">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
+          </div>
+          <div className="space-y-2 p-5 text-sm sm:p-6">
+            {order.order_items.map(item => (
+              <div key={item.id} className="flex justify-between gap-4"><span>{item.name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
+            ))}
+            <div className="flex justify-between border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee</span><span>{formatPrice(order.service_fee_cents)}</span></div>
+            {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
+            <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>Total</span><span>{formatPrice(order.total_cents)}</span></div>
+            {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>Refunded</span><span>−{formatPrice(order.refunded_cents)}</span></div>}
+          </div>
+        </section>
+
+        {ticketsAvailable && (
+          <section className="card mb-6 p-5 sm:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-semibold text-neutral-950">Tickets ({order.tickets.length})</h2>
+              {['completed', 'partially_refunded'].includes(order.status) && (
+                <button onClick={resend} disabled={resendState === 'sending'} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600"><Mail className="h-4 w-4" /> Resend</button>
+              )}
+            </div>
+            {resendState === 'sent' && <p className="mb-3 text-sm text-emerald-700">A fresh confirmation was queued for delivery.</p>}
+            {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">A message was sent recently. Please wait two minutes.</p>}
+            {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
+            <div className="divide-y divide-neutral-100">
+              {order.tickets.map(ticket => (
+                <div key={ticket.id} className="flex items-center justify-between gap-3 py-3">
+                  <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-neutral-900">{ticket.ticket_type.name}</p>
+                    <p className="text-xs capitalize text-neutral-500">{ticket.attendee_name} · {ticket.status.replace('_', ' ')}</p>
+                  </Link>
+                  <div className="flex items-center gap-2">
+                    {ticket.status === 'issued' && (
+                      <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
+                    )}
+                    {ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) && (
+                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id} className="text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Cancelling…' : ticket.refundable_cents > 0 ? 'Refund' : 'Cancel'}</button>
+                    )}
+                    {ticket.status === 'issued' && !order.ticket_access_blocked && (
+                      <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
+                    )}
+                    <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <div className="flex items-center justify-center gap-5 text-sm font-medium">
+          <button onClick={fetchOrder} className="inline-flex items-center gap-1.5 text-neutral-600"><RefreshCw className="h-4 w-4" /> Refresh</button>
+          <Link to="/events" className="text-brand-600">Browse events</Link>
+          {!getOrderAccess(id) && <Link to="/my-tickets" className="text-brand-600">My tickets</Link>}
+        </div>
       </div>
     </div>
   )

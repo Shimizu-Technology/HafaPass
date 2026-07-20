@@ -34,7 +34,32 @@ module Api
         end
 
         def update
-          if @event.update(parsed_event_params)
+          attributes = parsed_event_params
+          reschedule = reschedule?(attributes)
+          change_reason = params[:change_reason].to_s.strip.presence
+          if reschedule && change_reason.blank?
+            return render json: { error: "A reason is required when changing the schedule of a published or postponed event" },
+              status: :unprocessable_entity
+          end
+
+          before_data = event_change_snapshot(@event) if reschedule
+          updated = false
+          event_change = nil
+          Event.transaction do
+            updated = @event.update(attributes)
+            if updated && reschedule
+              event_change = @event.event_changes.create!(
+                actor_user: current_user,
+                change_type: "rescheduled",
+                reason: change_reason,
+                before_data: before_data,
+                after_data: event_change_snapshot(@event),
+                occurred_at: Time.current
+              )
+            end
+          end
+          if updated
+            EmailService.send_event_change_notifications_async(event_change) if event_change
             render json: event_json(@event)
           else
             render json: { errors: @event.errors.full_messages }, status: :unprocessable_entity
@@ -191,7 +216,6 @@ module Api
                 ticket_type: ticket.ticket_type.name,
                 status: ticket.status,
                 checked_in_at: ticket.checked_in_at,
-                qr_code: ticket.qr_code,
                 order_id: ticket.order_id
               }
             },
@@ -245,6 +269,25 @@ module Api
           raise ActionController::BadRequest, e.message
         end
 
+        def reschedule?(attributes)
+          return false unless @event.published? || @event.postponed?
+
+          %w[starts_at ends_at doors_open_at].any? do |attribute|
+            attributes.key?(attribute) && @event.public_send(attribute) != attributes[attribute]
+          end
+        end
+
+        def event_change_snapshot(event)
+          {
+            status: event.status,
+            starts_at: event.starts_at&.iso8601,
+            ends_at: event.ends_at&.iso8601,
+            doors_open_at: event.doors_open_at&.iso8601,
+            venue_name: event.venue_name,
+            venue_address: event.venue_address
+          }
+        end
+
         def clone_event(source, overrides = {})
           attrs = source.attributes.slice(
             "title", "description", "short_description", "cover_image_url",
@@ -268,6 +311,7 @@ module Api
                 quantity_available: tt.quantity_available,
                 quantity_sold: 0,
                 max_per_order: tt.max_per_order,
+                max_per_buyer: tt.max_per_buyer,
                 sort_order: tt.sort_order,
                 sales_start_at: shifted_relative_time(tt.sales_start_at, source, new_event),
                 sales_end_at: shifted_relative_time(tt.sales_end_at, source, new_event)
@@ -367,6 +411,7 @@ module Api
                 quantity_available: tt.quantity_available,
                 quantity_sold: tt.quantity_sold,
                 max_per_order: tt.max_per_order,
+                max_per_buyer: tt.max_per_buyer,
                 sales_start_at: tt.sales_start_at,
                 sales_end_at: tt.sales_end_at
               }

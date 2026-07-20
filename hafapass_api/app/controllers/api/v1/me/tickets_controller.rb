@@ -21,11 +21,11 @@ class Api::V1::Me::TicketsController < ApplicationController
   def ticket_json(ticket)
     {
       id: ticket.id,
-      qr_code: ticket.qr_code,
+      display_credential: ticket.display_credential,
       status: ticket.status,
       attendee_name: ticket.attendee_name,
-      attendee_email: ticket.attendee_email,
       checked_in_at: ticket.checked_in_at,
+      admission_allowed: ticket.admission_allowed?,
       event: {
         id: ticket.event.id,
         title: ticket.event.title,

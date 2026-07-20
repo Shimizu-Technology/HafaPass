@@ -53,15 +53,17 @@ RSpec.describe "Api::V1::Orders", type: :request do
           .to eq(["General Admission", "General Admission", "VIP"])
       end
 
-      it "generates unique QR codes for each ticket" do
+      it "returns separate display and admission credentials to the creating buyer" do
         post_json "/api/v1/orders", params: valid_params
 
         json = JSON.parse(response.body)
-        qr_codes = json["tickets"].map { |t| t["qr_code"] }
-        expect(qr_codes.uniq.length).to eq(3)
-        qr_codes.each do |qr|
-          expect(qr).to match(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
-        end
+        credentials = json["tickets"].map { |ticket| ticket["display_credential"] }
+        scan_credentials = json["tickets"].map { |ticket| ticket["scan_credential"] }
+        expect(credentials.uniq.length).to eq(3)
+        expect(credentials).to all(be_present)
+        expect(scan_credentials).to all(be_present)
+        expect(scan_credentials).not_to match_array(credentials)
+        expect(json["tickets"]).to all(satisfy { |ticket| !ticket.key?("qr_code") })
       end
 
       it "increments quantity_sold on ticket types" do
@@ -77,7 +79,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         json = JSON.parse(response.body)
         json["tickets"].each do |ticket|
           expect(ticket["attendee_name"]).to eq("Jane Smith")
-          expect(ticket["attendee_email"]).to eq("buyer@example.com")
+          expect(ticket).not_to have_key("attendee_email")
         end
       end
 
@@ -95,6 +97,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         expect(response).to have_http_status(:created)
         order = Order.last
         expect(order.user_id).to be_nil
+        expect(JSON.parse(response.body)["guest_access_token"]).to be_present
       end
 
       it "attaches user when authenticated" do
@@ -292,12 +295,12 @@ RSpec.describe "Api::V1::Orders", type: :request do
   end
 
   describe "POST /api/v1/orders/:id/cancel" do
-    it "requires authentication" do
+    it "does not reveal an order without buyer authorization" do
       order = create(:order, :pending, event: event)
 
       post "/api/v1/orders/#{order.id}/cancel"
 
-      expect(response).to have_http_status(:unauthorized)
+      expect(response).to have_http_status(:not_found)
     end
 
     it "rejects a verified token without a Clerk subject instead of raising" do
@@ -311,7 +314,28 @@ RSpec.describe "Api::V1::Orders", type: :request do
         post "/api/v1/orders/#{order.id}/cancel", headers: { "Authorization" => "Bearer blank_sub" }
       end.not_to change { order.reload.status }
 
-      expect(response).to have_http_status(:unauthorized)
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "allows a guest buyer with the order-specific access token to cancel" do
+      order = create(:order, :pending, event: event, user: nil)
+      token = GuestOrderAccess.issue!(order)
+
+      post "/api/v1/orders/#{order.id}/cancel", headers: { "X-Guest-Order-Token" => token }
+
+      expect(response).to have_http_status(:ok)
+      expect(order.reload).to be_cancelled
+    end
+
+    it "does not allow one guest order token to access another order" do
+      first_order = create(:order, :pending, event: event, user: nil)
+      second_order = create(:order, :pending, event: event, user: nil)
+      token = GuestOrderAccess.issue!(first_order)
+
+      post "/api/v1/orders/#{second_order.id}/cancel", headers: { "X-Guest-Order-Token" => token }
+
+      expect(response).to have_http_status(:not_found)
+      expect(second_order.reload).to be_pending
     end
 
     it "allows the authenticated buyer to cancel a pending order" do

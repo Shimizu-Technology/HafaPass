@@ -1,10 +1,11 @@
 class Api::V1::TicketsController < ApplicationController
   skip_before_action :authenticate_user!
+  before_action :optional_authenticate_user!
 
   def show
     ticket = find_ticket
     return render_not_found unless ticket
-    return render_not_found unless ticket.order.completed?
+    return render_not_found unless ticket.order.ticket_record_available?
 
     render json: ticket_json(ticket)
   end
@@ -12,10 +13,10 @@ class Api::V1::TicketsController < ApplicationController
   def download
     ticket = find_ticket
     return render_not_found unless ticket
-    return render_not_found unless ticket.order.completed?
+    return render_not_found unless downloadable?(ticket) && admission_access?(ticket)
 
     pdf_data = TicketPdfGenerator.new(ticket).generate
-    filename = "hafapass-ticket-#{ticket.qr_code[0..7]}.pdf"
+    filename = "hafapass-ticket-#{ticket.id}.pdf"
 
     send_data pdf_data,
               filename: filename,
@@ -40,21 +41,26 @@ class Api::V1::TicketsController < ApplicationController
   private
 
   def find_ticket
-    Ticket.includes(:order, :ticket_type, :event).find_by(qr_code: params[:qr_code])
+    ticket = TicketCredential.find_display(params[:credential] || params[:qr_code])
+    Ticket.includes(:order, :ticket_type, :event).find_by(id: ticket&.id)
   end
 
   def render_not_found
     render json: { error: "Ticket not found" }, status: :not_found
   end
 
+  def downloadable?(ticket)
+    ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked?
+  end
+
   def ticket_json(ticket)
     {
       id: ticket.id,
-      qr_code: ticket.qr_code,
+      scan_credential: downloadable?(ticket) && admission_access?(ticket) ? ticket.scan_credential : nil,
       status: ticket.status,
-      attendee_name: ticket.attendee_name,
-      attendee_email: ticket.attendee_email,
       checked_in_at: ticket.checked_in_at,
+      admission_allowed: ticket.admission_allowed?,
+      admission_block_reason: ticket.order.ticket_access_blocked? ? "Payment dispute under review" : nil,
       event: {
         id: ticket.event.id,
         title: ticket.event.title,
@@ -75,5 +81,13 @@ class Api::V1::TicketsController < ApplicationController
         price_cents: ticket.ticket_type.price_cents
       }
     }
+  end
+
+  def admission_access?(ticket)
+    return true if @current_user&.admin?
+    return true if ticket.order.user_id.present? && ticket.order.user_id == @current_user&.id
+
+    token = request.headers["X-Guest-Order-Token"].presence
+    token.present? && GuestOrderAccess.find(token)&.id == ticket.order_id
   end
 end
