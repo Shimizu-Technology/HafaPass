@@ -12,8 +12,8 @@ This manual plan is run in full during Phase 7 after the required Phase 1–6 fo
 - The release commit passes `./scripts/gate.sh` and repository CI.
 - There are no open P0 blueprint findings.
 - Backend, frontend, Redis, and the background worker are running.
-- Stripe is in test mode using HafaPass or approved compatible sandbox credentials.
-- Webhook forwarding uses a signed Stripe test endpoint.
+- The selected payment provider is in sandbox mode using HafaPass or approved compatible credentials; Stripe may be used only for sandbox regression until Guam production eligibility is confirmed in writing.
+- Webhook forwarding uses a signed endpoint for every enabled provider.
 - Email uses a sandbox/test recipient configuration.
 - Browser authentication uses `TEST_USER_EMAIL`, `TEST_USER_PASSWORD`, and `TEST_BASE_URL` without exposing environment values.
 - Test actors exist for attendee, organization owner, manager, finance, box office, scanner, support, risk/operations, finance admin, and platform admin.
@@ -46,7 +46,7 @@ The expected counts will grow. A hard-coded example count is not the gate; passi
 
 1. Create an organization and invite team members.
 2. Confirm role invitations, acceptance, expiration, removal, and event assignment.
-3. Verify paid publishing is blocked before required organizer/Connect readiness.
+3. Verify paid publishing is blocked before required organizer/connected-account readiness.
 4. Create an incomplete draft and confirm the publish checklist identifies every blocker.
 5. Enter start/end/doors/sales windows in ChST and confirm stored/displayed values.
 6. Add ticket types, tiers, capacity, promo, policy, and venue.
@@ -164,7 +164,7 @@ Performance targets:
 ## 12. Production operations drill
 
 1. Deploy a release candidate to a production-like environment.
-2. Confirm web, worker, Redis, database, storage, email, Stripe, and monitoring configuration status.
+2. Confirm web, worker, Redis, database, storage, email, every enabled payment/payout provider, and monitoring configuration status.
 3. Trigger controlled application, job, webhook, and reconciliation failures; confirm alerts.
 4. Restore the database and required objects from backup into an isolated environment.
 5. Roll back a release using the documented procedure.

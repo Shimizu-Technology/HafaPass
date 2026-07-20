@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react'
+import { CheckCircle2, CircleAlert, Loader2, WalletCards } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -28,17 +28,21 @@ export default function EventAnalyticsPage() {
  const [attendees, setAttendees] = useState(null)
  const [showAttendees, setShowAttendees] = useState(false)
  const [attendeesLoading, setAttendeesLoading] = useState(false)
+ const [finance, setFinance] = useState(null)
+ const [financeBusy, setFinanceBusy] = useState(false)
 
  const fetchData = useCallback(async () => {
   setLoading(true)
   setError(null)
   try {
-   const [statsRes, eventRes] = await Promise.all([
+   const [statsRes, eventRes, financeRes] = await Promise.all([
     apiClient.get(`/organizer/events/${id}/stats`),
-    apiClient.get(`/organizer/events/${id}`)
+    apiClient.get(`/organizer/events/${id}`),
+    apiClient.get(`/organizer/events/${id}/finance`)
    ])
    setStats(statsRes.data)
    setEvent(eventRes.data)
+   setFinance(financeRes.data)
   } catch (err) {
    if (err.response?.status === 401) {
     setError('Please sign in to access this page.')
@@ -82,6 +86,41 @@ export default function EventAnalyticsPage() {
   }
  }
 
+ const refreshFinance = async () => {
+  const response = await apiClient.get(`/organizer/events/${id}/finance`)
+  setFinance(response.data)
+ }
+
+ const finalizeSettlement = async () => {
+  setFinanceBusy(true)
+  setError(null)
+  try {
+   await apiClient.post(`/organizer/events/${id}/finance/finalize`)
+   await refreshFinance()
+  } catch (requestError) {
+   setError(requestError.response?.data?.error || 'Could not finalize this statement.')
+  } finally {
+   setFinanceBusy(false)
+  }
+ }
+
+ const createPayout = async settlement => {
+  if (!window.confirm(`Send ${formatCents(settlement.available_to_payout_cents)} to the verified payout account?`)) return
+  setFinanceBusy(true)
+  setError(null)
+  try {
+   await apiClient.post(`/organizer/events/${id}/finance/payout`, {
+    settlement_id: settlement.id,
+    amount_cents: settlement.available_to_payout_cents
+   }, { headers: { 'Idempotency-Key': crypto.randomUUID() } })
+   await refreshFinance()
+  } catch (requestError) {
+   setError(requestError.response?.data?.error || 'Could not create payout.')
+  } finally {
+   setFinanceBusy(false)
+  }
+ }
+
  if (loading) {
   return (
    <div className="flex justify-center items-center py-20">
@@ -107,6 +146,7 @@ export default function EventAnalyticsPage() {
  const checkInRate = stats.total_tickets_sold > 0
   ? Math.round((stats.tickets_checked_in / stats.total_tickets_sold) * 100)
   : 0
+ const latestSettlement = finance?.settlements?.[0]
 
  return (
   <div className="max-w-4xl mx-auto px-4 py-8">
@@ -179,6 +219,40 @@ export default function EventAnalyticsPage() {
      </div>
     </div>
    </div>
+
+   {/* Settlement and payout ledger */}
+   {finance && (
+    <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="finance-heading">
+     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-start gap-3">
+       <div className="rounded-xl bg-emerald-50 p-2.5"><WalletCards className="h-5 w-5 text-emerald-700" /></div>
+       <div><h2 id="finance-heading" className="text-lg font-semibold text-neutral-900">Settlement and payout</h2><p className="mt-1 text-sm text-neutral-500">Versioned from immutable sales, refunds, processing costs, disputes, reserves, adjustments, and payouts.</p></div>
+      </div>
+      {finance.connected_account?.payout_ready ? (
+       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> {finance.connected_account.provider} ready</span>
+      ) : (
+       <Link to="/dashboard/settings" className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700"><CircleAlert className="h-4 w-4" /> Complete payout setup</Link>
+      )}
+     </div>
+
+     <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Gross ticket value</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.gross_cents)}</p></div>
+      <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Refunds</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.refund_cents)}</p></div>
+      <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Processing costs</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.processing_fee_cents)}</p></div>
+      <div className="rounded-xl bg-brand-50 p-3"><p className="text-xs text-brand-700">Organizer payable</p><p className="mt-1 font-bold text-brand-900">{formatCents(finance.preview.payable_cents)}</p></div>
+     </div>
+
+     {finance.preview.negative_balance_cents > 0 && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">A {formatCents(finance.preview.negative_balance_cents)} negative balance will be withheld from future organization payouts.</div>}
+
+     <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-5">
+      {['completed', 'cancelled'].includes(event?.status) && <button disabled={financeBusy} onClick={finalizeSettlement} className="rounded-xl border border-brand-200 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50">{financeBusy ? 'Working…' : latestSettlement ? 'Finalize current version' : 'Finalize statement'}</button>}
+      {latestSettlement?.available_to_payout_cents > 0 && <button disabled={financeBusy || !finance.connected_account?.payout_ready} onClick={() => createPayout(latestSettlement)} className="btn-primary text-sm disabled:opacity-50">Pay {formatCents(latestSettlement.available_to_payout_cents)}</button>}
+      {latestSettlement && <p className="text-xs text-neutral-500">Version {latestSettlement.version} · {latestSettlement.status} · {formatCents(latestSettlement.available_to_payout_cents)} available</p>}
+     </div>
+
+     {finance.payouts?.length > 0 && <div className="mt-5 divide-y divide-neutral-100 rounded-xl border border-neutral-200">{finance.payouts.map(payout => <div key={payout.id} className="flex items-center justify-between px-4 py-3 text-sm"><span className="text-neutral-600">{payout.provider} · {payout.status}</span><span className="font-semibold text-neutral-900">{formatCents(payout.amount_cents)}</span></div>)}</div>}
+    </section>
+   )}
 
    {/* Tickets by Type */}
    <div className="bg-white rounded-xl shadow-sm border border-neutral-200 mb-8">

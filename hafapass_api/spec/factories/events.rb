@@ -1,6 +1,7 @@
 FactoryBot.define do
   factory :event do
     association :organizer_profile
+    organization { organizer_profile.organization }
     sequence(:title) { |n| "Beach Party #{n}" }
     description { "An amazing event on Guam's beaches" }
     short_description { "Beach party vibes" }

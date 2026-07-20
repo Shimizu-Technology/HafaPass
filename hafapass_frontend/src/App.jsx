@@ -22,6 +22,8 @@ const EditEventPage = lazy(() => import('./pages/dashboard/EditEventPage'))
 const EventAnalyticsPage = lazy(() => import('./pages/dashboard/EventAnalyticsPage'))
 const ScannerPage = lazy(() => import('./pages/dashboard/ScannerPage'))
 const SettingsPage = lazy(() => import('./pages/dashboard/SettingsPage'))
+const InvitationAcceptPage = lazy(() => import('./pages/dashboard/InvitationAcceptPage'))
+const EventStaffPage = lazy(() => import('./pages/dashboard/EventStaffPage'))
 const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
 const GuestListPage = lazy(() => import('./pages/dashboard/GuestListPage'))
 const RefundsPage = lazy(() => import('./pages/dashboard/RefundsPage'))
@@ -68,6 +70,8 @@ function App() {
           <Route path="/dashboard/events/:id/waitlist" element={<ProtectedRoute><WaitlistPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id/team" element={<ProtectedRoute><EventStaffPage /></ProtectedRoute>} />
+          <Route path="/organization-invitations/accept" element={<ProtectedRoute><InvitationAcceptPage /></ProtectedRoute>} />
           {/* Admin routes */}
           <Route path="/admin" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
           <Route path="/admin/events" element={<AdminRoute><AdminEventsPage /></AdminRoute>} />

@@ -322,14 +322,15 @@ Branch: `codex/phase-05-organizations-and-payouts`
 
 Prerequisite decision:
 
-- Confirm Guam business/bank support, merchant of record, Connect account type, charge model, refund/dispute liability, reserves, and payout policy with Stripe/legal/accounting.
+- Follow [GUAM_PAYMENT_AND_PAYOUT_DECISION.md](GUAM_PAYMENT_AND_PAYOUT_DECISION.md): pursue PayPal Multiparty approval, retain a controlled manual/local-bank pilot fallback, and treat Stripe as blocked for Guam production until written eligibility confirmation.
+- Confirm merchant of record, charge model, refund/dispute liability, reserves, tax, and payout policy with the selected provider, legal counsel, and accounting.
 
 Requirements:
 
 - Organizations and unique memberships.
 - Owner, manager, finance, marketer, box-office, and scanner roles.
 - Event-level staff assignment.
-- Stripe Connect onboarding and requirements-due state.
+- Provider-neutral connected-account onboarding, requirements-due, restricted, ready, and disabled states.
 - Paid publishing blocked until payout-ready.
 - Immutable settlement calculation and statement.
 - Payout, reserve, adjustment, refund, dispute, and negative-balance reconciliation.
@@ -345,8 +346,8 @@ Automated acceptance:
 
 Runtime acceptance:
 
-- Test organizer onboarding through test Connect.
-- Sell, refund, settle, and reconcile a test event to the cent.
+- Exercise organizer onboarding through the approved provider sandbox or the controlled manual adapter.
+- Sell, refund, settle, pay, and reconcile a simulated/sandbox event to the cent; real-money activation remains an external release gate.
 
 ### Phase 6 — Offline admissions and event-day operations
 

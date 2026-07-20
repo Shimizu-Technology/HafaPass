@@ -11,6 +11,7 @@ RSpec.describe "Api::V1::Admin::Users", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(user.reload).to be_organizer
+      expect(AuditLog.where(auditable: user, actor_user: admin, action: "user.role_updated")).to exist
     end
 
     it "rejects an unsupported role without changing the user" do
@@ -28,14 +29,15 @@ RSpec.describe "Api::V1::Admin::OrganizerProfiles", type: :request do
   let(:admin) { create(:user, :admin) }
   let(:profile) { create(:organizer_profile) }
 
-  it "lets an admin record organizer verification and payout readiness" do
+  it "lets an admin record organizer verification without bypassing payout evidence" do
     patch "/api/v1/admin/organizer_profiles/#{profile.id}", params: {
       verification_status: "verified", payout_ready: true
     }, headers: auth_headers(admin)
 
     expect(response).to have_http_status(:ok)
     expect(profile.reload).to be_verification_status_verified
-    expect(profile).to be_payout_ready
+    expect(profile.organization).not_to be_payout_ready
     expect(profile.verified_by_user).to eq(admin)
+    expect(AuditLog.where(auditable: profile, action: "organizer.verification_updated")).to exist
   end
 end

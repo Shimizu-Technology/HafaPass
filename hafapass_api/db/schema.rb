@@ -10,9 +10,81 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_20_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "audit_logs", force: :cascade do |t|
+    t.string "action", null: false
+    t.bigint "actor_user_id"
+    t.jsonb "after_data", default: {}, null: false
+    t.bigint "auditable_id", null: false
+    t.string "auditable_type", null: false
+    t.jsonb "before_data", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.inet "ip_address"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "organization_id"
+    t.string "request_id"
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_audit_logs_on_actor_user_id"
+    t.index ["auditable_type", "auditable_id", "occurred_at"], name: "idx_audit_logs_auditable_time"
+    t.index ["organization_id", "occurred_at"], name: "index_audit_logs_on_organization_id_and_occurred_at"
+    t.index ["organization_id"], name: "index_audit_logs_on_organization_id"
+  end
+
+  create_table "balance_adjustments", force: :cascade do |t|
+    t.integer "amount_cents", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_user_id"
+    t.string "currency", default: "usd", null: false
+    t.bigint "dispute_id"
+    t.datetime "effective_at", null: false
+    t.bigint "event_id"
+    t.string "kind", null: false
+    t.bigint "order_id"
+    t.bigint "organization_id", null: false
+    t.text "reason", null: false
+    t.bigint "reversal_of_id"
+    t.bigint "reversed_by_user_id"
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_user_id"], name: "index_balance_adjustments_on_created_by_user_id"
+    t.index ["dispute_id"], name: "index_balance_adjustments_on_dispute_id"
+    t.index ["event_id"], name: "index_balance_adjustments_on_event_id"
+    t.index ["order_id"], name: "index_balance_adjustments_on_order_id"
+    t.index ["organization_id"], name: "index_balance_adjustments_on_organization_id"
+    t.index ["reversal_of_id"], name: "idx_balance_adjustments_one_reversal", unique: true, where: "(reversal_of_id IS NOT NULL)"
+    t.index ["reversal_of_id"], name: "index_balance_adjustments_on_reversal_of_id"
+    t.index ["reversed_by_user_id"], name: "index_balance_adjustments_on_reversed_by_user_id"
+    t.check_constraint "amount_cents <> 0", name: "balance_adjustments_amount_nonzero"
+    t.check_constraint "char_length(currency::text) = 3", name: "balance_adjustments_currency_length"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "balance_adjustments_status_valid"
+  end
+
+  create_table "connected_accounts", force: :cascade do |t|
+    t.jsonb "capabilities", default: {}, null: false
+    t.boolean "charges_enabled", default: false, null: false
+    t.string "country", default: "GU", null: false
+    t.datetime "created_at", null: false
+    t.string "currency", default: "usd", null: false
+    t.boolean "details_submitted", default: false, null: false
+    t.datetime "last_synced_at"
+    t.bigint "organization_id", null: false
+    t.boolean "payouts_enabled", default: false, null: false
+    t.string "provider", null: false
+    t.string "provider_account_id"
+    t.jsonb "requirements_due", default: [], null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "provider"], name: "index_connected_accounts_on_organization_id_and_provider", unique: true
+    t.index ["organization_id"], name: "index_connected_accounts_on_organization_id"
+    t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
+    t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
+    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying]::text[])", name: "connected_accounts_provider_valid"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
+  end
 
   create_table "disputes", force: :cascade do |t|
     t.integer "amount_cents", null: false
@@ -63,6 +135,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.index ["event_id"], name: "index_event_changes_on_event_id"
   end
 
+  create_table "event_staff_assignments", force: :cascade do |t|
+    t.bigint "assigned_by_user_id"
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.datetime "expires_at"
+    t.bigint "organization_id", null: false
+    t.integer "role", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["assigned_by_user_id"], name: "index_event_staff_assignments_on_assigned_by_user_id"
+    t.index ["event_id", "user_id", "role"], name: "idx_event_staff_assignments_unique_role", unique: true
+    t.index ["event_id"], name: "index_event_staff_assignments_on_event_id"
+    t.index ["organization_id"], name: "index_event_staff_assignments_on_organization_id"
+    t.index ["user_id"], name: "index_event_staff_assignments_on_user_id"
+    t.check_constraint "role = ANY (ARRAY[0, 1, 2])", name: "event_staff_assignments_role_valid"
+    t.check_constraint "status = ANY (ARRAY[0, 1])", name: "event_staff_assignments_status_valid"
+  end
+
   create_table "event_state_changes", force: :cascade do |t|
     t.string "action", null: false
     t.bigint "actor_user_id", null: false
@@ -89,6 +180,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.datetime "ends_at"
     t.boolean "is_featured", default: false
     t.integer "max_capacity"
+    t.bigint "organization_id", null: false
     t.bigint "organizer_profile_id", null: false
     t.datetime "published_at"
     t.date "recurrence_end_date"
@@ -105,6 +197,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.string "venue_address"
     t.string "venue_city"
     t.string "venue_name"
+    t.index ["organization_id"], name: "index_events_on_organization_id"
     t.index ["organizer_profile_id"], name: "index_events_on_organizer_profile_id"
     t.index ["recurrence_parent_id"], name: "index_events_on_recurrence_parent_id"
     t.index ["slug"], name: "index_events_on_slug", unique: true
@@ -277,12 +370,50 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.check_constraint "total_cents >= 0", name: "orders_total_nonnegative"
   end
 
+  create_table "organization_memberships", force: :cascade do |t|
+    t.datetime "accepted_at"
+    t.datetime "created_at", null: false
+    t.datetime "expires_at"
+    t.integer "invitation_version", default: 1, null: false
+    t.datetime "invited_at"
+    t.bigint "invited_by_user_id"
+    t.string "invited_email"
+    t.bigint "organization_id", null: false
+    t.integer "role", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index "organization_id, lower((invited_email)::text)", name: "idx_organization_memberships_unique_invite", unique: true, where: "((invited_email IS NOT NULL) AND (status = 0))"
+    t.index ["invited_by_user_id"], name: "index_organization_memberships_on_invited_by_user_id"
+    t.index ["organization_id", "user_id"], name: "idx_organization_memberships_unique_user", unique: true, where: "(user_id IS NOT NULL)"
+    t.index ["organization_id"], name: "index_organization_memberships_on_organization_id"
+    t.index ["user_id"], name: "index_organization_memberships_on_user_id"
+    t.check_constraint "invitation_version > 0", name: "organization_memberships_invitation_version_positive"
+    t.check_constraint "role = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "organization_memberships_role_valid"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organization_memberships_status_valid"
+    t.check_constraint "user_id IS NOT NULL OR invited_email IS NOT NULL", name: "organization_memberships_identity_present"
+  end
+
+  create_table "organizations", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "currency", default: "usd", null: false
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.integer "status", default: 0, null: false
+    t.string "timezone", default: "Pacific/Guam", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_organizations_on_slug", unique: true
+    t.check_constraint "char_length(currency::text) = 3", name: "organizations_currency_length"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organizations_status_valid"
+  end
+
   create_table "organizer_profiles", force: :cascade do |t|
     t.text "business_description"
     t.string "business_name"
     t.datetime "created_at", null: false
     t.boolean "is_ambros_partner", default: false
     t.string "logo_url"
+    t.bigint "organization_id", null: false
     t.boolean "payout_ready", default: false, null: false
     t.datetime "policy_accepted_at"
     t.string "stripe_account_id"
@@ -293,6 +424,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.integer "verification_status", default: 0, null: false
     t.datetime "verified_at"
     t.bigint "verified_by_user_id"
+    t.index ["organization_id"], name: "index_organizer_profiles_on_organization_id", unique: true
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id", unique: true
     t.index ["verification_status"], name: "index_organizer_profiles_on_verification_status"
     t.index ["verified_by_user_id"], name: "index_organizer_profiles_on_verified_by_user_id"
@@ -335,6 +467,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.check_constraint "amount_cents >= 0", name: "payments_amount_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "payments_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payments_status_valid"
+  end
+
+  create_table "payouts", force: :cascade do |t|
+    t.integer "amount_cents", null: false
+    t.bigint "connected_account_id", null: false
+    t.datetime "created_at", null: false
+    t.string "currency", default: "usd", null: false
+    t.bigint "event_id", null: false
+    t.string "failure_code"
+    t.text "failure_message"
+    t.string "idempotency_key", null: false
+    t.datetime "initiated_at"
+    t.bigint "organization_id", null: false
+    t.datetime "paid_at"
+    t.string "provider", null: false
+    t.string "provider_payout_id"
+    t.bigint "settlement_id", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
+    t.index ["event_id"], name: "index_payouts_on_event_id"
+    t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
+    t.index ["organization_id"], name: "index_payouts_on_organization_id"
+    t.index ["provider", "provider_payout_id"], name: "idx_payouts_unique_provider_id", unique: true, where: "(provider_payout_id IS NOT NULL)"
+    t.index ["settlement_id"], name: "index_payouts_on_settlement_id"
+    t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
+    t.check_constraint "char_length(currency::text) = 3", name: "payouts_currency_length"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "payouts_status_valid"
   end
 
   create_table "pricing_tiers", force: :cascade do |t|
@@ -471,6 +631,67 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "refunds_status_valid"
   end
 
+  create_table "settlement_items", force: :cascade do |t|
+    t.integer "amount_cents", null: false
+    t.datetime "created_at", null: false
+    t.string "currency", default: "usd", null: false
+    t.string "description", null: false
+    t.string "kind", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "settlement_id", null: false
+    t.bigint "source_id"
+    t.string "source_type"
+    t.datetime "updated_at", null: false
+    t.index ["settlement_id", "kind", "source_type", "source_id"], name: "idx_settlement_items_unique_source", unique: true, where: "(source_id IS NOT NULL)"
+    t.index ["settlement_id"], name: "index_settlement_items_on_settlement_id"
+    t.index ["source_type", "source_id"], name: "index_settlement_items_on_source_type_and_source_id"
+    t.check_constraint "char_length(currency::text) = 3", name: "settlement_items_currency_length"
+  end
+
+  create_table "settlements", force: :cascade do |t|
+    t.integer "adjustment_cents", default: 0, null: false
+    t.datetime "calculated_at", null: false
+    t.datetime "created_at", null: false
+    t.string "currency", default: "usd", null: false
+    t.integer "discount_cents", default: 0, null: false
+    t.bigint "event_id", null: false
+    t.datetime "finalized_at"
+    t.integer "gross_cents", default: 0, null: false
+    t.integer "negative_balance_cents", default: 0, null: false
+    t.integer "net_cents", default: 0, null: false
+    t.bigint "organization_id", null: false
+    t.integer "organizer_proceeds_cents", default: 0, null: false
+    t.integer "paid_cents", default: 0, null: false
+    t.integer "payable_cents", default: 0, null: false
+    t.integer "platform_fee_cents", default: 0, null: false
+    t.integer "processing_fee_cents", default: 0, null: false
+    t.integer "refund_cents", default: 0, null: false
+    t.integer "reserve_cents", default: 0, null: false
+    t.string "source_digest", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.integer "version", null: false
+    t.index ["event_id", "source_digest"], name: "index_settlements_on_event_id_and_source_digest", unique: true
+    t.index ["event_id", "version"], name: "index_settlements_on_event_id_and_version", unique: true
+    t.index ["event_id"], name: "index_settlements_on_event_id"
+    t.index ["organization_id"], name: "index_settlements_on_organization_id"
+    t.check_constraint "char_length(currency::text) = 3", name: "settlements_currency_length"
+    t.check_constraint "discount_cents >= 0", name: "settlements_discount_nonnegative"
+    t.check_constraint "gross_cents >= 0", name: "settlements_gross_nonnegative"
+    t.check_constraint "negative_balance_cents >= 0", name: "settlements_negative_balance_nonnegative"
+    t.check_constraint "net_cents >= 0", name: "settlements_net_nonnegative"
+    t.check_constraint "organizer_proceeds_cents >= 0", name: "settlements_organizer_proceeds_nonnegative"
+    t.check_constraint "paid_cents >= 0", name: "settlements_paid_nonnegative"
+    t.check_constraint "payable_cents >= 0", name: "settlements_payable_nonnegative"
+    t.check_constraint "platform_fee_cents >= 0", name: "settlements_platform_fee_nonnegative"
+    t.check_constraint "processing_fee_cents >= 0", name: "settlements_processing_fee_nonnegative"
+    t.check_constraint "refund_cents >= 0", name: "settlements_refund_nonnegative"
+    t.check_constraint "reserve_cents >= 0", name: "settlements_reserve_nonnegative"
+    t.check_constraint "status = ANY (ARRAY[0, 1])", name: "settlements_status_valid"
+    t.check_constraint "version > 0", name: "settlements_version_positive"
+  end
+
   create_table "site_settings", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "payment_mode", default: "simulate", null: false
@@ -585,14 +806,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "webhook_events_status_valid"
   end
 
+  add_foreign_key "audit_logs", "organizations", on_delete: :restrict
+  add_foreign_key "audit_logs", "users", column: "actor_user_id", on_delete: :nullify
+  add_foreign_key "balance_adjustments", "balance_adjustments", column: "reversal_of_id", on_delete: :restrict
+  add_foreign_key "balance_adjustments", "disputes", on_delete: :restrict
+  add_foreign_key "balance_adjustments", "events", on_delete: :restrict
+  add_foreign_key "balance_adjustments", "orders", on_delete: :restrict
+  add_foreign_key "balance_adjustments", "organizations", on_delete: :restrict
+  add_foreign_key "balance_adjustments", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "balance_adjustments", "users", column: "reversed_by_user_id", on_delete: :nullify
+  add_foreign_key "connected_accounts", "organizations", on_delete: :restrict
   add_foreign_key "disputes", "orders", on_delete: :restrict
   add_foreign_key "disputes", "payments", on_delete: :restrict
   add_foreign_key "event_change_responses", "event_changes", on_delete: :restrict
   add_foreign_key "event_change_responses", "orders", on_delete: :restrict
   add_foreign_key "event_changes", "events", on_delete: :restrict
   add_foreign_key "event_changes", "users", column: "actor_user_id", on_delete: :nullify
+  add_foreign_key "event_staff_assignments", "events", on_delete: :restrict
+  add_foreign_key "event_staff_assignments", "organizations", on_delete: :restrict
+  add_foreign_key "event_staff_assignments", "users", column: "assigned_by_user_id", on_delete: :nullify
+  add_foreign_key "event_staff_assignments", "users", on_delete: :restrict
   add_foreign_key "event_state_changes", "events"
   add_foreign_key "event_state_changes", "users", column: "actor_user_id"
+  add_foreign_key "events", "organizations", on_delete: :restrict
   add_foreign_key "events", "organizer_profiles"
   add_foreign_key "fee_components", "order_items", on_delete: :restrict
   add_foreign_key "fee_components", "orders", on_delete: :restrict
@@ -613,11 +849,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
   add_foreign_key "orders", "events"
   add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
+  add_foreign_key "organization_memberships", "organizations", on_delete: :restrict
+  add_foreign_key "organization_memberships", "users", column: "invited_by_user_id", on_delete: :nullify
+  add_foreign_key "organization_memberships", "users", on_delete: :restrict
+  add_foreign_key "organizer_profiles", "organizations", on_delete: :restrict
   add_foreign_key "organizer_profiles", "users"
   add_foreign_key "organizer_profiles", "users", column: "verified_by_user_id"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict
   add_foreign_key "payments", "orders", on_delete: :restrict
+  add_foreign_key "payouts", "connected_accounts", on_delete: :restrict
+  add_foreign_key "payouts", "events", on_delete: :restrict
+  add_foreign_key "payouts", "organizations", on_delete: :restrict
+  add_foreign_key "payouts", "settlements", on_delete: :restrict
   add_foreign_key "pricing_tiers", "ticket_types"
   add_foreign_key "promo_codes", "events"
   add_foreign_key "promo_redemptions", "orders", on_delete: :restrict
@@ -632,6 +876,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
   add_foreign_key "refunds", "orders", on_delete: :restrict
   add_foreign_key "refunds", "payments", on_delete: :restrict
   add_foreign_key "refunds", "users", column: "requested_by_id", on_delete: :nullify
+  add_foreign_key "settlement_items", "settlements", on_delete: :restrict
+  add_foreign_key "settlements", "events", on_delete: :restrict
+  add_foreign_key "settlements", "organizations", on_delete: :restrict
   add_foreign_key "ticket_types", "events"
   add_foreign_key "tickets", "events"
   add_foreign_key "tickets", "order_items", on_delete: :restrict

@@ -46,7 +46,16 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
       return
     end
 
+    previous_role = user.role
     if user.update(role: requested_role)
+      AuditLogger.record!(
+        action: "user.role_updated",
+        auditable: user,
+        actor: current_user,
+        before_data: { role: previous_role },
+        after_data: { role: user.role },
+        request: request
+      )
       render json: user_json(user)
     else
       render json: { errors: user.errors.full_messages }, status: :unprocessable_entity
@@ -70,9 +79,21 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
         verification_status: u.organizer_profile.verification_status,
         verification_requested_at: u.organizer_profile.verification_requested_at,
         policy_accepted: u.organizer_profile.policy_accepted?,
-        payout_ready: u.organizer_profile.payout_ready,
-        verification_notes: u.organizer_profile.verification_notes
+        payout_ready: u.organizer_profile.organization.payout_ready?,
+        verification_notes: u.organizer_profile.verification_notes,
+        connected_account: connected_account_json(
+          u.organizer_profile.organization.payout_account || u.organizer_profile.organization.connected_accounts.first
+        )
       } : nil
     }
+  end
+
+  def connected_account_json(account)
+    return unless account
+
+    account.attributes.slice(
+      "id", "provider", "provider_account_id", "status", "charges_enabled", "payouts_enabled",
+      "details_submitted", "requirements_due", "last_synced_at"
+    ).merge(payout_ready: account.payout_ready?)
   end
 end

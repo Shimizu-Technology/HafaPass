@@ -3,8 +3,7 @@
 module Api
   module V1
     module Organizer
-      class BoxOfficeController < ApplicationController
-        before_action :require_organizer_profile
+      class BoxOfficeController < BaseController
         before_action :set_event
 
         # POST /api/v1/organizer/events/:event_id/box_office
@@ -61,20 +60,9 @@ module Api
 
         private
 
-        def require_organizer_profile
-          unless current_organizer_profile
-            render json: { error: "Organizer profile required" }, status: :forbidden
-          end
-        end
-
-        def current_organizer_profile
-          @current_organizer_profile ||= current_user.organizer_profile
-        end
-
         def set_event
-          @event = current_organizer_profile.events.find(params[:event_id])
-        rescue ActiveRecord::RecordNotFound
-          render json: { error: "Event not found" }, status: :not_found
+          @event = find_organization_event(params[:event_id])
+          authorize_organization!(:box_office, event: @event) if @event
         end
 
         def order_json(order)

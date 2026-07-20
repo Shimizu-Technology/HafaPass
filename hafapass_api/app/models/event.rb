@@ -1,5 +1,6 @@
 class Event < ApplicationRecord
   belongs_to :organizer_profile
+  belongs_to :organization
   belongs_to :recurrence_parent, class_name: "Event", optional: true
   has_many :recurrence_children, class_name: "Event", foreign_key: "recurrence_parent_id", dependent: :nullify
   has_many :ticket_types, dependent: :destroy
@@ -11,6 +12,10 @@ class Event < ApplicationRecord
   has_many :waitlist_entries, dependent: :destroy
   has_many :event_state_changes, dependent: :restrict_with_error
   has_many :event_changes, dependent: :restrict_with_error
+  has_many :event_staff_assignments, dependent: :restrict_with_error
+  has_many :settlements, dependent: :restrict_with_error
+  has_many :payouts, dependent: :restrict_with_error
+  has_many :balance_adjustments, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -118,7 +123,7 @@ class Event < ApplicationRecord
       checklist_item("capacity", "Event capacity added and ticket inventory fits", max_capacity.present? && configured_inventory.positive? && configured_inventory <= max_capacity),
       checklist_item("sales_window", "Ticket sales windows are valid", valid_ticket_sales_windows?(at: at)),
       checklist_item("payout", paid_event ? "Payout account ready for paid sales" : "No payout account needed for a free event",
-        !paid_event || organizer_profile.payout_ready?)
+        !paid_event || organization.payout_ready?)
     ]
     checks
   end

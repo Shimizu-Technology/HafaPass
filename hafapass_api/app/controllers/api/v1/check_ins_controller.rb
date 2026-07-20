@@ -2,7 +2,7 @@ class Api::V1::CheckInsController < ApplicationController
   def create
     credential = params[:credential] || params[:qr_code]
     resolved_ticket = TicketCredential.find_scan(credential)
-    ticket = Ticket.includes(:order, :ticket_type, event: :organizer_profile).find_by(id: resolved_ticket&.id)
+    ticket = Ticket.includes(:order, :ticket_type, event: [:organizer_profile, :organization]).find_by(id: resolved_ticket&.id)
 
     unless ticket
       render json: { error: "Ticket not found" }, status: :not_found
@@ -49,15 +49,26 @@ class Api::V1::CheckInsController < ApplicationController
     end
 
     ticket.check_in!
+    AuditLogger.record!(
+      action: "ticket.checked_in",
+      auditable: ticket,
+      actor: current_user,
+      organization: ticket.event.organization,
+      metadata: { event_id: ticket.event_id },
+      request: request
+    )
     render json: { message: "Check-in successful", ticket: ticket_json(ticket) }, status: :ok
   end
 
   private
 
   def authorized_to_check_in?(ticket)
-    return true if current_user.admin?
-
-    current_user.organizer_profile&.id == ticket.event.organizer_profile_id
+    OrganizationAuthorization.allowed?(
+      user: current_user,
+      organization: ticket.event.organization,
+      permission: :scan,
+      event: ticket.event
+    )
   end
 
   def ticket_json(ticket)
