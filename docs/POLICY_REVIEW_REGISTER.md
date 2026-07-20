@@ -15,8 +15,8 @@ Status: **not approved for production**. Engineering has created versioned surfa
 
 - Public checkout rejects an absent or stale buyer-terms version and stores version, digest, and acceptance time on the order.
 - Organizer publication requires acceptance of the current organizer-agreement version and digest.
-- Policy content is rendered as React text, never raw organizer HTML.
-- Replacing a policy changes its version/digest and therefore requires new acceptance.
+- Policy content is loaded from the backend's authoritative `config/policies.yml` registry and rendered as React text, never raw HTML.
+- The snapshot digest covers the exact served document content and version; replacing policy text therefore changes the digest and requires a deliberate version/reacceptance decision.
 - Approval evidence belongs in the controlled legal/operations record system. Do not commit signatures, phone numbers, private legal advice, or personal identity documents to this repository.
 
-The current digest is a technical content-family fingerprint, not proof of legal approval. Before launch, replace draft copy with approved text, update the version/canonical digest input, run checkout/publication regression tests, and record the approval evidence.
+The content-bound digest is technical evidence of which text was served, not proof of legal approval. Before launch, replace draft copy with approved text, update the version, run checkout/publication regression tests, and record the approval evidence.

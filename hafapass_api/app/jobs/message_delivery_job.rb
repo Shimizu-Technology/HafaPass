@@ -7,36 +7,38 @@ class MessageDeliveryJob < ApplicationJob
 
   def perform(delivery_id)
     delivery = MessageDelivery.find(delivery_id)
-    return if terminal?(delivery)
-
-    if delivery.suppressed_recipient?
-      delivery.update!(status: :suppressed, suppressed_at: Time.current,
-        last_error: "Recipient has a prior bounce, complaint, or suppression")
-      return
-    end
-
     delivery.with_lock do
       return if terminal?(delivery)
 
-      delivery.update!(attempts: delivery.attempts + 1, status: :queued, last_error: nil)
-    end
+      if delivery.suppressed_recipient?
+        delivery.update!(status: :suppressed, suppressed_at: Time.current,
+          last_error: "Recipient has a prior bounce, complaint, or suppression")
+        return
+      end
 
-    response = dispatch(delivery)
-    delivery.update!(
-      status: :sent,
-      provider_id: provider_id(response),
-      sent_at: Time.current,
-      failed_at: nil,
-      last_error: nil
-    )
+      delivery.update!(attempts: delivery.attempts + 1, status: :queued, last_error: nil)
+      response = dispatch(delivery)
+      delivery.update!(
+        status: :sent,
+        provider_id: provider_id(response),
+        sent_at: Time.current,
+        failed_at: nil,
+        last_error: nil
+      )
+    end
     MessageProviderEventProcessor.reconcile_for!(delivery)
   rescue StandardError => e
-    delivery&.update_columns(
-      status: MessageDelivery.statuses.fetch("failed"),
-      failed_at: Time.current,
-      last_error: "#{e.class}: #{e.message}".first(1000),
-      updated_at: Time.current
-    )
+    delivery&.with_lock do
+      unless terminal?(delivery)
+        delivery.update_columns(
+          status: MessageDelivery.statuses.fetch("failed"),
+          attempts: delivery.attempts + 1,
+          failed_at: Time.current,
+          last_error: "#{e.class}: #{e.message}".first(1000),
+          updated_at: Time.current
+        )
+      end
+    end
     Sentry.capture_exception(e, extra: { message_delivery_id: delivery_id })
     raise
   end

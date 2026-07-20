@@ -23,7 +23,8 @@ class MessageDelivery < ApplicationRecord
   end
 
   def suppressed_recipient?
-    self.class.where(recipient: recipient.to_s.downcase, status: [:bounced, :complained, :suppressed]).
+    self.class.where("LOWER(recipient) = ?", recipient.to_s.strip.downcase).
+      where(status: [:bounced, :complained, :suppressed]).
       where.not(id: id).exists?
   end
 

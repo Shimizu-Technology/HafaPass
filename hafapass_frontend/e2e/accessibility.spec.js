@@ -7,6 +7,20 @@ test('buyer policy and consent surfaces have no serious automated accessibility 
     contentType: 'application/json',
     body: JSON.stringify({ status: 'ok' }),
   }))
+  await page.route('**/api/v1/config', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      buyer_terms_version: 'test-version',
+      policies: {
+        'buyer-terms': {
+          title: 'Buyer Terms',
+          summary: 'Test summary',
+          sections: [{ heading: 'Your purchase', body: 'Test policy content.' }],
+        },
+      },
+    }),
+  }))
   await page.goto('/policies/buyer-terms')
   await expect(page.getByRole('heading', { level: 1, name: 'Buyer Terms' })).toBeVisible()
 

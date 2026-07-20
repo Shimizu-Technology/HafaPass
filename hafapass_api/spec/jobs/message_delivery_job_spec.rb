@@ -23,7 +23,7 @@ RSpec.describe MessageDeliveryJob do
   end
 
   it "suppresses a recipient after a prior hard bounce" do
-    create(:message_delivery, order: delivery.order, recipient: delivery.recipient, status: :bounced)
+    create(:message_delivery, order: delivery.order, recipient: delivery.recipient.upcase, status: :bounced)
     allow(EmailService).to receive(:send_order_confirmation)
 
     described_class.new.perform(delivery.id)

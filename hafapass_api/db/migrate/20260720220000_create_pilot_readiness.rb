@@ -17,8 +17,8 @@ class CreatePilotReadiness < ActiveRecord::Migration[8.1]
       direction.up do
         execute <<~SQL.squish
           UPDATE message_deliveries
-          SET idempotency_key = 'legacy-message/' || id::text
-          WHERE idempotency_key IS NULL
+          SET recipient = LOWER(TRIM(recipient)),
+              idempotency_key = COALESCE(idempotency_key, 'legacy-message/' || id::text)
         SQL
       end
     end

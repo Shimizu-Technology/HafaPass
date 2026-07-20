@@ -1,33 +1,43 @@
 # frozen_string_literal: true
 
 require "digest"
+require "yaml"
 
 class PolicyRegistry
-  BUYER_TERMS_VERSION = "2026-07-pilot-draft"
-  ORGANIZER_AGREEMENT_VERSION = "2026-07-pilot-draft"
+  DOCUMENT_PATH = Rails.root.join("config/policies.yml")
+  BUYER_DOCUMENT_KEYS = %w[buyer-terms privacy refunds acceptable-use retention].freeze
 
-  BUYER_TERMS_CANONICAL = [
-    BUYER_TERMS_VERSION,
-    "buyer-terms",
-    "privacy",
-    "refund-cancellation",
-    "acceptable-use",
-    "data-retention"
-  ].join("|").freeze
-  ORGANIZER_AGREEMENT_CANONICAL = [
-    ORGANIZER_AGREEMENT_VERSION,
-    "organizer-agreement",
-    "permitted-events",
-    "refund-obligations",
-    "payout-reserves",
-    "data-protection"
-  ].join("|").freeze
+  class << self
+    def buyer_terms
+      snapshot(BUYER_DOCUMENT_KEYS)
+    end
 
-  def self.buyer_terms
-    { version: BUYER_TERMS_VERSION, digest: Digest::SHA256.hexdigest(BUYER_TERMS_CANONICAL) }
-  end
+    def organizer_agreement
+      snapshot(["organizer-agreement"])
+    end
 
-  def self.organizer_agreement
-    { version: ORGANIZER_AGREEMENT_VERSION, digest: Digest::SHA256.hexdigest(ORGANIZER_AGREEMENT_CANONICAL) }
+    def public_documents
+      documents.deep_dup
+    end
+
+    private
+
+    def snapshot(keys)
+      content = keys.to_h { |key| [key, documents.fetch(key)] }
+      canonical = JSON.generate({ "version" => version, "documents" => content })
+      { version: version, digest: Digest::SHA256.hexdigest(canonical) }
+    end
+
+    def registry
+      @registry ||= YAML.safe_load_file(DOCUMENT_PATH, permitted_classes: [], aliases: false).freeze
+    end
+
+    def version
+      registry.fetch("version")
+    end
+
+    def documents
+      registry.fetch("documents")
+    end
   end
 end

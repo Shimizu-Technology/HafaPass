@@ -22,6 +22,7 @@ function SupportGate({ children }) {
   return children
 }
 
-export default function SupportRoute({ children }) {
-  return clerkPubKey ? <SupportGate>{children}</SupportGate> : children
+export default function SupportRoute({ children, clerkConfigured = Boolean(clerkPubKey) }) {
+  if (!clerkConfigured) return <Navigate to="/sign-in" replace />
+  return <SupportGate>{children}</SupportGate>
 }
