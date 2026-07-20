@@ -1,222 +1,186 @@
-# HafaPass MVP Manual Test Plan
+# HafaPass Pilot Manual Test Plan
 
-This is the simple human walkthrough for validating the MVP before trusting it with a pilot event.
+Status: evolving pilot gate; not evidence that the current prototype is production-ready
+Last baseline: July 20, 2026
+Requirements: [TICKETING_PLATFORM_BLUEPRINT.md](TICKETING_PLATFORM_BLUEPRINT.md)
+Phase process: [PHASE_DELIVERY_PLAYBOOK.md](PHASE_DELIVERY_PLAYBOOK.md)
 
-## Before You Start
+This manual plan is run in full during Phase 7 after the required Phase 1–6 foundations merge. Earlier phases run the relevant sections as regression checks.
 
-Run the app locally:
+## 1. Preconditions
 
-```bash
-cd hafapass_api
-rbenv exec bundle exec rails server -p 3000
-```
+- The release commit passes `./scripts/gate.sh` and repository CI.
+- There are no open P0 blueprint findings.
+- Backend, frontend, Redis, and the background worker are running.
+- Stripe is in test mode using HafaPass or approved compatible sandbox credentials.
+- Webhook forwarding uses a signed Stripe test endpoint.
+- Email uses a sandbox/test recipient configuration.
+- Browser authentication uses `TEST_USER_EMAIL`, `TEST_USER_PASSWORD`, and `TEST_BASE_URL` without exposing environment values.
+- Test actors exist for attendee, organization owner, manager, finance, box office, scanner, support, risk/operations, finance admin, and platform admin.
+- A future Guam event has multiple ticket types, low inventory, a promo, a guest list, staff assignments, and a waitlist configuration.
+- A second organizer/event exists to test isolation.
+- All test records are clearly labeled.
 
-```bash
-cd hafapass_frontend
-npm run dev
-```
+Historical baseline before Phase 1:
 
-Use the test values from `.env` through the app, not by reading the file directly:
+- Backend: 260 RSpec examples, zero failures.
+- Frontend lint/build complete with three hook warnings and a bundle warning.
+- No frontend automated tests.
+- Eight production npm audit findings.
 
-- `TEST_BASE_URL` should point to the frontend, usually `http://localhost:5173`.
-- `TEST_USER_EMAIL` and `TEST_USER_PASSWORD` should sign into Clerk.
+The expected counts will grow. A hard-coded example count is not the gate; passing the required suites and coverage is.
 
-Recommended setup:
+## 2. Public discovery and event truth
 
-- Use Stripe `simulate` mode for the first pass.
-- Use Stripe `test` mode for the payment/webhook pass.
-- Create at least one published future event with at least two ticket types.
+1. Browse on desktop and mobile while signed out.
+2. Confirm the default marketplace shows upcoming relevant events, not old published inventory.
+3. Test category deep links, date, location, price, search, and availability filters.
+4. Paginate/load beyond the first 20 records.
+5. Confirm URL state matches visible filters.
+6. Open an event and verify title, organizer, venue, policy, age, accessibility, inventory, and ticket state.
+7. Confirm a Guam 7:00 PM event displays as 7:00 PM ChST while the test browser uses a non-Guam timezone.
+8. Confirm JSON-LD, canonical URL, social metadata, and sitemap use the configured production domain.
+9. Confirm ended, cancelled, postponed, sold-out, not-yet-on-sale, and sales-ended events cannot be purchased and explain why.
 
-## 1. Public Event Discovery
+## 3. Organizer verification and publishing
 
-Expected result: a guest can find and understand an event.
+1. Create an organization and invite team members.
+2. Confirm role invitations, acceptance, expiration, removal, and event assignment.
+3. Verify paid publishing is blocked before required organizer/Connect readiness.
+4. Create an incomplete draft and confirm the publish checklist identifies every blocker.
+5. Enter start/end/doors/sales windows in ChST and confirm stored/displayed values.
+6. Add ticket types, tiers, capacity, promo, policy, and venue.
+7. Preview and publish.
+8. Confirm organizers cannot self-feature, self-partner, self-verify, or set arbitrary statuses through UI or API.
+9. Clone and recur an event; verify pricing tiers and deliberately recalculated dates/windows.
+10. Confirm another organization cannot access or mutate the event.
+11. Archive rather than delete and confirm financial/history records remain.
 
-Steps:
+## 4. Guest checkout and payment recovery
 
-1. Open the homepage.
-2. Click `Events`.
-3. Confirm published upcoming events appear.
-4. Use search by event title or venue name.
-5. Use category filters.
-6. Open an event detail page.
-7. Confirm date, time, venue, description, age restriction, and ticket types are readable on desktop and mobile size.
+Run on desktop and mobile:
 
-## 2. Guest Checkout in Simulate Mode
+1. Select tickets and verify inventory hold/countdown.
+2. Enter minimal buyer information.
+3. Apply a valid promo and verify the all-in total.
+4. Complete a standard successful card payment.
+5. Refresh and revisit confirmation through the protected guest link.
+6. Close the browser after provider payment but before redirect; recover the order.
+7. Complete a 3DS success and a 3DS failure.
+8. Use a declined card and verify inventory/promo release after failure/expiry.
+9. Attempt to access the order with a changed/expired token.
+10. Buy the final ticket concurrently from two sessions and verify only one succeeds.
+11. Confirm confirmation and ticket fulfillment happen once despite duplicate webhooks.
+12. Confirm a free ticket follows the approved fee policy and does not unnecessarily require card entry.
 
-Expected result: a guest can buy tickets without signing in, receive completed tickets, and see QR links.
+## 5. Authenticated buyer lifecycle
 
-Steps:
+1. Sign in using Clerk test credentials.
+2. Purchase tickets and find the order in My Tickets.
+3. Resend fulfillment and confirm a delivery record is visible to authorized support.
+4. Update allowed attendee details and verify audit history.
+5. Transfer one ticket, accept as another buyer, and verify credential rotation.
+6. Confirm the prior scan credential is invalid.
+7. Add supported wallet passes and confirm event/time/details are correct.
+8. Request ticket-level cancellation/refund according to policy.
+9. Process a rescheduled event’s accept/refund options.
+10. Confirm public ticket lookup never exposes buyer email or unnecessary PII.
 
-1. Open a published event as a signed-out visitor.
-2. Select one or more tickets.
-3. Continue to checkout.
-4. Enter buyer name and email.
-5. Apply a valid promo code if one exists.
-6. Place the order in simulate mode.
-7. Confirm the order confirmation page says tickets are confirmed.
-8. Open each ticket link.
-9. Confirm each ticket page shows a QR code and correct event/ticket details.
+## 6. Payment, refund, dispute, and ledger reconciliation
 
-## 3. Signed-In Buyer Flow
+1. Complete successful, failed, cancelled, expired, and 3DS orders.
+2. Replay identical webhook events.
+3. Deliver success/failure events out of order.
+4. Simulate provider amount/currency mismatch and confirm reconciliation alert.
+5. Process multiple partial refunds against different order items.
+6. Submit concurrent refund requests and confirm provider/local idempotency.
+7. Process a full refund and confirm ticket/inventory policy.
+8. Create a test dispute and verify ticket, reserve, notification, and admin state.
+9. Edit the current ticket type and confirm historical order-item price/name do not change.
+10. Reconcile gross, discounts, refunds, net, HafaPass fees, processing costs, organizer proceeds, reserves, adjustments, and payout to the cent.
 
-Expected result: a signed-in buyer can purchase and later find tickets in `My Tickets`.
+## 7. Promo, capacity, and waitlist
 
-Steps:
+1. Use unlimited and limited promos and verify finalized usage.
+2. Expire/decline a promo checkout and verify reserved usage releases.
+3. Exercise event capacity across multiple ticket types and comps.
+4. Sell out and join the waitlist.
+5. Issue an offer and verify inventory is held for that person only.
+6. Purchase through the signed offer.
+7. Expire, decline, cancel, and reuse an offer token; verify correct rejection/promotion.
+8. Confirm organizer waitlist reporting includes position, offers, expiry, and conversion.
 
-1. Sign in with Clerk test credentials.
-2. Buy tickets for a published event.
-3. Open `My Tickets`.
-4. Confirm the new tickets appear.
-5. Open a ticket from `My Tickets`.
-6. Confirm it shows as valid before check-in.
+## 8. Refund, cancellation, and reschedule operations
 
-## 4. Stripe Test Payment Flow
+1. Confirm finance/authorized roles can refund and unauthorized roles cannot.
+2. Verify partial refund allocation and remaining valid tickets.
+3. Cancel an event and exercise buyer notification/refund policy.
+4. Reschedule an event and exercise buyer accept/refund policy.
+5. Confirm all actions update settlement and payout state.
+6. Confirm delivery messages are safe, logged, resendable, and do not duplicate unexpectedly.
 
-Expected result: paid orders do not expose QR codes until payment completes.
+## 9. Offline event-day simulation
 
-Steps:
+Use at least three devices/browser profiles and at least 500 generated tickets:
 
-1. As admin, switch payment mode to `test`.
-2. Start checkout for a paid ticket.
-3. Confirm the app moves to Stripe payment UI.
-4. Complete payment with Stripe test card `4242 4242 4242 4242`.
-5. Confirm the immediate confirmation page does not show usable QR tickets if the order is still pending.
-6. Confirm the Stripe webhook completes the order.
-7. Refresh or revisit the order/ticket area.
-8. Confirm QR tickets are available only after completion.
+1. Assign scanner staff and download the signed manifest.
+2. Disconnect all scanners from the network.
+3. Scan valid, invalid, refunded, transferred, and already-used tickets.
+4. Scan the same valid ticket on multiple offline devices.
+5. Use manual lookup and check-in reversal.
+6. Record approved cash door sales without overselling.
+7. Restore connectivity and sync all devices.
+8. Confirm one accepted first admission, visible conflicts, complete append-only history, and correct counts.
+9. Confirm expired/unassigned staff cannot continue scanning after authorization refresh.
+10. Use the printable emergency list as a fallback drill.
 
-## 5. Organizer Event Management
+Performance targets:
 
-Expected result: an organizer can manage their own event but not another organizer's event.
+- Online p95 scan response under 500 ms at representative load.
+- Cached offline feedback feels immediate (target under 100 ms).
+- Zero false valid admissions and zero oversold inventory.
 
-Steps:
+## 10. Roles, privacy, and accessibility
 
-1. Sign in as an organizer or create an organizer profile.
-2. Create a draft event.
-3. Add ticket types.
-4. Publish the event.
-5. Edit event details.
-6. Confirm the public event page reflects the changes.
-7. Confirm direct URLs to another organizer's event management pages return not found or forbidden.
+1. Exercise every target role against every sensitive API/action.
+2. Confirm scanner sees minimum admission data.
+3. Confirm support cannot change payout/payment configuration.
+4. Confirm organizer finance is isolated by organization.
+5. Confirm all role, refund, payout, resend, moderation, and reversal actions are audited.
+6. Navigate public, checkout, ticket, organizer, and scanner flows using keyboard only.
+7. Check focus order, dialogs, errors, loading announcements, contrast, alt text, reduced motion, and zoom.
+8. Run automated accessibility checks and manually verify critical screen-reader labels.
 
-## 6. Ticket Sale Windows and Inventory
+## 11. Messaging and support
 
-Expected result: backend rules enforce what buyers can purchase.
+1. Verify consolidated order/ticket delivery.
+2. Force provider failure and job retry.
+3. Exercise bounce/suppression handling.
+4. Resend from the support dashboard and verify actor/time/status.
+5. Insert HTML-like organizer/user input and verify safe rendering.
+6. Exercise cancellation, reschedule, refund, waitlist, and reminder templates.
+7. Verify any SMS/WhatsApp flow has recorded consent and opt-out behavior.
 
-Steps:
+## 12. Production operations drill
 
-1. Create a ticket type with a future sales start date.
-2. Try to buy it from the frontend or direct API path.
-3. Confirm purchase is rejected.
-4. Create a ticket type with an expired sales end date.
-5. Confirm purchase is rejected.
-6. Set low inventory, such as one available ticket.
-7. Buy the available ticket.
-8. Confirm additional purchase attempts fail when sold out.
+1. Deploy a release candidate to a production-like environment.
+2. Confirm web, worker, Redis, database, storage, email, Stripe, and monitoring configuration status.
+3. Trigger controlled application, job, webhook, and reconciliation failures; confirm alerts.
+4. Restore the database and required objects from backup into an isolated environment.
+5. Roll back a release using the documented procedure.
+6. Execute provider-outage and venue-internet-outage runbooks.
+7. Confirm logs, screenshots, and support tools do not disclose secrets or excess PII.
 
-## 7. Check-In Scanner
+## 13. Pilot sign-off
 
-Expected result: only the owning organizer or admin can check in tickets.
-
-Steps:
-
-1. Sign in as the organizer who owns the event.
-2. Open the scanner page.
-3. Scan or manually enter a valid QR code for that organizer's event.
-4. Confirm check-in succeeds.
-5. Scan the same ticket again.
-6. Confirm the app reports already checked in.
-7. Sign in as a different organizer.
-8. Try the same QR code.
-9. Confirm access is rejected.
-10. Try to check in a pending/unpaid ticket if available.
-11. Confirm it is rejected.
-
-## 8. Promo Codes
-
-Expected result: organizers can create usable promo codes and usage limits are respected.
-
-Steps:
-
-1. Create a percentage promo code.
-2. Apply it during checkout.
-3. Confirm the discount appears in the order summary.
-4. Complete checkout.
-5. Confirm usage count increments.
-6. Create a code with max uses of one.
-7. Use it once.
-8. Confirm a second attempt is rejected.
-
-## 9. Guest List
-
-Expected result: organizers can create and redeem comp tickets.
-
-Steps:
-
-1. Open an event's guest list page.
-2. Add a guest list entry with name, email, quantity, and ticket type.
-3. Redeem the guest entry.
-4. Confirm a zero-cost completed order is created.
-5. Confirm comp tickets have QR codes.
-6. Confirm redeemed guest list entries cannot be edited/deleted unexpectedly.
-
-## 10. Refunds
-
-Expected result: organizers can refund their own completed orders and refunded tickets cannot be used.
-
-Steps:
-
-1. Open an event's refunds page.
-2. Select a completed order.
-3. Process a partial refund if supported by the current order/payment mode.
-4. Process a full refund.
-5. Confirm fully refunded tickets are cancelled.
-6. Try checking in a cancelled ticket.
-7. Confirm check-in is rejected.
-
-## 11. Admin Settings
-
-Expected result: only admins can manage payment mode.
-
-Steps:
-
-1. Sign in as admin.
-2. Open dashboard settings.
-3. Switch between `simulate` and `test` if keys are configured.
-4. Confirm live mode requires live keys and explicit confirmation.
-5. Sign in as non-admin.
-6. Confirm settings are inaccessible.
-
-## 12. Mobile Smoke Test
-
-Expected result: the critical buyer and scanner flows work on a phone-sized viewport.
-
-Steps:
-
-1. Open homepage on mobile viewport.
-2. Browse events.
-3. Buy a ticket.
-4. View the ticket QR page.
-5. Open scanner page on a real mobile browser if possible.
-6. Confirm camera permission and manual entry fallback both work.
-
-## Automated Checks
-
-Run these before merging major MVP changes:
-
-```bash
-cd hafapass_api
-rbenv exec bundle exec rspec
-```
-
-```bash
-cd hafapass_frontend
-npm run lint
-npm run build
-```
-
-Current expected status after the security hardening work:
-
-- Backend: `163 examples, 0 failures`.
-- Frontend lint: no errors or warnings.
-- Frontend build: successful.
+- [ ] Full local gate and GitHub CI pass on release commit.
+- [ ] All P0 blueprint requirements are proven.
+- [ ] Production dependency audit has no unaccepted critical/high issues.
+- [ ] Payment/ledger/refund/payout reconciliation has zero variance.
+- [ ] Desktop/mobile public, buyer, organizer, staff, and admin flows pass.
+- [ ] Guam time is correct on every surface.
+- [ ] Three-device offline event simulation passes.
+- [ ] Backup restore, rollback, and alert drills pass.
+- [ ] Legal/accounting/payment/privacy policies are approved.
+- [ ] Named event-day support owner and escalation channel exist.
+- [ ] Small real test charge and refund succeed before pilot inventory opens.
