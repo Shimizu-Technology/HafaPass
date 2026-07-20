@@ -69,4 +69,20 @@ RSpec.describe CardPresentGateway do
       )
     end.to raise_error(described_class::PaymentError, /cancelled/)
   end
+
+  it "treats a gateway 502 as an unknown result because the terminal may have charged" do
+    response = Net::HTTPBadGateway.new("1.1", "502", "Bad Gateway")
+    allow(response).to receive(:body).and_return({ message: "terminal unavailable" }.to_json)
+    connection = instance_double(Net::HTTP, request: response)
+    http_client = class_double(Net::HTTP)
+    allow(http_client).to receive(:start).and_yield(connection)
+    allow(ENV).to receive(:fetch).with("CLOVER_REST_PAY_BASE_URL").and_return("https://api.clover.com/connect")
+    allow(ENV).to receive(:fetch).with("CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_#{account.organization_id}").and_return("secret")
+
+    expect do
+      described_class.new(http_client: http_client, simulate: false).charge(
+        account: account, amount_cents: 2500, currency: "usd", external_payment_id: "hp-123", idempotency_key: "sale-123"
+      )
+    end.to raise_error(described_class::ResultUnknown, /could not be confirmed/)
+  end
 end

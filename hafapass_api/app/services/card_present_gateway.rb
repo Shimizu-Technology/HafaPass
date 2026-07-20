@@ -90,7 +90,7 @@ class CardPresentGateway
     payment = parsed["payment"].is_a?(Hash) ? parsed.fetch("payment") : parsed
 
     code = response.code.to_i
-    if [408, 500, 503, 504].include?(code) || code >= 520
+    if [408, 500, 502, 503, 504].include?(code) || code >= 520
       raise ResultUnknown, "The terminal result could not be confirmed"
     end
     unless response.is_a?(Net::HTTPSuccess)
