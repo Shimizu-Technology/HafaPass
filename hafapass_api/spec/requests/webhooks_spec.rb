@@ -45,6 +45,17 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(response).to have_http_status(:bad_request)
   end
 
+  it "identifies a missing Stripe signature when the production secret is configured" do
+    allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("STRIPE_WEBHOOK_SECRET").and_return("whsec_test")
+
+    post_stripe_event("payment_intent.succeeded", { id: "pi_unsigned" }, event_id: "evt_missing_signature")
+
+    expect(response).to have_http_status(:bad_request)
+    expect(response.parsed_body).to eq("error" => "Stripe signature missing")
+  end
+
   it "rejects an invalid Stripe signature before storing a receipt" do
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with("STRIPE_WEBHOOK_SECRET").and_return("whsec_test")

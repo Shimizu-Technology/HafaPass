@@ -21,11 +21,9 @@ module Commerce
         order: order,
         amount_cents: delta,
         reason: "provider_webhook_reconciliation",
-        idempotency_key: idempotency_key,
+        idempotency_key: pending&.idempotency_key || idempotency_key,
         provider_refund: provider_refund
       )
-      return creator.send(:finalize_refund!, pending, provider_refund) if pending
-
       creator.call
     end
 

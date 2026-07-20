@@ -26,6 +26,9 @@ class WebhooksController < ActionController::API
     elsif Rails.env.development? || Rails.env.test?
       Rails.logger.warn({ event: "unsigned_stripe_webhook", environment: Rails.env }.to_json)
       Stripe::Event.construct_from(JSON.parse(payload, symbolize_names: true))
+    elsif secret.present?
+      render json: { error: "Stripe signature missing" }, status: :bad_request
+      nil
     else
       render json: { error: "Webhook secret not configured" }, status: :bad_request
       nil

@@ -50,6 +50,31 @@ RSpec.describe Commerce::RefundCreator do
     end.not_to change(Refund, :count)
   end
 
+  it "finalizes an existing pending refund during provider reconciliation" do
+    pending = create(
+      :refund,
+      order: order,
+      payment: payment,
+      amount_cents: 1000,
+      currency: order.currency,
+      status: :pending,
+      idempotency_key: "original-refund"
+    )
+
+    expect do
+      result = described_class.reconcile_provider_total!(
+        order: order,
+        payment: payment,
+        amount_cents: 1000,
+        provider_refund_id: "re_webhook",
+        idempotency_key: "webhook-refund"
+      )
+      expect(result.id).to eq(pending.id)
+      expect(result).to be_succeeded
+      expect(result.provider_refund_id).to eq("re_webhook")
+    end.not_to change(Refund, :count)
+  end
+
   it "preserves an unrelated refund validation failure" do
     allow_any_instance_of(Refund).to receive(:save!).and_raise(
       ActiveRecord::RecordInvalid.new(Refund.new)

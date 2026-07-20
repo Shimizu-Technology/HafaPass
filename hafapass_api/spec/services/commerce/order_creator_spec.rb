@@ -5,6 +5,27 @@ RSpec.describe Commerce::OrderCreator do
   let(:event) { create(:event, :published) }
   let(:ticket_type) { create(:ticket_type, event: event, price_cents: 1000) }
 
+  it "does not create a Stripe intent for an immediately settled box-office payment" do
+    allow(StripeService).to receive(:payment_enabled?).and_return(true)
+    allow(StripeService).to receive(:create_payment_intent)
+
+    result = described_class.call(
+      event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "walkin@example.com",
+      buyer_name: "Walk-in",
+      payment_required: false,
+      service_fee: false,
+      source: "box_office",
+      payment_method: "door_cash"
+    )
+
+    expect(StripeService).not_to have_received(:create_payment_intent)
+    expect(result.order).to be_completed
+    expect(result.payment).to have_attributes(provider: "door_cash", status: "succeeded")
+    expect(result.payment_intent).to be_nil
+  end
+
   it "cancels the provider intent and releases inventory when attaching it fails" do
     intent = OpenStruct.new(id: "pi_orphan_candidate", client_secret: "secret")
     allow(StripeService).to receive(:payment_enabled?).and_return(true)

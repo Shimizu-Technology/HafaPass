@@ -243,7 +243,7 @@ module Commerce
     end
 
     def create_provider_payment!(order, payment)
-      return unless payment
+      return unless payment&.provider == "stripe"
 
       intent = StripeService.create_payment_intent(order, idempotency_key: payment.idempotency_key)
       Payment.transaction do
