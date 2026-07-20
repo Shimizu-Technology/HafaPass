@@ -114,7 +114,7 @@ class Event < ApplicationRecord
       checklist_item("schedule", "Future start and valid end time added", starts_at.present? && starts_at > at && ends_at.present? && ends_at > starts_at),
       checklist_item("timezone", "Valid IANA timezone selected", timezone_valid?),
       checklist_item("tickets", "At least one ticket type added", ticket_types.any?),
-      checklist_item("capacity", "Ticket inventory fits event capacity", max_capacity.present? && configured_inventory.positive? && configured_inventory <= max_capacity),
+      checklist_item("capacity", "Event capacity added and ticket inventory fits", max_capacity.present? && configured_inventory.positive? && configured_inventory <= max_capacity),
       checklist_item("sales_window", "Ticket sales windows are valid", valid_ticket_sales_windows?(at: at)),
       checklist_item("payout", paid_event ? "Payout account ready for paid sales" : "No payout account needed for a free event",
         !paid_event || organizer_profile.payout_ready?)

@@ -11,7 +11,7 @@ module Api
         ]
 
         def index
-          events = current_organizer_profile.events.includes(:ticket_types).order(created_at: :desc)
+          events = current_organizer_profile.events.includes(ticket_types: :pricing_tiers).order(created_at: :desc)
           pagy, paginated_events = paginate(events)
 
           render json: {
@@ -312,7 +312,7 @@ module Api
           when "weekly" then value.advance(weeks: occurrence_number)
           when "biweekly" then value.advance(weeks: occurrence_number * 2)
           when "monthly" then value.advance(months: occurrence_number)
-          else raise EventLifecycle::TransitionError, "Unsupported recurrence rule"
+          else raise ActionController::BadRequest, "Unsupported recurrence rule"
           end
         end
 

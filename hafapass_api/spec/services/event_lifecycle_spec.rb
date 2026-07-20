@@ -27,6 +27,18 @@ RSpec.describe EventLifecycle do
     }
   end
 
+  it "requires a declared venue capacity before publishing" do
+    event.update!(max_capacity: nil)
+
+    expect {
+      described_class.call(event: event, action: :publish, actor: actor)
+    }.to raise_error(described_class::TransitionError) { |error|
+      expect(error.checklist).to include(
+        include(code: "capacity", label: "Event capacity added and ticket inventory fits", complete: false)
+      )
+    }
+  end
+
   it "requires a reason to postpone and stops sales after postponement" do
     described_class.call(event: event, action: :publish, actor: actor)
 

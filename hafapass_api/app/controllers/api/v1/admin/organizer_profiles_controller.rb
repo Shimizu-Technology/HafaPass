@@ -27,7 +27,7 @@ class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseControll
     if status == "verified"
       profile.verified_at = Time.current
       profile.verified_by_user = @current_user
-    elsif status != "verified"
+    else
       profile.verified_at = nil
       profile.verified_by_user = nil
     end
