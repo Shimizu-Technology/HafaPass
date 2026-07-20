@@ -246,4 +246,25 @@ RSpec.describe "Stripe webhooks", type: :request do
       post_stripe_event("charge.dispute.closed", dispute, event_id: "evt_dispute_lost")
     end.not_to change { ticket_type.reload.quantity_sold }
   end
+
+  it "does not treat a closed warning inquiry as a lost chargeback" do
+    checkout = create_pending_checkout(intent_id: "pi_warning_closed")
+    post_stripe_event(
+      "payment_intent.succeeded",
+      { id: "pi_warning_closed", amount_received: checkout.payment.amount_cents, currency: "usd" },
+      event_id: "evt_warning_payment"
+    )
+    ticket = checkout.order.reload.tickets.first
+
+    post_stripe_event(
+      "charge.dispute.closed",
+      { id: "dp_warning", payment_intent: "pi_warning_closed", amount: checkout.payment.amount_cents,
+        currency: "usd", reason: "fraudulent", status: "warning_closed" },
+      event_id: "evt_warning_closed"
+    )
+
+    expect(Dispute.find_by(provider_dispute_id: "dp_warning")).to be_won
+    expect(ticket.reload).to be_issued
+    expect(checkout.order.reload.ticket_access_blocked?).to be(false)
+  end
 end

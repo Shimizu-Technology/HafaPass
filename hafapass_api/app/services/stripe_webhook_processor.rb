@@ -195,7 +195,11 @@ class StripeWebhookProcessor
 
     provider_status = value(object, :status).to_s
     status = if event.type == "charge.dispute.closed"
-      provider_status == "won" ? :won : :lost
+      case provider_status
+      when "won", "warning_closed" then :won
+      when "lost" then :lost
+      else :open
+      end
     else
       :open
     end
