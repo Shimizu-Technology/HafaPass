@@ -4,7 +4,7 @@ import apiClient from '../api/client'
 import PricingTiersCRUD from './PricingTiersCRUD'
 import { compareLocalDateTimes, formatEventDateTime, toEventLocalInput } from '../utils/eventTime'
 
-const EMPTY_FORM = { name: '', description: '', price: '', quantity_available: '', max_per_order: '', max_per_buyer: '', sales_start_at: '', sales_end_at: '' }
+const EMPTY_FORM = { name: '', description: '', price: '', quantity_available: '', door_allocation: '', max_per_order: '', max_per_buyer: '', sales_start_at: '', sales_end_at: '' }
 
 function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone }) {
   const [form, setForm] = useState(initial || EMPTY_FORM)
@@ -23,6 +23,7 @@ function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone }) {
       description: form.description.trim() || null,
       price_cents: Math.round(parseFloat(form.price || '0') * 100),
       quantity_available: form.quantity_available ? parseInt(form.quantity_available, 10) : null,
+      door_allocation: form.door_allocation === '' ? null : parseInt(form.door_allocation, 10),
       max_per_order: form.max_per_order ? parseInt(form.max_per_order, 10) : null,
       max_per_buyer: form.max_per_buyer ? parseInt(form.max_per_buyer, 10) : null,
       sales_start_at: form.sales_start_at || null,
@@ -36,6 +37,11 @@ function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone }) {
       <div>
         <label htmlFor="ticket-type-name" className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
         <input id="ticket-type-name" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., General Admission" disabled={saving} />
+      </div>
+      <div>
+        <label htmlFor="ticket-type-door-allocation" className="block text-sm font-medium text-neutral-700 mb-1">Door allocation</label>
+        <input id="ticket-type-door-allocation" type="number" min="0" value={form.door_allocation} onChange={e => setForm(f => ({ ...f, door_allocation: e.target.value }))} className="input" placeholder="Uses all remaining inventory" disabled={saving} />
+        <p className="mt-1 text-xs text-neutral-500">Optional cap reserved for cash and verified terminal sales at the venue.</p>
       </div>
       <div>
         <p className="text-xs text-neutral-500 mb-2">Optional sales window in {eventTimezone || 'Pacific/Guam'}.</p>
@@ -166,6 +172,7 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh, e
                     description: tt.description || '',
                     price: (tt.price_cents / 100).toFixed(2),
                     quantity_available: tt.quantity_available ? String(tt.quantity_available) : '',
+                    door_allocation: tt.door_allocation == null ? '' : String(tt.door_allocation),
                     max_per_order: tt.max_per_order ? String(tt.max_per_order) : '',
                     max_per_buyer: tt.max_per_buyer ? String(tt.max_per_buyer) : '',
                     sales_start_at: toEventLocalInput(tt.sales_start_at, eventTimezone),
@@ -190,6 +197,7 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh, e
                           <p className="text-xs text-emerald-600">Current: ${(tt.current_price_cents / 100).toFixed(2)}</p>
                         )}
                         <p className="text-xs text-neutral-500">{tt.quantity_sold ?? 0}/{tt.quantity_available ?? '∞'} sold</p>
+                        {tt.door_allocation != null && <p className="text-xs text-brand-700">Door: {tt.door_sold_quantity ?? 0}/{tt.door_allocation}</p>}
                         {(tt.sales_start_at || tt.sales_end_at) && (
                           <p className="text-xs text-neutral-400">
                             {tt.sales_start_at ? `From ${formatEventDateTime(tt.sales_start_at, eventTimezone)}` : 'On sale now'}

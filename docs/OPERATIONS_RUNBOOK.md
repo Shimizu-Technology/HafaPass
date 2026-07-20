@@ -98,3 +98,7 @@ Every release must pass `./scripts/gate.sh` and CI before merge. After deploymen
 - Job-level capture and retries do not make non-idempotent commerce operations safe by themselves.
 - Monitoring alert policies must be created in the selected external Sentry account and deployment monitor.
 - Backup restore drills, transaction reconciliation, payment state machines, immutable ledger behavior, and offline event-day admissions are delivered and validated in later phases.
+
+## Event-day operations
+
+Signed offline admissions, device reconciliation, emergency door lists, door inventory, cash sales, and the guarded BOH/Clover card-present path are operated through [Event-Day Operations](EVENT_DAY_OPERATIONS.md). Treat an unknown terminal result like an unknown webhook result: preserve provider identifiers and the original idempotency key, do not duplicate the side effect, and reconcile before issuing inventory.

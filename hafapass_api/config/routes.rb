@@ -76,6 +76,7 @@ Rails.application.routes.draw do
         resources :organizations, only: [:index]
         resources :memberships, only: [:index, :create, :update, :destroy]
         resources :connected_accounts, only: [:index, :create]
+        resource :card_present_account, only: [:show]
         resources :events, only: [:index, :show, :create, :update, :destroy] do
           member do
             post :publish
@@ -95,6 +96,16 @@ Rails.application.routes.draw do
           resources :promo_codes, only: [:index, :show, :create, :update, :destroy]
           resources :staff_assignments, only: [:index, :create, :update, :destroy],
                     controller: "event_staff_assignments"
+          resources :scanner_devices, only: [:index, :create, :update, :destroy] do
+            member do
+              get :manifest
+              post :sync
+            end
+          end
+          resource :admissions, only: [:show], controller: "admissions" do
+            get :search
+            get :door_list
+          end
           resource :finance, only: [:show], controller: "finances" do
             post :finalize
             post :payout
@@ -136,6 +147,7 @@ Rails.application.routes.draw do
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]
         resources :connected_accounts, only: [:update]
+        resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:create, :destroy]
         resources :payouts, only: [:update]
 

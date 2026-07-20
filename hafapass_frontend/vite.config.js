@@ -30,24 +30,6 @@ export default defineConfig({
             },
           },
           {
-            // Individual ticket by QR code — critical for offline door access
-            urlPattern: /^https:\/\/hafapass-api\.onrender\.com\/api\/v1\/tickets\/[^/]+$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'tickets',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 7 }, // 7 days
-            },
-          },
-          {
-            // My tickets listing
-            urlPattern: /^https:\/\/hafapass-api\.onrender\.com\/api\/v1\/me\/tickets$/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'my-tickets',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 }, // 1 day
-            },
-          },
-          {
             // Images — CacheFirst with 30 day expiry
             urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/,
             handler: 'CacheFirst',

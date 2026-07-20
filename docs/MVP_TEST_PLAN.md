@@ -134,6 +134,8 @@ Use at least three devices/browser profiles and at least 500 generated tickets:
 9. Confirm expired/unassigned staff cannot continue scanning after authorization refresh.
 10. Use the printable emergency list as a fallback drill.
 
+Follow the step-by-step setup, three-device procedure, outage decisions, card-result rules, and closeout checklist in [Event-Day Operations](EVENT_DAY_OPERATIONS.md). Automated simulation does not replace this real-device pilot drill.
+
 Performance targets:
 
 - Online p95 scan response under 500 ms at representative load.

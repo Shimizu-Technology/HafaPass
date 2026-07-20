@@ -16,6 +16,10 @@ class Event < ApplicationRecord
   has_many :settlements, dependent: :restrict_with_error
   has_many :payouts, dependent: :restrict_with_error
   has_many :balance_adjustments, dependent: :restrict_with_error
+  has_many :scanner_devices, dependent: :restrict_with_error
+  has_many :admission_manifests, dependent: :restrict_with_error
+  has_many :admission_actions, dependent: :restrict_with_error
+  has_many :card_present_payment_attempts, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {

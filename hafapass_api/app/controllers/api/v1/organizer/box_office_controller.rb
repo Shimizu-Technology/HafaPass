@@ -23,6 +23,11 @@ module Api
           buyer_name = params[:buyer_name].presence || "Walk-in"
           buyer_email = params[:buyer_email].presence || "walkin-#{SecureRandom.hex(4)}@boxoffice.local"
 
+          if payment_method == "door_card"
+            create_card_sale!(line_items: line_items, buyer_name: buyer_name, buyer_email: buyer_email)
+            return
+          end
+
           result = Commerce::OrderCreator.call(
             event: @event,
             line_items: line_items,
@@ -39,6 +44,15 @@ module Api
           render json: order_json(result.order), status: :created
         rescue Commerce::OrderCreator::CheckoutError => e
           render json: { error: e.message }, status: :unprocessable_entity
+        rescue CardPresentPayments::Processor::ProcessingError => e
+          attempt = e.attempt
+          status = attempt&.status_result_unknown? ? :bad_gateway : :unprocessable_entity
+          render json: {
+            error: e.message,
+            payment_status: attempt&.status,
+            order_id: attempt&.order_id,
+            reconciliation_required: attempt&.status_result_unknown? || false
+          }, status: status
         end
 
         # GET /api/v1/organizer/events/:event_id/box_office/summary
@@ -60,6 +74,74 @@ module Api
 
         private
 
+        def create_card_sale!(line_items:, buyer_name:, buyer_email:)
+          idempotency_key = request.headers["Idempotency-Key"].to_s
+          if idempotency_key.blank?
+            render json: { error: "Idempotency-Key is required for card-present sales" }, status: :unprocessable_entity
+            return
+          end
+
+          account = current_organization.card_present_account
+          unless account&.payment_ready? && CardPresentGateway.configured_for?(account)
+            render json: { error: "A verified Guam card-present account is required" }, status: :unprocessable_entity
+            return
+          end
+
+          existing = CardPresentPaymentAttempt.find_by(idempotency_key: idempotency_key)
+          if existing
+            unless matching_existing_sale?(existing, line_items)
+              render json: { error: "Idempotency-Key was already used for a different sale" }, status: :conflict
+              return
+            end
+            attempt = CardPresentPayments::Processor.call(
+              order: existing.order,
+              payment: existing.payment,
+              account: existing.card_present_account,
+              user: current_user,
+              idempotency_key: idempotency_key,
+              request: request
+            )
+            render json: order_json(attempt.order.reload), status: :ok
+            return
+          end
+
+          result = Commerce::OrderCreator.call(
+            event: @event,
+            line_items: line_items,
+            buyer_email: buyer_email,
+            buyer_name: buyer_name,
+            buyer_phone: params[:buyer_phone],
+            user: current_user,
+            payment_required: true,
+            payment_provider: account.provider,
+            service_fee: false,
+            source: "box_office",
+            payment_method: "door_card"
+          )
+          attempt = CardPresentPayments::Processor.call(
+            order: result.order,
+            payment: result.payment,
+            account: account,
+            user: current_user,
+            idempotency_key: idempotency_key,
+            request: request
+          )
+          render json: order_json(attempt.order.reload), status: :created
+        end
+
+        def matching_existing_sale?(attempt, line_items)
+          return false unless attempt.organization_id == current_organization.id && attempt.event_id == @event.id &&
+            attempt.initiated_by_user_id == current_user.id
+
+          requested = line_items.each_with_object(Hash.new(0)) do |item, quantities|
+            ticket_type_id = item[:ticket_type_id] || item["ticket_type_id"]
+            quantity = (item[:quantity] || item["quantity"]).to_i
+            quantities[ticket_type_id.to_i] += quantity
+          end
+          existing = attempt.order.order_items.group(:ticket_type_id).sum(:quantity)
+          requested == existing
+        end
+
         def set_event
           @event = find_organization_event(params[:event_id])
           authorize_organization!(:box_office, event: @event) if @event
@@ -76,6 +158,13 @@ module Api
             source: order.source,
             payment_method: order.payment_method,
             completed_at: order.completed_at,
+            card_present_payment: order.card_present_payment_attempts.order(:id).last&.then { |attempt|
+              {
+                status: attempt.status,
+                provider: attempt.provider,
+                reconciliation_required: attempt.status_result_unknown?
+              }
+            },
             tickets: order.tickets.includes(:ticket_type).map { |t|
               {
                 id: t.id,

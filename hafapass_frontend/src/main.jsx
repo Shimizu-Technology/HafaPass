@@ -10,14 +10,21 @@ import ErrorFallback from './components/ErrorFallback'
 
 initializeMonitoring()
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <HelmetProvider>
-      <BrowserRouter>
-        <Sentry.ErrorBoundary fallback={({ error, resetError }) => <ErrorFallback error={error} resetError={resetError} />}>
-          <ServiceCheck />
-        </Sentry.ErrorBoundary>
-      </BrowserRouter>
-    </HelmetProvider>
-  </StrictMode>,
-)
+async function removeLegacyPrivateCaches() {
+  if (!('caches' in window)) return
+  await Promise.all(['tickets', 'my-tickets'].map(cacheName => window.caches.delete(cacheName)))
+}
+
+removeLegacyPrivateCaches().finally(() => {
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <HelmetProvider>
+        <BrowserRouter>
+          <Sentry.ErrorBoundary fallback={({ error, resetError }) => <ErrorFallback error={error} resetError={resetError} />}>
+            <ServiceCheck />
+          </Sentry.ErrorBoundary>
+        </BrowserRouter>
+      </HelmetProvider>
+    </StrictMode>,
+  )
+})
