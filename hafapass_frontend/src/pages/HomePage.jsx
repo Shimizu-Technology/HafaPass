@@ -6,25 +6,16 @@ import Footer from '../components/Footer'
 import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
+import { formatEventDate, formatEventTime } from '../utils/eventTime'
 
 const CATEGORY_IMAGES = [
   { name: 'Nightlife', slug: 'nightlife', image: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=800' },
-  { name: 'Food & Drink', slug: 'food_drink', image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800' },
-  { name: 'Music', slug: 'music', image: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=800' },
+  { name: 'Food & Drink', slug: 'dining', image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800' },
+  { name: 'Music & Concerts', slug: 'concert', image: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=800' },
   { name: 'Sports', slug: 'sports', image: 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=800' },
-  { name: 'Community', slug: 'community', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800' },
-  { name: 'Festivals', slug: 'festivals', image: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=800' },
+  { name: 'Festivals & Culture', slug: 'festival', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800' },
+  { name: 'Classes & Workshops', slug: 'workshop', image: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=800' },
 ]
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr)
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
-}
-
-function formatTime(dateStr) {
-  const d = new Date(dateStr)
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-}
 
 function getLowestPrice(ticketTypes) {
   if (!ticketTypes?.length) return null
@@ -32,15 +23,6 @@ function getLowestPrice(ticketTypes) {
   if (!prices.length) return null
   const min = Math.min(...prices)
   return min === 0 ? 'Free' : `$${(min / 100).toFixed(0)}`
-}
-
-function getThisWeekRange() {
-  const now = new Date()
-  const start = new Date(now)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 7)
-  return { start, end }
 }
 
 export default function HomePage() {
@@ -65,22 +47,14 @@ export default function HomePage() {
   }, [events])
 
   const { groupedEvents, sectionTitle } = useMemo(() => {
-    const { start, end } = getThisWeekRange()
     const upcoming = events
-      .filter(e => new Date(e.starts_at) >= start)
       .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
-
-    let filtered = upcoming.filter(e => new Date(e.starts_at) < end)
-    let title = 'This Week on Guam'
-
-    if (!filtered.length) {
-      filtered = upcoming.slice(0, 8)
-      title = filtered.length ? 'Next Up on Guam' : ''
-    }
+    const filtered = upcoming.slice(0, 8)
+    const title = filtered.length ? 'Next Up on Guam' : ''
 
     const grouped = {}
     filtered.forEach(e => {
-      const key = formatDate(e.starts_at)
+      const key = formatEventDate(e.starts_at, e.timezone, { weekday: 'long' })
       if (!grouped[key]) grouped[key] = []
       grouped[key].push(e)
     })
@@ -116,7 +90,7 @@ export default function HomePage() {
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-white/70 text-base lg:text-lg mb-8">
                   <span className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    {formatDate(featuredEvent.starts_at)} · {formatTime(featuredEvent.starts_at)}
+                    {formatEventDate(featuredEvent.starts_at, featuredEvent.timezone, { weekday: 'long' })} · {formatEventTime(featuredEvent.starts_at, featuredEvent.timezone)}
                   </span>
                   {featuredEvent.venue_name && (
                     <span className="flex items-center gap-2">
@@ -211,7 +185,7 @@ export default function HomePage() {
                             <div className="flex items-center gap-3 text-sm text-white/40 mb-2">
                               <span className="flex items-center gap-1.5">
                                 <Clock className="w-3.5 h-3.5" />
-                                {formatTime(event.starts_at)}
+                                {formatEventTime(event.starts_at, event.timezone)}
                               </span>
                               {event.venue_name && (
                                 <span className="flex items-center gap-1.5">

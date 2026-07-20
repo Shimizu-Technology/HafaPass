@@ -19,7 +19,7 @@ module Api
 
         # POST /api/v1/organizer/events/:event_id/promo_codes
         def create
-          promo_code = @event.promo_codes.build(promo_code_params)
+          promo_code = @event.promo_codes.build(parsed_promo_code_params)
           if promo_code.save
             render json: promo_code_json(promo_code), status: :created
           else
@@ -29,7 +29,7 @@ module Api
 
         # PATCH /api/v1/organizer/events/:event_id/promo_codes/:id
         def update
-          if @promo_code.update(promo_code_params)
+          if @promo_code.update(parsed_promo_code_params)
             render json: promo_code_json(@promo_code)
           else
             render json: { errors: @promo_code.errors.full_messages }, status: :unprocessable_entity
@@ -72,6 +72,16 @@ module Api
 
         def promo_code_params
           params.permit(:code, :discount_type, :discount_value, :max_uses, :starts_at, :expires_at, :active)
+        end
+
+        def parsed_promo_code_params
+          attributes = promo_code_params.to_h
+          %w[starts_at expires_at].each do |key|
+            attributes[key] = EventTimeParser.call(attributes[key], timezone: @event.timezone) if attributes.key?(key)
+          end
+          attributes
+        rescue EventTimeParser::ParseError => e
+          raise ActionController::BadRequest, e.message
         end
 
         def promo_code_json(pc)

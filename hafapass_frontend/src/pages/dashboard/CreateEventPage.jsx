@@ -2,15 +2,9 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
-
-const CATEGORIES = [
- { value: 'nightlife', label: 'Nightlife' },
- { value: 'concert', label: 'Concert' },
- { value: 'festival', label: 'Festival' },
- { value: 'dining', label: 'Dining' },
- { value: 'sports', label: 'Sports' },
- { value: 'other', label: 'Other' }
-]
+import { ClipboardList } from 'lucide-react'
+import useEventCategories from '../../hooks/useEventCategories'
+import { compareLocalDateTimes } from '../../utils/eventTime'
 
 const AGE_RESTRICTIONS = [
  { value: 'all_ages', label: 'All Ages' },
@@ -20,6 +14,7 @@ const AGE_RESTRICTIONS = [
 
 export default function CreateEventPage() {
  const navigate = useNavigate()
+ const categories = useEventCategories()
  const [submitting, setSubmitting] = useState(false)
  const [error, setError] = useState(null)
  const [formErrors, setFormErrors] = useState({})
@@ -55,18 +50,14 @@ export default function CreateEventPage() {
 
   // Cross-field validation: end time must be after start time
   if (form.ends_at && form.starts_at) {
-   const startsAt = new Date(form.starts_at)
-   const endsAt = new Date(form.ends_at)
-   if (Number.isFinite(startsAt.valueOf()) && Number.isFinite(endsAt.valueOf()) && endsAt <= startsAt) {
+   if (compareLocalDateTimes(form.ends_at, form.starts_at) <= 0) {
     errors.ends_at = 'End time must be after the start time'
    }
   }
 
   // Cross-field validation: doors open must be before start time
   if (form.doors_open_at && form.starts_at) {
-   const doorsAt = new Date(form.doors_open_at)
-   const startsAt = new Date(form.starts_at)
-   if (Number.isFinite(doorsAt.valueOf()) && Number.isFinite(startsAt.valueOf()) && doorsAt > startsAt) {
+   if (compareLocalDateTimes(form.doors_open_at, form.starts_at) > 0) {
     errors.doors_open_at = 'Doors open time must be before the start time'
    }
   }
@@ -100,6 +91,7 @@ export default function CreateEventPage() {
     venue_name: form.venue_name.trim(),
     venue_address: form.venue_address.trim() || undefined,
     venue_city: form.venue_city.trim() || 'Guam',
+    timezone: 'Pacific/Guam',
     starts_at: form.starts_at || undefined,
     ends_at: form.ends_at || undefined,
     doors_open_at: form.doors_open_at || undefined,
@@ -200,7 +192,7 @@ export default function CreateEventPage() {
          className="input"
          disabled={submitting}
         >
-         {CATEGORIES.map(cat => (
+         {categories.map(cat => (
           <option key={cat.value} value={cat.value}>{cat.label}</option>
          ))}
         </select>
@@ -281,6 +273,7 @@ export default function CreateEventPage() {
     {/* Date/Time Section */}
     <section>
      <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Date & Time</h2>
+     <p className="text-sm text-neutral-500 mb-4">All event times are entered and displayed in Guam time (Pacific/Guam).</p>
      <div className="space-y-4">
       <div>
        <label htmlFor="starts_at" className="block text-sm font-medium text-neutral-700 mb-1">
@@ -368,7 +361,7 @@ export default function CreateEventPage() {
       {submitting ? 'Creating Event...' : 'Create Event'}
      </button>
      <div className="mt-3 p-3 bg-brand-50 border border-brand-200 rounded-xl">
-      <p className="text-sm text-brand-700">📋 <strong>You&apos;ll add ticket types on the next step.</strong> After creating the event, you&apos;ll be taken to the edit page where you can set up ticket types, upload a cover image, and publish.</p>
+      <p className="text-sm text-brand-700 flex items-start gap-2"><ClipboardList className="w-4 h-4 mt-0.5 shrink-0" /> <span><strong>You&apos;ll add ticket types on the next step.</strong> After creating the event, you&apos;ll be taken to the edit page where you can set up ticket types, upload a cover image, and publish.</span></p>
      </div>
     </div>
    </form>

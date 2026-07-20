@@ -8,8 +8,8 @@ FactoryBot.define do
     venue_address { "123 Pale San Vitores Rd" }
     venue_city { "Tumon" }
     starts_at { 7.days.from_now }
-    ends_at { 7.days.from_now + 4.hours }
-    doors_open_at { 7.days.from_now - 30.minutes }
+    ends_at { starts_at + 4.hours }
+    doors_open_at { starts_at - 30.minutes }
     timezone { "Pacific/Guam" }
     status { :draft }
     category { :nightlife }
@@ -29,7 +29,8 @@ FactoryBot.define do
     trait :completed do
       status { :completed }
       starts_at { 7.days.ago }
-      ends_at { 7.days.ago + 4.hours }
+      ends_at { starts_at + 4.hours }
+      doors_open_at { starts_at - 30.minutes }
     end
 
     trait :upcoming do
@@ -38,7 +39,8 @@ FactoryBot.define do
 
     trait :past do
       starts_at { 7.days.ago }
-      ends_at { 7.days.ago + 4.hours }
+      ends_at { starts_at + 4.hours }
+      doors_open_at { starts_at - 30.minutes }
     end
 
     trait :featured do

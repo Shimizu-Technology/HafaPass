@@ -8,47 +8,73 @@ import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
+import useEventCategories from '../hooks/useEventCategories'
+import { PUBLIC_WEB_URL } from '../utils/site'
 
-const categories = [
-  { key: 'all', label: 'All Events', icon: Ticket },
-  { key: 'concert', label: 'Music', icon: Music },
-  { key: 'dining', label: 'Food & Drink', icon: UtensilsCrossed },
-  { key: 'sports', label: 'Sports', icon: Trophy },
-  { key: 'festival', label: 'Community', icon: Users },
-  { key: 'nightlife', label: 'Nightlife', icon: Moon },
-  { key: 'other', label: 'Other', icon: Sparkles },
-]
+const CATEGORY_ICONS = { concert: Music, dining: UtensilsCrossed, sports: Trophy, festival: Users, nightlife: Moon }
+
+function guamDate(offsetDays = 0) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Pacific/Guam', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date())
+  const value = type => Number(parts.find(part => part.type === type)?.value)
+  return new Date(Date.UTC(value('year'), value('month') - 1, value('day') + offsetDays)).toISOString().slice(0, 10)
+}
 
 export default function EventsPage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
-  const [searchParams] = useSearchParams()
+  const [meta, setMeta] = useState({ current_page: 1, total_pages: 1, total_count: 0 })
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('search') || '')
-  const [activeCategory, setActiveCategory] = useState('all')
+  const [activeCategory, setActiveCategory] = useState(searchParams.get('category') || 'all')
+  const [dateRange, setDateRange] = useState(searchParams.get('date') || 'upcoming')
+  const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
+  const categories = useEventCategories()
 
   useEffect(() => {
-    apiClient.get('/events')
+    const timer = setTimeout(() => {
+      setLoading(true)
+      const params = { page, per_page: 12 }
+      if (search.trim()) params.q = search.trim()
+      if (activeCategory !== 'all') params.category = activeCategory
+      if (dateRange === 'today') {
+        params.date_from = guamDate()
+        params.date_to = guamDate()
+      } else if (dateRange === 'week') {
+        params.date_from = guamDate()
+        params.date_to = guamDate(7)
+      }
+
+      apiClient.get('/events', { params })
       .then(res => {
         const data = res.data.events || res.data
         setEvents(Array.isArray(data) ? data : [])
-        setLoading(false)
+        setMeta(res.data.meta || { current_page: 1, total_pages: 1, total_count: data.length })
       })
-      .catch(() => setLoading(false))
-  }, [])
+      .catch(() => { setEvents([]); setMeta({ current_page: 1, total_pages: 1, total_count: 0 }) })
+      .finally(() => setLoading(false))
 
-  const filtered = events.filter(e => {
-    const matchesSearch = e.title.toLowerCase().includes(search.toLowerCase()) ||
-      e.venue_name?.toLowerCase().includes(search.toLowerCase())
-    const matchesCategory = activeCategory === 'all' || e.category === activeCategory
-    return matchesSearch && matchesCategory
-  })
+      const nextParams = {}
+      if (search.trim()) nextParams.search = search.trim()
+      if (activeCategory !== 'all') nextParams.category = activeCategory
+      if (dateRange !== 'upcoming') nextParams.date = dateRange
+      if (page > 1) nextParams.page = String(page)
+      setSearchParams(nextParams, { replace: true })
+    }, 250)
+
+    return () => clearTimeout(timer)
+  }, [search, activeCategory, dateRange, page, setSearchParams])
+
+  const changeCategory = (value) => { setActiveCategory(value); setPage(1) }
+  const clearFilters = () => { setSearch(''); setActiveCategory('all'); setDateRange('upcoming'); setPage(1) }
 
   return (
     <div className="min-h-screen">
       <SEO
         title="Browse Events"
         description="Discover what's happening on Guam. Browse concerts, nightlife, festivals, dining, sports, and more."
-        url="https://hafapass.netlify.app/events"
+        url={`${PUBLIC_WEB_URL}/events`}
       />
       {/* Dark Header Section */}
       <div className="bg-neutral-950 pt-8 pb-12 sm:pb-16 relative">
@@ -82,13 +108,17 @@ export default function EventsPage() {
       <div className="bg-neutral-50 min-h-[50vh]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Category Filter Chips */}
-          <div className="flex flex-wrap gap-2 mb-8">
-            {categories.map(({ key, label, icon: Icon }) => (
+          <div className="flex flex-col gap-4 mb-8">
+           <div className="flex flex-wrap gap-2">
+            {[{ value: 'all', label: 'All Events' }, ...categories].map(({ value, label }) => {
+              const Icon = value === 'all' ? Ticket : (CATEGORY_ICONS[value] || Sparkles)
+              return (
               <button
-                key={key}
-                onClick={() => setActiveCategory(key)}
+                key={value}
+                onClick={() => changeCategory(value)}
+                aria-pressed={activeCategory === value}
                 className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                  activeCategory === key
+                  activeCategory === value
                     ? 'bg-brand-500 text-white shadow-md shadow-brand-500/20'
                     : 'bg-white text-neutral-600 border border-neutral-200 hover:border-brand-300 hover:text-brand-600'
                 }`}
@@ -96,14 +126,24 @@ export default function EventsPage() {
                 <Icon className="w-3.5 h-3.5" />
                 {label}
               </button>
-            ))}
+            )})}
+           </div>
+           <div className="flex items-center gap-3">
+            <label htmlFor="event-date-range" className="text-sm font-medium text-neutral-600">When</label>
+            <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input max-w-[12rem] !py-2">
+             <option value="upcoming">All upcoming</option>
+             <option value="today">Today</option>
+             <option value="week">Next 7 days</option>
+            </select>
+            {!loading && <span className="text-sm text-neutral-500">{meta.total_count} event{meta.total_count === 1 ? '' : 's'}</span>}
+           </div>
           </div>
 
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {Array.from({ length: 6 }).map((_, i) => <EventCardSkeleton key={i} />)}
             </div>
-          ) : filtered.length === 0 ? (
+          ) : events.length === 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -123,16 +163,16 @@ export default function EventsPage() {
               </div>
 
               <h2 className="text-xl font-bold text-neutral-900 mb-2">
-                {events.length === 0 ? 'No events yet' : 'No matching events'}
+                {search || activeCategory !== 'all' || dateRange !== 'upcoming' ? 'No matching events' : 'No events yet'}
               </h2>
               <p className="text-neutral-500 max-w-md mx-auto mb-8">
-                {events.length === 0
+                {!search && activeCategory === 'all' && dateRange === 'upcoming'
                   ? "Events on Guam will show up here. Be the first to create one and get the island buzzing!"
                   : "Try adjusting your search or filters to find what you're looking for."
                 }
               </p>
 
-              {events.length === 0 && (
+              {!search && activeCategory === 'all' && dateRange === 'upcoming' && (
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
                     to="/sign-up"
@@ -150,9 +190,9 @@ export default function EventsPage() {
                 </div>
               )}
 
-              {events.length > 0 && (
+              {(search || activeCategory !== 'all' || dateRange !== 'upcoming') && (
                 <button
-                  onClick={() => { setSearch(''); setActiveCategory('all') }}
+                  onClick={clearFilters}
                   className="text-brand-500 hover:text-brand-600 font-medium transition-colors"
                 >
                   Clear filters
@@ -161,8 +201,15 @@ export default function EventsPage() {
             </motion.div>
           ) : (
             <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filtered.map(event => <StaggerItem key={event.id}><EventCard event={event} /></StaggerItem>)}
+              {events.map(event => <StaggerItem key={event.id}><EventCard event={event} /></StaggerItem>)}
             </StaggerContainer>
+          )}
+          {!loading && meta.total_pages > 1 && (
+            <nav className="mt-10 flex items-center justify-center gap-3" aria-label="Event results pages">
+              <button type="button" className="btn-secondary" disabled={!meta.prev_page} onClick={() => setPage(meta.prev_page)}>Previous</button>
+              <span className="text-sm text-neutral-600">Page {meta.current_page} of {meta.total_pages}</span>
+              <button type="button" className="btn-secondary" disabled={!meta.next_page} onClick={() => setPage(meta.next_page)}>Next</button>
+            </nav>
           )}
         </div>
       </div>

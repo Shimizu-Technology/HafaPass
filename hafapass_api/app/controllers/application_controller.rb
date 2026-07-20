@@ -1,4 +1,8 @@
 class ApplicationController < ActionController::API
+  rescue_from ActionController::BadRequest do |error|
+    render json: { error: error.message }, status: :bad_request
+  end
+
   before_action :authenticate_user!
   before_action :set_observability_context
 

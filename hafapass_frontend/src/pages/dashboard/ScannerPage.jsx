@@ -1,6 +1,7 @@
 import { CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import apiClient from '../../api/client'
+import { formatEventTime } from '../../utils/eventTime'
 
 export default function ScannerPage() {
  const [scanResult, setScanResult] = useState(null) // { type: 'success'|'warning'|'error', data }
@@ -41,7 +42,7 @@ export default function ScannerPage() {
      setScanResult({
       type: 'warning',
       message: 'Already checked in',
-      detail: `Checked in at ${new Date(data.checked_in_at).toLocaleTimeString()}`,
+      detail: `Checked in at ${formatEventTime(data.checked_in_at, data.event?.timezone)}`,
       ticket: data.ticket
      })
     } else {

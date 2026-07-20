@@ -7,6 +7,7 @@ import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
+import { formatEventDate, formatEventTime } from '../utils/eventTime'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -66,16 +67,8 @@ export default function CheckoutPage() {
   }, [slug, event, lineItems, navigate])
 
   const formatPrice = (cents) => cents === 0 ? t('events.free') : `$${(cents / 100).toFixed(2)}`
-  const formatDate = (dateStr) => {
-    if (!dateStr) return ''
-    const d = new Date(dateStr)
-    return Number.isNaN(d.valueOf()) ? '' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-  }
-  const formatTime = (dateStr) => {
-    if (!dateStr) return ''
-    const d = new Date(dateStr)
-    return Number.isNaN(d.valueOf()) ? '' : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  }
+  const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
+  const formatTime = (dateStr) => formatEventTime(dateStr, event?.timezone)
 
   // Promo code validation
   const handlePromoValidate = async () => {

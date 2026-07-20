@@ -30,9 +30,11 @@ class Api::V1::Me::TicketsController < ApplicationController
         id: ticket.event.id,
         title: ticket.event.title,
         slug: ticket.event.slug,
+        status: ticket.event.status,
         venue_name: ticket.event.venue_name,
         starts_at: ticket.event.starts_at,
         ends_at: ticket.event.ends_at,
+        timezone: ticket.event.timezone,
         cover_image_url: ticket.event.cover_image_url
       },
       ticket_type: {

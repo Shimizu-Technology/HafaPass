@@ -13,7 +13,9 @@ class Api::V1::ConfigController < ApplicationController
       stripe_publishable_key: settings.stripe_publishable_key,
       platform_name: settings.platform_name,
       service_fee_percent: settings.service_fee_percent,
-      service_fee_flat_cents: settings.service_fee_flat_cents
+      service_fee_flat_cents: settings.service_fee_flat_cents,
+      public_web_url: PublicSiteUrl.base,
+      event_categories: Event::CATEGORY_LABELS.map { |value, label| { value: value, label: label } }
     }
   end
 end

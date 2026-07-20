@@ -4,6 +4,7 @@ import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smar
 import { motion, AnimatePresence } from 'framer-motion'
 import api from '../api/client'
 import QRCode from '../components/QRCode'
+import { formatEventDate, formatEventTime } from '../utils/eventTime'
 
 function AddToHomeScreenInstructions() {
   const [expanded, setExpanded] = useState(false)
@@ -179,23 +180,8 @@ export default function TicketPage() {
 
   const { event, ticket_type } = ticket
 
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
-  }
-
-  const formatTime = (dateStr) => {
-    const date = new Date(dateStr)
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  }
+  const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'long', month: 'long' })
+  const formatTime = (dateStr) => formatEventTime(dateStr, event?.timezone)
 
   const statusConfig = {
     issued: { label: 'Valid', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
@@ -214,6 +200,11 @@ export default function TicketPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       >
+        {['postponed', 'cancelled'].includes(event.status) && (
+          <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            <strong className="capitalize">Event {event.status}.</strong> Keep this ticket and watch your email for organizer updates.
+          </div>
+        )}
         {/* Main Ticket Card */}
         <div className="bg-white rounded-2xl overflow-hidden shadow-2xl shadow-black/30">
           {/* Cover image banner */}

@@ -3,6 +3,7 @@ import { useParams, useLocation, Link } from 'react-router-dom'
 import { CheckCircle, ChevronRight, Loader2, PartyPopper, Download } from 'lucide-react'
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
+import { formatEventDate, formatEventTime } from '../utils/eventTime'
 
 // Simple confetti particles
 function ConfettiParticles() {
@@ -104,19 +105,8 @@ export default function OrderConfirmationPage() {
     return `$${(cents / 100).toFixed(2)}`
   }
 
-  const formatDate = (dateStr) => {
-    if (!dateStr) return ''
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
-    })
-  }
-
-  const formatTime = (dateStr) => {
-    if (!dateStr) return ''
-    return new Date(dateStr).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit',
-    })
-  }
+  const formatDate = (dateStr) => formatEventDate(dateStr, order?.event?.timezone, { weekday: 'short' })
+  const formatTime = (dateStr) => formatEventTime(dateStr, order?.event?.timezone)
 
   if (loading) {
     return (

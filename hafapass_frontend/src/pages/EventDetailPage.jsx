@@ -8,6 +8,8 @@ import TicketTypesSection from '../components/TicketTypesSection'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
+import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { PUBLIC_WEB_URL } from '../utils/site'
 
 export default function EventDetailPage() {
   const { slug } = useParams()
@@ -29,9 +31,6 @@ export default function EventDetailPage() {
   const handleCheckout = (lineItems) => {
     navigate(`/checkout/${slug}`, { state: { event, lineItems } })
   }
-
-  const formatDate = (dateStr) => new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-  const formatTime = (dateStr) => new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 
   const ageLabels = { all_ages: 'All Ages', eighteen_plus: '18+', twenty_one_plus: '21+' }
 
@@ -79,11 +78,11 @@ export default function EventDetailPage() {
   if (!event) return null
 
   const truncatedDescription = (event.short_description || event.description || '').slice(0, 160)
-  const eventUrl = `https://hafapass.netlify.app/events/${event.slug}`
+  const eventUrl = `${PUBLIC_WEB_URL}/events/${event.slug}`
 
   // Build JSON-LD structured data for the event
   const ticketTypes = event.ticket_types || []
-  const prices = ticketTypes.map(t => parseFloat(t.price)).filter(p => !isNaN(p) && p > 0)
+  const prices = ticketTypes.map(t => (t.current_price_cents ?? t.price_cents) / 100).filter(p => Number.isFinite(p) && p >= 0)
   const eventJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Event',
@@ -106,14 +105,14 @@ export default function EventDetailPage() {
         lowPrice: Math.min(...prices).toFixed(2),
         highPrice: Math.max(...prices).toFixed(2),
         priceCurrency: 'USD',
-        availability: ticketTypes.some(tt => (tt.quantity_available - tt.quantity_sold) > 0) ? 'https://schema.org/InStock' : 'https://schema.org/SoldOut',
+        availability: event.purchasable ? 'https://schema.org/InStock' : 'https://schema.org/SoldOut',
         url: eventUrl,
       },
     }),
-    ...(event.organizer_name && {
+    ...(event.organizer?.business_name && {
       organizer: {
         '@type': 'Organization',
-        name: event.organizer_name,
+        name: event.organizer.business_name,
       },
     }),
   }
@@ -151,7 +150,7 @@ export default function EventDetailPage() {
 
             {event.category && event.category !== 'other' && (
               <span className="inline-block text-xs font-medium text-brand-400 uppercase tracking-wider mb-2">
-                {event.category}
+                {event.category_label || event.category}
               </span>
             )}
             <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3">{event.title}</h1>
@@ -161,9 +160,9 @@ export default function EventDetailPage() {
               {event.starts_at && (
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-brand-400" />
-                  <span>{formatDate(event.starts_at)}</span>
+                  <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
                   <span className="text-neutral-500">·</span>
-                  <span>{formatTime(event.starts_at)}{event.ends_at && ` – ${formatTime(event.ends_at)}`}</span>
+                  <span>{formatEventTime(event.starts_at, event.timezone)}{event.ends_at && ` – ${formatEventTime(event.ends_at, event.timezone)}`}</span>
                 </div>
               )}
               {event.venue_name && (
@@ -224,7 +223,7 @@ export default function EventDetailPage() {
                 {event.doors_open_at && (
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
                     <Clock className="w-3 h-3" />
-                    Doors {formatTime(event.doors_open_at)}
+                    Doors {formatEventTime(event.doors_open_at, event.timezone)}
                   </span>
                 )}
               </div>
@@ -284,7 +283,8 @@ export default function EventDetailPage() {
                 </div>
                 {/* Waitlist form when all ticket types are sold out */}
                 {event.ticket_types?.length > 0 &&
-                  event.ticket_types.every(tt => (tt.quantity_available - tt.quantity_sold) <= 0) && (
+                  event.status === 'published' &&
+                  event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
                   <div className="mt-4">
                     <WaitlistForm event={event} ticketTypes={event.ticket_types} />
                   </div>

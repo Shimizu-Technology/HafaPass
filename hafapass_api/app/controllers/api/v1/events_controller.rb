@@ -7,12 +7,18 @@ module Api
       before_action :optional_authenticate!, only: [:show]
 
       def index
-        events = Event.where(status: [:published, :completed]).includes(:ticket_types, :organizer_profile).order(starts_at: :asc)
+        events = filtered_events.includes(ticket_types: :pricing_tiers).includes(:organizer_profile).order(starts_at: :asc)
         pagy, paginated_events = paginate(events)
 
         render json: {
           events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
           meta: pagination_meta(pagy)
+        }
+      end
+
+      def categories
+        render json: {
+          categories: Event::CATEGORY_LABELS.map { |value, label| { value: value, label: label } }
         }
       end
 
@@ -27,13 +33,37 @@ module Api
           end
         end
 
-        event = Event.where(status: [:published, :completed]).find_by!(slug: params[:slug])
+        event = Event.publicly_visible.find_by!(slug: params[:slug])
         render json: event_json(event, include_ticket_types: true)
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end
 
       private
+
+      def filtered_events
+        events = Event.discoverable
+        if params[:q].present?
+          query = "%#{ActiveRecord::Base.sanitize_sql_like(params[:q].to_s.strip)}%"
+          events = events.where(<<~SQL.squish, query: query)
+            events.title ILIKE :query OR events.description ILIKE :query OR
+            events.short_description ILIKE :query OR events.venue_name ILIKE :query OR events.venue_city ILIKE :query
+          SQL
+        end
+        events = events.where(category: params[:category]) if Event.categories.key?(params[:category].to_s)
+        events = events.where(is_featured: true) if ActiveModel::Type::Boolean.new.cast(params[:featured])
+        events = events.where(starts_at: parse_date_boundary(params[:date_from], beginning: true)..) if params[:date_from].present?
+        events = events.where(starts_at: ..parse_date_boundary(params[:date_to], beginning: false)) if params[:date_to].present?
+        events
+      end
+
+      def parse_date_boundary(value, beginning:)
+        date = Date.iso8601(value.to_s)
+        local = beginning ? date.beginning_of_day : date.end_of_day
+        ActiveSupport::TimeZone["Pacific/Guam"].local(local.year, local.month, local.day, local.hour, local.min, local.sec)
+      rescue Date::Error
+        raise ActionController::BadRequest, "Invalid date filter"
+      end
 
       def optional_authenticate!
         token = extract_bearer_token
@@ -57,8 +87,8 @@ module Api
       end
 
       def event_json(event, include_ticket_types: false)
-        completed_orders = event.orders.where(status: :completed)
-        attendee_count = completed_orders.count
+        active_tickets = event.tickets.where.not(status: :cancelled)
+        attendee_count = active_tickets.count
 
         json = {
           id: event.id,
@@ -76,16 +106,19 @@ module Api
           timezone: event.timezone,
           status: event.status,
           category: event.category,
+          category_label: event.category_label,
           age_restriction: event.age_restriction,
           max_capacity: event.max_capacity,
           is_featured: event.is_featured,
           published_at: event.published_at,
           show_attendees: event.show_attendees,
           attendee_count: attendee_count,
-          attendees_preview: event.show_attendees ? completed_orders.limit(10).pluck(:buyer_name).map { |n| anonymize_name(n) } : [],
+          attendees_preview: event.show_attendees ? active_tickets.limit(10).pluck(:attendee_name).map { |name| anonymize_name(name) } : [],
+          purchasable: event.sales_open? && event.has_available_inventory?,
           organizer: {
             business_name: event.organizer_profile.business_name,
-            logo_url: event.organizer_profile.logo_url
+            logo_url: event.organizer_profile.logo_url,
+            verified: event.organizer_profile.verification_status_verified?
           },
           created_at: event.created_at,
           updated_at: event.updated_at
@@ -104,6 +137,8 @@ module Api
               original_price_cents: tt.price_cents,
               quantity_available: tt.quantity_available,
               quantity_sold: tt.quantity_sold,
+              quantity_remaining: tt.available_quantity,
+              on_sale: event.sales_open? && tt.on_sale?,
               max_per_order: tt.max_per_order,
               sales_start_at: tt.sales_start_at,
               sales_end_at: tt.sales_end_at
@@ -112,7 +147,7 @@ module Api
               tt_json[:active_tier] = {
                 name: active_tier.name,
                 tier_type: active_tier.tier_type,
-                remaining: active_tier.quantity_based? ? (active_tier.quantity_limit - active_tier.quantity_sold) : nil,
+                remaining: active_tier.quantity_based? ? [active_tier.quantity_limit - active_tier.quantity_sold - active_tier.inventory_holds.current.sum(:quantity), 0].max : nil,
                 ends_at: active_tier.ends_at
               }
             end

@@ -14,6 +14,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
+  create_table "event_state_changes", force: :cascade do |t|
+    t.string "action", null: false
+    t.bigint "actor_user_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.string "from_status", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.text "reason"
+    t.string "to_status", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_event_state_changes_on_actor_user_id"
+    t.index ["event_id", "occurred_at"], name: "index_event_state_changes_on_event_id_and_occurred_at"
+    t.index ["event_id"], name: "index_event_state_changes_on_event_id"
+  end
+
   create_table "events", force: :cascade do |t|
     t.integer "age_restriction", default: 0
     t.integer "category", default: 5
@@ -189,10 +205,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.datetime "created_at", null: false
     t.boolean "is_ambros_partner", default: false
     t.string "logo_url"
+    t.boolean "payout_ready", default: false, null: false
+    t.datetime "policy_accepted_at"
     t.string "stripe_account_id"
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.text "verification_notes"
+    t.datetime "verification_requested_at"
+    t.integer "verification_status", default: 0, null: false
+    t.datetime "verified_at"
+    t.bigint "verified_by_user_id"
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id", unique: true
+    t.index ["verification_status"], name: "index_organizer_profiles_on_verification_status"
+    t.index ["verified_by_user_id"], name: "index_organizer_profiles_on_verified_by_user_id"
   end
 
   create_table "payment_events", force: :cascade do |t|
@@ -463,6 +488,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "webhook_events_status_valid"
   end
 
+  add_foreign_key "event_state_changes", "events"
+  add_foreign_key "event_state_changes", "users", column: "actor_user_id"
   add_foreign_key "events", "organizer_profiles"
   add_foreign_key "fee_components", "order_items", on_delete: :restrict
   add_foreign_key "fee_components", "orders", on_delete: :restrict
@@ -481,6 +508,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_150003) do
   add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
   add_foreign_key "organizer_profiles", "users"
+  add_foreign_key "organizer_profiles", "users", column: "verified_by_user_id"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict
   add_foreign_key "payments", "orders", on_delete: :restrict

@@ -193,6 +193,7 @@ Query params: `?page=2&per_page=10`
 | `RESEND_API_KEY` | No | Resend email API key |
 | `MAILER_FROM_EMAIL` | No | From address for emails (default: tickets@hafapass.com) |
 | `FRONTEND_URL` | No | Frontend URL for email links (default: http://localhost:5173) |
+| `PUBLIC_WEB_URL` | No | Canonical public site URL for SEO and sitemaps (default: https://hafapass.com) |
 | `SENTRY_DSN` | Production | Backend error-monitoring DSN |
 | `SENTRY_ENVIRONMENT` | No | Monitoring environment label (defaults to Rails environment) |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | Backend performance trace sample rate (default: `0.1`) |
@@ -202,6 +203,7 @@ Query params: `?page=2&per_page=10`
 |----------|----------|-------------|
 | `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
 | `VITE_API_URL` | No | API base URL (default: http://localhost:3000/api/v1) |
+| `VITE_PUBLIC_WEB_URL` | No | Canonical public site URL (default: https://hafapass.com) |
 | `VITE_SENTRY_DSN` | Production | Frontend error-monitoring DSN |
 | `VITE_SENTRY_ENVIRONMENT` | No | Frontend monitoring environment label |
 | `VITE_SENTRY_RELEASE` | Production | Release identifier shared with source-map upload |

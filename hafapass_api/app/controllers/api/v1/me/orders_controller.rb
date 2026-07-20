@@ -52,9 +52,11 @@ class Api::V1::Me::OrdersController < ApplicationController
       id: event.id,
       title: event.title,
       slug: event.slug,
+      status: event.status,
       venue_name: event.venue_name,
       starts_at: event.starts_at,
       ends_at: event.ends_at,
+      timezone: event.timezone,
       cover_image_url: event.cover_image_url
     }
   end

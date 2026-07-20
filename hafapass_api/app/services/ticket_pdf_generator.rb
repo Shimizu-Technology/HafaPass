@@ -51,14 +51,21 @@ class TicketPdfGenerator
     pdf.text @event.title
     pdf.move_down 8
 
+    if @event.cancelled? || @event.postponed?
+      pdf.fill_color BRAND_CORAL
+      pdf.font "Helvetica", style: :bold, size: 10
+      pdf.text "EVENT #{@event.status.upcase} — check your email for updates"
+      pdf.move_down 8
+    end
+
     pdf.fill_color MUTED_TEXT
     pdf.font "Helvetica", size: 10
 
-    starts = @event.starts_at
+    starts = event_time(@event.starts_at)
     if starts
       pdf.text format_date(starts)
       time_str = format_time(starts)
-      time_str += " – #{format_time(@event.ends_at)}" if @event.ends_at
+      time_str += " – #{format_time(event_time(@event.ends_at))}" if @event.ends_at
       pdf.text time_str
     end
 
@@ -136,6 +143,10 @@ class TicketPdfGenerator
 
   def format_date(datetime)
     datetime.strftime("%A, %B %-d, %Y")
+  end
+
+  def event_time(datetime)
+    datetime&.in_time_zone(@event.timezone.presence || "Pacific/Guam")
   end
 
   def format_time(datetime)

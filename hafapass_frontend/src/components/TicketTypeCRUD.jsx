@@ -2,23 +2,30 @@ import { useState } from 'react'
 import { Plus, Pencil, Trash2, X, Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
 import PricingTiersCRUD from './PricingTiersCRUD'
+import { compareLocalDateTimes, formatEventDateTime, toEventLocalInput } from '../utils/eventTime'
 
-const EMPTY_FORM = { name: '', description: '', price: '', quantity_available: '', max_per_order: '' }
+const EMPTY_FORM = { name: '', description: '', price: '', quantity_available: '', max_per_order: '', sales_start_at: '', sales_end_at: '' }
 
-function TicketTypeForm({ initial, onSave, onCancel, saving }) {
+function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone }) {
   const [form, setForm] = useState(initial || EMPTY_FORM)
   const [error, setError] = useState(null)
 
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!form.name.trim()) { setError('Name is required'); return }
+    if (form.sales_start_at && form.sales_end_at && compareLocalDateTimes(form.sales_end_at, form.sales_start_at) <= 0) {
+      setError('Sales end must be after sales start')
+      return
+    }
     setError(null)
     onSave({
       name: form.name.trim(),
       description: form.description.trim() || null,
       price_cents: Math.round(parseFloat(form.price || '0') * 100),
       quantity_available: form.quantity_available ? parseInt(form.quantity_available, 10) : null,
-      max_per_order: form.max_per_order ? parseInt(form.max_per_order, 10) : null
+      max_per_order: form.max_per_order ? parseInt(form.max_per_order, 10) : null,
+      sales_start_at: form.sales_start_at || null,
+      sales_end_at: form.sales_end_at || null
     })
   }
 
@@ -26,25 +33,38 @@ function TicketTypeForm({ initial, onSave, onCancel, saving }) {
     <form onSubmit={handleSubmit} className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div>
-        <label className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
-        <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., General Admission" disabled={saving} />
+        <label htmlFor="ticket-type-name" className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
+        <input id="ticket-type-name" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., General Admission" disabled={saving} />
       </div>
       <div>
-        <label className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
-        <input value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} className="input" placeholder="Optional description" disabled={saving} />
+        <p className="text-xs text-neutral-500 mb-2">Optional sales window in {eventTimezone || 'Pacific/Guam'}.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="ticket-type-sales-start" className="block text-sm font-medium text-neutral-700 mb-1">Sales Start</label>
+            <input id="ticket-type-sales-start" type="datetime-local" value={form.sales_start_at} onChange={e => setForm(current => ({ ...current, sales_start_at: e.target.value }))} className="input" disabled={saving} />
+          </div>
+          <div>
+            <label htmlFor="ticket-type-sales-end" className="block text-sm font-medium text-neutral-700 mb-1">Sales End</label>
+            <input id="ticket-type-sales-end" type="datetime-local" value={form.sales_end_at} onChange={e => setForm(current => ({ ...current, sales_end_at: e.target.value }))} className="input" disabled={saving} />
+          </div>
+        </div>
+      </div>
+      <div>
+        <label htmlFor="ticket-type-description" className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
+        <input id="ticket-type-description" value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} className="input" placeholder="Optional description" disabled={saving} />
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-1">Price ($)</label>
-          <input type="number" step="0.01" min="0" value={form.price} onChange={e => setForm(f => ({...f, price: e.target.value}))} className="input" placeholder="0.00" disabled={saving} />
+          <label htmlFor="ticket-type-price" className="block text-sm font-medium text-neutral-700 mb-1">Price ($)</label>
+          <input id="ticket-type-price" type="number" step="0.01" min="0" value={form.price} onChange={e => setForm(f => ({...f, price: e.target.value}))} className="input" placeholder="0.00" disabled={saving} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-1">Qty Available</label>
-          <input type="number" min="1" value={form.quantity_available} onChange={e => setForm(f => ({...f, quantity_available: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
+          <label htmlFor="ticket-type-quantity" className="block text-sm font-medium text-neutral-700 mb-1">Qty Available</label>
+          <input id="ticket-type-quantity" type="number" min="1" value={form.quantity_available} onChange={e => setForm(f => ({...f, quantity_available: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-1">Max/Order</label>
-          <input type="number" min="1" value={form.max_per_order} onChange={e => setForm(f => ({...f, max_per_order: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
+          <label htmlFor="ticket-type-max-order" className="block text-sm font-medium text-neutral-700 mb-1">Max/Order</label>
+          <input id="ticket-type-max-order" type="number" min="1" value={form.max_per_order} onChange={e => setForm(f => ({...f, max_per_order: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
         </div>
       </div>
       <div className="flex gap-2 justify-end">
@@ -57,7 +77,7 @@ function TicketTypeForm({ initial, onSave, onCancel, saving }) {
   )
 }
 
-export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh }) {
+export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh, eventTimezone = 'Pacific/Guam' }) {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -124,7 +144,7 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh })
 
       {showForm && (
         <div className="mb-4">
-          <TicketTypeForm onSave={handleCreate} onCancel={() => setShowForm(false)} saving={saving} />
+          <TicketTypeForm onSave={handleCreate} onCancel={() => setShowForm(false)} saving={saving} eventTimezone={eventTimezone} />
         </div>
       )}
 
@@ -141,11 +161,14 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh })
                     description: tt.description || '',
                     price: (tt.price_cents / 100).toFixed(2),
                     quantity_available: tt.quantity_available ? String(tt.quantity_available) : '',
-                    max_per_order: tt.max_per_order ? String(tt.max_per_order) : ''
+                    max_per_order: tt.max_per_order ? String(tt.max_per_order) : '',
+                    sales_start_at: toEventLocalInput(tt.sales_start_at, eventTimezone),
+                    sales_end_at: toEventLocalInput(tt.sales_end_at, eventTimezone)
                   }}
                   onSave={handleUpdate}
                   onCancel={() => setEditingId(null)}
                   saving={saving}
+                  eventTimezone={eventTimezone}
                 />
               ) : (
                 <div>
@@ -161,6 +184,12 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh })
                           <p className="text-xs text-emerald-600">Current: ${(tt.current_price_cents / 100).toFixed(2)}</p>
                         )}
                         <p className="text-xs text-neutral-500">{tt.quantity_sold ?? 0}/{tt.quantity_available ?? '∞'} sold</p>
+                        {(tt.sales_start_at || tt.sales_end_at) && (
+                          <p className="text-xs text-neutral-400">
+                            {tt.sales_start_at ? `From ${formatEventDateTime(tt.sales_start_at, eventTimezone)}` : 'On sale now'}
+                            {tt.sales_end_at ? ` to ${formatEventDateTime(tt.sales_end_at, eventTimezone)}` : ''}
+                          </p>
+                        )}
                       </div>
                     {confirmDeleteId === tt.id ? (
                       <div className="flex items-center gap-1">
@@ -182,7 +211,7 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh })
                     )}
                   </div>
                 </div>
-                  <PricingTiersCRUD eventId={eventId} ticketTypeId={tt.id} />
+                  <PricingTiersCRUD eventId={eventId} ticketTypeId={tt.id} eventTimezone={eventTimezone} />
                 </div>
               )}
             </div>

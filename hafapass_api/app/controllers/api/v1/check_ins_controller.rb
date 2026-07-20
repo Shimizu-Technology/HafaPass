@@ -17,6 +17,12 @@ class Api::V1::CheckInsController < ApplicationController
       return
     end
 
+    unless ticket.event.published?
+      render json: { error: "Event is #{ticket.event.status}; check-in is unavailable", ticket: ticket_json(ticket) },
+        status: :unprocessable_entity
+      return
+    end
+
     if ticket.checked_in?
       render json: {
         error: "Ticket already checked in",
@@ -58,8 +64,10 @@ class Api::V1::CheckInsController < ApplicationController
         id: ticket.event.id,
         title: ticket.event.title,
         slug: ticket.event.slug,
+        status: ticket.event.status,
         venue_name: ticket.event.venue_name,
-        starts_at: ticket.event.starts_at
+        starts_at: ticket.event.starts_at,
+        timezone: ticket.event.timezone
       },
       ticket_type: {
         id: ticket.ticket_type.id,

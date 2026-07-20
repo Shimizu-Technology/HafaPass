@@ -13,6 +13,7 @@ class PricingTier < ApplicationRecord
   validates :position, presence: true, numericality: { greater_than_or_equal_to: 0 }
   validates :quantity_sold, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :sold_quantity_within_limit
+  validate :chronological_time_window
 
   scope :ordered, -> { order(:position) }
 
@@ -35,6 +36,12 @@ class PricingTier < ApplicationRecord
     end
   end
   private
+
+  def chronological_time_window
+    return unless time_based?
+
+    errors.add(:ends_at, "must be after the tier start") if starts_at && ends_at && ends_at <= starts_at
+  end
 
   def sold_quantity_within_limit
     return unless quantity_based? && quantity_limit.present?

@@ -16,7 +16,7 @@ module Api
         end
 
         def create
-          ticket_type = @event.ticket_types.build(ticket_type_params)
+          ticket_type = @event.ticket_types.build(parsed_ticket_type_params)
           if ticket_type.save
             render json: ticket_type_json(ticket_type), status: :created
           else
@@ -25,7 +25,7 @@ module Api
         end
 
         def update
-          if @ticket_type.update(ticket_type_params)
+          if @ticket_type.update(parsed_ticket_type_params)
             render json: ticket_type_json(@ticket_type)
           else
             render json: { errors: @ticket_type.errors.full_messages }, status: :unprocessable_entity
@@ -70,6 +70,16 @@ module Api
             :name, :description, :price_cents, :quantity_available,
             :max_per_order, :sales_start_at, :sales_end_at, :sort_order
           )
+        end
+
+        def parsed_ticket_type_params
+          attributes = ticket_type_params.to_h
+          %w[sales_start_at sales_end_at].each do |key|
+            attributes[key] = EventTimeParser.call(attributes[key], timezone: @event.timezone) if attributes.key?(key)
+          end
+          attributes
+        rescue EventTimeParser::ParseError => e
+          raise ActionController::BadRequest, e.message
         end
 
         def ticket_type_json(tt)
