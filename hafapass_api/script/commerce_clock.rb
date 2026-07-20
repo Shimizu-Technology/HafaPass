@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+# This file is a long-running process entrypoint, not an autoloadable library.
+# Keep it outside lib/ so Rails eager loading cannot execute the scheduler while
+# booting production or CI.
 running = true
 Signal.trap("TERM") { running = false }
 Signal.trap("INT") { running = false }
