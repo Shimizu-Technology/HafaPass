@@ -59,7 +59,11 @@ export default function OrderConfirmationPage() {
   const isProcessing = order && !finalStatuses.has(order.status)
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
   const change = order?.latest_event_change
-  const canRespondToChange = change && !change.response && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
+  const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
+    ticket.status === 'issued' && ticket.refundable_cents >= 0
+  ))
+  const canRespondToChange = change && (!change.response || refundNeedsRetry) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
+  const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
   const orderHeaders = useMemo(() => orderAccessHeaders(id), [id])
 
   async function resend() {
@@ -150,8 +154,10 @@ export default function OrderConfirmationPage() {
             {change.response && <p className="mt-3 text-sm font-medium text-amber-950">Your response: {change.response.replace('_', ' ')}</p>}
             {canRespondToChange && (
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <button className="btn-secondary" disabled={decisionState !== 'idle'} onClick={() => respondToChange('accepted')}>Keep my tickets</button>
-                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionState !== 'idle'} onClick={() => respondToChange('refund_requested')}>Request refund</button>
+                {!change.response && (
+                  <button className="btn-secondary" disabled={decisionBusy} onClick={() => respondToChange('accepted')}>Keep my tickets</button>
+                )}
+                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy} onClick={() => respondToChange('refund_requested')}>{refundNeedsRetry ? 'Retry refund' : 'Request refund'}</button>
               </div>
             )}
             {decisionState === 'error' && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}

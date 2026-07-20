@@ -110,7 +110,7 @@ class OrderPresenter
       status: ticket.status,
       attendee_name: ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
-      refundable_cents: ticket_refundable_amounts.fetch(ticket.id, 0),
+      refundable_cents: ticket.issued? ? ticket_refundable_amounts.fetch(ticket.id, 0) : 0,
       ticket_type: {
         id: ticket.ticket_type.id,
         name: ticket.ticket_type.name,

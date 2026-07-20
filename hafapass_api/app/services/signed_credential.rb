@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
+require "concurrent/map"
+
 class SignedCredential
+  VERIFIERS = Concurrent::Map.new
+
   class << self
     def issue(namespace:, payload:, expires_at: nil)
       verifier(namespace).generate(payload, expires_at: expires_at, purpose: namespace)
@@ -15,8 +19,7 @@ class SignedCredential
     private
 
     def verifier(namespace)
-      @verifiers ||= {}
-      @verifiers[namespace] ||= begin
+      VERIFIERS.compute_if_absent(namespace) do
         secret = Rails.application.key_generator.generate_key("hafapass/#{namespace}", 32)
         ActiveSupport::MessageVerifier.new(secret, digest: "SHA256", serializer: JSON, url_safe: true)
       end

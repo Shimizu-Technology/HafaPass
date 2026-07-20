@@ -26,4 +26,18 @@ RSpec.describe GuestOrderAccess do
     expect(described_class.find(expired)).to be_nil
     expect(described_class.find(authenticated)).to be_nil
   end
+
+  it "does not silently restore access when issuing for a revoked order" do
+    token = described_class.issue!(order)
+    described_class.revoke!(order)
+
+    replacement = described_class.issue!(order)
+
+    expect(described_class.find(token)).to be_nil
+    expect(described_class.find(replacement)).to be_nil
+    expect(order.reload.guest_access_revoked_at).to be_present
+
+    restored = described_class.issue!(order, rotate: true)
+    expect(described_class.find(restored)).to eq(order)
+  end
 end

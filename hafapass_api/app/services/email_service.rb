@@ -158,6 +158,8 @@ class EmailService
 
     def record_enqueue_failure(delivery, error)
       delivery&.update(status: :failed, last_error: "#{error.class}: #{error.message}")
+    rescue StandardError => tracking_error
+      Rails.logger.error("[MessageDelivery] Unable to record enqueue failure: #{tracking_error.class}")
     end
 
     # ── Unified delivery method ─────────────────────────────────────

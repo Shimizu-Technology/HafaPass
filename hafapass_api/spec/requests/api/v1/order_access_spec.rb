@@ -68,4 +68,19 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response).to have_http_status(:ok)
     expect(change.event_change_responses.find_by(order: order).decision).to eq("accepted")
   end
+
+  it "rejects a changed decision before performing refund side effects" do
+    change = event.event_changes.create!(change_type: "rescheduled", reason: "Later start",
+      before_data: {}, after_data: {}, occurred_at: Time.current)
+    change.event_change_responses.create!(order: order, decision: "accepted", responded_at: Time.current)
+    allow(Commerce::RefundCreator).to receive(:call)
+
+    post "/api/v1/orders/#{order.id}/event_change_response",
+      params: { event_change_id: change.id, decision: "refund_requested" },
+      headers: access_headers.merge("Idempotency-Key" => SecureRandom.uuid)
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(Commerce::RefundCreator).not_to have_received(:call)
+    expect(change.event_change_responses.find_by(order: order).decision).to eq("accepted")
+  end
 end

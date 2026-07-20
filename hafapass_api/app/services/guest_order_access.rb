@@ -8,7 +8,9 @@ class GuestOrderAccess
     def issue!(order, expires_at: LIFETIME.from_now, rotate: false)
       order.with_lock do
         order.increment!(:guest_access_version) if rotate
-        order.update!(guest_access_expires_at: expires_at, guest_access_revoked_at: nil)
+        attributes = { guest_access_expires_at: expires_at }
+        attributes[:guest_access_revoked_at] = nil if rotate
+        order.update!(attributes)
       end
 
       SignedCredential.issue(

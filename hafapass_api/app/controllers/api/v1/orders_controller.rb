@@ -130,10 +130,23 @@ class Api::V1::OrdersController < ApplicationController
       return render json: { error: "Decision must be accepted or refund_requested" }, status: :unprocessable_entity
     end
 
+    existing_response = change.event_change_responses.find_by(order: @order)
+    if existing_response && existing_response.decision != decision
+      return render json: { error: "This event-change response has already been recorded" }, status: :unprocessable_entity
+    end
+
     if decision == "refund_requested"
       idempotency_key = request.headers["Idempotency-Key"].presence
       return render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity unless idempotency_key
+    end
 
+    response = existing_response || change.event_change_responses.create!(
+      order: @order,
+      decision: decision,
+      responded_at: Time.current
+    )
+
+    if decision == "refund_requested"
       refundable_tickets = @order.tickets.where(status: :issued).to_a
       paid_tickets = refundable_tickets.select { |ticket| ticket.refundable_cents.positive? }
       free_tickets = refundable_tickets - paid_tickets
@@ -149,8 +162,9 @@ class Api::V1::OrdersController < ApplicationController
       end
     end
 
-    response = change.event_change_responses.create!(order: @order, decision: decision, responded_at: Time.current)
     render json: { decision: response.decision, order: OrderPresenter.call(@order.reload, include_tickets: true) }
+  rescue ActiveRecord::RecordNotUnique
+    render json: { error: "This event-change response has already been recorded" }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e
     render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
   rescue Commerce::RefundCreator::RefundError => e
