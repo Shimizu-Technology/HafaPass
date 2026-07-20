@@ -59,10 +59,11 @@ RSpec.describe User, type: :model do
       expect(user.orders).to include(order)
     end
 
-    it "destroys organizer_profile when destroyed" do
+    it "protects an organization's ownership history when deletion is attempted" do
       user = create(:user, :organizer)
       create(:organizer_profile, user: user)
-      expect { user.destroy }.to change(OrganizerProfile, :count).by(-1)
+      expect { user.destroy }.not_to change(OrganizerProfile, :count)
+      expect(user).to be_persisted
     end
 
     it "nullifies orders when destroyed" do

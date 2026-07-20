@@ -242,6 +242,8 @@ export default function DashboardPage() {
  const [error, setError] = useState(null)
  const [showEditProfile, setShowEditProfile] = useState(false)
  const [readinessLoading, setReadinessLoading] = useState(false)
+ const [organizations, setOrganizations] = useState([])
+ const [selectedOrganizationId, setSelectedOrganizationId] = useState('')
 
  const updateReadiness = async (path) => {
   setReadinessLoading(true)
@@ -260,6 +262,18 @@ export default function DashboardPage() {
   setLoading(true)
   setError(null)
   try {
+   const organizationsRes = await apiClient.get('/organizer/organizations')
+   const availableOrganizations = Array.isArray(organizationsRes.data) ? organizationsRes.data : []
+   setOrganizations(availableOrganizations)
+   const storedOrganizationId = window.localStorage.getItem('hafapass_organization_id')
+   const selectedOrganization = availableOrganizations.find(item => item.id.toString() === storedOrganizationId) || availableOrganizations[0]
+   if (selectedOrganization) {
+    window.localStorage.setItem('hafapass_organization_id', selectedOrganization.id.toString())
+    setSelectedOrganizationId(selectedOrganization.id.toString())
+   } else {
+    window.localStorage.removeItem('hafapass_organization_id')
+    setSelectedOrganizationId('')
+   }
    const profileRes = await apiClient.get('/organizer_profile')
    setProfile(profileRes.data)
 
@@ -320,7 +334,7 @@ export default function DashboardPage() {
  return (
   <div className="max-w-4xl mx-auto px-4 py-8">
    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-    <div>
+   <div>
      <div className="flex items-center gap-2">
       <h1 className="text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
       <button onClick={() => setShowEditProfile(true)} className="p-1.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
@@ -328,6 +342,18 @@ export default function DashboardPage() {
       </button>
      </div>
      <p className="text-neutral-600 mt-1">Manage your events and track ticket sales</p>
+     {organizations.length > 1 && (
+      <label className="mt-3 flex items-center gap-2 text-sm text-neutral-600">
+       Organization
+       <select value={selectedOrganizationId} onChange={event => {
+        window.localStorage.setItem('hafapass_organization_id', event.target.value)
+        setSelectedOrganizationId(event.target.value)
+        fetchDashboard()
+       }} className="input !w-auto !py-1.5 text-sm">
+        {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {organization.role.replaceAll('_', ' ')}</option>)}
+       </select>
+      </label>
+     )}
     </div>
     <div className="flex items-center gap-3">
      <Link
@@ -384,7 +410,7 @@ export default function DashboardPage() {
         <span className="flex items-center gap-2 text-sm text-neutral-700">{profile.verification_status === 'verified' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Identity verification: <strong className="capitalize">{profile.verification_status}</strong></span>
         {['unverified', 'rejected'].includes(profile.verification_status) && <button type="button" disabled={readinessLoading} onClick={() => updateReadiness('submit_verification')} className="btn-secondary text-xs !py-2">Submit for review</button>}
        </li>
-       <li className="flex items-center gap-2 text-sm text-neutral-700">{profile.payout_ready ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Paid-event payouts {profile.payout_ready ? 'ready' : 'not ready'}</li>
+       <li className="flex items-center justify-between gap-4 text-sm text-neutral-700"><span className="flex items-center gap-2">{profile.payout_ready ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Paid-event payouts {profile.payout_ready ? `ready via ${profile.connected_account?.provider}` : 'not ready'}</span>{!profile.payout_ready && <Link to="/dashboard/settings" className="font-semibold text-brand-600 hover:text-brand-700">Set up</Link>}</li>
       </ul>
       {profile.verification_notes && <p className="mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3">Review note: {profile.verification_notes}</p>}
      </div>

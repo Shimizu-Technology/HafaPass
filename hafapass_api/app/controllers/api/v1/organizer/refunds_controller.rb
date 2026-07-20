@@ -3,8 +3,7 @@
 module Api
   module V1
     module Organizer
-      class RefundsController < ApplicationController
-        before_action :require_organizer_profile
+      class RefundsController < BaseController
         before_action :set_event
         before_action :set_order
 
@@ -23,6 +22,15 @@ module Api
             idempotency_key: idempotency_key
           )
 
+          AuditLogger.record!(
+            action: "refund.created",
+            auditable: refund,
+            actor: current_user,
+            organization: current_organization,
+            metadata: { order_id: @order.id, amount_cents: refund.amount_cents },
+            request: request
+          )
+
           render json: refund_json(refund), status: :created
         rescue Commerce::RefundCreator::RefundError => e
           render json: { error: e.message }, status: :unprocessable_entity
@@ -30,18 +38,9 @@ module Api
 
         private
 
-        def require_organizer_profile
-          render json: { error: "Organizer profile required" }, status: :forbidden unless current_organizer_profile
-        end
-
-        def current_organizer_profile
-          @current_organizer_profile ||= current_user.organizer_profile
-        end
-
         def set_event
-          @event = current_organizer_profile.events.find(params[:event_id])
-        rescue ActiveRecord::RecordNotFound
-          render json: { error: "Event not found" }, status: :not_found
+          @event = find_organization_event(params[:event_id])
+          authorize_organization!(:refund, event: @event) if @event
         end
 
         def set_order

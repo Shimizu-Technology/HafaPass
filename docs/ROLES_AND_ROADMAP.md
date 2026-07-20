@@ -4,7 +4,7 @@ Status: supporting reference
 Authoritative roadmap: [TICKETING_PLATFORM_BLUEPRINT.md](TICKETING_PLATFORM_BLUEPRINT.md)
 Delivery phases: [PHASE_DELIVERY_PLAYBOOK.md](PHASE_DELIVERY_PLAYBOOK.md)
 
-## Current prototype roles
+## Implemented organization roles
 
 ### Guest
 
@@ -18,11 +18,12 @@ Delivery phases: [PHASE_DELIVERY_PLAYBOOK.md](PHASE_DELIVERY_PLAYBOOK.md)
 - Can view their own orders/tickets and create an organizer profile.
 - The current navigation exposes organizer/scanner destinations too broadly even though backend authorization rejects many operations.
 
-### Organizer profile owner
+### Organizer organization
 
-- Owns and manages events, ticket types, promos, guest lists, refunds, and check-in for their events.
-- This is currently a single-person ownership model, not a complete organization/team model.
-- Current parameter controls permit privileged fields that must be removed in Phase 3.
+- Every organizer profile belongs to an organization with unique, lifecycle-managed memberships.
+- Owner, manager, finance, marketer, box-office, and scanner permissions are enforced server-side.
+- Scanner and box-office roles are limited to explicitly assigned events; assignments can expire or be revoked.
+- Privileged verification, connected-account, settlement, payout, and platform fields are not organizer-controlled parameters.
 
 ### Platform administrator
 

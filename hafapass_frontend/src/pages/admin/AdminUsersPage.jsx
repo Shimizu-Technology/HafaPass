@@ -53,6 +53,22 @@ export default function AdminUsersPage() {
     updateOrganizer(user, { verification_status: verificationStatus, verification_notes: verificationNotes })
   }
 
+  const syncConnectedAccount = async (user, updates) => {
+    const account = user.organizer_profile?.connected_account
+    if (!account) return
+    try {
+      const response = await apiClient.patch(`/admin/connected_accounts/${account.id}`, updates)
+      setUsers(current => current.map(item => item.id === user.id ? {
+        ...item,
+        organizer_profile: {
+          ...item.organizer_profile,
+          payout_ready: response.data.payout_ready,
+          connected_account: response.data
+        }
+      } : item))
+    } catch (err) { console.error(err) }
+  }
+
   const roleBadge = (role) => {
     const styles = {
       admin: 'bg-brand-50 text-brand-600',
@@ -118,7 +134,18 @@ export default function AdminUsersPage() {
                           <select value={user.organizer_profile.verification_status} onChange={event => reviewOrganizer(user, event.target.value)} className="input !py-1 !text-xs">
                             {['unverified', 'pending', 'verified', 'rejected', 'suspended'].map(status => <option key={status} value={status}>{status}</option>)}
                           </select>
-                          <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={user.organizer_profile.payout_ready} onChange={event => updateOrganizer(user, { payout_ready: event.target.checked })} /> Payout ready</label>
+                          {user.organizer_profile.connected_account ? (
+                            <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 text-xs">
+                              <p className="font-semibold text-neutral-800">{user.organizer_profile.connected_account.provider} · {user.organizer_profile.connected_account.status}</p>
+                              <p className="mt-1 text-neutral-500">{user.organizer_profile.connected_account.requirements_due?.length ? `Due: ${user.organizer_profile.connected_account.requirements_due.join(', ')}` : 'No outstanding requirements'}</p>
+                              <div className="mt-2 flex gap-2">
+                                {!user.organizer_profile.payout_ready && <button onClick={() => {
+                                  if (window.confirm('Confirm identity, payment acceptance, and payout evidence were reviewed?')) syncConnectedAccount(user, { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] })
+                                }} className="font-semibold text-emerald-700 hover:text-emerald-800">Mark evidence verified</button>}
+                                {user.organizer_profile.connected_account.status !== 'disabled' && <button onClick={() => syncConnectedAccount(user, { disabled: true })} className="font-semibold text-red-600 hover:text-red-700">Disable</button>}
+                              </div>
+                            </div>
+                          ) : <p className="text-xs text-amber-700">Organizer has not started payout onboarding.</p>}
                         </div>
                       ) : '—'}
                     </td>

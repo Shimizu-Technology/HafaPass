@@ -1,8 +1,7 @@
 module Api
   module V1
     module Organizer
-      class PricingTiersController < ApplicationController
-        before_action :require_organizer_profile
+      class PricingTiersController < BaseController
         before_action :set_event
         before_action :set_ticket_type
         before_action :set_pricing_tier, only: [:update, :destroy]
@@ -40,20 +39,9 @@ module Api
 
         private
 
-        def require_organizer_profile
-          unless current_organizer_profile
-            render json: { error: "Organizer profile required" }, status: :forbidden
-          end
-        end
-
-        def current_organizer_profile
-          @current_organizer_profile ||= current_user.organizer_profile
-        end
-
         def set_event
-          @event = current_organizer_profile.events.find(params[:event_id])
-        rescue ActiveRecord::RecordNotFound
-          render json: { error: "Event not found" }, status: :not_found
+          @event = find_organization_event(params[:event_id])
+          authorize_organization!(:manage_inventory, event: @event) if @event
         end
 
         def set_ticket_type

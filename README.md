@@ -12,7 +12,7 @@ HafaPass is a ticketing platform designed for Guam's hospitality industry. It en
 - **Frontend:** React 18 with Vite
 - **Authentication:** Clerk
 - **Database:** PostgreSQL
-- **Payments:** Stripe
+- **Payments:** Provider-neutral local ledger; Stripe sandbox adapter; PayPal/manual payout onboarding paths (see `docs/GUAM_PAYMENT_AND_PAYOUT_DECISION.md`)
 - **Background Jobs:** Sidekiq + Redis
 - **Rate Limiting:** Rack::Attack
 - **Email:** Resend

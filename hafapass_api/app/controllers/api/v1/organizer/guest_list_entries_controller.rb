@@ -1,10 +1,9 @@
 module Api
   module V1
     module Organizer
-      class GuestListEntriesController < ApplicationController
+      class GuestListEntriesController < BaseController
         include Paginatable
 
-        before_action :require_organizer_profile
         before_action :set_event
         before_action :set_entry, only: [:update, :destroy, :redeem]
 
@@ -96,21 +95,10 @@ module Api
 
         private
 
-        def require_organizer_profile
-          return if current_organizer_profile
-
-          render json: { error: "Organizer profile required" }, status: :forbidden
-        end
-
-        def current_organizer_profile
-          @current_organizer_profile ||= current_user.organizer_profile
-        end
-
         def set_event
           return if performed?
-          @event = current_organizer_profile.events.find(params[:event_id])
-        rescue ActiveRecord::RecordNotFound
-          render json: { error: "Event not found" }, status: :not_found
+          @event = find_organization_event(params[:event_id])
+          authorize_organization!(:manage_attendees, event: @event) if @event
         end
 
         def set_entry

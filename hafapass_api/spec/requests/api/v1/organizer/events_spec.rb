@@ -46,7 +46,7 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
       expect(response).to have_http_status(:forbidden)
       json = JSON.parse(response.body)
-      expect(json["error"]).to eq("Organizer profile required")
+      expect(json["error"]).to eq("Organization membership required")
     end
 
     it "orders events by created_at descending" do
@@ -260,6 +260,24 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
         include("code" => "organizer_verified", "complete" => false),
         include("code" => "tickets", "complete" => false)
       )
+    end
+
+    it "requires evidence-backed connected-account readiness for paid events" do
+      organizer_profile.update!(verification_status: :verified, verified_at: Time.current,
+        policy_accepted_at: Time.current, payout_ready: true)
+      event = create(:event, organizer_profile: organizer_profile)
+      create(:ticket_type, event: event, price_cents: 2500, quantity_available: 100)
+
+      post "/api/v1/organizer/events/#{event.id}/publish", headers: headers
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["publish_checklist"]).to include(
+        include("code" => "payout", "complete" => false)
+      )
+
+      create(:connected_account, organization: organizer_profile.organization)
+      post "/api/v1/organizer/events/#{event.id}/publish", headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(event.reload).to be_published
     end
 
     it "returns 422 for already published events" do

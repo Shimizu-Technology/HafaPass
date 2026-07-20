@@ -24,6 +24,7 @@ Rails.application.routes.draw do
       put "organizer_profile", to: "organizer_profiles#create_or_update"
       post "organizer_profile/accept_policy", to: "organizer_profiles#accept_policy"
       post "organizer_profile/submit_verification", to: "organizer_profiles#submit_verification"
+      post "organization_invitations/accept", to: "organization_invitations#accept"
 
       # Presigned upload URL (authenticated) - works in simulate mode too
       post "uploads/presign", to: "uploads#presign"
@@ -71,6 +72,10 @@ Rails.application.routes.draw do
 
       # Organizer events (protected)
       namespace :organizer do
+        resource :organization, only: [:show], controller: "organizations"
+        resources :organizations, only: [:index]
+        resources :memberships, only: [:index, :create, :update, :destroy]
+        resources :connected_accounts, only: [:index, :create]
         resources :events, only: [:index, :show, :create, :update, :destroy] do
           member do
             post :publish
@@ -88,6 +93,12 @@ Rails.application.routes.draw do
             resources :pricing_tiers, only: [:index, :create, :update, :destroy]
           end
           resources :promo_codes, only: [:index, :show, :create, :update, :destroy]
+          resources :staff_assignments, only: [:index, :create, :update, :destroy],
+                    controller: "event_staff_assignments"
+          resource :finance, only: [:show], controller: "finances" do
+            post :finalize
+            post :payout
+          end
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do
             get :summary
@@ -124,6 +135,9 @@ Rails.application.routes.draw do
         resources :users, only: [:index, :update]
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]
+        resources :connected_accounts, only: [:update]
+        resources :balance_adjustments, only: [:create, :destroy]
+        resources :payouts, only: [:update]
 
         # Maintenance
         post "maintenance/complete_past_events", to: "maintenance#complete_past_events"

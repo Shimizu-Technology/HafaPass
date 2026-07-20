@@ -17,6 +17,9 @@ const apiClient = axios.create({
 
 // Request interceptor to attach auth token when available
 apiClient.interceptors.request.use(async (config) => {
+  const organizationId = window.localStorage.getItem('hafapass_organization_id')
+  if (organizationId) config.headers['X-Organization-Id'] = organizationId
+
   // Clerk token will be attached here once auth is configured (Task 3)
   // The token is set via setAuthToken() called from the ClerkProvider wrapper
   if (apiClient._authTokenGetter) {

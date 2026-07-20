@@ -1,5 +1,6 @@
 class OrganizerProfile < ApplicationRecord
   belongs_to :user
+  belongs_to :organization
   belongs_to :verified_by_user, class_name: "User", optional: true
   has_many :events, dependent: :destroy
 
@@ -18,6 +19,6 @@ class OrganizerProfile < ApplicationRecord
   end
 
   def ready_to_publish_paid_events?
-    ready_to_publish_free_events? && payout_ready?
+    ready_to_publish_free_events? && organization.payout_ready?
   end
 end

@@ -540,7 +540,7 @@ Required decisions and artifacts:
 
 The current Guam GRT form lists 5% for major categories, but an accountant must determine what HafaPass and organizer amounts are taxable: [Guam GRT form](https://www.guamtax.com/forms/GRT1.pdf).
 
-Stripe lists the United States but individual Guam business, bank, Connect, and Terminal capability must be confirmed before architecture is finalized: [Stripe availability](https://stripe.com/global), [Stripe Connect](https://docs.stripe.com/connect/how-connect-works).
+Stripe's support guidance says US territories other than Puerto Rico are unsupported, so Guam production eligibility must not be inferred from the US availability listing. HafaPass uses the provider-neutral decision in [GUAM_PAYMENT_AND_PAYOUT_DECISION.md](GUAM_PAYMENT_AND_PAYOUT_DECISION.md): pursue PayPal Multiparty approval, retain a controlled local-bank/manual fallback, and require written confirmation before any Stripe production use. See [Stripe territory support](https://support.stripe.com/questions/stripe-availability-for-outlying-territories-of-supported-countries?locale=en-GB), [PayPal Multiparty](https://developer.paypal.com/docs/multiparty/?multiformSubmitted=true), and [PayPal state codes](https://developer.paypal.com/api/nvp-soap/state-codes/).
 
 Stripe-hosted fields reduce card-data scope but do not eliminate PCI duties. The platform must confirm its correct PCI DSS 4.0.1 SAQ and script/vulnerability controls: [PCI SSC SAQ guidance](https://blog.pcisecuritystandards.org/faq-clarifies-new-saq-a-eligibility-criteria-for-e-commerce-merchants).
 
@@ -595,7 +595,7 @@ Implementation details, branch names, test protocol, PR requirements, and Grepti
 | 2 | Commerce ledger, holds, state machines, refunds, reconciliation | Concurrency and Stripe edge-case matrix passes |
 | 3 | Organizer trust, publishing, ChST, accurate marketplace | Privilege, time, past-event, and discovery E2E tests pass |
 | 4 | Recoverable checkout and secure ticket lifecycle | Guest, 3DS, privacy, refund, and fulfillment matrix passes |
-| 5 | Organizations, staff roles, Connect, settlements, payouts | Test organizer settlement reconciles to the cent |
+| 5 | Organizations, staff roles, connected accounts, settlements, payouts | Test organizer settlement reconciles to the cent |
 | 6 | Offline scanner and event-day operations | Multi-device offline door simulation passes |
 | 7 | Communications, support, compliance, and pilot readiness | Full pilot checklist and real test charge/refund pass |
 | 8 | Transfers, wallets, actionable waitlist, add-ons, attribution | Competitive feature E2E suites pass |
@@ -609,8 +609,8 @@ HafaPass is pilot-ready only when all are true:
 - No open P0 findings from this blueprint.
 - CI and the local gate pass on the exact release commit.
 - Production dependency scan has no unaccepted critical/high findings.
-- Stripe test matrix covers success, decline, 3DS, browser loss, duplicate/out-of-order webhook, expiration, refund, and dispute.
-- Local ledger reconciles exactly with Stripe test data.
+- The enabled-provider sandbox matrix covers success, decline, additional authentication, browser loss, duplicate/out-of-order webhook, expiration, refund, and dispute; the current Stripe adapter remains part of sandbox regression.
+- Local ledger reconciles exactly with enabled-provider sandbox data.
 - Guest and authenticated checkout work on desktop and mobile.
 - Guam event time is consistent across every surface.
 - Organizer onboarding and settlement are exercised end-to-end.

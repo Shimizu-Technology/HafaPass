@@ -1,225 +1,212 @@
-import { Check, Loader2, X } from 'lucide-react'
-import { useState, useEffect, useRef } from 'react'
+import { CheckCircle2, CircleAlert, Copy, Loader2, ShieldCheck, Trash2, UserPlus, Users, WalletCards } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 
-const MODES = [
- {
-  value: 'simulate',
-  label: 'Simulate',
-  description: 'No real charges. Orders auto-complete for development/testing.',
-  color: 'border-amber-300 bg-amber-50',
-  activeColor: 'border-amber-500 bg-amber-50 ring-2 ring-amber-500',
-  dot: 'bg-amber-500',
- },
- {
-  value: 'test',
-  label: 'Test (Stripe Sandbox)',
-  description: 'Real Stripe API with test keys. Use test card 4242 4242 4242 4242.',
-  color: 'border-brand-300 bg-brand-50',
-  activeColor: 'border-brand-500 bg-brand-50 ring-2 ring-brand-500',
-  dot: 'bg-brand-500',
- },
- {
-  value: 'live',
-  label: 'Live (Real Money)',
-  description: 'Production Stripe. Real charges will be made to real cards.',
-  color: 'border-green-300 bg-green-50',
-  activeColor: 'border-green-500 bg-green-50 ring-2 ring-green-500',
-  dot: 'bg-green-500',
- },
-]
+const TEAM_ROLES = ['manager', 'finance', 'marketer', 'box_office', 'scanner']
+
+function label(value) {
+  return value?.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
+}
+
+function StatusPill({ ready, children }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${ready ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+      {ready ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleAlert className="h-3.5 w-3.5" />}
+      {children}
+    </span>
+  )
+}
 
 export default function SettingsPage() {
- const [settings, setSettings] = useState(null)
- const [loading, setLoading] = useState(true)
- const [saving, setSaving] = useState(false)
- const [error, setError] = useState(null)
- const [success, setSuccess] = useState(null)
- const successTimeoutRef = useRef(null)
+  const [organization, setOrganization] = useState(null)
+  const [memberships, setMemberships] = useState([])
+  const [accounts, setAccounts] = useState([])
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState('manager')
+  const [invitationUrl, setInvitationUrl] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
 
- useEffect(() => {
-  return () => {
-   if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
+  const canManage = organization?.role === 'owner'
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const organizationResponse = await apiClient.get('/organizer/organization')
+      setOrganization(organizationResponse.data)
+      if (organizationResponse.data.role === 'owner') {
+        const [membersResponse, accountsResponse] = await Promise.all([
+          apiClient.get('/organizer/memberships'),
+          apiClient.get('/organizer/connected_accounts')
+        ])
+        setMemberships(membersResponse.data)
+        setAccounts(accountsResponse.data)
+      }
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Could not load organization settings.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const invite = async event => {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const response = await apiClient.post('/organizer/memberships', { email, role })
+      const url = `${window.location.origin}/organization-invitations/accept?token=${encodeURIComponent(response.data.invitation_token)}`
+      setInvitationUrl(url)
+      setEmail('')
+      setMemberships(current => [...current, response.data])
+      setNotice('Invitation created. Copy the secure link and send it to the invited email address.')
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || requestError.response?.data?.errors?.[0] || 'Could not create invitation.')
+    } finally {
+      setBusy(false)
+    }
   }
- }, [])
 
- useEffect(() => {
-  apiClient.get('/admin/settings')
-   .then(res => {
-    setSettings(res.data)
-    setLoading(false)
-   })
-   .catch(err => {
-    const msg = err.response?.status === 403
-     ? 'Admin access required.'
-     : 'Failed to load settings.'
-    setError(msg)
-    setLoading(false)
-   })
- }, [])
-
- const handleModeChange = async (newMode) => {
-  if (!settings || newMode === settings.payment_mode) return
-
-  // Client-side safety checks
-  if (newMode === 'test' && !settings.stripe_test_configured) {
-   setError('Cannot enable test mode \u2014 no Stripe test keys configured on the server.')
-   return
-  }
-  if (newMode === 'live' && !settings.stripe_live_configured) {
-   setError('Cannot enable live mode \u2014 no Stripe live keys configured on the server.')
-   return
+  const changeRole = async (membership, nextRole) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await apiClient.patch(`/organizer/memberships/${membership.id}`, { role: nextRole })
+      setMemberships(current => current.map(item => item.id === membership.id ? response.data : item))
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || requestError.response?.data?.errors?.[0] || 'Could not update role.')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  // Confirm live mode
-  if (newMode === 'live') {
-   const confirmed = window.confirm(
-    'Are you sure you want to enable LIVE mode?\n\n' +
-    'Real credit cards will be charged real money. ' +
-    'Make sure everything is tested first.'
-   )
-   if (!confirmed) return
+  const revoke = async membership => {
+    if (!window.confirm(`Revoke ${membership.email}'s access?`)) return
+    setBusy(true)
+    setError(null)
+    try {
+      await apiClient.delete(`/organizer/memberships/${membership.id}`)
+      setMemberships(current => current.map(item => item.id === membership.id ? { ...item, status: 'revoked' } : item))
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Could not revoke access.')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  setSaving(true)
-  setError(null)
-  setSuccess(null)
-
-  try {
-   const res = await apiClient.patch('/admin/settings', { payment_mode: newMode })
-   setSettings(res.data)
-   const labels = { simulate: 'Simulate', test: 'Test (Stripe Sandbox)', live: 'Live' }
-   setSuccess(`Payment mode changed to ${labels[newMode]}`)
-   if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
-   successTimeoutRef.current = setTimeout(() => setSuccess(null), 4000)
-  } catch (err) {
-   const msg = err.response?.data?.error || 'Failed to update settings.'
-   setError(msg)
-  } finally {
-   setSaving(false)
+  const startOnboarding = async provider => {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const response = await apiClient.post('/organizer/connected_accounts', { provider })
+      setAccounts(current => [...current.filter(account => account.provider !== provider), response.data])
+      setNotice(response.data.next_action)
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Could not start payout onboarding.')
+    } finally {
+      setBusy(false)
+    }
   }
- }
 
- if (loading) {
+  if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+
   return (
-   <div className="flex justify-center py-16">
-    <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-   </div>
-  )
- }
-
- return (
-  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-   <div className="flex items-center gap-3 mb-6">
-    <Link to="/dashboard" className="text-brand-500 hover:text-brand-700">
-     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-     </svg>
-    </Link>
-    <h1 className="text-2xl font-bold text-neutral-900">Settings</h1>
-   </div>
-
-   {error && (
-    <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-     <p className="text-red-700 text-sm">{error}</p>
-    </div>
-   )}
-
-   {success && (
-    <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
-     <p className="text-green-700 text-sm">{success}</p>
-    </div>
-   )}
-
-   {/* Payment Mode Section */}
-   <div className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 mb-6">
-    <h2 className="text-lg font-semibold text-neutral-900 mb-1">Payment Mode</h2>
-    <p className="text-sm text-neutral-500 mb-6">
-     Controls how payments are processed. Switch between simulated, Stripe sandbox, and production.
-    </p>
-
-    <div className="space-y-3">
-     {MODES.map(mode => {
-      const isActive = settings?.payment_mode === mode.value
-      const missingKeys =
-       (mode.value === 'test' && !settings?.stripe_test_configured) ||
-       (mode.value === 'live' && !settings?.stripe_live_configured)
-      const isDisabled = saving || missingKeys
-
-      return (
-       <button
-        key={mode.value}
-        onClick={() => handleModeChange(mode.value)}
-        disabled={isDisabled}
-        className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 ${
-         isActive
-          ? mode.activeColor
-          : isDisabled
-           ? 'border-neutral-200 bg-neutral-50 opacity-50 cursor-not-allowed'
-           : `${mode.color} hover:shadow-sm cursor-pointer`
-        }`}
-       >
-        <div className="flex items-center gap-3">
-         <div className={`w-3 h-3 rounded-full ${isActive ? mode.dot : 'bg-neutral-300'}`} />
-         <div>
-          <p className="font-semibold text-neutral-900">{mode.label}</p>
-          <p className="text-sm text-neutral-600 mt-0.5">{mode.description}</p>
-          {missingKeys && !isActive && (
-           <p className="text-xs text-red-500 mt-1">
-            {mode.value === 'test' ? 'Stripe test keys not configured' : 'Stripe live keys not configured'}
-           </p>
-          )}
-         </div>
-         {isActive && (
-          <svg className="w-5 h-5 text-green-600 ml-auto flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
-         )}
+    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      <Link to="/dashboard" className="text-sm font-medium text-brand-600 hover:text-brand-700">← Back to dashboard</Link>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">Organization</p>
+          <h1 className="mt-1 text-3xl font-bold text-neutral-950">{organization?.name}</h1>
+          <p className="mt-1 text-sm text-neutral-500">Team access, event staffing, and payout readiness for {organization?.timezone}.</p>
         </div>
-       </button>
-      )
-     })}
-    </div>
+        <StatusPill ready={organization?.payout_ready}>{organization?.payout_ready ? 'Paid events ready' : 'Payout setup incomplete'}</StatusPill>
+      </div>
 
-    {saving && (
-     <p className="text-sm text-neutral-500 mt-3 flex items-center gap-2">
-      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-      </svg>
-      Switching payment mode...
-     </p>
-    )}
-   </div>
+      {error && <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+      {notice && <div className="mt-6 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-800">{notice}</div>}
 
-   {/* Platform Info Section */}
-   {settings && (
-    <div className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6">
-     <h2 className="text-lg font-semibold text-neutral-900 mb-4">Platform Info</h2>
-     <div className="grid grid-cols-2 gap-4 text-sm">
-      <div>
-       <p className="text-neutral-500">Platform Name</p>
-       <p className="text-neutral-900 font-medium">{settings.platform_name}</p>
-      </div>
-      <div>
-       <p className="text-neutral-500">Contact Email</p>
-       <p className="text-neutral-900 font-medium">{settings.platform_email || '\u2014'}</p>
-      </div>
-      <div>
-       <p className="text-neutral-500">Service Fee</p>
-       <p className="text-neutral-900 font-medium">{settings.service_fee_percent}% + ${(settings.service_fee_flat_cents / 100).toFixed(2)}/ticket</p>
-      </div>
-      <div>
-       <p className="text-neutral-500">Stripe Keys</p>
-       <p className="text-neutral-900 font-medium">
-        Test: {settings.stripe_test_configured ? <Check className="w-4 h-4 text-emerald-500 inline" /> : <X className="w-4 h-4 text-red-400 inline" />}
-        {' '}Live: {settings.stripe_live_configured ? <Check className="w-4 h-4 text-emerald-500 inline" /> : <X className="w-4 h-4 text-red-400 inline" />}
-       </p>
-      </div>
-     </div>
-    </div>
-   )}
-  </div>
- )
+      {!canManage ? (
+        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6">
+          <ShieldCheck className="h-6 w-6 text-brand-600" />
+          <h2 className="mt-3 text-lg font-semibold text-neutral-900">Your role: {label(organization?.role)}</h2>
+          <p className="mt-1 text-sm text-neutral-600">Only the organization owner can change team roles or payout destinations. Event managers can assign event staff from each event’s Team page.</p>
+        </section>
+      ) : (
+        <>
+          <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="team-heading">
+            <div className="flex items-center gap-3"><Users className="h-5 w-5 text-brand-600" /><h2 id="team-heading" className="text-lg font-semibold text-neutral-900">Organization team</h2></div>
+            <p className="mt-1 text-sm text-neutral-500">Give each person only the access they need. Scanner and box-office access still requires an event assignment.</p>
+
+            <form onSubmit={invite} className="mt-5 grid gap-3 sm:grid-cols-[1fr_11rem_auto]">
+              <input type="email" required value={email} onChange={event => setEmail(event.target.value)} className="input" placeholder="teammate@example.com" aria-label="Teammate email" />
+              <select value={role} onChange={event => setRole(event.target.value)} className="input" aria-label="Team role">
+                {TEAM_ROLES.map(item => <option key={item} value={item}>{label(item)}</option>)}
+              </select>
+              <button disabled={busy} className="btn-primary inline-flex items-center justify-center gap-2"><UserPlus className="h-4 w-4" /> Invite</button>
+            </form>
+
+            {invitationUrl && (
+              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Secure invitation link</p>
+                <div className="mt-2 flex gap-2">
+                  <input readOnly value={invitationUrl} className="input min-w-0 text-xs" aria-label="Invitation link" />
+                  <button type="button" onClick={() => navigator.clipboard.writeText(invitationUrl)} className="rounded-xl border border-emerald-300 bg-white px-3 text-emerald-800" aria-label="Copy invitation link"><Copy className="h-4 w-4" /></button>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 divide-y divide-neutral-100">
+              {memberships.map(membership => (
+                <div key={membership.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-neutral-900">{membership.name || membership.email}</p>
+                    <p className="text-sm text-neutral-500">{membership.email} · {label(membership.status)}</p>
+                  </div>
+                  {membership.role === 'owner' ? <StatusPill ready>Owner</StatusPill> : (
+                    <div className="flex items-center gap-2">
+                      <select disabled={busy || membership.status === 'revoked'} value={membership.role} onChange={event => changeRole(membership, event.target.value)} className="input !w-auto !py-2 text-sm">
+                        {TEAM_ROLES.map(item => <option key={item} value={item}>{label(item)}</option>)}
+                      </select>
+                      <button disabled={busy || membership.status === 'revoked'} onClick={() => revoke(membership)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Revoke ${membership.email}`}><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="payout-heading">
+            <div className="flex items-center gap-3"><WalletCards className="h-5 w-5 text-brand-600" /><h2 id="payout-heading" className="text-lg font-semibold text-neutral-900">Payments and payouts</h2></div>
+            <p className="mt-1 text-sm text-neutral-500">A provider is not ready until HafaPass verifies payment acceptance, identity details, and payout capability. Starting onboarding never marks an account ready.</p>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              {['paypal', 'manual', 'stripe'].map(provider => {
+                const account = accounts.find(item => item.provider === provider)
+                return (
+                  <article key={provider} className="rounded-xl border border-neutral-200 p-4">
+                    <div className="flex items-center justify-between gap-2"><h3 className="font-semibold text-neutral-900">{provider === 'manual' ? 'Local bank / manual' : label(provider)}</h3>{account && <StatusPill ready={account.payout_ready}>{label(account.status)}</StatusPill>}</div>
+                    <p className="mt-2 text-xs leading-5 text-neutral-500">
+                      {provider === 'paypal' && 'Preferred automation path, pending HafaPass marketplace approval and seller verification.'}
+                      {provider === 'manual' && 'Pilot fallback using verified local banking details and finance reconciliation.'}
+                      {provider === 'stripe' && 'Blocked unless Stripe confirms Guam entity and bank eligibility in writing.'}
+                    </p>
+                    {account?.requirements_due?.length > 0 && <p className="mt-3 text-xs text-amber-700">Due: {account.requirements_due.map(label).join(', ')}</p>}
+                    {!account && <button disabled={busy} onClick={() => startOnboarding(provider)} className="mt-4 w-full rounded-lg border border-brand-200 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">Start review</button>}
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        </>
+      )}
+    </main>
+  )
 }

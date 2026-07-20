@@ -36,7 +36,7 @@ bundle exec rails runner 'puts Commerce::LedgerTotals.call(Order.where(status: [
 bundle exec rails runner 'puts({active_holds: InventoryHold.current.sum(:quantity), expired_holds: InventoryHold.due.count}.to_json)'
 ```
 
-The release gate is zero unexplained reconciliation exceptions, no negative database-constrained money or inventory values, and exact agreement between Stripe test activity and the admin ledger.
+The release gate is zero unexplained reconciliation exceptions, no negative database-constrained money or inventory values, and exact agreement between enabled-provider sandbox activity and the admin ledger.
 
 ## Operational behavior
 

@@ -333,10 +333,13 @@ export default function EditEventPage() {
           <Link to={`/dashboard/events/${id}/attendees`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <Users className="w-4 h-4" /> Attendees
           </Link>
+          <Link to={`/dashboard/events/${id}/team`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+            <Users className="w-4 h-4" /> Team
+          </Link>
           <Link to={`/dashboard/events/${id}/waitlist`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ClipboardList className="w-4 h-4" /> Waitlist
           </Link>
-          {event?.status === 'published' && (
+          {['published', 'completed', 'cancelled'].includes(event?.status) && (
             <Link to={`/dashboard/events/${id}/analytics`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
               View Analytics
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,17 +1,17 @@
 module Api
   module V1
     module Organizer
-      class EventsController < ApplicationController
+      class EventsController < BaseController
         include Paginatable
 
-        before_action :require_organizer_profile
         before_action :set_event, only: [
           :show, :update, :destroy, :publish, :postpone, :resume, :cancel, :complete, :archive,
           :clone, :generate_recurrences, :stats, :attendees
         ]
 
         def index
-          events = current_organizer_profile.events.includes(ticket_types: :pricing_tiers).order(created_at: :desc)
+          events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
+            .includes(ticket_types: :pricing_tiers).order(created_at: :desc)
           pagy, paginated_events = paginate(events)
 
           render json: {
@@ -25,7 +25,10 @@ module Api
         end
 
         def create
-          event = current_organizer_profile.events.build(parsed_event_params)
+          return unless authorize_organization!(:manage_events)
+
+          event = current_organization.events.build(parsed_event_params)
+          event.organizer_profile = current_organizer_profile
           if event.save
             render json: event_json(event), status: :created
           else
@@ -35,6 +38,11 @@ module Api
 
         def update
           attributes = parsed_event_params
+          unless OrganizationAuthorization.allowed?(
+            user: current_user, organization: current_organization, permission: :manage_events, event: @event
+          )
+            attributes.slice!("title", "description", "short_description", "cover_image_url", "category")
+          end
           reschedule = reschedule?(attributes)
           change_reason = params[:change_reason].to_s.strip.presence
           if reschedule && change_reason.blank?
@@ -232,20 +240,21 @@ module Api
           render json: { error: e.message, publish_checklist: e.checklist }, status: :unprocessable_entity
         end
 
-        def require_organizer_profile
-          unless current_organizer_profile
-            render json: { error: "Organizer profile required" }, status: :forbidden
-          end
-        end
-
-        def current_organizer_profile
-          @current_organizer_profile ||= current_user.organizer_profile
-        end
-
         def set_event
-          @event = current_organizer_profile.events.find(params[:id])
-        rescue ActiveRecord::RecordNotFound
-          render json: { error: "Event not found" }, status: :not_found
+          @event = find_organization_event(params[:id])
+          return unless @event
+
+          authorize_organization!(permission_for_action, event: @event)
+        end
+
+        def permission_for_action
+          case action_name
+          when "show" then :view_events
+          when "stats" then :view_finance
+          when "attendees" then :view_attendees
+          when "update" then :edit_event_content
+          else :manage_events
+          end
         end
 
         def event_params
@@ -296,6 +305,7 @@ module Api
             "show_attendees"
           ).merge(
             "organizer_profile_id" => source.organizer_profile_id,
+            "organization_id" => source.organization_id,
             "status" => "draft",
             "slug" => nil,
             "published_at" => nil
