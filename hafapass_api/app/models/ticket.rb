@@ -7,6 +7,7 @@ class Ticket < ApplicationRecord
   has_many :refund_tickets, dependent: :restrict_with_error
   has_many :refunds, through: :refund_tickets
   has_many :message_deliveries, dependent: :restrict_with_error
+  has_many :admission_actions, dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
 
@@ -54,6 +55,12 @@ class Ticket < ApplicationRecord
     raise "Ticket order is not fulfilled" unless order&.ticket_fulfilled?
 
     update!(status: :checked_in, checked_in_at: Time.current)
+  end
+
+  def reverse_check_in!
+    raise "Ticket is not checked in" unless checked_in?
+
+    update!(status: :issued, checked_in_at: nil)
   end
 
   def release_inventory!

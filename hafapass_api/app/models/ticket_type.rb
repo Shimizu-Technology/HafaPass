@@ -10,7 +10,9 @@ class TicketType < ApplicationRecord
   validates :quantity_available, presence: true, numericality: { greater_than: 0 }
   validates :quantity_sold, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :max_per_buyer, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
+  validates :door_allocation, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validate :sold_quantity_within_capacity
+  validate :door_allocation_within_capacity
   validate :chronological_sales_window
 
   def sold_out?
@@ -23,6 +25,20 @@ class TicketType < ApplicationRecord
 
   def active_holds_quantity
     inventory_holds.current.sum(:quantity)
+  end
+
+  def door_sold_quantity
+    tickets.joins(:order).where(orders: { source: "box_office" }).where.not(status: :cancelled).count
+  end
+
+  def door_held_quantity
+    inventory_holds.current.joins(:order).where(orders: { source: "box_office" }).sum(:quantity)
+  end
+
+  def door_available_quantity
+    return available_quantity if door_allocation.nil?
+
+    [available_quantity, [door_allocation - door_sold_quantity - door_held_quantity, 0].max].min
   end
 
   def on_sale?(at: Time.current)
@@ -81,5 +97,11 @@ class TicketType < ApplicationRecord
     return if committed <= quantity_available
 
     errors.add(:quantity_available, "cannot be less than sold and actively held inventory")
+  end
+
+  def door_allocation_within_capacity
+    return if door_allocation.nil? || quantity_available.nil? || door_allocation <= quantity_available
+
+    errors.add(:door_allocation, "cannot exceed total ticket inventory")
   end
 end

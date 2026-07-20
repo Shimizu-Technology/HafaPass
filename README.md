@@ -52,6 +52,7 @@ The current application is a strong prototype, not yet a production-safe real-mo
 - [Ticketing Platform Blueprint](docs/TICKETING_PLATFORM_BLUEPRINT.md) — what HafaPass is, verified risks, required capabilities, architecture, compliance, metrics, and completion criteria.
 - [Phase Delivery Playbook](docs/PHASE_DELIVERY_PLAYBOOK.md) — the exact phase branches, implementation scope, automated/runtime testing, Greptile 5/5 loop, and merge gates.
 - [Pilot Manual Test Plan](docs/MVP_TEST_PLAN.md) — the end-to-end release-candidate validation.
+- [Event-Day Operations](docs/EVENT_DAY_OPERATIONS.md) — signed offline scanning, device drills, door sales, Clover gates, reconciliation, and fallback procedures.
 - [Competitive Analysis](COMPETITIVE_ANALYSIS.md) — current GuamTime, Ticketmaster, and alternative-platform findings.
 
 ## Getting Started
@@ -186,6 +187,9 @@ Query params: `?page=2&per_page=10`
 | `STRIPE_SECRET_KEY` | No | Stripe API key (mock checkout without it) |
 | `STRIPE_PUBLISHABLE_KEY` | No | Stripe frontend key |
 | `STRIPE_WEBHOOK_SECRET` | Production | Stripe webhook signing secret |
+| `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` | Production | Stable RSA private key used to sign offline scanner manifests |
+| `CLOVER_REST_PAY_BASE_URL` | Card-present pilot | Approved Clover cloud `/connect` base URL |
+| `CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_<id>` | Card-present pilot | Encrypted Clover OAuth token scoped to one HåfaPass organization |
 | `AWS_ACCESS_KEY_ID` | No | S3 upload access key |
 | `AWS_SECRET_ACCESS_KEY` | No | S3 upload secret key |
 | `AWS_BUCKET` | No | S3 bucket name |

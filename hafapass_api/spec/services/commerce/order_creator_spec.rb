@@ -46,6 +46,36 @@ RSpec.describe Commerce::OrderCreator do
     expect(result.payment_intent).to be_nil
   end
 
+  it "counts pending card-present holds against the dedicated door allocation" do
+    ticket_type.update!(door_allocation: 1)
+    first = described_class.call(
+      event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "walkin@example.com",
+      buyer_name: "Walk-in",
+      payment_required: true,
+      payment_provider: "boh_clover",
+      service_fee: false,
+      source: "box_office",
+      payment_method: "door_card"
+    )
+
+    expect(first.order).to be_pending
+    expect(ticket_type.reload.door_available_quantity).to eq(0)
+    expect do
+      described_class.call(
+        event: event,
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+        buyer_email: "second@example.com",
+        buyer_name: "Second walk-in",
+        payment_required: false,
+        service_fee: false,
+        source: "box_office",
+        payment_method: "door_cash"
+      )
+    end.to raise_error(described_class::CheckoutError, /Only 0 door tickets remain/)
+  end
+
   it "cancels the provider intent and releases inventory when attaching it fails" do
     intent = OpenStruct.new(id: "pi_orphan_candidate", client_secret: "secret")
     allow(StripeService).to receive(:payment_enabled?).and_return(true)

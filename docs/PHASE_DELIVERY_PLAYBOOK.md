@@ -380,6 +380,8 @@ Runtime acceptance:
 - At least 500 generated tickets under representative scan load.
 - Online p95 under 500 ms and immediate cached feedback.
 
+Implementation and operating details live in [Event-Day Operations](EVENT_DAY_OPERATIONS.md). Automated tests prove the data, signature, reconciliation, 500-ticket, browser-offline, and latency paths; the documented real-device drill and BOH/Clover approvals remain explicit pilot release gates.
+
 ### Phase 7 — Communications, support, compliance, and pilot
 
 Branch: `codex/phase-07-pilot-readiness`

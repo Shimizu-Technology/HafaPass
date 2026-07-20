@@ -13,7 +13,8 @@ module Commerce
     end
 
     def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, user: nil, promo_code_id: nil,
-      payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil)
+      payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
+      payment_provider: nil)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -26,6 +27,7 @@ module Commerce
       @complimentary = complimentary
       @source = source
       @payment_method = payment_method
+      @payment_provider = payment_provider
     end
 
     def call
@@ -63,9 +65,10 @@ module Commerce
         reserve_promo!(order, totals[:promo_code], totals[:discount_cents], expires_at)
 
         if requires_payment && order.total_cents.positive?
+          provider = payment_provider.presence || "stripe"
           payment = order.payments.create!(
-            provider: "stripe",
-            idempotency_key: "payment:order:#{order.id}",
+            provider: provider,
+            idempotency_key: "#{provider}:payment:order:#{order.id}",
             amount_cents: order.total_cents,
             currency: order.currency,
             status: :pending
@@ -101,7 +104,7 @@ module Commerce
     private
 
     attr_reader :event, :line_items, :buyer_email, :buyer_name, :buyer_phone, :user, :promo_code_id,
-      :payment_required, :service_fee, :complimentary, :source, :payment_method
+      :payment_required, :service_fee, :complimentary, :source, :payment_method, :payment_provider
 
     def normalized_quantities
       raise CheckoutError, "line_items is required and must be a non-empty array" unless line_items.is_a?(Array) && line_items.any?
@@ -126,6 +129,7 @@ module Commerce
         if ticket_type.max_per_order && quantity > ticket_type.max_per_order
           raise CheckoutError, "Maximum #{ticket_type.max_per_order} tickets per order for #{ticket_type.name}"
         end
+        enforce_door_allocation!(ticket_type, quantity) if source == "box_office"
         enforce_buyer_limit!(ticket_type, quantity)
 
         tier = complimentary ? nil : ticket_type.active_pricing_tier
@@ -138,6 +142,13 @@ module Commerce
           quantity: quantity
         }
       end
+    end
+
+    def enforce_door_allocation!(ticket_type, requested_quantity)
+      remaining = ticket_type.door_available_quantity
+      return if requested_quantity <= remaining
+
+      raise CheckoutError, "Only #{remaining} door tickets remain for #{ticket_type.name}"
     end
 
     def enforce_buyer_limit!(ticket_type, requested_quantity)

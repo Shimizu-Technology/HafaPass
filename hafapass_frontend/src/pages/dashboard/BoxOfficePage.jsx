@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -16,6 +16,9 @@ export default function BoxOfficePage() {
   const [submitting, setSubmitting] = useState(false)
   const [lastOrder, setLastOrder] = useState(null)
   const [summary, setSummary] = useState(null)
+  const [cardAccount, setCardAccount] = useState(null)
+  const [saleError, setSaleError] = useState(null)
+  const cardIdempotencyRef = useRef(null)
 
   const fetchEvent = useCallback(async () => {
     try {
@@ -39,7 +42,16 @@ export default function BoxOfficePage() {
     } catch { /* ignore */ }
   }, [id])
 
-  useEffect(() => { fetchEvent(); fetchSummary() }, [fetchEvent, fetchSummary])
+  const fetchCardAccount = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/organizer/card_present_account')
+      setCardAccount(res.data)
+    } catch {
+      setCardAccount({ status: 'unavailable', payment_ready: false })
+    }
+  }, [])
+
+  useEffect(() => { fetchEvent(); fetchSummary(); fetchCardAccount() }, [fetchCardAccount, fetchEvent, fetchSummary])
 
   const updateQty = (ttId, delta) => {
     setQuantities(prev => ({
@@ -55,19 +67,24 @@ export default function BoxOfficePage() {
     if (totalItems === 0) return
     setSubmitting(true)
     setLastOrder(null)
+    setSaleError(null)
 
     const line_items = Object.entries(quantities)
       .filter(([, qty]) => qty > 0)
       .map(([ttId, qty]) => ({ ticket_type_id: parseInt(ttId), quantity: qty }))
 
     try {
+      if (paymentMethod === 'door_card' && !cardIdempotencyRef.current) {
+        cardIdempotencyRef.current = `box-office-${crypto.randomUUID()}`
+      }
       const res = await apiClient.post(`/organizer/events/${id}/box_office`, {
         line_items,
         payment_method: paymentMethod,
         buyer_name: buyerName || undefined,
-        buyer_email: buyerEmail || undefined
-      })
+        buyer_email: buyerEmail || undefined,
+      }, paymentMethod === 'door_card' ? { headers: { 'Idempotency-Key': cardIdempotencyRef.current } } : undefined)
       setLastOrder(res.data)
+      cardIdempotencyRef.current = null
       // Reset form
       const reset = {}
       event.ticket_types?.forEach(tt => { reset[tt.id] = 0 })
@@ -77,7 +94,13 @@ export default function BoxOfficePage() {
       fetchSummary()
       fetchEvent() // refresh availability
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to process sale.')
+      const data = err.response?.data
+      setSaleError({
+        message: data?.error || 'Failed to process sale.',
+        reconciliationRequired: Boolean(data?.reconciliation_required),
+        orderId: data?.order_id,
+      })
+      if (!data?.reconciliation_required) cardIdempotencyRef.current = null
     } finally {
       setSubmitting(false)
     }
@@ -109,18 +132,19 @@ export default function BoxOfficePage() {
           <h2 className="text-lg font-semibold text-neutral-900">Select Tickets</h2>
 
           {event.ticket_types?.map(tt => {
-            const available = tt.quantity_available - tt.quantity_sold
+            const available = tt.door_available_quantity ?? (tt.quantity_available == null ? Number.MAX_SAFE_INTEGER : tt.quantity_available - tt.quantity_sold)
             return (
               <div key={tt.id} className="flex items-center justify-between p-4 sm:p-5 bg-white border border-neutral-200 rounded-xl">
                 <div className="min-w-0 mr-4">
                   <p className="font-medium text-neutral-900 truncate">{tt.name}</p>
                   <p className="text-sm text-neutral-500">
-                    ${(tt.price_cents / 100).toFixed(2)} · {available} left
+                    ${(tt.price_cents / 100).toFixed(2)} · {available === Number.MAX_SAFE_INTEGER ? 'Unlimited' : `${available} at door`}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <button
                     onClick={() => updateQty(tt.id, -1)}
+                    aria-label={`Remove ${tt.name}`}
                     disabled={!quantities[tt.id]}
                     className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-neutral-100 hover:bg-neutral-200 disabled:opacity-30 transition"
                   >
@@ -129,6 +153,7 @@ export default function BoxOfficePage() {
                   <span className="w-10 text-center text-xl font-semibold tabular-nums">{quantities[tt.id] || 0}</span>
                   <button
                     onClick={() => updateQty(tt.id, 1)}
+                    aria-label={`Add ${tt.name}`}
                     disabled={(quantities[tt.id] || 0) >= available}
                     className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-30 transition"
                   >
@@ -176,16 +201,29 @@ export default function BoxOfficePage() {
               </button>
               <button
                 onClick={() => setPaymentMethod('door_card')}
+                disabled={!cardAccount?.payment_ready}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
                   paymentMethod === 'door_card'
                     ? 'border-brand-500 bg-brand-50 text-brand-700'
                     : 'border-neutral-200 text-neutral-600 hover:border-neutral-300'
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-40`}
               >
                 <CreditCard className="w-5 h-5" /> Card at Door
               </button>
             </div>
+            {!cardAccount?.payment_ready && (
+              <p className="mt-2 text-xs text-amber-700">Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HafaPass. Never record a card sale manually.</p>
+            )}
           </div>
+
+          {saleError && (
+            <div className={`rounded-xl border p-4 text-sm ${saleError.reconciliationRequired ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
+              <p className="font-semibold">{saleError.reconciliationRequired ? 'Do not charge the card again' : 'Sale not completed'}</p>
+              <p className="mt-1">{saleError.message}</p>
+              {saleError.orderId && <p className="mt-1 font-mono text-xs">Order #{saleError.orderId}</p>}
+              {saleError.reconciliationRequired && <p className="mt-2">Keep this screen open and use Process Sale again to retry the same provider idempotency key, or ask a manager to reconcile the terminal receipt.</p>}
+            </div>
+          )}
 
           {/* Process Sale Button */}
           <button
@@ -194,7 +232,7 @@ export default function BoxOfficePage() {
             className="w-full mt-6 py-4 rounded-xl bg-brand-600 text-white font-semibold text-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
           >
             {submitting ? (
-              <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>
+              <><Loader2 className="w-5 h-5 animate-spin" /> {paymentMethod === 'door_card' ? 'Waiting for terminal…' : 'Processing…'}</>
             ) : (
               <>Process Sale · ${(totalCents / 100).toFixed(2)} ({totalItems} ticket{totalItems !== 1 ? 's' : ''})</>
             )}

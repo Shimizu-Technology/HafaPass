@@ -74,6 +74,53 @@ RSpec.describe "Api::V1::Organizer::BoxOffice", type: :request do
         currency: "usd"
       )
     end
+
+    it "requires a verified Guam account and idempotency key for card sales" do
+      card_params = valid_params.merge(payment_method: "door_card")
+
+      post "/api/v1/organizer/events/#{event.id}/box_office", params: card_params, headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to include("Idempotency-Key")
+
+      post "/api/v1/organizer/events/#{event.id}/box_office", params: card_params,
+        headers: headers.merge("Idempotency-Key" => "door-card-1")
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to include("verified Guam")
+    end
+
+    it "confirms a card-present payment before issuing one set of tickets and safely replays it" do
+      create(:card_present_account, :verified, organization: event.organization)
+      card_params = valid_params.merge(payment_method: "door_card")
+      card_headers = headers.merge("Idempotency-Key" => "door-card-confirmed")
+
+      expect do
+        post "/api/v1/organizer/events/#{event.id}/box_office", params: card_params, headers: card_headers
+      end.to change(CardPresentPaymentAttempt, :count).by(1)
+      expect(response).to have_http_status(:created)
+      order_id = response.parsed_body.fetch("id")
+      expect(response.parsed_body).to include("status" => "completed", "payment_method" => "door_card")
+      expect(response.parsed_body.dig("card_present_payment", "status")).to eq("succeeded")
+
+      expect do
+        post "/api/v1/organizer/events/#{event.id}/box_office", params: card_params, headers: card_headers
+      end.not_to change(Order, :count)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("id")).to eq(order_id)
+      expect(Order.find(order_id).tickets.count).to eq(2)
+    end
+
+    it "rejects reuse of a card idempotency key for different inventory" do
+      create(:card_present_account, :verified, organization: event.organization)
+      card_headers = headers.merge("Idempotency-Key" => "door-card-conflict")
+      post "/api/v1/organizer/events/#{event.id}/box_office",
+        params: valid_params.merge(payment_method: "door_card"), headers: card_headers
+
+      post "/api/v1/organizer/events/#{event.id}/box_office",
+        params: valid_params.merge(payment_method: "door_card", line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }]),
+        headers: card_headers
+
+      expect(response).to have_http_status(:conflict)
+    end
   end
 
   describe "GET /api/v1/organizer/events/:event_id/box_office/summary" do

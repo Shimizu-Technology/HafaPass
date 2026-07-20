@@ -11,6 +11,11 @@ class Organization < ApplicationRecord
   has_many :payouts, dependent: :restrict_with_error
   has_many :balance_adjustments, dependent: :restrict_with_error
   has_many :audit_logs, dependent: :restrict_with_error
+  has_many :scanner_devices, dependent: :restrict_with_error
+  has_many :admission_manifests, dependent: :restrict_with_error
+  has_many :admission_actions, dependent: :restrict_with_error
+  has_one :card_present_account, dependent: :restrict_with_error
+  has_many :card_present_payment_attempts, dependent: :restrict_with_error
 
   enum :status, { active: 0, suspended: 1, archived: 2 }, prefix: true
 

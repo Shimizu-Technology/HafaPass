@@ -4,6 +4,7 @@ class Payment < ApplicationRecord
   belongs_to :order
   has_many :payment_events, dependent: :restrict_with_error
   has_many :refunds, dependent: :restrict_with_error
+  has_many :card_present_payment_attempts, dependent: :restrict_with_error
 
   enum :status, { pending: 0, succeeded: 1, failed: 2, cancelled: 3, partially_refunded: 4, refunded: 5 }
 
