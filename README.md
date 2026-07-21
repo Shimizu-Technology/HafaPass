@@ -59,6 +59,7 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
 - [Gate G Event-Day Rehearsal Evidence](docs/GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md) — candidate-bound signed-manifest, three-device offline, incident, door-sale, staffing, alert, and zero-variance rehearsal evidence.
 - [Gate H Low-Value Live-Money Proof](docs/GATE_H_LIVE_MONEY_PROOF.md) — hidden one-use charge authorization plus real refund, settlement, payout, bank-receipt, negative-balance, communication, and cent-exact approval evidence.
 - [Gate I Bounded Live-Pilot Operations](docs/GATE_I_BOUNDED_LIVE_PILOT.md) — two-person bounded-inventory approval, active sales window, monitoring checkpoints, automatic safety pauses, incident evidence, and reconciled post-event exit.
+- [Gate J Pilot Closeout and Expansion Decision](docs/GATE_J_PILOT_CLOSEOUT.md) — exact-state closeout metrics, reconciliation/cleanup evidence, retrospective actions, independent approval, and deliberately bounded Guam-only expansion.
 - [Pilot Manual Test Plan](docs/MVP_TEST_PLAN.md) — the end-to-end release-candidate validation.
 - [Event-Day Operations](docs/EVENT_DAY_OPERATIONS.md) — signed offline scanning, device drills, door sales, Clover gates, reconciliation, and fallback procedures.
 - [Competitive Analysis](COMPETITIVE_ANALYSIS.md) — current GuamTime, Ticketmaster, and alternative-platform findings.

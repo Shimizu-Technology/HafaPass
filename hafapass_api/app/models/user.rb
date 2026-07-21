@@ -57,6 +57,8 @@ class User < ApplicationRecord
     inverse_of: :actor_user
   has_many :live_pilot_metric_snapshots, foreign_key: :recorded_by_user_id,
     dependent: :restrict_with_error, inverse_of: :recorded_by_user
+  has_many :pilot_closeout_reviews, foreign_key: :actor_user_id,
+    dependent: :restrict_with_error, inverse_of: :actor_user
 
   enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
 

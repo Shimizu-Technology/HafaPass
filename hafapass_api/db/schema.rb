@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_220000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1266,6 +1266,43 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_210000) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "payouts_status_valid"
   end
 
+  create_table "pilot_closeout_reviews", force: :cascade do |t|
+    t.bigint "actor_user_id", null: false
+    t.string "application_revision", null: false
+    t.jsonb "cleanup_results", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "decision", null: false
+    t.bigint "event_id", null: false
+    t.string "evidence_digest", null: false
+    t.string "evidence_reference", null: false
+    t.jsonb "evidence_references", default: {}, null: false
+    t.integer "expansion_decision", null: false
+    t.jsonb "expansion_scope", default: {}, null: false
+    t.bigint "live_pilot_run_id", null: false
+    t.jsonb "local_metrics", default: {}, null: false
+    t.string "local_state_digest", null: false
+    t.jsonb "outcome_metrics", default: {}, null: false
+    t.bigint "parent_review_id"
+    t.text "reason"
+    t.jsonb "reconciliation_results", default: {}, null: false
+    t.jsonb "retrospective_actions", default: [], null: false
+    t.datetime "signed_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_pilot_closeout_reviews_on_actor_user_id"
+    t.index ["event_id", "created_at"], name: "idx_pilot_closeout_timeline"
+    t.index ["event_id"], name: "index_pilot_closeout_reviews_on_event_id"
+    t.index ["live_pilot_run_id", "created_at"], name: "idx_pilot_closeout_run_timeline"
+    t.index ["live_pilot_run_id"], name: "index_pilot_closeout_reviews_on_live_pilot_run_id"
+    t.index ["parent_review_id"], name: "idx_pilot_closeout_one_approval", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 1))"
+    t.index ["parent_review_id"], name: "idx_pilot_closeout_one_rejection", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 3))"
+    t.index ["parent_review_id"], name: "idx_pilot_closeout_one_revocation", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 2))"
+    t.index ["parent_review_id"], name: "index_pilot_closeout_reviews_on_parent_review_id"
+    t.check_constraint "decision = 0 AND parent_review_id IS NULL OR (decision = ANY (ARRAY[1, 2, 3])) AND parent_review_id IS NOT NULL", name: "pilot_closeout_parent_valid"
+    t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "pilot_closeout_decision_valid"
+    t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND local_state_digest::text ~ '^[0-9a-f]{64}$'::text", name: "pilot_closeout_digests_valid"
+    t.check_constraint "expansion_decision = ANY (ARRAY[0, 1, 2])", name: "pilot_closeout_expansion_valid"
+  end
+
   create_table "pilot_readiness_reviews", force: :cascade do |t|
     t.bigint "actor_user_id", null: false
     t.string "application_revision", null: false
@@ -2176,6 +2213,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_210000) do
   add_foreign_key "payouts", "events", on_delete: :restrict
   add_foreign_key "payouts", "organizations", on_delete: :restrict
   add_foreign_key "payouts", "settlements", on_delete: :restrict
+  add_foreign_key "pilot_closeout_reviews", "events", on_delete: :restrict
+  add_foreign_key "pilot_closeout_reviews", "live_pilot_runs", on_delete: :restrict
+  add_foreign_key "pilot_closeout_reviews", "pilot_closeout_reviews", column: "parent_review_id", on_delete: :restrict
+  add_foreign_key "pilot_closeout_reviews", "users", column: "actor_user_id", on_delete: :restrict
   add_foreign_key "pilot_readiness_reviews", "events", on_delete: :restrict
   add_foreign_key "pilot_readiness_reviews", "pilot_readiness_reviews", column: "parent_review_id", on_delete: :restrict
   add_foreign_key "pilot_readiness_reviews", "users", column: "actor_user_id", on_delete: :restrict

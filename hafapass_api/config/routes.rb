@@ -254,6 +254,15 @@ Rails.application.routes.draw do
         resources :live_pilot_incidents, only: [] do
           member { post :resolve }
         end
+        get "events/:event_id/pilot_closeout", to: "pilot_closeout_reviews#show"
+        post "events/:event_id/pilot_closeout_reviews", to: "pilot_closeout_reviews#create"
+        resources :pilot_closeout_reviews, only: [] do
+          member do
+            post :approve
+            post :revoke
+            post :reject
+          end
+        end
         resources :users, only: [:index, :update]
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]

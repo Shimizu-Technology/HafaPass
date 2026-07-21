@@ -48,7 +48,7 @@ The command deliberately refuses to proceed unless:
 It writes two mode-`0600` files beneath `.release-evidence/<candidate-id>/`:
 
 - `candidate.json`: commit, backend/frontend release IDs, schema version/hash, dependency-lock hashes, local gate result, CI/review state, blocker state, and branch-protection state.
-- `evidence-register.md`: private Gate A–I owners, due dates, evidence IDs, approvals, references, exceptions, and issues.
+- `evidence-register.md`: private Gate A–J owners, due dates, evidence IDs, approvals, references, exceptions, and issues.
 
 The directory is gitignored. Store its approved copy in the restricted operations system chosen by the founder. Do not attach it wholesale to a public issue or PR.
 
@@ -74,7 +74,7 @@ gh variable get RELEASE_FREEZE
 ## Change admission during the freeze
 
 1. Open a focused PR from the frozen `main`.
-2. Explain why it is required for Gates B–H and what evidence it invalidates.
+2. Explain which Gates B–J it affects and what evidence, pilot run, or closeout decision it invalidates.
 3. A maintainer adds `release-approved` only after reviewing that impact.
 4. Run the normal CI and Greptile loop.
 5. Merge, capture a new candidate ID, update every affected evidence reference, and retire—not move—the old tag.
@@ -84,7 +84,7 @@ Never retag an existing candidate. An immutable failed or superseded candidate r
 ## Exit evidence
 
 - Candidate JSON and private register exist with restrictive permissions.
-- Human Gate A approvals, Gate B–H owners, and due dates are recorded.
+- Human Gate A approvals, Gate B–J owners, and due dates are recorded.
 - `main` protection and the release-freeze check are active.
 - The annotated tag, `main`, manifest commit, release IDs, and schema version agree.
 - Exact-commit local gate, CI, Greptile, P0/P1, and review-thread evidence is retained.

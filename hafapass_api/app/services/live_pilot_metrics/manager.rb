@@ -50,6 +50,8 @@ module LivePilotMetrics
       deliveries = event.message_deliveries
       checkout_started = event.marketplace_funnel_events.where(stage: :checkout_started).count
       purchases = orders.where(status: [:completed, :partially_refunded, :refunded]).count
+      online_purchases = orders.where(status: [:completed, :partially_refunded, :refunded])
+        .where("source IS NULL OR source <> ?", "box_office").count
       payment_count = payments.where.not(status: :pending).count
       payment_failures = payments.where(status: [:failed, :cancelled]).count
       hold_count = holds.count
@@ -59,7 +61,8 @@ module LivePilotMetrics
       {
         "checkout_started_count" => checkout_started,
         "purchase_count" => purchases,
-        "checkout_conversion_bps" => rate_bps(purchases, checkout_started),
+        "online_purchase_count" => online_purchases,
+        "checkout_conversion_bps" => rate_bps(online_purchases, checkout_started),
         "payment_count" => payment_count,
         "payment_failure_count" => payment_failures,
         "payment_failure_rate_bps" => rate_bps(payment_failures, payment_count),

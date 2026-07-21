@@ -5,6 +5,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   def index
     events = Event.includes(:organizer_profile, :ticket_types, :orders, :pilot_readiness_reviews,
       :pilot_validation_reviews, :event_day_rehearsal_reviews, :live_pilot_reviews, :live_pilot_runs,
+      :pilot_closeout_reviews,
       organization: :live_money_proof_reviews)
 
     events = events.where("title ILIKE ?", "%#{params[:search]}%") if params[:search].present?
@@ -62,7 +63,8 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       event_day_rehearsal: EventDayRehearsal.list_summary(e),
       live_money_proof_candidate: e.live_money_proof_candidate,
       live_money_proof: LiveMoneyProof.list_summary(e.organization),
-      live_pilot: LivePilot.list_summary(e)
+      live_pilot: LivePilot.list_summary(e),
+      pilot_closeout: PilotCloseout.list_summary(e)
     }
   end
 end
