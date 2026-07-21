@@ -40,6 +40,7 @@ class Event < ApplicationRecord
   has_one :event_seating_configuration, dependent: :restrict_with_error
   has_many :event_seats, through: :event_seating_configuration
   has_many :seat_audit_events, dependent: :restrict_with_error
+  has_many :pilot_readiness_reviews, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -206,13 +207,19 @@ class Event < ApplicationRecord
       checklist_item("capacity", "Event capacity added and ticket inventory fits", max_capacity.present? && configured_inventory.positive? && configured_inventory <= max_capacity),
       checklist_item("sales_window", "Ticket sales windows are valid", valid_ticket_sales_windows?(at: at)),
       checklist_item("payout", paid_event ? "Payout account ready for paid sales" : "No payout account needed for a free event",
-        !paid_event || organization.payout_ready?)
+        !paid_event || organization.payout_ready?),
+      checklist_item("pilot_readiness_approved", "Event-specific pilot readiness independently approved",
+        !Rails.env.production? || PilotReadiness.active_approval(self, at: at).present?)
     ]
     checks
   end
 
   def ready_to_publish?(at: Time.current)
     publish_checklist(at: at).all? { |item| item[:complete] }
+  end
+
+  def pilot_ready_for_production?(at: Time.current)
+    !Rails.env.production? || PilotReadiness.active_approval(self, at: at).present?
   end
 
   # Check if tickets are available and notify next waitlisted people

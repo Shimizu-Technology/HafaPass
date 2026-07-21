@@ -5,6 +5,24 @@ RSpec.describe Commerce::OrderCreator do
   let(:event) { create(:event, :published) }
   let(:ticket_type) { create(:ticket_type, event: event, price_cents: 1000) }
 
+  it "blocks internal and box-office checkout in production without current pilot readiness" do
+    allow(Rails.env).to receive(:production?).and_return(true)
+
+    expect do
+      described_class.call(
+        event: event,
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+        buyer_email: "walkin@example.com",
+        buyer_name: "Walk-in",
+        payment_required: false,
+        source: "box_office",
+        payment_method: "door_cash"
+      )
+    end.to raise_error(described_class::CheckoutError, /current pilot readiness approval/)
+
+    expect(event.orders).to be_empty
+  end
+
   it "rejects checkout for events that ended or are no longer published" do
     allow(StripeService).to receive(:payment_enabled?).and_return(false)
     checkout = lambda do

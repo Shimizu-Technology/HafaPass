@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Loader2, Search, Star, ChevronLeft, ChevronRight } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
+import PilotReadinessReviewDialog from '../../components/PilotReadinessReviewDialog'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
 const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 'other']
@@ -50,11 +51,11 @@ export default function AdminEventsPage() {
             className="w-full pl-10 pr-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
           />
         </div>
-        <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+        <select aria-label="Filter events by status" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
           <option value="">All Statuses</option>
           {statuses.filter(Boolean).map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={category} onChange={e => { setCategory(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+        <select aria-label="Filter events by category" value={category} onChange={e => { setCategory(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
           <option value="">All Categories</option>
           {categories.filter(Boolean).map(c => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -74,6 +75,7 @@ export default function AdminEventsPage() {
                   <th className="px-4 py-3 font-medium hidden md:table-cell">Category</th>
                   <th className="px-4 py-3 font-medium text-right">Sold</th>
                   <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Revenue</th>
+                  <th className="px-4 py-3 font-medium">Pilot readiness</th>
                   <th className="px-4 py-3 font-medium text-center">★</th>
                 </tr>
               </thead>
@@ -94,8 +96,11 @@ export default function AdminEventsPage() {
                     <td className="px-4 py-3 text-neutral-500 hidden md:table-cell capitalize">{event.category}</td>
                     <td className="px-4 py-3 text-right text-neutral-700">{event.tickets_sold}</td>
                     <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
+                    <td className="px-4 py-3">
+                      <PilotReadinessReviewDialog event={event} onComplete={fetchEvents} />
+                    </td>
                     <td className="px-4 py-3 text-center">
-                      <button onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
+                      <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
                         <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-400 text-amber-400' : 'text-neutral-300'}`} />
                       </button>
                     </td>
