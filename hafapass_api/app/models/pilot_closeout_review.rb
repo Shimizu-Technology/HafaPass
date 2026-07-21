@@ -54,6 +54,14 @@ class PilotCloseoutReview < ApplicationRecord
     child_reviews.decision_revocation.exists?
   end
 
+  def expansion_current?(at: Time.current)
+    return true if expansion_decision_hold?
+
+    Time.iso8601(expansion_scope.to_h.stringify_keys["expires_at"].to_s) > at
+  rescue ArgumentError
+    false
+  end
+
   private
 
   def relationships_match
@@ -206,8 +214,10 @@ class PilotCloseoutReview < ApplicationRecord
 
   def validate_expansion_window(scope)
     expires_at = Time.iso8601(scope["expires_at"].to_s)
-    unless expires_at > signed_at && expires_at <= signed_at + 90.days
+    if decision_submission? && !(expires_at > signed_at && expires_at <= signed_at + 90.days)
       errors.add(:expansion_scope, "must expire after signing and within 90 days")
+    elsif decision_approval? && expires_at <= signed_at
+      errors.add(:expansion_scope, "expired before independent approval")
     end
   rescue ArgumentError
     errors.add(:expansion_scope, "expires_at must be ISO-8601")

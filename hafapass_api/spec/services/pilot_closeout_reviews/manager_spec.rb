@@ -164,4 +164,38 @@ RSpec.describe PilotCloseoutReviews::Manager do
       expect(approval).to be_expansion_decision_hold
     end
   end
+
+  it "refuses an expansion approval after its submitted window expires" do
+    run = create_completed_live_pilot_run
+    attributes = valid_pilot_closeout_attributes(expansion_decision: "repeat_bounded_pilot")
+    attributes[:expansion_scope][:expires_at] = 1.minute.from_now.iso8601
+    submission = described_class.submit!(run: run, attributes: attributes, actor: create(:user, :admin))
+
+    travel_to 2.minutes.from_now do
+      expect do
+        described_class.approve!(submission: submission, actor: create(:user, :admin))
+      end.to raise_error(described_class::ReviewError, /expired before independent approval/)
+      rejection = described_class.reject!(
+        submission: submission, actor: create(:user, :admin), reason: "Expansion window expired"
+      )
+      expect(rejection).to be_decision_rejection
+    end
+  end
+
+  it "deactivates and can revoke non-hold expansion after its window expires" do
+    run = create_completed_live_pilot_run
+    attributes = valid_pilot_closeout_attributes(expansion_decision: "repeat_bounded_pilot")
+    attributes[:expansion_scope][:expires_at] = 1.minute.from_now.iso8601
+    submission = described_class.submit!(run: run, attributes: attributes, actor: create(:user, :admin))
+    approval = described_class.approve!(submission: submission, actor: create(:user, :admin))
+
+    travel_to 2.minutes.from_now do
+      expect(PilotCloseout.active_approval(run)).to be_nil
+      expect(PilotCloseout.list_summary(run.event)[:approved]).to be(false)
+      revocation = described_class.revoke!(
+        approval: approval, actor: create(:user, :admin), reason: "Close expired authority"
+      )
+      expect(revocation).to be_decision_revocation
+    end
+  end
 end

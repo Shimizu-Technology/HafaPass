@@ -109,7 +109,7 @@ All endpoints require an authenticated administrator:
 
 ## Exit evidence
 
-Gate J exits successfully only when the latest approval is not revoked and still matches the current application revision and local event-state digest. Retain:
+Gate J exits successfully only when the latest approval is not revoked, still matches the current application revision and local event-state digest, and any non-hold expansion window has not expired. Retain:
 
 - The completed Gate I run identifier and full append-only operating history.
 - The Gate J submission, independent approval, application revision, local-state digest, bundle digest, and eight restricted evidence references.

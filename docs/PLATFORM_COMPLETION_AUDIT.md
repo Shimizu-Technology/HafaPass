@@ -21,7 +21,7 @@ The right next move is not another broad feature sprint. It is to close the rele
 
 The current Gate J candidate, based on merged Gate I, passed locally with:
 
-- 679 RSpec examples.
+- 681 RSpec examples.
 - 511 Ruby files with zero RuboCop offenses.
 - Zero Brakeman warnings.
 - Zero known Ruby dependency vulnerabilities.
@@ -30,7 +30,7 @@ The current Gate J candidate, based on merged Gate I, passed locally with:
 - 18 Playwright Chromium journeys, including the hidden Gate H authorization, Gate I live monitoring and incident flow, Gate J independent closeout approval, offline scanning, finance isolation, service recovery, marketplace discovery, competitive checkout, exact keyboard seat selection, and automated serious/critical accessibility checks.
 - Rails eager-load validation and a Gate J migration down/up drill.
 
-GitHub independently passed the backend, frontend, browser, security, hygiene, and deploy-preview checks on every merged final phase and release-gate commit. Gate I was merged only after a fresh Greptile review covered its final correction commit and reported no new actionable comment. Gate J passed the complete local gate and every GitHub/preview check. Greptile found one valid delayed-decision defect, which was corrected with regression coverage; the fresh review passed the correction commit with no new comment, and every thread was resolved. No real Gate I or Gate J operating outcome is claimed by these engineering results.
+GitHub independently passed the backend, frontend, browser, security, hygiene, and deploy-preview checks on every merged final phase and release-gate commit. Gate I was merged only after a fresh Greptile review covered its final correction commit and reported no new actionable comment. Gate J passed the complete local gate and every GitHub/preview check. Greptile found valid delayed-decision and expired-expansion lifecycle defects; both were corrected with regression coverage, followed by fresh review of the final correction and resolution of every thread. No real Gate I or Gate J operating outcome is claimed by these engineering results.
 
 ## Live market revalidation
 

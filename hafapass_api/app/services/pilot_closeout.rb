@@ -25,7 +25,7 @@ class PilotCloseout
     revoked_ids = run.pilot_closeout_reviews.decision_revocation.select(:parent_review_id)
     run.pilot_closeout_reviews.decision_approval.where.not(id: revoked_ids)
       .where(local_state_digest: local_state_digest(run), application_revision: PilotReadiness.application_revision)
-      .order(created_at: :desc).first
+      .order(created_at: :desc).detect(&:expansion_current?)
   end
 
   def self.status(event)
@@ -55,7 +55,7 @@ class PilotCloseout
     latest = reviews.select(&:decision_approval?).max_by(&:created_at)
     approved = latest.present? && !revoked_ids.include?(latest.id) &&
       latest.local_state_digest == local_state_digest(run) &&
-      latest.application_revision == PilotReadiness.application_revision
+      latest.application_revision == PilotReadiness.application_revision && latest.expansion_current?
     {
       eligible: true, approved: approved, expansion_decision: (latest.expansion_decision if approved),
       pending_submission: pending && { id: pending.id, created_at: pending.created_at },
