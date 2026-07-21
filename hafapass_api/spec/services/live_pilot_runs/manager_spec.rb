@@ -103,6 +103,42 @@ RSpec.describe LivePilotRuns::Manager do
     end.to raise_error(described_class::RunError, /pending_payment_count/)
   end
 
+  it "records abort semantics separately and clears its Gate I suspension for an approved recovery run" do
+    chain = create_live_pilot_run
+    actor = create(:user, :admin)
+
+    described_class.abort!(run: chain[:run], actor: actor, reason: "Provider outcome requires recovery")
+    aborted = chain[:run].reload
+    expect(aborted).to be_status_aborted
+    expect(aborted).to have_attributes(
+      abort_reason: "Provider outcome requires recovery", paused_at: nil, pause_reason: nil
+    )
+    expect(aborted.aborted_at).to be_present
+    expect(chain[:event].reload.sales_suspension_reason).to start_with("[GATE I]")
+
+    LivePilotReviews::Manager.revoke!(
+      approval: chain[:approval], actor: actor, reason: "Authorize a separately reviewed recovery plan"
+    )
+    recovery_approval = create_live_pilot_approval(event: chain[:event])
+    recovery = described_class.start!(approval: recovery_approval, actor: actor)
+
+    expect(recovery).to be_status_active
+    expect(chain[:event].reload).to have_attributes(sales_suspended_at: nil, sales_suspension_reason: nil)
+  end
+
+  it "clears a Gate I suspension when a paused run completes" do
+    chain = create_live_pilot_run
+    actor = create(:user, :admin)
+    described_class.pause!(run: chain[:run], actor: actor, reason: "Hold through closeout")
+    chain[:event].update_columns(status: Event.statuses[:completed], updated_at: Time.current)
+    record_safe_live_pilot_checkpoint(chain[:run])
+
+    described_class.complete!(run: chain[:run], actor: actor,
+      attributes: valid_live_pilot_completion_attributes)
+
+    expect(chain[:event].reload).to have_attributes(sales_suspended_at: nil, sales_suspension_reason: nil)
+  end
+
   it "enforces the active pilot inventory cap against committed ticket quantities" do
     chain = create_live_pilot_run(inventory_cap: 2)
     ticket_type = chain[:event].ticket_types.first

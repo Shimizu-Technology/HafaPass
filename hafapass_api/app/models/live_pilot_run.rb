@@ -14,6 +14,8 @@ class LivePilotRun < ApplicationRecord
   validates :started_at, presence: true
   validate :relationships_match
   validate :valid_completion_state
+  validate :valid_pause_state
+  validate :valid_abort_state
 
   attr_readonly :event_id, :live_pilot_review_id, :started_by_user_id, :started_at
 
@@ -42,6 +44,24 @@ class LivePilotRun < ApplicationRecord
       errors.add(:base, "Completed pilot runs require actor, time, evidence reference, and digest")
     elsif !status_completed? && completed_fields.any?
       errors.add(:base, "Completion fields are only allowed on completed pilot runs")
+    end
+  end
+
+  def valid_pause_state
+    pause_fields = [paused_at, pause_reason].map(&:present?)
+    if status_paused? && !pause_fields.all?
+      errors.add(:base, "Paused pilot runs require a time and reason")
+    elsif !status_paused? && pause_fields.any?
+      errors.add(:base, "Pause fields are only allowed on paused pilot runs")
+    end
+  end
+
+  def valid_abort_state
+    abort_fields = [aborted_at, abort_reason].map(&:present?)
+    if status_aborted? && !abort_fields.all?
+      errors.add(:base, "Aborted pilot runs require a time and reason")
+    elsif !status_aborted? && abort_fields.any?
+      errors.add(:base, "Abort fields are only allowed on aborted pilot runs")
     end
   end
 end

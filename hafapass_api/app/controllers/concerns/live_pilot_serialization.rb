@@ -37,8 +37,8 @@ module LivePilotSerialization
 
     run.attributes.slice(
       "id", "event_id", "live_pilot_review_id", "started_by_user_id", "completed_by_user_id", "status",
-      "started_at", "paused_at", "completed_at", "pause_reason", "completion_evidence_reference",
-      "completion_evidence_digest", "completion_results", "created_at"
+      "started_at", "paused_at", "completed_at", "aborted_at", "pause_reason", "abort_reason",
+      "completion_evidence_reference", "completion_evidence_digest", "completion_results", "created_at"
     ).merge(
       inventory_cap: run.inventory_cap,
       committed_ticket_quantity: LivePilot.committed_ticket_quantity(run.event),

@@ -52,7 +52,9 @@ class CreateLivePilotOperations < ActiveRecord::Migration[8.1]
       t.datetime :started_at, null: false
       t.datetime :paused_at
       t.datetime :completed_at
+      t.datetime :aborted_at
       t.text :pause_reason
+      t.text :abort_reason
       t.string :completion_evidence_reference
       t.string :completion_evidence_digest
       t.jsonb :completion_results, null: false, default: {}

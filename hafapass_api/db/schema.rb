@@ -858,6 +858,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_210000) do
   end
 
   create_table "live_pilot_runs", force: :cascade do |t|
+    t.text "abort_reason"
+    t.datetime "aborted_at"
     t.datetime "completed_at"
     t.bigint "completed_by_user_id"
     t.string "completion_evidence_digest"

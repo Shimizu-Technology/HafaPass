@@ -31,4 +31,19 @@ RSpec.describe "Admin Gate I live-pilot operations", type: :request do
 
     expect(response).to have_http_status(:forbidden)
   end
+
+  it "returns explicit abort metadata without mislabeling the run as paused" do
+    chain = create_live_pilot_run
+    admin = create(:user, :admin)
+
+    post "/api/v1/admin/live_pilot_runs/#{chain[:run].id}/abort", headers: auth_headers(admin),
+      params: { reason: "Stop and preserve evidence" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      "status" => "aborted", "abort_reason" => "Stop and preserve evidence",
+      "paused_at" => nil, "pause_reason" => nil
+    )
+    expect(response.parsed_body.fetch("aborted_at")).to be_present
+  end
 end

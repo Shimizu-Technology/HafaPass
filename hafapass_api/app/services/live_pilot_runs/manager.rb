@@ -28,6 +28,7 @@ module LivePilotRuns
         run = approval.event.live_pilot_runs.create!(
           live_pilot_review: approval, started_by_user: actor, status: :active, started_at: Time.current
         )
+        clear_gate_i_sales_suspension!(run.event)
         record_action!(run, :started, actor, { inventory_cap: run.inventory_cap }, request)
       end
       run
@@ -71,9 +72,7 @@ module LivePilotRuns
         ensure_current_checkpoint_safe!(run, checkpoint)
 
         run.update!(status: :active, paused_at: nil, pause_reason: nil)
-        if run.event.sales_suspension_reason.to_s.start_with?("[GATE I]")
-          run.event.update!(sales_suspended_at: nil, sales_suspension_reason: nil)
-        end
+        clear_gate_i_sales_suspension!(run.event)
         record_action!(run, :resumed, actor, { reason: reason.to_s.strip }, request)
       end
       run
@@ -110,6 +109,7 @@ module LivePilotRuns
           completion_evidence_reference: reference, completion_evidence_digest: digest,
           completion_results: results, paused_at: nil, pause_reason: nil
         )
+        clear_gate_i_sales_suspension!(run.event)
         record_action!(run, :completed, actor, { evidence_reference: reference, results: results }, request)
       end
       run
@@ -126,7 +126,10 @@ module LivePilotRuns
           raise RunError, "Only an open pilot run can be aborted"
         end
         now = Time.current
-        run.update!(status: :aborted, paused_at: now, pause_reason: reason.to_s.strip)
+        run.update!(
+          status: :aborted, aborted_at: now, abort_reason: reason.to_s.strip,
+          paused_at: nil, pause_reason: nil
+        )
         run.event.update!(sales_suspended_at: now, sales_suspension_reason: "[GATE I] #{reason.to_s.strip}")
         record_action!(run, :aborted, actor, { reason: reason.to_s.strip }, request)
       end
@@ -169,6 +172,13 @@ module LivePilotRuns
       local
     end
     private_class_method :ensure_current_checkpoint_safe!
+
+    def self.clear_gate_i_sales_suspension!(event)
+      return unless event.sales_suspension_reason.to_s.start_with?("[GATE I]")
+
+      event.update!(sales_suspended_at: nil, sales_suspension_reason: nil)
+    end
+    private_class_method :clear_gate_i_sales_suspension!
 
     def self.normalize_completion(value)
       result = value.respond_to?(:to_h) ? value.to_h.stringify_keys : {}

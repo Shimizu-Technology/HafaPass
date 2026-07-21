@@ -77,4 +77,22 @@ describe('LivePilotOperationsDialog', () => {
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_pilot_runs/91/checkpoint',
       expect.objectContaining({ external_metrics: expect.objectContaining({ checkout_p95_ms: 450 }) })))
   })
+
+  it('shows explicit abort metadata in the recovery workflow', async () => {
+    const run = {
+      id: 91, status: 'aborted', aborted_at: '2026-07-21T13:00:00Z',
+      abort_reason: 'Provider outcome requires recovery',
+    }
+    apiClient.get.mockResolvedValue({ data: {
+      event, live_pilot: {
+        approved: true, latest_approval: { ...pending, id: 82 }, latest_run: run,
+      },
+    } })
+    render(<LivePilotOperationsDialog event={{ ...event, live_pilot: { run_status: 'aborted' } }} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gate I pilot · aborted' }))
+
+    expect(await screen.findByText(/Provider outcome requires recovery/)).toBeInTheDocument()
+    expect(screen.getByText(/Revoke the old approval/)).toBeInTheDocument()
+  })
 })
