@@ -45,6 +45,18 @@ class User < ApplicationRecord
     foreign_key: :approved_by_user_id, dependent: :restrict_with_error, inverse_of: :approved_by_user
   has_many :live_money_proof_reviews, foreign_key: :actor_user_id, dependent: :restrict_with_error,
     inverse_of: :actor_user
+  has_many :live_pilot_reviews, foreign_key: :actor_user_id, dependent: :restrict_with_error,
+    inverse_of: :actor_user
+  has_many :started_live_pilot_runs, class_name: "LivePilotRun", foreign_key: :started_by_user_id,
+    dependent: :restrict_with_error, inverse_of: :started_by_user
+  has_many :completed_live_pilot_runs, class_name: "LivePilotRun", foreign_key: :completed_by_user_id,
+    dependent: :restrict_with_error, inverse_of: :completed_by_user
+  has_many :live_pilot_run_actions, foreign_key: :actor_user_id, dependent: :nullify,
+    inverse_of: :actor_user
+  has_many :live_pilot_incidents, foreign_key: :actor_user_id, dependent: :restrict_with_error,
+    inverse_of: :actor_user
+  has_many :live_pilot_metric_snapshots, foreign_key: :recorded_by_user_id,
+    dependent: :restrict_with_error, inverse_of: :recorded_by_user
 
   enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
 

@@ -63,10 +63,19 @@ module Commerce
         if release_gate == :live_money
           raise CheckoutError, "This event does not have a current Gate H live-money approval"
         end
+        if release_gate == :live_pilot
+          raise CheckoutError, "This event does not have a current Gate I bounded-pilot approval"
+        end
+        if release_gate == :live_pilot_operation
+          raise CheckoutError, "This event's bounded live-pilot sales window is not active"
+        end
         raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)
         selections = locked_selections!(offer: offer)
+        LivePilot.enforce_inventory_cap!(
+          event: event, requested_quantity: selections.sum { |selection| selection[:quantity] }
+        )
         validate_seating_selection!(selections)
         catalog_selections = locked_catalog_selections!
         enforce_event_capacity!(selections.sum { |selection| selection[:quantity] }, offer: offer)

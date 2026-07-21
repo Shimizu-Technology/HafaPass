@@ -1,6 +1,6 @@
 # HåfaPass Pilot Readiness and Incident Runbook
 
-Status: engineering implementation complete; external approvals and production drills required before paid pilot inventory opens.
+Status: engineering controls implemented through Gate I; external approvals, production drills, and a real bounded pilot are still required.
 
 ## Release authority and named ownership
 
@@ -9,6 +9,8 @@ The proposed primary event-day/on-call owner is **Leon Shimizu, Shimizu Technolo
 No one person may silently approve their own production payment configuration, payout evidence, or reconciliation exception. The existing role and audit controls remain authoritative.
 
 Record the event-specific owners, controls, evidence reference, and independent approval through [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Do not open production inventory merely because the generic checklist below is complete; the approval must match the current event-state digest.
+
+After Gates E–H are current, use [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md) to authorize the exact inventory cap, support windows, accountable owners, pause thresholds, live checkpoints, incident ledger, and post-event reconciliation. Production checkout remains closed unless that event has a current Gate I approval and an active run.
 
 ## Hard production gates
 
@@ -107,6 +109,12 @@ Run on current iOS Safari, Android Chrome, desktop Chrome, Safari, Firefox, and 
 
 Record device/browser versions, tester, timestamp, result, screenshots without PII, and issue links. A failed P0/P1 scenario blocks pilot.
 
+## Live Gate I cadence
+
+The incident commander opens the approved Gate I run only after the private support/incident channel, provider dashboards, readiness/worker state, venue contacts, scanners, and stop authority are confirmed. Record monitoring checkpoints after activation, first checkout/provider outcome, each inventory release, before doors, at peak entry, after queues drain, after incident recovery, and after event completion. Report P0/P1 and mandatory safety categories in the Gate I console; continued selling on an uncertain payment, duplicate charge, oversell, credential compromise, cross-tenant disclosure, or widespread entry failure is prohibited.
+
+Resume requires a separate resolution record and a new safe post-pause checkpoint. Completion requires the event to be completed, a safe checkpoint created afterward, no pending local operation, no unresolved mandatory incident, all closeout affirmations, zero unexplained variance, and a digest-bound restricted evidence bundle.
+
 ## Closeout
 
-Reconcile payments/refunds/fees/settlements/payouts to zero unexplained variance; resolve admission and message exceptions; export the incident and pilot evidence register; revoke temporary staff/devices; purge offline scanner data within the approved window; and hold a retrospective before expanding inventory.
+Reconcile payments/refunds/fees/settlements/payouts to zero unexplained variance; resolve admission and message exceptions; complete Gate I and export its append-only plan/action/checkpoint/incident evidence; revoke temporary staff/devices; purge offline scanner data within the approved window; and hold the Gate J retrospective before expanding inventory.

@@ -47,6 +47,16 @@ class Api::V1::OrdersController < ApplicationController
         status: :service_unavailable
     end
 
+    if release_gate == :live_pilot
+      return render json: { error: "Checkout is unavailable until this event has a current Gate I bounded-pilot approval" },
+        status: :service_unavailable
+    end
+
+    if release_gate == :live_pilot_operation
+      return render json: { error: "Checkout is unavailable while the bounded live-pilot sales window is inactive" },
+        status: :service_unavailable
+    end
+
     unless params[:buyer_email].present? && params[:buyer_name].present?
       render json: { error: "buyer_email and buyer_name are required" }, status: :unprocessable_entity
       return
@@ -103,6 +113,8 @@ class Api::V1::OrdersController < ApplicationController
   rescue Commerce::OrderCreator::CheckoutError => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue LiveMoneyProofAuthorizations::Manager::AuthorizationError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  rescue LivePilot::InventoryLimitError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
 

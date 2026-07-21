@@ -231,6 +231,29 @@ Rails.application.routes.draw do
             post :reject
           end
         end
+        get "events/:event_id/live_pilot", to: "live_pilot_reviews#show"
+        post "events/:event_id/live_pilot_reviews", to: "live_pilot_reviews#create"
+        resources :live_pilot_reviews, only: [] do
+          member do
+            post :approve
+            post :revoke
+            post :reject
+            post :start, to: "live_pilot_runs#start"
+          end
+        end
+        resources :live_pilot_runs, only: [] do
+          member do
+            post :pause
+            post :resume
+            post :complete
+            post :abort
+            post :checkpoint
+            post :incidents, to: "live_pilot_incidents#create"
+          end
+        end
+        resources :live_pilot_incidents, only: [] do
+          member { post :resolve }
+        end
         resources :users, only: [:index, :update]
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]

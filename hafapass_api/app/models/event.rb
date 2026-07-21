@@ -46,6 +46,11 @@ class Event < ApplicationRecord
   has_many :live_money_proof_authorizations, dependent: :restrict_with_error
   has_many :live_money_proof_reviews, foreign_key: :proof_event_id, dependent: :restrict_with_error,
     inverse_of: :proof_event
+  has_many :live_pilot_reviews, dependent: :restrict_with_error
+  has_many :live_pilot_runs, dependent: :restrict_with_error
+  has_many :live_pilot_run_actions, dependent: :restrict_with_error
+  has_many :live_pilot_incidents, dependent: :restrict_with_error
+  has_many :live_pilot_metric_snapshots, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -200,7 +205,8 @@ class Event < ApplicationRecord
       ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
     end
     configured_inventory = ticket_types.sum(&:quantity_available)
-    pilot_readiness_approved, pilot_validation_approved, event_day_rehearsal_approved, live_money_approved =
+    pilot_readiness_approved, pilot_validation_approved, event_day_rehearsal_approved, live_money_approved,
+      live_pilot_approved =
       production_release_approvals(at: at)
     checks = [
       checklist_item("production_policy_approved", "Production policy register approved",
@@ -228,7 +234,9 @@ class Event < ApplicationRecord
       checklist_item("live_money_approved",
         paid_event ? "Live charge, refund, settlement, payout, and bank receipt independently approved" :
           "No live-money approval needed for a free event",
-        !paid_event || live_money_approved)
+        !paid_event || live_money_approved),
+      checklist_item("live_pilot_approved", "Bounded live-pilot plan independently approved",
+        live_money_proof_candidate? || live_pilot_approved)
     ]
     checks
   end
@@ -238,11 +246,14 @@ class Event < ApplicationRecord
   end
 
   def production_release_gate_status(at: Time.current)
-    readiness, validation, rehearsal, live_money = production_release_approvals(at: at)
+    readiness, validation, rehearsal, live_money, live_pilot = production_release_approvals(at: at)
     return :pilot_readiness unless readiness
     return :pilot_validation unless validation
     return :event_day_rehearsal unless rehearsal
     return :live_money unless live_money
+    return :live_pilot unless live_pilot
+    return :live_pilot_operation if !live_money_proof_candidate? && Rails.env.production? &&
+      LivePilot.active_run(self, at: at).nil?
 
     :ready
   end
@@ -283,7 +294,7 @@ class Event < ApplicationRecord
   private
 
   def production_release_approvals(at:)
-    return [true, true, true, true] unless Rails.env.production?
+    return [true, true, true, true, true] unless Rails.env.production?
 
     state_digest = PilotReadiness.event_state_digest(self)
     readiness = PilotReadiness.active_approval(self, at: at, state_digest: state_digest)
@@ -296,8 +307,12 @@ class Event < ApplicationRecord
     paid_event = ticket_types.any? do |ticket_type|
       ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
     end
-    live_money = live_money_proof_candidate? || !paid_event || LiveMoneyProof.active_approval(organization, at: at).present?
-    [readiness.present?, validation.present?, rehearsal.present?, live_money]
+    live_money_approval = LiveMoneyProof.active_approval(organization, at: at) if paid_event && !live_money_proof_candidate?
+    live_money = live_money_proof_candidate? || !paid_event || live_money_approval.present?
+    live_pilot = live_money_proof_candidate? || (rehearsal.present? && live_money && LivePilot.active_approval(
+      self, at: at, state_digest: state_digest, rehearsal: rehearsal, live_money: live_money_approval
+    ).present?)
+    [readiness.present?, validation.present?, rehearsal.present?, live_money, live_pilot]
   end
 
   def active_seat_holds_count(at: Time.current)
