@@ -4,7 +4,8 @@ class Api::V1::DistributionLinksController < ApplicationController
   skip_before_action :authenticate_user!
 
   def show
-    link = DistributionLink.available.includes(:event, :distribution_partner).find_by!(code: params[:code].to_s.upcase)
+    link = DistributionLink.available.joins(:event).merge(Event.publicly_visible)
+      .includes(:event, :distribution_partner).find_by!(code: params[:code].to_s.upcase)
     visitor_hash = Marketplace::VisitorIdentity.hash(params[:anonymous_id])
     MarketplaceFunnelEvent.create!(
       event: link.event,

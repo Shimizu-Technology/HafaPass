@@ -16,6 +16,18 @@ RSpec.describe "Privacy-safe distribution attribution", type: :request do
     expect(funnel).to be_landing
   end
 
+  it "does not resolve partner or referral links after an event leaves public visibility" do
+    referral = create(:user).event_referrals.create!(event: event)
+    event.update!(status: :cancelled)
+
+    get "/api/v1/distribution_links/#{link.code}", params: { anonymous_id: anonymous_id }
+    expect(response).to have_http_status(:not_found)
+
+    get "/api/v1/event_referrals/#{referral.code}", params: { anonymous_id: anonymous_id }
+    expect(response).to have_http_status(:not_found)
+    expect(MarketplaceFunnelEvent.count).to eq(0)
+  end
+
 
   it "drops personal-looking campaign fields from public telemetry" do
     post "/api/v1/marketplace_funnel_events", params: { event_id: event.id, stage: "event_view",

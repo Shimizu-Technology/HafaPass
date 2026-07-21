@@ -4,7 +4,8 @@ class Api::V1::EventReferralsController < ApplicationController
   skip_before_action :authenticate_user!
 
   def show
-    referral = EventReferral.includes(:event).find_by!(code: params[:code].to_s.upcase, active: true)
+    referral = EventReferral.joins(:event).merge(Event.publicly_visible).includes(:event)
+      .find_by!(code: params[:code].to_s.upcase, active: true)
     MarketplaceFunnelEvent.create!(
       event: referral.event,
       event_referral: referral,
