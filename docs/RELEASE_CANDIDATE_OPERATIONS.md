@@ -48,7 +48,7 @@ The command deliberately refuses to proceed unless:
 It writes two mode-`0600` files beneath `.release-evidence/<candidate-id>/`:
 
 - `candidate.json`: commit, backend/frontend release IDs, schema version/hash, dependency-lock hashes, local gate result, CI/review state, blocker state, and branch-protection state.
-- `evidence-register.md`: private Gate A–H owners, due dates, evidence IDs, approvals, references, exceptions, and issues.
+- `evidence-register.md`: private Gate A–I owners, due dates, evidence IDs, approvals, references, exceptions, and issues.
 
 The directory is gitignored. Store its approved copy in the restricted operations system chosen by the founder. Do not attach it wholesale to a public issue or PR.
 

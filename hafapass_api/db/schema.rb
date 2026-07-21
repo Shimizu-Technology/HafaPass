@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_203100) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -757,6 +757,129 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_203100) do
     t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "live_money_proof_reviews_decision_valid"
     t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND provider_state_digest::text ~ '^[0-9a-f]{64}$'::text AND platform_configuration_digest::text ~ '^[0-9a-f]{64}$'::text", name: "live_money_proof_reviews_digests_valid"
     t.check_constraint "expires_at > effective_at", name: "live_money_proof_reviews_window_valid"
+  end
+
+  create_table "live_pilot_incidents", force: :cascade do |t|
+    t.integer "action", null: false
+    t.bigint "actor_user_id", null: false
+    t.string "category", null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.string "evidence_digest", null: false
+    t.string "evidence_reference", null: false
+    t.bigint "live_pilot_run_id", null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "parent_incident_id"
+    t.integer "severity", null: false
+    t.text "summary", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_live_pilot_incidents_on_actor_user_id"
+    t.index ["event_id"], name: "index_live_pilot_incidents_on_event_id"
+    t.index ["live_pilot_run_id", "occurred_at"], name: "idx_live_pilot_incidents_timeline"
+    t.index ["live_pilot_run_id"], name: "index_live_pilot_incidents_on_live_pilot_run_id"
+    t.index ["parent_incident_id"], name: "idx_live_pilot_incidents_one_resolution", unique: true, where: "((parent_incident_id IS NOT NULL) AND (action = 1))"
+    t.index ["parent_incident_id"], name: "index_live_pilot_incidents_on_parent_incident_id"
+    t.check_constraint "action = 0 AND parent_incident_id IS NULL OR action = 1 AND parent_incident_id IS NOT NULL", name: "live_pilot_incidents_parent_valid"
+    t.check_constraint "action = ANY (ARRAY[0, 1])", name: "live_pilot_incidents_action_valid"
+    t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text", name: "live_pilot_incidents_digest_valid"
+    t.check_constraint "severity = ANY (ARRAY[0, 1, 2, 3])", name: "live_pilot_incidents_severity_valid"
+  end
+
+  create_table "live_pilot_metric_snapshots", force: :cascade do |t|
+    t.jsonb "breached_thresholds", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.string "evidence_digest", null: false
+    t.string "evidence_reference", null: false
+    t.jsonb "external_metrics", default: {}, null: false
+    t.bigint "live_pilot_run_id", null: false
+    t.jsonb "local_metrics", default: {}, null: false
+    t.datetime "observed_at", null: false
+    t.bigint "recorded_by_user_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_live_pilot_metric_snapshots_on_event_id"
+    t.index ["live_pilot_run_id", "observed_at"], name: "idx_live_pilot_metrics_timeline"
+    t.index ["live_pilot_run_id"], name: "index_live_pilot_metric_snapshots_on_live_pilot_run_id"
+    t.index ["recorded_by_user_id"], name: "index_live_pilot_metric_snapshots_on_recorded_by_user_id"
+    t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text", name: "live_pilot_metrics_digest_valid"
+  end
+
+  create_table "live_pilot_reviews", force: :cascade do |t|
+    t.bigint "actor_user_id", null: false
+    t.string "application_revision", null: false
+    t.jsonb "assignments", default: {}, null: false
+    t.jsonb "controls", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "decision", null: false
+    t.datetime "effective_at", null: false
+    t.bigint "event_day_rehearsal_review_id", null: false
+    t.bigint "event_id", null: false
+    t.string "event_state_digest", null: false
+    t.string "evidence_digest", null: false
+    t.string "evidence_reference", null: false
+    t.datetime "expires_at", null: false
+    t.integer "inventory_cap", null: false
+    t.bigint "live_money_proof_review_id"
+    t.bigint "parent_review_id"
+    t.text "reason"
+    t.jsonb "support_coverage", default: {}, null: false
+    t.jsonb "thresholds", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_live_pilot_reviews_on_actor_user_id"
+    t.index ["event_day_rehearsal_review_id"], name: "index_live_pilot_reviews_on_event_day_rehearsal_review_id"
+    t.index ["event_id", "created_at"], name: "idx_live_pilot_reviews_timeline"
+    t.index ["event_id"], name: "index_live_pilot_reviews_on_event_id"
+    t.index ["live_money_proof_review_id"], name: "index_live_pilot_reviews_on_live_money_proof_review_id"
+    t.index ["parent_review_id"], name: "idx_live_pilot_reviews_one_approval", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 1))"
+    t.index ["parent_review_id"], name: "idx_live_pilot_reviews_one_rejection", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 3))"
+    t.index ["parent_review_id"], name: "idx_live_pilot_reviews_one_revocation", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 2))"
+    t.index ["parent_review_id"], name: "index_live_pilot_reviews_on_parent_review_id"
+    t.check_constraint "decision = 0 AND parent_review_id IS NULL OR (decision = ANY (ARRAY[1, 2, 3])) AND parent_review_id IS NOT NULL", name: "live_pilot_reviews_parent_valid"
+    t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "live_pilot_reviews_decision_valid"
+    t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND event_state_digest::text ~ '^[0-9a-f]{64}$'::text", name: "live_pilot_reviews_digests_valid"
+    t.check_constraint "expires_at > effective_at", name: "live_pilot_reviews_window_valid"
+    t.check_constraint "inventory_cap > 0 AND inventory_cap <= 250", name: "live_pilot_reviews_inventory_cap_valid"
+  end
+
+  create_table "live_pilot_run_actions", force: :cascade do |t|
+    t.bigint "actor_user_id"
+    t.datetime "created_at", null: false
+    t.jsonb "details", default: {}, null: false
+    t.bigint "event_id", null: false
+    t.integer "kind", null: false
+    t.bigint "live_pilot_run_id", null: false
+    t.datetime "occurred_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_live_pilot_run_actions_on_actor_user_id"
+    t.index ["event_id"], name: "index_live_pilot_run_actions_on_event_id"
+    t.index ["live_pilot_run_id", "occurred_at"], name: "idx_live_pilot_actions_timeline"
+    t.index ["live_pilot_run_id"], name: "index_live_pilot_run_actions_on_live_pilot_run_id"
+    t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3, 4])", name: "live_pilot_run_actions_kind_valid"
+  end
+
+  create_table "live_pilot_runs", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.bigint "completed_by_user_id"
+    t.string "completion_evidence_digest"
+    t.string "completion_evidence_reference"
+    t.jsonb "completion_results", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.bigint "live_pilot_review_id", null: false
+    t.text "pause_reason"
+    t.datetime "paused_at"
+    t.datetime "started_at", null: false
+    t.bigint "started_by_user_id", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["completed_by_user_id"], name: "index_live_pilot_runs_on_completed_by_user_id"
+    t.index ["event_id", "created_at"], name: "idx_live_pilot_runs_timeline"
+    t.index ["event_id"], name: "idx_live_pilot_runs_one_open", unique: true, where: "(status = ANY (ARRAY[0, 1]))"
+    t.index ["event_id"], name: "index_live_pilot_runs_on_event_id"
+    t.index ["live_pilot_review_id"], name: "index_live_pilot_runs_on_live_pilot_review_id", unique: true
+    t.index ["started_by_user_id"], name: "index_live_pilot_runs_on_started_by_user_id"
+    t.check_constraint "completion_evidence_digest IS NULL OR completion_evidence_digest::text ~ '^[0-9a-f]{64}$'::text", name: "live_pilot_runs_completion_digest_valid"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "live_pilot_runs_status_valid"
   end
 
   create_table "marketplace_collection_events", force: :cascade do |t|
@@ -1994,6 +2117,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_203100) do
   add_foreign_key "live_money_proof_reviews", "settlements", column: "initial_settlement_id", on_delete: :restrict
   add_foreign_key "live_money_proof_reviews", "settlements", column: "post_payout_settlement_id", on_delete: :restrict
   add_foreign_key "live_money_proof_reviews", "users", column: "actor_user_id", on_delete: :restrict
+  add_foreign_key "live_pilot_incidents", "events", on_delete: :restrict
+  add_foreign_key "live_pilot_incidents", "live_pilot_incidents", column: "parent_incident_id", on_delete: :restrict
+  add_foreign_key "live_pilot_incidents", "live_pilot_runs", on_delete: :restrict
+  add_foreign_key "live_pilot_incidents", "users", column: "actor_user_id", on_delete: :restrict
+  add_foreign_key "live_pilot_metric_snapshots", "events", on_delete: :restrict
+  add_foreign_key "live_pilot_metric_snapshots", "live_pilot_runs", on_delete: :restrict
+  add_foreign_key "live_pilot_metric_snapshots", "users", column: "recorded_by_user_id", on_delete: :restrict
+  add_foreign_key "live_pilot_reviews", "event_day_rehearsal_reviews", on_delete: :restrict
+  add_foreign_key "live_pilot_reviews", "events", on_delete: :restrict
+  add_foreign_key "live_pilot_reviews", "live_money_proof_reviews", on_delete: :restrict
+  add_foreign_key "live_pilot_reviews", "live_pilot_reviews", column: "parent_review_id", on_delete: :restrict
+  add_foreign_key "live_pilot_reviews", "users", column: "actor_user_id", on_delete: :restrict
+  add_foreign_key "live_pilot_run_actions", "events", on_delete: :restrict
+  add_foreign_key "live_pilot_run_actions", "live_pilot_runs", on_delete: :restrict
+  add_foreign_key "live_pilot_run_actions", "users", column: "actor_user_id", on_delete: :restrict
+  add_foreign_key "live_pilot_runs", "events", on_delete: :restrict
+  add_foreign_key "live_pilot_runs", "live_pilot_reviews", on_delete: :restrict
+  add_foreign_key "live_pilot_runs", "users", column: "completed_by_user_id", on_delete: :restrict
+  add_foreign_key "live_pilot_runs", "users", column: "started_by_user_id", on_delete: :restrict
   add_foreign_key "marketplace_collection_events", "events", on_delete: :restrict
   add_foreign_key "marketplace_collection_events", "marketplace_collections", on_delete: :cascade
   add_foreign_key "marketplace_collections", "users", column: "created_by_user_id", on_delete: :restrict

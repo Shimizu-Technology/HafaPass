@@ -18,6 +18,7 @@ module PilotReadinessReviews
         incomplete = event.publish_checklist.reject do |item|
           item[:complete] || %w[
             pilot_readiness_approved pilot_validation_approved event_day_rehearsal_approved live_money_approved
+            live_pilot_approved
           ].include?(item[:code])
         end
         if incomplete.any?

@@ -16,6 +16,7 @@ vi.mock('../../components/PilotReadinessReviewDialog', () => ({ default: () => n
 vi.mock('../../components/PilotValidationReviewDialog', () => ({ default: () => null }))
 vi.mock('../../components/EventDayRehearsalReviewDialog', () => ({ default: () => null }))
 vi.mock('../../components/LiveMoneyProofReviewDialog', () => ({ default: () => null }))
+vi.mock('../../components/LivePilotOperationsDialog', () => ({ default: () => null }))
 
 const proofEvent = {
   id: 42,
