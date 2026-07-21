@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::BaseController < ApplicationController
+  include PaymentReadinessSerialization
+
   before_action :require_admin!
 
   private

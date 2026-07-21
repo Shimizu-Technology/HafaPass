@@ -29,7 +29,13 @@ class ConnectedAccount < ApplicationRecord
   end
 
   def active_payment_readiness_approval(at: Time.current)
-    payment_readiness_reviews.approvals.order(created_at: :desc).detect { |review| review.active?(at: at) }
+    revoked_approval_ids = payment_readiness_reviews.revocations.select(:parent_review_id)
+    payment_readiness_reviews.approvals
+      .where("effective_at <= ? AND expires_at > ?", at, at)
+      .where(provider_state_digest: readiness_state_digest)
+      .where.not(id: revoked_approval_ids)
+      .order(created_at: :desc)
+      .first
   end
 
   def latest_payment_readiness_approval
@@ -37,9 +43,12 @@ class ConnectedAccount < ApplicationRecord
   end
 
   def pending_payment_readiness_submission
-    payment_readiness_reviews.decision_submission.where("expires_at > ?", Time.current).order(created_at: :desc).detect do |review|
-      !review.child_reviews.where(decision: [:approval, :rejection]).exists?
-    end
+    decided_submission_ids = payment_readiness_reviews.where(decision: [:approval, :rejection]).select(:parent_review_id)
+    payment_readiness_reviews.decision_submission
+      .where("expires_at > ?", Time.current)
+      .where.not(id: decided_submission_ids)
+      .order(created_at: :desc)
+      .first
   end
 
   def readiness_state_digest

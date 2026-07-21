@@ -9,14 +9,15 @@ class Api::V1::Admin::ConnectedAccountsController < Api::V1::Admin::BaseControll
       actor: current_user,
       request: request
     )
+    active_approval = account.active_payment_readiness_approval
     render json: account.attributes.slice(
       "id", "organization_id", "provider", "provider_account_id", "status", "charges_enabled",
       "payouts_enabled", "details_submitted", "requirements_due", "capabilities", "last_synced_at"
     ).merge(
-      payout_ready: account.payout_ready?,
-      readiness_submission: readiness_review_json(account.pending_payment_readiness_submission),
-      readiness_approval: readiness_review_json(account.latest_payment_readiness_approval),
-      readiness_approval_active: account.active_payment_readiness_approval.present?
+      payout_ready: account.externally_ready? && active_approval.present?,
+      readiness_submission: payment_readiness_review_json(account.pending_payment_readiness_submission),
+      readiness_approval: payment_readiness_review_json(account.latest_payment_readiness_approval),
+      readiness_approval_active: active_approval.present?
     )
   rescue ConnectedAccounts::Manager::AccountError => e
     render json: { error: e.message }, status: :unprocessable_entity
@@ -28,17 +29,6 @@ class Api::V1::Admin::ConnectedAccountsController < Api::V1::Admin::BaseControll
     params.permit(
       :provider_account_id, :charges_enabled, :payouts_enabled, :details_submitted, :disabled,
       requirements_due: [], capabilities: {}
-    )
-  end
-
-  def readiness_review_json(review)
-    return nil unless review
-
-    review.attributes.slice(
-      "id", "actor_user_id", "decision", "evidence_reference", "evidence_digest",
-      "provider_state_digest",
-      "provider_approval_reference", "merchant_of_record", "fee_tax_schedule_reference",
-      "liability_schedule_reference", "controls", "effective_at", "expires_at", "created_at"
     )
   end
 end
