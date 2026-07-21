@@ -29,6 +29,8 @@ class User < ApplicationRecord
   has_many :seat_hold_sessions, dependent: :nullify
   has_many :seat_audit_events, foreign_key: :actor_user_id, dependent: :nullify
   has_many :accessible_seat_releases, foreign_key: :released_by_user_id, dependent: :restrict_with_error
+  has_many :payment_readiness_reviews, foreign_key: :actor_user_id, dependent: :restrict_with_error,
+    inverse_of: :actor_user
 
   enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
 

@@ -37,6 +37,69 @@ FactoryBot.define do
     requirements_due { [] }
     country { "GU" }
     currency { "usd" }
+
+    transient do
+      with_readiness_approval { true }
+    end
+
+    after(:create) do |account, evaluator|
+      next unless evaluator.with_readiness_approval && account.status_ready?
+
+      submitter = create(:user, :admin)
+      approver = create(:user, :admin)
+      snapshot = {
+        evidence_reference: "test-evidence/#{account.id}",
+        evidence_digest: Digest::SHA256.hexdigest("test-evidence-#{account.id}"),
+        provider_approval_reference: "test-provider-approval/#{account.provider}",
+        merchant_of_record: "organizer",
+        fee_tax_schedule_reference: "test-fee-tax-v1",
+        liability_schedule_reference: "test-liability-v1",
+        controls: PaymentReadinessReview::CONTROL_KEYS.index_with(true),
+        effective_at: 1.day.ago,
+        expires_at: 1.year.from_now,
+        provider_state_digest: account.readiness_state_digest
+      }
+      submission = create(:payment_readiness_review, :submission, connected_account: account,
+        actor_user: submitter, **snapshot)
+      create(:payment_readiness_review, :approval, connected_account: account,
+        parent_review: submission, actor_user: approver, **snapshot)
+    end
+  end
+
+  factory :payment_readiness_review do
+    association :connected_account, with_readiness_approval: false
+    actor_user { association :user, :admin }
+    decision { :submission }
+    evidence_reference { "ops/payment-readiness/test" }
+    evidence_digest { Digest::SHA256.hexdigest("payment-readiness-test") }
+    provider_approval_reference { "provider/approval/test" }
+    merchant_of_record { "organizer" }
+    fee_tax_schedule_reference { "finance/fee-tax-v1" }
+    liability_schedule_reference { "legal/liability-v1" }
+    controls { PaymentReadinessReview::CONTROL_KEYS.index_with(true) }
+    effective_at { 1.day.ago }
+    expires_at { 1.year.from_now }
+    provider_state_digest { connected_account.readiness_state_digest }
+
+    trait :submission do
+      decision { :submission }
+      parent_review { nil }
+    end
+
+    trait :approval do
+      decision { :approval }
+    end
+
+    trait :revocation do
+      decision { :revocation }
+      reason { "Provider authorization withdrawn" }
+    end
+
+
+    trait :rejection do
+      decision { :rejection }
+      reason { "Evidence does not support the requested production scope" }
+    end
   end
 
   factory :balance_adjustment do

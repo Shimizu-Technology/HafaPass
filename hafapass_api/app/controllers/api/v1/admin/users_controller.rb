@@ -94,6 +94,22 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
     account.attributes.slice(
       "id", "provider", "provider_account_id", "status", "charges_enabled", "payouts_enabled",
       "details_submitted", "requirements_due", "last_synced_at"
-    ).merge(payout_ready: account.payout_ready?)
+    ).merge(
+      payout_ready: account.payout_ready?,
+      readiness_submission: payment_readiness_review_json(account.pending_payment_readiness_submission),
+      readiness_approval: payment_readiness_review_json(account.latest_payment_readiness_approval),
+      readiness_approval_active: account.active_payment_readiness_approval.present?
+    )
+  end
+
+  def payment_readiness_review_json(review)
+    return unless review
+
+    review.attributes.slice(
+      "id", "actor_user_id", "decision", "evidence_reference", "evidence_digest",
+      "provider_state_digest",
+      "provider_approval_reference", "merchant_of_record", "fee_tax_schedule_reference",
+      "liability_schedule_reference", "controls", "effective_at", "expires_at", "created_at"
+    )
   end
 end
