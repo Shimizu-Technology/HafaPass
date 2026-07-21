@@ -5,7 +5,7 @@ module PilotValidationSerialization
 
   private
 
-  def pilot_validation_review_json(review)
+  def pilot_validation_review_json(review, active:)
     return nil unless review
 
     review.attributes.slice(
@@ -13,14 +13,17 @@ module PilotValidationSerialization
       "evidence_reference", "evidence_digest", "event_state_digest", "application_revision", "device_matrix",
       "buyer_flows", "organizer_flows", "accessibility_results", "load_results", "controls", "effective_at",
       "expires_at", "reason", "created_at"
-    ).merge(active: review.active?)
+    ).merge(active: active)
   end
 
   def pilot_validation_json(event)
     status = PilotValidation.status(event)
-    status.except(:pending_submission, :latest_approval).merge(
-      pending_submission: pilot_validation_review_json(status[:pending_submission]),
-      latest_approval: pilot_validation_review_json(status[:latest_approval])
+    active_approval_id = status[:active_approval_id]
+    status.except(:pending_submission, :latest_approval, :active_approval_id).merge(
+      pending_submission: pilot_validation_review_json(status[:pending_submission], active: false),
+      latest_approval: pilot_validation_review_json(
+        status[:latest_approval], active: status[:latest_approval]&.id == active_approval_id
+      )
     )
   end
 end

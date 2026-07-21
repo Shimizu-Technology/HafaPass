@@ -12,7 +12,7 @@ class Api::V1::Admin::PilotValidationReviewsController < Api::V1::Admin::BaseCon
     review = PilotValidationReviews::Manager.submit!(
       event: Event.find(params[:event_id]), attributes: review_params, actor: current_user, request: request
     )
-    render json: pilot_validation_review_json(review), status: :created
+    render json: pilot_validation_review_json(review, active: false), status: :created
   rescue PilotValidationReviews::Manager::ReviewError => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue ActionController::BadRequest => e
@@ -23,7 +23,8 @@ class Api::V1::Admin::PilotValidationReviewsController < Api::V1::Admin::BaseCon
     review = PilotValidationReviews::Manager.approve!(
       submission: PilotValidationReview.find(params[:id]), actor: current_user, request: request
     )
-    render json: pilot_validation_review_json(review), status: :created
+    active = PilotValidation.active_approval(review.event)&.id == review.id
+    render json: pilot_validation_review_json(review, active: active), status: :created
   rescue PilotValidationReviews::Manager::ReviewError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
@@ -32,7 +33,7 @@ class Api::V1::Admin::PilotValidationReviewsController < Api::V1::Admin::BaseCon
     review = PilotValidationReviews::Manager.reject!(
       submission: PilotValidationReview.find(params[:id]), actor: current_user, reason: params[:reason], request: request
     )
-    render json: pilot_validation_review_json(review), status: :created
+    render json: pilot_validation_review_json(review, active: false), status: :created
   rescue PilotValidationReviews::Manager::ReviewError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
@@ -41,7 +42,7 @@ class Api::V1::Admin::PilotValidationReviewsController < Api::V1::Admin::BaseCon
     review = PilotValidationReviews::Manager.revoke!(
       approval: PilotValidationReview.find(params[:id]), actor: current_user, reason: params[:reason], request: request
     )
-    render json: pilot_validation_review_json(review), status: :created
+    render json: pilot_validation_review_json(review, active: false), status: :created
   rescue PilotValidationReviews::Manager::ReviewError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end

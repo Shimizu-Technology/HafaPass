@@ -29,7 +29,6 @@ RSpec.describe PilotValidationReviews::Manager do
     end.to raise_error(described_class::ReviewError, /cannot approve their own/)
 
     approval = described_class.approve!(submission: submission, actor: approver)
-    expect(approval).to be_active
     expect(approval.pilot_readiness_review).to eq(readiness)
     expect(PilotValidation.active_approval(event)).to eq(approval)
     expect(AuditLog.where(auditable: approval, action: "pilot_validation.approved")).to exist
@@ -55,13 +54,12 @@ RSpec.describe PilotValidationReviews::Manager do
     submission = described_class.submit!(
       event: event, attributes: valid_pilot_validation_attributes(event: event), actor: submitter
     )
-    approval = described_class.approve!(submission: submission, actor: approver)
+    described_class.approve!(submission: submission, actor: approver)
 
     PilotReadinessReviews::Manager.revoke!(
       approval: readiness, actor: submitter, reason: "Venue configuration must be rechecked"
     )
 
-    expect(approval.reload).not_to be_active
     expect(PilotValidation.active_approval(event)).to be_nil
   end
 
@@ -72,11 +70,10 @@ RSpec.describe PilotValidationReviews::Manager do
     submission = described_class.submit!(
       event: event, attributes: valid_pilot_validation_attributes(event: event), actor: submitter
     )
-    approval = described_class.approve!(submission: submission, actor: approver)
+    described_class.approve!(submission: submission, actor: approver)
 
     ENV["GIT_SHA"] = "gate-f-candidate-b"
 
-    expect(approval.reload).not_to be_active
     expect(PilotValidation.active_approval(event)).to be_nil
   ensure
     original_revision.nil? ? ENV.delete("GIT_SHA") : ENV["GIT_SHA"] = original_revision

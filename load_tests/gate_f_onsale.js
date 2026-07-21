@@ -110,7 +110,6 @@ export function assignedSeatContention(data) {
   const response = http.post(`${baseUrl}/api/v1/events/${data.contentionEventSlug}/seat_holds`, JSON.stringify({
     event_seat_ids: [contentionSeatId],
     accessibility_attested: false,
-    source: 'gate_f_load_test',
   }), { headers: { 'Content-Type': 'application/json' }, tags: { operation: 'seat_contention' } })
   const expected = [201, 422].includes(response.status)
   contentionUnexpected.add(!expected)

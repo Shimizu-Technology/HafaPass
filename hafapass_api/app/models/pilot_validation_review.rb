@@ -74,10 +74,6 @@ class PilotValidationReview < ApplicationRecord
   scope :approvals, -> { where(decision: :approval) }
   scope :revocations, -> { where(decision: :revocation) }
 
-  def active?(at: Time.current)
-    decision_approval? && effective_at <= at && expires_at > at && !revoked? && candidate_current?(at: at)
-  end
-
   def revoked?
     child_reviews.decision_revocation.exists?
   end
@@ -264,14 +260,6 @@ class PilotValidationReview < ApplicationRecord
     return if effective_at.blank? || expires_at.blank?
 
     errors.add(:expires_at, "must be after the effective time") unless expires_at > effective_at
-  end
-
-  def candidate_current?(at:)
-    return false unless application_revision == PilotReadiness.application_revision
-    state_digest = PilotReadiness.event_state_digest(event)
-    return false unless event_state_digest == state_digest
-
-    PilotReadiness.active_approval(event, at: at, state_digest: state_digest)&.id == pilot_readiness_review_id
   end
 
   def prevent_mutation

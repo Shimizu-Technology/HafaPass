@@ -43,6 +43,7 @@ class PilotValidation
       required_organizer_flows: PilotValidationReview::ORGANIZER_FLOW_KEYS,
       required_accessibility_checks: PilotValidationReview::ACCESSIBILITY_CHECK_KEYS,
       required_controls: PilotValidationReview::CONTROL_KEYS,
+      active_approval_id: approval&.id,
       event_state_digest: state_digest,
       application_revision: PilotReadiness.application_revision
     }
