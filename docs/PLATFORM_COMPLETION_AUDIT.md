@@ -1,8 +1,8 @@
 # HafaPass Platform Completion Audit and Launch Plan
 
-Status: Phase 0–10 engineering scope and Gate A release controls delivered; paid production launch blocked on external evidence
+Status: Phase 0–10 and Gate A/B application controls delivered; Gate C controls under review; paid production launch blocked on external evidence
 Last verified: July 21, 2026 (Pacific/Guam)
-Audited baseline: protected `main` at `d1fceb5`, plus the Gate B change set documented here
+Audited baseline: protected `main` at `9471d8c`, plus the Gate C change set documented here
 
 ## Executive verdict
 
@@ -19,10 +19,10 @@ The right next move is not another broad feature sprint. It is to close the rele
 
 ## Evidence baseline
 
-The current Gate B candidate passed locally with:
+The current Gate C candidate passed locally with:
 
-- 541 RSpec examples.
-- 423 Ruby files with zero RuboCop offenses.
+- 548 RSpec examples.
+- 427 Ruby files with zero RuboCop offenses.
 - Zero Brakeman warnings.
 - Zero known Ruby dependency vulnerabilities.
 - 25 Vitest tests and zero ESLint warnings.
@@ -170,6 +170,8 @@ Actions:
 5. Restore an encrypted backup into an isolated environment with external providers disabled, then run the reviewed deploy/application-rollback sequence. Do not run destructive migration downs after real records exist.
 
 Exit evidence: production configuration checklist, redacted readiness output, named alert routes, backup and isolated-restore identifiers, rollback result, and secret-rotation attestations.
+
+Application control: follow [Gate C Production Environment](GATE_C_PRODUCTION_ENVIRONMENT.md). Production readiness now requires a redacted configuration contract and an active Redis-backed singleton commerce-clock heartbeat; production CORS has no development fallback. These controls make missing evidence visible but do not constitute the external deployment, alert, restore, or rollback evidence themselves.
 
 ### Gate D — Close provider and policy evidence
 

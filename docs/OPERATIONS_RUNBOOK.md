@@ -4,14 +4,14 @@ This runbook covers the Phase 1 production foundation. It is an operational cont
 
 ## Service topology
 
-Production requires four independently supervised processes/services:
+Production requires four independently supervised runtime processes/services:
 
 1. Rails web process: `bundle exec puma -C config/puma.rb`
 2. Sidekiq worker process: `bundle exec sidekiq -C config/sidekiq.yml`
 3. Redis service shared by Active Job, Sidekiq, and Rack::Attack
 4. Clock process: `bundle exec rails runner script/commerce_clock.rb`
 
-The backend `Procfile` declares the web, worker, and clock commands. The clock enqueues order/inventory and assigned-seat hold expiry every minute and privacy-retention cleanup once per UTC date. The frontend is a separate static Vite deployment.
+The backend `Procfile` declares the web, worker, and clock commands. The clock enqueues order/inventory and assigned-seat hold expiry every minute and privacy-retention cleanup once per UTC date. It must own the renewable Redis singleton lease; a second process exits and a missing heartbeat fails production readiness. The frontend is a separate static Vite deployment.
 
 Production never falls back to an in-memory or inline queue. Rails boot fails when `REDIS_URL` is missing, making a broken worker topology visible during deployment instead of silently losing work.
 
@@ -20,13 +20,15 @@ Production never falls back to an in-memory or inline queue. Rails boot fails wh
 | Probe | Purpose | Healthy response | Load-balancer use |
 |---|---|---|---|
 | `GET /api/v1/health` | Web-process liveness | HTTP 200, `{"status":"ok"}` | Restart a wedged web process |
-| `GET /api/v1/readiness` | Database, queue, worker, and provider state | HTTP 200 with `status: ready` | Stop routing traffic when required dependencies fail |
+| `GET /api/v1/readiness` | Database, queue, worker, commerce clock, redacted configuration, provider, and operational state | HTTP 200 with `status: ready` | Stop routing traffic when required dependencies fail |
 
 In production, readiness requires:
 
 - a working database connection;
 - a successful Redis ping through the configured queue adapter; and
-- at least one Sidekiq process registered in Redis.
+- at least one Sidekiq process registered in Redis;
+- an active singleton commerce-clock lease; and
+- a complete redacted production configuration contract.
 
 Provider checks return booleans only. They intentionally never return credentials. Provider configuration is advisory in Phase 1 because payment, storage, email, and monitoring may be enabled at different deployment stages; each later launch phase promotes its own provider to a hard release gate.
 
@@ -39,10 +41,11 @@ Core runtime:
 - `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY`
 - `ALLOWED_ORIGINS`
 - `FRONTEND_URL`
+- `PUBLIC_WEB_URL`
 - `SENTRY_DSN`
 - `GIT_SHA` or `COMMIT_REF` for release correlation
 
-Provider-specific configuration remains documented in the root README. Put secrets in the deployment platform's encrypted environment store. Never put values in source, CI YAML, command output, screenshots, or support tickets.
+Provider-specific configuration remains documented in the root README. Put secrets in the deployment platform's encrypted environment store. Never put values in source, CI YAML, command output, screenshots, or support tickets. The exact Gate C contract and evidence procedure are in [Gate C Production Environment](GATE_C_PRODUCTION_ENVIRONMENT.md).
 
 ## Monitoring and alert rules
 

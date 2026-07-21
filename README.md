@@ -193,15 +193,15 @@ Query params: `?page=2&per_page=10`
 | `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` | Production | Stable RSA private key used to sign offline scanner manifests |
 | `CLOVER_REST_PAY_BASE_URL` | Card-present pilot | Approved Clover cloud `/connect` base URL |
 | `CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_<id>` | Card-present pilot | Encrypted Clover OAuth token scoped to one HåfaPass organization |
-| `AWS_ACCESS_KEY_ID` | No | S3 upload access key |
-| `AWS_SECRET_ACCESS_KEY` | No | S3 upload secret key |
-| `AWS_BUCKET` | No | S3 bucket name |
-| `AWS_REGION` | No | AWS region (default: us-west-2) |
-| `RESEND_API_KEY` | No | Resend email API key |
+| `AWS_ACCESS_KEY_ID` | Production | Dedicated private object-storage access key |
+| `AWS_SECRET_ACCESS_KEY` | Production | Dedicated private object-storage secret key |
+| `AWS_BUCKET` | Production | Private object-storage bucket name |
+| `AWS_REGION` | Production | Object-storage region |
+| `RESEND_API_KEY` | Production | Resend email API key |
 | `RESEND_WEBHOOK_SECRET` | Production email | Resend/Svix webhook signing secret |
-| `MAILER_FROM_EMAIL` | No | From address for emails (default: tickets@hafapass.com) |
-| `FRONTEND_URL` | No | Frontend URL for email links (default: http://localhost:5173) |
-| `PUBLIC_WEB_URL` | No | Canonical public site URL for SEO and sitemaps (default: https://hafapass.com) |
+| `MAILER_FROM_EMAIL` | Production | Verified from address for emails |
+| `FRONTEND_URL` | Production | HTTPS frontend URL for email links and CORS validation |
+| `PUBLIC_WEB_URL` | Production | HTTPS canonical public site URL for SEO and sitemaps |
 | `SENTRY_DSN` | Production | Backend error-monitoring DSN |
 | `SENTRY_ENVIRONMENT` | No | Monitoring environment label (defaults to Rails environment) |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | Backend performance trace sample rate (default: `0.1`) |
