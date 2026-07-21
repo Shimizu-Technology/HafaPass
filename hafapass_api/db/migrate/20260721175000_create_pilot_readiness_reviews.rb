@@ -12,6 +12,7 @@ class CreatePilotReadinessReviews < ActiveRecord::Migration[8.1]
       t.string :evidence_reference, null: false
       t.string :evidence_digest, null: false
       t.string :event_state_digest, null: false
+      t.string :application_revision, null: false
       t.jsonb :controls, null: false, default: {}
       t.jsonb :assignments, null: false, default: {}
       t.datetime :effective_at, null: false

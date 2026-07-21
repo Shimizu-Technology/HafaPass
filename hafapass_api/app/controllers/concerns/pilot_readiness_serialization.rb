@@ -10,8 +10,8 @@ module PilotReadinessSerialization
 
     review.attributes.slice(
       "id", "event_id", "parent_review_id", "actor_user_id", "decision", "evidence_reference",
-      "evidence_digest", "event_state_digest", "controls", "assignments", "effective_at", "expires_at",
-      "reason", "created_at"
+      "evidence_digest", "event_state_digest", "application_revision", "controls", "assignments", "effective_at",
+      "expires_at", "reason", "created_at"
     ).merge(active: review.active?)
   end
 

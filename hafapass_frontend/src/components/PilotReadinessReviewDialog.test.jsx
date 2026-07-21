@@ -83,6 +83,7 @@ describe('PilotReadinessReviewDialog', () => {
       evidence_reference: 'private/pilot/42',
       evidence_digest: 'b'.repeat(64),
       event_state_digest: 'c'.repeat(64),
+      application_revision: 'pilot-candidate-a',
       assignments,
       controls,
       effective_at: '2026-07-21T00:00:00Z',

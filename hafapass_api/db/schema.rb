@@ -1016,6 +1016,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_175000) do
 
   create_table "pilot_readiness_reviews", force: :cascade do |t|
     t.bigint "actor_user_id", null: false
+    t.string "application_revision", null: false
     t.jsonb "assignments", default: {}, null: false
     t.jsonb "controls", default: {}, null: false
     t.datetime "created_at", null: false

@@ -54,6 +54,7 @@ function EvidenceSummary({ review }) {
         <div className="border-l-2 border-brand-300 pl-3"><dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Evidence reference</dt><dd className="mt-1 break-all text-neutral-900">{review.evidence_reference}</dd></div>
         <div className="border-l-2 border-brand-300 pl-3"><dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Evidence SHA-256</dt><dd className="mt-1 break-all font-mono text-xs text-neutral-700">{review.evidence_digest}</dd></div>
         <div className="border-l-2 border-neutral-300 pl-3 sm:col-span-2"><dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Event-state SHA-256</dt><dd className="mt-1 break-all font-mono text-xs text-neutral-700">{review.event_state_digest}</dd></div>
+        <div className="border-l-2 border-neutral-300 pl-3 sm:col-span-2"><dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Application revision</dt><dd className="mt-1 break-all font-mono text-xs text-neutral-700">{review.application_revision}</dd></div>
       </dl>
       <div>
         <h3 className="text-sm font-bold text-neutral-950">Named command and response owners</h3>

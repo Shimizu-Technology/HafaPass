@@ -5,7 +5,7 @@ module PilotReadinessReviews
     class ReviewError < StandardError; end
 
     SNAPSHOT_FIELDS = %i[
-      evidence_reference evidence_digest event_state_digest controls assignments effective_at expires_at
+      evidence_reference evidence_digest event_state_digest application_revision controls assignments effective_at expires_at
     ].freeze
 
     def self.submit!(event:, attributes:, actor:, request: nil)
@@ -26,6 +26,7 @@ module PilotReadinessReviews
         end
 
         snapshot[:event_state_digest] = PilotReadiness.event_state_digest(event)
+        snapshot[:application_revision] = PilotReadiness.application_revision
         review = event.pilot_readiness_reviews.create!(snapshot.merge(decision: :submission, actor_user: actor))
         record!(review, "pilot_readiness.submitted", actor, request)
       end
@@ -42,7 +43,7 @@ module PilotReadinessReviews
         raise ReviewError, "The readiness window is not yet effective" if submission.effective_at > Time.current
         raise ReviewError, "The readiness window has expired" if submission.expires_at <= Time.current
         unless submission.event_state_digest == PilotReadiness.event_state_digest(submission.event)
-          raise ReviewError, "Event or organizer configuration changed; submit a new readiness snapshot"
+          raise ReviewError, "Application, event, or organizer configuration changed; submit a new readiness snapshot"
         end
         if PilotReadiness.active_approval(submission.event)
           raise ReviewError, "Revoke the current pilot readiness approval before approving another"
@@ -131,7 +132,8 @@ module PilotReadinessReviews
         organization: review.event.organization,
         after_data: review.attributes.slice(
           "id", "event_id", "parent_review_id", "actor_user_id", "decision", "evidence_reference",
-          "evidence_digest", "event_state_digest", "controls", "effective_at", "expires_at", "reason"
+          "evidence_digest", "event_state_digest", "application_revision", "controls", "effective_at", "expires_at",
+          "reason"
         ).merge("assignment_roles" => review.assignments.keys.sort),
         request: request
       )

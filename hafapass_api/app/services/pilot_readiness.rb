@@ -28,6 +28,10 @@ class PilotReadiness
     Digest::SHA256.hexdigest(JSON.generate(canonicalize(snapshot(event))))
   end
 
+  def self.application_revision
+    ENV["GIT_SHA"].presence || "development"
+  end
+
   def self.active_approval(event, at: Time.current, state_digest: nil)
     revoked_ids = event.pilot_readiness_reviews.revocations.select(:parent_review_id)
     state_digest ||= event_state_digest(event)
@@ -131,6 +135,7 @@ class PilotReadiness
     end
 
     {
+      application_revision: application_revision,
       event: event.attributes.slice(*EVENT_FIELDS),
       venue: event.venue&.attributes&.slice(*VENUE_FIELDS),
       organizer: {

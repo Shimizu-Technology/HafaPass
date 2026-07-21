@@ -36,7 +36,7 @@ This control prevents a checklist document from becoming detached from the event
 
 ## Immutable event-state binding
 
-The application computes a canonical SHA-256 digest over material sale and operating configuration:
+The application records the production `GIT_SHA` (or `development` locally) and computes a canonical SHA-256 digest over that application revision plus material sale and operating configuration:
 
 - event identity, content, venue, Guam schedule, capacity, fee policy, locale, attendee visibility, and transfer settings;
 - organizer verification and exact agreement acceptance;
@@ -46,6 +46,8 @@ The application computes a canonical SHA-256 digest over material sale and opera
 - assigned-seating layout version, renderer, seat-to-ticket mapping, operational status, labels, zones, and accessibility metadata.
 
 Ordinary sales counters are deliberately excluded, so selling a ticket does not invalidate approval. Material configuration changes do invalidate approval without rewriting history. The event must receive a new evidence submission and independent approval before production sales continue.
+
+A new deployment revision also invalidates approval. This enforces Gate A's rule that pilot evidence belongs to one immutable application/database candidate; it cannot silently authorize different code.
 
 ## Append-only decisions and privacy boundary
 

@@ -32,8 +32,24 @@ RSpec.describe PilotReadinessReviews::Manager do
     approval = described_class.approve!(submission: submission, actor: approver)
 
     expect(approval).to be_active
+    expect(approval.application_revision).to eq(PilotReadiness.application_revision)
     expect(PilotReadiness.active_approval(event)).to eq(approval)
     expect(AuditLog.where(auditable: approval, action: "pilot_readiness.approved")).to exist
+  end
+
+
+  it "invalidates approval when the deployed application revision changes" do
+    original_revision = ENV["GIT_SHA"]
+    ENV["GIT_SHA"] = "pilot-candidate-a"
+    submission = described_class.submit!(event: event, attributes: attributes, actor: submitter)
+    approval = described_class.approve!(submission: submission, actor: approver)
+
+    ENV["GIT_SHA"] = "pilot-candidate-b"
+
+    expect(approval.reload).not_to be_active
+    expect(PilotReadiness.active_approval(event)).to be_nil
+  ensure
+    original_revision.nil? ? ENV.delete("GIT_SHA") : ENV["GIT_SHA"] = original_revision
   end
 
   it "invalidates approval after a material event change without mutating evidence" do

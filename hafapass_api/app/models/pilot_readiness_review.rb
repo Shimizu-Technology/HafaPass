@@ -20,7 +20,8 @@ class PilotReadinessReview < ApplicationRecord
 
   enum :decision, { submission: 0, approval: 1, revocation: 2, rejection: 3 }, prefix: true
 
-  validates :evidence_reference, :evidence_digest, :event_state_digest, :effective_at, :expires_at, presence: true
+  validates :evidence_reference, :evidence_digest, :event_state_digest, :application_revision,
+    :effective_at, :expires_at, presence: true
   validates :evidence_digest, :event_state_digest, format: { with: /\A[0-9a-f]{64}\z/ }
   validate :complete_control_snapshot
   validate :complete_assignments
@@ -31,7 +32,8 @@ class PilotReadinessReview < ApplicationRecord
   validate :valid_effective_window
 
   attr_readonly :event_id, :parent_review_id, :actor_user_id, :decision, :evidence_reference,
-    :evidence_digest, :event_state_digest, :controls, :assignments, :effective_at, :expires_at, :reason
+    :evidence_digest, :event_state_digest, :application_revision, :controls, :assignments,
+    :effective_at, :expires_at, :reason
 
   before_update :prevent_mutation
   before_destroy :prevent_mutation
@@ -90,7 +92,9 @@ class PilotReadinessReview < ApplicationRecord
   def parent_snapshot_matches
     return unless parent_review
 
-    fields = %w[evidence_reference evidence_digest event_state_digest controls assignments effective_at expires_at]
+    fields = %w[
+      evidence_reference evidence_digest event_state_digest application_revision controls assignments effective_at expires_at
+    ]
     unless fields.all? { |field| public_send(field) == parent_review.public_send(field) }
       errors.add(:base, "Readiness snapshot must match the parent review")
     end
