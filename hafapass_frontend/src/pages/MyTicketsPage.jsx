@@ -21,9 +21,9 @@ export default function MyTicketsPage() {
     setLoading(true)
     setError(null)
     try {
-      const response = await apiClient.get('/me/orders')
-      const data = response.data.orders || response.data
-      setOrders(Array.isArray(data) ? data : [])
+      const response = await apiClient.get('/me/tickets')
+      const tickets = response.data.tickets || []
+      setOrders(tickets.map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
     } catch (err) {
       if (err.response?.status === 401) {
         setError('Please sign in to view your tickets.')
@@ -149,6 +149,17 @@ export default function MyTicketsPage() {
     }
   }
 
+  async function transferTicket(ticket) {
+    const email = window.prompt('Enter the recipient email. They must sign in with this address to accept.')
+    if (!email) return
+    try {
+      await apiClient.post(`/me/tickets/${ticket.id}/transfer`, { recipient_email: email })
+      window.alert('Transfer invitation sent. Your ticket remains valid until it is accepted.')
+    } catch (err) {
+      window.alert(err.response?.data?.error || 'Unable to transfer this ticket.')
+    }
+  }
+
   return (
     <div>
       <SEO title="My Tickets" />
@@ -232,6 +243,7 @@ export default function MyTicketsPage() {
                         </Link>
                         <div className="flex items-center space-x-2">
                           {getStatusBadge(ticket.status)}
+                          {ticket.status === 'issued' && event.transfers_enabled !== false && !isPast && <button onClick={() => transferTicket(ticket)} className="text-xs font-semibold text-brand-600">Transfer</button>}
                           <Link
                             to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
                             className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"

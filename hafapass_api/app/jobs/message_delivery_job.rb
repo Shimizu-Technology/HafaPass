@@ -68,6 +68,14 @@ class MessageDeliveryJob < ApplicationJob
     when "waitlist_notification"
       entry = WaitlistEntry.find(delivery.metadata.fetch("waitlist_entry_id"))
       EmailService.send_waitlist_notification(entry, delivery: delivery)
+    when "ticket_transfer"
+      transfer = TicketTransfer.find(delivery.metadata.fetch("ticket_transfer_id"))
+      EmailService.send_ticket_transfer(transfer, delivery: delivery)
+    when "waitlist_offer"
+      offer = WaitlistOffer.find(delivery.metadata.fetch("waitlist_offer_id"))
+      EmailService.send_waitlist_offer(offer, delivery: delivery)
+    when "communication_campaign"
+      EmailService.send_communication_campaign(delivery)
     else
       raise ArgumentError, "Unsupported message template"
     end

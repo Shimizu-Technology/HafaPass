@@ -22,6 +22,13 @@ class Event < ApplicationRecord
   has_many :admission_manifests, dependent: :restrict_with_error
   has_many :admission_actions, dependent: :restrict_with_error
   has_many :card_present_payment_attempts, dependent: :restrict_with_error
+  has_many :ticket_transfers, through: :tickets
+  has_many :waitlist_offers, dependent: :restrict_with_error
+  has_many :catalog_items, dependent: :restrict_with_error
+  has_many :registration_questions, dependent: :restrict_with_error
+  has_many :event_waivers, dependent: :restrict_with_error
+  has_many :promoters, dependent: :restrict_with_error
+  has_many :communication_campaigns, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -44,11 +51,16 @@ class Event < ApplicationRecord
     workshop: 6, fundraiser: 7, family: 8, business: 9
   }
   enum :age_restriction, { all_ages: 0, eighteen_plus: 1, twenty_one_plus: 2 }
+  enum :fee_policy, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
   validates :max_capacity, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
+  validates :buyer_fee_percent, numericality: { only_integer: true, in: 0..100 }
   validate :capacity_covers_committed_inventory
+  validate :fee_policy_matches_percent
+  validate :supported_locales_are_known
+  validate :localized_content_is_valid
   validate :valid_iana_timezone
   validate :chronological_event_times
 
@@ -65,16 +77,22 @@ class Event < ApplicationRecord
       .joins(:ticket_types)
       .where("ticket_types.sales_start_at IS NULL OR ticket_types.sales_start_at <= ?", at)
       .where("ticket_types.sales_end_at IS NULL OR ticket_types.sales_end_at > ?", at)
-      .where(<<~SQL.squish, at)
+      .where(<<~SQL.squish, at, at)
         ticket_types.quantity_available - ticket_types.quantity_sold - COALESCE((
           SELECT SUM(inventory_holds.quantity)
           FROM inventory_holds
           WHERE inventory_holds.ticket_type_id = ticket_types.id
             AND inventory_holds.status = 0
             AND inventory_holds.expires_at > ?
+        ), 0) - COALESCE((
+          SELECT SUM(waitlist_offers.quantity)
+          FROM waitlist_offers
+          WHERE waitlist_offers.ticket_type_id = ticket_types.id
+            AND waitlist_offers.status = 0
+            AND waitlist_offers.expires_at > ?
         ), 0) > 0
       SQL
-      .where(<<~SQL.squish, at)
+      .where(<<~SQL.squish, at, at)
         events.max_capacity IS NULL OR events.max_capacity - COALESCE((
           SELECT SUM(all_ticket_types.quantity_sold)
           FROM ticket_types all_ticket_types
@@ -85,6 +103,12 @@ class Event < ApplicationRecord
           WHERE event_holds.event_id = events.id
             AND event_holds.status = 0
             AND event_holds.expires_at > ?
+        ), 0) - COALESCE((
+          SELECT SUM(event_offers.quantity)
+          FROM waitlist_offers event_offers
+          WHERE event_offers.event_id = events.id
+            AND event_offers.status = 0
+            AND event_offers.expires_at > ?
         ), 0) > 0
       SQL
       .distinct
@@ -98,6 +122,16 @@ class Event < ApplicationRecord
     published? && (ends_at || starts_at).present? && (ends_at || starts_at) > at
   end
 
+  def content_for(locale)
+    code = locale.to_s.split(/[-_]/).first
+    translation = supported_locales.include?(code) ? localized_content.fetch(code, {}) : {}
+    {
+      title: translation["title"].presence || title,
+      description: translation["description"].presence || description,
+      short_description: translation["short_description"].presence || short_description
+    }
+  end
+
   def has_available_inventory?(at: Time.current)
     return false unless remaining_capacity(at: at).positive?
 
@@ -108,7 +142,8 @@ class Event < ApplicationRecord
     return Float::INFINITY if max_capacity.blank?
 
     sold = ticket_types.sum(&:quantity_sold)
-    held = inventory_holds.active.where("expires_at > ?", at).sum(:quantity)
+    held = inventory_holds.active.where("expires_at > ?", at).sum(:quantity) +
+      waitlist_offers.holding_inventory(at).sum(:quantity)
     [max_capacity - sold - held, 0].max
   end
 
@@ -158,6 +193,33 @@ class Event < ApplicationRecord
 
   private
 
+  def fee_policy_matches_percent
+    errors.add(:buyer_fee_percent, "must be 100 when the buyer pays fees") if buyer_pays? && buyer_fee_percent != 100
+    errors.add(:buyer_fee_percent, "must be 0 when the organizer absorbs fees") if organizer_absorbs? && buyer_fee_percent != 0
+    if split_fees? && !buyer_fee_percent.between?(1, 99)
+      errors.add(:buyer_fee_percent, "must be between 1 and 99 for split fees")
+    end
+  end
+
+  def supported_locales_are_known
+    values = Array(supported_locales)
+    errors.add(:supported_locales, "must include English") unless values.include?("en")
+    errors.add(:supported_locales, "contains an unsupported locale") unless (values - %w[en ja ch]).empty?
+  end
+
+  def localized_content_is_valid
+    unless localized_content.is_a?(Hash) && localized_content.keys.all? { |key| %w[ja ch].include?(key) }
+      errors.add(:localized_content, "may only contain Japanese and CHamoru content")
+      return
+    end
+
+    valid = localized_content.values.all? do |translation|
+      translation.is_a?(Hash) && (translation.keys - %w[title description short_description]).empty? &&
+        translation.values.all? { |value| value.is_a?(String) }
+    end
+    errors.add(:localized_content, "has an invalid translation shape") unless valid
+  end
+
   def checklist_item(code, label, complete)
     { code: code, label: label, complete: !!complete }
   end
@@ -195,7 +257,8 @@ class Event < ApplicationRecord
   def capacity_covers_committed_inventory
     return if max_capacity.blank? || !persisted?
 
-    committed = ticket_types.sum(:quantity_sold) + inventory_holds.current.sum(:quantity)
+    committed = ticket_types.sum(:quantity_sold) + inventory_holds.current.sum(:quantity) +
+      waitlist_offers.holding_inventory.sum(:quantity)
     errors.add(:max_capacity, "cannot be less than sold and actively held inventory") if max_capacity < committed
   end
 

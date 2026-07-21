@@ -2,13 +2,16 @@
 
 class Api::V1::OrdersController < ApplicationController
   skip_before_action :authenticate_user!, only: [
-    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket
+    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create_transfer, :cancel_transfer
   ]
   before_action :optional_authenticate_user!, only: [
-    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket
+    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create_transfer, :cancel_transfer
   ]
   before_action :set_accessible_order, only: [
-    :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket
+    :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create_transfer, :cancel_transfer
   ]
 
   def create
@@ -38,6 +41,12 @@ class Api::V1::OrdersController < ApplicationController
       buyer_phone: params[:buyer_phone],
       user: @current_user,
       promo_code_id: params[:promo_code_id],
+      catalog_items: params[:catalog_items],
+      registration_answers: params[:registration_answers],
+      waiver_acceptances: params[:waiver_acceptances],
+      referral_code: params[:referral_code],
+      attribution: params[:attribution],
+      waitlist_offer_token: params[:waitlist_offer_token],
       buyer_terms_version: buyer_terms[:version],
       buyer_terms_digest: buyer_terms[:digest],
       buyer_terms_accepted_at: Time.current
@@ -88,6 +97,7 @@ class Api::V1::OrdersController < ApplicationController
   def rotate_scan
     ticket = @order.tickets.find_by(id: params[:ticket_id])
     return render json: { error: "Ticket not found" }, status: :not_found unless ticket
+    return render json: { error: "This ticket belongs to its new holder" }, status: :forbidden unless controls_ticket?(ticket)
 
     rotated = ticket.with_lock do
       next false unless ticket.issued? && !@order.ticket_access_blocked?
@@ -103,6 +113,7 @@ class Api::V1::OrdersController < ApplicationController
   def cancel_ticket
     ticket = @order.tickets.find_by(id: params[:ticket_id])
     return render json: { error: "Ticket not found" }, status: :not_found unless ticket
+    return render json: { error: "Transferred tickets are controlled by their current holder" }, status: :forbidden unless controls_ticket?(ticket)
     return render json: { error: "Ticket is already cancelled" }, status: :unprocessable_entity if ticket.cancelled?
     return render json: { error: "Used or transferred tickets cannot be cancelled" }, status: :unprocessable_entity unless ticket.issued?
 
@@ -128,6 +139,34 @@ class Api::V1::OrdersController < ApplicationController
     )
     render json: { refund_id: refund.id, order: OrderPresenter.call(@order.reload, include_tickets: true) }, status: :created
   rescue Commerce::RefundCreator::RefundError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def create_transfer
+    ticket = transferable_order_ticket
+    return unless ticket
+
+    transfer = TicketTransfers::Manager.create!(
+      ticket: ticket,
+      recipient_email: params[:recipient_email],
+      recipient_name: params[:recipient_name],
+      initiated_by: @current_user
+    )
+    render json: transfer_json(transfer), status: :created
+  rescue TicketTransfers::Manager::TransferError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def cancel_transfer
+    ticket = transferable_order_ticket
+    return unless ticket
+
+    transfer = ticket.ticket_transfers.pending.first
+    return render json: { error: "Pending transfer not found" }, status: :not_found unless transfer
+
+    TicketTransfers::Manager.cancel!(transfer)
+    render json: transfer_json(transfer)
+  rescue TicketTransfers::Manager::TransferError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
@@ -182,6 +221,30 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   private
+
+  def transferable_order_ticket
+    ticket = @order.tickets.find_by(id: params[:ticket_id])
+    return render(json: { error: "Ticket not found" }, status: :not_found) unless ticket
+    return ticket if controls_ticket?(ticket)
+
+    render json: { error: "This ticket belongs to its new holder" }, status: :forbidden
+    nil
+  end
+
+  def controls_ticket?(ticket)
+    ticket.holder_user_id.blank? || ticket.holder_user_id == @current_user&.id
+  end
+
+  def transfer_json(transfer)
+    {
+      id: transfer.id,
+      ticket_id: transfer.ticket_id,
+      recipient_email: transfer.recipient_email,
+      recipient_name: transfer.recipient_name,
+      status: transfer.status,
+      expires_at: transfer.expires_at
+    }
+  end
 
   def cancel_free_ticket!(ticket, reason:)
     ticket.order.with_lock do

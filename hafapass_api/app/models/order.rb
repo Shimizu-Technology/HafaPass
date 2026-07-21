@@ -15,14 +15,22 @@ class Order < ApplicationRecord
   has_one :promo_redemption, dependent: :restrict_with_error
   has_many :reconciliation_exceptions, dependent: :restrict_with_error
   has_many :card_present_payment_attempts, dependent: :restrict_with_error
+  has_many :catalog_item_holds, dependent: :restrict_with_error
+  has_many :registration_responses, dependent: :restrict_with_error
+  has_many :waiver_acceptances, dependent: :restrict_with_error
+  has_one :referral_attribution, dependent: :restrict_with_error
+  has_many :promoter_commission_entries, dependent: :restrict_with_error
+  has_one :waitlist_offer, dependent: :restrict_with_error
 
   enum :status, { pending: 0, completed: 1, refunded: 2, cancelled: 3, partially_refunded: 4, expired: 5 }
+  enum :fee_policy_snapshot, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }, prefix: :fee
 
   validates :buyer_email, presence: true
   validates :buyer_name, presence: true
   validates :currency, presence: true, length: { is: 3 }
   validates :subtotal_cents, :service_fee_cents, :discount_cents, :total_cents, :refund_amount_cents,
-    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    :organizer_fee_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :buyer_fee_percent_snapshot, numericality: { only_integer: true, in: 0..100 }
   validate :financial_components_balance
 
   before_validation :assign_reference, on: :create

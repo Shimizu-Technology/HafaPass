@@ -21,7 +21,7 @@ module Commerce
       proceeds = OrderItem.where(order_id: order_ids).sum(:organizer_proceeds_cents)
       refund_allocations = RefundItem.joins(:refund)
         .where(refunds: { order_id: order_ids, status: Refund.statuses[:succeeded] })
-      refunded_fees = refund_allocations.sum(:fee_cents)
+      refunded_fees = refund_allocations.sum(:fee_cents) + refund_allocations.sum(:organizer_fee_cents)
       refunded_proceeds = refund_allocations.sum(:organizer_proceeds_cents)
 
       {

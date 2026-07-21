@@ -3,8 +3,7 @@ class Api::V1::Me::TicketsController < ApplicationController
 
   def index
     tickets = Ticket
-      .joins(:order)
-      .where(orders: { user_id: current_user.id })
+      .where(holder_user: current_user)
       .includes(:ticket_type, :event, :order)
       .order(created_at: :desc)
 
@@ -35,6 +34,7 @@ class Api::V1::Me::TicketsController < ApplicationController
         starts_at: ticket.event.starts_at,
         ends_at: ticket.event.ends_at,
         timezone: ticket.event.timezone,
+        transfers_enabled: ticket.event.transfers_enabled,
         cover_image_url: ticket.event.cover_image_url
       },
       ticket_type: {

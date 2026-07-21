@@ -58,6 +58,7 @@ class OrderPresenter
       ends_at: event.ends_at,
       doors_open_at: event.doors_open_at,
       timezone: event.timezone,
+      transfers_enabled: event.transfers_enabled,
       cover_image_url: event.cover_image_url
     }
   end
@@ -93,6 +94,8 @@ class OrderPresenter
       id: item.id,
       name: item.name,
       tier_name: item.tier_name,
+      item_kind: item.item_kind,
+      fulfillment_status: item.catalog_fulfillment&.status,
       unit_price_cents: item.unit_price_cents,
       quantity: item.quantity,
       subtotal_cents: item.subtotal_cents,
@@ -104,14 +107,15 @@ class OrderPresenter
   end
 
   def ticket_json(ticket)
+    transferred_away = ticket.holder_user_id.present? && ticket.holder_user_id != order.user_id
     {
       id: ticket.id,
-      display_credential: ticket.display_credential,
-      scan_credential: ticket.admission_allowed? ? ticket.scan_credential : nil,
-      status: ticket.status,
-      attendee_name: ticket.attendee_name,
+      display_credential: transferred_away ? nil : ticket.display_credential,
+      scan_credential: !transferred_away && ticket.admission_allowed? ? ticket.scan_credential : nil,
+      status: transferred_away ? "transferred" : ticket.status,
+      attendee_name: transferred_away ? nil : ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
-      refundable_cents: ticket.issued? ? ticket_refundable_amounts.fetch(ticket.id, 0) : 0,
+      refundable_cents: !transferred_away && ticket.issued? ? ticket_refundable_amounts.fetch(ticket.id, 0) : 0,
       ticket_type: {
         id: ticket.ticket_type.id,
         name: ticket.ticket_type.name,

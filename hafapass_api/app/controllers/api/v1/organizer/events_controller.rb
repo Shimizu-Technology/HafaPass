@@ -263,7 +263,9 @@ module Api
             :venue_name, :venue_address, :venue_city,
             :starts_at, :ends_at, :doors_open_at, :timezone,
             :category, :age_restriction, :max_capacity,
-            :recurrence_rule, :recurrence_end_date, :show_attendees
+            :recurrence_rule, :recurrence_end_date, :show_attendees,
+            :fee_policy, :buyer_fee_percent, :transfers_enabled, supported_locales: [],
+            localized_content: { ja: [:title, :description, :short_description], ch: [:title, :description, :short_description] }
           )
         end
 
@@ -397,6 +399,11 @@ module Api
             recurrence_parent_id: event.recurrence_parent_id,
             recurrence_end_date: event.recurrence_end_date,
             show_attendees: event.show_attendees,
+            fee_policy: event.fee_policy,
+            buyer_fee_percent: event.buyer_fee_percent,
+            transfers_enabled: event.transfers_enabled,
+            supported_locales: event.supported_locales,
+            localized_content: event.localized_content,
             created_at: event.created_at,
             updated_at: event.updated_at
           }

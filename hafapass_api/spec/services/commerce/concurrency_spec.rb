@@ -116,6 +116,59 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(order.reload.refundable_cents).to eq(1250)
   end
 
+  it "allows exactly one checkout to reserve the final catalog item" do
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    ticket_type = create(:ticket_type, event: event, quantity_available: 2, max_per_order: 1)
+    catalog_item = create(:catalog_item, event: event, inventory_quantity: 1)
+
+    outcomes = run_concurrently(2) do |index|
+      Commerce::OrderCreator.call(
+        event: Event.find(event.id),
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+        catalog_items: [{ catalog_item_id: catalog_item.id, quantity: 1 }],
+        buyer_email: "catalog#{index}@example.com",
+        buyer_name: "Catalog #{index}"
+      )
+    end
+
+    expect(outcomes.count { |outcome| outcome.is_a?(Commerce::OrderCreator::Result) }).to eq(1)
+    expect(outcomes.count { |outcome| outcome.is_a?(Commerce::OrderCreator::CheckoutError) }).to eq(1)
+    expect(CatalogItemHold.current.sum(:quantity)).to eq(1)
+  end
+
+  it "creates exactly one inventory-holding offer for concurrent waitlist actions" do
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    ticket_type = create(:ticket_type, event: event, quantity_available: 2)
+    entry = create(:waitlist_entry, event: event, ticket_type: ticket_type)
+    allow(EmailService).to receive(:send_waitlist_offer_async)
+
+    outcomes = run_concurrently(2) do
+      WaitlistOffers::Issuer.call(entry: WaitlistEntry.find(entry.id))
+    end
+
+    expect(outcomes.count { |outcome| outcome.is_a?(WaitlistOffer) }).to eq(1)
+    expect(outcomes.count { |outcome| outcome.is_a?(WaitlistOffers::Issuer::OfferError) }).to eq(1)
+    expect(entry.waitlist_offers.holding_inventory.count).to eq(1)
+  end
+
+  it "creates exactly one pending transfer under concurrent requests" do
+    owner = create(:user)
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    ticket_type = create(:ticket_type, event: event)
+    order = create(:order, event: event, user: owner, buyer_email: owner.email)
+    item = create(:order_item, order: order, ticket_type: ticket_type)
+    ticket = create(:ticket, event: event, ticket_type: ticket_type, order: order, order_item: item)
+    allow(EmailService).to receive(:send_ticket_transfer_async)
+
+    outcomes = run_concurrently(2) do |index|
+      TicketTransfers::Manager.create!(ticket: Ticket.find(ticket.id), recipient_email: "recipient#{index}@example.com")
+    end
+
+    expect(outcomes.count { |outcome| outcome.is_a?(TicketTransfer) }).to eq(1)
+    expect(outcomes.count { |outcome| outcome.is_a?(TicketTransfers::Manager::TransferError) }).to eq(1)
+    expect(ticket.ticket_transfers.pending.count).to eq(1)
+  end
+
   def run_concurrently(count)
     ready = Queue.new
     start = Queue.new

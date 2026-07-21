@@ -12,6 +12,12 @@ class User < ApplicationRecord
   has_many :card_present_payment_attempts, foreign_key: :initiated_by_user_id,
     dependent: :restrict_with_error, inverse_of: :initiated_by_user
   has_many :support_notes, foreign_key: :author_user_id, dependent: :restrict_with_error, inverse_of: :author_user
+  has_many :held_tickets, class_name: "Ticket", foreign_key: :holder_user_id, dependent: :restrict_with_error
+  has_many :initiated_ticket_transfers, class_name: "TicketTransfer", foreign_key: :initiated_by_user_id,
+    dependent: :restrict_with_error
+  has_many :accepted_ticket_transfers, class_name: "TicketTransfer", foreign_key: :accepted_by_user_id,
+    dependent: :restrict_with_error
+  has_many :communication_campaigns, foreign_key: :created_by_user_id, dependent: :restrict_with_error
 
   enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
 

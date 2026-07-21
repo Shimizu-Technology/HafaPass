@@ -81,6 +81,21 @@ class EmailService
       delivery
     end
 
+    def send_ticket_transfer_async(transfer)
+      delivery = create_delivery(ticket: transfer.ticket, order: transfer.ticket.order, event: transfer.ticket.event,
+        template: "ticket_transfer", recipient: transfer.recipient_email,
+        metadata: { ticket_transfer_id: transfer.id })
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    end
+
+    def send_waitlist_offer_async(offer)
+      delivery = create_delivery(event: offer.event, template: "waitlist_offer",
+        recipient: offer.waitlist_entry.email, metadata: { waitlist_offer_id: offer.id })
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    end
+
     # ── Order Confirmation ──────────────────────────────────────────
     def send_order_confirmation(order, delivery: nil)
       event = order.event
@@ -150,6 +165,45 @@ class EmailService
 
       deliver(to: waitlist_entry.email, subject: subject, html: html, tag: "waitlist_notification", delivery: delivery,
         entry_id: waitlist_entry.id)
+    end
+
+    def send_ticket_transfer(transfer, delivery: nil)
+      url = "#{frontend_url}/ticket-transfers/accept?token=#{ERB::Util.url_encode(TicketTransferCredential.issue(transfer))}"
+      html = email_wrapper("Ticket transfer") do
+        <<~HTML
+          <h2 style="color:#1f2937">A HafaPass ticket was sent to you</h2>
+          <p style="color:#6b7280">#{h(transfer.ticket.event.title)} — #{h(transfer.ticket.ticket_type.name)}</p>
+          <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">Accept ticket</a></p>
+          <p style="color:#6b7280;font-size:14px">Sign in using #{h(transfer.recipient_email)}. This link expires #{h(transfer.expires_at.iso8601)}.</p>
+        HTML
+      end
+      deliver(to: transfer.recipient_email, subject: safe_subject("Ticket transfer: #{transfer.ticket.event.title}"),
+        html: html, tag: "ticket_transfer", delivery: delivery, ticket_id: transfer.ticket_id)
+    end
+
+    def send_waitlist_offer(offer, delivery: nil)
+      url = "#{frontend_url}/events/#{offer.event.slug}?waitlist_offer=#{ERB::Util.url_encode(WaitlistCredential.offer(offer))}"
+      html = email_wrapper("Waitlist offer") do
+        <<~HTML
+          <h2 style="color:#1f2937">Your tickets are ready</h2>
+          <p style="color:#6b7280">#{offer.quantity} #{h(offer.ticket_type.name)} ticket(s) for #{h(offer.event.title)} are reserved for you.</p>
+          <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">Claim tickets</a></p>
+          <p style="color:#6b7280;font-size:14px">This offer expires #{h(offer.expires_at.iso8601)}.</p>
+        HTML
+      end
+      deliver(to: offer.waitlist_entry.email, subject: safe_subject("Your waitlist offer: #{offer.event.title}"),
+        html: html, tag: "waitlist_offer", delivery: delivery, offer_id: offer.id)
+    end
+
+    def send_communication_campaign(delivery)
+      html = email_wrapper(delivery.metadata.fetch("subject")) do
+        <<~HTML
+          <h2 style="color:#1f2937">#{h(delivery.metadata.fetch('subject'))}</h2>
+          <div style="color:#4b5563;white-space:pre-wrap">#{h(delivery.metadata.fetch('body'))}</div>
+        HTML
+      end
+      deliver(to: delivery.recipient, subject: safe_subject(delivery.metadata.fetch("subject")), html: html,
+        tag: "communication_campaign", delivery: delivery, campaign_id: delivery.communication_campaign_id)
     end
 
     # ── Guest List Notification ─────────────────────────────────────

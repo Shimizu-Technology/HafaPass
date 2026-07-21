@@ -89,6 +89,18 @@ RSpec.describe "Api::V1::Events", type: :request do
   end
 
   describe "GET /api/v1/events/:slug" do
+    it "serves maintained Japanese content while preserving English as the fallback" do
+      event = create(:event, :published, supported_locales: %w[en ja],
+        localized_content: { "ja" => { "title" => "グアム・フェスティバル", "description" => "島のお祭り" } })
+      create(:ticket_type, event: event)
+
+      get "/api/v1/events/#{event.slug}", params: { locale: "ja" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("title" => "グアム・フェスティバル", "description" => "島のお祭り")
+      expect(response.parsed_body["localized_content"]).to have_key("ja")
+    end
+
     it "returns a published event with ticket types" do
       event = create(:event, :published, organizer_profile: organizer_profile, starts_at: 5.days.from_now)
       ga = create(:ticket_type, event: event, name: "General Admission", price_cents: 2500, sort_order: 0)

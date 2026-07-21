@@ -19,6 +19,8 @@ export default function OrderConfirmationPage() {
   const [decisionState, setDecisionState] = useState('idle')
   const [cancellingTicketId, setCancellingTicketId] = useState(null)
   const [rotatingTicketId, setRotatingTicketId] = useState(null)
+  const [transferringTicketId, setTransferringTicketId] = useState(null)
+  const [ticketActionError, setTicketActionError] = useState(null)
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -118,6 +120,21 @@ export default function OrderConfirmationPage() {
     }
   }
 
+  async function transferTicket(ticket) {
+    const recipientEmail = window.prompt('Enter the recipient email address. They must sign in with this email to accept the ticket.')
+    if (!recipientEmail) return
+    setTransferringTicketId(ticket.id)
+    setTicketActionError(null)
+    try {
+      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/transfer`, { recipient_email: recipientEmail }, { headers: orderHeaders })
+      window.alert('Transfer invitation sent. You retain control until the recipient accepts it.')
+    } catch (err) {
+      setTicketActionError(err.response?.data?.error || 'Unable to transfer this ticket.')
+    } finally {
+      setTransferringTicketId(null)
+    }
+  }
+
   if (loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
 
   if (error || !order) {
@@ -193,13 +210,14 @@ export default function OrderConfirmationPage() {
             {resendState === 'sent' && <p className="mb-3 text-sm text-emerald-700">A fresh confirmation was queued for delivery.</p>}
             {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">A message was sent recently. Please wait two minutes.</p>}
             {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
+            {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             <div className="divide-y divide-neutral-100">
               {order.tickets.map(ticket => (
                 <div key={ticket.id} className="flex items-center justify-between gap-3 py-3">
-                  <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-neutral-900">{ticket.ticket_type.name}</p>
-                    <p className="text-xs capitalize text-neutral-500">{ticket.attendee_name} · {ticket.status.replace('_', ' ')}</p>
-                  </Link>
+                    <p className="text-xs capitalize text-neutral-500">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
+                  </div>
                   <div className="flex items-center gap-2">
                     {ticket.status === 'issued' && (
                       <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
@@ -207,10 +225,13 @@ export default function OrderConfirmationPage() {
                     {ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) && (
                       <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id} className="text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Cancelling…' : ticket.refundable_cents > 0 ? 'Refund' : 'Cancel'}</button>
                     )}
+                    {ticket.status === 'issued' && event.transfers_enabled !== false && (
+                      <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="text-xs font-semibold text-brand-600">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
+                    )}
                     {ticket.status === 'issued' && !order.ticket_access_blocked && (
                       <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
                     )}
-                    <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>
+                    {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>}
                   </div>
                 </div>
               ))}

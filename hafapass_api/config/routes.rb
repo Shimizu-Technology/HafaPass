@@ -38,9 +38,12 @@ Rails.application.routes.draw do
           post :event_change_response
           post "tickets/:ticket_id/rotate_scan", to: "orders#rotate_scan", as: :rotate_ticket_scan
           post "tickets/:ticket_id/cancel", to: "orders#cancel_ticket", as: :cancel_ticket
+          post "tickets/:ticket_id/transfer", to: "orders#create_transfer", as: :create_ticket_transfer
+          delete "tickets/:ticket_id/transfer", to: "orders#cancel_transfer", as: :cancel_ticket_transfer
         end
       end
       post "order_lookup", to: "order_recovery#create"
+      get "waitlist_offers/:token", to: "waitlist_offers#show"
 
       # Promo code validation (public, for checkout)
       post "promo_codes/validate", to: "promo_codes#validate"
@@ -58,6 +61,9 @@ Rails.application.routes.draw do
       namespace :me do
         resources :orders, only: [:index, :show]
         resources :tickets, only: [:index]
+        post "ticket_transfers/accept", to: "ticket_transfers#accept"
+        post "tickets/:ticket_id/transfer", to: "ticket_transfers#create"
+        delete "tickets/:ticket_id/transfer", to: "ticket_transfers#destroy"
       end
 
       # Public events
@@ -125,11 +131,22 @@ Rails.application.routes.draw do
           resources :waitlist, only: [:index, :destroy], controller: "waitlist" do
             member do
               post :notify
+              post :offer
             end
             collection do
               post :notify_next
             end
           end
+          resources :catalog_items, except: [:show]
+          resources :registration_questions, except: [:show]
+          resources :event_waivers, except: [:show]
+          resources :promoters, except: [:show]
+          resources :communication_campaigns, only: [:index, :create, :update, :destroy] do
+            member { post :send_now }
+          end
+          get "crm/export", to: "crm#export"
+          get "crm/segments", to: "crm#segments"
+          post "catalog_fulfillments/:order_item_id", to: "catalog_fulfillments#create"
           # Refunds for specific orders
           resources :orders, only: [] do
             member do

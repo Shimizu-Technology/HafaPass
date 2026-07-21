@@ -9,6 +9,21 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
 
   before do
     allow(EmailService).to receive(:send_waitlist_notification_async)
+    allow(EmailService).to receive(:send_waitlist_offer_async)
+  end
+
+  describe "POST /api/v1/organizer/events/:event_id/waitlist/:id/offer" do
+    it "reserves inventory and queues a single-use offer" do
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket, quantity: 2)
+
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/offer", headers: headers
+
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body.dig("offer", "quantity")).to eq(2)
+      expect(entry.reload).to be_offered
+      expect(ga_ticket.reload.available_quantity).to eq(98)
+      expect(EmailService).to have_received(:send_waitlist_offer_async)
+    end
   end
 
   describe "GET /api/v1/organizer/events/:event_id/waitlist" do
@@ -81,12 +96,12 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
   end
 
   describe "DELETE /api/v1/organizer/events/:event_id/waitlist/:id" do
-    it "removes a waitlist entry" do
+    it "cancels a waitlist entry while preserving its history" do
       entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
 
       delete "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}", headers: headers
       expect(response).to have_http_status(:no_content)
-      expect(WaitlistEntry.find_by(id: entry.id)).to be_nil
+      expect(entry.reload).to be_cancelled
     end
   end
 end
