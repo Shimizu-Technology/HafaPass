@@ -1,4 +1,4 @@
-# HåfaPass Platform Completion Audit and Launch Plan
+# HafaPass Platform Completion Audit and Launch Plan
 
 Status: Phase 0–10 engineering scope delivered; paid production launch blocked on external evidence
 Last verified: July 20, 2026 (Pacific/Guam)
@@ -6,7 +6,7 @@ Audited release: `main` at merge commit `31684b8`
 
 ## Executive verdict
 
-HåfaPass is now a coherent Guam-first ticketing platform, not the thin event-page prototype described by the 2026 baseline audit. The merged software covers the complete general-admission lifecycle and pilot-scale assigned seating: governed event publishing, ChST correctness, auditable money and inventory, guest recovery, secure tickets, organizer roles, settlements, offline admissions, box office, support, communications, transfers, wallets, actionable waitlist, add-ons, donations, registration/waivers, distribution, marketplace analytics, and accessibility-aware exact-seat sales.
+HafaPass is now a coherent Guam-first ticketing platform, not the thin event-page prototype described by the 2026 baseline audit. The merged software covers the complete general-admission lifecycle and pilot-scale assigned seating: governed event publishing, ChST correctness, auditable money and inventory, guest recovery, secure tickets, organizer roles, settlements, offline admissions, box office, support, communications, transfers, wallets, actionable waitlist, add-ons, donations, registration/waivers, distribution, marketplace analytics, and accessibility-aware exact-seat sales.
 
 The honest release verdict is narrower:
 
@@ -40,7 +40,7 @@ GuamTime remains a real operational competitor, not an outdated placeholder. Its
 
 Source: [GuamTime services and FAQ](https://www.guamtime.net/services).
 
-The practical lesson is that HåfaPass cannot win through software alone. It must combine the now-stronger self-service, financial, security, and offline product with a credible local support, event staffing, promotion, and organizer-success operation.
+The practical lesson is that HafaPass cannot win through software alone. It must combine the now-stronger self-service, financial, security, and offline product with a credible local support, event staffing, promotion, and organizer-success operation.
 
 ### Ticketmaster
 
@@ -48,7 +48,7 @@ Ticketmaster's current business material still highlights the concepts worth bor
 
 Sources: [Ticketmaster ticket-sales platform](https://business.ticketmaster.com/solutions/ticket-sales/) and [SafeTix](https://business.ticketmaster.com/safetix-encrypted-digital-ticketing/).
 
-HåfaPass adopts the underlying protections—revocable display/scan credentials, credential rotation after transfer/exchange, wallets, controlled transfer, exact-seat inventory, event-day analytics, and transparent add-ons—without requiring an app. It deliberately does not launch open resale, speculative inventory, opaque premium pricing, an identity graph, or arena complexity.
+HafaPass adopts the underlying protections—revocable display/scan credentials, credential rotation after transfer/exchange, wallets, controlled transfer, exact-seat inventory, event-day analytics, and transparent add-ons—without requiring an app. It deliberately does not launch open resale, speculative inventory, opaque premium pricing, an identity graph, or arena complexity.
 
 ### Alternative-platform lessons
 
@@ -56,14 +56,14 @@ HåfaPass adopts the underlying protections—revocable display/scan credentials
 - Luma validates simple event pages and an actionable waitlist with explicit approval/capture behavior.
 - Humanitix validates donations, nonprofit usability, and fee transparency.
 - Eventbrite validates marketplace discovery and organizer self-service, while also showing the risk of checkout and pricing complexity.
-- DICE validates nightlife positioning, recommendations, waitlist demand, analytics, and strong support; HåfaPass should not copy app-only access.
-- Seats.io is the leading optional visual-seating boundary for irregular venues because it supplies chart design, hold tokens, validators, channels, and best-available allocation. HåfaPass must remain the final inventory, commerce, credential, accessibility, and audit authority.
+- DICE validates nightlife positioning, recommendations, waitlist demand, analytics, and strong support; HafaPass should not copy app-only access.
+- Seats.io is the leading optional visual-seating boundary for irregular venues because it supplies chart design, hold tokens, validators, channels, and best-available allocation. HafaPass must remain the final inventory, commerce, credential, accessibility, and audit authority.
 
 Sources: [Ticket Tailor features](https://www.tickettailor.com/en-us/features), [Luma waitlist](https://help.luma.com/p/waitlist), [Humanitix features](https://humanitix.com/us/features), [Eventbrite organizer pricing/features](https://www.eventbrite.com/organizer/pricing/), [DICE venues](https://dice.fm/partners/work-with-us/venues), [Seats.io hold tokens](https://docs.seats.io/docs/api/hold-tokens/), [selection validators](https://docs.seats.io/docs/renderer/config-selectionvalidators/), and [channels](https://docs.seats.io/docs/api/channels-overview/).
 
 ## Competitive functionality audit
 
-| Capability | HåfaPass disposition | Evidence or next threshold |
+| Capability | HafaPass disposition | Evidence or next threshold |
 |---|---|---|
 | Local self-service publishing | Implemented with verification, policy, schedule, capacity, inventory, and payout-readiness gates | Phase 3 event lifecycle and organizer requests |
 | All-in fee clarity | Implemented with buyer-pays, organizer-absorbs, and split policies; immutable fee snapshots | Phases 2, 4, and 8 commerce tests |
@@ -106,7 +106,7 @@ The status vocabulary is the delivery playbook's vocabulary. `Proven` means impl
 These are not optional polish and must not be converted into checkboxes without retained evidence.
 
 1. **Merchant, legal, tax, and liability decision.** Counsel/accounting/provider must sign the merchant-of-record, agency, Guam Business Privilege Tax, fees, reserves, refunds, disputes, negative balances, prohibited events, PCI, privacy, and retention treatment.
-2. **Approved Guam online payment and payout path.** Obtain written PayPal Multiparty/alternative approval for the actual HåfaPass entity and organizer model, or formally approve the dual-control local-bank/manual pilot path. Stripe remains sandbox-only unless Guam eligibility is confirmed in writing.
+2. **Approved Guam online payment and payout path.** Obtain written PayPal Multiparty/alternative approval for the actual HafaPass entity and organizer model, or formally approve the dual-control local-bank/manual pilot path. Stripe remains sandbox-only unless Guam eligibility is confirmed in writing.
 3. **Real organizer onboarding and bank evidence.** One Guam organizer must pass actual identity/business/account requirements; configuration status alone is not proof.
 4. **Dedicated production providers and secrets.** Replace borrowed/shared test credentials; configure Clerk, database, Redis/Sidekiq, mail, monitoring, storage, wallet, payment, and webhook secrets with rotation and least privilege.
 5. **Provider sandbox matrix.** Record success, decline, additional authentication, browser loss, duplicate/out-of-order callbacks, expiry, refund, dispute, unknown outcomes, and exact ledger reconciliation for each enabled provider.
@@ -117,6 +117,8 @@ These are not optional polish and must not be converted into checkboxes without 
 10. **Real device/browser/accessibility QA.** Execute the documented iOS/Android/desktop matrix, keyboard path, VoiceOver/TalkBack spot checks, camera behavior, low connectivity, and three physical scanner-device conflict drill.
 11. **Venue and assigned-seat approval.** Venue signs seat labels, capacity, price zones, accessible/companion groupings, obstructions, house holds, door workflow, and emergency behavior; qualified accessibility review approves the policy.
 12. **Pilot load and event dry run.** Test expected onsale concurrency, connection pool, seat contention, 500+ admissions, box office, emergency door list, network loss, batteries/spares, cash controls, incident command, and support escalation.
+
+These numbered controls are the blocker inventory, while Gates A–J below are the execution sequence; they are not intended to correspond one-for-one. Coverage is: 1 → B/D; 2 → B/D/H; 3 → B/E/H; 4 → C/D; 5 → D; 6 → H; 7 → B/D; 8 → C/D; 9 → C/G; 10 → F/G; 11 → E/F; and 12 → F/G.
 
 ## Ordered execution plan
 
@@ -158,12 +160,12 @@ Owner: engineering/operations with an independent verifier.
 Actions:
 
 1. Provision production database, Redis, web, worker, exactly one commerce clock, DNS/TLS, mail, monitoring, storage, and backups.
-2. Install dedicated HåfaPass credentials; document rotation/revocation and verify no borrowed credential remains.
+2. Install dedicated HafaPass credentials; document rotation/revocation and verify no borrowed credential remains.
 3. Configure readiness, Sentry, uptime, queue depth, payment/webhook/reconciliation, delivery, hold expiry, scanner sync, and seating contention alerts.
 4. Enforce private pages/cache headers, allowed origins, rate limits, webhook signatures, and admin/support least privilege.
-5. Run migration backups and the reviewed deploy/rollback sequence. Do not run destructive downs after real records exist.
+5. Restore an encrypted backup into an isolated environment with external providers disabled, then run the reviewed deploy/application-rollback sequence. Do not run destructive migration downs after real records exist.
 
-Exit evidence: production configuration checklist, redacted readiness output, named alert routes, backup identifiers, rollback result, and secret-rotation attestations.
+Exit evidence: production configuration checklist, redacted readiness output, named alert routes, backup and isolated-restore identifiers, rollback result, and secret-rotation attestations.
 
 ### Gate D — Close provider and policy evidence
 
@@ -263,7 +265,7 @@ Exit evidence: signed closeout, metric report, retrospective actions, and an exp
 
 ## Product strategy after the first pilot
 
-The most important non-code gap against GuamTime is not another checkbox; it is local execution. HåfaPass needs an organizer-success promise, pre-event checklist, published support hours/escalation, trained event-day staffing option, promotion calendar, and real hotel/concierge/tourism/Ambros relationships. The marketplace already measures governed links and conversion, so those partnerships can be evaluated instead of treated as branding.
+The most important non-code gap against GuamTime is not another checkbox; it is local execution. HafaPass needs an organizer-success promise, pre-event checklist, published support hours/escalation, trained event-day staffing option, promotion calendar, and real hotel/concierge/tourism/Ambros relationships. The marketplace already measures governed links and conversion, so those partnerships can be evaluated instead of treated as branding.
 
 The most important scale gap against Ticketmaster is peak-demand operations, not resale. Establish a measured trigger for a waiting room, CDN/cache changes, database/read-replica strategy, connection-pool changes, and a richer chart provider. Do not add those systems before load evidence; every new distributed inventory authority increases oversell and incident risk.
 
@@ -273,4 +275,4 @@ The most important trust promise is simple: transparent total price, real Guam-l
 
 The original application had a strong visual shell but weak transactional and operational guarantees. That is no longer the accurate description. The merged application now has the architecture and feature surface of a proper Guam ticketing platform and a credible product advantage over GuamTime's assisted workflow.
 
-What remains is the part software cannot self-certify: legal authority, Guam money movement, real provider behavior, physical venue/device accessibility, local service capacity, and operational discipline. HåfaPass should be described as **engineering-complete through Phase 10 and production-gated**, not “production ready,” until Gates A–H have dated evidence and named owners.
+What remains is the part software cannot self-certify: legal authority, Guam money movement, real provider behavior, physical venue/device accessibility, local service capacity, and operational discipline. HafaPass should be described as **engineering-complete through Phase 10 and production-gated**, not “production ready,” until Gates A–H have dated evidence and named owners.
