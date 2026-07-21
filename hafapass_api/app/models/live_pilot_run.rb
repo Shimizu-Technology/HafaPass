@@ -8,6 +8,7 @@ class LivePilotRun < ApplicationRecord
   has_many :live_pilot_run_actions, dependent: :restrict_with_error
   has_many :live_pilot_incidents, dependent: :restrict_with_error
   has_many :live_pilot_metric_snapshots, dependent: :restrict_with_error
+  has_many :pilot_closeout_reviews, dependent: :restrict_with_error
 
   enum :status, { active: 0, paused: 1, completed: 2, aborted: 3 }, prefix: true
 

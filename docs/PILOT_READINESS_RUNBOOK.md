@@ -1,6 +1,6 @@
 # HåfaPass Pilot Readiness and Incident Runbook
 
-Status: engineering controls implemented through Gate I; external approvals, production drills, and a real bounded pilot are still required.
+Status: engineering controls implemented through Gate J; external approvals, production drills, a real bounded pilot, and inspected closeout evidence are still required.
 
 ## Release authority and named ownership
 
@@ -11,6 +11,8 @@ No one person may silently approve their own production payment configuration, p
 Record the event-specific owners, controls, evidence reference, and independent approval through [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Do not open production inventory merely because the generic checklist below is complete; the approval must match the current event-state digest.
 
 After Gates E–H are current, use [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md) to authorize the exact inventory cap, support windows, accountable owners, pause thresholds, live checkpoints, incident ledger, and post-event reconciliation. Production checkout remains closed unless that event has a current Gate I approval and an active run.
+
+After Gate I is completed, use [Gate J Pilot Closeout and Expansion Decision](GATE_J_PILOT_CLOSEOUT.md) to bind the exact run and current local state to the external evidence, outcome metrics, retrospective actions, cleanup, and a two-person hold/repeat/limited-Guam decision. Gate J never bypasses the next event's gates or authorizes a new region.
 
 ## Hard production gates
 
@@ -117,4 +119,11 @@ Resume requires a separate resolution record and a new safe post-pause checkpoin
 
 ## Closeout
 
-Reconcile payments/refunds/fees/settlements/payouts to zero unexplained variance; resolve admission and message exceptions; complete Gate I and export its append-only plan/action/checkpoint/incident evidence; revoke temporary staff/devices; purge offline scanner data within the approved window; and hold the Gate J retrospective before expanding inventory.
+1. Complete Gate I and export/reference its append-only plan, decisions, run actions, checkpoints, incidents/resolutions, and completion evidence.
+2. Reconcile sales, discounts, taxes, fees, refunds, disputes, add-ons, cash/card door sales, settlement, payout, scans, messages, and support to zero unexplained variance or unresolved exception.
+3. Finalize a settlement for the current financial state, complete paid-payout reconciliation, and resolve pending/unknown provider operations before making attestations.
+4. Revoke temporary staff and scanner devices, sync and purge device-local data within the approved window, and retain cleanup proof under policy.
+5. Calculate the metric report with definitions and denominators; gather privacy-safe organizer/buyer feedback; hold the retrospective; and assign dated, evidence-backed actions.
+6. In **Admin → Events → Gate J pilot closeout**, enter the restricted bundle reference/digest, eight evidence references, external outcomes, reconciliation/cleanup affirmations, actions, and explicit decision.
+7. Have a different administrator inspect the artifacts and approve or reject the exact snapshot. If local state or the application changed, prepare a new submission.
+8. Expand only within a current Gate J approval: hold, one more bounded Guam pilot, or at most 10 Guam events/1,000 tickets per event for no more than 90 days. Every future event still completes its applicable Gates A–I.

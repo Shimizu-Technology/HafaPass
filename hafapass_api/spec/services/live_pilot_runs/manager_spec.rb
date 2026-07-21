@@ -49,6 +49,21 @@ RSpec.describe LivePilotRuns::Manager do
     expect(chain[:run].reload).to be_status_paused
   end
 
+  it "keeps door orders out of online checkout conversion" do
+    chain = create_live_pilot_run
+    create(:order, event: chain[:event], status: :completed, source: "box_office", payment_method: "door_cash",
+      subtotal_cents: 0, service_fee_cents: 0, total_cents: 0)
+    MarketplaceFunnelEvent.create!(
+      event: chain[:event], stage: :checkout_started, visitor_hash: "visitor-online", occurred_at: Time.current
+    )
+
+    metrics = LivePilotMetrics::Manager.local_metrics(chain[:run])
+
+    expect(metrics).to include(
+      "purchase_count" => 1, "online_purchase_count" => 0, "checkout_conversion_bps" => 0
+    )
+  end
+
   it "rejects invalid, pre-run, and future monitoring timestamps" do
     chain = create_live_pilot_run
     actor = create(:user, :admin)

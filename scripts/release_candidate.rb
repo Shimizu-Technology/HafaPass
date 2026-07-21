@@ -276,13 +276,15 @@ module HafaPass
           | F — buyer, organizer, accessibility, and load QA | QA / representative users / venue | TBD | `#{id}-F` | pending | | |
           | G — event-day rehearsal | Event commander / technical lead | TBD | `#{id}-G` | pending | | |
           | H — live low-value money loop | Finance lead / independent approver | TBD | `#{id}-H` | pending | | |
+          | I — bounded live-pilot operation | Incident commander / business owner | TBD | `#{id}-I` | pending | | |
+          | J — closeout and expansion decision | Finance / operations / organizer success / engineering | TBD | `#{id}-J` | pending | | |
 
           ## Gate A human approvals
 
           - [ ] Engineering lead confirms this exact commit and schema are the candidate.
           - [ ] Founder approves the release freeze and scope.
-          - [ ] Named owner and backup are recorded for every Gate B–H row.
-          - [ ] Due dates are recorded for every Gate B–H row.
+          - [ ] Named owner and backup are recorded for every Gate B–J row.
+          - [ ] Due dates are recorded for every Gate B–J row.
           - [ ] No exception is accepted without an owner, expiry, risk statement, and issue/reference.
         MARKDOWN
         end

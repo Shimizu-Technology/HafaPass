@@ -51,6 +51,7 @@ class Event < ApplicationRecord
   has_many :live_pilot_run_actions, dependent: :restrict_with_error
   has_many :live_pilot_incidents, dependent: :restrict_with_error
   has_many :live_pilot_metric_snapshots, dependent: :restrict_with_error
+  has_many :pilot_closeout_reviews, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {

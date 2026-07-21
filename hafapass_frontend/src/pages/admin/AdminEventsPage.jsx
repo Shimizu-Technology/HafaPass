@@ -8,6 +8,7 @@ import PilotValidationReviewDialog from '../../components/PilotValidationReviewD
 import EventDayRehearsalReviewDialog from '../../components/EventDayRehearsalReviewDialog'
 import LiveMoneyProofReviewDialog from '../../components/LiveMoneyProofReviewDialog'
 import LivePilotOperationsDialog from '../../components/LivePilotOperationsDialog'
+import PilotCloseoutDialog from '../../components/PilotCloseoutDialog'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
 const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 'other']
@@ -110,7 +111,8 @@ export default function AdminEventsPage() {
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                         event.status === 'published' ? 'bg-emerald-50 text-emerald-700' :
                         event.status === 'draft' ? 'bg-neutral-100 text-neutral-600' :
-                        'bg-red-50 text-red-600'
+                        event.status === 'completed' ? 'bg-violet-50 text-violet-800' :
+                        'bg-red-50 text-red-800'
                       }`}>{event.status}</span>
                     </td>
                     <td className="px-4 py-3 text-neutral-500 hidden md:table-cell capitalize">{event.category}</td>
@@ -122,6 +124,7 @@ export default function AdminEventsPage() {
                       <EventDayRehearsalReviewDialog event={event} onComplete={fetchEvents} />
                       <LiveMoneyProofReviewDialog event={event} onComplete={fetchEvents} />
                       {!event.live_money_proof_candidate && <LivePilotOperationsDialog event={event} onComplete={fetchEvents} />}
+                      {!event.live_money_proof_candidate && <PilotCloseoutDialog event={event} onComplete={fetchEvents} />}
                       {event.status === 'draft' && <button type="button" onClick={() => toggleProofCandidate(event)} className="min-h-11 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">{event.live_money_proof_candidate ? 'Remove proof-candidate flag' : 'Mark as hidden proof candidate'}</button>}
                     </div></td>
                     <td className="px-4 py-3 text-center">

@@ -109,6 +109,10 @@ RSpec.describe "release candidate tooling" do
 
         expect(paths.map(&:basename).map(&:to_s)).to contain_exactly("candidate.json", "evidence-register.md")
         expect(File.stat(paths.first).mode & 0o777).to eq(0o600)
+        register = File.read(paths.find { |path| path.basename.to_s == "evidence-register.md" })
+        expect(register).to include(
+          "I — bounded live-pilot operation", "J — closeout and expansion decision", "Gate B–J row"
+        )
         expect { described_class.new(File.join(directory, "pilot-rc-1")).write!(manifest) }
           .to raise_error(HafaPass::ReleaseCandidate::Error, /Refusing to overwrite/)
 
