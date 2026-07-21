@@ -235,6 +235,8 @@ Actions:
 
 Exit evidence: rehearsal log, alert acknowledgements, reconciliation with zero unexplained variance, and explicit go/no-go decision.
 
+Application control: follow [Gate G Physical Event-Day Rehearsal Evidence](GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md). HafaPass now stores an append-only, independently approved rehearsal snapshot tied to the active Gate F approval, material event digest, and deployed revision. It requires a 500-ticket signed manifest and emergency-list proof, three distinct physical offline devices, the full revoked/duplicate/reconnect scan matrix, seven outage/incident drills, explicit cash/card-present decisions, named event-day owners, alert acknowledgements, p95 thresholds, drained queues, resolved conflicts, and zero unexplained admission/inventory/money variance. Production publish/resume and every commerce channel fail closed when Gate G is missing or stale. The application does not claim the physical drill happened; the restricted evidence must still be produced and inspected.
+
 ### Gate H — Complete the low-value live money loop
 
 Owner: finance lead with independent approver.

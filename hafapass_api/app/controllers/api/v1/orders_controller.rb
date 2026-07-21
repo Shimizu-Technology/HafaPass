@@ -37,6 +37,11 @@ class Api::V1::OrdersController < ApplicationController
         status: :service_unavailable
     end
 
+    if release_gate == :event_day_rehearsal
+      return render json: { error: "Checkout is unavailable until this event has a current Gate G rehearsal approval" },
+        status: :service_unavailable
+    end
+
     unless params[:buyer_email].present? && params[:buyer_name].present?
       render json: { error: "buyer_email and buyer_name are required" }, status: :unprocessable_entity
       return

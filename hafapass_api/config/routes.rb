@@ -206,6 +206,15 @@ Rails.application.routes.draw do
             post :reject
           end
         end
+        get "events/:event_id/event_day_rehearsal", to: "event_day_rehearsal_reviews#show"
+        post "events/:event_id/event_day_rehearsal_reviews", to: "event_day_rehearsal_reviews#create"
+        resources :event_day_rehearsal_reviews, only: [] do
+          member do
+            post :approve
+            post :revoke
+            post :reject
+          end
+        end
         resources :users, only: [:index, :update]
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]

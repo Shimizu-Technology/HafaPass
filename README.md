@@ -56,6 +56,7 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
 - [Gate D Provider and Policy Evidence](docs/GATE_D_PROVIDER_POLICY_EVIDENCE.md) — fail-closed provider/policy enablement, immutable evidence, independent approval, expiry, configuration binding, and remaining external proof.
 - [Gate E Pilot Readiness Evidence](docs/GATE_E_PILOT_READINESS_EVIDENCE.md) — event-bound operating evidence, named command ownership, independent approval, configuration-drift invalidation, and production sales enforcement.
 - [Gate F Validation Evidence](docs/GATE_F_VALIDATION_EVIDENCE.md) — candidate-bound device, representative-user, accessibility, and expected-onsale load evidence with independent approval and fail-closed production enforcement.
+- [Gate G Event-Day Rehearsal Evidence](docs/GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md) — candidate-bound signed-manifest, three-device offline, incident, door-sale, staffing, alert, and zero-variance rehearsal evidence.
 - [Pilot Manual Test Plan](docs/MVP_TEST_PLAN.md) — the end-to-end release-candidate validation.
 - [Event-Day Operations](docs/EVENT_DAY_OPERATIONS.md) — signed offline scanning, device drills, door sales, Clover gates, reconciliation, and fallback procedures.
 - [Competitive Analysis](COMPETITIVE_ANALYSIS.md) — current GuamTime, Ticketmaster, and alternative-platform findings.

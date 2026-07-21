@@ -42,6 +42,7 @@ class Event < ApplicationRecord
   has_many :seat_audit_events, dependent: :restrict_with_error
   has_many :pilot_readiness_reviews, dependent: :restrict_with_error
   has_many :pilot_validation_reviews, dependent: :restrict_with_error
+  has_many :event_day_rehearsal_reviews, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -194,7 +195,8 @@ class Event < ApplicationRecord
       ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
     end
     configured_inventory = ticket_types.sum(&:quantity_available)
-    pilot_readiness_approved, pilot_validation_approved = production_release_approvals(at: at)
+    pilot_readiness_approved, pilot_validation_approved, event_day_rehearsal_approved =
+      production_release_approvals(at: at)
     checks = [
       checklist_item("production_policy_approved", "Production policy register approved",
         !Rails.env.production? || PolicyRegistry.production_approved?),
@@ -213,7 +215,9 @@ class Event < ApplicationRecord
       checklist_item("pilot_readiness_approved", "Event-specific pilot readiness independently approved",
         pilot_readiness_approved),
       checklist_item("pilot_validation_approved", "Buyer, organizer, accessibility, and load validation independently approved",
-        pilot_validation_approved)
+        pilot_validation_approved),
+      checklist_item("event_day_rehearsal_approved", "Physical event-day rehearsal independently approved",
+        event_day_rehearsal_approved)
     ]
     checks
   end
@@ -223,9 +227,10 @@ class Event < ApplicationRecord
   end
 
   def production_release_gate_status(at: Time.current)
-    readiness, validation = production_release_approvals(at: at)
+    readiness, validation, rehearsal = production_release_approvals(at: at)
     return :pilot_readiness unless readiness
     return :pilot_validation unless validation
+    return :event_day_rehearsal unless rehearsal
 
     :ready
   end
@@ -251,14 +256,17 @@ class Event < ApplicationRecord
   private
 
   def production_release_approvals(at:)
-    return [true, true] unless Rails.env.production?
+    return [true, true, true] unless Rails.env.production?
 
     state_digest = PilotReadiness.event_state_digest(self)
     readiness = PilotReadiness.active_approval(self, at: at, state_digest: state_digest)
     validation = PilotValidation.active_approval(
       self, at: at, readiness_approval: readiness, state_digest: state_digest
     ) if readiness
-    [readiness.present?, validation.present?]
+    rehearsal = EventDayRehearsal.active_approval(
+      self, at: at, validation_approval: validation, state_digest: state_digest
+    ) if validation
+    [readiness.present?, validation.present?, rehearsal.present?]
   end
 
   def active_seat_holds_count(at: Time.current)

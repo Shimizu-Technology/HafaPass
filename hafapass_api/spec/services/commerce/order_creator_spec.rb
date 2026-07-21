@@ -42,6 +42,25 @@ RSpec.describe Commerce::OrderCreator do
     expect(event.orders).to be_empty
   end
 
+  it "blocks every commerce channel in production without current Gate G rehearsal approval" do
+    allow(Rails.env).to receive(:production?).and_return(true)
+    allow(event).to receive(:production_release_gate_status).and_return(:event_day_rehearsal)
+
+    expect do
+      described_class.call(
+        event: event,
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+        buyer_email: "walkin@example.com",
+        buyer_name: "Walk-in",
+        payment_required: false,
+        source: "box_office",
+        payment_method: "door_cash"
+      )
+    end.to raise_error(described_class::CheckoutError, /current Gate G rehearsal approval/)
+
+    expect(event.orders).to be_empty
+  end
+
   it "rejects checkout for events that ended or are no longer published" do
     allow(StripeService).to receive(:payment_enabled?).and_return(false)
     checkout = lambda do

@@ -110,6 +110,8 @@ Required production configuration:
 
 ## Release checklist
 
+The completed artifacts are submitted and independently approved through [Gate G Physical Event-Day Rehearsal Evidence](GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md). Automated coverage does not satisfy the physical rehearsal.
+
 - [ ] Stable signing key configured, backed up, and rotation procedure tested.
 - [ ] Three real devices pass the offline drill with the production candidate.
 - [ ] 500-ticket load and p95 targets pass in CI and the pilot environment.

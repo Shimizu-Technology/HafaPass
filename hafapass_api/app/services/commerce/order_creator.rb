@@ -56,6 +56,9 @@ module Commerce
         if release_gate == :pilot_validation
           raise CheckoutError, "This event does not have a current Gate F validation approval"
         end
+        if release_gate == :event_day_rehearsal
+          raise CheckoutError, "This event does not have a current Gate G rehearsal approval"
+        end
         raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)

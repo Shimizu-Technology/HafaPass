@@ -5,6 +5,7 @@ import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 import PilotReadinessReviewDialog from '../../components/PilotReadinessReviewDialog'
 import PilotValidationReviewDialog from '../../components/PilotValidationReviewDialog'
+import EventDayRehearsalReviewDialog from '../../components/EventDayRehearsalReviewDialog'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
 const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 'other']
@@ -100,6 +101,7 @@ export default function AdminEventsPage() {
                     <td className="px-4 py-3"><div className="flex min-w-48 flex-col items-start gap-2">
                       <PilotReadinessReviewDialog event={event} onComplete={fetchEvents} />
                       <PilotValidationReviewDialog event={event} onComplete={fetchEvents} />
+                      <EventDayRehearsalReviewDialog event={event} onComplete={fetchEvents} />
                     </div></td>
                     <td className="px-4 py-3 text-center">
                       <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
