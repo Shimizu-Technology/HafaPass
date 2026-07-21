@@ -25,6 +25,7 @@ RSpec.describe "Admin marketplace governance", type: :request do
     get "/api/v1/admin/marketplace", headers: headers
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig("supply", "purchasable_upcoming")).to eq(1)
+    expect(response.parsed_body.dig("supply", "categories_without_inventory")).not_to include(event.category)
   end
 
   it "rejects non-admin governance access" do

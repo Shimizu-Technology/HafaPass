@@ -81,4 +81,13 @@ RSpec.describe "Privacy-safe distribution attribution", type: :request do
     expect(result.order.acquisition_attribution.source).to eq("user_referral")
     expect(referral.acquisition_attributions.count).to eq(1)
   end
+
+  it "does not misclassify box-office orders as online marketplace acquisitions" do
+    result = Commerce::OrderCreator.call(event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }], buyer_email: "door@example.com",
+      buyer_name: "Door Buyer", payment_required: false, source: "box_office", payment_method: "cash")
+
+    expect(result.order.acquisition_attribution).to be_nil
+    expect(result.order.marketplace_funnel_events.purchase).to be_empty
+  end
 end

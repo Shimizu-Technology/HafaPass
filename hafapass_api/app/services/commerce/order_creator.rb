@@ -477,6 +477,8 @@ module Commerce
     end
 
     def record_acquisition!(order)
+      return if order.source == "box_office"
+
       link = DistributionLink.available.find_by(code: attribution_value(:distribution_code).to_s.upcase, event: event)
       event_referral = EventReferral.find_by(code: attribution_value(:event_referral_code).to_s.upcase, event: event,
         active: true)
