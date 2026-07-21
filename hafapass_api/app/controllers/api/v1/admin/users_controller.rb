@@ -91,9 +91,15 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   def connected_account_json(account)
     return unless account
 
+    active_approval = account.active_payment_readiness_approval
     account.attributes.slice(
       "id", "provider", "provider_account_id", "status", "charges_enabled", "payouts_enabled",
       "details_submitted", "requirements_due", "last_synced_at"
-    ).merge(payout_ready: account.payout_ready?)
+    ).merge(
+      payout_ready: account.externally_ready? && active_approval.present?,
+      readiness_submission: payment_readiness_review_json(account.pending_payment_readiness_submission),
+      readiness_approval: payment_readiness_review_json(account.latest_payment_readiness_approval),
+      readiness_approval_active: active_approval.present?
+    )
   end
 end

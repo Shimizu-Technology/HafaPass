@@ -191,7 +191,16 @@ Rails.application.routes.draw do
         resources :users, only: [:index, :update]
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]
-        resources :connected_accounts, only: [:update]
+        resources :connected_accounts, only: [:update] do
+          resources :payment_readiness_reviews, only: [:create]
+        end
+        resources :payment_readiness_reviews, only: [] do
+          member do
+            patch :approve
+            post :revoke
+            post :reject
+          end
+        end
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:create, :destroy]
         resources :payouts, only: [:update]

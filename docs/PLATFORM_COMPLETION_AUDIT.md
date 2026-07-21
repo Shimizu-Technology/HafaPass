@@ -1,8 +1,8 @@
 # HafaPass Platform Completion Audit and Launch Plan
 
-Status: Phase 0–10 engineering scope delivered; paid production launch blocked on external evidence
-Last verified: July 20, 2026 (Pacific/Guam)
-Audited release: `main` at merge commit `31684b8`
+Status: Phase 0–10 engineering scope and Gate A release controls delivered; paid production launch blocked on external evidence
+Last verified: July 21, 2026 (Pacific/Guam)
+Audited baseline: protected `main` at `d1fceb5`, plus the Gate B change set documented here
 
 ## Executive verdict
 
@@ -19,13 +19,13 @@ The right next move is not another broad feature sprint. It is to close the rele
 
 ## Evidence baseline
 
-The final Phase 10 candidate passed locally with:
+The current Gate B candidate passed locally with:
 
-- 522 RSpec examples.
-- 412 Ruby files with zero RuboCop offenses.
+- 541 RSpec examples.
+- 423 Ruby files with zero RuboCop offenses.
 - Zero Brakeman warnings.
 - Zero known Ruby dependency vulnerabilities.
-- 21 Vitest tests and zero ESLint warnings.
+- 25 Vitest tests and zero ESLint warnings.
 - A successful Vite production build and zero known high production npm vulnerabilities.
 - 11 Playwright Chromium journeys, including offline scanning, finance isolation, service recovery, marketplace discovery, competitive checkout, exact keyboard seat selection, and automated serious/critical accessibility checks.
 - Rails eager-load validation and an empty-data migration down/up drill for Phase 10.
@@ -77,7 +77,7 @@ Sources: [Ticket Tailor features](https://www.tickettailor.com/en-us/features), 
 | Discovery and local distribution | Implemented with collections, windows, categories, prices, villages, venue/organizer pages, favorites, follows, reminders, tourism/hospitality/Ambros/promoter links, and privacy-safe attribution | Phase 9 request and E2E suites |
 | Local audience and marketing reach | Software exists; audience and partner execution are not software facts | Build opted-in supply/demand channels and measure first-touch-to-purchase conversion |
 | Local support/event staffing | Support console and staff roles exist; staffing coverage/SLA is not yet evidenced | Contract the operating model and staff the first event |
-| Production Guam payments/payouts | Provider-neutral ledger and onboarding states exist; live provider approval does not | Hard launch blocker; follow the Guam money decision below |
+| Production Guam payments/payouts | Provider-neutral ledger, onboarding states, and append-only two-person readiness evidence enforcement exist; live provider approval does not | Hard launch blocker; follow the Guam money decision and Gate B operations below |
 | Complex theater/arena visual charts and seat views | Deliberately deferred | Integrate a visual provider only when a signed venue cannot be represented safely by the native renderer |
 | High-demand waiting room/queue | Not required for the first controlled pilot | Add only after measured onsale load approaches tested database/web capacity |
 | Open resale/speculative tickets/opaque dynamic pricing | Deliberately excluded | Reconsider only after legal, consumer-protection, fraud, and market evidence; no launch dependency |
@@ -94,7 +94,7 @@ The status vocabulary is the delivery playbook's vocabulary. `Proven` means impl
 | 2 — immutable order/fee/payment/refund ledger, expiring inventory holds, state machines, webhook receipt/replay, locked capacity/promo allocation, reconciliation, non-destructive history, correct analytics/backfill | [PR #20](https://github.com/Shimizu-Technology/HafaPass/pull/20) / `eba035b` | commerce migrations `20260720150000`–`150003`; commerce services/models | commerce ledger, concurrency, creator/lifecycle/refund, webhook/admin suites | Simulated/sandbox adapter evidence exists; complete enabled-provider sandbox export is not recorded | `docs/COMMERCE_LEDGER_OPERATIONS.md` | **Proven** for local invariants; provider matrix **insufficient evidence** |
 | 3 — organizer privilege removal/readiness, publish/lifecycle commands, Guam IANA time, sale-window/end-state enforcement, recurrence/clone, canonical category/search/filter/pagination, honest marketplace/SEO | [PR #21](https://github.com/Shimizu-Technology/HafaPass/pull/21) / `e5cda0d` | migration `20260720000001`; `EventLifecycle`, `EventTimeParser`, event controllers/models | event, lifecycle, time, organizer, recurrence, sitemap/OG request suites | Automated ChST evidence exists; final multi-browser/device matrix remains part of pilot QA | Blueprint and MVP test plan | **Proven** for engineering |
 | 4 — guest access/recovery, provider return restoration, checkout expiry/all-in/free policy, authoritative confirmation, revocable display/scan credentials, PII removal, resend/lookup, ticket refunds/actions, dispute access, rate limits | [PR #22](https://github.com/Shimizu-Technology/HafaPass/pull/22) / `d4c6514` | migration `20260720000002`; order access, credentials, lifecycle/controllers | order access/recovery/orders/tickets/Stripe/credential suites | Real approved-provider redirect/3DS/browser-loss matrix not recorded | MVP test plan and pilot runbook | **Proven** for local behavior; provider/browser matrix **insufficient evidence** |
-| 5 — organizations/memberships/roles/event assignment, provider-neutral connected accounts, paid-publish gate, immutable settlements, payouts/reserves/adjustments/refunds/disputes/negative balances, finance UI/audit | [PR #24](https://github.com/Shimizu-Technology/HafaPass/pull/24) / `b976e6c` | migration `20260720200000`; organization authorization, connected-account and settlement services | authorization, invitation, connected-account, settlement, finance E2E suites | No written Guam live-provider approval, real onboarding, payout, or bank reconciliation yet | `docs/GUAM_PAYMENT_AND_PAYOUT_DECISION.md`, `docs/SETTLEMENT_AND_PAYOUT_OPERATIONS.md` | **Proven** for accounting model; live money path **insufficient evidence** |
+| 5 / Gate B enforcement — organizations/memberships/roles/event assignment, provider-neutral connected accounts, paid-publish gate, immutable settlements, payouts/reserves/adjustments/refunds/disputes/negative balances, two-person readiness evidence, finance UI/audit | [PR #24](https://github.com/Shimizu-Technology/HafaPass/pull/24) / `b976e6c`; Gate B evidence PR recorded after merge | migrations `20260720200000` and `20260721150000`–`150300`; organization authorization, connected-account/readiness-review, and settlement services | authorization, invitation, connected-account, payment-readiness, settlement, finance E2E suites | No written Guam live-provider approval, real onboarding, payout, or bank reconciliation yet | `docs/GUAM_PAYMENT_AND_PAYOUT_DECISION.md`, `docs/GATE_B_PAYMENT_READINESS_OPERATIONS.md`, `docs/SETTLEMENT_AND_PAYOUT_OPERATIONS.md` | **Proven** for accounting and fail-closed evidence controls; live money path **insufficient evidence** |
 | 6 — authorized devices/signed manifests, offline queue, QR/manual lookup, multi-device reconciliation, append-only admissions/reversal, least-PII staff UI, dashboard/door list, cash and guarded card-present sales, shared door inventory | [PR #25](https://github.com/Shimizu-Technology/HafaPass/pull/25) / `28f0ba6` | migration `20260720210000`; admissions/card-present services and scanner UI | manifest/signing/reconciler/500-ticket scale, admissions/box-office requests, offline Playwright | Automated three-device simulation proven; physical-device/network drill and Clover merchant certification not recorded | `docs/EVENT_DAY_OPERATIONS.md` | **Proven** in simulation; physical/provider evidence **insufficient** |
 | 7 — durable messages/provider events, safe fulfillment, escaped content, resend/bounce/suppression/failure visibility, lifecycle templates, least-privilege support, policy/version snapshots, incident/provider/refund/weather/rollback/backup/on-call procedures | [PR #27](https://github.com/Shimizu-Technology/HafaPass/pull/27) / `35c01b9` | migration `20260720220000`; delivery/support/policy/readiness services | delivery concurrency/jobs, Resend webhook/provider processor, support/policy/readiness/accessibility suites | Real domain delivery/bounce, professional approvals, backup restore, alert drill, and full device/AT matrix not recorded | `docs/PILOT_READINESS_RUNBOOK.md`, `docs/POLICY_REVIEW_REGISTER.md` | **Proven** for surfaces; external release evidence **insufficient** |
 | 8 — secure transfer, wallets, actionable waitlist, donations/catalog, registration/waivers, promoter commission, fee policy, CRM campaigns/segments, selected Japanese/CHamoru content | [PR #28](https://github.com/Shimizu-Technology/HafaPass/pull/28) / `c3aed82` | migrations `20260720230000`–`230300`; competitive services/controllers/UI | competitive order, transfer, wallet, waitlist, campaigns, request and E2E suites | Production Apple signing/Google issuer and real campaign delivery not recorded | `docs/PHASE_08_COMPETITIVE_FEATURES.md` | **Proven** for application behavior; provider credentials **insufficient** |
@@ -150,6 +150,8 @@ Actions:
 3. In parallel, document the Bank of Hawaii/manual fallback, dual approval, bank-detail verification, payout proof, and reconciliation ownership.
 4. Approve BPT/tax, pricing, free-event policy, fee absorb/pass/split, refundability, payout timing, reserves, and chargeback responsibility.
 5. Keep production paid publishing blocked until connected-account readiness is supported by provider evidence.
+
+Application control: follow [Gate B Payment Readiness Operations](GATE_B_PAYMENT_READINESS_OPERATIONS.md). Provider capability flags alone cannot enable readiness; a different administrator must approve a complete, digest-bound, expiring evidence snapshot, and revocation is append-only.
 
 Exit evidence: signed decisions, provider approval/contract, approved fee/tax schedule, and one real organizer/account path ready for controlled testing.
 

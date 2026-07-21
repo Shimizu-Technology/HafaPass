@@ -1,7 +1,7 @@
 # Guam Payment and Payout Decision
 
-Status: Phase 5 architecture decision; external approval gates remain open  
-Last verified: July 20, 2026
+Status: Gate B implementation decision; external legal, accounting, bank, and provider approvals remain open.
+Last verified against first-party sources: July 21, 2026
 
 ## Decision
 
@@ -13,25 +13,25 @@ The launch order is:
 2. Support a reviewed manual/local-bank payout path for a tightly controlled pilot, using compensating ledger records and finance reconciliation.
 3. Keep the current Stripe checkout adapter for sandbox validation and only use Stripe for Guam production money movement after written confirmation that the exact HafaPass entity, Guam organizers, settlement bank accounts, Connect charge model, disputes, refunds, and payouts are supported.
 
-Starting onboarding never makes an organizer payout-ready. An account is ready only when payment acceptance, payouts, submitted identity/business details, and an empty requirements list are independently recorded by a platform administrator.
+Starting onboarding never makes an organizer payout-ready. An account is ready only when payment acceptance, payouts, submitted identity/business details, and an empty provider requirements list are recorded, complete decision evidence is submitted, and a different platform administrator approves that append-only evidence before it expires.
 
 ## Verified provider findings
 
 ### Stripe
 
-Stripe's support guidance says US territories other than Puerto Rico are not supported. Guam therefore cannot be treated as an ordinary US Stripe/Connect deployment. The global availability page alone is insufficient evidence for Guam eligibility. See [Stripe support for outlying territories](https://support.stripe.com/questions/stripe-availability-for-outlying-territories-of-supported-countries?locale=en-GB) and [Stripe Connect architecture](https://docs.stripe.com/connect/how-connect-works).
+Stripe's current support guidance says US territories other than Puerto Rico are not supported. Guam therefore cannot be treated as an ordinary US Stripe/Connect deployment. The global availability page alone is insufficient evidence for Guam eligibility. See [Stripe support for outlying territories](https://support.stripe.com/questions/stripe-availability-for-outlying-territories-of-supported-countries?locale=en-GB) and [Stripe Connect architecture](https://docs.stripe.com/connect/how-connect-works).
 
 Deployment consequence: Stripe onboarding starts in `guam_eligibility_review`, and production enablement requires written provider confirmation plus a successful end-to-end test using the real entity and settlement bank configuration.
 
 ### PayPal
 
-PayPal's US agreement covers US territories, and PayPal's state-code reference includes Guam as `GU`. PayPal Multiparty documents seller onboarding, partner fees, refunds/disputes, and payouts, but production use requires approved partner/marketplace access. See the [PayPal US User Agreement](https://www.paypal.com/us/legalhub/paypal/useragreement-full?local.x=en_US), [PayPal state codes](https://developer.paypal.com/api/nvp-soap/state-codes/), and [PayPal Multiparty overview](https://developer.paypal.com/docs/multiparty/?multiformSubmitted=true).
+PayPal's current US agreement covers businesses organized in, operating in, or resident in US territories, and PayPal's state-code reference includes Guam as `GU`. PayPal Multiparty documents seller onboarding, partner fees, refunds/disputes, and payouts, but its current integration checklist says the platform must be an approved partner before going live. Seller permissions must match the features configured for the REST app, including payment, refunds, partner fees, delayed disbursement, and dispute access where used. See the [PayPal US User Agreement](https://www.paypal.com/us/legalhub/paypal/useragreement-full?locale.x=en_US), [PayPal state codes](https://developer.paypal.com/api/nvp-soap/state-codes/), [PayPal Multiparty overview](https://developer.paypal.com/docs/multiparty/?multiformSubmitted=true), [seller-onboarding checklist](https://developer.paypal.com/docs/multiparty/seller-onboarding/onboarding-checklist/), and [integration checklist](https://developer.paypal.com/docs/multiparty/integration-checklist/).
 
 Deployment consequence: PayPal is the preferred automation investigation, not a presumed live capability. `partner_approval`, `seller_onboarding`, `business_verification`, and `payout_method` remain explicit requirements until evidenced.
 
 ### Local bank/manual settlement
 
-Local merchant acquiring and banking discussions remain necessary. Bank of Hawaii publicly offers merchant services, but pricing, platform/marketplace structure, API capability, reserve treatment, and Guam account eligibility require direct underwriting. See [Bank of Hawaii Merchant Services](https://www.boh.com/business/merchant-services).
+Local merchant acquiring and banking discussions remain necessary. Bank of Hawaii currently describes a Fiserv/Clover merchant-services offering and explicitly markets Clover devices to businesses in Guam. That is useful evidence for local card-present acquiring, but it does not establish marketplace split payments, seller onboarding APIs, platform fees, automated organizer payouts, or HafaPass underwriting. Those points still require a written bank/Fiserv decision. See [Bank of Hawaii Merchant Services](https://www.boh.com/business/merchant-services) and [Clover Flex for Guam](https://www.boh.com/business/merchant-services/clover/flex).
 
 Deployment consequence: manual payout is a pilot fallback, not an untracked spreadsheet process. It uses a verified connected-account record, immutable settlement version, unique payout idempotency key, finance reconciliation, and append-only audit entry.
 
@@ -56,6 +56,12 @@ Before real paid inventory is published, legal, accounting, and the selected pro
 - Payout retries require the same idempotency key; reusing a key for a different settlement or amount is rejected.
 - Cross-organization references are rejected at authorization, model, foreign-key, and database-constraint boundaries where applicable.
 - Financial reversals append compensating records. Operators do not edit or delete history.
+- Provider capability booleans cannot by themselves enable paid publishing or payouts.
+- Readiness evidence carries a SHA-256 digest and references the provider approval, merchant-of-record decision, approved fee/tax schedule, approved liability schedule, Guam territory confirmation, organizer onboarding, bank account, charges, payouts, refunds, and disputes.
+- Evidence submission and approval require different administrators. Approval and revocation are new append-only records; approved evidence cannot be edited or deleted.
+- Expired or revoked evidence immediately fails `payout_ready?`, even if a provider's last capability sync still says enabled.
+- Each submission is bound to a canonical provider-state digest and monotonic readiness revision. Changing or disabling the provider account, capabilities, requirements, territory, currency, or account identifier permanently invalidates the old approval, even if a later sync restores the same values.
+- The Gate B migration intentionally removes readiness from every legacy connected account until the two-person evidence process is completed.
 
 ## Pilot release gates
 
@@ -68,3 +74,5 @@ Before real paid inventory is published, legal, accounting, and the selected pro
 - No paid event can publish unless its organization has a ready connected account.
 
 Until every applicable gate is complete, HafaPass remains in simulation/sandbox mode for paid events.
+
+The operational workflow and exact API contract are in [Gate B Payment Readiness Operations](./GATE_B_PAYMENT_READINESS_OPERATIONS.md).

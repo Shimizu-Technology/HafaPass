@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_150300) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -299,6 +299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_130000) do
     t.boolean "payouts_enabled", default: false, null: false
     t.string "provider", null: false
     t.string "provider_account_id"
+    t.integer "readiness_revision", default: 1, null: false
     t.jsonb "requirements_due", default: [], null: false
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
@@ -307,6 +308,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_130000) do
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
     t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying]::text[])", name: "connected_accounts_provider_valid"
+    t.check_constraint "readiness_revision > 0", name: "connected_accounts_readiness_revision_positive"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
   end
 
@@ -926,6 +928,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_130000) do
     t.index ["webhook_event_id"], name: "index_payment_events_on_webhook_event_id", unique: true
     t.check_constraint "amount_cents IS NULL OR amount_cents >= 0", name: "payment_events_amount_nonnegative"
     t.check_constraint "currency IS NULL OR char_length(currency::text) = 3", name: "payment_events_currency_length"
+  end
+
+  create_table "payment_readiness_reviews", force: :cascade do |t|
+    t.bigint "actor_user_id", null: false
+    t.bigint "connected_account_id", null: false
+    t.jsonb "controls", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "decision", null: false
+    t.datetime "effective_at", null: false
+    t.string "evidence_digest", null: false
+    t.string "evidence_reference", null: false
+    t.datetime "expires_at", null: false
+    t.string "fee_tax_schedule_reference", null: false
+    t.string "liability_schedule_reference", null: false
+    t.string "merchant_of_record", null: false
+    t.bigint "parent_review_id"
+    t.string "provider_approval_reference", null: false
+    t.string "provider_state_digest", null: false
+    t.text "reason"
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_payment_readiness_reviews_on_actor_user_id"
+    t.index ["connected_account_id", "created_at"], name: "idx_payment_reviews_account_timeline"
+    t.index ["connected_account_id"], name: "index_payment_readiness_reviews_on_connected_account_id"
+    t.index ["parent_review_id"], name: "idx_payment_reviews_one_approval", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 1))"
+    t.index ["parent_review_id"], name: "idx_payment_reviews_one_rejection", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 3))"
+    t.index ["parent_review_id"], name: "idx_payment_reviews_one_revocation", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 2))"
+    t.index ["parent_review_id"], name: "index_payment_readiness_reviews_on_parent_review_id"
+    t.check_constraint "decision = 0 AND parent_review_id IS NULL OR (decision = ANY (ARRAY[1, 2, 3])) AND parent_review_id IS NOT NULL", name: "payment_readiness_reviews_parent_valid"
+    t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "payment_readiness_reviews_decision_valid"
+    t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text", name: "payment_readiness_reviews_digest_valid"
+    t.check_constraint "expires_at > effective_at", name: "payment_readiness_reviews_window_valid"
+    t.check_constraint "merchant_of_record::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying, 'provider_managed'::character varying]::text[])", name: "payment_readiness_reviews_merchant_valid"
+    t.check_constraint "provider_state_digest::text ~ '^[0-9a-f]{64}$'::text", name: "payment_readiness_reviews_provider_state_digest_valid"
   end
 
   create_table "payments", force: :cascade do |t|
@@ -1749,6 +1784,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_130000) do
   add_foreign_key "organizer_profiles", "users", column: "verified_by_user_id"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict
+  add_foreign_key "payment_readiness_reviews", "connected_accounts", on_delete: :restrict
+  add_foreign_key "payment_readiness_reviews", "payment_readiness_reviews", column: "parent_review_id", on_delete: :restrict
+  add_foreign_key "payment_readiness_reviews", "users", column: "actor_user_id", on_delete: :restrict
   add_foreign_key "payments", "orders", on_delete: :restrict
   add_foreign_key "payouts", "connected_accounts", on_delete: :restrict
   add_foreign_key "payouts", "events", on_delete: :restrict
