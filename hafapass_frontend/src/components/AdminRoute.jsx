@@ -46,7 +46,7 @@ function AdminGate({ children }) {
   return <>{children}</>
 }
 
-export default function AdminRoute({ children }) {
-  if (!clerkPubKey) return <>{children}</>
+export default function AdminRoute({ children, clerkConfigured = Boolean(clerkPubKey) }) {
+  if (!clerkConfigured) return <>{children}</>
   return <AdminGate>{children}</AdminGate>
 }

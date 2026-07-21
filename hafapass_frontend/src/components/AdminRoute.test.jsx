@@ -22,7 +22,7 @@ describe('AdminRoute', () => {
           <Route path="/sign-in" element={<h1>Sign in</h1>} />
           <Route
             path="/admin/events"
-            element={<AdminRoute><h1>Admin events</h1></AdminRoute>}
+            element={<AdminRoute clerkConfigured><h1>Admin events</h1></AdminRoute>}
           />
         </Routes>
       </MemoryRouter>,
