@@ -53,7 +53,7 @@ test('buyer selects an exact seat, holds it, and completes seat-specific checkou
   await page.keyboard.press('Enter')
   await expect(seatButton).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Reserve selected seats' }).click()
-  await expect(page.getByText(seat.display_label)).toBeVisible()
+  await expect(page.getByText(seat.display_label, { exact: true })).toBeVisible()
   await page.getByLabel('Full Name').fill('Seat Buyer')
   await page.getByLabel('Email Address').fill('buyer@example.com')
   await page.locator('input#termsAccepted:visible').check()

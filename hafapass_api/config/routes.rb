@@ -188,6 +188,15 @@ Rails.application.routes.draw do
         resource :settings, only: [:show, :update]
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update]
+        get "events/:event_id/pilot_readiness", to: "pilot_readiness_reviews#show"
+        post "events/:event_id/pilot_readiness_reviews", to: "pilot_readiness_reviews#create"
+        resources :pilot_readiness_reviews, only: [] do
+          member do
+            post :approve
+            post :revoke
+            post :reject
+          end
+        end
         resources :users, only: [:index, :update]
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]

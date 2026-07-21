@@ -39,6 +39,19 @@ RSpec.describe EventLifecycle do
     }
   end
 
+  it "blocks production publication without a current event-specific readiness approval" do
+    allow(Rails.env).to receive(:production?).and_return(true)
+    allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
+
+    expect {
+      described_class.call(event: event, action: :publish, actor: actor)
+    }.to raise_error(described_class::TransitionError) { |error|
+      expect(error.checklist).to include(
+        include(code: "pilot_readiness_approved", complete: false)
+      )
+    }
+  end
+
   it "requires a reason to postpone and stops sales after postponement" do
     described_class.call(event: event, action: :publish, actor: actor)
 

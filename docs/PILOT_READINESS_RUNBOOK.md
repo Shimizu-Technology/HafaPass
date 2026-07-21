@@ -8,6 +8,8 @@ The proposed primary event-day/on-call owner is **Leon Shimizu, Shimizu Technolo
 
 No one person may silently approve their own production payment configuration, payout evidence, or reconciliation exception. The existing role and audit controls remain authoritative.
 
+Record the event-specific owners, controls, evidence reference, and independent approval through [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Do not open production inventory merely because the generic checklist below is complete; the approval must match the current event-state digest.
+
 ## Hard production gates
 
 Do not open paid pilot inventory until every item has dated evidence and an owner:

@@ -203,6 +203,8 @@ Actions:
 
 Exit evidence: signed event readiness sheet and no unresolved P0/P1 scenario.
 
+Application control: follow [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Each event now has append-only, digest-bound, expiring readiness evidence with six named operational roles, twelve required controls, and independent approval. The digest covers material event, organizer, payout, policy, pricing, inventory, venue, and assigned-seating configuration while deliberately excluding live sales counters. Production publish/resume and checkout fail closed after missing, expired, revoked, or configuration-stale approval. This control does not select the real pilot, inspect the venue, confirm staff, or create the signed external evidence.
+
 ### Gate F — Prove buyers, organizers, accessibility, and load
 
 Owner: QA lead with representative users and venue staff.

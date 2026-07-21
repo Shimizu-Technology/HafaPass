@@ -114,6 +114,17 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
     end
 
+    it "fails closed in production when event-specific pilot readiness is absent" do
+      allow(Rails.env).to receive(:production?).and_return(true)
+      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
+
+      post_json "/api/v1/orders", params: valid_params
+
+      expect(response).to have_http_status(:service_unavailable)
+      expect(response.parsed_body.fetch("error")).to include("current pilot readiness approval")
+      expect(Order.count).to eq(0)
+    end
+
     context "with insufficient inventory" do
       it "returns 422 when quantity exceeds available" do
         params = valid_params.merge(

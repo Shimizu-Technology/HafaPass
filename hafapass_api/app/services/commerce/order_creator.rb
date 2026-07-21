@@ -49,6 +49,9 @@ module Commerce
 
       Order.transaction do
         event.lock!
+        unless event.pilot_ready_for_production?
+          raise CheckoutError, "This event does not have a current pilot readiness approval"
+        end
         raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)

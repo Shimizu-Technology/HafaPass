@@ -26,6 +26,11 @@ class Api::V1::OrdersController < ApplicationController
       return
     end
 
+    if Rails.env.production? && !event.pilot_ready_for_production?
+      return render json: { error: "Checkout is unavailable until this event has a current pilot readiness approval" },
+        status: :service_unavailable
+    end
+
     unless params[:buyer_email].present? && params[:buyer_name].present?
       render json: { error: "buyer_email and buyer_name are required" }, status: :unprocessable_entity
       return

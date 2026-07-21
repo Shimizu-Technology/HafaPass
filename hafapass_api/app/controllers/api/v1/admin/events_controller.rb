@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
+  include PilotReadinessSerialization
   # GET /api/v1/admin/events
   def index
     events = Event.includes(:organizer_profile, :ticket_types, :orders)
@@ -54,7 +55,8 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       revenue_cents: financials[:net_cents],
       financials: financials,
       organizer_name: e.organizer_profile&.business_name,
-      organizer_email: e.organizer_profile&.user&.email
+      organizer_email: e.organizer_profile&.user&.email,
+      pilot_readiness: pilot_readiness_json(e).slice(:required, :approved, :state_current, :pending_submission)
     }
   end
 end
