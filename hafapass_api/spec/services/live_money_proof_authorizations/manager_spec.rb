@@ -19,6 +19,13 @@ RSpec.describe LiveMoneyProofAuthorizations::Manager do
     described_class.approve!(authorization: authorization, actor: create(:user, :admin))
     expect(described_class.find_available(event: event, user: requester, buyer_email: "proof@example.com"))
       .to eq(authorization)
+    expect do
+      LiveMoneyProofAuthorization.transaction(requires_new: true) do
+        LiveMoneyProofAuthorization.where(id: authorization.id).update_all(
+          revoked_at: Time.current, revocation_reason: nil
+        )
+      end
+    end.to raise_error(ActiveRecord::StatementInvalid, /live_money_authorizations_revocation_valid/)
 
     order = create(:order, event: event, subtotal_cents: 150, service_fee_cents: 0, total_cents: 150,
       buyer_email: "proof@example.com")

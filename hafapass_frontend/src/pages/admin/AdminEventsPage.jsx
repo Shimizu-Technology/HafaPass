@@ -19,6 +19,7 @@ export default function AdminEventsPage() {
   const [status, setStatus] = useState('')
   const [category, setCategory] = useState('')
   const [page, setPage] = useState(1)
+  const [actionError, setActionError] = useState('')
 
   const fetchEvents = useCallback(() => {
     setLoading(true)
@@ -42,10 +43,16 @@ export default function AdminEventsPage() {
   }
 
   const toggleProofCandidate = async (event) => {
+    setActionError('')
     try {
       const res = await apiClient.patch(`/admin/events/${event.id}`, { live_money_proof_candidate: !event.live_money_proof_candidate })
       setEvents(prev => prev.map(item => item.id === event.id ? res.data : item))
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      console.error(err)
+      const errors = err.response?.data?.errors
+      setActionError(Array.isArray(errors) ? errors.join(' ') :
+        err.response?.data?.error || err.response?.data?.message || 'The proof-candidate flag could not be updated.')
+    }
   }
 
   return (
@@ -70,6 +77,8 @@ export default function AdminEventsPage() {
           {categories.filter(Boolean).map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
+
+      {actionError && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
 
       <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
         {loading ? (

@@ -15,6 +15,17 @@ RSpec.describe "Admin live-money proof controls", type: :request do
     expect(response.parsed_body.fetch("live_money_proof")).to include("approved" => false)
   end
 
+  it "does not advertise a stale authorization as available" do
+    chain = create_live_money_proof_chain
+    chain[:authorization].update_columns(order_id: nil, consumed_at: nil)
+
+    get "/api/v1/admin/events/#{chain[:event].id}/live_money_proof",
+      headers: auth_headers(create(:user, :admin))
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("authorization")).to include("available" => false)
+  end
+
   it "submits and independently approves complete Gate H evidence" do
     chain = create_live_money_proof_chain
     submitter = create(:user, :admin)

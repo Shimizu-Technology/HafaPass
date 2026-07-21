@@ -14,7 +14,7 @@ module LiveMoneyProofSerialization
       "provider_state_digest", "platform_configuration_digest", "expires_at", "approved_at", "consumed_at",
       "revoked_at", "revocation_reason", "created_at"
     ).merge(available: authorization.approved? && !authorization.consumed? && !authorization.revoked? &&
-      authorization.expires_at > Time.current)
+      authorization.expires_at > Time.current && authorization.current_bindings?)
   end
 
   def live_money_review_json(review, active:)

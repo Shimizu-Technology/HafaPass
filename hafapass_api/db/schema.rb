@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_203000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_203100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -702,7 +702,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_203000) do
     t.check_constraint "buyer_email_digest::text ~ '^[0-9a-f]{64}$'::text AND event_state_digest::text ~ '^[0-9a-f]{64}$'::text AND provider_state_digest::text ~ '^[0-9a-f]{64}$'::text AND platform_configuration_digest::text ~ '^[0-9a-f]{64}$'::text", name: "live_money_authorizations_digests_valid"
     t.check_constraint "consumed_at IS NULL AND order_id IS NULL OR consumed_at IS NOT NULL AND order_id IS NOT NULL", name: "live_money_authorizations_consumption_valid"
     t.check_constraint "max_amount_cents > 0 AND max_amount_cents <= 500", name: "live_money_authorizations_amount_valid"
-    t.check_constraint "revoked_at IS NULL AND revocation_reason IS NULL OR revoked_at IS NOT NULL AND length(btrim(revocation_reason)) > 0", name: "live_money_authorizations_revocation_valid"
+    t.check_constraint "revoked_at IS NULL AND revocation_reason IS NULL OR revoked_at IS NOT NULL AND revocation_reason IS NOT NULL AND length(btrim(revocation_reason)) > 0", name: "live_money_authorizations_revocation_valid"
   end
 
   create_table "live_money_proof_reviews", force: :cascade do |t|
