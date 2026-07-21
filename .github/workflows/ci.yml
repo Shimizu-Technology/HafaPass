@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -9,6 +10,16 @@ permissions:
   contents: read
 
 jobs:
+  release-contract:
+    name: Release / Freeze contract
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_FREEZE: ${{ vars.RELEASE_FREEZE }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enforce candidate freeze
+        run: ruby scripts/check_release_freeze.rb
+
   backend-test:
     name: Backend / RSpec
     runs-on: ubuntu-latest
