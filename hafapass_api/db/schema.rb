@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_185000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_194000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -392,6 +392,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_185000) do
     t.index ["actor_user_id"], name: "index_event_changes_on_actor_user_id"
     t.index ["event_id", "occurred_at"], name: "index_event_changes_on_event_id_and_occurred_at"
     t.index ["event_id"], name: "index_event_changes_on_event_id"
+  end
+
+  create_table "event_day_rehearsal_reviews", force: :cascade do |t|
+    t.bigint "actor_user_id", null: false
+    t.string "application_revision", null: false
+    t.jsonb "assignments", default: {}, null: false
+    t.jsonb "controls", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "decision", null: false
+    t.jsonb "device_results", default: [], null: false
+    t.jsonb "door_sales_results", default: {}, null: false
+    t.datetime "effective_at", null: false
+    t.bigint "event_id", null: false
+    t.string "event_state_digest", null: false
+    t.string "evidence_digest", null: false
+    t.string "evidence_reference", null: false
+    t.datetime "expires_at", null: false
+    t.jsonb "incident_drills", default: {}, null: false
+    t.jsonb "manifest_results", default: {}, null: false
+    t.bigint "parent_review_id"
+    t.bigint "pilot_validation_review_id", null: false
+    t.text "reason"
+    t.jsonb "reconciliation_results", default: {}, null: false
+    t.jsonb "scan_results", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_event_day_rehearsal_reviews_on_actor_user_id"
+    t.index ["event_id", "created_at"], name: "idx_event_day_rehearsal_reviews_timeline"
+    t.index ["event_id"], name: "index_event_day_rehearsal_reviews_on_event_id"
+    t.index ["parent_review_id"], name: "idx_event_day_rehearsal_reviews_one_decision", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = ANY (ARRAY[1, 3])))"
+    t.index ["parent_review_id"], name: "idx_event_day_rehearsal_reviews_one_revocation", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 2))"
+    t.index ["parent_review_id"], name: "index_event_day_rehearsal_reviews_on_parent_review_id"
+    t.index ["pilot_validation_review_id"], name: "idx_on_pilot_validation_review_id_981bde49ad"
+    t.check_constraint "decision = 0 AND parent_review_id IS NULL OR (decision = ANY (ARRAY[1, 2, 3])) AND parent_review_id IS NOT NULL", name: "event_day_rehearsal_reviews_parent_valid"
+    t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "event_day_rehearsal_reviews_decision_valid"
+    t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND event_state_digest::text ~ '^[0-9a-f]{64}$'::text", name: "event_day_rehearsal_reviews_digests_valid"
+    t.check_constraint "expires_at > effective_at", name: "event_day_rehearsal_reviews_window_valid"
   end
 
   create_table "event_favorites", force: :cascade do |t|
@@ -1809,6 +1845,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_185000) do
   add_foreign_key "event_change_responses", "orders", on_delete: :restrict
   add_foreign_key "event_changes", "events", on_delete: :restrict
   add_foreign_key "event_changes", "users", column: "actor_user_id", on_delete: :nullify
+  add_foreign_key "event_day_rehearsal_reviews", "event_day_rehearsal_reviews", column: "parent_review_id", on_delete: :restrict
+  add_foreign_key "event_day_rehearsal_reviews", "events", on_delete: :restrict
+  add_foreign_key "event_day_rehearsal_reviews", "pilot_validation_reviews", on_delete: :restrict
+  add_foreign_key "event_day_rehearsal_reviews", "users", column: "actor_user_id", on_delete: :restrict
   add_foreign_key "event_favorites", "events", on_delete: :cascade
   add_foreign_key "event_favorites", "users", on_delete: :cascade
   add_foreign_key "event_price_zones", "event_seating_configurations", on_delete: :cascade

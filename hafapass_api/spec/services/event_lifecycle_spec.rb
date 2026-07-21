@@ -69,6 +69,26 @@ RSpec.describe EventLifecycle do
     }
   end
 
+  it "blocks production publication after Gate F until the physical event-day rehearsal is approved" do
+    allow(Rails.env).to receive(:production?).and_return(true)
+    allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
+    readiness = instance_double(PilotReadinessReview)
+    validation = instance_double(PilotValidationReview)
+    expect(PilotReadiness).to receive(:event_state_digest).with(event).once.and_return("a" * 64)
+    allow(PilotReadiness).to receive(:active_approval)
+      .with(event, at: anything, state_digest: "a" * 64).and_return(readiness)
+    allow(PilotValidation).to receive(:active_approval)
+      .with(event, at: anything, readiness_approval: readiness, state_digest: "a" * 64).and_return(validation)
+    allow(EventDayRehearsal).to receive(:active_approval)
+      .with(event, at: anything, validation_approval: validation, state_digest: "a" * 64).and_return(nil)
+
+    expect do
+      described_class.call(event: event, action: :publish, actor: actor)
+    end.to raise_error(described_class::TransitionError) { |error|
+      expect(error.checklist).to include(include(code: "event_day_rehearsal_approved", complete: false))
+    }
+  end
+
   it "requires a reason to postpone and stops sales after postponement" do
     described_class.call(event: event, action: :publish, actor: actor)
 

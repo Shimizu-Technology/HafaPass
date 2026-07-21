@@ -69,4 +69,4 @@ The script's default technical thresholds are at most 1% unexpected checkout fai
 3. A different administrator opens the same record, checks the restricted artifacts and issue register, then approves or rejects with a specific reason.
 4. Revoke immediately after a material event/venue/provider change, a newly discovered release blocker, evidence integrity concern, or invalid accessibility/load assumption. Configuration and revision changes also invalidate automatically.
 
-Gate F approval is necessary but not sufficient to launch. Gate G physical event-day rehearsal, Gate H live-money proof, and later launch/closeout gates remain separate.
+Gate F approval is necessary but not sufficient to launch. Gate G is enforced through [Gate G Physical Event-Day Rehearsal Evidence](GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md); its real physical evidence is still pending. Gate H live-money proof and later launch/closeout gates remain separate.
