@@ -69,6 +69,17 @@ RSpec.describe "release candidate tooling" do
     end
   end
 
+  describe HafaPass::ReleaseCandidate::GitHubEvidence do
+    it "normalizes malformed pull-request JSON into a release-candidate error" do
+      shell = instance_double(HafaPass::ReleaseCandidate::Shell)
+      allow(shell).to receive(:capture!).and_return("not-json")
+
+      expect do
+        described_class.new(shell: shell).send(:pull_request, "Shimizu-Technology/HafaPass", 32)
+      end.to raise_error(HafaPass::ReleaseCandidate::Error, /invalid JSON/)
+    end
+  end
+
   describe HafaPass::ReleaseCandidate::EvidenceWriter do
     it "writes private, non-overwritable evidence files" do
       manifest = {

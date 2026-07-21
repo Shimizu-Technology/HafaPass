@@ -157,11 +157,11 @@ module HafaPass
         end
 
         def pull_request(repository, number)
-          JSON.parse(@shell.capture!(
+          json!(
             "gh", "pr", "view", number.to_s,
             "--repo", repository,
             "--json", "number,url,state,mergedAt,headRefOid,statusCheckRollup"
-          ))
+          )
         end
 
         def unresolved_review_threads(repository, number)
@@ -302,9 +302,10 @@ module HafaPass
         repository = JSON.parse(@shell.capture!("gh", "repo", "view", "--json", "nameWithOwner")).fetch("nameWithOwner")
 
         @shell.stream!(@root.join("scripts/gate.sh").to_s, chdir: @root.to_s)
+        gate_completed_at = @clock.call.iso8601
         github = @github.collect(repository: repository, sha: sha, source_pr_number: source_pr_number)
 
-        manifest = build_manifest(candidate_id, repository, sha, github)
+        manifest = build_manifest(candidate_id, repository, sha, github, gate_completed_at)
         output_dir = @root.join(output_base, candidate_id)
         paths = EvidenceWriter.new(output_dir).write!(manifest)
 
@@ -335,7 +336,7 @@ module HafaPass
           match[1].to_i
         end
 
-        def build_manifest(candidate_id, repository, sha, github)
+        def build_manifest(candidate_id, repository, sha, github, gate_completed_at)
           created_at = @clock.call.iso8601
           schema_path = @root.join("hafapass_api/db/schema.rb")
           gem_lock = @root.join("hafapass_api/Gemfile.lock")
@@ -368,7 +369,7 @@ module HafaPass
             "local_gate" => {
               "command" => "./scripts/gate.sh",
               "passed" => true,
-              "completed_at" => created_at
+              "completed_at" => gate_completed_at
             },
             "github" => github,
             "human_approvals" => {
