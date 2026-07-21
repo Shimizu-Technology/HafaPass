@@ -36,7 +36,10 @@ module Commerce
 
           holds = order.inventory_holds.order(:id).lock.to_a
           catalog_holds = order.catalog_item_holds.order(:id).lock.to_a
-          if holds.empty? || (holds + catalog_holds).any? { |hold| !hold.active? || hold.expires_at <= Time.current }
+          seat_session = order.seat_hold_session
+          seat_session&.lock!
+          seat_hold_invalid = seat_session && (!seat_session.status_claimed? || seat_session.expires_at <= Time.current)
+          if holds.empty? || seat_hold_invalid || (holds + catalog_holds).any? { |hold| !hold.active? || hold.expires_at <= Time.current }
             release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true)
             mark_payment_succeeded!(payment)
             ReconciliationException.create!(
@@ -64,7 +67,8 @@ module Commerce
             hold.consume!
           end
 
-          issue_tickets!(order)
+          issued_tickets = issue_tickets!(order)
+          Seating::SessionLifecycle.consume!(seat_session, tickets: issued_tickets) if seat_session
           finalize_promo!(order)
           finalize_waitlist_offer!(order)
           record_promoter_commission!(order)
@@ -160,6 +164,10 @@ module Commerce
           hold.release!(reason: reason, expired: expired, at: at)
         end
         release_waitlist_offer!(order, at: at)
+        if order.seat_hold_session
+          Seating::SessionLifecycle.release!(order.seat_hold_session, reason: reason, expired: expired, at: at,
+            allow_claimed: true)
+        end
         order.promo_redemption&.update!(status: :released, released_at: at) if order.promo_redemption&.reserved?
         order.tickets.includes(:ticket_type, :pricing_tier, :order_item).where.not(status: :cancelled).each do |ticket|
           ticket.release_inventory! if ticket.order_item_id.nil?
@@ -174,8 +182,28 @@ module Commerce
       end
 
       def issue_tickets!(order)
+        issued = []
         order.order_items.item_ticket.each do |item|
           existing = order.tickets.where(order_item_id: item.id).order(:id).to_a
+          assigned_holds = item.seat_holds.status_claimed.includes(:event_seat).order(:event_seat_id).to_a
+          if assigned_holds.any?
+            unless assigned_holds.length == item.quantity
+              raise InvalidTransition, "Assigned seats do not match the order item quantity"
+            end
+            assigned_holds.each do |hold|
+              ticket = existing.find { |candidate| candidate.event_seat_id == hold.event_seat_id }
+              ticket ||= order.tickets.create!(
+                order_item: item,
+                ticket_type: item.ticket_type,
+                pricing_tier: item.pricing_tier,
+                event: order.event,
+                event_seat: hold.event_seat
+              )
+              ticket.issue_qr_code!
+              issued << ticket
+            end
+            next
+          end
           (item.quantity - existing.length).times do
             existing << order.tickets.create!(
               order_item: item,
@@ -185,7 +213,9 @@ module Commerce
             )
           end
           existing.each(&:issue_qr_code!)
+          issued.concat(existing)
         end
+        issued
       end
 
       def finalize_waitlist_offer!(order)

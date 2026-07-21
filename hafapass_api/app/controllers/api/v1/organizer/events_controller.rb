@@ -11,7 +11,7 @@ module Api
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(ticket_types: :pricing_tiers).order(created_at: :desc)
+            .includes(:event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc)
           pagy, paginated_events = paginate(events)
 
           render json: {
@@ -390,6 +390,7 @@ module Api
             venue_name: event.venue_name,
             venue_address: event.venue_address,
             venue_city: event.venue_city,
+            venue_id: event.venue_id,
             starts_at: event.starts_at,
             ends_at: event.ends_at,
             doors_open_at: event.doors_open_at,
@@ -408,6 +409,7 @@ module Api
             fee_policy: event.fee_policy,
             buyer_fee_percent: event.buyer_fee_percent,
             transfers_enabled: event.transfers_enabled,
+            assigned_seating: event.assigned_seating?,
             supported_locales: event.supported_locales,
             localized_content: event.localized_content,
             created_at: event.created_at,

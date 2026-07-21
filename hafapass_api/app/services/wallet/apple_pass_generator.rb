@@ -71,7 +71,10 @@ module Wallet
               timeStyle: "PKDateStyleShort" },
             { key: "venue", label: "VENUE", value: event.venue_name.to_s }
           ],
-          auxiliaryFields: [{ key: "ticket", label: "TICKET", value: ticket.ticket_type.name }],
+          auxiliaryFields: [
+            { key: "ticket", label: "TICKET", value: ticket.ticket_type.name },
+            (ticket.seat_label && { key: "seat", label: "SEAT", value: ticket.seat_label })
+          ].compact,
           backFields: [
             { key: "holder", label: "TICKET HOLDER", value: ticket.attendee_name.to_s },
             { key: "address", label: "VENUE ADDRESS", value: event.venue_address.to_s }

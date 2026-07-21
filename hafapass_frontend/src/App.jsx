@@ -40,6 +40,7 @@ const VenuePage = lazy(() => import('./pages/VenuePage'))
 const OrganizerPage = lazy(() => import('./pages/OrganizerPage'))
 const DistributionRedirectPage = lazy(() => import('./pages/DistributionRedirectPage'))
 const SavedPage = lazy(() => import('./pages/SavedPage'))
+const SeatingManagementPage = lazy(() => import('./pages/dashboard/SeatingManagementPage'))
 
 // Admin pages
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'))
@@ -90,6 +91,7 @@ function App() {
           <Route path="/dashboard/events/:id/box-office" element={<ProtectedRoute><BoxOfficePage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/waitlist" element={<ProtectedRoute><WaitlistPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/sales-tools" element={<ProtectedRoute><SalesToolsPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id/seating" element={<ProtectedRoute><SeatingManagementPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/team" element={<ProtectedRoute><EventStaffPage /></ProtectedRoute>} />

@@ -13,6 +13,7 @@ class OrderItem < ApplicationRecord
   has_many :refund_items, dependent: :restrict_with_error
   has_one :catalog_item_hold, dependent: :restrict_with_error
   has_one :catalog_fulfillment, dependent: :restrict_with_error
+  has_many :seat_holds, dependent: :restrict_with_error
 
   enum :item_kind, { ticket: 0, add_on: 1, merchandise: 2, concession: 3, donation: 4 }, prefix: :item
 

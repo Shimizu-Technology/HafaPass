@@ -26,6 +26,9 @@ class User < ApplicationRecord
   has_many :marketplace_collections, foreign_key: :created_by_user_id, dependent: :restrict_with_error
   has_many :distribution_links, foreign_key: :created_by_user_id, dependent: :restrict_with_error
   has_many :event_referrals, dependent: :destroy
+  has_many :seat_hold_sessions, dependent: :nullify
+  has_many :seat_audit_events, foreign_key: :actor_user_id, dependent: :nullify
+  has_many :accessible_seat_releases, foreign_key: :released_by_user_id, dependent: :restrict_with_error
 
   enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
 

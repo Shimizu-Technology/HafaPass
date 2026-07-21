@@ -6,7 +6,8 @@ class Api::V1::Me::EventFavoritesController < ApplicationController
   def index
     events = current_user.favorite_events.merge(Event.publicly_visible).includes(:venue, :organization,
       :organizer_profile, ticket_types: [:inventory_holds, :waitlist_offers,
-        { pricing_tiers: [:inventory_holds, :waitlist_offers] }]).order(:starts_at)
+        { event_seats: :active_precheckout_seat_holds },
+        { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
     render json: { events: records.map { |event| Marketplace::EventSerializer.call(event) }, meta: pagination_meta(pagy) }
   end

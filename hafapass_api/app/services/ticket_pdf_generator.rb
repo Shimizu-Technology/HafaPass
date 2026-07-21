@@ -87,6 +87,7 @@ class TicketPdfGenerator
     pdf.fill_color DARK_TEXT
     pdf.font "Helvetica", style: :bold, size: 11
     pdf.text @ticket_type.name
+    pdf.text @ticket.seat_label if @ticket.seat_label.present?
 
     pdf.move_down 4
     pdf.fill_color MUTED_TEXT

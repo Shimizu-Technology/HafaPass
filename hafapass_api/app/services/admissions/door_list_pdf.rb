@@ -36,8 +36,10 @@ module Admissions
 
     def rows
       [["Ticket", "Attendee", "Type", "Status", "Door mark"]] +
-        event.tickets.includes(:ticket_type).order(:attendee_name, :id).map do |ticket|
-          ["HP-T#{ticket.id}", safe_text(ticket.attendee_name.presence || "Guest"), safe_text(ticket.ticket_type.name),
+        event.tickets.includes(:ticket_type,
+          event_seat: { venue_seat: { seating_row: :seating_section } }).order(:attendee_name, :id).map do |ticket|
+          ["HP-T#{ticket.id}", safe_text(ticket.attendee_name.presence || "Guest"),
+            safe_text([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")),
             ticket.status.humanize, "________"]
         end
     end

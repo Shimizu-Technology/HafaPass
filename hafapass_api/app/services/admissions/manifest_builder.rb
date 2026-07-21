@@ -79,13 +79,15 @@ module Admissions
     attr_reader :event, :actor
 
     def manifest_tickets
-      event.tickets.includes(:ticket_type, order: :disputes).order(:id).map do |ticket|
+      event.tickets.includes(:ticket_type, { order: :disputes },
+        event_seat: { venue_seat: { seating_row: :seating_section } }).order(:id).map do |ticket|
         {
           ticket_id: ticket.id,
           code: "HP-T#{ticket.id}",
           credential_hash: Digest::SHA256.hexdigest(ticket.scan_credential),
           attendee_name: ticket.attendee_name.presence || "Guest",
-          ticket_type: ticket.ticket_type.name,
+          ticket_type: [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
+          seat: ticket.seat_label,
           state: admission_state(ticket)
         }
       end

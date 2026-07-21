@@ -23,6 +23,15 @@ module Api
                   SELECT SUM(tier_offers.quantity) FROM waitlist_offers tier_offers
                   WHERE tier_offers.pricing_tier_id = pricing_tiers.id
                     AND tier_offers.status = 0 AND tier_offers.expires_at > :price_at
+                ), 0) + COALESCE((
+                  SELECT COUNT(*)
+                  FROM seat_holds tier_seat_holds
+                  INNER JOIN seat_hold_sessions tier_seat_sessions
+                    ON tier_seat_sessions.id = tier_seat_holds.seat_hold_session_id
+                  WHERE tier_seat_holds.pricing_tier_id = pricing_tiers.id
+                    AND tier_seat_holds.status = 0
+                    AND tier_seat_sessions.status = 0
+                    AND tier_seat_sessions.expires_at > :price_at
                 ), 0) < pricing_tiers.quantity_limit)
             )
           ORDER BY pricing_tiers.position ASC, pricing_tiers.id ASC
@@ -34,7 +43,15 @@ module Api
       before_action :optional_authenticate!, only: [:index, :show]
 
       def index
-        events = filtered_events.includes(ticket_types: :pricing_tiers).includes(:organizer_profile, :organization, :venue)
+        events = filtered_events.includes(
+          :organizer_profile, :organization, :venue, :event_seating_configuration,
+          ticket_types: [
+            :inventory_holds,
+            :waitlist_offers,
+            { event_seats: :active_precheckout_seat_holds },
+            { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }
+          ]
+        )
           .order(starts_at: :asc)
         pagy, paginated_events = paginate(events)
         preload_viewer_state(paginated_events)
@@ -218,6 +235,7 @@ module Api
           fee_policy: event.fee_policy,
           buyer_fee_percent: event.buyer_fee_percent,
           transfers_enabled: event.transfers_enabled,
+          assigned_seating: event.assigned_seating?,
           supported_locales: event.supported_locales,
           localized_content: event.localized_content,
           catalog_items: event.catalog_items.available.map { |item| catalog_item_json(item) },
@@ -267,7 +285,7 @@ module Api
               tt_json[:active_tier] = {
                 name: active_tier.name,
                 tier_type: active_tier.tier_type,
-                remaining: active_tier.quantity_based? ? [active_tier.quantity_limit - active_tier.quantity_sold - active_tier.inventory_holds.current.sum(:quantity), 0].max : nil,
+                remaining: active_tier.remaining_quantity,
                 ends_at: active_tier.ends_at
               }
             end

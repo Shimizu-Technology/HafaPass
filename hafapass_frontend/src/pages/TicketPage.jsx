@@ -299,6 +299,8 @@ export default function TicketPage() {
             <div>
               <h2 className="font-display text-lg font-bold text-neutral-900">{event.title}</h2>
               <p className="text-sm text-accent-600 font-semibold font-sans">{ticket_type.name}</p>
+              {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
+              {ticket.seat?.obstructed_view && <p className="mt-1 text-xs text-amber-700">Obstructed view{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
             </div>
 
             <div className="space-y-2.5">

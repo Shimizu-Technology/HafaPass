@@ -75,7 +75,8 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
       id: ticket.id,
       code: "HP-T#{ticket.id}",
       attendee_name: ticket.attendee_name,
-      ticket_type: ticket.ticket_type.name,
+      ticket_type: [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
+      seat: ticket.seat_label,
       status: ticket.status,
       checked_in_at: ticket.checked_in_at,
       admission_allowed: ticket.admission_allowed?

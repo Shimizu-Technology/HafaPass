@@ -5,6 +5,8 @@ class TicketType < ApplicationRecord
   has_many :inventory_holds, dependent: :restrict_with_error
   has_many :pricing_tiers, -> { order(:position) }, dependent: :destroy
   has_many :waitlist_offers, dependent: :restrict_with_error
+  has_many :event_seats, dependent: :restrict_with_error
+  has_many :seat_holds, through: :event_seats
 
   validates :name, presence: true
   validates :price_cents, presence: true, numericality: { greater_than_or_equal_to: 0 }
@@ -21,7 +23,8 @@ class TicketType < ApplicationRecord
   end
 
   def available_quantity
-    [quantity_available - quantity_sold - active_holds_quantity - active_waitlist_offer_quantity, 0].max
+    [quantity_available - quantity_sold - active_holds_quantity - active_waitlist_offer_quantity -
+      active_seat_holds_quantity, 0].max
   end
 
   def active_holds_quantity(at: Time.current)
@@ -38,6 +41,18 @@ class TicketType < ApplicationRecord
     end
 
     waitlist_offers.holding_inventory.sum(:quantity)
+  end
+
+  def active_seat_holds_quantity(at: Time.current)
+    if event_seats.loaded? && event_seats.all? { |seat| seat.active_precheckout_seat_holds.loaded? }
+      return event_seats.sum do |event_seat|
+        event_seat.active_precheckout_seat_holds.length
+      end
+    end
+
+    seat_holds.status_active.joins(:seat_hold_session)
+      .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
+      .where("seat_hold_sessions.expires_at > ?", at).count
   end
 
   def door_sold_quantity
@@ -60,18 +75,18 @@ class TicketType < ApplicationRecord
   end
 
   # Evaluates pricing tiers in order and returns the current effective price.
-  def current_price_cents
+  def current_price_cents(at: Time.current)
     pricing_tiers.each do |tier|
       case tier.tier_type
       when "quantity_based"
-        return tier.price_cents if tier.active?
+        return tier.price_cents if tier.active?(at: at)
       when "time_based"
         if tier.starts_at.present? && tier.ends_at.present?
-          return tier.price_cents if Time.current.between?(tier.starts_at, tier.ends_at)
+          return tier.price_cents if at.between?(tier.starts_at, tier.ends_at)
         elsif tier.starts_at.present?
-          return tier.price_cents if Time.current >= tier.starts_at
+          return tier.price_cents if at >= tier.starts_at
         elsif tier.ends_at.present?
-          return tier.price_cents if Time.current < tier.ends_at
+          return tier.price_cents if at < tier.ends_at
         end
       end
     end
@@ -79,9 +94,9 @@ class TicketType < ApplicationRecord
   end
 
   # Returns the currently active pricing tier, or nil if using base price.
-  def active_pricing_tier
+  def active_pricing_tier(at: Time.current)
     pricing_tiers.each do |tier|
-      return tier if tier.active?
+      return tier if tier.active?(at: at)
     end
     nil
   end
@@ -106,7 +121,10 @@ class TicketType < ApplicationRecord
   def sold_quantity_within_capacity
     return if quantity_sold.blank? || quantity_available.blank?
 
-    committed = quantity_sold + (persisted? ? active_holds_quantity : 0)
+    committed = quantity_sold
+    if persisted?
+      committed += active_holds_quantity + active_waitlist_offer_quantity + active_seat_holds_quantity
+    end
     return if committed <= quantity_available
 
     errors.add(:quantity_available, "cannot be less than sold and actively held inventory")

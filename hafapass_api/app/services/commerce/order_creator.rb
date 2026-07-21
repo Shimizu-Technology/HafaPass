@@ -16,7 +16,7 @@ module Commerce
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
-      attribution: nil, waitlist_offer_token: nil)
+      attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -39,6 +39,7 @@ module Commerce
       @referral_code = referral_code
       @attribution = attribution || {}
       @waitlist_offer_token = waitlist_offer_token
+      @seat_hold_token = seat_hold_token
     end
 
     def call
@@ -52,6 +53,7 @@ module Commerce
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)
         selections = locked_selections!(offer: offer)
+        validate_seating_selection!(selections)
         catalog_selections = locked_catalog_selections!
         enforce_event_capacity!(selections.sum { |selection| selection[:quantity] }, offer: offer)
         validate_registration!
@@ -84,6 +86,7 @@ module Commerce
         )
 
         create_ledger!(order, selections, catalog_selections, totals, expires_at)
+        claim_seat_hold!(order)
         reserve_promo!(order, totals[:promo_code], totals[:discount_cents], expires_at)
         record_registration!(order)
         record_referral!(order, promoter)
@@ -133,7 +136,34 @@ module Commerce
       :payment_required, :service_fee, :complimentary, :source, :payment_method, :payment_provider
     attr_reader :buyer_terms_version, :buyer_terms_digest, :buyer_terms_accepted_at
     attr_reader :catalog_items, :registration_answers, :waiver_acceptances, :referral_code, :attribution,
-      :waitlist_offer_token
+      :waitlist_offer_token, :seat_hold_token
+
+    def validate_seating_selection!(selections)
+      configuration = event.event_seating_configuration
+      return unless configuration&.status_active?
+
+      seated_ticket_type_ids = configuration.event_seats.distinct.pluck(:ticket_type_id)
+      selects_reserved_inventory = selections.any? { |selection| seated_ticket_type_ids.include?(selection[:ticket_type].id) }
+      if selects_reserved_inventory && seat_hold_token.blank?
+        raise CheckoutError, "Select and reserve seats before checkout"
+      end
+      if seat_hold_token.present? && !selects_reserved_inventory
+        raise CheckoutError, "The seat hold does not match this ticket order"
+      end
+    end
+
+    def claim_seat_hold!(order)
+      return if seat_hold_token.blank?
+
+      Seating::SessionLifecycle.claim!(
+        token: seat_hold_token,
+        event: event,
+        order: order,
+        order_items: order.order_items.item_ticket.to_a
+      )
+    rescue Seating::SessionLifecycle::SessionError => e
+      raise CheckoutError, e.message
+    end
 
     def normalized_quantities
       raise CheckoutError, "line_items is required and must be a non-empty array" unless line_items.is_a?(Array) && line_items.any?
@@ -148,12 +178,18 @@ module Commerce
     end
 
     def locked_selections!(offer: nil)
+      if offer && seat_hold_token.present?
+        raise CheckoutError, "Waitlist offers cannot be combined with an assigned-seat hold"
+      end
       enforce_offer_selection!(offer) if offer
       normalized_quantities.sort.map do |ticket_type_id, quantity|
         ticket_type = event.ticket_types.lock.find_by(id: ticket_type_id)
         raise CheckoutError, "Ticket type #{ticket_type_id} not found for this event" unless ticket_type
         raise CheckoutError, "#{ticket_type.name} is not currently on sale" unless ticket_type.on_sale?
-        available = ticket_type.available_quantity + (offer&.ticket_type_id == ticket_type.id ? offer.quantity : 0)
+        seat_holds = seat_hold_selection(ticket_type.id)
+        reserved_seat_quantity = seat_holds.length
+        available = ticket_type.available_quantity + reserved_seat_quantity +
+          (offer&.ticket_type_id == ticket_type.id ? offer.quantity : 0)
         if quantity > available
           raise CheckoutError, "Only #{available} tickets available for #{ticket_type.name}"
         end
@@ -163,13 +199,21 @@ module Commerce
         enforce_door_allocation!(ticket_type, quantity) if source == "box_office"
         enforce_buyer_limit!(ticket_type, quantity)
 
-        tier = complimentary ? nil : ticket_type.active_pricing_tier
+        tier = if complimentary
+          nil
+        elsif seat_holds.any?
+          seat_holds.first.pricing_tier
+        else
+          ticket_type.active_pricing_tier
+        end
         tier&.lock!
-        enforce_pricing_tier_capacity!(tier, quantity, offer: offer) if tier&.quantity_based?
+        if tier&.quantity_based?
+          enforce_pricing_tier_capacity!(tier, quantity, offer: offer, reserved_seat_quantity: reserved_seat_quantity)
+        end
         selection = {
           ticket_type: ticket_type,
           pricing_tier: tier,
-          unit_price_cents: complimentary ? 0 : (tier&.price_cents || ticket_type.price_cents),
+          unit_price_cents: complimentary ? 0 : (seat_holds.first&.unit_price_cents || tier&.price_cents || ticket_type.price_cents),
           quantity: quantity
         }
         if offer
@@ -178,6 +222,30 @@ module Commerce
         end
         selection
       end
+    end
+
+    def seat_hold_selection(ticket_type_id)
+      return [] if seat_hold_token.blank?
+
+      session = seat_hold_session_for_checkout
+      holds = session.seat_holds.status_active.joins(:event_seat)
+        .where(event_seats: { ticket_type_id: ticket_type_id }).includes(:pricing_tier).order(:event_seat_id).lock.to_a
+      if holds.map { |hold| [hold.pricing_tier_id, hold.unit_price_cents] }.uniq.length > 1
+        raise CheckoutError, "Selected seats in one price category must share the same active price"
+      end
+      holds
+    end
+
+    def seat_hold_session_for_checkout
+      return @seat_hold_session_for_checkout if defined?(@seat_hold_session_for_checkout)
+
+      session = Seating::Credential.find_session(seat_hold_token)
+      session&.lock!
+      unless session&.status_active? && session.expires_at > Time.current &&
+          session.event_seating_configuration.event_id == event.id
+        raise CheckoutError, "Your seat hold is invalid or expired"
+      end
+      @seat_hold_session_for_checkout = session
     end
 
     def enforce_offer_selection!(offer)
@@ -256,10 +324,11 @@ module Commerce
       raise CheckoutError, "Purchase limit is #{ticket_type.max_per_buyer} tickets per buyer for #{ticket_type.name}"
     end
 
-    def enforce_pricing_tier_capacity!(tier, requested_quantity, offer: nil)
+    def enforce_pricing_tier_capacity!(tier, requested_quantity, offer: nil, reserved_seat_quantity: 0)
       reserved_offer_quantity = offer&.pricing_tier_id == tier.id ? offer.quantity : 0
       remaining = [tier.quantity_limit - tier.quantity_sold - tier.inventory_holds.current.sum(:quantity) -
-        tier.waitlist_offers.holding_inventory.sum(:quantity) + reserved_offer_quantity, 0].max
+        tier.waitlist_offers.holding_inventory.sum(:quantity) - tier.active_seat_holds_quantity(Time.current) +
+        reserved_offer_quantity + reserved_seat_quantity, 0].max
       return if requested_quantity <= remaining
 
       noun = "ticket".pluralize(remaining)
@@ -273,7 +342,12 @@ module Commerce
       sold = event.ticket_types.sum(:quantity_sold)
       held = event.inventory_holds.current.sum(:quantity)
       offered = event.waitlist_offers.holding_inventory.sum(:quantity) - (offer&.quantity || 0)
-      remaining = [event.max_capacity - sold - held - offered, 0].max
+      active_seat_holds = SeatHold.status_active.joins(:seat_hold_session, :event_seat)
+        .where(event_seats: { event_seating_configuration_id: event.event_seating_configuration&.id })
+        .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
+        .where("seat_hold_sessions.expires_at > ?", Time.current).count
+      reserved_seats = seat_hold_token.present? ? seat_hold_session_for_checkout.seat_holds.status_active.count : 0
+      remaining = [event.max_capacity - sold - held - offered - active_seat_holds + reserved_seats, 0].max
       raise CheckoutError, "Only #{remaining} tickets remain within event capacity" if requested_quantity > remaining
     end
 

@@ -59,6 +59,7 @@ class OrderPresenter
       doors_open_at: event.doors_open_at,
       timezone: event.timezone,
       transfers_enabled: event.transfers_enabled,
+      assigned_seating: event.assigned_seating?,
       cover_image_url: event.cover_image_url
     }
   end
@@ -120,7 +121,25 @@ class OrderPresenter
         id: ticket.ticket_type.id,
         name: ticket.ticket_type.name,
         price_cents: ticket.order_item&.unit_price_cents || ticket.ticket_type.price_cents
-      }
+      },
+      seat: seat_json(ticket)
+    }
+  end
+
+  def seat_json(ticket)
+    return unless ticket.event_seat
+
+    seat = ticket.event_seat
+    venue_seat = seat.venue_seat
+    {
+      id: seat.id,
+      display_label: seat.display_label,
+      section: venue_seat.seating_row.seating_section.name,
+      row: venue_seat.seating_row.label,
+      seat: venue_seat.label,
+      accessibility_kind: venue_seat.accessibility_kind,
+      obstructed_view: venue_seat.obstructed_view,
+      view_note: venue_seat.view_note
     }
   end
 
@@ -141,7 +160,8 @@ class OrderPresenter
   def presented_tickets
     @presented_tickets ||= begin
       tickets = order.tickets
-      tickets = tickets.includes(:ticket_type, :order_item) unless tickets.loaded?
+      tickets = tickets.includes(:ticket_type, :order_item,
+        event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
       tickets.to_a.sort_by(&:id)
     end
   end

@@ -18,7 +18,8 @@ class Api::V1::MarketplaceCollectionsController < ApplicationController
     collection = MarketplaceCollection.currently_visible.find_by!(slug: params[:slug])
     events = collection.discoverable_events.includes(:venue, :organization, :organizer_profile,
       ticket_types: [:inventory_holds, :waitlist_offers,
-        { pricing_tiers: [:inventory_holds, :waitlist_offers] }])
+        { event_seats: :active_precheckout_seat_holds },
+        { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }])
     raise ActiveRecord::RecordNotFound unless events.exists?
 
     pagy, records = paginate(events)
@@ -48,7 +49,8 @@ class Api::V1::MarketplaceCollectionsController < ApplicationController
       .where("preview_rank <= 6")
       .includes(event: [:venue, :organization, :organizer_profile,
         { ticket_types: [:inventory_holds, :waitlist_offers,
-          { pricing_tiers: [:inventory_holds, :waitlist_offers] }] }])
+          { event_seats: :active_precheckout_seat_holds },
+          { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }] }])
       .order(:marketplace_collection_id, :position, :id)
     memberships.group_by(&:marketplace_collection_id).transform_values do |items|
       items.map { |membership| Marketplace::EventSerializer.call(membership.event, purchasable: true) }

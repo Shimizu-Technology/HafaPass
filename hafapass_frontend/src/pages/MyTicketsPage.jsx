@@ -236,6 +236,7 @@ export default function MyTicketsPage() {
                           </div>
                           <div>
                             <p className="text-sm font-medium text-neutral-900">{ticket.ticket_type.name}</p>
+                            {ticket.seat && <p className="text-xs font-semibold text-brand-700">{ticket.seat.display_label}</p>}
                             {ticket.attendee_name && (
                               <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
                             )}
