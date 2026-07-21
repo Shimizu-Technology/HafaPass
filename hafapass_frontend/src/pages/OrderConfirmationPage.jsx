@@ -20,6 +20,10 @@ export default function OrderConfirmationPage() {
   const [cancellingTicketId, setCancellingTicketId] = useState(null)
   const [rotatingTicketId, setRotatingTicketId] = useState(null)
   const [transferringTicketId, setTransferringTicketId] = useState(null)
+  const [exchangeTicketId, setExchangeTicketId] = useState(null)
+  const [exchangeMap, setExchangeMap] = useState(null)
+  const [exchangeSeatId, setExchangeSeatId] = useState('')
+  const [exchangeAttested, setExchangeAttested] = useState(false)
   const [ticketActionError, setTicketActionError] = useState(null)
 
   useEffect(() => {
@@ -135,6 +139,36 @@ export default function OrderConfirmationPage() {
     }
   }
 
+  async function openSeatExchange(ticket) {
+    setTicketActionError(null)
+    setExchangeTicketId(ticket.id)
+    setExchangeSeatId('')
+    setExchangeAttested(false)
+    try {
+      const response = await apiClient.get(`/events/${event.slug}/seating`)
+      setExchangeMap(response.data)
+    } catch (err) {
+      setTicketActionError(err.response?.data?.error || 'Unable to load available seats.')
+      setExchangeTicketId(null)
+    }
+  }
+
+  async function exchangeSeat(ticket) {
+    if (!exchangeSeatId) return
+    setTicketActionError(null)
+    try {
+      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/exchange_seat`, {
+        event_seat_id: Number(exchangeSeatId),
+        accessibility_attested: exchangeAttested,
+      }, { headers: orderHeaders })
+      setExchangeTicketId(null)
+      setExchangeMap(null)
+      await fetchOrder()
+    } catch (err) {
+      setTicketActionError(err.response?.data?.error || 'The seat could not be changed.')
+    }
+  }
+
   if (loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
 
   if (error || !order) {
@@ -212,10 +246,17 @@ export default function OrderConfirmationPage() {
             {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             <div className="divide-y divide-neutral-100">
-              {order.tickets.map(ticket => (
-                <div key={ticket.id} className="flex items-center justify-between gap-3 py-3">
+              {order.tickets.map(ticket => {
+                const exchangeOptions = exchangeMap?.sections.flatMap(section => section.rows.flatMap(row =>
+                  row.seats.filter(seat => seat.status === 'available' && seat.ticket_type_id === ticket.ticket_type.id &&
+                    seat.accessibility_kind === ticket.seat?.accessibility_kind)
+                )) || []
+                const selectedExchangeSeat = exchangeOptions.find(seat => seat.id === Number(exchangeSeatId))
+                return <div key={ticket.id} className="py-3">
+                <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-neutral-900">{ticket.ticket_type.name}</p>
+                    {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
                     <p className="text-xs capitalize text-neutral-500">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -228,13 +269,34 @@ export default function OrderConfirmationPage() {
                     {ticket.status === 'issued' && event.transfers_enabled !== false && (
                       <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="text-xs font-semibold text-brand-600">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
                     )}
+                    {ticket.status === 'issued' && ticket.seat && (
+                      <button onClick={() => openSeatExchange(ticket)} className="text-xs font-semibold text-brand-600">Change seat</button>
+                    )}
                     {ticket.status === 'issued' && !order.ticket_access_blocked && (
                       <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
                     )}
                     {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>}
                   </div>
                 </div>
-              ))}
+                {exchangeTicketId === ticket.id && (
+                  <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
+                    <label className="block text-sm font-medium text-neutral-800">Available equivalent seats
+                      <select className="input mt-1" value={exchangeSeatId} onChange={eventValue => setExchangeSeatId(eventValue.target.value)}>
+                        <option value="">Choose a seat</option>
+                        {exchangeOptions.map(seat => <option key={seat.id} value={seat.id}>{seat.display_label}</option>)}
+                      </select>
+                    </label>
+                    {selectedExchangeSeat?.requires_accessibility_attestation && (
+                      <label className="mt-3 flex items-start gap-2 text-sm text-neutral-700"><input type="checkbox" className="mt-1" checked={exchangeAttested} onChange={eventValue => setExchangeAttested(eventValue.target.checked)} />I attest that this party needs an accessible seating location.</label>
+                    )}
+                    <div className="mt-3 flex gap-2">
+                      <button className="btn-primary !px-3 !py-2 text-sm" disabled={!exchangeSeatId || (selectedExchangeSeat?.requires_accessibility_attestation && !exchangeAttested)} onClick={() => exchangeSeat(ticket)}>Confirm seat change</button>
+                      <button className="btn-secondary !px-3 !py-2 text-sm" onClick={() => setExchangeTicketId(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              })}
             </div>
           </section>
         )}

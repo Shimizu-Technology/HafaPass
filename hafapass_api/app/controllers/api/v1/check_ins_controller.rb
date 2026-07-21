@@ -57,6 +57,10 @@ class Api::V1::CheckInsController < ApplicationController
       metadata: { event_id: ticket.event_id },
       request: request
     )
+    if ticket.event_seat
+      Seating::Audit.record!(event: ticket.event, action: "seat.checked_in", event_seat: ticket.event_seat,
+        ticket: ticket, actor: current_user)
+    end
     render json: { message: "Check-in successful", ticket: ticket_json(ticket) }, status: :ok
   end
 
@@ -90,7 +94,8 @@ class Api::V1::CheckInsController < ApplicationController
         id: ticket.ticket_type.id,
         name: ticket.ticket_type.name,
         price_cents: ticket.ticket_type.price_cents
-      }
+      },
+      seat: ticket.event_seat && { id: ticket.event_seat_id, display_label: ticket.seat_label }
     }
   end
 end

@@ -23,6 +23,7 @@ class Order < ApplicationRecord
   has_one :waitlist_offer, dependent: :restrict_with_error
   has_one :acquisition_attribution, dependent: :restrict_with_error
   has_many :marketplace_funnel_events, dependent: :restrict_with_error
+  has_one :seat_hold_session, dependent: :restrict_with_error
 
   enum :status, { pending: 0, completed: 1, refunded: 2, cancelled: 3, partially_refunded: 4, expired: 5 }
   enum :fee_policy_snapshot, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }, prefix: :fee

@@ -38,7 +38,8 @@ module Api
             payment_required: false,
             service_fee: false,
             source: "box_office",
-            payment_method: payment_method
+            payment_method: payment_method,
+            seat_hold_token: params[:seat_hold_token]
           )
 
           render json: order_json(result.order), status: :created
@@ -89,7 +90,7 @@ module Api
 
           existing = CardPresentPaymentAttempt.find_by(idempotency_key: idempotency_key)
           if existing
-            unless matching_existing_sale?(existing, line_items)
+            unless matching_existing_sale?(existing, line_items, params[:seat_hold_token])
               render json: { error: "Idempotency-Key was already used for a different sale" }, status: :conflict
               return
             end
@@ -116,7 +117,8 @@ module Api
             payment_provider: account.provider,
             service_fee: false,
             source: "box_office",
-            payment_method: "door_card"
+            payment_method: "door_card",
+            seat_hold_token: params[:seat_hold_token]
           )
           attempt = CardPresentPayments::Processor.call(
             order: result.order,
@@ -129,7 +131,7 @@ module Api
           render json: order_json(attempt.order.reload), status: :created
         end
 
-        def matching_existing_sale?(attempt, line_items)
+        def matching_existing_sale?(attempt, line_items, seat_hold_token)
           return false unless attempt.organization_id == current_organization.id && attempt.event_id == @event.id &&
             attempt.initiated_by_user_id == current_user.id
 
@@ -139,7 +141,10 @@ module Api
             quantities[ticket_type_id.to_i] += quantity
           end
           existing = attempt.order.order_items.group(:ticket_type_id).sum(:quantity)
-          requested == existing
+          return false unless requested == existing
+
+          submitted_session = Seating::Credential.find_session(seat_hold_token)
+          submitted_session.nil? ? attempt.order.seat_hold_session.nil? : submitted_session.order_id == attempt.order_id
         end
 
         def set_event
@@ -165,13 +170,15 @@ module Api
                 reconciliation_required: attempt.status_result_unknown?
               }
             },
-            tickets: order.tickets.includes(:ticket_type).map { |t|
+            tickets: order.tickets.includes(:ticket_type,
+              event_seat: { venue_seat: { seating_row: :seating_section } }).map { |t|
               {
                 id: t.id,
                 scan_credential: t.scan_credential,
                 display_credential: t.display_credential,
                 status: t.status,
                 attendee_name: t.attendee_name,
+                seat: t.event_seat && { id: t.event_seat_id, display_label: t.seat_label },
                 ticket_type: { id: t.ticket_type.id, name: t.ticket_type.name, price_cents: t.ticket_type.price_cents }
               }
             }

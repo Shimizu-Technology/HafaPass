@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Organization < ApplicationRecord
+  has_many :venue_layouts, dependent: :restrict_with_error
   has_one :organizer_profile, dependent: :restrict_with_error
   has_many :organization_memberships, dependent: :restrict_with_error
   has_many :members, through: :organization_memberships, source: :user

@@ -21,6 +21,9 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(!location.state?.event)
   const lineItems = location.state?.lineItems || null
   const waitlistOfferToken = location.state?.waitlistOfferToken || null
+  const seatHoldToken = location.state?.seatHoldToken || null
+  const seatHoldExpiresAt = location.state?.seatHoldExpiresAt || null
+  const selectedSeats = location.state?.selectedSeats || []
   const [error, setError] = useState(null)
   const [configError, setConfigError] = useState(null)
   const [config, setConfig] = useState(null)
@@ -80,15 +83,16 @@ export default function CheckoutPage() {
   }, [slug, event, lineItems, navigate])
 
   useEffect(() => {
-    if (!orderData?.expires_at || step !== 'payment') return undefined
+    const expiresAt = orderData?.expires_at || seatHoldExpiresAt
+    if (!expiresAt) return undefined
 
     const updateCountdown = () => {
-      setSecondsRemaining(Math.max(0, Math.ceil((new Date(orderData.expires_at).getTime() - Date.now()) / 1000)))
+      setSecondsRemaining(Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000)))
     }
     updateCountdown()
     const timer = window.setInterval(updateCountdown, 1000)
     return () => window.clearInterval(timer)
-  }, [orderData?.expires_at, step])
+  }, [orderData?.expires_at, seatHoldExpiresAt])
 
   const formatPrice = (cents) => cents === 0 ? t('events.free') : `$${(cents / 100).toFixed(2)}`
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
@@ -181,6 +185,7 @@ export default function CheckoutPage() {
           anonymous_id: anonymousId(),
         },
         waitlist_offer_token: waitlistOfferToken,
+        seat_hold_token: seatHoldToken,
         terms_accepted: termsAccepted,
         terms_version: config.buyer_terms_version,
       }
@@ -338,7 +343,21 @@ export default function CheckoutPage() {
                 <span className="text-neutral-900 font-medium text-sm">{formatPrice(line.lineTotal)}</span>
               </div>
             ))}
+            {selectedSeats.length > 0 && (
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Assigned seats</p>
+                <ul className="mt-1 space-y-1 text-sm text-neutral-700">
+                  {selectedSeats.map(seat => <li key={seat.id}>{seat.display_label}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
+          {seatHoldToken && countdownLabel && step === 'info' && (
+            <div className={`mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${checkoutExpired ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+              <Timer className="h-4 w-4" />
+              {checkoutExpired ? 'Your seat hold expired. Return to the event and select seats again.' : `Seats held for ${countdownLabel}`}
+            </div>
+          )}
           <hr className="border-neutral-100 my-4" />
           <div className="space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
@@ -492,7 +511,7 @@ export default function CheckoutPage() {
                   {formErrors.terms && <p className="text-red-500 text-xs mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
               </div>
-              <button type="submit" disabled={submitting} className="w-full mt-6 btn-primary text-base !py-4 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0 transition-all duration-200">
+              <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0 transition-all duration-200">
                 {submitting
                   ? (isSimulate ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
                   : (isSimulate ? `${t('checkout.placeOrder')} \u2014 ${formatPrice(displayedTotal)}` : `${t('checkout.continueToPayment')} \u2014 ${formatPrice(displayedTotal)}`)}

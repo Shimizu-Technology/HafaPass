@@ -169,6 +169,39 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(ticket.ticket_transfers.pending.count).to eq(1)
   end
 
+  it "allows exactly one high-contention hold on the same assigned seat" do
+    organization = create(:organization)
+    profile = create(:organizer_profile, organization: organization)
+    venue = create(:venue)
+    event = create(:event, :published, organization: organization, organizer_profile: profile,
+      venue: venue, starts_at: 5.days.from_now, max_capacity: 1)
+    ticket_type = create(:ticket_type, event: event, quantity_available: 1)
+    layout = create(:venue_layout, organization: organization, venue: venue)
+    zone = create(:seating_price_zone, venue_layout: layout)
+    section = create(:seating_section, venue_layout: layout)
+    row = create(:seating_row, seating_section: section)
+    create(:venue_seat, seating_row: row, seating_price_zone: zone)
+    configuration = Seating::ConfigurationActivator.call(
+      event: event,
+      venue_layout: layout,
+      zone_ticket_types: { zone.id => ticket_type.id },
+      actor: profile.user
+    )
+    event_seat = configuration.event_seats.first
+
+    outcomes = run_concurrently(2) do
+      Seating::HoldAllocator.call(
+        event: Event.find(event.id),
+        event_seat_ids: [event_seat.id],
+        accessibility_attested: false
+      )
+    end
+
+    expect(outcomes.count { |outcome| outcome.is_a?(Seating::HoldAllocator::Result) }).to eq(1)
+    expect(outcomes.count { |outcome| outcome.is_a?(Seating::HoldAllocator::HoldError) }).to eq(1)
+    expect(event_seat.seat_holds.status_active.count).to eq(1)
+  end
+
   def run_concurrently(count)
     ready = Queue.new
     start = Queue.new

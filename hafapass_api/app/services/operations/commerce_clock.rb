@@ -8,6 +8,7 @@ module Operations
 
     def tick(at: Time.current)
       ExpireInventoryHoldsJob.perform_later(at)
+      ExpireSeatHoldsJob.perform_later(at)
       return if @last_marketplace_purge_date == at.to_date
 
       PurgeMarketplaceAnalyticsJob.perform_later(at: at)

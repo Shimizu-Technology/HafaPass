@@ -11,7 +11,7 @@ Production requires four independently supervised processes/services:
 3. Redis service shared by Active Job, Sidekiq, and Rack::Attack
 4. Clock process: `bundle exec rails runner script/commerce_clock.rb`
 
-The backend `Procfile` declares the web, worker, and clock commands. The clock enqueues hold expiry every minute and privacy-retention cleanup once per UTC date. The frontend is a separate static Vite deployment.
+The backend `Procfile` declares the web, worker, and clock commands. The clock enqueues order/inventory and assigned-seat hold expiry every minute and privacy-retention cleanup once per UTC date. The frontend is a separate static Vite deployment.
 
 Production never falls back to an in-memory or inline queue. Rails boot fails when `REDIS_URL` is missing, making a broken worker topology visible during deployment instead of silently losing work.
 

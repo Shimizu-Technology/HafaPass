@@ -2,6 +2,7 @@
 
 class Venue < ApplicationRecord
   has_many :events, dependent: :restrict_with_error
+  has_many :venue_layouts, dependent: :restrict_with_error
 
   validates :name, :slug, :address, :village, presence: true
   validates :slug, uniqueness: true

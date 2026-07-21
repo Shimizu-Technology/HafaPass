@@ -329,7 +329,7 @@ class EmailService
       ticket_rows = tickets.map do |ticket|
         <<~HTML
           <tr>
-            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h(ticket.ticket_type.name)}</td>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h([ticket.ticket_type.name, ticket.seat_label].compact.join(" — "))}</td>
             <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h(ticket.attendee_name)}</td>
             <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">
               <a href="#{ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">View Ticket</a>
@@ -392,6 +392,7 @@ class EmailService
 
             <div style="background: #f3f4f6; border-radius: 10px; padding: 28px; margin-bottom: 28px;">
               <p style="color: #1f2937; font-weight: 600; margin: 0 0 4px;">#{h(ticket_type.name)}</p>
+              #{ticket.seat_label ? "<p style=\"color: #1f2937; margin: 0 0 4px;\">#{h(ticket.seat_label)}</p>" : ""}
               <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
               <p style="color: #6b7280; margin: 0;">#{h(event.venue_name)}</p>
             </div>

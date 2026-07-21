@@ -50,7 +50,8 @@ class Api::V1::TicketsController < ApplicationController
 
   def find_ticket
     ticket = TicketCredential.find_display(params[:credential] || params[:qr_code])
-    Ticket.includes(:order, :ticket_type, :event).find_by(id: ticket&.id)
+    Ticket.includes(:order, :ticket_type, :event,
+      event_seat: { venue_seat: { seating_row: :seating_section } }).find_by(id: ticket&.id)
   end
 
   def render_not_found
@@ -87,6 +88,13 @@ class Api::V1::TicketsController < ApplicationController
         name: ticket.ticket_type.name,
         description: ticket.ticket_type.description,
         price_cents: ticket.ticket_type.price_cents
+      },
+      seat: ticket.event_seat && {
+        id: ticket.event_seat_id,
+        display_label: ticket.seat_label,
+        accessibility_kind: ticket.event_seat.accessibility_kind,
+        obstructed_view: ticket.event_seat.obstructed_view,
+        view_note: ticket.event_seat.view_note
       }
     }
   end

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import QRCode from '../../components/QRCode'
+import SeatSelector from '../../components/SeatSelector'
 
 export default function BoxOfficePage() {
   const { id } = useParams()
@@ -18,6 +19,8 @@ export default function BoxOfficePage() {
   const [summary, setSummary] = useState(null)
   const [cardAccount, setCardAccount] = useState(null)
   const [saleError, setSaleError] = useState(null)
+  const [seatReservation, setSeatReservation] = useState(null)
+  const [seatSelectorKey, setSeatSelectorKey] = useState(0)
   const cardIdempotencyRef = useRef(null)
 
   const fetchEvent = useCallback(async () => {
@@ -61,7 +64,9 @@ export default function BoxOfficePage() {
   }
 
   const totalItems = Object.values(quantities).reduce((s, q) => s + q, 0)
-  const totalCents = event?.ticket_types?.reduce((s, tt) => s + (quantities[tt.id] || 0) * tt.price_cents, 0) || 0
+  const totalCents = seatReservation
+    ? seatReservation.seats.reduce((sum, seat) => sum + seat.price_cents, 0)
+    : event?.ticket_types?.reduce((s, tt) => s + (quantities[tt.id] || 0) * tt.price_cents, 0) || 0
 
   const handleSale = async () => {
     if (totalItems === 0) return
@@ -79,6 +84,7 @@ export default function BoxOfficePage() {
       }
       const res = await apiClient.post(`/organizer/events/${id}/box_office`, {
         line_items,
+        seat_hold_token: seatReservation?.seatHoldToken,
         payment_method: paymentMethod,
         buyer_name: buyerName || undefined,
         buyer_email: buyerEmail || undefined,
@@ -91,6 +97,8 @@ export default function BoxOfficePage() {
       setQuantities(reset)
       setBuyerName('')
       setBuyerEmail('')
+      setSeatReservation(null)
+      setSeatSelectorKey(value => value + 1)
       fetchSummary()
       fetchEvent() // refresh availability
     } catch (err) {
@@ -131,7 +139,29 @@ export default function BoxOfficePage() {
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-lg font-semibold text-neutral-900">Select Tickets</h2>
 
-          {event.ticket_types?.map(tt => {
+          {event.assigned_seating ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
+              <SeatSelector
+                key={seatSelectorKey}
+                event={event}
+                source="box_office"
+                reserveLabel="Hold seats for this sale"
+                onReserved={(reservation) => {
+                  const next = {}
+                  event.ticket_types?.forEach(ticketType => { next[ticketType.id] = 0 })
+                  reservation.lineItems.forEach(item => { next[item.ticket_type_id] = item.quantity })
+                  setQuantities(next)
+                  setSeatReservation(reservation)
+                }}
+              />
+              {seatReservation && (
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status">
+                  <p className="font-semibold">Seats held for this sale</p>
+                  <p className="mt-1">{seatReservation.seats.map(seat => seat.display_label).join(', ')}</p>
+                </div>
+              )}
+            </div>
+          ) : event.ticket_types?.map(tt => {
             const available = tt.door_available_quantity ?? (tt.quantity_available == null ? Number.MAX_SAFE_INTEGER : tt.quantity_available - tt.quantity_sold)
             return (
               <div key={tt.id} className="flex items-center justify-between p-4 sm:p-5 bg-white border border-neutral-200 rounded-xl">
@@ -228,7 +258,7 @@ export default function BoxOfficePage() {
           {/* Process Sale Button */}
           <button
             onClick={handleSale}
-            disabled={totalItems === 0 || submitting}
+            disabled={totalItems === 0 || submitting || (event.assigned_seating && !seatReservation)}
             className="w-full mt-6 py-4 rounded-xl bg-brand-600 text-white font-semibold text-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
           >
             {submitting ? (

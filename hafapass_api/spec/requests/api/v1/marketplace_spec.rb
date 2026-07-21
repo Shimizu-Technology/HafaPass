@@ -61,6 +61,23 @@ RSpec.describe "Marketplace discovery", type: :request do
     expect(ids).not_to include(increased.id)
   end
 
+  it "moves to the next effective price when assigned-seat holds exhaust a quantity tier" do
+    tiered_event = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+      venue: venue, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 2.hours)
+    tiered_ticket = create(:ticket_type, event: tiered_event, price_cents: 5000, quantity_available: 2)
+    create(:pricing_tier, ticket_type: tiered_ticket, price_cents: 1500, tier_type: :quantity_based,
+      quantity_limit: 1)
+    configuration = create(:event_seating_configuration, event: tiered_event)
+    assigned_seat = create(:event_seat, event_seating_configuration: configuration, ticket_type: tiered_ticket)
+    Seating::HoldAllocator.call(
+      event: tiered_event, event_seat_ids: [assigned_seat.id], accessibility_attested: false
+    )
+
+    get "/api/v1/events", params: { price: "under_25", per_page: 20 }
+
+    expect(response.parsed_body.fetch("events").pluck("id")).not_to include(tiered_event.id)
+  end
+
   it "adds collections, venues, and organizers to the canonical sitemap" do
     collection = create(:marketplace_collection)
     collection.marketplace_collection_events.create!(event: event)

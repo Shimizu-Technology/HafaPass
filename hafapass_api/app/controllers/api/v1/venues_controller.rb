@@ -15,7 +15,8 @@ class Api::V1::VenuesController < ApplicationController
     venue = Venue.published.find_by!(slug: params[:slug])
     events = venue.events.merge(Event.discoverable).includes(:venue, :organization, :organizer_profile,
       ticket_types: [:inventory_holds, :waitlist_offers,
-        { pricing_tiers: [:inventory_holds, :waitlist_offers] }]).order(:starts_at)
+        { event_seats: :active_precheckout_seat_holds },
+        { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
     render json: venue_json(venue).merge(
       events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true) },

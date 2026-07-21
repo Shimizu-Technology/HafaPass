@@ -4,6 +4,12 @@ class PricingTier < ApplicationRecord
   has_many :order_items, dependent: :restrict_with_error
   has_many :inventory_holds, dependent: :restrict_with_error
   has_many :waitlist_offers, dependent: :restrict_with_error
+  has_many :seat_holds, dependent: :restrict_with_error
+  has_many :active_precheckout_seat_holds, -> {
+    where(status: :active).joins(:seat_hold_session)
+      .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
+      .where("seat_hold_sessions.expires_at > ?", Time.current)
+  }, class_name: "SeatHold"
 
   enum :tier_type, { time_based: 0, quantity_based: 1 }
 
@@ -21,7 +27,7 @@ class PricingTier < ApplicationRecord
   def active?(at: Time.current)
     case tier_type
     when "quantity_based"
-      quantity_sold + active_holds_quantity(at) + active_waitlist_quantity(at) < quantity_limit
+      quantity_sold + active_holds_quantity(at) + active_waitlist_quantity(at) + active_seat_holds_quantity(at) < quantity_limit
     when "time_based"
       if starts_at.present? && ends_at.present?
         at.between?(starts_at, ends_at)
@@ -36,6 +42,24 @@ class PricingTier < ApplicationRecord
       false
     end
   end
+
+  def active_seat_holds_quantity(at = Time.current)
+    if active_precheckout_seat_holds.loaded?
+      return active_precheckout_seat_holds.length
+    end
+
+    seat_holds.status_active.joins(:seat_hold_session)
+      .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
+      .where("seat_hold_sessions.expires_at > ?", at).count
+  end
+
+  def remaining_quantity(at: Time.current)
+    return unless quantity_based?
+
+    [quantity_limit - quantity_sold - active_holds_quantity(at) - active_waitlist_quantity(at) -
+      active_seat_holds_quantity(at), 0].max
+  end
+
   private
 
   def active_holds_quantity(at)
@@ -61,7 +85,12 @@ class PricingTier < ApplicationRecord
   def sold_quantity_within_limit
     return unless quantity_based? && quantity_limit.present?
 
-    held = persisted? ? inventory_holds.current.sum(:quantity) + waitlist_offers.holding_inventory.sum(:quantity) : 0
+    held = if persisted?
+      inventory_holds.current.sum(:quantity) + waitlist_offers.holding_inventory.sum(:quantity) +
+        active_seat_holds_quantity
+    else
+      0
+    end
     committed = quantity_sold + held
     return if committed <= quantity_limit
 

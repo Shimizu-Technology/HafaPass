@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import apiClient from '../api/client'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
+import SeatSelector from '../components/SeatSelector'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
@@ -41,6 +42,12 @@ export default function EventDetailPage() {
 
   const handleCheckout = (lineItems) => {
     navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken } })
+  }
+
+  const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {
+    navigate(`/checkout/${slug}`, {
+      state: { event, lineItems, seatHoldToken, seatHoldExpiresAt, selectedSeats: seats },
+    })
   }
 
   const marketplaceAction = async (kind) => {
@@ -328,7 +335,9 @@ export default function EventDetailPage() {
                 )}
                 {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
                 <div className="card p-5">
-                  {event.ticket_types && event.ticket_types.length > 0 ? (
+                  {event.assigned_seating ? (
+                    <SeatSelector event={event} onReserved={handleSeatCheckout} />
+                  ) : event.ticket_types && event.ticket_types.length > 0 ? (
                     <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />
                   ) : (
                     <p className="text-neutral-500 text-center py-4">No tickets available</p>

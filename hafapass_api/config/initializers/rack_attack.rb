@@ -105,6 +105,12 @@ class Rack::Attack
     req.ip if marketplace_landing && req.get?
   end
 
+  # Seat holds lock scarce, named inventory before checkout.
+  throttle("seat-holds/ip", limit: 20, period: 1.minute) do |req|
+    seat_hold_path = req.path.match?(%r{\A/api/v1/events/[^/]+/seat_holds\z})
+    req.ip if seat_hold_path && req.post?
+  end
+
   # ─── Blocklist ────────────────────────────────────────────────────────────
 
   # Block requests from known bad IPs (configured via environment)

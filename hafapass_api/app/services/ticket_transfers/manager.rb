@@ -34,6 +34,8 @@ module TicketTransfers
             recipient_name: recipient_name,
             expires_at: [7.days.from_now, ticket.event.starts_at].compact.min
           )
+          audit_seat!(ticket, "seat.transfer_started", initiated_by,
+            recipient_email: normalized, ticket_transfer_id: transfer.id)
         end
         EmailService.send_ticket_transfer_async(transfer)
         transfer
@@ -65,6 +67,7 @@ module TicketTransfers
           )
           transfer.update!(status: :accepted, accepted_by_user: user, accepted_at: Time.current,
             token_version: transfer.token_version + 1)
+          audit_seat!(transfer.ticket, "seat.transfer_accepted", user, ticket_transfer_id: transfer.id)
         end
         transfer
       end
@@ -74,11 +77,19 @@ module TicketTransfers
           raise TransferError, "Only pending transfers can be cancelled" unless transfer.pending?
 
           transfer.update!(status: :cancelled, cancelled_at: Time.current, token_version: transfer.token_version + 1)
+          audit_seat!(transfer.ticket, "seat.transfer_cancelled", nil, ticket_transfer_id: transfer.id)
         end
         transfer
       end
 
       private
+
+      def audit_seat!(ticket, action, actor, metadata = {})
+        return unless ticket.event_seat
+
+        Seating::Audit.record!(event: ticket.event, action: action, event_seat: ticket.event_seat,
+          ticket: ticket, actor: actor, metadata: metadata)
+      end
 
       def validate_transferable!(ticket)
         raise TransferError, "Only unused active tickets can be transferred" unless ticket.issued?

@@ -40,6 +40,7 @@ Rails.application.routes.draw do
           post "tickets/:ticket_id/cancel", to: "orders#cancel_ticket", as: :cancel_ticket
           post "tickets/:ticket_id/transfer", to: "orders#create_transfer", as: :create_ticket_transfer
           delete "tickets/:ticket_id/transfer", to: "orders#cancel_transfer", as: :cancel_ticket_transfer
+          post "tickets/:ticket_id/exchange_seat", to: "orders#exchange_seat", as: :exchange_ticket_seat
         end
       end
       post "order_lookup", to: "order_recovery#create"
@@ -86,6 +87,9 @@ Rails.application.routes.draw do
       end
       get "event_categories", to: "events#categories"
       get "events/:slug", to: "events#show", as: :event
+      get "events/:slug/seating", to: "event_seating#show"
+      post "events/:slug/seat_holds", to: "event_seating#create_hold"
+      delete "events/:slug/seat_holds", to: "event_seating#destroy_hold"
       resources :marketplace_collections, only: [:index, :show], param: :slug
       resources :venues, only: [:index, :show], param: :slug
       resources :organizers, only: [:index, :show], param: :slug
@@ -99,6 +103,7 @@ Rails.application.routes.draw do
         resources :organizations, only: [:index]
         resources :memberships, only: [:index, :create, :update, :destroy]
         resources :connected_accounts, only: [:index, :create]
+        resources :venue_layouts, only: [:index, :show, :create, :update]
         resource :card_present_account, only: [:show]
         resources :events, only: [:index, :show, :create, :update, :destroy] do
           member do
@@ -136,6 +141,12 @@ Rails.application.routes.draw do
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do
             get :summary
+          end
+          resource :seating, only: [:show, :create], controller: "event_seating" do
+            post :suspend
+            post :resume
+            post :release_accessible
+            post :update_seat_statuses
           end
           resources :guest_list, only: [:index, :create, :update, :destroy],
                     controller: "guest_list_entries" do

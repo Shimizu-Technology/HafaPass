@@ -10,9 +10,22 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "accessible_seat_releases", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "event_seat_id", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.string "reason", null: false
+    t.string "release_scope", null: false
+    t.datetime "released_at", null: false
+    t.bigint "released_by_user_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_seat_id"], name: "index_accessible_seat_releases_on_event_seat_id", unique: true
+    t.index ["released_by_user_id"], name: "index_accessible_seat_releases_on_released_by_user_id"
+  end
 
   create_table "acquisition_attributions", force: :cascade do |t|
     t.datetime "attributed_at", null: false
@@ -389,6 +402,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
     t.index ["user_id"], name: "index_event_favorites_on_user_id"
   end
 
+  create_table "event_price_zones", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "event_seating_configuration_id", null: false
+    t.bigint "seating_price_zone_id", null: false
+    t.bigint "ticket_type_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_seating_configuration_id", "seating_price_zone_id"], name: "index_event_price_zones_on_configuration_and_zone", unique: true
+    t.index ["event_seating_configuration_id"], name: "index_event_price_zones_on_configuration_id"
+    t.index ["seating_price_zone_id"], name: "index_event_price_zones_on_seating_price_zone_id"
+    t.index ["ticket_type_id"], name: "index_event_price_zones_on_ticket_type_id"
+  end
+
   create_table "event_referrals", force: :cascade do |t|
     t.boolean "active", default: true, null: false
     t.string "code", null: false
@@ -415,6 +440,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
     t.index ["user_id", "event_id"], name: "index_event_reminders_on_user_id_and_event_id", unique: true
     t.index ["user_id"], name: "index_event_reminders_on_user_id"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "event_reminders_status_valid"
+  end
+
+  create_table "event_seating_configurations", force: :cascade do |t|
+    t.datetime "activated_at"
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.string "provider_event_key"
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "venue_layout_id", null: false
+    t.index ["event_id"], name: "index_event_seating_configurations_on_event_id", unique: true
+    t.index ["venue_layout_id"], name: "index_event_seating_configurations_on_venue_layout_id"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "event_seating_configurations_status_valid"
+  end
+
+  create_table "event_seats", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "event_seating_configuration_id", null: false
+    t.datetime "general_release_at"
+    t.integer "operational_status", default: 0, null: false
+    t.string "status_reason"
+    t.bigint "ticket_type_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "venue_seat_id", null: false
+    t.index ["event_seating_configuration_id", "ticket_type_id"], name: "idx_on_event_seating_configuration_id_ticket_type_i_3c06f89e8e"
+    t.index ["event_seating_configuration_id", "venue_seat_id"], name: "index_event_seats_on_configuration_and_venue_seat", unique: true
+    t.index ["event_seating_configuration_id"], name: "index_event_seats_on_configuration_id"
+    t.index ["ticket_type_id"], name: "index_event_seats_on_ticket_type_id"
+    t.index ["venue_seat_id"], name: "index_event_seats_on_venue_seat_id"
+    t.check_constraint "operational_status = ANY (ARRAY[0, 1, 2])", name: "event_seats_status_valid"
   end
 
   create_table "event_staff_assignments", force: :cascade do |t|
@@ -485,6 +540,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
     t.date "recurrence_end_date"
     t.integer "recurrence_parent_id"
     t.string "recurrence_rule"
+    t.datetime "sales_suspended_at"
+    t.string "sales_suspension_reason"
     t.string "short_description"
     t.boolean "show_attendees", default: true
     t.string "slug", null: false
@@ -1164,6 +1221,101 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
     t.check_constraint "status = ANY (ARRAY[0, 1])", name: "scanner_devices_status_valid"
   end
 
+  create_table "seat_audit_events", force: :cascade do |t|
+    t.string "action", null: false
+    t.bigint "actor_user_id"
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.bigint "event_seat_id"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "seat_hold_session_id"
+    t.bigint "ticket_id"
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_seat_audit_events_on_actor_user_id"
+    t.index ["event_id", "occurred_at"], name: "index_seat_audit_events_on_event_id_and_occurred_at"
+    t.index ["event_id"], name: "index_seat_audit_events_on_event_id"
+    t.index ["event_seat_id"], name: "index_seat_audit_events_on_event_seat_id"
+    t.index ["seat_hold_session_id"], name: "index_seat_audit_events_on_seat_hold_session_id"
+    t.index ["ticket_id"], name: "index_seat_audit_events_on_ticket_id"
+  end
+
+  create_table "seat_hold_sessions", force: :cascade do |t|
+    t.boolean "accessibility_attested", default: false, null: false
+    t.datetime "claimed_at"
+    t.datetime "consumed_at"
+    t.datetime "created_at", null: false
+    t.bigint "event_seating_configuration_id", null: false
+    t.datetime "expires_at", null: false
+    t.bigint "order_id"
+    t.datetime "released_at"
+    t.string "source", default: "online", null: false
+    t.integer "status", default: 0, null: false
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["event_seating_configuration_id"], name: "index_seat_hold_sessions_on_configuration_id"
+    t.index ["order_id"], name: "index_seat_hold_sessions_on_order_id", unique: true
+    t.index ["status", "expires_at"], name: "index_seat_hold_sessions_on_status_and_expires_at"
+    t.index ["token_digest"], name: "index_seat_hold_sessions_on_token_digest", unique: true
+    t.index ["user_id"], name: "index_seat_hold_sessions_on_user_id"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "seat_hold_sessions_status_valid"
+  end
+
+  create_table "seat_holds", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "event_seat_id", null: false
+    t.bigint "order_item_id"
+    t.bigint "pricing_tier_id"
+    t.string "release_reason"
+    t.datetime "released_at"
+    t.bigint "seat_hold_session_id", null: false
+    t.integer "status", default: 0, null: false
+    t.integer "unit_price_cents", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_seat_id"], name: "index_seat_holds_on_event_seat_id"
+    t.index ["event_seat_id"], name: "index_seat_holds_one_blocking_per_event_seat", unique: true, where: "(status = ANY (ARRAY[0, 1]))"
+    t.index ["order_item_id"], name: "index_seat_holds_on_order_item_id"
+    t.index ["pricing_tier_id"], name: "index_seat_holds_on_pricing_tier_id"
+    t.index ["seat_hold_session_id", "event_seat_id"], name: "index_seat_holds_on_session_and_event_seat", unique: true
+    t.index ["seat_hold_session_id"], name: "index_seat_holds_on_seat_hold_session_id"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "seat_holds_status_valid"
+    t.check_constraint "unit_price_cents >= 0", name: "seat_holds_price_nonnegative"
+  end
+
+  create_table "seating_price_zones", force: :cascade do |t|
+    t.string "code", null: false
+    t.string "color", default: "#2563EB", null: false
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "venue_layout_id", null: false
+    t.index ["venue_layout_id", "code"], name: "index_seating_price_zones_on_venue_layout_id_and_code", unique: true
+    t.index ["venue_layout_id"], name: "index_seating_price_zones_on_venue_layout_id"
+  end
+
+  create_table "seating_rows", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "label", null: false
+    t.integer "position", default: 0, null: false
+    t.bigint "seating_section_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["seating_section_id", "label"], name: "index_seating_rows_on_seating_section_id_and_label", unique: true
+    t.index ["seating_section_id"], name: "index_seating_rows_on_seating_section_id"
+  end
+
+  create_table "seating_sections", force: :cascade do |t|
+    t.string "code", null: false
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "venue_layout_id", null: false
+    t.index ["venue_layout_id", "code"], name: "index_seating_sections_on_venue_layout_id_and_code", unique: true
+    t.index ["venue_layout_id"], name: "index_seating_sections_on_venue_layout_id"
+  end
+
   create_table "settlement_items", force: :cascade do |t|
     t.integer "amount_cents", null: false
     t.datetime "created_at", null: false
@@ -1311,6 +1463,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
     t.datetime "created_at", null: false
     t.integer "display_credential_version", default: 1, null: false
     t.bigint "event_id", null: false
+    t.bigint "event_seat_id"
     t.string "holder_email"
     t.bigint "holder_user_id"
     t.bigint "order_id", null: false
@@ -1323,6 +1476,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
     t.datetime "updated_at", null: false
     t.index "lower((holder_email)::text)", name: "index_tickets_on_lower_holder_email"
     t.index ["event_id"], name: "index_tickets_on_event_id"
+    t.index ["event_seat_id"], name: "index_tickets_on_event_seat_id"
+    t.index ["event_seat_id"], name: "index_tickets_one_active_per_event_seat", unique: true, where: "((event_seat_id IS NOT NULL) AND (status = ANY (ARRAY[0, 1, 3])))"
     t.index ["holder_user_id"], name: "index_tickets_on_holder_user_id"
     t.index ["order_id"], name: "index_tickets_on_order_id"
     t.index ["order_item_id"], name: "index_tickets_on_order_item_id"
@@ -1343,6 +1498,46 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
     t.integer "role", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["clerk_id"], name: "index_users_on_clerk_id", unique: true
+  end
+
+  create_table "venue_layouts", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.bigint "organization_id", null: false
+    t.string "provider_chart_key"
+    t.integer "renderer", default: 0, null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "venue_id", null: false
+    t.integer "version", default: 1, null: false
+    t.index ["organization_id", "venue_id", "name", "version"], name: "index_venue_layouts_on_owner_venue_name_version", unique: true
+    t.index ["organization_id"], name: "index_venue_layouts_on_organization_id"
+    t.index ["venue_id"], name: "index_venue_layouts_on_venue_id"
+    t.check_constraint "renderer = ANY (ARRAY[0, 1])", name: "venue_layouts_renderer_valid"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "venue_layouts_status_valid"
+    t.check_constraint "version > 0", name: "venue_layouts_version_positive"
+  end
+
+  create_table "venue_seats", force: :cascade do |t|
+    t.integer "accessibility_kind", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.string "companion_group"
+    t.datetime "created_at", null: false
+    t.string "label", null: false
+    t.boolean "obstructed_view", default: false, null: false
+    t.integer "position", null: false
+    t.bigint "seating_price_zone_id", null: false
+    t.bigint "seating_row_id", null: false
+    t.datetime "updated_at", null: false
+    t.string "view_note"
+    t.decimal "x", precision: 10, scale: 3
+    t.decimal "y", precision: 10, scale: 3
+    t.index ["seating_price_zone_id"], name: "index_venue_seats_on_seating_price_zone_id"
+    t.index ["seating_row_id", "label"], name: "index_venue_seats_on_seating_row_id_and_label", unique: true
+    t.index ["seating_row_id", "position"], name: "index_venue_seats_on_seating_row_id_and_position", unique: true
+    t.index ["seating_row_id"], name: "index_venue_seats_on_seating_row_id"
+    t.check_constraint "\"position\" >= 0", name: "venue_seats_position_nonnegative"
+    t.check_constraint "accessibility_kind = ANY (ARRAY[0, 1, 2, 3])", name: "venue_seats_accessibility_kind_valid"
   end
 
   create_table "venues", force: :cascade do |t|
@@ -1441,6 +1636,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "webhook_events_status_valid"
   end
 
+  add_foreign_key "accessible_seat_releases", "event_seats", on_delete: :restrict
+  add_foreign_key "accessible_seat_releases", "users", column: "released_by_user_id", on_delete: :restrict
   add_foreign_key "acquisition_attributions", "distribution_links", on_delete: :restrict
   add_foreign_key "acquisition_attributions", "event_referrals", on_delete: :restrict
   add_foreign_key "acquisition_attributions", "orders", on_delete: :restrict
@@ -1490,10 +1687,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
   add_foreign_key "event_changes", "users", column: "actor_user_id", on_delete: :nullify
   add_foreign_key "event_favorites", "events", on_delete: :cascade
   add_foreign_key "event_favorites", "users", on_delete: :cascade
+  add_foreign_key "event_price_zones", "event_seating_configurations", on_delete: :cascade
+  add_foreign_key "event_price_zones", "seating_price_zones", on_delete: :restrict
+  add_foreign_key "event_price_zones", "ticket_types", on_delete: :restrict
   add_foreign_key "event_referrals", "events", on_delete: :restrict
   add_foreign_key "event_referrals", "users", on_delete: :cascade
   add_foreign_key "event_reminders", "events", on_delete: :cascade
   add_foreign_key "event_reminders", "users", on_delete: :cascade
+  add_foreign_key "event_seating_configurations", "events", on_delete: :restrict
+  add_foreign_key "event_seating_configurations", "venue_layouts", on_delete: :restrict
+  add_foreign_key "event_seats", "event_seating_configurations", on_delete: :restrict
+  add_foreign_key "event_seats", "ticket_types", on_delete: :restrict
+  add_foreign_key "event_seats", "venue_seats", on_delete: :restrict
   add_foreign_key "event_staff_assignments", "events", on_delete: :restrict
   add_foreign_key "event_staff_assignments", "organizations", on_delete: :restrict
   add_foreign_key "event_staff_assignments", "users", column: "assigned_by_user_id", on_delete: :nullify
@@ -1575,6 +1780,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
   add_foreign_key "scanner_devices", "events", on_delete: :restrict
   add_foreign_key "scanner_devices", "organizations", on_delete: :restrict
   add_foreign_key "scanner_devices", "users", on_delete: :restrict
+  add_foreign_key "seat_audit_events", "event_seats", on_delete: :restrict
+  add_foreign_key "seat_audit_events", "events", on_delete: :restrict
+  add_foreign_key "seat_audit_events", "seat_hold_sessions", on_delete: :restrict
+  add_foreign_key "seat_audit_events", "tickets", on_delete: :restrict
+  add_foreign_key "seat_audit_events", "users", column: "actor_user_id", on_delete: :nullify
+  add_foreign_key "seat_hold_sessions", "event_seating_configurations", on_delete: :restrict
+  add_foreign_key "seat_hold_sessions", "orders", on_delete: :restrict
+  add_foreign_key "seat_hold_sessions", "users", on_delete: :nullify
+  add_foreign_key "seat_holds", "event_seats", on_delete: :restrict
+  add_foreign_key "seat_holds", "order_items", on_delete: :restrict
+  add_foreign_key "seat_holds", "pricing_tiers", on_delete: :restrict
+  add_foreign_key "seat_holds", "seat_hold_sessions", on_delete: :restrict
+  add_foreign_key "seating_price_zones", "venue_layouts", on_delete: :cascade
+  add_foreign_key "seating_rows", "seating_sections", on_delete: :cascade
+  add_foreign_key "seating_sections", "venue_layouts", on_delete: :cascade
   add_foreign_key "settlement_items", "settlements", on_delete: :restrict
   add_foreign_key "settlements", "events", on_delete: :restrict
   add_foreign_key "settlements", "organizations", on_delete: :restrict
@@ -1586,12 +1806,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
   add_foreign_key "ticket_transfers", "users", column: "accepted_by_user_id", on_delete: :restrict
   add_foreign_key "ticket_transfers", "users", column: "initiated_by_user_id", on_delete: :restrict
   add_foreign_key "ticket_types", "events"
+  add_foreign_key "tickets", "event_seats", on_delete: :restrict
   add_foreign_key "tickets", "events"
   add_foreign_key "tickets", "order_items", on_delete: :restrict
   add_foreign_key "tickets", "orders"
   add_foreign_key "tickets", "pricing_tiers"
   add_foreign_key "tickets", "ticket_types"
   add_foreign_key "tickets", "users", column: "holder_user_id", on_delete: :restrict
+  add_foreign_key "venue_layouts", "organizations", on_delete: :restrict
+  add_foreign_key "venue_layouts", "venues", on_delete: :restrict
+  add_foreign_key "venue_seats", "seating_price_zones", on_delete: :restrict
+  add_foreign_key "venue_seats", "seating_rows", on_delete: :cascade
   add_foreign_key "waitlist_entries", "events"
   add_foreign_key "waitlist_entries", "ticket_types"
   add_foreign_key "waitlist_entries", "users"

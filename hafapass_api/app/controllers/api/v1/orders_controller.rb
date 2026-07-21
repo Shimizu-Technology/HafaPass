@@ -3,15 +3,15 @@
 class Api::V1::OrdersController < ApplicationController
   skip_before_action :authenticate_user!, only: [
     :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
-    :create_transfer, :cancel_transfer
+    :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :optional_authenticate_user!, only: [
     :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
-    :create_transfer, :cancel_transfer
+    :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :set_accessible_order, only: [
     :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
-    :create_transfer, :cancel_transfer
+    :create_transfer, :cancel_transfer, :exchange_seat
   ]
 
   def create
@@ -47,6 +47,7 @@ class Api::V1::OrdersController < ApplicationController
       referral_code: params[:referral_code],
       attribution: params[:attribution],
       waitlist_offer_token: params[:waitlist_offer_token],
+      seat_hold_token: params[:seat_hold_token],
       buyer_terms_version: buyer_terms[:version],
       buyer_terms_digest: buyer_terms[:digest],
       buyer_terms_accepted_at: Time.current
@@ -167,6 +168,25 @@ class Api::V1::OrdersController < ApplicationController
     TicketTransfers::Manager.cancel!(transfer)
     render json: transfer_json(transfer)
   rescue TicketTransfers::Manager::TransferError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def exchange_seat
+    ticket = @order.tickets.find_by(id: params[:ticket_id])
+    return render json: { error: "Ticket not found" }, status: :not_found unless ticket
+    return render json: { error: "This ticket belongs to its new holder" }, status: :forbidden unless controls_ticket?(ticket)
+
+    target = ticket.event.event_seating_configuration&.event_seats&.find_by(id: params[:event_seat_id])
+    return render json: { error: "Seat not found" }, status: :not_found unless target
+
+    Seating::SeatExchange.call(
+      ticket: ticket,
+      target_event_seat: target,
+      actor: @current_user,
+      accessibility_attested: params[:accessibility_attested]
+    )
+    render json: OrderPresenter.call(@order.reload, include_tickets: true)
+  rescue Seating::SeatExchange::ExchangeError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
 

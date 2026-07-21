@@ -66,7 +66,7 @@ module Wallet
         state: ticket.admission_allowed? ? "ACTIVE" : "INACTIVE",
         ticketHolderName: ticket.attendee_name.to_s,
         ticketNumber: ticket.id.to_s,
-        ticketType: localized(ticket.ticket_type.name),
+        ticketType: localized([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")),
         barcode: { type: "QR_CODE", value: ticket.scan_credential, alternateText: "HafaPass #{ticket.id}" }
       }
     end

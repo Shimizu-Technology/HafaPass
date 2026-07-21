@@ -16,7 +16,8 @@ class Api::V1::OrganizersController < ApplicationController
     organization = Organization.status_active.includes(:organizer_profile).find_by!(slug: params[:slug])
     events = organization.events.merge(Event.discoverable).includes(:venue, :organization, :organizer_profile,
       ticket_types: [:inventory_holds, :waitlist_offers,
-        { pricing_tiers: [:inventory_holds, :waitlist_offers] }]).order(:starts_at)
+        { event_seats: :active_precheckout_seat_holds },
+        { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
     render json: organizer_json(organization).merge(
       events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true) },

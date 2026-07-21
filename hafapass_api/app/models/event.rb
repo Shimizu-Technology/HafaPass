@@ -37,6 +37,9 @@ class Event < ApplicationRecord
   has_many :distribution_links, dependent: :restrict_with_error
   has_many :marketplace_funnel_events, dependent: :restrict_with_error
   has_many :event_referrals, dependent: :restrict_with_error
+  has_one :event_seating_configuration, dependent: :restrict_with_error
+  has_many :event_seats, through: :event_seating_configuration
+  has_many :seat_audit_events, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -83,10 +86,11 @@ class Event < ApplicationRecord
   scope :discoverable, ->(at = Time.current) {
     published
       .where("COALESCE(events.ends_at, events.starts_at) > ?", at)
+      .where(sales_suspended_at: nil)
       .joins(:ticket_types)
       .where("ticket_types.sales_start_at IS NULL OR ticket_types.sales_start_at <= ?", at)
       .where("ticket_types.sales_end_at IS NULL OR ticket_types.sales_end_at > ?", at)
-      .where(<<~SQL.squish, at, at)
+      .where(<<~SQL.squish, at, at, at)
         ticket_types.quantity_available - ticket_types.quantity_sold - COALESCE((
           SELECT SUM(inventory_holds.quantity)
           FROM inventory_holds
@@ -99,9 +103,18 @@ class Event < ApplicationRecord
           WHERE waitlist_offers.ticket_type_id = ticket_types.id
             AND waitlist_offers.status = 0
             AND waitlist_offers.expires_at > ?
+        ), 0) - COALESCE((
+          SELECT COUNT(*)
+          FROM seat_holds
+          INNER JOIN seat_hold_sessions ON seat_hold_sessions.id = seat_holds.seat_hold_session_id
+          INNER JOIN event_seats ON event_seats.id = seat_holds.event_seat_id
+          WHERE event_seats.ticket_type_id = ticket_types.id
+            AND seat_holds.status = 0
+            AND seat_hold_sessions.status = 0
+            AND seat_hold_sessions.expires_at > ?
         ), 0) > 0
       SQL
-      .where(<<~SQL.squish, at, at)
+      .where(<<~SQL.squish, at, at, at)
         events.max_capacity IS NULL OR events.max_capacity - COALESCE((
           SELECT SUM(all_ticket_types.quantity_sold)
           FROM ticket_types all_ticket_types
@@ -118,6 +131,19 @@ class Event < ApplicationRecord
           WHERE event_offers.event_id = events.id
             AND event_offers.status = 0
             AND event_offers.expires_at > ?
+        ), 0) - COALESCE((
+          SELECT COUNT(*)
+          FROM seat_holds capacity_seat_holds
+          INNER JOIN seat_hold_sessions capacity_sessions
+            ON capacity_sessions.id = capacity_seat_holds.seat_hold_session_id
+          INNER JOIN event_seats capacity_event_seats
+            ON capacity_event_seats.id = capacity_seat_holds.event_seat_id
+          INNER JOIN event_seating_configurations capacity_configurations
+            ON capacity_configurations.id = capacity_event_seats.event_seating_configuration_id
+          WHERE capacity_configurations.event_id = events.id
+            AND capacity_seat_holds.status = 0
+            AND capacity_sessions.status = 0
+            AND capacity_sessions.expires_at > ?
         ), 0) > 0
       SQL
       .distinct
@@ -128,7 +154,11 @@ class Event < ApplicationRecord
   end
 
   def sales_open?(at: Time.current)
-    published? && (ends_at || starts_at).present? && (ends_at || starts_at) > at
+    published? && sales_suspended_at.nil? && (ends_at || starts_at).present? && (ends_at || starts_at) > at
+  end
+
+  def assigned_seating?
+    event_seating_configuration&.status_active? || false
   end
 
   def content_for(locale)
@@ -142,6 +172,7 @@ class Event < ApplicationRecord
   end
 
   def has_available_inventory?(at: Time.current)
+    return false unless sales_open?(at: at)
     return false unless remaining_capacity(at: at).positive?
 
     ticket_types.any? { |ticket_type| ticket_type.on_sale?(at: at) && ticket_type.available_quantity.positive? }
@@ -152,7 +183,7 @@ class Event < ApplicationRecord
 
     sold = ticket_types.sum(&:quantity_sold)
     held = inventory_holds.active.where("expires_at > ?", at).sum(:quantity) +
-      waitlist_offers.holding_inventory(at).sum(:quantity)
+      waitlist_offers.holding_inventory(at).sum(:quantity) + active_seat_holds_count(at: at)
     [max_capacity - sold - held, 0].max
   end
 
@@ -201,6 +232,15 @@ class Event < ApplicationRecord
   end
 
   private
+
+  def active_seat_holds_count(at: Time.current)
+    return 0 unless event_seating_configuration
+
+    SeatHold.status_active.joins(:seat_hold_session, :event_seat)
+      .where(event_seats: { event_seating_configuration_id: event_seating_configuration.id })
+      .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
+      .where("seat_hold_sessions.expires_at > ?", at).count
+  end
 
   def copy_venue_details
     self.venue_name = venue.name

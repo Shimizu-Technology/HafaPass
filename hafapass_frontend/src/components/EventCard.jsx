@@ -71,7 +71,7 @@ export default function EventCard({ event }) {
       <div className="p-5 flex flex-col flex-1">
         {/* Category badge */}
         {event.category && event.category !== 'other' && (
-          <span className="inline-block text-xs font-semibold text-brand-600 uppercase tracking-wider mb-2">
+          <span className="inline-block text-xs font-semibold text-brand-700 uppercase tracking-wider mb-2">
             {event.category_label || event.category}
           </span>
         )}
@@ -82,16 +82,16 @@ export default function EventCard({ event }) {
 
         <div className="space-y-1.5 mb-4 flex-1">
           {event.starts_at && (
-            <div className="flex items-center gap-2 text-sm text-neutral-500">
-              <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+            <div className="flex items-center gap-2 text-sm text-neutral-600">
+              <Calendar className="w-3.5 h-3.5 text-neutral-500" />
               <span>{formatEventDate(event.starts_at, event.timezone)}</span>
-              <Clock className="w-3.5 h-3.5 text-neutral-400 ml-1" />
+              <Clock className="w-3.5 h-3.5 text-neutral-500 ml-1" />
               <span>{formatEventTime(event.starts_at, event.timezone)}</span>
             </div>
           )}
           {event.venue_name && (
-            <div className="flex items-center gap-2 text-sm text-neutral-500">
-              <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+            <div className="flex items-center gap-2 text-sm text-neutral-600">
+              <MapPin className="w-3.5 h-3.5 text-neutral-500" />
               <span className="truncate">{event.venue_name}</span>
             </div>
           )}
