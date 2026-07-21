@@ -7,12 +7,14 @@ class SystemReadiness
         database: database_check,
         job_queue: job_queue_check,
         worker: worker_check,
+        commerce_clock: commerce_clock_check,
+        configuration: ProductionConfiguration.call,
         providers: provider_configuration,
         operations: operational_signals
       }
 
       required_checks = checks.values_at(:database, :job_queue)
-      required_checks << checks[:worker] if Rails.env.production?
+      required_checks.concat(checks.values_at(:worker, :commerce_clock, :configuration)) if Rails.env.production?
 
       {
         status: required_checks.all? { |check| check[:ready] } ? "ready" : "not_ready",
@@ -67,6 +69,13 @@ class SystemReadiness
         stripe_test: %w[STRIPE_TEST_SECRET_KEY STRIPE_TEST_PUBLISHABLE_KEY].all? { |key| ENV[key].present? },
         stripe_live: %w[STRIPE_LIVE_SECRET_KEY STRIPE_LIVE_PUBLISHABLE_KEY].all? { |key| ENV[key].present? }
       }
+    end
+
+    def commerce_clock_check
+      return { ready: true, status: "not_required", lease_ttl_seconds: 0 } unless Rails.env.production?
+      return { ready: false, status: "redis_not_configured", lease_ttl_seconds: 0 } if ENV["REDIS_URL"].blank?
+
+      Operations::CommerceClockLease.status
     end
 
     def configured?(key)

@@ -25,7 +25,7 @@ Do not open paid pilot inventory until every item has dated evidence and an owne
 
 ## Production configuration checklist
 
-Core: `DATABASE_URL`, `REDIS_URL`, Clerk keys, `ALLOWED_ORIGINS`, `FRONTEND_URL`, `GIT_SHA`, and independently supervised web/worker processes.
+Core: `DATABASE_URL`, `REDIS_URL`, Clerk keys, HTTPS-only `ALLOWED_ORIGINS`, `FRONTEND_URL`, `PUBLIC_WEB_URL`, `GIT_SHA`, and independently supervised web, worker, and singleton commerce-clock processes. Follow the evidence contract in [Gate C Production Environment](GATE_C_PRODUCTION_ENVIRONMENT.md).
 
 Communication: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, verified `MAILER_FROM_EMAIL`, production webhook URL `/webhooks/resend`, and subscriptions for sent, delivered, delayed, failed, bounced, complained, and suppressed events. Resend requests use the persisted delivery idempotency key; webhook deduplication uses `svix-id` and the raw signed body.
 

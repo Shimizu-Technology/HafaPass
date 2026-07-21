@@ -16,6 +16,11 @@ RSpec.describe SystemReadiness do
         status: "not_required",
         processes: 0
       )
+      expect(result.dig(:checks, :commerce_clock)).to include(
+        ready: true,
+        status: "not_required",
+        lease_ttl_seconds: 0
+      )
     end
 
     it "reports only boolean provider configuration state" do
@@ -56,6 +61,12 @@ RSpec.describe SystemReadiness do
         allow(Rails.env).to receive(:production?).and_return(true)
         allow(ActiveJob::Base).to receive(:queue_adapter_name).and_return("sidekiq")
         allow(Sidekiq).to receive(:redis).and_yield(instance_double(RedisClient, call: "PONG"))
+        allow(ProductionConfiguration).to receive(:call).and_return(
+          ready: true, status: "configured", checks: {}
+        )
+        allow(Operations::CommerceClockLease).to receive(:status).and_return(
+          ready: true, status: "active", lease_ttl_seconds: 60
+        )
       end
 
       it "is not ready when no worker process is registered" do
@@ -82,6 +93,18 @@ RSpec.describe SystemReadiness do
           status: "active",
           processes: 1
         )
+      end
+
+      it "is not ready when the singleton commerce clock heartbeat is missing" do
+        allow(Sidekiq::ProcessSet).to receive(:new).and_return(instance_double(Sidekiq::ProcessSet, size: 1))
+        allow(Operations::CommerceClockLease).to receive(:status).and_return(
+          ready: false, status: "missing", lease_ttl_seconds: 0
+        )
+
+        result = described_class.call
+
+        expect(result[:status]).to eq("not_ready")
+        expect(result.dig(:checks, :commerce_clock)).to include(ready: false, status: "missing")
       end
 
       it "checks Redis through Sidekiq's shared connection pool" do
