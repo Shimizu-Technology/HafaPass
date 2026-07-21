@@ -43,7 +43,7 @@ Core runtime:
 - `FRONTEND_URL`
 - `PUBLIC_WEB_URL`
 - `SENTRY_DSN`
-- `GIT_SHA` or `COMMIT_REF` for release correlation
+- `GIT_SHA` or an explicitly configured `COMMIT_REF` containing the full commit digest for release correlation
 
 Provider-specific configuration remains documented in the root README. Put secrets in the deployment platform's encrypted environment store. Never put values in source, CI YAML, command output, screenshots, or support tickets. The exact Gate C contract and evidence procedure are in [Gate C Production Environment](GATE_C_PRODUCTION_ENVIRONMENT.md).
 

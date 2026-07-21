@@ -8,9 +8,9 @@ RSpec.describe ProductionConfiguration do
     "REDIS_URL" => "configured",
     "CLERK_SECRET_KEY" => "configured",
     "CLERK_PUBLISHABLE_KEY" => "configured",
-    "FRONTEND_URL" => "https://hafapass.example",
-    "PUBLIC_WEB_URL" => "https://hafapass.example",
-    "ALLOWED_ORIGINS" => "https://hafapass.example,https://admin.hafapass.example",
+    "FRONTEND_URL" => "https://hafapass.example/",
+    "PUBLIC_WEB_URL" => "https://hafapass.example/",
+    "ALLOWED_ORIGINS" => "https://hafapass.example/,https://admin.hafapass.example",
     "GIT_SHA" => "a" * 40,
     "SENTRY_DSN" => "configured",
     "RESEND_API_KEY" => "configured",
@@ -41,7 +41,7 @@ RSpec.describe ProductionConfiguration do
   end
 
   it "fails closed for unsafe origins, missing credentials, or first-user admin bootstrap" do
-    ENV["ALLOWED_ORIGINS"] = "http://localhost:5173,*"
+    ENV["ALLOWED_ORIGINS"] = "https://hafapass.example/tickets,http://localhost:5173,*"
     ENV.delete("SENTRY_DSN")
     ENV["ENABLE_FIRST_USER_ADMIN_BOOTSTRAP"] = "true"
 

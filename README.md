@@ -205,6 +205,7 @@ Query params: `?page=2&per_page=10`
 | `SENTRY_DSN` | Production | Backend error-monitoring DSN |
 | `SENTRY_ENVIRONMENT` | No | Monitoring environment label (defaults to Rails environment) |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | Backend performance trace sample rate (default: `0.1`) |
+| `GIT_SHA` / `COMMIT_REF` | Production | Exact 40- or 64-hex deployed commit digest; branch names are rejected by readiness |
 
 ### Frontend (`hafapass_frontend/.env.local`)
 | Variable | Required | Description |

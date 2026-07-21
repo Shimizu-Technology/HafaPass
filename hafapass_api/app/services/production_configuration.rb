@@ -10,7 +10,7 @@ class ProductionConfiguration
         redis: configured?(*%w[REDIS_URL]),
         clerk: configured?(*%w[CLERK_SECRET_KEY CLERK_PUBLISHABLE_KEY]),
         public_urls: secure_public_urls?,
-        release: release_identifier.to_s.match?(/\A[0-9a-f]{40}\z/i),
+        release: release_identifier.to_s.match?(/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/i),
         monitoring: configured?(*%w[SENTRY_DSN]),
         email: configured?(*%w[RESEND_API_KEY RESEND_WEBHOOK_SECRET MAILER_FROM_EMAIL]),
         object_storage: configured?(*%w[AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET AWS_REGION]),
@@ -46,7 +46,7 @@ class ProductionConfiguration
     end
 
     def parse_https_url(value)
-      uri = URI.parse(value.to_s)
+      uri = URI.parse(value.to_s.delete_suffix("/"))
       return unless uri.is_a?(URI::HTTPS) && uri.host.present? && uri.userinfo.blank? && uri.path.blank? &&
         uri.query.blank? && uri.fragment.blank?
 

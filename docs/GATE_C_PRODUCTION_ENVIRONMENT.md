@@ -32,14 +32,14 @@ The readiness configuration check requires the following groups without returnin
 - queue/lease: `REDIS_URL`;
 - authentication: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`;
 - public routing: HTTPS `FRONTEND_URL`, HTTPS `PUBLIC_WEB_URL`, and HTTPS-only `ALLOWED_ORIGINS` containing the frontend origin;
-- release correlation: `GIT_SHA` or `COMMIT_REF`;
+- release correlation: `GIT_SHA` or an explicitly configured `COMMIT_REF` containing the full 40- or 64-hex commit digest—not a branch name;
 - monitoring: `SENTRY_DSN`;
 - mail: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `MAILER_FROM_EMAIL`;
 - private storage: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET`, `AWS_REGION`;
 - offline-admission signing: `ADMISSION_MANIFEST_PRIVATE_KEY_PEM`; and
 - bootstrap safety: `ENABLE_FIRST_USER_ADMIN_BOOTSTRAP` absent or false.
 
-Production CORS has no localhost fallback. Missing `ALLOWED_ORIGINS` prevents boot; HTTP, wildcard, path-bearing, credential-bearing, query-bearing, and fragment-bearing origins make readiness fail.
+Production CORS has no localhost fallback. Missing `ALLOWED_ORIGINS` prevents boot; HTTP, wildcard, genuine subpath, credential-bearing, query-bearing, and fragment-bearing origins make readiness fail. A conventional single trailing root slash is normalized.
 
 Payment, wallet, and card-present credentials remain feature-specific gates. Do not add a credential merely to turn a boolean green. Every enabled production provider still needs the applicable Gate B/D/H approval and evidence.
 
