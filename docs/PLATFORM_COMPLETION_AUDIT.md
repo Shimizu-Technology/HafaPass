@@ -2,7 +2,7 @@
 
 Status: Phase 0–10 and Gate A–J application controls delivered; paid production launch remains blocked on dated external evidence and a real operated Gate I pilot with an independently inspected Gate J closeout
 Last verified: July 21, 2026 (Pacific/Guam)
-Audited baseline: protected `main` at `02734df` (Gate I), plus the Gate J candidate change set documented here
+Audited baseline: protected `main` at `02734df` (Gate I), plus the reviewed Gate J candidate change set documented here
 
 ## Executive verdict
 
@@ -30,7 +30,7 @@ The current Gate J candidate, based on merged Gate I, passed locally with:
 - 18 Playwright Chromium journeys, including the hidden Gate H authorization, Gate I live monitoring and incident flow, Gate J independent closeout approval, offline scanning, finance isolation, service recovery, marketplace discovery, competitive checkout, exact keyboard seat selection, and automated serious/critical accessibility checks.
 - Rails eager-load validation and a Gate J migration down/up drill.
 
-GitHub independently passed the backend, frontend, browser, security, hygiene, and deploy-preview checks on every merged final phase and release-gate commit. Gate I was merged only after a fresh Greptile review covered its final correction commit and reported no new actionable comment. Gate J has passed the complete local gate; its GitHub and Greptile result will be recorded only after the candidate PR completes review. No real Gate I or Gate J operating outcome is claimed by these engineering results.
+GitHub independently passed the backend, frontend, browser, security, hygiene, and deploy-preview checks on every merged final phase and release-gate commit. Gate I was merged only after a fresh Greptile review covered its final correction commit and reported no new actionable comment. Gate J passed the complete local gate and every GitHub/preview check. Greptile found one valid delayed-decision defect, which was corrected with regression coverage; the fresh review passed the correction commit with no new comment, and every thread was resolved. No real Gate I or Gate J operating outcome is claimed by these engineering results.
 
 ## Live market revalidation
 
