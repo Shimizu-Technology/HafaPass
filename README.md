@@ -47,10 +47,11 @@ HafaPass/
 
 ## Product and Delivery Roadmap
 
-The current application is a strong prototype, not yet a production-safe real-money ticketing platform. Use these documents as the source of truth:
+The Phase 0–10 engineering program is merged, but HafaPass is not yet authorized for production real-money ticketing because external approvals and live drills remain open. Use these documents as the source of truth:
 
 - [Ticketing Platform Blueprint](docs/TICKETING_PLATFORM_BLUEPRINT.md) — what HafaPass is, verified risks, required capabilities, architecture, compliance, metrics, and completion criteria.
 - [Phase Delivery Playbook](docs/PHASE_DELIVERY_PLAYBOOK.md) — the exact phase branches, implementation scope, automated/runtime testing, Greptile 5/5 loop, and merge gates.
+- [Platform Completion Audit](docs/PLATFORM_COMPLETION_AUDIT.md) — requirement evidence, market revalidation, honest production-readiness verdict, and ordered launch plan.
 - [Pilot Manual Test Plan](docs/MVP_TEST_PLAN.md) — the end-to-end release-candidate validation.
 - [Event-Day Operations](docs/EVENT_DAY_OPERATIONS.md) — signed offline scanning, device drills, door sales, Clover gates, reconciliation, and fallback procedures.
 - [Competitive Analysis](COMPETITIVE_ANALYSIS.md) — current GuamTime, Ticketmaster, and alternative-platform findings.
@@ -99,7 +100,7 @@ The current application is a strong prototype, not yet a production-safe real-mo
    cd hafapass_api
    bundle exec sidekiq
    ```
-   Development uses Rails' in-process async adapter when `REDIS_URL` is absent. Production requires Redis, a separately running Sidekiq worker, and exactly one commerce clock process; it does not silently fall back to non-durable work. The clock enqueues idempotent inventory-hold expiry every minute.
+   Development uses Rails' in-process async adapter when `REDIS_URL` is absent. Production requires Redis, a separately running Sidekiq worker, and exactly one commerce clock process; it does not silently fall back to non-durable work. The clock enqueues idempotent general-admission and assigned-seat hold expiry every minute and the marketplace retention job daily.
 
 6. **Open the app**
    Visit http://localhost:5173
@@ -126,10 +127,11 @@ The current application is a strong prototype, not yet a production-safe real-mo
 - [x] API pagination
 - [x] CORS configuration via environment variables
 
-### Roadmap
-- Phase 2: Ambros partner features, promoter splits
-- Phase 3: Mobile app, VIP reservations, tourism integrations
-- Phase 4: White-label, API, Micronesia expansion
+### Delivery status and next horizon
+
+- [x] Engineering Phases 0–10: safety foundation, commerce ledger, Guam event integrity, buyer lifecycle, organizations/payout accounting, offline event day, support/compliance surfaces, competitive features, marketplace distribution, and assigned seating.
+- [ ] Production release gates: approved Guam payment/payout path, professional policies, dedicated provider configuration, live transaction/reconciliation proof, backup/alert/device/accessibility drills, and named event operations.
+- [ ] Evidence-triggered expansion only: complex visual seating provider, high-demand waiting room, season products/memberships, white-label/API, or regional expansion after pilot metrics justify them.
 
 ## Architecture
 

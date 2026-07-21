@@ -9,14 +9,14 @@ Delivery phases: [PHASE_DELIVERY_PLAYBOOK.md](PHASE_DELIVERY_PLAYBOOK.md)
 ### Guest
 
 - Can browse public events and begin guest checkout.
-- Cannot reliably recover or cancel a pending paid order in the current implementation.
-- A QR-bearing ticket URL currently carries too much access and must not be treated as a safe public credential.
+- Can recover an order through a scoped, expiring guest-access credential and request safe fulfillment resend.
+- Ticket display and scan credentials are separate, versioned, revocable, and do not grant order-level access.
 
 ### Attendee
 
 - Default authenticated Clerk user.
 - Can view their own orders/tickets and create an organizer profile.
-- The current navigation exposes organizer/scanner destinations too broadly even though backend authorization rejects many operations.
+- Organizer, finance, box-office, scanner, support, and administration capabilities remain hidden and rejected unless database authorization grants them.
 
 ### Organizer organization
 
@@ -28,7 +28,8 @@ Delivery phases: [PHASE_DELIVERY_PLAYBOOK.md](PHASE_DELIVERY_PLAYBOOK.md)
 ### Platform administrator
 
 - Controls platform-level settings and cross-event administration.
-- The prototype lacks the complete support, audit, reconciliation, risk, and message-delivery tools required for production.
+- Uses dedicated support, audit, reconciliation, connected-account, marketplace-governance, message-delivery, and operational readiness surfaces.
+- Production use of those tools remains subject to the professional approvals and live drills in the completion audit.
 
 ## Target authorization model
 
