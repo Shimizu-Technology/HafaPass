@@ -1,7 +1,16 @@
 require "rails_helper"
 
 RSpec.describe Wallet::ApplePassGenerator do
+  it "does not sign a configured pass before provider evidence is approved" do
+    allow(described_class).to receive(:configured?).and_return(true)
+    allow(PlatformCapabilities).to receive(:enabled?).with("apple_wallet").and_return(false)
+
+    expect { described_class.call(instance_double(Ticket)) }
+      .to raise_error(described_class::ConfigurationError, /disabled pending provider approval/)
+  end
+
   it "packages a signed pass with a manifest and the current scan credential" do
+    allow(PlatformCapabilities).to receive(:enabled?).with("apple_wallet").and_return(true)
     key = OpenSSL::PKey::RSA.new(2048)
     certificate = OpenSSL::X509::Certificate.new
     certificate.version = 2

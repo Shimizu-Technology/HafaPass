@@ -1,10 +1,27 @@
 require "rails_helper"
 
 RSpec.describe StripeService do
+  it "refuses legacy live mode when current provider evidence is not approved" do
+    settings = instance_double(
+      SiteSetting,
+      simulate_mode?: false,
+      live_mode?: true,
+      can_enable_live?: false,
+      stripe_secret_key: "sk_live_present_but_unapproved",
+      payment_mode: "live"
+    )
+    allow(SiteSetting).to receive(:instance).and_return(settings)
+
+    expect do
+      described_class.refund_payment("pi_live", idempotency_key: "refund-live-unapproved")
+    end.to raise_error(described_class::PaymentError, /disabled until current provider evidence/)
+  end
+
   it "maps internal refund notes to Stripe's supported reason enum" do
     settings = instance_double(
       SiteSetting,
       simulate_mode?: false,
+      live_mode?: false,
       stripe_secret_key: "sk_test_fake",
       payment_mode: "test"
     )

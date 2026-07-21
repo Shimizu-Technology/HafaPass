@@ -49,6 +49,7 @@ const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'))
 const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'))
 const SupportPage = lazy(() => import('./pages/support/SupportPage'))
 const MarketplaceAdminPage = lazy(() => import('./pages/admin/MarketplaceAdminPage'))
+const ProviderReadinessPage = lazy(() => import('./pages/admin/ProviderReadinessPage'))
 
 function PageLoader() {
   return (
@@ -102,6 +103,7 @@ function App() {
           <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
           <Route path="/admin/orders" element={<AdminRoute><AdminOrdersPage /></AdminRoute>} />
           <Route path="/admin/marketplace" element={<AdminRoute><MarketplaceAdminPage /></AdminRoute>} />
+          <Route path="/admin/provider-readiness" element={<AdminRoute><ProviderReadinessPage /></AdminRoute>} />
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />

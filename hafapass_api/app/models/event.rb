@@ -193,6 +193,8 @@ class Event < ApplicationRecord
     end
     configured_inventory = ticket_types.sum(&:quantity_available)
     checks = [
+      checklist_item("production_policy_approved", "Production policy register approved",
+        !Rails.env.production? || PolicyRegistry.production_approved?),
       checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?),
       checklist_item("policy_accepted", "Organizer policy accepted", organizer_profile.policy_accepted?),
       checklist_item("title", "Event title added", title.present?),

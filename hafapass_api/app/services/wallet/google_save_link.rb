@@ -12,6 +12,10 @@ module Wallet
       end
     end
 
+    def self.enabled?
+      configured? && PlatformCapabilities.enabled?("google_wallet")
+    end
+
     def self.call(ticket)
       new(ticket).call
     end
@@ -22,6 +26,7 @@ module Wallet
 
     def call
       raise ConfigurationError, "Google Wallet is not configured" unless self.class.configured?
+      raise ConfigurationError, "Google Wallet is disabled pending provider approval" unless self.class.enabled?
 
       token = JWT.encode(claims, OpenSSL::PKey::RSA.new(normalized_private_key), "RS256")
       "https://pay.google.com/gp/v/save/#{token}"

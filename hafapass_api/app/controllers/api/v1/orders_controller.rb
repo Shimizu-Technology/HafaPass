@@ -15,6 +15,11 @@ class Api::V1::OrdersController < ApplicationController
   ]
 
   def create
+    if Rails.env.production? && !PolicyRegistry.production_approved?
+      return render json: { error: "Checkout is unavailable until the current policy register is approved" },
+        status: :service_unavailable
+    end
+
     event = Event.published.find_by(id: params[:event_id])
     unless event
       render json: { error: "Event not found" }, status: :not_found

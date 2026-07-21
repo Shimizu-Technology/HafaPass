@@ -1,6 +1,27 @@
 require "rails_helper"
 
 RSpec.describe EmailService do
+  it "fails closed in production instead of recording a simulated customer delivery" do
+    order = create(:order)
+    allow(Rails.env).to receive(:production?).and_return(true)
+    allow(PlatformCapabilities).to receive(:enabled?).with("resend_production").and_return(false)
+
+    expect do
+      described_class.send_order_confirmation(order)
+    end.to raise_error(described_class::ProviderDisabled, /disabled until current Resend evidence/)
+  end
+
+  it "labels an unapproved production delivery as disabled for support visibility" do
+    order = create(:order)
+    allow(Rails.env).to receive(:production?).and_return(true)
+    allow(PlatformCapabilities).to receive(:enabled?).with("resend_production").and_return(false)
+    allow(MessageDeliveryJob).to receive(:perform_later)
+
+    delivery = described_class.send_order_confirmation_async(order)
+
+    expect(delivery.provider).to eq("disabled")
+  end
+
   it "passes a stable provider idempotency key and escapes all organizer and attendee HTML" do
     order = create(:order, buyer_name: "<script>buyer()</script>")
     order.event.update!(title: "<img src=x onerror=alert(1)>", venue_name: "<b>Venue</b>")

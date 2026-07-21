@@ -1,7 +1,16 @@
 require "rails_helper"
 
 RSpec.describe Wallet::GoogleSaveLink do
+  it "does not issue a configured save link before provider evidence is approved" do
+    allow(described_class).to receive(:configured?).and_return(true)
+    allow(PlatformCapabilities).to receive(:enabled?).with("google_wallet").and_return(false)
+
+    expect { described_class.call(instance_double(Ticket)) }
+      .to raise_error(described_class::ConfigurationError, /disabled pending provider approval/)
+  end
+
   it "creates a signed Save to Google Wallet URL with an event class and rotated ticket object" do
+    allow(PlatformCapabilities).to receive(:enabled?).with("google_wallet").and_return(true)
     key = OpenSSL::PKey::RSA.new(2048)
     stub_const("ENV", ENV.to_h.merge(
       "GOOGLE_WALLET_ISSUER_ID" => "3388000000000000000",

@@ -126,6 +126,8 @@ module Commerce
       order.reload
       guest_access_token = GuestOrderAccess.issue!(order) if order.user_id.nil?
       Result.new(order: order, payment: payment&.reload, payment_intent: intent, guest_access_token: guest_access_token)
+    rescue StripeService::PaymentError => e
+      raise CheckoutError, e.message
     rescue ActiveRecord::RecordInvalid => e
       raise CheckoutError, e.record.errors.full_messages.to_sentence
     end

@@ -69,6 +69,10 @@ class Api::V1::TicketsController < ApplicationController
       status: ticket.status,
       checked_in_at: ticket.checked_in_at,
       admission_allowed: ticket.admission_allowed?,
+      wallet_availability: {
+        apple: Wallet::ApplePassGenerator.enabled?,
+        google: Wallet::GoogleSaveLink.enabled?
+      },
       admission_block_reason: ticket.order.ticket_access_blocked? ? "Payment dispute under review" : nil,
       event: {
         id: ticket.event.id,
