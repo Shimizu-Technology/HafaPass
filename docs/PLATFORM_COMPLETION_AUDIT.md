@@ -22,7 +22,7 @@ The right next move is not another broad feature sprint. It is to close the rele
 The current Gate B candidate passed locally with:
 
 - 541 RSpec examples.
-- 422 Ruby files with zero RuboCop offenses.
+- 423 Ruby files with zero RuboCop offenses.
 - Zero Brakeman warnings.
 - Zero known Ruby dependency vulnerabilities.
 - 25 Vitest tests and zero ESLint warnings.
