@@ -126,6 +126,8 @@ These numbered controls are the blocker inventory, while Gates A–J below are t
 
 Owner: engineering lead with founder approval.
 
+Procedure: [Release Candidate Operations](RELEASE_CANDIDATE_OPERATIONS.md).
+
 Actions:
 
 1. Tag one green `main` commit as the candidate; record frontend/backend release IDs and database schema version.

@@ -52,6 +52,7 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
 - [Ticketing Platform Blueprint](docs/TICKETING_PLATFORM_BLUEPRINT.md) — what HafaPass is, verified risks, required capabilities, architecture, compliance, metrics, and completion criteria.
 - [Phase Delivery Playbook](docs/PHASE_DELIVERY_PLAYBOOK.md) — the exact phase branches, implementation scope, automated/runtime testing, Greptile 5/5 loop, and merge gates.
 - [Platform Completion Audit](docs/PLATFORM_COMPLETION_AUDIT.md) — requirement evidence, market revalidation, honest production-readiness verdict, and ordered launch plan.
+- [Release Candidate Operations](docs/RELEASE_CANDIDATE_OPERATIONS.md) — exact-commit Gate A capture, private evidence register, protected-branch freeze, approvals, and immutable candidate tags.
 - [Pilot Manual Test Plan](docs/MVP_TEST_PLAN.md) — the end-to-end release-candidate validation.
 - [Event-Day Operations](docs/EVENT_DAY_OPERATIONS.md) — signed offline scanning, device drills, door sales, Clover gates, reconciliation, and fallback procedures.
 - [Competitive Analysis](COMPETITIVE_ANALYSIS.md) — current GuamTime, Ticketmaster, and alternative-platform findings.

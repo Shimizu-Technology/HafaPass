@@ -75,3 +75,6 @@ coverage/
 
 # Local Netlify folder
 .netlify
+
+# Private release and pilot evidence (may contain approvals and provider references)
+.release-evidence/
