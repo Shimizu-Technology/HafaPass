@@ -12,7 +12,7 @@ test('buyer selects an exact seat, holds it, and completes seat-specific checkou
     assigned_seating: true, fee_policy: 'organizer_absorbs', buyer_fee_percent: 0, transfers_enabled: true,
     ticket_types: [{ id: 7, name: 'Main reserved', price_cents: 2500, current_price_cents: 2500,
       quantity_available: 20, quantity_sold: 0, quantity_remaining: 20, on_sale: true }],
-    catalog_items: [], registration_questions: [], waivers: [], organizer: { business_name: 'Museum Events', verified: true },
+    catalog_items: [], registration_questions: [], waivers: [], organizer: { business_name: 'Museum Events', slug: 'museum-events', verified: true },
     attendee_count: 0, attendees_preview: [],
   }
   const seat = { id: 12, label: '1', display_label: 'Main floor · Row A · Seat 1', price_cents: 2500,
@@ -21,6 +21,7 @@ test('buyer selects an exact seat, holds it, and completes seat-specific checkou
   let submitted
   const completedOrder = {
     id: 101, reference: 'HP-SEAT', status: 'completed', buyer_email: 'buyer@example.com', buyer_name: 'Seat Buyer',
+    guest_access_token: 'guest-seat-token',
     subtotal_cents: 2500, service_fee_cents: 0, discount_cents: 0, total_cents: 2500, refunded_cents: 0,
     ticket_access_blocked: false, event, order_items: [{ id: 1, name: 'Main reserved', quantity: 1, subtotal_cents: 2500 }],
     tickets: [{ id: 501, status: 'issued', attendee_name: 'Seat Buyer', display_credential: 'display-token',
@@ -46,6 +47,8 @@ test('buyer selects an exact seat, holds it, and completes seat-specific checkou
   await page.route('**/api/v1/orders/101', route => json(route, completedOrder))
 
   await page.goto('/events/guam-theater')
+  const animatedContent = page.getByRole('link', { name: 'Add to Calendar' }).locator('xpath=ancestor::div[contains(@class,"lg:col-span-2")]')
+  await expect.poll(() => animatedContent.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
   const accessibilityResults = await new AxeBuilder({ page }).analyze()
   expect(accessibilityResults.violations.filter(violation => ['serious', 'critical'].includes(violation.impact))).toEqual([])
   const seatButton = page.getByRole('button', { name: /Main floor, row A, seat 1/ })
@@ -57,10 +60,13 @@ test('buyer selects an exact seat, holds it, and completes seat-specific checkou
   await page.getByLabel('Full Name').fill('Seat Buyer')
   await page.getByLabel('Email Address').fill('buyer@example.com')
   await page.locator('input#termsAccepted:visible').check()
+  const orderResponse = page.waitForResponse(response => response.url().endsWith('/api/v1/orders') && response.request().method() === 'POST')
   await page.getByRole('button', { name: /Place Order/ }).click()
+  expect((await orderResponse).status()).toBe(201)
 
-  await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
-  await expect(page.getByText(seat.display_label)).toBeVisible()
+  await expect(page).toHaveURL(/\/orders\/101\/confirmation$/, { timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(seat.display_label, { exact: true })).toBeVisible()
   expect(submitted.seat_hold_token).toBe('seat-hold-token')
   expect(submitted.line_items).toEqual([{ ticket_type_id: 7, quantity: 1 }])
 })

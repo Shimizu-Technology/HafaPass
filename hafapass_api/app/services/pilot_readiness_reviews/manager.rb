@@ -16,7 +16,7 @@ module PilotReadinessReviews
 
       event.with_lock do
         incomplete = event.publish_checklist.reject do |item|
-          item[:complete] || item[:code] == "pilot_readiness_approved"
+          item[:complete] || %w[pilot_readiness_approved pilot_validation_approved].include?(item[:code])
         end
         if incomplete.any?
           raise ReviewError, "Complete event configuration first: #{incomplete.map { |item| item[:label] }.join(', ')}"

@@ -26,8 +26,14 @@ class Api::V1::OrdersController < ApplicationController
       return
     end
 
-    if Rails.env.production? && !event.pilot_ready_for_production?
+    release_gate = event.production_release_gate_status
+    if release_gate == :pilot_readiness
       return render json: { error: "Checkout is unavailable until this event has a current pilot readiness approval" },
+        status: :service_unavailable
+    end
+
+    if release_gate == :pilot_validation
+      return render json: { error: "Checkout is unavailable until this event has a current Gate F validation approval" },
         status: :service_unavailable
     end
 

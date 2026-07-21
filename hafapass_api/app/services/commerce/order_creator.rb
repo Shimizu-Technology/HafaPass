@@ -49,8 +49,12 @@ module Commerce
 
       Order.transaction do
         event.lock!
-        unless event.pilot_ready_for_production?
+        release_gate = event.production_release_gate_status
+        if release_gate == :pilot_readiness
           raise CheckoutError, "This event does not have a current pilot readiness approval"
+        end
+        if release_gate == :pilot_validation
+          raise CheckoutError, "This event does not have a current Gate F validation approval"
         end
         raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
         offer = claimable_waitlist_offer!
