@@ -64,6 +64,16 @@ Rails.application.routes.draw do
         post "ticket_transfers/accept", to: "ticket_transfers#accept"
         post "tickets/:ticket_id/transfer", to: "ticket_transfers#create"
         delete "tickets/:ticket_id/transfer", to: "ticket_transfers#destroy"
+        resources :event_favorites, only: [:index, :create] do
+          collection { delete ":event_id", action: :destroy }
+        end
+        resources :organizer_follows, only: [:index, :create] do
+          collection { delete ":organization_id", action: :destroy }
+        end
+        resources :event_reminders, only: [:index, :create] do
+          collection { delete ":event_id", action: :destroy }
+        end
+        resources :event_referrals, only: [:index, :create]
       end
 
       # Public events
@@ -76,6 +86,12 @@ Rails.application.routes.draw do
       end
       get "event_categories", to: "events#categories"
       get "events/:slug", to: "events#show", as: :event
+      resources :marketplace_collections, only: [:index, :show], param: :slug
+      resources :venues, only: [:index, :show], param: :slug
+      resources :organizers, only: [:index, :show], param: :slug
+      get "distribution_links/:code", to: "distribution_links#show"
+      get "event_referrals/:code", to: "event_referrals#show"
+      resources :marketplace_funnel_events, only: [:create]
 
       # Organizer events (protected)
       namespace :organizer do
@@ -168,6 +184,11 @@ Rails.application.routes.draw do
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:create, :destroy]
         resources :payouts, only: [:update]
+        resource :marketplace, only: [:show], controller: "marketplace"
+        resources :marketplace_collections, except: [:show]
+        resources :distribution_partners, except: [:show]
+        resources :distribution_links, except: [:show]
+        resources :venues, except: [:show]
 
         # Maintenance
         post "maintenance/complete_past_events", to: "maintenance#complete_past_events"

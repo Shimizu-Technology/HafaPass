@@ -16,6 +16,7 @@ class Organization < ApplicationRecord
   has_many :admission_actions, dependent: :restrict_with_error
   has_one :card_present_account, dependent: :restrict_with_error
   has_many :card_present_payment_attempts, dependent: :restrict_with_error
+  has_many :organizer_follows, dependent: :destroy
 
   enum :status, { active: 0, suspended: 1, archived: 2 }, prefix: true
 

@@ -18,6 +18,14 @@ class User < ApplicationRecord
   has_many :accepted_ticket_transfers, class_name: "TicketTransfer", foreign_key: :accepted_by_user_id,
     dependent: :restrict_with_error
   has_many :communication_campaigns, foreign_key: :created_by_user_id, dependent: :restrict_with_error
+  has_many :event_favorites, dependent: :destroy
+  has_many :favorite_events, through: :event_favorites, source: :event
+  has_many :organizer_follows, dependent: :destroy
+  has_many :followed_organizations, through: :organizer_follows, source: :organization
+  has_many :event_reminders, dependent: :destroy
+  has_many :marketplace_collections, foreign_key: :created_by_user_id, dependent: :restrict_with_error
+  has_many :distribution_links, foreign_key: :created_by_user_id, dependent: :restrict_with_error
+  has_many :event_referrals, dependent: :destroy
 
   enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
 

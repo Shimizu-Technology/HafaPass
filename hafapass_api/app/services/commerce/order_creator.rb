@@ -87,6 +87,7 @@ module Commerce
         reserve_promo!(order, totals[:promo_code], totals[:discount_cents], expires_at)
         record_registration!(order)
         record_referral!(order, promoter)
+        record_acquisition!(order)
         offer&.update!(order: order)
 
         if requires_payment && order.total_cents.positive?
@@ -473,6 +474,42 @@ module Commerce
 
     def attribution_value(key)
       (attribution[key] || attribution[key.to_s]).to_s.strip.presence&.first(255)
+    end
+
+    def record_acquisition!(order)
+      return if order.source == "box_office"
+
+      event_referral = EventReferral.find_by(code: attribution_value(:event_referral_code).to_s.upcase, event: event,
+        active: true)
+      link = DistributionLink.available.find_by(code: attribution_value(:distribution_code).to_s.upcase, event: event) unless event_referral
+      visitor_hash = begin
+        Marketplace::VisitorIdentity.hash(attribution_value(:anonymous_id))
+      rescue Marketplace::VisitorIdentity::InvalidIdentifier
+        OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, "order/#{order.id}")
+      end
+      source_value, medium_value, campaign_value = acquisition_values(link, event_referral)
+
+      order.create_acquisition_attribution!(
+        distribution_link: link,
+        event_referral: event_referral,
+        visitor_hash: visitor_hash,
+        source: source_value,
+        medium: medium_value,
+        campaign: campaign_value,
+        attributed_at: Time.current
+      )
+    end
+
+    def acquisition_values(link, event_referral)
+      return ["user_referral", "share", event_referral.code] if event_referral
+      return [link.distribution_partner.kind, "partner", link.campaign] if link
+
+      [tracking_value(:source) || "direct", tracking_value(:medium) || "none", tracking_value(:campaign)]
+    end
+
+    def tracking_value(key)
+      value = attribution_value(key)&.first(100)
+      value if value&.match?(/\A[a-zA-Z0-9._-]+\z/)
     end
 
     def reserve_promo!(order, promo_code, discount_cents, expires_at)

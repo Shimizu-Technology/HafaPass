@@ -3,12 +3,41 @@ module Api
     class EventsController < ApplicationController
       include Paginatable
 
+      EFFECTIVE_TICKET_PRICE_SQL = <<~SQL.squish.freeze
+        COALESCE((
+          SELECT pricing_tiers.price_cents
+          FROM pricing_tiers
+          WHERE pricing_tiers.ticket_type_id = ticket_types.id
+            AND (
+              (pricing_tiers.tier_type = 0
+                AND (pricing_tiers.starts_at IS NOT NULL OR pricing_tiers.ends_at IS NOT NULL)
+                AND (pricing_tiers.starts_at IS NULL OR pricing_tiers.starts_at <= :price_at)
+                AND (pricing_tiers.ends_at IS NULL OR pricing_tiers.ends_at >= :price_at))
+              OR
+              (pricing_tiers.tier_type = 1
+                AND pricing_tiers.quantity_sold + COALESCE((
+                  SELECT SUM(tier_holds.quantity) FROM inventory_holds tier_holds
+                  WHERE tier_holds.pricing_tier_id = pricing_tiers.id
+                    AND tier_holds.status = 0 AND tier_holds.expires_at > :price_at
+                ), 0) + COALESCE((
+                  SELECT SUM(tier_offers.quantity) FROM waitlist_offers tier_offers
+                  WHERE tier_offers.pricing_tier_id = pricing_tiers.id
+                    AND tier_offers.status = 0 AND tier_offers.expires_at > :price_at
+                ), 0) < pricing_tiers.quantity_limit)
+            )
+          ORDER BY pricing_tiers.position ASC, pricing_tiers.id ASC
+          LIMIT 1
+        ), ticket_types.price_cents)
+      SQL
+
       skip_before_action :authenticate_user!
-      before_action :optional_authenticate!, only: [:show]
+      before_action :optional_authenticate!, only: [:index, :show]
 
       def index
-        events = filtered_events.includes(ticket_types: :pricing_tiers).includes(:organizer_profile).order(starts_at: :asc)
+        events = filtered_events.includes(ticket_types: :pricing_tiers).includes(:organizer_profile, :organization, :venue)
+          .order(starts_at: :asc)
         pagy, paginated_events = paginate(events)
+        preload_viewer_state(paginated_events)
 
         render json: {
           events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
@@ -54,7 +83,47 @@ module Api
         events = events.where(is_featured: true) if ActiveModel::Type::Boolean.new.cast(params[:featured])
         events = events.where(starts_at: parse_date_boundary(params[:date_from], beginning: true)..) if params[:date_from].present?
         events = events.where(starts_at: ..parse_date_boundary(params[:date_to], beginning: false)) if params[:date_to].present?
+        events = filter_named_window(events)
+        events = events.where("LOWER(events.venue_city) = ?", params[:village].to_s.strip.downcase) if params[:village].present?
+        events = events.joins(:venue).where(venues: { slug: params[:venue] }) if params[:venue].present?
+        events = events.joins(:organization).where(organizations: { slug: params[:organizer] }) if params[:organizer].present?
+        events = filter_price(events)
         events
+      end
+
+      def filter_named_window(events)
+        zone = ActiveSupport::TimeZone["Pacific/Guam"]
+        case params[:window]
+        when "tonight"
+          events.where(starts_at: Time.current..zone.now.end_of_day)
+        when "weekend"
+          date = zone.today
+          offset = case date.wday
+          when 5 then 0
+          when 6 then -1
+          when 0 then -2
+          else 5 - date.wday
+          end
+          friday = date + offset
+          events.where(starts_at: zone.local(friday.year, friday.month, friday.day).beginning_of_day..
+            zone.local((friday + 2).year, (friday + 2).month, (friday + 2).day).end_of_day)
+        else
+          events
+        end
+      end
+
+      def filter_price(events)
+        cents = case params[:price]
+        when "free" then 0
+        when "under_25" then 2500
+        when "under_50" then 5000
+        else return events
+        end
+        if params[:price] == "free"
+          events.where("#{EFFECTIVE_TICKET_PRICE_SQL} = :price_cents", price_at: Time.current, price_cents: cents)
+        else
+          events.where("#{EFFECTIVE_TICKET_PRICE_SQL} <= :price_cents", price_at: Time.current, price_cents: cents)
+        end
       end
 
       def parse_date_boundary(value, beginning:)
@@ -74,6 +143,38 @@ module Api
 
         @clerk_payload = payload
         @current_user = current_user
+      end
+
+      def preload_viewer_state(events)
+        return unless @current_user
+
+        event_ids = events.map(&:id)
+        organization_ids = events.map(&:organization_id)
+        @favorite_event_ids = @current_user.event_favorites.where(event_id: event_ids).pluck(:event_id).to_set
+        @followed_organization_ids = @current_user.organizer_follows.where(organization_id: organization_ids)
+          .pluck(:organization_id).to_set
+        @reminders_by_event = @current_user.event_reminders.pending.where(event_id: event_ids).pluck(:event_id, :remind_at).to_h
+      end
+
+      def favorited?(event)
+        return false unless @current_user
+        return @favorite_event_ids.include?(event.id) if @favorite_event_ids
+
+        @current_user.event_favorites.exists?(event_id: event.id)
+      end
+
+      def followed?(event)
+        return false unless @current_user
+        return @followed_organization_ids.include?(event.organization_id) if @followed_organization_ids
+
+        @current_user.organizer_follows.exists?(organization_id: event.organization_id)
+      end
+
+      def reminder_for(event)
+        return unless @current_user
+        return @reminders_by_event[event.id] if @reminders_by_event
+
+        @current_user.event_reminders.pending.find_by(event_id: event.id)&.remind_at
       end
 
       def anonymize_name(name)
@@ -125,10 +226,19 @@ module Api
           attendees_preview: event.show_attendees ? active_tickets.limit(10).pluck(:attendee_name).map { |name| anonymize_name(name) } : [],
           purchasable: event.sales_open? && event.has_available_inventory?,
           organizer: {
+            id: event.organization_id,
             business_name: event.organizer_profile.business_name,
+            slug: event.organization.slug,
             logo_url: event.organizer_profile.logo_url,
-            verified: event.organizer_profile.verification_status_verified?
+            verified: event.organizer_profile.verification_status_verified?,
+            followed: followed?(event)
           },
+          venue: event.venue && {
+            id: event.venue.id, name: event.venue.name, slug: event.venue.slug,
+            village: event.venue.village, verified: event.venue.verified
+          },
+          favorited: favorited?(event),
+          reminder: reminder_for(event),
           created_at: event.created_at,
           updated_at: event.updated_at
         }

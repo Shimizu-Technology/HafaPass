@@ -4,13 +4,14 @@ This runbook covers the Phase 1 production foundation. It is an operational cont
 
 ## Service topology
 
-Production requires three independently supervised processes/services:
+Production requires four independently supervised processes/services:
 
 1. Rails web process: `bundle exec puma -C config/puma.rb`
 2. Sidekiq worker process: `bundle exec sidekiq -C config/sidekiq.yml`
 3. Redis service shared by Active Job, Sidekiq, and Rack::Attack
+4. Clock process: `bundle exec rails runner script/commerce_clock.rb`
 
-The backend `Procfile` declares the web and worker commands. The frontend is a separate static Vite deployment.
+The backend `Procfile` declares the web, worker, and clock commands. The clock enqueues hold expiry every minute and privacy-retention cleanup once per UTC date. The frontend is a separate static Vite deployment.
 
 Production never falls back to an in-memory or inline queue. Rails boot fails when `REDIS_URL` is missing, making a broken worker topology visible during deployment instead of silently losing work.
 

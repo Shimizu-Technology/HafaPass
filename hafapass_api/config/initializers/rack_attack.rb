@@ -95,6 +95,16 @@ class Rack::Attack
     req.ip if req.path.start_with?("/api/v1/uploads/presign") && req.post?
   end
 
+  # Funnel telemetry is intentionally anonymous but still write-heavy.
+  throttle("marketplace-funnel/ip", limit: 60, period: 1.minute) do |req|
+    req.ip if req.path == "/api/v1/marketplace_funnel_events" && req.post?
+  end
+
+  throttle("marketplace-landing/ip", limit: 60, period: 1.minute) do |req|
+    marketplace_landing = req.path.start_with?("/api/v1/distribution_links/", "/api/v1/event_referrals/")
+    req.ip if marketplace_landing && req.get?
+  end
+
   # ─── Blocklist ────────────────────────────────────────────────────────────
 
   # Block requests from known bad IPs (configured via environment)

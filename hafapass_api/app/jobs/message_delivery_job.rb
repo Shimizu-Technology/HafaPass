@@ -8,7 +8,16 @@ class MessageDeliveryJob < ApplicationJob
   def perform(delivery_id)
     delivery = MessageDelivery.find(delivery_id)
     delivery.with_lock do
-      return if terminal?(delivery)
+      if terminal?(delivery)
+        mark_reminder_sent!(delivery) if delivery.sent? || delivery.delivered?
+        return
+      end
+
+      if obsolete_reminder?(delivery)
+        delivery.update!(status: :suppressed, suppressed_at: Time.current,
+          last_error: "Reminder was cancelled or rescheduled")
+        return
+      end
 
       if delivery.suppressed_recipient?
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
@@ -25,6 +34,7 @@ class MessageDeliveryJob < ApplicationJob
         failed_at: nil,
         last_error: nil
       )
+      mark_reminder_sent!(delivery)
     end
     MessageProviderEventProcessor.reconcile_for!(delivery)
   rescue StandardError => e
@@ -47,6 +57,24 @@ class MessageDeliveryJob < ApplicationJob
 
   def terminal?(delivery)
     delivery.sent? || delivery.delivered? || delivery.bounced? || delivery.complained? || delivery.suppressed?
+  end
+
+  def obsolete_reminder?(delivery)
+    return false unless delivery.template == "event_reminder"
+
+    reminder = EventReminder.find_by(id: delivery.metadata["event_reminder_id"])
+    scheduled_for = delivery.metadata["scheduled_for"]
+    reminder.nil? || !reminder.pending? || scheduled_for.blank? || reminder.remind_at.iso8601(6) != scheduled_for
+  end
+
+  def mark_reminder_sent!(delivery)
+    return unless delivery.template == "event_reminder"
+
+    reminder = EventReminder.find_by(id: delivery.metadata["event_reminder_id"])
+    return unless reminder&.pending?
+    return unless reminder.remind_at.iso8601(6) == delivery.metadata["scheduled_for"]
+
+    reminder.update!(status: :sent, sent_at: delivery.sent_at || Time.current)
   end
 
   def dispatch(delivery)
@@ -76,6 +104,9 @@ class MessageDeliveryJob < ApplicationJob
       EmailService.send_waitlist_offer(offer, delivery: delivery)
     when "communication_campaign"
       EmailService.send_communication_campaign(delivery)
+    when "event_reminder"
+      reminder = EventReminder.find(delivery.metadata.fetch("event_reminder_id"))
+      EmailService.send_event_reminder(reminder, delivery: delivery)
     else
       raise ArgumentError, "Unsupported message template"
     end

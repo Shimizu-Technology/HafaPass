@@ -254,6 +254,13 @@ export default function EventAnalyticsPage() {
     </section>
    )}
 
+   <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5" aria-labelledby="acquisition-heading">
+    <h2 id="acquisition-heading" className="text-lg font-semibold text-neutral-900">Discovery and acquisition</h2>
+    <p className="mt-1 text-sm text-neutral-500">Anonymous funnel totals and attributed orders; no buyer identity is exposed here.</p>
+    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{['landing', 'event_view', 'checkout_started', 'purchase'].map(stage => <div key={stage} className="rounded-xl bg-neutral-50 p-3"><p className="text-xs capitalize text-neutral-500">{stage.replace('_', ' ')}</p><p className="mt-1 text-xl font-bold">{stats.marketplace_funnel?.[stage] || 0}</p></div>)}</div>
+    {stats.acquisition_sources?.length > 0 && <div className="mt-4 divide-y rounded-xl border">{stats.acquisition_sources.map((source, index) => <div key={index} className="flex items-center justify-between px-4 py-3 text-sm"><span>{source.source} / {source.medium}{source.campaign ? ` / ${source.campaign}` : ''}</span><strong>{source.orders} orders</strong></div>)}</div>}
+   </section>
+
    {/* Tickets by Type */}
    <div className="bg-white rounded-xl shadow-sm border border-neutral-200 mb-8">
     <div className="px-4 sm:px-5 py-4 border-b border-neutral-200">

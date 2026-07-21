@@ -24,11 +24,19 @@ class TicketType < ApplicationRecord
     [quantity_available - quantity_sold - active_holds_quantity - active_waitlist_offer_quantity, 0].max
   end
 
-  def active_holds_quantity
+  def active_holds_quantity(at: Time.current)
+    if inventory_holds.loaded?
+      return inventory_holds.sum { |hold| hold.active? && hold.expires_at > at ? hold.quantity : 0 }
+    end
+
     inventory_holds.current.sum(:quantity)
   end
 
-  def active_waitlist_offer_quantity
+  def active_waitlist_offer_quantity(at: Time.current)
+    if waitlist_offers.loaded?
+      return waitlist_offers.sum { |offer| offer.offered? && offer.expires_at > at ? offer.quantity : 0 }
+    end
+
     waitlist_offers.holding_inventory.sum(:quantity)
   end
 

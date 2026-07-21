@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, ExternalLink, Check, Copy } from 'lucide-react'
+import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus } from 'lucide-react'
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
 import WhosGoing from '../components/WhosGoing'
@@ -10,6 +10,7 @@ import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
+import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function EventDetailPage() {
   const { slug } = useParams()
@@ -24,9 +25,10 @@ export default function EventDetailPage() {
   const waitlistOfferToken = searchParams.get('waitlist_offer')
 
   useEffect(() => {
+    captureQueryAttribution(window.location.search)
     const url = isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`
     apiClient.get(url)
-      .then(res => { setEvent(res.data); setLoading(false) })
+      .then(res => { setEvent(res.data); trackFunnel(apiClient, res.data.id, 'event_view'); setLoading(false) })
       .catch(() => { setError('Event not found.'); setLoading(false) })
   }, [slug, isPreview])
 
@@ -39,6 +41,26 @@ export default function EventDetailPage() {
 
   const handleCheckout = (lineItems) => {
     navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken } })
+  }
+
+  const marketplaceAction = async (kind) => {
+    try {
+      if (kind === 'favorite') {
+        if (event.favorited) await apiClient.delete(`/me/event_favorites/${event.id}`)
+        else await apiClient.post('/me/event_favorites', { event_id: event.id })
+        setEvent(current => ({ ...current, favorited: !current.favorited }))
+      } else if (kind === 'follow') {
+        if (event.organizer.followed) await apiClient.delete(`/me/organizer_follows/${event.organizer.id}`)
+        else await apiClient.post('/me/organizer_follows', { organization_id: event.organizer.id })
+        setEvent(current => ({ ...current, organizer: { ...current.organizer, followed: !current.organizer.followed } }))
+      } else if (kind === 'reminder') {
+        if (event.reminder) await apiClient.delete(`/me/event_reminders/${event.id}`)
+        else await apiClient.post('/me/event_reminders', { event_id: event.id })
+        setEvent(current => ({ ...current, reminder: current.reminder ? null : true }))
+      }
+    } catch (error) {
+      if (error.response?.status === 401) navigate('/sign-in')
+    }
   }
 
   const ageLabels = { all_ages: 'All Ages', eighteen_plus: '18+', twenty_one_plus: '21+' }
@@ -58,7 +80,13 @@ export default function EventDetailPage() {
   }
 
   const handleShare = async () => {
-    const url = window.location.href
+    let url = window.location.href
+    try {
+      const response = await apiClient.post('/me/event_referrals', { event_id: event.id })
+      url = response.data.url
+    } catch {
+      // Guests still get the canonical event URL; signed-in fans get measurable referral links.
+    }
     if (navigator.share) {
       try {
         await navigator.share({ title: event.title, text: event.short_description || event.description?.slice(0, 120), url })
@@ -219,6 +247,12 @@ export default function EventDetailPage() {
                   {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
                   {copied ? 'Copied!' : 'Share'}
                 </button>
+                <button onClick={() => marketplaceAction('favorite')} aria-pressed={event.favorited} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
+                  <Heart className={`h-4 w-4 ${event.favorited ? 'fill-coral-500 text-coral-500' : ''}`} />{event.favorited ? 'Saved' : 'Save'}
+                </button>
+                <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
+                  <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-500' : ''}`} />{event.reminder ? 'Reminder set' : 'Remind me'}
+                </button>
               </div>
 
               {/* Badges */}
@@ -252,13 +286,15 @@ export default function EventDetailPage() {
                 </div></FadeUp>
               )}
 
+              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Organizer</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-600">Verified</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? 'Following' : 'Follow'}</button></div></div></FadeUp>}
+
               {/* Venue Location Section */}
               {event.venue_address && (
                 <FadeUp delay={0.1}><div className="mb-8">
                   <h2 className="text-lg font-semibold text-neutral-900 mb-3">Location</h2>
-                  <a
-                    href={buildMapsUrl(event)}
-                    target="_blank"
+                  <Link
+                    to={event.venue?.slug ? `/venues/${event.venue.slug}` : buildMapsUrl(event)}
+                    target={event.venue?.slug ? undefined : '_blank'}
                     rel="noopener noreferrer"
                     className="block rounded-2xl overflow-hidden border border-neutral-200 hover:border-brand-300 transition-colors group"
                   >
@@ -267,10 +303,10 @@ export default function EventDetailPage() {
                         <MapPin className="w-8 h-8 text-brand-400 mx-auto mb-2" />
                         <p className="text-sm font-medium text-brand-700">{event.venue_name}</p>
                         <p className="text-xs text-brand-500 mt-0.5">{event.venue_address}</p>
-                        <p className="text-xs text-brand-400 mt-2 group-hover:underline">Open in Google Maps</p>
+                        <p className="text-xs text-brand-400 mt-2 group-hover:underline">{event.venue?.slug ? 'View venue details' : 'Open in Google Maps'}</p>
                       </div>
                     </div>
-                  </a>
+                  </Link>
                 </div></FadeUp>
               )}
             </motion.div>

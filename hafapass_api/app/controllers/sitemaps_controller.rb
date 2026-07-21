@@ -3,6 +3,9 @@ class SitemapsController < ApplicationController
 
   def show
     @events = Event.published.where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current).order(updated_at: :desc)
+    @collections = MarketplaceCollection.currently_visible.with_discoverable_events
+    @venues = Venue.published.joins(:events).merge(Event.discoverable).distinct
+    @organizers = Organization.status_active.joins(:events).merge(Event.discoverable).distinct
     base_url = PublicSiteUrl.base
 
     builder = Nokogiri::XML::Builder.new(encoding: "UTF-8") do |xml|
@@ -30,9 +33,31 @@ class SitemapsController < ApplicationController
             xml.priority "0.7"
           end
         end
+
+
+        @collections.each do |collection|
+          sitemap_url(xml, "#{base_url}/collections/#{collection.slug}", collection.updated_at, "daily", "0.7")
+        end
+        @venues.each do |venue|
+          sitemap_url(xml, "#{base_url}/venues/#{venue.slug}", venue.updated_at, "weekly", "0.6")
+        end
+        @organizers.each do |organization|
+          sitemap_url(xml, "#{base_url}/organizers/#{organization.slug}", organization.updated_at, "weekly", "0.6")
+        end
       end
     end
 
     render xml: builder.to_xml
+  end
+
+  private
+
+  def sitemap_url(xml, location, updated_at, frequency, priority)
+    xml.url do
+      xml.loc { xml.text location }
+      xml.lastmod updated_at.strftime("%Y-%m-%d")
+      xml.changefreq frequency
+      xml.priority priority
+    end
   end
 end

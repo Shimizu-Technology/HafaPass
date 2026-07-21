@@ -114,13 +114,13 @@ export default function EventCard({ event }) {
             ) : (
               <>
                 <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
-                <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-600' : 'text-neutral-400'}`}>
+                <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-700' : 'text-neutral-600'}`}>
                   {hasAvailability ? t('events.ticketsAvailable') : t('events.soldOut')}
                 </span>
               </>
             )}
           </div>
-          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-400 group-hover:text-brand-500 transition-all duration-200 group-hover:translate-x-0.5">
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 group-hover:text-brand-700 transition-all duration-200 group-hover:translate-x-0.5">
             {t('common.view')}
             <ArrowRight className="w-3.5 h-3.5" />
           </span>

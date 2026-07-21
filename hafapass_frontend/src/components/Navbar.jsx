@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { UserButton, SignedIn, useUser } from '@clerk/clerk-react'
-import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search } from 'lucide-react'
+import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search, Compass, Heart } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import apiClient from '../api/client'
 import LanguageSwitcher from './LanguageSwitcher'
@@ -37,8 +37,10 @@ function NavContent({ isSignedIn, clerkEnabled }) {
 
   const navLinks = [
     { to: '/events', label: t('nav.events'), icon: CalendarDays },
+    { to: '/discover', label: 'Discover', icon: Compass },
     ...(isSignedIn ? [
       { to: '/my-tickets', label: t('nav.myTickets'), icon: Ticket },
+      { to: '/saved', label: 'Saved', icon: Heart },
       { to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine },
       { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
       ...(userRole === 'admin' ? [

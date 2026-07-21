@@ -12,6 +12,7 @@ import useEventCategories from '../hooks/useEventCategories'
 import { PUBLIC_WEB_URL } from '../utils/site'
 
 const CATEGORY_ICONS = { concert: Music, dining: UtensilsCrossed, sports: Trophy, festival: Users, nightlife: Moon }
+const GUAM_VILLAGES = ['Agana Heights','Asan-Maina','Barrigada','Chalan Pago-Ordot','Dededo','Hagåtña','Humåtak','Inalåhan','Mangilao','Malesso’','Mongmong-Toto-Maite','Piti','Sånta Rita-Sumai','Sinajana','Talo’fo’fo','Tamuning-Tumon-Harmon','Yigo','Yona']
 
 function guamDate(offsetDays = 0) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -29,6 +30,8 @@ export default function EventsPage() {
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [activeCategory, setActiveCategory] = useState(searchParams.get('category') || 'all')
   const [dateRange, setDateRange] = useState(searchParams.get('date') || 'upcoming')
+  const [price, setPrice] = useState(searchParams.get('price') || 'all')
+  const [village, setVillage] = useState(searchParams.get('village') || '')
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
   const categories = useEventCategories()
 
@@ -38,12 +41,16 @@ export default function EventsPage() {
       const params = { page, per_page: 12 }
       if (search.trim()) params.q = search.trim()
       if (activeCategory !== 'all') params.category = activeCategory
+      if (price !== 'all') params.price = price
+      if (village) params.village = village
       if (dateRange === 'today') {
         params.date_from = guamDate()
         params.date_to = guamDate()
       } else if (dateRange === 'week') {
         params.date_from = guamDate()
         params.date_to = guamDate(7)
+      } else if (dateRange === 'tonight' || dateRange === 'weekend') {
+        params.window = dateRange
       }
 
       apiClient.get('/events', { params })
@@ -59,15 +66,17 @@ export default function EventsPage() {
       if (search.trim()) nextParams.search = search.trim()
       if (activeCategory !== 'all') nextParams.category = activeCategory
       if (dateRange !== 'upcoming') nextParams.date = dateRange
+      if (price !== 'all') nextParams.price = price
+      if (village) nextParams.village = village
       if (page > 1) nextParams.page = String(page)
       setSearchParams(nextParams, { replace: true })
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [search, activeCategory, dateRange, page, setSearchParams])
+  }, [search, activeCategory, dateRange, price, village, page, setSearchParams])
 
   const changeCategory = (value) => { setActiveCategory(value); setPage(1) }
-  const clearFilters = () => { setSearch(''); setActiveCategory('all'); setDateRange('upcoming'); setPage(1) }
+  const clearFilters = () => { setSearch(''); setActiveCategory('all'); setDateRange('upcoming'); setPrice('all'); setVillage(''); setPage(1) }
 
   return (
     <div className="min-h-screen">
@@ -133,8 +142,14 @@ export default function EventsPage() {
             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input max-w-[12rem] !py-2">
              <option value="upcoming">All upcoming</option>
              <option value="today">Today</option>
+             <option value="tonight">Tonight</option>
+             <option value="weekend">This weekend</option>
              <option value="week">Next 7 days</option>
             </select>
+            <label htmlFor="event-price" className="sr-only">Price</label>
+            <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input max-w-[10rem] !py-2"><option value="all">Any price</option><option value="free">Free</option><option value="under_25">Under $25</option><option value="under_50">Under $50</option></select>
+            <label htmlFor="event-village" className="sr-only">Village</label>
+            <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input max-w-[13rem] !py-2"><option value="">All villages</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
             {!loading && <span className="text-sm text-neutral-500">{meta.total_count} event{meta.total_count === 1 ? '' : 's'}</span>}
            </div>
           </div>
@@ -163,16 +178,16 @@ export default function EventsPage() {
               </div>
 
               <h2 className="text-xl font-bold text-neutral-900 mb-2">
-                {search || activeCategory !== 'all' || dateRange !== 'upcoming' ? 'No matching events' : 'No events yet'}
+                {search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village ? 'No matching events' : 'No events yet'}
               </h2>
               <p className="text-neutral-500 max-w-md mx-auto mb-8">
-                {!search && activeCategory === 'all' && dateRange === 'upcoming'
+                {!search && activeCategory === 'all' && dateRange === 'upcoming' && price === 'all' && !village
                   ? "Events on Guam will show up here. Be the first to create one and get the island buzzing!"
                   : "Try adjusting your search or filters to find what you're looking for."
                 }
               </p>
 
-              {!search && activeCategory === 'all' && dateRange === 'upcoming' && (
+              {!search && activeCategory === 'all' && dateRange === 'upcoming' && price === 'all' && !village && (
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
                     to="/sign-up"
@@ -190,7 +205,7 @@ export default function EventsPage() {
                 </div>
               )}
 
-              {(search || activeCategory !== 'all' || dateRange !== 'upcoming') && (
+              {(search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village) && (
                 <button
                   onClick={clearFilters}
                   className="text-brand-500 hover:text-brand-600 font-medium transition-colors"

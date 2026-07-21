@@ -8,8 +8,9 @@ Signal.trap("TERM") { running = false }
 Signal.trap("INT") { running = false }
 
 Rails.logger.info({ event: "commerce_clock_started", interval_seconds: 60 }.to_json)
+clock = Operations::CommerceClock.new
 while running
-  ExpireInventoryHoldsJob.perform_later(Time.current)
+  clock.tick(at: Time.current)
   60.times do
     break unless running
 

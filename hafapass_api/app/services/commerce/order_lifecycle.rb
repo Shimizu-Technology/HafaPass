@@ -70,6 +70,7 @@ module Commerce
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
           order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
+          record_marketplace_purchase!(order)
           completed_now = true
         end
 
@@ -217,6 +218,22 @@ module Commerce
           entry.amount_cents = amount
           entry.currency = order.currency
           entry.occurred_at = Time.current
+        end
+      end
+
+      def record_marketplace_purchase!(order)
+        attribution = order.acquisition_attribution
+        return unless attribution
+
+        MarketplaceFunnelEvent.find_or_create_by!(order: order, stage: :purchase) do |funnel_event|
+          funnel_event.event = order.event
+          funnel_event.distribution_link = attribution.distribution_link
+          funnel_event.event_referral = attribution.event_referral
+          funnel_event.visitor_hash = attribution.visitor_hash
+          funnel_event.source = attribution.source
+          funnel_event.medium = attribution.medium
+          funnel_event.campaign = attribution.campaign
+          funnel_event.occurred_at = Time.current
         end
       end
 
