@@ -197,6 +197,15 @@ Rails.application.routes.draw do
             post :reject
           end
         end
+        get "events/:event_id/pilot_validation", to: "pilot_validation_reviews#show"
+        post "events/:event_id/pilot_validation_reviews", to: "pilot_validation_reviews#create"
+        resources :pilot_validation_reviews, only: [] do
+          member do
+            post :approve
+            post :revoke
+            post :reject
+          end
+        end
         resources :users, only: [:index, :update]
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]

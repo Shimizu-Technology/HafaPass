@@ -219,6 +219,8 @@ Actions:
 
 Exit evidence: device/version/tester matrix, privacy-safe screenshots, accessibility sign-off, load report, and resolved issues.
 
+Application control: follow [Gate F Buyer, Organizer, Accessibility, and Load Evidence](GATE_F_VALIDATION_EVIDENCE.md). HafaPass now stores an append-only, independently approved validation snapshot tied to the active Gate E approval, material event digest, and deployed revision. It requires explicit physical mobile/browser evidence, complete buyer and organizer flow matrices, three assistive-technology targets, qualified accessibility sign-off, declared/observed load guardrails, hold reconciliation, and zero oversells/duplicate sales. Production publish/resume and all commerce channels fail closed when this evidence is missing, expired, revoked, or stale. The included k6 harness refuses paid or non-`[LOAD TEST]` events. The application does not create the real device, reviewer, or load evidence by itself.
+
 ### Gate G — Run the full event-day rehearsal
 
 Owner: event commander and technical lead.

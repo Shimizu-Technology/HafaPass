@@ -52,6 +52,23 @@ RSpec.describe EventLifecycle do
     }
   end
 
+  it "blocks production publication after Gate E until candidate validation is approved" do
+    allow(Rails.env).to receive(:production?).and_return(true)
+    allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
+    readiness = instance_double(PilotReadinessReview)
+    expect(PilotReadiness).to receive(:event_state_digest).with(event).once.and_return("a" * 64)
+    allow(PilotReadiness).to receive(:active_approval)
+      .with(event, at: anything, state_digest: "a" * 64).and_return(readiness)
+    allow(PilotValidation).to receive(:active_approval)
+      .with(event, at: anything, readiness_approval: readiness, state_digest: "a" * 64).and_return(nil)
+
+    expect do
+      described_class.call(event: event, action: :publish, actor: actor)
+    end.to raise_error(described_class::TransitionError) { |error|
+      expect(error.checklist).to include(include(code: "pilot_validation_approved", complete: false))
+    }
+  end
+
   it "requires a reason to postpone and stops sales after postponement" do
     described_class.call(event: event, action: :publish, actor: actor)
 

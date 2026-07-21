@@ -41,6 +41,7 @@ class Event < ApplicationRecord
   has_many :event_seats, through: :event_seating_configuration
   has_many :seat_audit_events, dependent: :restrict_with_error
   has_many :pilot_readiness_reviews, dependent: :restrict_with_error
+  has_many :pilot_validation_reviews, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -193,6 +194,7 @@ class Event < ApplicationRecord
       ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
     end
     configured_inventory = ticket_types.sum(&:quantity_available)
+    pilot_readiness_approved, pilot_validation_approved = production_release_approvals(at: at)
     checks = [
       checklist_item("production_policy_approved", "Production policy register approved",
         !Rails.env.production? || PolicyRegistry.production_approved?),
@@ -209,7 +211,9 @@ class Event < ApplicationRecord
       checklist_item("payout", paid_event ? "Payout account ready for paid sales" : "No payout account needed for a free event",
         !paid_event || organization.payout_ready?),
       checklist_item("pilot_readiness_approved", "Event-specific pilot readiness independently approved",
-        !Rails.env.production? || PilotReadiness.active_approval(self, at: at).present?)
+        pilot_readiness_approved),
+      checklist_item("pilot_validation_approved", "Buyer, organizer, accessibility, and load validation independently approved",
+        pilot_validation_approved)
     ]
     checks
   end
@@ -218,8 +222,12 @@ class Event < ApplicationRecord
     publish_checklist(at: at).all? { |item| item[:complete] }
   end
 
-  def pilot_ready_for_production?(at: Time.current)
-    !Rails.env.production? || PilotReadiness.active_approval(self, at: at).present?
+  def production_release_gate_status(at: Time.current)
+    readiness, validation = production_release_approvals(at: at)
+    return :pilot_readiness unless readiness
+    return :pilot_validation unless validation
+
+    :ready
   end
 
   # Check if tickets are available and notify next waitlisted people
@@ -241,6 +249,17 @@ class Event < ApplicationRecord
   end
 
   private
+
+  def production_release_approvals(at:)
+    return [true, true] unless Rails.env.production?
+
+    state_digest = PilotReadiness.event_state_digest(self)
+    readiness = PilotReadiness.active_approval(self, at: at, state_digest: state_digest)
+    validation = PilotValidation.active_approval(
+      self, at: at, readiness_approval: readiness, state_digest: state_digest
+    ) if readiness
+    [readiness.present?, validation.present?]
+  end
 
   def active_seat_holds_count(at: Time.current)
     return 0 unless event_seating_configuration

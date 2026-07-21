@@ -125,6 +125,18 @@ RSpec.describe "Api::V1::Orders", type: :request do
       expect(Order.count).to eq(0)
     end
 
+    it "fails closed in production when Gate F candidate validation is absent" do
+      allow(Rails.env).to receive(:production?).and_return(true)
+      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
+      allow_any_instance_of(Event).to receive(:production_release_gate_status).and_return(:pilot_validation)
+
+      post_json "/api/v1/orders", params: valid_params
+
+      expect(response).to have_http_status(:service_unavailable)
+      expect(response.parsed_body.fetch("error")).to include("current Gate F validation approval")
+      expect(Order.count).to eq(0)
+    end
+
     context "with insufficient inventory" do
       it "returns 422 when quantity exceeds available" do
         params = valid_params.merge(

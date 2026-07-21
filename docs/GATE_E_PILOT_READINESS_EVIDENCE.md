@@ -65,4 +65,4 @@ The full readiness record is available only through administrator endpoints. Pub
 
 The software does not select the organizer, inspect a venue, verify a physical seat, name real people, provision devices, approve cash handling, or resolve P0/P1 findings. Gate E is complete only when the actual event has a signed evidence bundle, all owners have confirmed their assignments, the second administrator has approved the current digest, and there is no unresolved P0/P1 scenario.
 
-Gate F device/browser/accessibility/load proof and Gate G physical event-day rehearsal remain separate release gates.
+Gate F device/browser/accessibility/load proof is enforced through [Gate F Validation Evidence](GATE_F_VALIDATION_EVIDENCE.md). Real evidence is still pending. Gate G physical event-day rehearsal remains a separate release gate.

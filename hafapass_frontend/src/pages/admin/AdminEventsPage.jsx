@@ -4,6 +4,7 @@ import { Loader2, Search, Star, ChevronLeft, ChevronRight } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 import PilotReadinessReviewDialog from '../../components/PilotReadinessReviewDialog'
+import PilotValidationReviewDialog from '../../components/PilotValidationReviewDialog'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
 const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 'other']
@@ -75,7 +76,7 @@ export default function AdminEventsPage() {
                   <th className="px-4 py-3 font-medium hidden md:table-cell">Category</th>
                   <th className="px-4 py-3 font-medium text-right">Sold</th>
                   <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Revenue</th>
-                  <th className="px-4 py-3 font-medium">Pilot readiness</th>
+                  <th className="px-4 py-3 font-medium">Release gates</th>
                   <th className="px-4 py-3 font-medium text-center">★</th>
                 </tr>
               </thead>
@@ -96,9 +97,10 @@ export default function AdminEventsPage() {
                     <td className="px-4 py-3 text-neutral-500 hidden md:table-cell capitalize">{event.category}</td>
                     <td className="px-4 py-3 text-right text-neutral-700">{event.tickets_sold}</td>
                     <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3"><div className="flex min-w-48 flex-col items-start gap-2">
                       <PilotReadinessReviewDialog event={event} onComplete={fetchEvents} />
-                    </td>
+                      <PilotValidationReviewDialog event={event} onComplete={fetchEvents} />
+                    </div></td>
                     <td className="px-4 py-3 text-center">
                       <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
                         <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-400 text-amber-400' : 'text-neutral-300'}`} />
