@@ -8,7 +8,7 @@ Authoritative requirements: [docs/TICKETING_PLATFORM_BLUEPRINT.md](docs/TICKETIN
 
 HafaPass should not position itself as a generic Ticketmaster clone or merely a cheaper GuamTime. Its defensible position is a Guam-first event operating system that combines self-service software with local promotion, hospitality relationships, and event-day support.
 
-The immediate segment is general-admission nightlife, cultural, community, school, fundraiser, workshop, hospitality, festival, and brand events. Assigned seating follows only after the general-admission commerce and operations platform is proven.
+The immediate segment is general-admission and smaller reserved-seat nightlife, cultural, community, school, fundraiser, workshop, hospitality, festival, and brand events. The native assigned-seating system is appropriate for Guam pilot venues; complex irregular or arena diagrams remain behind the documented provider boundary.
 
 ## GuamTime
 
@@ -76,9 +76,9 @@ Sources: [Ticketmaster ticket sales](https://business.ticketmaster.com/solutions
 
 Sources: [Ticket Tailor features](https://www.tickettailor.com/en-us/features), [Ticket Tailor offline check-in](https://help.tickettailor.com/en/articles/9546560-how-to-use-the-check-in-app-offline), [Luma waitlist](https://help.luma.com/p/waitlist), [Humanitix features](https://humanitix.com/us/features), [Eventbrite pricing](https://www.eventbrite.com/organizer/pricing/), [DICE venues](https://dice.fm/partners/work-with-us/venues), [TicketSpice pricing](https://www.ticketspice.com/pricing)
 
-## Required competitive parity
+## Competitive parity delivered in software
 
-Before a general-admission organizer should choose HafaPass for a meaningful event, the platform needs:
+The Phase 0–10 program implements these capabilities. Production payment/provider approval, real-device operation, professional policy approval, and local service execution remain separate launch gates:
 
 - Verified organizer onboarding.
 - Dependable payment, refund, and payout reconciliation.
@@ -120,4 +120,4 @@ The final model must:
 
 ## Strategic conclusion
 
-HafaPass can surpass GuamTime for general-admission events without recreating all of Ticketmaster. The winning sequence is financial integrity, event-time and publishing correctness, recoverable checkout, organizer payouts, offline admission, local support, then transfers/wallets/waitlist/add-ons and marketplace growth.
+HafaPass can surpass GuamTime for general-admission and pilot reserved-seat events without recreating all of Ticketmaster. The software sequence is now implemented through assigned seating. The remaining advantage must be earned operationally: approve a Guam money path, build real local distribution and support, prove the event-day drills, launch narrowly, and reconcile the first events without unexplained variance.

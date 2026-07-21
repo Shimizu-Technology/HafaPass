@@ -39,6 +39,8 @@ Assigned-seat theaters, arenas, season packages, and resale are later capabiliti
 
 ## 3. Current application
 
+Sections 3 and 4 preserve the verified pre-Phase-1 baseline that drove this program. They are historical findings, not claims about the post-Phase-10 codebase. Current disposition and remaining evidence gates are recorded in [Platform Completion Audit](PLATFORM_COMPLETION_AUDIT.md).
+
 ### 3.1 Stack
 
 - Rails API backend with PostgreSQL.
@@ -83,6 +85,8 @@ The July 20, 2026 verification baseline is:
 Passing backend tests does not prove the current payment and inventory behavior is correct. Several unsafe behaviors are currently untested or encoded as accepted behavior.
 
 ## 4. Verified risk register
+
+This register records the defects found before the phase program began. The implementation status of every family below is superseded by the requirement/evidence matrix in [Platform Completion Audit](PLATFORM_COMPLETION_AUDIT.md); the original wording remains so the reason for each control is not lost.
 
 ### 4.1 P0: money, inventory, and data integrity
 
