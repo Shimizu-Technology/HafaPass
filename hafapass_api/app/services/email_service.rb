@@ -4,10 +4,11 @@ require "digest"
 
 class EmailService
   FROM_EMAIL = ENV.fetch("MAILER_FROM_EMAIL", "tickets@hafapass.com")
+  class ProviderDisabled < StandardError; end
 
   class << self
     def configured?
-      ENV["RESEND_API_KEY"].present?
+      PlatformCapabilities.enabled?("resend_production")
     end
 
     # ── Async Methods (use these from controllers) ──────────────────
@@ -257,7 +258,7 @@ class EmailService
         channel: "email",
         template: template,
         recipient: recipient.to_s.strip.downcase,
-        provider: configured? ? "resend" : "simulated",
+        provider: delivery_provider,
         payload_digest: Digest::SHA256.hexdigest(digest_source),
         metadata: metadata,
         status: :queued
@@ -275,9 +276,19 @@ class EmailService
       Rails.logger.error("[MessageDelivery] Unable to record enqueue failure: #{tracking_error.class}")
     end
 
+    def delivery_provider
+      return "resend" if configured?
+      return "disabled" if Rails.env.production?
+
+      "simulated"
+    end
+
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, **log_meta)
       unless configured?
+        if Rails.env.production?
+          raise ProviderDisabled, "Production email is disabled until current Resend evidence is independently approved"
+        end
         meta_str = log_meta.map { |k, v| "#{k}=#{v}" }.join(", ")
         Rails.logger.info(
           "[EmailService SIMULATE] Would send to=#{to} subject=\"#{subject}\" tag=#{tag} #{meta_str}"

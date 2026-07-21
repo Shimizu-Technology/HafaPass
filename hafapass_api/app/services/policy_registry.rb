@@ -8,6 +8,18 @@ class PolicyRegistry
   BUYER_DOCUMENT_KEYS = %w[buyer-terms privacy refunds acceptable-use retention].freeze
 
   class << self
+    def version
+      registry.fetch("version")
+    end
+
+    def registry_digest
+      Digest::SHA256.hexdigest(JSON.generate({ "version" => version, "documents" => documents }))
+    end
+
+    def production_approved?
+      PlatformCapabilities.enabled?("policy_register")
+    end
+
     def buyer_terms
       snapshot(BUYER_DOCUMENT_KEYS)
     end
@@ -30,10 +42,6 @@ class PolicyRegistry
 
     def registry
       @registry ||= YAML.safe_load_file(DOCUMENT_PATH, permitted_classes: [], aliases: false).freeze
-    end
-
-    def version
-      registry.fetch("version")
     end
 
     def documents

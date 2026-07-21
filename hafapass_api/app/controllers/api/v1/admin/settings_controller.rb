@@ -16,9 +16,10 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       return
     end
 
-    # Safety: can't switch to live without live keys
+    # Safety: live money requires current, independently approved provider evidence.
     if params[:payment_mode] == "live" && !settings.can_enable_live?
-      render json: { error: "Cannot enable live mode \u2014 STRIPE_LIVE_SECRET_KEY not configured" }, status: :unprocessable_entity
+      render json: { error: "Cannot enable live mode \u2014 current Stripe provider evidence is not independently approved" },
+        status: :unprocessable_entity
       return
     end
 
@@ -47,7 +48,8 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       service_fee_percent: settings.service_fee_percent,
       service_fee_flat_cents: settings.service_fee_flat_cents,
       stripe_test_configured: settings.can_enable_test?,
-      stripe_live_configured: settings.can_enable_live?
+      stripe_live_configured: settings.stripe_live_configured?,
+      stripe_live_approved: settings.can_enable_live?
     }
   end
 end

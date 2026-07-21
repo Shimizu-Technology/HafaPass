@@ -13,6 +13,7 @@ class ProductionConfiguration
         release: release_identifier.to_s.match?(/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/i),
         monitoring: configured?(*%w[SENTRY_DSN]),
         email: configured?(*%w[RESEND_API_KEY RESEND_WEBHOOK_SECRET MAILER_FROM_EMAIL]),
+        provider_configuration_revision: configured?(*%w[PROVIDER_CONFIGURATION_REVISION]),
         object_storage: configured?(*%w[AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET AWS_REGION]),
         admission_signing: configured?(*%w[ADMISSION_MANIFEST_PRIVATE_KEY_PEM]),
         admin_bootstrap_disabled: !ActiveModel::Type::Boolean.new.cast(ENV["ENABLE_FIRST_USER_ADMIN_BOOTSTRAP"])

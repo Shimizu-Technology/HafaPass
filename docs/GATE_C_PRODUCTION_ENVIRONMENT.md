@@ -35,6 +35,7 @@ The readiness configuration check requires the following groups without returnin
 - release correlation: `GIT_SHA` or an explicitly configured `COMMIT_REF` containing the full 40- or 64-hex commit digest—not a branch name;
 - monitoring: `SENTRY_DSN`;
 - mail: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `MAILER_FROM_EMAIL`;
+- provider evidence binding: non-secret `PROVIDER_CONFIGURATION_REVISION`, incremented for every provider-side configuration change;
 - private storage: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET`, `AWS_REGION`;
 - offline-admission signing: `ADMISSION_MANIFEST_PRIVATE_KEY_PEM`; and
 - bootstrap safety: `ENABLE_FIRST_USER_ADMIN_BOOTSTRAP` absent or false.

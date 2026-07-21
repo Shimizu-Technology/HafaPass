@@ -18,6 +18,7 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(json).not_to have_key("attendee_email")
       expect(json["event"]["title"]).to eq(event.title)
       expect(json["ticket_type"]["name"]).to eq(ticket_type.name)
+      expect(json["wallet_availability"]).to eq("apple" => false, "google" => false)
     end
 
     it "returns the scan credential only with access to the owning order" do

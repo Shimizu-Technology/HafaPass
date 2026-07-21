@@ -187,6 +187,8 @@ Actions:
 
 Exit evidence: provider test report/export, reconciliation report, delivery evidence, approved policy register, and explicit disablement of every unapproved provider feature.
 
+Application control: follow [Gate D Provider and Policy Evidence](GATE_D_PROVIDER_POLICY_EVIDENCE.md). Credentials no longer authorize live Stripe, production Resend, Apple Wallet, or Google Wallet. Each capability requires append-only, digest-bound, expiring evidence and a different approving administrator; policy approval is bound to the exact served content. Production readiness requires approved email and policy evidence, live Stripe cannot be selected or used without its approval, and unapproved wallet buttons remain hidden.
+
 ### Gate E — Select and configure the first pilot
 
 Owner: founder/organizer success, event commander, venue lead, finance lead.

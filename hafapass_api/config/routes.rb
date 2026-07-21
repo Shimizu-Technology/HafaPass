@@ -201,6 +201,15 @@ Rails.application.routes.draw do
             post :reject
           end
         end
+        resources :platform_capabilities, only: [:index]
+        post "platform_capabilities/:capability/reviews", to: "platform_capability_reviews#create"
+        resources :platform_capability_reviews, only: [] do
+          member do
+            patch :approve
+            post :revoke
+            post :reject
+          end
+        end
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:create, :destroy]
         resources :payouts, only: [:update]

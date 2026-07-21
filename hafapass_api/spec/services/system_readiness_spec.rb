@@ -47,6 +47,17 @@ RSpec.describe SystemReadiness do
       )
     end
 
+    it "exposes provider and policy enablement without configuration values" do
+      result = described_class.call
+      controls = result.dig(:checks, :provider_policy_controls)
+
+      expect(controls).to include(ready: false, status: "approval_required")
+      expect(controls.dig(:capabilities, "policy_register")).to include(
+        configured: true, approved: false, enabled: false, status: "disabled_pending_approval"
+      )
+      expect(controls.to_json).not_to include("RESEND_API_KEY", "STRIPE_LIVE_SECRET_KEY")
+    end
+
     context "with the production Sidekiq adapter" do
       around do |example|
         original_redis_url = ENV["REDIS_URL"]
@@ -63,6 +74,9 @@ RSpec.describe SystemReadiness do
         allow(Sidekiq).to receive(:redis).and_yield(instance_double(RedisClient, call: "PONG"))
         allow(ProductionConfiguration).to receive(:call).and_return(
           ready: true, status: "configured", checks: {}
+        )
+        allow(PlatformCapabilities).to receive(:readiness).and_return(
+          ready: true, status: "approved", capabilities: {}
         )
         allow(Operations::CommerceClockLease).to receive(:status).and_return(
           ready: true, status: "active", lease_ttl_seconds: 60

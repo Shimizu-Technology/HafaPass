@@ -10,11 +10,14 @@ class SystemReadiness
         commerce_clock: commerce_clock_check,
         configuration: ProductionConfiguration.call,
         providers: provider_configuration,
+        provider_policy_controls: PlatformCapabilities.readiness,
         operations: operational_signals
       }
 
       required_checks = checks.values_at(:database, :job_queue)
-      required_checks.concat(checks.values_at(:worker, :commerce_clock, :configuration)) if Rails.env.production?
+      if Rails.env.production?
+        required_checks.concat(checks.values_at(:worker, :commerce_clock, :configuration, :provider_policy_controls))
+      end
 
       {
         status: required_checks.all? { |check| check[:ready] } ? "ready" : "not_ready",

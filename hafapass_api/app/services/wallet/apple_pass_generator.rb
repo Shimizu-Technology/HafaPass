@@ -15,6 +15,10 @@ module Wallet
         APPLE_WWDR_CERTIFICATE_BASE64 APPLE_PASS_ICON_PATH].all? { |key| ENV[key].present? }
     end
 
+    def self.enabled?
+      configured? && PlatformCapabilities.enabled?("apple_wallet")
+    end
+
     def self.call(ticket)
       new(ticket).call
     end
@@ -25,6 +29,7 @@ module Wallet
 
     def call
       raise ConfigurationError, "Apple Wallet is not configured" unless self.class.configured?
+      raise ConfigurationError, "Apple Wallet is disabled pending provider approval" unless self.class.enabled?
 
       files = {
         "pass.json" => JSON.generate(pass_payload),

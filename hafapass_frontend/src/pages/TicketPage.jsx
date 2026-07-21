@@ -363,12 +363,18 @@ export default function TicketPage() {
             )}
 
             {walletError && <p className="text-center text-xs text-red-600">{walletError}</p>}
-            <div className="grid grid-cols-2 gap-2">
-              <WalletButton label="Apple Wallet" icon={<AppleWalletIcon />} disabled={!showCredential}
-                loading={walletLoading === 'apple'} onClick={() => handleWallet('apple')} />
-              <WalletButton label="Google Wallet" icon={<GoogleWalletIcon />} disabled={!showCredential}
-                loading={walletLoading === 'google'} onClick={() => handleWallet('google')} />
-            </div>
+            {(ticket.wallet_availability?.apple || ticket.wallet_availability?.google) && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {ticket.wallet_availability.apple && (
+                  <WalletButton label="Apple Wallet" icon={<AppleWalletIcon />} disabled={!showCredential}
+                    loading={walletLoading === 'apple'} onClick={() => handleWallet('apple')} />
+                )}
+                {ticket.wallet_availability.google && (
+                  <WalletButton label="Google Wallet" icon={<GoogleWalletIcon />} disabled={!showCredential}
+                    loading={walletLoading === 'google'} onClick={() => handleWallet('google')} />
+                )}
+              </div>
+            )}
           </div>
 
           {/* Footer */}

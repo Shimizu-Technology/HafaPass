@@ -29,6 +29,8 @@ Core: `DATABASE_URL`, `REDIS_URL`, Clerk keys, HTTPS-only `ALLOWED_ORIGINS`, `FR
 
 Communication: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, verified `MAILER_FROM_EMAIL`, production webhook URL `/webhooks/resend`, and subscriptions for sent, delivered, delayed, failed, bounced, complained, and suppressed events. Resend requests use the persisted delivery idempotency key; webhook deduplication uses `svix-id` and the raw signed body.
 
+Set the non-secret `PROVIDER_CONFIGURATION_REVISION` and increment it whenever provider-side configuration changes. Complete the independent capability review in [Gate D Provider and Policy Evidence](GATE_D_PROVIDER_POLICY_EVIDENCE.md); credentials alone leave production email and optional wallets disabled.
+
 The implementation follows Resend's official [idempotency-key guidance](https://resend.com/docs/dashboard/emails/idempotency-keys), [webhook signature verification](https://resend.com/docs/webhooks/verify-webhooks-requests), [at-least-once delivery/deduplication guidance](https://resend.com/docs/webhooks/introduction), [event types](https://resend.com/docs/webhooks/event-types), and [suppression behavior](https://resend.com/docs/dashboard/emails/email-suppressions). Provider-delayed events are observed rather than blindly resent; a hard bounce or complaint suppresses subsequent sends until the underlying address/provider state is deliberately resolved.
 
 Monitoring: backend/frontend Sentry DSNs, environment/release tags, uptime probes, payment/webhook/email/job alert routing, and a synthetic readiness check. Readiness exposes only counts—not recipients, payloads, credentials, or payment details.

@@ -16,6 +16,7 @@ RSpec.describe ProductionConfiguration do
     "RESEND_API_KEY" => "configured",
     "RESEND_WEBHOOK_SECRET" => "configured",
     "MAILER_FROM_EMAIL" => "tickets@hafapass.example",
+    "PROVIDER_CONFIGURATION_REVISION" => "2026-07-pilot-1",
     "AWS_ACCESS_KEY_ID" => "configured",
     "AWS_SECRET_ACCESS_KEY" => "configured",
     "AWS_BUCKET" => "configured",

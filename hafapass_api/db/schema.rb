@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_150300) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_150400) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1014,6 +1014,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_150300) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "payouts_status_valid"
   end
 
+  create_table "platform_capability_reviews", force: :cascade do |t|
+    t.bigint "actor_user_id", null: false
+    t.string "capability", null: false
+    t.string "configuration_digest", null: false
+    t.jsonb "controls", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "decision", null: false
+    t.datetime "effective_at", null: false
+    t.string "evidence_digest", null: false
+    t.string "evidence_reference", null: false
+    t.datetime "expires_at", null: false
+    t.bigint "parent_review_id"
+    t.text "reason"
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_platform_capability_reviews_on_actor_user_id"
+    t.index ["capability", "created_at"], name: "idx_platform_capability_reviews_timeline"
+    t.index ["parent_review_id"], name: "idx_platform_capability_reviews_one_approval", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 1))"
+    t.index ["parent_review_id"], name: "idx_platform_capability_reviews_one_rejection", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 3))"
+    t.index ["parent_review_id"], name: "idx_platform_capability_reviews_one_revocation", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 2))"
+    t.index ["parent_review_id"], name: "index_platform_capability_reviews_on_parent_review_id"
+    t.check_constraint "capability::text = ANY (ARRAY['stripe_live'::character varying, 'resend_production'::character varying, 'apple_wallet'::character varying, 'google_wallet'::character varying, 'policy_register'::character varying]::text[])", name: "platform_capability_reviews_capability_valid"
+    t.check_constraint "decision = 0 AND parent_review_id IS NULL OR (decision = ANY (ARRAY[1, 2, 3])) AND parent_review_id IS NOT NULL", name: "platform_capability_reviews_parent_valid"
+    t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "platform_capability_reviews_decision_valid"
+    t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND configuration_digest::text ~ '^[0-9a-f]{64}$'::text", name: "platform_capability_reviews_digests_valid"
+    t.check_constraint "expires_at > effective_at", name: "platform_capability_reviews_window_valid"
+  end
+
   create_table "pricing_tiers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "ends_at"
@@ -1792,6 +1819,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_150300) do
   add_foreign_key "payouts", "events", on_delete: :restrict
   add_foreign_key "payouts", "organizations", on_delete: :restrict
   add_foreign_key "payouts", "settlements", on_delete: :restrict
+  add_foreign_key "platform_capability_reviews", "platform_capability_reviews", column: "parent_review_id", on_delete: :restrict
+  add_foreign_key "platform_capability_reviews", "users", column: "actor_user_id", on_delete: :restrict
   add_foreign_key "pricing_tiers", "ticket_types"
   add_foreign_key "promo_codes", "events"
   add_foreign_key "promo_redemptions", "orders", on_delete: :restrict

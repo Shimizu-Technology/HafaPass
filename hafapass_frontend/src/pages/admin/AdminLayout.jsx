@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BarChart3, Calendar, Users, ShoppingCart, Shield, LifeBuoy, Compass } from 'lucide-react'
+import { BarChart3, Calendar, Users, ShoppingCart, Shield, LifeBuoy, Compass, ShieldCheck } from 'lucide-react'
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: BarChart3, exact: true },
@@ -7,6 +7,7 @@ const navItems = [
   { to: '/admin/users', label: 'Users', icon: Users },
   { to: '/admin/orders', label: 'Orders', icon: ShoppingCart },
   { to: '/admin/marketplace', label: 'Marketplace', icon: Compass },
+  { to: '/admin/provider-readiness', label: 'Provider readiness', icon: ShieldCheck },
   { to: '/support', label: 'Support', icon: LifeBuoy },
 ]
 
@@ -38,7 +39,7 @@ export default function AdminLayout({ children }) {
               to={item.to}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                 active
-                  ? 'bg-brand-500 text-white shadow-md shadow-brand-500/20'
+                  ? 'bg-brand-700 text-white shadow-md shadow-brand-700/20'
                   : 'bg-white/60 text-neutral-600 hover:bg-white hover:text-neutral-900 border border-neutral-200/50'
               }`}
             >

@@ -71,7 +71,12 @@ class StripeService
 
     # True when Stripe API calls will actually be made (test or live mode).
     def payment_enabled?
-      SiteSetting.instance.stripe_enabled?
+      settings = SiteSetting.instance
+      if settings.live_mode? && !settings.can_enable_live?
+        raise PaymentError, "Live payments are disabled until current provider evidence is independently approved"
+      end
+
+      settings.stripe_enabled?
     end
 
     # Returns the publishable key the frontend should use.
@@ -88,6 +93,9 @@ class StripeService
 
     # Returns the API key for per-request Stripe calls (thread-safe).
     def resolve_api_key!(settings)
+      if settings.live_mode? && !settings.can_enable_live?
+        raise PaymentError, "Live payments are disabled until current provider evidence is independently approved"
+      end
       key = settings.stripe_secret_key
       if key.blank?
         raise PaymentError, "Stripe secret key not configured for #{settings.payment_mode} mode"

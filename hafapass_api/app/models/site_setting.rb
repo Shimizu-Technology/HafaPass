@@ -54,7 +54,7 @@ class SiteSetting < ApplicationRecord
   def stripe_publishable_key
     case payment_mode
     when "test"  then ENV["STRIPE_TEST_PUBLISHABLE_KEY"].presence || ENV["STRIPE_PUBLISHABLE_KEY"]
-    when "live"  then ENV["STRIPE_LIVE_PUBLISHABLE_KEY"]
+    when "live"  then ENV["STRIPE_LIVE_PUBLISHABLE_KEY"] if can_enable_live?
     end
   end
 
@@ -64,7 +64,11 @@ class SiteSetting < ApplicationRecord
   end
 
   def can_enable_live?
-    ENV["STRIPE_LIVE_SECRET_KEY"].present?
+    PlatformCapabilities.enabled?("stripe_live")
+  end
+
+  def stripe_live_configured?
+    PlatformCapabilities.configured?("stripe_live")
   end
 
   # ── Guards ──────────────────────────────────────────────────────────
