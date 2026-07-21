@@ -56,20 +56,13 @@ function AddToHomeScreenInstructions() {
   )
 }
 
-function WalletButton({ label, icon }) {
+function WalletButton({ label, icon, onClick, disabled, loading }) {
   return (
-    <div className="relative group">
-      <button
-        disabled
-        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-100 text-neutral-400 text-sm font-medium cursor-not-allowed"
-      >
+      <button onClick={onClick} disabled={disabled || loading}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
         {icon}
-        <span>{label}</span>
+        <span>{loading ? 'Opening…' : label}</span>
       </button>
-      <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-neutral-800 text-white text-xs px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-        Coming Soon
-      </div>
-    </div>
   )
 }
 
@@ -103,6 +96,8 @@ export default function TicketPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [downloading, setDownloading] = useState(false)
+  const [walletLoading, setWalletLoading] = useState(null)
+  const [walletError, setWalletError] = useState(null)
 
   useEffect(() => {
     async function fetchTicket() {
@@ -159,6 +154,33 @@ export default function TicketPage() {
       } catch {
         // User cancelled
       }
+    }
+  }
+
+  async function handleWallet(kind) {
+    setWalletLoading(kind)
+    setWalletError(null)
+    try {
+      if (kind === 'apple') {
+        const response = await api.get(`/tickets/${encodeURIComponent(credential)}/wallet/apple`, {
+          headers: orderAccessHeaders(orderId), responseType: 'blob',
+        })
+        const url = window.URL.createObjectURL(response.data)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `hafapass-ticket-${ticket.id}.pkpass`
+        link.click()
+        window.URL.revokeObjectURL(url)
+      } else {
+        const response = await api.get(`/tickets/${encodeURIComponent(credential)}/wallet/google`, {
+          params: { response: 'json' }, headers: orderAccessHeaders(orderId),
+        })
+        window.location.assign(response.data.url)
+      }
+    } catch (err) {
+      setWalletError(err.response?.data?.error || `${kind === 'apple' ? 'Apple' : 'Google'} Wallet is unavailable.`)
+    } finally {
+      setWalletLoading(null)
     }
   }
 
@@ -338,10 +360,12 @@ export default function TicketPage() {
               </button>
             )}
 
-            {/* Wallet Buttons (Coming Soon) */}
+            {walletError && <p className="text-center text-xs text-red-600">{walletError}</p>}
             <div className="grid grid-cols-2 gap-2">
-              <WalletButton label="Apple Wallet" icon={<AppleWalletIcon />} />
-              <WalletButton label="Google Wallet" icon={<GoogleWalletIcon />} />
+              <WalletButton label="Apple Wallet" icon={<AppleWalletIcon />} disabled={!showCredential}
+                loading={walletLoading === 'apple'} onClick={() => handleWallet('apple')} />
+              <WalletButton label="Google Wallet" icon={<GoogleWalletIcon />} disabled={!showCredential}
+                loading={walletLoading === 'google'} onClick={() => handleWallet('google')} />
             </div>
           </div>
 

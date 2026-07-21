@@ -4,11 +4,13 @@ class Ticket < ApplicationRecord
   belongs_to :event
   belongs_to :pricing_tier, optional: true
   belongs_to :order_item, optional: true
+  belongs_to :holder_user, class_name: "User", optional: true
   has_many :refund_tickets, dependent: :restrict_with_error
   has_many :refunds, through: :refund_tickets
   has_many :message_deliveries, dependent: :restrict_with_error
   has_many :support_notes, dependent: :restrict_with_error
   has_many :admission_actions, dependent: :restrict_with_error
+  has_many :ticket_transfers, dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
 
@@ -16,6 +18,9 @@ class Ticket < ApplicationRecord
   before_create :set_attendee_info
 
   validates :qr_code, uniqueness: true, allow_nil: true
+  validates :holder_email, format: { with: URI::MailTo::EMAIL_REGEXP }, allow_blank: true
+
+  before_validation :normalize_holder
 
   def issue_qr_code!
     return if qr_code.present?
@@ -41,6 +46,10 @@ class Ticket < ApplicationRecord
 
   def admission_allowed?
     issued? && order.ticket_fulfilled? && !order.ticket_access_blocked? && event.published?
+  end
+
+  def held_by?(user)
+    user.present? && holder_user_id == user.id
   end
 
   def refundable_cents
@@ -89,9 +98,15 @@ class Ticket < ApplicationRecord
   end
 
   def set_attendee_info
-    return if attendee_name.present? || attendee_email.present?
+    unless attendee_name.present? || attendee_email.present?
+      self.attendee_name ||= order&.buyer_name
+      self.attendee_email ||= order&.buyer_email
+    end
+    self.holder_user ||= order&.user
+    self.holder_email ||= attendee_email || order&.buyer_email
+  end
 
-    self.attendee_name ||= order&.buyer_name
-    self.attendee_email ||= order&.buyer_email
+  def normalize_holder
+    self.holder_email = holder_email.to_s.strip.downcase.presence
   end
 end

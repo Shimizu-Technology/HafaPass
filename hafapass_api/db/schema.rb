@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -185,6 +185,79 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "card_present_attempts_status_valid"
   end
 
+  create_table "catalog_fulfillments", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "fulfilled_at"
+    t.bigint "fulfilled_by_user_id"
+    t.bigint "order_item_id", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["fulfilled_by_user_id"], name: "index_catalog_fulfillments_on_fulfilled_by_user_id"
+    t.index ["order_item_id"], name: "index_catalog_fulfillments_on_order_item_id", unique: true
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "catalog_fulfillments_status_valid"
+  end
+
+  create_table "catalog_item_holds", force: :cascade do |t|
+    t.bigint "catalog_item_id", null: false
+    t.datetime "consumed_at"
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false
+    t.bigint "order_id", null: false
+    t.bigint "order_item_id", null: false
+    t.integer "quantity", null: false
+    t.string "release_reason"
+    t.datetime "released_at"
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["catalog_item_id", "status", "expires_at"], name: "index_catalog_item_hold_inventory"
+    t.index ["catalog_item_id"], name: "index_catalog_item_holds_on_catalog_item_id"
+    t.index ["order_id"], name: "index_catalog_item_holds_on_order_id"
+    t.index ["order_item_id"], name: "index_catalog_item_holds_on_order_item_id", unique: true
+    t.check_constraint "quantity > 0", name: "catalog_item_holds_quantity_positive"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "catalog_item_holds_status_valid"
+  end
+
+  create_table "catalog_items", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.bigint "event_id", null: false
+    t.integer "inventory_quantity"
+    t.integer "kind", null: false
+    t.integer "maximum_price_cents"
+    t.integer "minimum_price_cents"
+    t.string "name", null: false
+    t.integer "position", default: 0, null: false
+    t.integer "price_cents", default: 0, null: false
+    t.integer "quantity_sold", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id", "active", "position"], name: "index_catalog_items_on_event_id_and_active_and_position"
+    t.index ["event_id"], name: "index_catalog_items_on_event_id"
+    t.check_constraint "inventory_quantity IS NULL OR inventory_quantity > 0", name: "catalog_items_inventory_positive"
+    t.check_constraint "kind = ANY (ARRAY[1, 2, 3, 4])", name: "catalog_items_kind_valid"
+    t.check_constraint "price_cents >= 0 AND quantity_sold >= 0", name: "catalog_items_values_nonnegative"
+  end
+
+  create_table "communication_campaigns", force: :cascade do |t|
+    t.text "body", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_user_id", null: false
+    t.bigint "event_id", null: false
+    t.string "name", null: false
+    t.integer "recipient_count", default: 0, null: false
+    t.datetime "scheduled_at"
+    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
+    t.datetime "sent_at"
+    t.datetime "started_at"
+    t.integer "status", default: 0, null: false
+    t.string "subject", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_user_id"], name: "index_communication_campaigns_on_created_by_user_id"
+    t.index ["event_id"], name: "index_communication_campaigns_on_event_id"
+    t.index ["status", "scheduled_at"], name: "index_communication_campaigns_on_status_and_scheduled_at"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "communication_campaigns_status_valid"
+  end
+
   create_table "connected_accounts", force: :cascade do |t|
     t.jsonb "capabilities", default: {}, null: false
     t.boolean "charges_enabled", default: false, null: false
@@ -204,7 +277,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.index ["organization_id"], name: "index_connected_accounts_on_organization_id"
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
-    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying]::text[])", name: "connected_accounts_provider_valid"
+    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying::text, 'manual'::character varying::text, 'stripe'::character varying::text, 'legacy_manual'::character varying::text])", name: "connected_accounts_provider_valid"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
   end
 
@@ -292,15 +365,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.index ["event_id"], name: "index_event_state_changes_on_event_id"
   end
 
+  create_table "event_waivers", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.text "body", null: false
+    t.string "content_digest", null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.boolean "required", default: true, null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.string "version", null: false
+    t.index ["event_id", "version"], name: "index_event_waivers_on_event_id_and_version", unique: true
+    t.index ["event_id"], name: "index_event_waivers_on_event_id"
+  end
+
   create_table "events", force: :cascade do |t|
     t.integer "age_restriction", default: 0
+    t.integer "buyer_fee_percent", default: 100, null: false
     t.integer "category", default: 5
     t.string "cover_image_url"
     t.datetime "created_at", null: false
     t.text "description"
     t.datetime "doors_open_at"
     t.datetime "ends_at"
+    t.integer "fee_policy", default: 0, null: false
     t.boolean "is_featured", default: false
+    t.jsonb "localized_content", default: {}, null: false
     t.integer "max_capacity"
     t.bigint "organization_id", null: false
     t.bigint "organizer_profile_id", null: false
@@ -313,8 +403,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.string "slug", null: false
     t.datetime "starts_at"
     t.integer "status", default: 0
+    t.jsonb "supported_locales", default: ["en"], null: false
     t.string "timezone", default: "Pacific/Guam"
     t.string "title", null: false
+    t.boolean "transfers_enabled", default: true, null: false
     t.datetime "updated_at", null: false
     t.string "venue_address"
     t.string "venue_city"
@@ -325,6 +417,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.index ["slug"], name: "index_events_on_slug", unique: true
     t.index ["starts_at"], name: "index_events_on_starts_at"
     t.index ["status"], name: "index_events_on_status"
+    t.check_constraint "buyer_fee_percent >= 0 AND buyer_fee_percent <= 100", name: "events_buyer_fee_percent_valid"
+    t.check_constraint "fee_policy = ANY (ARRAY[0, 1, 2])", name: "events_fee_policy_valid"
     t.check_constraint "max_capacity IS NULL OR max_capacity > 0", name: "events_capacity_positive"
   end
 
@@ -392,6 +486,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.integer "attempts", default: 0, null: false
     t.datetime "bounced_at"
     t.string "channel", default: "email", null: false
+    t.bigint "communication_campaign_id"
     t.datetime "complained_at"
     t.datetime "created_at", null: false
     t.datetime "delivered_at"
@@ -413,6 +508,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.string "template", null: false
     t.bigint "ticket_id"
     t.datetime "updated_at", null: false
+    t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
     t.index ["order_id", "created_at"], name: "index_message_deliveries_on_order_id_and_created_at"
@@ -445,12 +541,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
   end
 
   create_table "order_items", force: :cascade do |t|
+    t.bigint "catalog_item_id"
     t.datetime "created_at", null: false
     t.string "currency", default: "usd", null: false
     t.integer "discount_cents", default: 0, null: false
     t.integer "fee_cents", default: 0, null: false
+    t.integer "item_kind", default: 0, null: false
     t.string "name", null: false
     t.bigint "order_id", null: false
+    t.integer "organizer_fee_cents", default: 0, null: false
     t.integer "organizer_proceeds_cents", null: false
     t.bigint "pricing_tier_id"
     t.integer "quantity", null: false
@@ -460,12 +559,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.string "tier_name"
     t.integer "unit_price_cents", null: false
     t.datetime "updated_at", null: false
+    t.index ["catalog_item_id"], name: "index_order_items_on_catalog_item_id"
     t.index ["order_id"], name: "index_order_items_on_order_id"
     t.index ["pricing_tier_id"], name: "index_order_items_on_pricing_tier_id"
     t.index ["ticket_type_id"], name: "index_order_items_on_ticket_type_id"
     t.check_constraint "char_length(currency::text) = 3", name: "order_items_currency_length"
     t.check_constraint "discount_cents >= 0", name: "order_items_discount_nonnegative"
     t.check_constraint "fee_cents >= 0", name: "order_items_fee_nonnegative"
+    t.check_constraint "item_kind = 0 AND ticket_type_id IS NOT NULL AND catalog_item_id IS NULL OR item_kind <> 0 AND ticket_type_id IS NULL AND catalog_item_id IS NOT NULL", name: "order_items_catalog_or_ticket"
+    t.check_constraint "item_kind = ANY (ARRAY[0, 1, 2, 3, 4])", name: "order_items_kind_valid"
+    t.check_constraint "organizer_fee_cents >= 0", name: "order_items_organizer_fee_nonnegative"
     t.check_constraint "organizer_proceeds_cents <= subtotal_cents", name: "order_items_proceeds_within_subtotal"
     t.check_constraint "organizer_proceeds_cents >= 0", name: "order_items_proceeds_nonnegative"
     t.check_constraint "quantity > 0", name: "order_items_quantity_positive"
@@ -476,6 +579,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
 
   create_table "orders", force: :cascade do |t|
     t.string "buyer_email"
+    t.integer "buyer_fee_percent_snapshot", default: 100, null: false
     t.string "buyer_name"
     t.string "buyer_phone"
     t.datetime "buyer_terms_accepted_at"
@@ -489,9 +593,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.bigint "event_id", null: false
     t.datetime "expired_at"
     t.datetime "expires_at"
+    t.integer "fee_policy_snapshot", default: 0, null: false
     t.datetime "guest_access_expires_at"
     t.datetime "guest_access_revoked_at"
     t.integer "guest_access_version", default: 1, null: false
+    t.integer "organizer_fee_cents", default: 0, null: false
     t.string "payment_method"
     t.bigint "promo_code_id"
     t.string "reference", null: false
@@ -515,10 +621,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.index ["source"], name: "index_orders_on_source"
     t.index ["stripe_payment_intent_id"], name: "index_orders_on_unique_payment_intent", unique: true, where: "(stripe_payment_intent_id IS NOT NULL)"
     t.index ["user_id"], name: "index_orders_on_user_id"
+    t.check_constraint "buyer_fee_percent_snapshot >= 0 AND buyer_fee_percent_snapshot <= 100", name: "orders_buyer_fee_percent_snapshot_valid"
     t.check_constraint "char_length(currency::text) = 3", name: "orders_currency_length"
     t.check_constraint "discount_cents <= (subtotal_cents + service_fee_cents)", name: "orders_discount_within_charge"
     t.check_constraint "discount_cents >= 0", name: "orders_discount_nonnegative"
+    t.check_constraint "fee_policy_snapshot = ANY (ARRAY[0, 1, 2])", name: "orders_fee_policy_snapshot_valid"
     t.check_constraint "guest_access_version > 0", name: "orders_guest_access_version_positive"
+    t.check_constraint "organizer_fee_cents >= 0", name: "orders_organizer_fee_nonnegative"
     t.check_constraint "refund_amount_cents <= total_cents", name: "orders_refund_within_total"
     t.check_constraint "refund_amount_cents >= 0", name: "orders_refund_nonnegative"
     t.check_constraint "service_fee_cents >= 0", name: "orders_service_fee_nonnegative"
@@ -710,6 +819,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "promo_redemptions_status_valid"
   end
 
+  create_table "promoter_commission_entries", force: :cascade do |t|
+    t.integer "amount_cents", null: false
+    t.datetime "created_at", null: false
+    t.string "currency", default: "usd", null: false
+    t.string "idempotency_key", null: false
+    t.integer "kind", null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "order_id", null: false
+    t.bigint "promoter_id", null: false
+    t.bigint "refund_id"
+    t.datetime "updated_at", null: false
+    t.index ["idempotency_key"], name: "index_promoter_commission_entries_idempotency", unique: true
+    t.index ["order_id"], name: "index_promoter_commission_entries_on_order_id"
+    t.index ["promoter_id"], name: "index_promoter_commission_entries_on_promoter_id"
+    t.index ["refund_id"], name: "index_promoter_commission_entries_on_refund_id"
+    t.check_constraint "amount_cents <> 0", name: "promoter_commission_entries_amount_nonzero"
+    t.check_constraint "kind = ANY (ARRAY[0, 1, 2])", name: "promoter_commission_entries_kind_valid"
+  end
+
+  create_table "promoters", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.string "code", null: false
+    t.integer "commission_bps", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.string "email"
+    t.bigint "event_id", null: false
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id", "code"], name: "index_promoters_on_event_id_and_code", unique: true
+    t.index ["event_id"], name: "index_promoters_on_event_id"
+    t.check_constraint "commission_bps >= 0 AND commission_bps <= 10000", name: "promoters_commission_valid"
+  end
+
   create_table "reconciliation_exceptions", force: :cascade do |t|
     t.integer "actual_amount_cents"
     t.string "actual_currency"
@@ -731,11 +873,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.check_constraint "status = ANY (ARRAY[0, 1])", name: "reconciliation_exceptions_status_valid"
   end
 
+  create_table "referral_attributions", force: :cascade do |t|
+    t.datetime "attributed_at", null: false
+    t.string "campaign"
+    t.string "code_snapshot", null: false
+    t.datetime "created_at", null: false
+    t.string "medium"
+    t.bigint "order_id", null: false
+    t.bigint "promoter_id", null: false
+    t.string "source"
+    t.datetime "updated_at", null: false
+    t.index ["order_id"], name: "index_referral_attributions_on_order_id", unique: true
+    t.index ["promoter_id"], name: "index_referral_attributions_on_promoter_id"
+  end
+
   create_table "refund_items", force: :cascade do |t|
     t.integer "amount_cents", null: false
     t.datetime "created_at", null: false
     t.integer "fee_cents", default: 0, null: false
     t.bigint "order_item_id", null: false
+    t.integer "organizer_fee_cents", default: 0, null: false
     t.integer "organizer_proceeds_cents", default: 0, null: false
     t.integer "quantity", default: 0, null: false
     t.bigint "refund_id", null: false
@@ -744,9 +901,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.index ["order_item_id"], name: "index_refund_items_on_order_item_id"
     t.index ["refund_id", "order_item_id"], name: "index_refund_items_on_refund_id_and_order_item_id", unique: true
     t.index ["refund_id"], name: "index_refund_items_on_refund_id"
-    t.check_constraint "amount_cents = (organizer_proceeds_cents + fee_cents + tax_cents)", name: "refund_items_components_match_amount"
+    t.check_constraint "amount_cents = (organizer_proceeds_cents + fee_cents + organizer_fee_cents + tax_cents)", name: "refund_items_components_match_amount"
     t.check_constraint "amount_cents >= 0", name: "refund_items_amount_nonnegative"
     t.check_constraint "fee_cents >= 0", name: "refund_items_fee_nonnegative"
+    t.check_constraint "organizer_fee_cents >= 0", name: "refund_items_organizer_fee_nonnegative"
     t.check_constraint "organizer_proceeds_cents >= 0", name: "refund_items_proceeds_nonnegative"
     t.check_constraint "quantity >= 0", name: "refund_items_quantity_nonnegative"
     t.check_constraint "tax_cents >= 0", name: "refund_items_tax_nonnegative"
@@ -789,6 +947,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.check_constraint "amount_cents > 0", name: "refunds_amount_positive"
     t.check_constraint "char_length(currency::text) = 3", name: "refunds_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "refunds_status_valid"
+  end
+
+  create_table "registration_questions", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.integer "kind", default: 0, null: false
+    t.jsonb "options", default: [], null: false
+    t.integer "position", default: 0, null: false
+    t.string "prompt", null: false
+    t.boolean "required", default: false, null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id", "active", "position"], name: "idx_on_event_id_active_position_0e532f85bc"
+    t.index ["event_id"], name: "index_registration_questions_on_event_id"
+    t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3])", name: "registration_questions_kind_valid"
+  end
+
+  create_table "registration_responses", force: :cascade do |t|
+    t.jsonb "answer", default: {}, null: false
+    t.datetime "answered_at", null: false
+    t.datetime "created_at", null: false
+    t.integer "kind_snapshot", null: false
+    t.jsonb "options_snapshot", default: [], null: false
+    t.bigint "order_id", null: false
+    t.string "prompt_snapshot", null: false
+    t.bigint "registration_question_id", null: false
+    t.boolean "required_snapshot", default: false, null: false
+    t.datetime "updated_at", null: false
+    t.index ["order_id", "registration_question_id"], name: "index_registration_responses_unique", unique: true
+    t.index ["order_id"], name: "index_registration_responses_on_order_id"
+    t.index ["registration_question_id"], name: "index_registration_responses_on_registration_question_id"
   end
 
   create_table "scanner_devices", force: :cascade do |t|
@@ -911,6 +1100,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "support_notes_subject_present"
   end
 
+  create_table "ticket_transfers", force: :cascade do |t|
+    t.datetime "accepted_at"
+    t.bigint "accepted_by_user_id"
+    t.datetime "cancelled_at"
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false
+    t.bigint "initiated_by_user_id"
+    t.string "recipient_email", null: false
+    t.string "recipient_name"
+    t.integer "status", default: 0, null: false
+    t.bigint "ticket_id", null: false
+    t.integer "token_version", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index "lower((recipient_email)::text)", name: "index_ticket_transfers_on_lower_recipient"
+    t.index ["accepted_by_user_id"], name: "index_ticket_transfers_on_accepted_by_user_id"
+    t.index ["initiated_by_user_id"], name: "index_ticket_transfers_on_initiated_by_user_id"
+    t.index ["ticket_id"], name: "index_ticket_transfers_on_ticket_id"
+    t.index ["ticket_id"], name: "index_ticket_transfers_one_pending", unique: true, where: "(status = 0)"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "ticket_transfers_status_valid"
+  end
+
   create_table "ticket_types", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "description"
@@ -945,6 +1155,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.datetime "created_at", null: false
     t.integer "display_credential_version", default: 1, null: false
     t.bigint "event_id", null: false
+    t.string "holder_email"
+    t.bigint "holder_user_id"
     t.bigint "order_id", null: false
     t.bigint "order_item_id"
     t.bigint "pricing_tier_id"
@@ -953,7 +1165,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.integer "status", default: 0, null: false
     t.bigint "ticket_type_id", null: false
     t.datetime "updated_at", null: false
+    t.index "lower((holder_email)::text)", name: "index_tickets_on_lower_holder_email"
     t.index ["event_id"], name: "index_tickets_on_event_id"
+    t.index ["holder_user_id"], name: "index_tickets_on_holder_user_id"
     t.index ["order_id"], name: "index_tickets_on_order_id"
     t.index ["order_item_id"], name: "index_tickets_on_order_item_id"
     t.index ["pricing_tier_id"], name: "index_tickets_on_pricing_tier_id"
@@ -980,6 +1194,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.string "email", null: false
     t.bigint "event_id", null: false
     t.datetime "expires_at"
+    t.integer "management_version", default: 0, null: false
     t.string "name"
     t.datetime "notified_at"
     t.string "phone"
@@ -994,6 +1209,46 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
     t.index ["event_id"], name: "index_waitlist_entries_on_event_id"
     t.index ["ticket_type_id"], name: "index_waitlist_entries_on_ticket_type_id"
     t.index ["user_id"], name: "index_waitlist_entries_on_user_id"
+  end
+
+  create_table "waitlist_offers", force: :cascade do |t|
+    t.datetime "claimed_at"
+    t.datetime "converted_at"
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.datetime "expires_at", null: false
+    t.bigint "order_id"
+    t.bigint "pricing_tier_id"
+    t.integer "quantity", null: false
+    t.integer "status", default: 0, null: false
+    t.bigint "ticket_type_id", null: false
+    t.integer "token_version", default: 0, null: false
+    t.integer "unit_price_cents", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "waitlist_entry_id", null: false
+    t.index ["event_id"], name: "index_waitlist_offers_on_event_id"
+    t.index ["order_id"], name: "index_waitlist_offers_on_order_id"
+    t.index ["pricing_tier_id"], name: "index_waitlist_offers_on_pricing_tier_id"
+    t.index ["ticket_type_id", "status", "expires_at"], name: "index_waitlist_offer_inventory"
+    t.index ["ticket_type_id"], name: "index_waitlist_offers_on_ticket_type_id"
+    t.index ["waitlist_entry_id"], name: "index_waitlist_offers_on_waitlist_entry_id"
+    t.index ["waitlist_entry_id"], name: "index_waitlist_offers_one_active", unique: true, where: "(status = ANY (ARRAY[0, 1]))"
+    t.check_constraint "quantity > 0", name: "waitlist_offers_quantity_positive"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "waitlist_offers_status_valid"
+    t.check_constraint "unit_price_cents >= 0", name: "waitlist_offers_price_nonnegative"
+  end
+
+  create_table "waiver_acceptances", force: :cascade do |t|
+    t.datetime "accepted_at", null: false
+    t.string "content_digest", null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_waiver_id", null: false
+    t.bigint "order_id", null: false
+    t.datetime "updated_at", null: false
+    t.string "version", null: false
+    t.index ["event_waiver_id"], name: "index_waiver_acceptances_on_event_waiver_id"
+    t.index ["order_id", "event_waiver_id"], name: "index_waiver_acceptances_on_order_id_and_event_waiver_id", unique: true
+    t.index ["order_id"], name: "index_waiver_acceptances_on_order_id"
   end
 
   create_table "webhook_events", force: :cascade do |t|
@@ -1040,6 +1295,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
   add_foreign_key "card_present_payment_attempts", "organizations", on_delete: :restrict
   add_foreign_key "card_present_payment_attempts", "payments", on_delete: :restrict
   add_foreign_key "card_present_payment_attempts", "users", column: "initiated_by_user_id", on_delete: :restrict
+  add_foreign_key "catalog_fulfillments", "order_items", on_delete: :restrict
+  add_foreign_key "catalog_fulfillments", "users", column: "fulfilled_by_user_id", on_delete: :restrict
+  add_foreign_key "catalog_item_holds", "catalog_items", on_delete: :restrict
+  add_foreign_key "catalog_item_holds", "order_items", on_delete: :restrict
+  add_foreign_key "catalog_item_holds", "orders", on_delete: :restrict
+  add_foreign_key "catalog_items", "events", on_delete: :restrict
+  add_foreign_key "communication_campaigns", "events", on_delete: :restrict
+  add_foreign_key "communication_campaigns", "users", column: "created_by_user_id", on_delete: :restrict
   add_foreign_key "connected_accounts", "organizations", on_delete: :restrict
   add_foreign_key "disputes", "orders", on_delete: :restrict
   add_foreign_key "disputes", "payments", on_delete: :restrict
@@ -1053,6 +1316,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
   add_foreign_key "event_staff_assignments", "users", on_delete: :restrict
   add_foreign_key "event_state_changes", "events"
   add_foreign_key "event_state_changes", "users", column: "actor_user_id"
+  add_foreign_key "event_waivers", "events", on_delete: :restrict
   add_foreign_key "events", "organizations", on_delete: :restrict
   add_foreign_key "events", "organizer_profiles"
   add_foreign_key "fee_components", "order_items", on_delete: :restrict
@@ -1065,11 +1329,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
   add_foreign_key "inventory_holds", "orders", on_delete: :restrict
   add_foreign_key "inventory_holds", "pricing_tiers", on_delete: :restrict
   add_foreign_key "inventory_holds", "ticket_types", on_delete: :restrict
+  add_foreign_key "message_deliveries", "communication_campaigns", on_delete: :restrict
   add_foreign_key "message_deliveries", "events", on_delete: :restrict
   add_foreign_key "message_deliveries", "orders", on_delete: :restrict
   add_foreign_key "message_deliveries", "tickets", on_delete: :restrict
   add_foreign_key "message_deliveries", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "message_provider_events", "message_deliveries", on_delete: :nullify
+  add_foreign_key "order_items", "catalog_items", on_delete: :restrict
   add_foreign_key "order_items", "orders", on_delete: :restrict
   add_foreign_key "order_items", "pricing_tiers", on_delete: :restrict
   add_foreign_key "order_items", "ticket_types", on_delete: :restrict
@@ -1093,9 +1359,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
   add_foreign_key "promo_codes", "events"
   add_foreign_key "promo_redemptions", "orders", on_delete: :restrict
   add_foreign_key "promo_redemptions", "promo_codes", on_delete: :restrict
+  add_foreign_key "promoter_commission_entries", "orders", on_delete: :restrict
+  add_foreign_key "promoter_commission_entries", "promoters", on_delete: :restrict
+  add_foreign_key "promoter_commission_entries", "refunds", on_delete: :restrict
+  add_foreign_key "promoters", "events", on_delete: :restrict
   add_foreign_key "reconciliation_exceptions", "orders", on_delete: :restrict
   add_foreign_key "reconciliation_exceptions", "payments", on_delete: :restrict
   add_foreign_key "reconciliation_exceptions", "webhook_events", on_delete: :restrict
+  add_foreign_key "referral_attributions", "orders", on_delete: :restrict
+  add_foreign_key "referral_attributions", "promoters", on_delete: :restrict
   add_foreign_key "refund_items", "order_items", on_delete: :restrict
   add_foreign_key "refund_items", "refunds", on_delete: :restrict
   add_foreign_key "refund_tickets", "refunds", on_delete: :restrict
@@ -1103,6 +1375,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
   add_foreign_key "refunds", "orders", on_delete: :restrict
   add_foreign_key "refunds", "payments", on_delete: :restrict
   add_foreign_key "refunds", "users", column: "requested_by_id", on_delete: :nullify
+  add_foreign_key "registration_questions", "events", on_delete: :restrict
+  add_foreign_key "registration_responses", "orders", on_delete: :restrict
+  add_foreign_key "registration_responses", "registration_questions", on_delete: :restrict
   add_foreign_key "scanner_devices", "events", on_delete: :restrict
   add_foreign_key "scanner_devices", "organizations", on_delete: :restrict
   add_foreign_key "scanner_devices", "users", on_delete: :restrict
@@ -1113,13 +1388,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_220000) do
   add_foreign_key "support_notes", "orders", on_delete: :restrict
   add_foreign_key "support_notes", "tickets", on_delete: :restrict
   add_foreign_key "support_notes", "users", column: "author_user_id", on_delete: :restrict
+  add_foreign_key "ticket_transfers", "tickets", on_delete: :restrict
+  add_foreign_key "ticket_transfers", "users", column: "accepted_by_user_id", on_delete: :restrict
+  add_foreign_key "ticket_transfers", "users", column: "initiated_by_user_id", on_delete: :restrict
   add_foreign_key "ticket_types", "events"
   add_foreign_key "tickets", "events"
   add_foreign_key "tickets", "order_items", on_delete: :restrict
   add_foreign_key "tickets", "orders"
   add_foreign_key "tickets", "pricing_tiers"
   add_foreign_key "tickets", "ticket_types"
+  add_foreign_key "tickets", "users", column: "holder_user_id", on_delete: :restrict
   add_foreign_key "waitlist_entries", "events"
   add_foreign_key "waitlist_entries", "ticket_types"
   add_foreign_key "waitlist_entries", "users"
+  add_foreign_key "waitlist_offers", "events", on_delete: :restrict
+  add_foreign_key "waitlist_offers", "orders", on_delete: :restrict
+  add_foreign_key "waitlist_offers", "pricing_tiers", on_delete: :restrict
+  add_foreign_key "waitlist_offers", "ticket_types", on_delete: :restrict
+  add_foreign_key "waitlist_offers", "waitlist_entries", on_delete: :restrict
+  add_foreign_key "waiver_acceptances", "event_waivers", on_delete: :restrict
+  add_foreign_key "waiver_acceptances", "orders", on_delete: :restrict
 end

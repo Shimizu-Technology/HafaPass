@@ -20,7 +20,7 @@ module Settlements
       discounts = orders.sum(&:discount_cents)
       charged = orders.sum(&:total_cents)
       refunds = succeeded_refunds.sum(&:amount_cents)
-      refunded_fees = refund_items.sum(&:fee_cents)
+      refunded_fees = refund_items.sum { |item| item.fee_cents + item.organizer_fee_cents }
       refunded_proceeds = refund_items.sum(&:organizer_proceeds_cents)
       platform_fees = [platform_fee_components.sum(&:amount_cents) - refunded_fees, 0].max
       organizer_proceeds = [order_items.sum(&:organizer_proceeds_cents) - refunded_proceeds, 0].max
@@ -128,7 +128,8 @@ module Settlements
           source: item,
           description: "Organizer proceeds refunded",
           occurred_at: item.refund.succeeded_at || item.created_at,
-          metadata: { refund_id: item.refund_id, buyer_refund_cents: item.amount_cents, fee_refund_cents: item.fee_cents }
+          metadata: { refund_id: item.refund_id, buyer_refund_cents: item.amount_cents,
+            fee_refund_cents: item.fee_cents + item.organizer_fee_cents }
         )
       end
     end

@@ -33,35 +33,27 @@ module Api
 
       # GET /api/v1/events/:slug/waitlist/status
       def status
-        email = params[:email]
-        unless email.present?
-          render json: { error: "Email is required" }, status: :bad_request
-          return
-        end
+        entry = managed_entry
+        return unless entry
 
-        entries = @event.waitlist_entries.where(email: email).order(:position)
-        if entries.any?
-          render json: { entries: entries.map { |e| public_entry_json(e) } }
-        else
-          render json: { entries: [], message: "No waitlist entries found for this email" }
-        end
+        render json: { entries: [public_entry_json(entry)] }
       end
 
       # DELETE /api/v1/events/:slug/waitlist
       def destroy
-        email = params[:email]
-        unless email.present?
-          render json: { error: "Email is required" }, status: :bad_request
-          return
+        entry = managed_entry
+        return unless entry
+        unless entry.active?
+          return render json: { error: "No active waitlist entry found" }, status: :not_found
         end
 
-        entries = @event.waitlist_entries.where(email: email, status: [:waiting, :notified, :offered])
-        if entries.any?
-          entries.update_all(status: :cancelled)
-          head :no_content
-        else
-          render json: { error: "No active waitlist entries found" }, status: :not_found
+        entry.with_lock do
+          entry.waitlist_offers.where(status: [:offered, :claimed]).find_each do |offer|
+            offer.update!(status: :cancelled, token_version: offer.token_version + 1)
+          end
+          entry.update!(status: :cancelled, management_version: entry.management_version + 1, expires_at: nil)
         end
+        head :no_content
       end
 
       private
@@ -89,12 +81,21 @@ module Api
           notified_at: entry.notified_at,
           expires_at: entry.expires_at,
           created_at: entry.created_at
-        }
+        }.merge(management_token: entry.management_credential)
       end
 
-      # Limited response for unauthenticated status checks — no personal data exposed
+      def managed_entry
+        entry = WaitlistCredential.find_management(params[:management_token])
+        return entry if entry&.event_id == @event.id
+
+        render json: { error: "Waitlist entry not found" }, status: :not_found
+        nil
+      end
+
+      # Limited response available only after verifying a signed entry credential.
       def public_entry_json(entry)
         {
+          id: entry.id,
           position: entry.position,
           status: entry.status,
           quantity: entry.quantity,

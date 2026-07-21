@@ -101,22 +101,24 @@ RSpec.describe "Api::V1::Tickets", type: :request do
   end
 
   describe "GET /api/v1/tickets/:credential/wallet/apple" do
-    it "returns 501 not implemented" do
-      get "/api/v1/tickets/#{ticket.display_credential}/wallet/apple"
+    it "requires secure order access and reports missing signing configuration" do
+      get "/api/v1/tickets/#{ticket.display_credential}/wallet/apple",
+        headers: { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
 
-      expect(response).to have_http_status(:not_implemented)
+      expect(response).to have_http_status(:service_unavailable)
       json = JSON.parse(response.body)
-      expect(json["error"]).to include("Coming soon")
+      expect(json["error"]).to include("not configured")
     end
   end
 
   describe "GET /api/v1/tickets/:credential/wallet/google" do
-    it "returns 501 not implemented" do
-      get "/api/v1/tickets/#{ticket.display_credential}/wallet/google"
+    it "requires secure order access and reports missing signing configuration" do
+      get "/api/v1/tickets/#{ticket.display_credential}/wallet/google",
+        headers: { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
 
-      expect(response).to have_http_status(:not_implemented)
+      expect(response).to have_http_status(:service_unavailable)
       json = JSON.parse(response.body)
-      expect(json["error"]).to include("Coming soon")
+      expect(json["error"]).to include("not configured")
     end
   end
 end

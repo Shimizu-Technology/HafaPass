@@ -2,6 +2,7 @@ class WaitlistEntry < ApplicationRecord
   belongs_to :event
   belongs_to :ticket_type, optional: true
   belongs_to :user, optional: true
+  has_many :waitlist_offers, dependent: :restrict_with_error
 
   enum :status, { waiting: 0, notified: 1, offered: 2, converted: 3, expired: 4, cancelled: 5 }
 
@@ -15,6 +16,10 @@ class WaitlistEntry < ApplicationRecord
   scope :active, -> { where(status: [:waiting, :notified, :offered]) }
   scope :by_position, -> { order(:position) }
 
+  def active?
+    waiting? || notified? || offered?
+  end
+
   def notify!
     update!(
       status: :notified,
@@ -25,6 +30,10 @@ class WaitlistEntry < ApplicationRecord
 
   def offer_expired?
     expires_at.present? && expires_at < Time.current && !converted?
+  end
+
+  def management_credential
+    WaitlistCredential.management(self)
   end
 
   private

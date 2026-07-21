@@ -19,6 +19,7 @@ export default function CheckoutPage() {
   const [event, setEvent] = useState(location.state?.event || null)
   const [loading, setLoading] = useState(!location.state?.event)
   const lineItems = location.state?.lineItems || null
+  const waitlistOfferToken = location.state?.waitlistOfferToken || null
   const [error, setError] = useState(null)
   const [configError, setConfigError] = useState(null)
   const [config, setConfig] = useState(null)
@@ -28,6 +29,9 @@ export default function CheckoutPage() {
   const [buyerEmail, setBuyerEmail] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [catalogSelections, setCatalogSelections] = useState({})
+  const [registrationAnswers, setRegistrationAnswers] = useState({})
+  const [acceptedWaivers, setAcceptedWaivers] = useState({})
   const [formErrors, setFormErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -133,6 +137,13 @@ export default function CheckoutPage() {
     if (!buyerEmail.trim()) errors.email = 'Email is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail.trim())) errors.email = 'Please enter a valid email'
     if (!termsAccepted) errors.terms = 'You must accept the buyer terms to continue'
+    event?.registration_questions?.forEach(question => {
+      const answer = registrationAnswers[question.id]
+      if (question.required && (answer === undefined || answer === null || answer === '')) errors[`question_${question.id}`] = 'This answer is required'
+    })
+    event?.waivers?.forEach(waiver => {
+      if (waiver.required && !acceptedWaivers[waiver.id]) errors[`waiver_${waiver.id}`] = 'You must accept this waiver'
+    })
     return errors
   }
 
@@ -151,6 +162,19 @@ export default function CheckoutPage() {
         buyer_phone: buyerPhone.trim() || null,
         line_items: lineItems.map(item => ({ ticket_type_id: item.ticket_type_id, quantity: item.quantity })),
         promo_code_id: promoData?.promo_code_id || null,
+        catalog_items: Object.entries(catalogSelections).filter(([, value]) => value.quantity > 0).map(([id, value]) => ({
+          catalog_item_id: Number(id), quantity: value.quantity,
+          amount_cents: event.catalog_items?.find(item => item.id === Number(id))?.kind === 'donation' ? (value.amount_cents || null) : null,
+        })),
+        registration_answers: registrationAnswers,
+        waiver_acceptances: (event.waivers || []).filter(waiver => acceptedWaivers[waiver.id]).map(waiver => ({ event_waiver_id: waiver.id, version: waiver.version })),
+        referral_code: new URLSearchParams(location.search).get('ref'),
+        attribution: {
+          source: new URLSearchParams(location.search).get('utm_source'),
+          medium: new URLSearchParams(location.search).get('utm_medium'),
+          campaign: new URLSearchParams(location.search).get('utm_campaign'),
+        },
+        waitlist_offer_token: waitlistOfferToken,
         terms_accepted: termsAccepted,
         terms_version: config.buyer_terms_version,
       }
@@ -223,10 +247,16 @@ export default function CheckoutPage() {
 
   const totalTickets = orderLines.reduce((s, l) => s + l.quantity, 0)
   const subtotalCents = orderLines.reduce((s, l) => s + l.lineTotal, 0)
-  const serviceFeeCents = subtotalCents === 0 ? 0 : Math.round(subtotalCents * (feePercent / 100)) + (totalTickets * feeFlatCents)
+  const catalogSubtotalCents = Object.entries(catalogSelections).reduce((sum, [id, selection]) => {
+    const item = event.catalog_items?.find(candidate => candidate.id === Number(id))
+    if (!item || !selection.quantity) return sum
+    return sum + (item.kind === 'donation' ? (selection.amount_cents || 0) : item.price_cents) * selection.quantity
+  }, 0)
+  const platformFeeCents = subtotalCents === 0 ? 0 : Math.round(subtotalCents * (feePercent / 100)) + (totalTickets * feeFlatCents)
+  const serviceFeeCents = Math.round(platformFeeCents * ((event.buyer_fee_percent ?? 100) / 100))
   const discountCents = promoData?.discount_cents || 0
-  const totalCents = Math.max(subtotalCents + serviceFeeCents - discountCents, 0)
-  const displayedSubtotal = orderData?.subtotal_cents ?? subtotalCents
+  const totalCents = Math.max(subtotalCents + catalogSubtotalCents + serviceFeeCents - discountCents, 0)
+  const displayedSubtotal = orderData?.subtotal_cents ?? (subtotalCents + catalogSubtotalCents)
   const displayedFee = orderData?.service_fee_cents ?? serviceFeeCents
   const displayedDiscount = orderData?.discount_cents ?? discountCents
   const displayedTotal = orderData?.total_cents ?? totalCents
@@ -394,6 +424,46 @@ export default function CheckoutPage() {
                     onChange={(e) => setBuyerPhone(e.target.value)}
                     className="input" placeholder="(671) 555-0123" disabled={submitting} />
                 </div>
+                {event.catalog_items?.length > 0 && (
+                  <fieldset className="rounded-xl border border-neutral-200 p-4">
+                    <legend className="px-1 text-sm font-semibold text-neutral-900">Extras and support</legend>
+                    <div className="space-y-3">
+                      {event.catalog_items.map(item => {
+                        const selection = catalogSelections[item.id] || { quantity: 0, amount_cents: item.minimum_price_cents || item.price_cents }
+                        return <div key={item.id} className="flex items-center justify-between gap-3">
+                          <div><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-xs text-neutral-500">{item.description || (item.kind === 'donation' ? 'Support this event' : formatPrice(item.price_cents))}</p></div>
+                          <div className="flex items-center gap-2">
+                            {item.kind === 'donation' && selection.quantity > 0 && <label className="text-xs text-neutral-500">$<input aria-label={`${item.name} amount`} type="number" min={(item.minimum_price_cents || item.price_cents) / 100} max={item.maximum_price_cents ? item.maximum_price_cents / 100 : undefined} step="1" value={(selection.amount_cents || 0) / 100} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, amount_cents: Math.round(Number(e.target.value) * 100) } }))} className="ml-1 w-20 rounded-lg border border-neutral-300 px-2 py-1" /></label>}
+                            <input aria-label={`${item.name} quantity`} type="number" min="0" max={item.quantity_remaining || 10} value={selection.quantity} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, quantity: Math.max(0, Number(e.target.value) || 0) } }))} className="w-16 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm" />
+                          </div>
+                        </div>
+                      })}
+                    </div>
+                  </fieldset>
+                )}
+                {event.registration_questions?.length > 0 && (
+                  <fieldset className="rounded-xl border border-neutral-200 p-4">
+                    <legend className="px-1 text-sm font-semibold text-neutral-900">Registration</legend>
+                    <div className="space-y-4">
+                      {event.registration_questions.map(question => <div key={question.id}>
+                        <label className="mb-1 block text-sm font-medium text-neutral-700" htmlFor={`question-${question.id}`}>{question.prompt}{question.required && ' *'}</label>
+                        {question.kind === 'selection' ? <select id={`question-${question.id}`} className="input" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))}><option value="">Select one</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
+                          : question.kind === 'checkbox' ? <input id={`question-${question.id}`} type="checkbox" checked={Boolean(registrationAnswers[question.id])} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.checked }))} />
+                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))} />
+                              : <input id={`question-${question.id}`} className="input" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))} />}
+                        {formErrors[`question_${question.id}`] && <p className="mt-1 text-xs text-red-500">{formErrors[`question_${question.id}`]}</p>}
+                      </div>)}
+                    </div>
+                  </fieldset>
+                )}
+                {event.waivers?.map(waiver => (
+                  <div key={waiver.id} className="rounded-xl border border-neutral-200 p-4">
+                    <p className="text-sm font-semibold text-neutral-900">{waiver.title}</p>
+                    <div className="my-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-600">{waiver.body}</div>
+                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input type="checkbox" checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked }))} className="mt-0.5" />I accept version {waiver.version}{waiver.required && ' *'}</label>
+                    {formErrors[`waiver_${waiver.id}`] && <p className="mt-1 text-xs text-red-500">{formErrors[`waiver_${waiver.id}`]}</p>}
+                  </div>
+                ))}
                 <div>
                   <label className="flex items-start gap-3 text-sm text-neutral-600" htmlFor="termsAccepted">
                     <input

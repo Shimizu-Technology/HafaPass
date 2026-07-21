@@ -87,15 +87,16 @@ module Api
       end
 
       def event_json(event, include_ticket_types: false)
+        content = event.content_for(params[:locale].presence || request.headers["Accept-Language"])
         active_tickets = event.tickets.where.not(status: :cancelled)
         attendee_count = active_tickets.count
 
         json = {
           id: event.id,
-          title: event.title,
+          title: content[:title],
           slug: event.slug,
-          description: event.description,
-          short_description: event.short_description,
+          description: content[:description],
+          short_description: content[:short_description],
           cover_image_url: event.cover_image_url,
           venue_name: event.venue_name,
           venue_address: event.venue_address,
@@ -113,6 +114,14 @@ module Api
           published_at: event.published_at,
           show_attendees: event.show_attendees,
           attendee_count: attendee_count,
+          fee_policy: event.fee_policy,
+          buyer_fee_percent: event.buyer_fee_percent,
+          transfers_enabled: event.transfers_enabled,
+          supported_locales: event.supported_locales,
+          localized_content: event.localized_content,
+          catalog_items: event.catalog_items.available.map { |item| catalog_item_json(item) },
+          registration_questions: event.registration_questions.published.map { |question| registration_question_json(question) },
+          waivers: event.event_waivers.published.map { |waiver| waiver_json(waiver) },
           attendees_preview: event.show_attendees ? active_tickets.limit(10).pluck(:attendee_name).map { |name| anonymize_name(name) } : [],
           purchasable: event.sales_open? && event.has_available_inventory?,
           organizer: {
@@ -163,6 +172,23 @@ module Api
         end
 
         json
+      end
+
+      def catalog_item_json(item)
+        {
+          id: item.id, name: item.name, description: item.description, kind: item.kind,
+          price_cents: item.price_cents, minimum_price_cents: item.minimum_price_cents,
+          maximum_price_cents: item.maximum_price_cents,
+          quantity_remaining: item.inventory_quantity ? item.available_quantity : nil
+        }
+      end
+
+      def registration_question_json(question)
+        { id: question.id, prompt: question.prompt, kind: question.kind, required: question.required, options: question.options }
+      end
+
+      def waiver_json(waiver)
+        { id: waiver.id, title: waiver.title, body: waiver.body, version: waiver.version, required: waiver.required }
       end
     end
   end

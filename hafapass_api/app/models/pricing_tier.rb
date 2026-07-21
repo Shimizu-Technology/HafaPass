@@ -3,6 +3,7 @@ class PricingTier < ApplicationRecord
   has_many :tickets, dependent: :restrict_with_error
   has_many :order_items, dependent: :restrict_with_error
   has_many :inventory_holds, dependent: :restrict_with_error
+  has_many :waitlist_offers, dependent: :restrict_with_error
 
   enum :tier_type, { time_based: 0, quantity_based: 1 }
 
@@ -20,7 +21,7 @@ class PricingTier < ApplicationRecord
   def active?
     case tier_type
     when "quantity_based"
-      quantity_sold + inventory_holds.current.sum(:quantity) < quantity_limit
+      quantity_sold + inventory_holds.current.sum(:quantity) + waitlist_offers.holding_inventory.sum(:quantity) < quantity_limit
     when "time_based"
       if starts_at.present? && ends_at.present?
         Time.current.between?(starts_at, ends_at)
@@ -46,7 +47,8 @@ class PricingTier < ApplicationRecord
   def sold_quantity_within_limit
     return unless quantity_based? && quantity_limit.present?
 
-    committed = quantity_sold + (persisted? ? inventory_holds.current.sum(:quantity) : 0)
+    held = persisted? ? inventory_holds.current.sum(:quantity) + waitlist_offers.holding_inventory.sum(:quantity) : 0
+    committed = quantity_sold + held
     return if committed <= quantity_limit
 
     errors.add(:quantity_limit, "cannot be less than sold and actively held inventory")

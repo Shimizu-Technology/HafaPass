@@ -339,6 +339,9 @@ export default function EditEventPage() {
           <Link to={`/dashboard/events/${id}/waitlist`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ClipboardList className="w-4 h-4" /> Waitlist
           </Link>
+          <Link to={`/dashboard/events/${id}/sales-tools`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+            <ShoppingCart className="w-4 h-4" /> Sales tools
+          </Link>
           {['published', 'completed', 'cancelled'].includes(event?.status) && (
             <Link to={`/dashboard/events/${id}/analytics`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
               View Analytics

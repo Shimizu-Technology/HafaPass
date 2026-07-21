@@ -329,6 +329,7 @@ GEM
       rubocop-performance (>= 1.24)
       rubocop-rails (>= 2.30)
     ruby-progressbar (1.13.0)
+    rubyzip (3.4.1)
     securerandom (0.4.1)
     sentry-rails (5.28.1)
       railties (>= 5.0)
@@ -391,6 +392,7 @@ DEPENDENCIES
   rspec-rails (~> 7.0)
   rspec_junit_formatter
   rubocop-rails-omakase
+  rubyzip
   sentry-rails (~> 5.0)
   sentry-ruby (~> 5.0)
   sidekiq (~> 8.0)

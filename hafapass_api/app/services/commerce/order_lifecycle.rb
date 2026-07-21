@@ -35,7 +35,8 @@ module Commerce
           end
 
           holds = order.inventory_holds.order(:id).lock.to_a
-          if holds.empty? || holds.any? { |hold| !hold.active? || hold.expires_at <= Time.current }
+          catalog_holds = order.catalog_item_holds.order(:id).lock.to_a
+          if holds.empty? || (holds + catalog_holds).any? { |hold| !hold.active? || hold.expires_at <= Time.current }
             release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true)
             mark_payment_succeeded!(payment)
             ReconciliationException.create!(
@@ -57,8 +58,16 @@ module Commerce
             hold.consume!
           end
 
+          catalog_holds.each do |hold|
+            hold.catalog_item.lock!
+            hold.catalog_item.increment!(:quantity_sold, hold.quantity)
+            hold.consume!
+          end
+
           issue_tickets!(order)
           finalize_promo!(order)
+          finalize_waitlist_offer!(order)
+          record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
           order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
           completed_now = true
@@ -146,6 +155,10 @@ module Commerce
         order.inventory_holds.active.order(:id).lock.each do |hold|
           hold.release!(reason: reason, expired: expired, at: at)
         end
+        order.catalog_item_holds.active.order(:id).lock.each do |hold|
+          hold.release!(reason: reason, expired: expired, at: at)
+        end
+        release_waitlist_offer!(order, at: at)
         order.promo_redemption&.update!(status: :released, released_at: at) if order.promo_redemption&.reserved?
         order.tickets.includes(:ticket_type, :pricing_tier, :order_item).where.not(status: :cancelled).each do |ticket|
           ticket.release_inventory! if ticket.order_item_id.nil?
@@ -160,7 +173,7 @@ module Commerce
       end
 
       def issue_tickets!(order)
-        order.order_items.each do |item|
+        order.order_items.item_ticket.each do |item|
           existing = order.tickets.where(order_item_id: item.id).order(:id).to_a
           (item.quantity - existing.length).times do
             existing << order.tickets.create!(
@@ -171,6 +184,39 @@ module Commerce
             )
           end
           existing.each(&:issue_qr_code!)
+        end
+      end
+
+      def finalize_waitlist_offer!(order)
+        offer = order.waitlist_offer
+        return unless offer&.claimed?
+
+        offer.update!(status: :converted, converted_at: Time.current, token_version: offer.token_version + 1)
+        offer.waitlist_entry.update!(status: :converted, expires_at: nil)
+      end
+
+      def release_waitlist_offer!(order, at: Time.current)
+        offer = order.waitlist_offer
+        return unless offer&.claimed?
+
+        offer.update!(status: :expired, token_version: offer.token_version + 1)
+        offer.waitlist_entry.update!(status: :waiting, expires_at: nil, notified_at: nil)
+      end
+
+      def record_promoter_commission!(order)
+        attribution = order.referral_attribution
+        return unless attribution
+
+        amount = attribution.promoter.commission_for(order.order_items.sum(:organizer_proceeds_cents))
+        return unless amount.positive?
+
+        PromoterCommissionEntry.find_or_create_by!(idempotency_key: "commission:order:#{order.id}") do |entry|
+          entry.promoter = attribution.promoter
+          entry.order = order
+          entry.kind = :earned
+          entry.amount_cents = amount
+          entry.currency = order.currency
+          entry.occurred_at = Time.current
         end
       end
 

@@ -45,6 +45,16 @@ export default function WaitlistPage() {
     }
   }
 
+  const handleOffer = async (entry) => {
+    if (!confirm(`Reserve inventory and send a checkout offer to ${entry.name || entry.email}?`)) return
+    try {
+      await apiClient.post(`/organizer/events/${eventId}/waitlist/${entry.id}/offer`)
+      fetchData()
+    } catch (e) {
+      alert(e.response?.data?.error || 'Unable to create an offer')
+    }
+  }
+
   const handleNotifyNext = async () => {
     if (!confirm(`Notify the next ${notifyCount} people on the waitlist?`)) return
     setNotifying(true)
@@ -152,6 +162,9 @@ export default function WaitlistPage() {
                   <td className="py-3 text-neutral-500 text-xs">{formatDate(entry.created_at)}</td>
                   <td className="py-3">
                     <div className="flex items-center gap-1">
+                      {entry.status === 'waiting' && (
+                        <button onClick={() => handleOffer(entry)} className="rounded-lg px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50" title="Reserve tickets and send offer">Offer</button>
+                      )}
                       {entry.status === 'waiting' && (
                         <button
                           onClick={() => handleNotify(entry)}

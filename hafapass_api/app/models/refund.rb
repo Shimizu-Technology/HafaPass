@@ -6,6 +6,7 @@ class Refund < ApplicationRecord
   belongs_to :requested_by, class_name: "User", optional: true
   has_many :refund_items, dependent: :restrict_with_error
   has_many :refund_tickets, dependent: :restrict_with_error
+  has_many :promoter_commission_entries, dependent: :restrict_with_error
   has_many :tickets, through: :refund_tickets
 
   enum :status, { pending: 0, succeeded: 1, failed: 2, cancelled: 3 }

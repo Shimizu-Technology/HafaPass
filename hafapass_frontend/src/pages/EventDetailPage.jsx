@@ -20,6 +20,8 @@ export default function EventDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [waitlistOffer, setWaitlistOffer] = useState(null)
+  const waitlistOfferToken = searchParams.get('waitlist_offer')
 
   useEffect(() => {
     const url = isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`
@@ -28,8 +30,15 @@ export default function EventDetailPage() {
       .catch(() => { setError('Event not found.'); setLoading(false) })
   }, [slug, isPreview])
 
+  useEffect(() => {
+    if (!waitlistOfferToken) return
+    apiClient.get(`/waitlist_offers/${encodeURIComponent(waitlistOfferToken)}`)
+      .then(res => setWaitlistOffer(res.data))
+      .catch(() => setWaitlistOffer({ error: 'This waitlist offer is no longer available.' }))
+  }, [waitlistOfferToken])
+
   const handleCheckout = (lineItems) => {
-    navigate(`/checkout/${slug}`, { state: { event, lineItems } })
+    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken } })
   }
 
   const ageLabels = { all_ages: 'All Ages', eighteen_plus: '18+', twenty_one_plus: '21+' }
@@ -274,6 +283,14 @@ export default function EventDetailPage() {
               transition={{ duration: 0.5, delay: 0.15 }}
             >
               <div className="lg:sticky lg:top-24">
+                {waitlistOffer && !waitlistOffer.error && (
+                  <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                    <p className="text-sm font-semibold text-emerald-900">Your tickets are reserved</p>
+                    <p className="mt-1 text-sm text-emerald-800">{waitlistOffer.quantity} × {waitlistOffer.ticket_type_name} until {new Date(waitlistOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>
+                    <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>Claim waitlist offer</button>
+                  </div>
+                )}
+                {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
                 <div className="card p-5">
                   {event.ticket_types && event.ticket_types.length > 0 ? (
                     <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />

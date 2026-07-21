@@ -32,6 +32,8 @@ const RefundsPage = lazy(() => import('./pages/dashboard/RefundsPage'))
 const AttendeesPage = lazy(() => import('./pages/dashboard/AttendeesPage'))
 const BoxOfficePage = lazy(() => import('./pages/dashboard/BoxOfficePage'))
 const WaitlistPage = lazy(() => import('./pages/dashboard/WaitlistPage'))
+const TicketTransferAcceptPage = lazy(() => import('./pages/TicketTransferAcceptPage'))
+const SalesToolsPage = lazy(() => import('./pages/dashboard/SalesToolsPage'))
 
 // Admin pages
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'))
@@ -62,6 +64,7 @@ function App() {
           <Route path="/tickets/:credential" element={<TicketPage />} />
           <Route path="/policies/:policy" element={<PolicyPage />} />
           <Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />
+          <Route path="/ticket-transfers/accept" element={<ProtectedRoute><TicketTransferAcceptPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />
@@ -72,6 +75,7 @@ function App() {
           <Route path="/dashboard/events/:id/attendees" element={<ProtectedRoute><AttendeesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/box-office" element={<ProtectedRoute><BoxOfficePage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/waitlist" element={<ProtectedRoute><WaitlistPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id/sales-tools" element={<ProtectedRoute><SalesToolsPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/team" element={<ProtectedRoute><EventStaffPage /></ProtectedRoute>} />

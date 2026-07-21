@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { useLocation, useOutlet } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import Navbar from './Navbar'
 import Footer from './Footer'
 
 export default function Layout() {
   const location = useLocation()
+  const outlet = useOutlet()
   const isHomePage = location.pathname === '/'
 
   // Scroll to top on route change
@@ -25,7 +26,7 @@ export default function Layout() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
           >
-            <Outlet />
+            {outlet}
           </motion.div>
         </AnimatePresence>
       </main>

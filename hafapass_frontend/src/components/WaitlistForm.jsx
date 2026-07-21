@@ -14,6 +14,12 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
   const [existingEntries, setExistingEntries] = useState(null)
 
   const soldOutTypes = ticketTypes.filter(tt => (tt.quantity_available - tt.quantity_sold) <= 0)
+  const storageKey = (email) => `hafapass:waitlist:${event.slug}:${email.trim().toLowerCase()}`
+
+  const storedCredentials = (email) => {
+    try { return JSON.parse(window.localStorage.getItem(storageKey(email)) || '[]') }
+    catch { return [] }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -24,6 +30,8 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
       if (!params.ticket_type_id) delete params.ticket_type_id
       const res = await apiClient.post(`/events/${event.slug}/waitlist`, params)
       setResult(res.data)
+      const credentials = storedCredentials(form.email).filter(value => value.id !== res.data.id)
+      window.localStorage.setItem(storageKey(form.email), JSON.stringify([...credentials, { id: res.data.id, token: res.data.management_token }]))
     } catch (err) {
       setError(err.response?.data?.errors?.join(', ') || 'Failed to join waitlist')
     }
@@ -34,19 +42,23 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
     if (!checkEmail) return
     setChecking(true)
     try {
-      const res = await apiClient.get(`/events/${event.slug}/waitlist/status`, { params: { email: checkEmail } })
-      setExistingEntries(res.data.entries)
+      const credentials = storedCredentials(checkEmail)
+      const responses = await Promise.all(credentials.map(value => apiClient.get(`/events/${event.slug}/waitlist/status`, { params: { management_token: value.token } }).catch(() => null)))
+      setExistingEntries(responses.flatMap(response => response?.data?.entries || []))
     } catch {
       setExistingEntries([])
     }
     setChecking(false)
   }
 
-  const handleLeave = async () => {
+  const handleLeave = async (entry) => {
     if (!checkEmail || !confirm('Remove yourself from the waitlist?')) return
     try {
-      await apiClient.delete(`/events/${event.slug}/waitlist`, { params: { email: checkEmail } })
-      setExistingEntries([])
+      const credential = storedCredentials(checkEmail).find(value => value.id === entry.id)
+      await apiClient.delete(`/events/${event.slug}/waitlist`, { params: { management_token: credential?.token } })
+      const remaining = storedCredentials(checkEmail).filter(value => value.id !== entry.id)
+      window.localStorage.setItem(storageKey(checkEmail), JSON.stringify(remaining))
+      setExistingEntries(previous => previous.filter(value => value.id !== entry.id))
       setResult(null)
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to leave waitlist')
@@ -168,7 +180,7 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
                       )}
                     </span>
                     {(entry.status === 'waiting' || entry.status === 'notified') && (
-                      <button onClick={handleLeave} className="text-xs text-red-500 hover:text-red-700 font-medium">{t('waitlist.leave')}</button>
+                      <button onClick={() => handleLeave(entry)} className="text-xs text-red-500 hover:text-red-700 font-medium">{t('waitlist.leave')}</button>
                     )}
                   </div>
                 ))}

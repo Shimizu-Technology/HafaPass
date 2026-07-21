@@ -25,17 +25,25 @@ class Api::V1::TicketsController < ApplicationController
   end
 
   def apple_wallet
-    render json: {
-      error: "Coming soon! Add to home screen for now.",
-      status: "not_implemented"
-    }, status: :not_implemented
+    ticket = find_ticket
+    return render_not_found unless ticket && downloadable?(ticket) && admission_access?(ticket)
+
+    send_data Wallet::ApplePassGenerator.call(ticket), filename: "hafapass-ticket-#{ticket.id}.pkpass",
+      type: "application/vnd.apple.pkpass", disposition: "attachment"
+  rescue Wallet::ApplePassGenerator::ConfigurationError => e
+    render json: { error: e.message }, status: :service_unavailable
   end
 
   def google_wallet
-    render json: {
-      error: "Coming soon! Add to home screen for now.",
-      status: "not_implemented"
-    }, status: :not_implemented
+    ticket = find_ticket
+    return render_not_found unless ticket && downloadable?(ticket) && admission_access?(ticket)
+
+    url = Wallet::GoogleSaveLink.call(ticket)
+    return render json: { url: url } if params[:response] == "json"
+
+    redirect_to url, allow_other_host: true
+  rescue Wallet::GoogleSaveLink::ConfigurationError => e
+    render json: { error: e.message }, status: :service_unavailable
   end
 
   private
@@ -85,6 +93,7 @@ class Api::V1::TicketsController < ApplicationController
 
   def admission_access?(ticket)
     return true if @current_user&.admin?
+    return ticket.held_by?(@current_user) if ticket.holder_user_id.present?
     return true if ticket.order.user_id.present? && ticket.order.user_id == @current_user&.id
 
     token = request.headers["X-Guest-Order-Token"].presence

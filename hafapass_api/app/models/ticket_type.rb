@@ -4,6 +4,7 @@ class TicketType < ApplicationRecord
   has_many :order_items, dependent: :restrict_with_error
   has_many :inventory_holds, dependent: :restrict_with_error
   has_many :pricing_tiers, -> { order(:position) }, dependent: :destroy
+  has_many :waitlist_offers, dependent: :restrict_with_error
 
   validates :name, presence: true
   validates :price_cents, presence: true, numericality: { greater_than_or_equal_to: 0 }
@@ -20,11 +21,15 @@ class TicketType < ApplicationRecord
   end
 
   def available_quantity
-    [quantity_available - quantity_sold - active_holds_quantity, 0].max
+    [quantity_available - quantity_sold - active_holds_quantity - active_waitlist_offer_quantity, 0].max
   end
 
   def active_holds_quantity
     inventory_holds.current.sum(:quantity)
+  end
+
+  def active_waitlist_offer_quantity
+    waitlist_offers.holding_inventory.sum(:quantity)
   end
 
   def door_sold_quantity

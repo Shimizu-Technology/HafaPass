@@ -4,6 +4,7 @@ class MessageDelivery < ApplicationRecord
   belongs_to :order, optional: true
   belongs_to :ticket, optional: true
   belongs_to :event, optional: true
+  belongs_to :communication_campaign, optional: true
   belongs_to :requested_by, class_name: "User", optional: true
   has_many :message_provider_events, dependent: :nullify
 

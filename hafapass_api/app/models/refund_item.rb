@@ -7,7 +7,7 @@ class RefundItem < ApplicationRecord
   belongs_to :order_item
 
   validates :order_item_id, uniqueness: { scope: :refund_id }
-  validates :amount_cents, :quantity, :organizer_proceeds_cents, :fee_cents, :tax_cents,
+  validates :amount_cents, :quantity, :organizer_proceeds_cents, :fee_cents, :organizer_fee_cents, :tax_cents,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :item_belongs_to_refund_order
   validate :components_match_amount
@@ -21,7 +21,7 @@ class RefundItem < ApplicationRecord
   end
 
   def components_match_amount
-    components = [organizer_proceeds_cents, fee_cents, tax_cents]
+    components = [organizer_proceeds_cents, fee_cents, organizer_fee_cents, tax_cents]
     return if amount_cents.nil? || components.any?(&:nil?) || amount_cents == components.sum
 
     errors.add(:amount_cents, "must equal organizer, fee, and tax refund components")

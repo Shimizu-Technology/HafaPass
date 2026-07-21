@@ -5,7 +5,7 @@ module Api
         include Paginatable
 
         before_action :set_event
-        before_action :set_entry, only: [:notify, :destroy]
+        before_action :set_entry, only: [:notify, :offer, :destroy]
 
         # GET /api/v1/organizer/events/:event_id/waitlist
         def index
@@ -47,6 +47,13 @@ module Api
           render json: entry_json(@entry)
         end
 
+        def offer
+          offer = WaitlistOffers::Issuer.call(entry: @entry)
+          render json: entry_json(@entry.reload).merge(offer: offer_json(offer)), status: :created
+        rescue WaitlistOffers::Issuer::OfferError => e
+          render json: { error: e.message }, status: :unprocessable_entity
+        end
+
         # POST /api/v1/organizer/events/:event_id/waitlist/notify_next
         def notify_next
           count = (params[:count] || 1).to_i
@@ -69,7 +76,12 @@ module Api
 
         # DELETE /api/v1/organizer/events/:event_id/waitlist/:id
         def destroy
-          @entry.destroy
+          @entry.with_lock do
+            @entry.waitlist_offers.where(status: [:offered, :claimed]).find_each do |offer|
+              offer.update!(status: :cancelled, token_version: offer.token_version + 1)
+            end
+            @entry.update!(status: :cancelled, management_version: @entry.management_version + 1, expires_at: nil)
+          end
           head :no_content
         end
 
@@ -106,6 +118,18 @@ module Api
             json[:ticket_type] = { id: entry.ticket_type.id, name: entry.ticket_type.name }
           end
           json
+        end
+
+
+        def offer_json(offer)
+          {
+            id: offer.id,
+            ticket_type_id: offer.ticket_type_id,
+            quantity: offer.quantity,
+            unit_price_cents: offer.unit_price_cents,
+            status: offer.status,
+            expires_at: offer.expires_at
+          }
         end
       end
     end
