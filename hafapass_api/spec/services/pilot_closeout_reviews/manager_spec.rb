@@ -1,6 +1,8 @@
 require "rails_helper"
 
 RSpec.describe PilotCloseoutReviews::Manager do
+  include ActiveSupport::Testing::TimeHelpers
+
   it "requires administrators and a completed, locally reconciled Gate I run" do
     run = create_completed_live_pilot_run
     order = create(:order, :pending, event: run.event)
@@ -148,5 +150,18 @@ RSpec.describe PilotCloseoutReviews::Manager do
     expect do
       described_class.submit!(run: run, attributes: attributes, actor: create(:user, :admin))
     end.to raise_error(described_class::ReviewError, /must affirm: sales/)
+  end
+
+  it "can record a hold decision after a submitted planned action becomes overdue" do
+    run = create_completed_live_pilot_run
+    attributes = valid_pilot_closeout_attributes(blocking_action: true)
+    attributes[:retrospective_actions][0][:due_at] = 1.minute.from_now.iso8601
+    submission = described_class.submit!(run: run, attributes: attributes, actor: create(:user, :admin))
+
+    travel_to 2.minutes.from_now do
+      approval = described_class.approve!(submission: submission, actor: create(:user, :admin))
+      expect(approval).to be_decision_approval
+      expect(approval).to be_expansion_decision_hold
+    end
   end
 end

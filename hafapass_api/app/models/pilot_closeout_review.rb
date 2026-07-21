@@ -157,7 +157,7 @@ class PilotCloseoutReview < ApplicationRecord
       end
       begin
         due_at = Time.iso8601(action["due_at"].to_s)
-        if action["status"] == "planned" && signed_at && due_at <= signed_at
+        if decision_submission? && action["status"] == "planned" && signed_at && due_at <= signed_at
           errors.add(:retrospective_actions, "action #{index + 1} planned due_at must be after signing")
         end
       rescue ArgumentError

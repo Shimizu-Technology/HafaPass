@@ -21,7 +21,7 @@ The right next move is not another broad feature sprint. It is to close the rele
 
 The current Gate J candidate, based on merged Gate I, passed locally with:
 
-- 678 RSpec examples.
+- 679 RSpec examples.
 - 511 Ruby files with zero RuboCop offenses.
 - Zero Brakeman warnings.
 - Zero known Ruby dependency vulnerabilities.
