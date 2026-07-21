@@ -10,6 +10,7 @@ class Organization < ApplicationRecord
   has_many :connected_accounts, dependent: :restrict_with_error
   has_many :settlements, dependent: :restrict_with_error
   has_many :payouts, dependent: :restrict_with_error
+  has_many :live_money_proof_reviews, dependent: :restrict_with_error
   has_many :balance_adjustments, dependent: :restrict_with_error
   has_many :audit_logs, dependent: :restrict_with_error
   has_many :scanner_devices, dependent: :restrict_with_error

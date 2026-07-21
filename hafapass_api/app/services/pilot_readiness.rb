@@ -8,6 +8,7 @@ class PilotReadiness
     venue_city starts_at ends_at doors_open_at timezone max_capacity category age_restriction fee_policy
     buyer_fee_percent transfers_enabled show_attendees supported_locales localized_content cover_image_url slug
     recurrence_parent_id recurrence_rule recurrence_end_date
+    live_money_proof_candidate
   ].freeze
   TICKET_TYPE_FIELDS = %w[
     id name description price_cents quantity_available max_per_order max_per_buyer door_allocation sales_start_at

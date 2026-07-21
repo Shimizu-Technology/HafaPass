@@ -24,6 +24,7 @@ export default function CheckoutPage() {
   const seatHoldToken = location.state?.seatHoldToken || null
   const seatHoldExpiresAt = location.state?.seatHoldExpiresAt || null
   const selectedSeats = location.state?.selectedSeats || []
+  const liveMoneyProof = location.state?.liveMoneyProof === true
   const [error, setError] = useState(null)
   const [configError, setConfigError] = useState(null)
   const [config, setConfig] = useState(null)
@@ -76,11 +77,11 @@ export default function CheckoutPage() {
     }
     if (!event) {
       setLoading(true)
-      apiClient.get(`/events/${slug}`)
+      apiClient.get(`/events/${slug}`, { params: liveMoneyProof ? { live_money_proof: true } : {} })
         .then(res => { setEvent(res.data); setLoading(false) })
         .catch(() => { setError('Unable to load event details.'); setLoading(false) })
     }
-  }, [slug, event, lineItems, navigate])
+  }, [slug, event, lineItems, navigate, liveMoneyProof])
 
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
@@ -188,6 +189,7 @@ export default function CheckoutPage() {
         seat_hold_token: seatHoldToken,
         terms_accepted: termsAccepted,
         terms_version: config.buyer_terms_version,
+        live_money_proof: liveMoneyProof,
       }
       const response = await apiClient.post('/orders', payload)
       const order = response.data
@@ -281,7 +283,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="bg-neutral-50 min-h-screen">
-      <SEO title={event ? `Checkout — ${event.title}` : 'Checkout'} />
+      <SEO title={event ? `Checkout — ${event.title}` : 'Checkout'} noIndex={liveMoneyProof} />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
         <Link to={`/events/${slug}`} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">

@@ -149,6 +149,51 @@ RSpec.describe "Api::V1::Orders", type: :request do
       expect(Order.count).to eq(0)
     end
 
+    it "fails closed in production when Gate H live-money approval is absent" do
+      allow(Rails.env).to receive(:production?).and_return(true)
+      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
+      allow_any_instance_of(Event).to receive(:production_release_gate_status).and_return(:live_money)
+
+      post_json "/api/v1/orders", params: valid_params
+
+      expect(response).to have_http_status(:service_unavailable)
+      expect(response.parsed_body.fetch("error")).to include("current Gate H live-money approval")
+      expect(Order.count).to eq(0)
+    end
+
+    it "allows one independently authorized administrator order on a hidden proof candidate" do
+      stub_live_money_provider_ready
+      profile = create(:organizer_profile, :payout_ready)
+      proof_event = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+        title: "[LIVE MONEY TEST] Checkout", max_capacity: 1, live_money_proof_candidate: true)
+      proof_ticket = create(:ticket_type, event: proof_event, price_cents: 100,
+        quantity_available: 1, max_per_order: 1, max_per_buyer: 1)
+      create_event_day_rehearsal_approval(event: proof_event)
+      buyer = create(:user, :admin)
+      authorization = LiveMoneyProofAuthorizations::Manager.request!(
+        event: proof_event, buyer_email: "proof-buyer@example.com", max_amount_cents: 200,
+        expires_at: 1.hour.from_now, actor: buyer
+      )
+      LiveMoneyProofAuthorizations::Manager.approve!(authorization: authorization, actor: create(:user, :admin))
+      allow(StripeService).to receive(:create_payment_intent).and_return(
+        double(id: "pi_live_checkout", client_secret: "pi_live_checkout_secret")
+      )
+
+      proof_params = {
+        event_id: proof_event.id, buyer_email: "proof-buyer@example.com", buyer_name: "Finance operator",
+        terms_accepted: true, terms_version: PolicyRegistry.buyer_terms[:version], live_money_proof: true,
+        line_items: [{ ticket_type_id: proof_ticket.id, quantity: 1 }]
+      }
+      post_json "/api/v1/orders", params: proof_params, headers: auth_headers(buyer)
+
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body).to include("client_secret" => "pi_live_checkout_secret")
+      expect(authorization.reload).to have_attributes(order_id: Order.last.id, consumed_at: be_present)
+
+      post_json "/api/v1/orders", params: proof_params, headers: auth_headers(buyer)
+      expect(response).to have_http_status(:forbidden)
+    end
+
     context "with insufficient inventory" do
       it "returns 422 when quantity exceeds available" do
         params = valid_params.merge(

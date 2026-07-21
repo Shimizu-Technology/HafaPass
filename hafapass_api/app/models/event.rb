@@ -43,6 +43,9 @@ class Event < ApplicationRecord
   has_many :pilot_readiness_reviews, dependent: :restrict_with_error
   has_many :pilot_validation_reviews, dependent: :restrict_with_error
   has_many :event_day_rehearsal_reviews, dependent: :restrict_with_error
+  has_many :live_money_proof_authorizations, dependent: :restrict_with_error
+  has_many :live_money_proof_reviews, foreign_key: :proof_event_id, dependent: :restrict_with_error,
+    inverse_of: :proof_event
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -77,6 +80,7 @@ class Event < ApplicationRecord
   validate :localized_content_is_valid
   validate :valid_iana_timezone
   validate :chronological_event_times
+  validate :live_money_candidate_flag_immutable_after_orders
 
   before_validation :generate_slug, if: -> { slug.blank? || title_changed? }
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
@@ -85,9 +89,10 @@ class Event < ApplicationRecord
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
   scope :past, -> { where("starts_at <= ?", Time.current) }
   scope :featured, -> { where(is_featured: true) }
-  scope :publicly_visible, -> { where(status: [:published, :completed]) }
+  scope :publicly_visible, -> { where(status: [:published, :completed], live_money_proof_candidate: false) }
   scope :discoverable, ->(at = Time.current) {
     published
+      .where(live_money_proof_candidate: false)
       .where("COALESCE(events.ends_at, events.starts_at) > ?", at)
       .where(sales_suspended_at: nil)
       .joins(:ticket_types)
@@ -195,7 +200,7 @@ class Event < ApplicationRecord
       ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
     end
     configured_inventory = ticket_types.sum(&:quantity_available)
-    pilot_readiness_approved, pilot_validation_approved, event_day_rehearsal_approved =
+    pilot_readiness_approved, pilot_validation_approved, event_day_rehearsal_approved, live_money_approved =
       production_release_approvals(at: at)
     checks = [
       checklist_item("production_policy_approved", "Production policy register approved",
@@ -210,6 +215,8 @@ class Event < ApplicationRecord
       checklist_item("tickets", "At least one ticket type added", ticket_types.any?),
       checklist_item("capacity", "Event capacity added and ticket inventory fits", max_capacity.present? && configured_inventory.positive? && configured_inventory <= max_capacity),
       checklist_item("sales_window", "Ticket sales windows are valid", valid_ticket_sales_windows?(at: at)),
+      checklist_item("live_money_candidate_scope", "Live-money proof event is hidden, single-ticket, and capped at $5",
+        !live_money_proof_candidate? || live_money_proof_candidate_configured?),
       checklist_item("payout", paid_event ? "Payout account ready for paid sales" : "No payout account needed for a free event",
         !paid_event || organization.payout_ready?),
       checklist_item("pilot_readiness_approved", "Event-specific pilot readiness independently approved",
@@ -217,7 +224,11 @@ class Event < ApplicationRecord
       checklist_item("pilot_validation_approved", "Buyer, organizer, accessibility, and load validation independently approved",
         pilot_validation_approved),
       checklist_item("event_day_rehearsal_approved", "Physical event-day rehearsal independently approved",
-        event_day_rehearsal_approved)
+        event_day_rehearsal_approved),
+      checklist_item("live_money_approved",
+        paid_event ? "Live charge, refund, settlement, payout, and bank receipt independently approved" :
+          "No live-money approval needed for a free event",
+        !paid_event || live_money_approved)
     ]
     checks
   end
@@ -227,12 +238,28 @@ class Event < ApplicationRecord
   end
 
   def production_release_gate_status(at: Time.current)
-    readiness, validation, rehearsal = production_release_approvals(at: at)
+    readiness, validation, rehearsal, live_money = production_release_approvals(at: at)
     return :pilot_readiness unless readiness
     return :pilot_validation unless validation
     return :event_day_rehearsal unless rehearsal
+    return :live_money unless live_money
 
     :ready
+  end
+
+  def live_money_proof_candidate_configured?
+    types = ticket_types.to_a
+    type = types.one? ? types.first : nil
+    settings = SiteSetting.instance
+    buyer_fee = if type
+      platform_fee = (type.price_cents * (settings.service_fee_percent / 100.0)).round + settings.service_fee_flat_cents
+      (platform_fee * buyer_fee_percent / 100.0).round
+    end
+    live_money_proof_candidate? && title.start_with?("[LIVE MONEY TEST]") && max_capacity == 1 &&
+      type.present? && type.price_cents.between?(1, 500) && type.quantity_available == 1 &&
+      type.price_cents + buyer_fee <= LiveMoneyProofAuthorization::MAX_AMOUNT_CENTS && type.max_per_order == 1 &&
+      type.max_per_buyer == 1 && type.pricing_tiers.empty? && catalog_items.none? && promo_codes.none? &&
+      event_seating_configuration.nil?
   end
 
   # Check if tickets are available and notify next waitlisted people
@@ -256,7 +283,7 @@ class Event < ApplicationRecord
   private
 
   def production_release_approvals(at:)
-    return [true, true, true] unless Rails.env.production?
+    return [true, true, true, true] unless Rails.env.production?
 
     state_digest = PilotReadiness.event_state_digest(self)
     readiness = PilotReadiness.active_approval(self, at: at, state_digest: state_digest)
@@ -266,7 +293,11 @@ class Event < ApplicationRecord
     rehearsal = EventDayRehearsal.active_approval(
       self, at: at, validation_approval: validation, state_digest: state_digest
     ) if validation
-    [readiness.present?, validation.present?, rehearsal.present?]
+    paid_event = ticket_types.any? do |ticket_type|
+      ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
+    end
+    live_money = live_money_proof_candidate? || !paid_event || LiveMoneyProof.active_approval(organization, at: at).present?
+    [readiness.present?, validation.present?, rehearsal.present?, live_money]
   end
 
   def active_seat_holds_count(at: Time.current)
@@ -276,6 +307,16 @@ class Event < ApplicationRecord
       .where(event_seats: { event_seating_configuration_id: event_seating_configuration.id })
       .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
       .where("seat_hold_sessions.expires_at > ?", at).count
+  end
+
+  def live_money_candidate_flag_immutable_after_orders
+    return unless live_money_proof_candidate_changed? && persisted?
+
+    if !draft?
+      errors.add(:live_money_proof_candidate, "can only change while the event is a draft")
+    elsif orders.exists?
+      errors.add(:live_money_proof_candidate, "cannot change after the event has orders")
+    end
   end
 
   def copy_venue_details

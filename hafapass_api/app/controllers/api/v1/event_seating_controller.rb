@@ -47,6 +47,6 @@ class Api::V1::EventSeatingController < ApplicationController
   private
 
   def set_event
-    @event = Event.published.find_by!(slug: params[:slug])
+    @event = Event.published.where(live_money_proof_candidate: false).find_by!(slug: params[:slug])
   end
 end

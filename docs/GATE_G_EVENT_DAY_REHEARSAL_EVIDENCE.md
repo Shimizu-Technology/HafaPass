@@ -40,4 +40,4 @@ Scanner manifests intentionally require a published event, while Gate G intentio
 5. Submit the complete structured Gate G record in Admin → Events.
 6. A different administrator verifies the bundle and records approval or rejection. Revoke immediately after an integrity concern, failed repeat drill, newly discovered blocker, or material candidate change.
 
-Gate G is necessary but not sufficient to launch. Gate H still requires the approved low-value live-money loop, and later gates govern the controlled pilot and closeout.
+Gate G is necessary but not sufficient to launch. Follow [Gate H Low-Value Live-Money Proof](GATE_H_LIVE_MONEY_PROOF.md) for the separately authorized charge/refund/settlement/payout/bank loop; later gates govern the controlled pilot and closeout.

@@ -6,6 +6,7 @@ import AdminLayout from './AdminLayout'
 import PilotReadinessReviewDialog from '../../components/PilotReadinessReviewDialog'
 import PilotValidationReviewDialog from '../../components/PilotValidationReviewDialog'
 import EventDayRehearsalReviewDialog from '../../components/EventDayRehearsalReviewDialog'
+import LiveMoneyProofReviewDialog from '../../components/LiveMoneyProofReviewDialog'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
 const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 'other']
@@ -37,6 +38,13 @@ export default function AdminEventsPage() {
     try {
       const res = await apiClient.patch(`/admin/events/${event.id}`, { is_featured: !event.is_featured })
       setEvents(prev => prev.map(e => e.id === event.id ? res.data : e))
+    } catch (err) { console.error(err) }
+  }
+
+  const toggleProofCandidate = async (event) => {
+    try {
+      const res = await apiClient.patch(`/admin/events/${event.id}`, { live_money_proof_candidate: !event.live_money_proof_candidate })
+      setEvents(prev => prev.map(item => item.id === event.id ? res.data : item))
     } catch (err) { console.error(err) }
   }
 
@@ -102,6 +110,8 @@ export default function AdminEventsPage() {
                       <PilotReadinessReviewDialog event={event} onComplete={fetchEvents} />
                       <PilotValidationReviewDialog event={event} onComplete={fetchEvents} />
                       <EventDayRehearsalReviewDialog event={event} onComplete={fetchEvents} />
+                      <LiveMoneyProofReviewDialog event={event} onComplete={fetchEvents} />
+                      {event.status === 'draft' && <button type="button" onClick={() => toggleProofCandidate(event)} className="min-h-11 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">{event.live_money_proof_candidate ? 'Remove proof-candidate flag' : 'Mark as hidden proof candidate'}</button>}
                     </div></td>
                     <td className="px-4 py-3 text-center">
                       <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">

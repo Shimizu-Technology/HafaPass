@@ -37,6 +37,20 @@ RSpec.describe PilotReadinessReviews::Manager do
     expect(AuditLog.where(auditable: approval, action: "pilot_readiness.approved")).to exist
   end
 
+  it "does not require the later validation, rehearsal, or live-money gates before readiness submission" do
+    allow(event).to receive(:publish_checklist).and_return([
+      { code: "title", label: "Event title added", complete: true },
+      { code: "pilot_readiness_approved", label: "Readiness approved", complete: false },
+      { code: "pilot_validation_approved", label: "Validation approved", complete: false },
+      { code: "event_day_rehearsal_approved", label: "Rehearsal approved", complete: false },
+      { code: "live_money_approved", label: "Live-money approved", complete: false }
+    ])
+
+    expect do
+      described_class.submit!(event: event, attributes: attributes, actor: submitter)
+    end.to change(event.pilot_readiness_reviews, :count).by(1)
+  end
+
 
   it "invalidates approval when the deployed application revision changes" do
     original_revision = ENV["GIT_SHA"]

@@ -86,6 +86,17 @@ RSpec.describe "Api::V1::Events", type: :request do
       expect(json["events"]).to eq([])
       expect(json["meta"]).to be_present
     end
+
+    it "never lists a live-money proof candidate" do
+      event = create(:event, :published, organizer_profile: organizer_profile,
+        title: "[LIVE MONEY TEST] Hidden", max_capacity: 1, live_money_proof_candidate: true)
+      create(:ticket_type, event: event, price_cents: 100, quantity_available: 1, max_per_order: 1, max_per_buyer: 1)
+
+      get "/api/v1/events"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("events").map { |item| item.fetch("id") }).not_to include(event.id)
+    end
   end
 
   describe "GET /api/v1/events/:slug" do
@@ -162,6 +173,25 @@ RSpec.describe "Api::V1::Events", type: :request do
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
       expect(json["status"]).to eq("completed")
+    end
+
+    it "hides a proof candidate publicly but permits an explicit administrator preview" do
+      event = create(:event, :published, organizer_profile: organizer_profile,
+        title: "[LIVE MONEY TEST] Hidden", max_capacity: 1, live_money_proof_candidate: true)
+      create(:ticket_type, event: event, price_cents: 100, quantity_available: 1, max_per_order: 1, max_per_buyer: 1)
+
+      get "/api/v1/events/#{event.slug}"
+      expect(response).to have_http_status(:not_found)
+
+      get "/api/v1/events/#{event.slug}?live_money_proof=true", headers: auth_headers(create(:user, :admin))
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("id")).to eq(event.id)
+
+      get "/api/v1/events/#{event.slug}/seating"
+      expect(response).to have_http_status(:not_found)
+
+      post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "TEST" }, as: :json
+      expect(response).to have_http_status(:not_found)
     end
 
     it "includes ticket type availability info" do

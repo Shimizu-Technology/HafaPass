@@ -7,6 +7,22 @@ const hasSentryUploadConfig = Boolean(
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT,
 )
 
+const manualChunkGroups = {
+  clerk: ['@clerk/clerk-react'],
+  monitoring: ['@sentry/react'],
+  payments: ['@stripe/react-stripe-js', '@stripe/stripe-js'],
+  react: ['react', 'react-dom', 'react-router-dom'],
+  translations: ['i18next', 'i18next-browser-languagedetector', 'react-i18next'],
+}
+
+function manualChunks(id) {
+  if (!id.includes('/node_modules/')) return undefined
+
+  return Object.entries(manualChunkGroups).find(([, packages]) => (
+    packages.some((packageName) => id.includes(`/node_modules/${packageName}/`))
+  ))?.[0]
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -73,13 +89,7 @@ export default defineConfig({
     sourcemap: hasSentryUploadConfig,
     rollupOptions: {
       output: {
-        manualChunks: {
-          clerk: ['@clerk/clerk-react'],
-          monitoring: ['@sentry/react'],
-          payments: ['@stripe/react-stripe-js', '@stripe/stripe-js'],
-          react: ['react', 'react-dom', 'react-router-dom'],
-          translations: ['i18next', 'i18next-browser-languagedetector', 'react-i18next'],
-        },
+        manualChunks,
       },
     },
   },

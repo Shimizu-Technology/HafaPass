@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_194000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_203000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -570,6 +570,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_194000) do
     t.datetime "ends_at"
     t.integer "fee_policy", default: 0, null: false
     t.boolean "is_featured", default: false
+    t.boolean "live_money_proof_candidate", default: false, null: false
     t.jsonb "localized_content", default: {}, null: false
     t.integer "max_capacity"
     t.bigint "organization_id", null: false
@@ -595,6 +596,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_194000) do
     t.bigint "venue_id"
     t.string "venue_name"
     t.index "lower((venue_city)::text)", name: "index_events_on_lower_venue_city"
+    t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
     t.index ["organizer_profile_id"], name: "index_events_on_organizer_profile_id"
     t.index ["recurrence_parent_id"], name: "index_events_on_recurrence_parent_id"
@@ -666,6 +668,95 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_194000) do
     t.index ["ticket_type_id"], name: "index_inventory_holds_on_ticket_type_id"
     t.check_constraint "quantity > 0", name: "inventory_holds_quantity_positive"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "inventory_holds_status_valid"
+  end
+
+  create_table "live_money_proof_authorizations", force: :cascade do |t|
+    t.string "application_revision", null: false
+    t.datetime "approved_at"
+    t.bigint "approved_by_user_id"
+    t.string "buyer_email_digest", null: false
+    t.bigint "connected_account_id", null: false
+    t.datetime "consumed_at"
+    t.datetime "created_at", null: false
+    t.bigint "event_day_rehearsal_review_id", null: false
+    t.bigint "event_id", null: false
+    t.string "event_state_digest", null: false
+    t.datetime "expires_at", null: false
+    t.integer "max_amount_cents", null: false
+    t.bigint "order_id"
+    t.string "platform_configuration_digest", null: false
+    t.string "provider_state_digest", null: false
+    t.bigint "requested_by_user_id", null: false
+    t.text "revocation_reason"
+    t.datetime "revoked_at"
+    t.datetime "updated_at", null: false
+    t.index ["approved_by_user_id"], name: "index_live_money_proof_authorizations_on_approved_by_user_id"
+    t.index ["connected_account_id"], name: "index_live_money_proof_authorizations_on_connected_account_id"
+    t.index ["event_day_rehearsal_review_id"], name: "idx_on_event_day_rehearsal_review_id_75d99fc8d7"
+    t.index ["event_id", "created_at"], name: "idx_live_money_authorizations_timeline"
+    t.index ["event_id"], name: "index_live_money_proof_authorizations_on_event_id"
+    t.index ["order_id"], name: "idx_live_money_authorizations_unique_order", unique: true, where: "(order_id IS NOT NULL)"
+    t.index ["order_id"], name: "index_live_money_proof_authorizations_on_order_id"
+    t.index ["requested_by_user_id"], name: "index_live_money_proof_authorizations_on_requested_by_user_id"
+    t.check_constraint "approved_at IS NULL AND approved_by_user_id IS NULL OR approved_at IS NOT NULL AND approved_by_user_id IS NOT NULL", name: "live_money_authorizations_approval_valid"
+    t.check_constraint "buyer_email_digest::text ~ '^[0-9a-f]{64}$'::text AND event_state_digest::text ~ '^[0-9a-f]{64}$'::text AND provider_state_digest::text ~ '^[0-9a-f]{64}$'::text AND platform_configuration_digest::text ~ '^[0-9a-f]{64}$'::text", name: "live_money_authorizations_digests_valid"
+    t.check_constraint "consumed_at IS NULL AND order_id IS NULL OR consumed_at IS NOT NULL AND order_id IS NOT NULL", name: "live_money_authorizations_consumption_valid"
+    t.check_constraint "max_amount_cents > 0 AND max_amount_cents <= 500", name: "live_money_authorizations_amount_valid"
+    t.check_constraint "revoked_at IS NULL AND revocation_reason IS NULL OR revoked_at IS NOT NULL AND length(btrim(revocation_reason)) > 0", name: "live_money_authorizations_revocation_valid"
+  end
+
+  create_table "live_money_proof_reviews", force: :cascade do |t|
+    t.bigint "actor_user_id", null: false
+    t.string "application_revision", null: false
+    t.bigint "authorization_id", null: false
+    t.jsonb "communication_results", default: {}, null: false
+    t.bigint "connected_account_id", null: false
+    t.jsonb "controls", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "decision", null: false
+    t.datetime "effective_at", null: false
+    t.jsonb "entity_results", default: {}, null: false
+    t.bigint "event_day_rehearsal_review_id", null: false
+    t.string "evidence_digest", null: false
+    t.string "evidence_reference", null: false
+    t.datetime "expires_at", null: false
+    t.bigint "final_refund_id", null: false
+    t.bigint "initial_settlement_id", null: false
+    t.bigint "order_id", null: false
+    t.bigint "organization_id", null: false
+    t.bigint "parent_review_id"
+    t.bigint "partial_refund_id", null: false
+    t.bigint "payment_id", null: false
+    t.bigint "payout_id", null: false
+    t.string "platform_configuration_digest", null: false
+    t.bigint "post_payout_settlement_id", null: false
+    t.bigint "proof_event_id", null: false
+    t.jsonb "provider_results", default: {}, null: false
+    t.string "provider_state_digest", null: false
+    t.text "reason"
+    t.jsonb "reconciliation_results", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id"], name: "index_live_money_proof_reviews_on_actor_user_id"
+    t.index ["authorization_id"], name: "index_live_money_proof_reviews_on_authorization_id"
+    t.index ["connected_account_id"], name: "index_live_money_proof_reviews_on_connected_account_id"
+    t.index ["event_day_rehearsal_review_id"], name: "idx_on_event_day_rehearsal_review_id_b090a5215f"
+    t.index ["final_refund_id"], name: "index_live_money_proof_reviews_on_final_refund_id"
+    t.index ["initial_settlement_id"], name: "index_live_money_proof_reviews_on_initial_settlement_id"
+    t.index ["order_id"], name: "index_live_money_proof_reviews_on_order_id"
+    t.index ["organization_id", "created_at"], name: "idx_live_money_proof_reviews_timeline"
+    t.index ["organization_id"], name: "index_live_money_proof_reviews_on_organization_id"
+    t.index ["parent_review_id"], name: "idx_live_money_proof_reviews_one_decision", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = ANY (ARRAY[1, 3])))"
+    t.index ["parent_review_id"], name: "idx_live_money_proof_reviews_one_revocation", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 2))"
+    t.index ["parent_review_id"], name: "index_live_money_proof_reviews_on_parent_review_id"
+    t.index ["partial_refund_id"], name: "index_live_money_proof_reviews_on_partial_refund_id"
+    t.index ["payment_id"], name: "index_live_money_proof_reviews_on_payment_id"
+    t.index ["payout_id"], name: "index_live_money_proof_reviews_on_payout_id"
+    t.index ["post_payout_settlement_id"], name: "index_live_money_proof_reviews_on_post_payout_settlement_id"
+    t.index ["proof_event_id"], name: "index_live_money_proof_reviews_on_proof_event_id"
+    t.check_constraint "decision = 0 AND parent_review_id IS NULL OR (decision = ANY (ARRAY[1, 2, 3])) AND parent_review_id IS NOT NULL", name: "live_money_proof_reviews_parent_valid"
+    t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "live_money_proof_reviews_decision_valid"
+    t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND provider_state_digest::text ~ '^[0-9a-f]{64}$'::text AND platform_configuration_digest::text ~ '^[0-9a-f]{64}$'::text", name: "live_money_proof_reviews_digests_valid"
+    t.check_constraint "expires_at > effective_at", name: "live_money_proof_reviews_window_valid"
   end
 
   create_table "marketplace_collection_events", force: :cascade do |t|
@@ -1883,6 +1974,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_194000) do
   add_foreign_key "inventory_holds", "orders", on_delete: :restrict
   add_foreign_key "inventory_holds", "pricing_tiers", on_delete: :restrict
   add_foreign_key "inventory_holds", "ticket_types", on_delete: :restrict
+  add_foreign_key "live_money_proof_authorizations", "connected_accounts", on_delete: :restrict
+  add_foreign_key "live_money_proof_authorizations", "event_day_rehearsal_reviews", on_delete: :restrict
+  add_foreign_key "live_money_proof_authorizations", "events", on_delete: :restrict
+  add_foreign_key "live_money_proof_authorizations", "orders", on_delete: :restrict
+  add_foreign_key "live_money_proof_authorizations", "users", column: "approved_by_user_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_authorizations", "users", column: "requested_by_user_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "connected_accounts", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "event_day_rehearsal_reviews", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "events", column: "proof_event_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "live_money_proof_authorizations", column: "authorization_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "live_money_proof_reviews", column: "parent_review_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "orders", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "organizations", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "payments", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "payouts", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "refunds", column: "final_refund_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "refunds", column: "partial_refund_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "settlements", column: "initial_settlement_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "settlements", column: "post_payout_settlement_id", on_delete: :restrict
+  add_foreign_key "live_money_proof_reviews", "users", column: "actor_user_id", on_delete: :restrict
   add_foreign_key "marketplace_collection_events", "events", on_delete: :restrict
   add_foreign_key "marketplace_collection_events", "marketplace_collections", on_delete: :cascade
   add_foreign_key "marketplace_collections", "users", column: "created_by_user_id", on_delete: :restrict

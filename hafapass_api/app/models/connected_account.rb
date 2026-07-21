@@ -6,6 +6,8 @@ class ConnectedAccount < ApplicationRecord
   belongs_to :organization
   has_many :payouts, dependent: :restrict_with_error
   has_many :payment_readiness_reviews, dependent: :restrict_with_error
+  has_many :live_money_proof_authorizations, dependent: :restrict_with_error
+  has_many :live_money_proof_reviews, dependent: :restrict_with_error
 
   enum :status, {
     pending: 0, onboarding: 1, requirements_due: 2, ready: 3, restricted: 4, disabled: 5

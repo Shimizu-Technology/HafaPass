@@ -16,7 +16,7 @@ module Commerce
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
-      attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil)
+      attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -40,6 +40,7 @@ module Commerce
       @attribution = attribution || {}
       @waitlist_offer_token = waitlist_offer_token
       @seat_hold_token = seat_hold_token
+      @live_money_proof_authorization = live_money_proof_authorization
     end
 
     def call
@@ -59,6 +60,9 @@ module Commerce
         if release_gate == :event_day_rehearsal
           raise CheckoutError, "This event does not have a current Gate G rehearsal approval"
         end
+        if release_gate == :live_money
+          raise CheckoutError, "This event does not have a current Gate H live-money approval"
+        end
         raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)
@@ -69,6 +73,7 @@ module Commerce
         validate_registration!
         promoter = locked_promoter
         totals = calculate_totals(selections, catalog_selections)
+        validate_live_money_proof_scope!(totals)
         expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now
 
         order = Order.create!(
@@ -94,6 +99,13 @@ module Commerce
           organizer_fee_cents: totals[:organizer_fee_cents],
           expires_at: expires_at
         )
+
+        if event.live_money_proof_candidate?
+          LiveMoneyProofAuthorizations::Manager.claim!(
+            authorization: live_money_proof_authorization, order: order, amount_cents: totals[:total_cents],
+            user: user, buyer_email: buyer_email
+          )
+        end
 
         create_ledger!(order, selections, catalog_selections, totals, expires_at)
         claim_seat_hold!(order)
@@ -148,7 +160,22 @@ module Commerce
       :payment_required, :service_fee, :complimentary, :source, :payment_method, :payment_provider
     attr_reader :buyer_terms_version, :buyer_terms_digest, :buyer_terms_accepted_at
     attr_reader :catalog_items, :registration_answers, :waiver_acceptances, :referral_code, :attribution,
-      :waitlist_offer_token, :seat_hold_token
+      :waitlist_offer_token, :seat_hold_token, :live_money_proof_authorization
+
+    def validate_live_money_proof_scope!(totals)
+      unless event.live_money_proof_candidate?
+        raise CheckoutError, "A live-money proof authorization cannot be used for a normal event" if
+          live_money_proof_authorization
+        return
+      end
+      unless live_money_proof_authorization&.event_id == event.id
+        raise CheckoutError, "An approved live-money proof authorization is required"
+      end
+      unless user&.admin? && promo_code_id.blank? && catalog_items.empty? && referral_code.blank? &&
+          waitlist_offer_token.blank? && seat_hold_token.blank? && totals[:total_cents].between?(1, live_money_proof_authorization.max_amount_cents)
+        raise CheckoutError, "The live-money proof order exceeds its approved buyer, item, or amount scope"
+      end
+    end
 
     def validate_seating_selection!(selections)
       configuration = event.event_seating_configuration

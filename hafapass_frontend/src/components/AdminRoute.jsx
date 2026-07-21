@@ -12,14 +12,20 @@ function AdminGate({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return
+    if (!isLoaded) return
+    if (!isSignedIn) {
+      setRole(null)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
     apiClient.get('/me')
       .then(res => setRole(res.data.role))
       .catch(() => setRole(null))
       .finally(() => setLoading(false))
   }, [isLoaded, isSignedIn])
 
-  if (!isLoaded || loading) {
+  if (!isLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
@@ -28,6 +34,13 @@ function AdminGate({ children }) {
   }
 
   if (!isSignedIn) return <Navigate to="/sign-in" replace />
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+      </div>
+    )
+  }
   if (role !== 'admin') return <Navigate to="/" replace />
 
   return <>{children}</>

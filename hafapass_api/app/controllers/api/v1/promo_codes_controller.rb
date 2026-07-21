@@ -6,7 +6,7 @@ module Api
       # POST /api/v1/promo_codes/validate
       # Public endpoint for checkout to validate a promo code
       def validate
-        event = Event.published.find_by(id: params[:event_id])
+        event = Event.published.where(live_money_proof_candidate: false).find_by(id: params[:event_id])
         unless event
           render json: { error: "Event not found" }, status: :not_found
           return

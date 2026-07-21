@@ -2,7 +2,8 @@ class SitemapsController < ApplicationController
   skip_before_action :authenticate_user!
 
   def show
-    @events = Event.published.where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current).order(updated_at: :desc)
+    @events = Event.published.where(live_money_proof_candidate: false)
+      .where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current).order(updated_at: :desc)
     @collections = MarketplaceCollection.currently_visible.with_discoverable_events
     @venues = Venue.published.joins(:events).merge(Event.discoverable).distinct
     @organizers = Organization.status_active.joins(:events).merge(Event.discoverable).distinct
