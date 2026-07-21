@@ -3,6 +3,18 @@ require "rails_helper"
 RSpec.describe CardPresentGateway do
   let(:account) { create(:card_present_account, :verified) }
 
+  it "keeps configured production Clover credentials disabled without platform evidence approval" do
+    allow(Rails.env).to receive(:development?).and_return(false)
+    allow(Rails.env).to receive(:test?).and_return(false)
+    allow(PlatformCapabilities).to receive(:enabled?).with("clover_card_present").and_return(false)
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("CLOVER_REST_PAY_BASE_URL").and_return("https://api.clover.com/connect")
+    allow(ENV).to receive(:[]).with("CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_#{account.organization_id}")
+      .and_return("configured-but-unapproved")
+
+    expect(described_class.configured_for?(account)).to be(false)
+  end
+
   it "returns an exact, minimal result in simulation mode" do
     result = described_class.new(simulate: true).charge(
       account: account,

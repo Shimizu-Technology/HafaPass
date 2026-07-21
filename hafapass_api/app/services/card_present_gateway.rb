@@ -20,7 +20,8 @@ class CardPresentGateway
   def self.configured_for?(account)
     return true if Rails.env.development? || Rails.env.test?
 
-    ENV["CLOVER_REST_PAY_BASE_URL"].present? && ENV[access_token_environment_key(account)].present?
+    PlatformCapabilities.enabled?("clover_card_present") &&
+      ENV["CLOVER_REST_PAY_BASE_URL"].present? && ENV[access_token_environment_key(account)].present?
   end
 
   def initialize(http_client: Net::HTTP, simulate: Rails.env.development? || Rails.env.test?)

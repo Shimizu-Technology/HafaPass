@@ -52,4 +52,18 @@ RSpec.describe PlatformCapabilityReviews::Manager do
       described_class.submit!(capability: "stripe_live", attributes: attributes, actor: submitter)
     end.to raise_error(described_class::ReviewError, /configuration is incomplete/)
   end
+
+  it "accepts only an HTTPS Clover-owned REST Pay endpoint as configured" do
+    original_base = ENV["CLOVER_REST_PAY_BASE_URL"]
+    original_revision = ENV["PROVIDER_CONFIGURATION_REVISION"]
+    ENV["PROVIDER_CONFIGURATION_REVISION"] = "clover-pilot-1"
+    ENV["CLOVER_REST_PAY_BASE_URL"] = "https://merchant.example/connect"
+    expect(PlatformCapabilities.configured?("clover_card_present")).to be(false)
+
+    ENV["CLOVER_REST_PAY_BASE_URL"] = "https://api.clover.com/connect"
+    expect(PlatformCapabilities.configured?("clover_card_present")).to be(true)
+  ensure
+    original_base.nil? ? ENV.delete("CLOVER_REST_PAY_BASE_URL") : ENV["CLOVER_REST_PAY_BASE_URL"] = original_base
+    original_revision.nil? ? ENV.delete("PROVIDER_CONFIGURATION_REVISION") : ENV["PROVIDER_CONFIGURATION_REVISION"] = original_revision
+  end
 end

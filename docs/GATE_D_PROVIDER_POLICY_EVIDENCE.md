@@ -28,13 +28,17 @@ Required evidence affirms domain verification, signed webhooks, event deduplicat
 
 Wallet buttons are returned to the browser only for independently approved capabilities. Apple evidence covers issuer approval, signing, device installation, and invalidation behavior. Google additionally requires an approved event-ticket class. Configured-but-unapproved endpoints return `503`; no unsigned or placeholder credential is emitted.
 
+### BOH/Clover card-present payments
+
+The existing per-organization Guam merchant, device, and reviewer evidence is necessary but not sufficient to send production charges. The platform capability additionally requires the bank merchant contract, Clover app/REST Pay approval, provisioned device, reviewed OAuth scope, sandbox matrix, low-value live test, zero-variance reconciliation, and unknown-result drill. Production `payment_ready` remains false and the gateway refuses a charge until both the platform approval and the organization-specific account/token controls are current.
+
 ### Production policy register
 
 The approved snapshot is bound to the exact backend policy version and content digest. Controls require counsel, accounting, and privacy approval plus effective dates, reacceptance rules, and the retention/deletion/legal-hold workflow. Any content or version change invalidates the approval. In production, readiness fails, checkout returns `503`, and event publication/resumption fails its checklist until the current register is approved.
 
 ## Configuration binding
 
-Provider configuration requires a non-secret `PROVIDER_CONFIGURATION_REVISION`. Increment it whenever provider-side state changes even if environment variables do not: verified domains, webhook destinations/subscriptions, provider accounts, issuer/class review, settlement routing, or equivalent settings. Environment credential rotations are fingerprinted automatically using SHA-256; only the resulting aggregate configuration digest is stored. Raw values are never returned by readiness or admin APIs.
+Provider configuration requires a non-secret `PROVIDER_CONFIGURATION_REVISION`. Increment it whenever provider-side state changes even if environment variables do not: verified domains, webhook destinations/subscriptions, provider accounts, issuer/class review, settlement routing, Clover organization access-token rotation, or equivalent settings. Environment credentials named in the capability contract are fingerprinted automatically using SHA-256; only the resulting aggregate configuration digest is stored. Dynamic per-organization Clover tokens are not fingerprinted, so their rotation must always bump the revision. Raw values are never returned by readiness or admin APIs.
 
 ## Evidence procedure
 

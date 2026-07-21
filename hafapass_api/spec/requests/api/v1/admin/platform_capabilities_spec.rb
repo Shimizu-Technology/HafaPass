@@ -19,7 +19,9 @@ RSpec.describe "Admin platform capabilities", type: :request do
 
     expect(response).to have_http_status(:ok)
     policy = response.parsed_body.fetch("capabilities").find { |item| item["capability"] == "policy_register" }
+    clover = response.parsed_body.fetch("capabilities").find { |item| item["capability"] == "clover_card_present" }
     expect(policy).to include("configured" => true, "approved" => false, "enabled" => false)
+    expect(clover).to include("configured" => false, "approved" => false, "enabled" => false)
     expect(policy.fetch("required_controls")).to include("counsel_approved")
     expect(response.body).not_to include("RESEND_API_KEY", "STRIPE_LIVE_SECRET_KEY")
   end

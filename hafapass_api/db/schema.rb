@@ -1034,7 +1034,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_150400) do
     t.index ["parent_review_id"], name: "idx_platform_capability_reviews_one_rejection", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 3))"
     t.index ["parent_review_id"], name: "idx_platform_capability_reviews_one_revocation", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 2))"
     t.index ["parent_review_id"], name: "index_platform_capability_reviews_on_parent_review_id"
-    t.check_constraint "capability::text = ANY (ARRAY['stripe_live'::character varying, 'resend_production'::character varying, 'apple_wallet'::character varying, 'google_wallet'::character varying, 'policy_register'::character varying]::text[])", name: "platform_capability_reviews_capability_valid"
+    t.check_constraint "capability::text = ANY (ARRAY['stripe_live'::character varying, 'resend_production'::character varying, 'apple_wallet'::character varying, 'google_wallet'::character varying, 'clover_card_present'::character varying, 'policy_register'::character varying]::text[])", name: "platform_capability_reviews_capability_valid"
     t.check_constraint "decision = 0 AND parent_review_id IS NULL OR (decision = ANY (ARRAY[1, 2, 3])) AND parent_review_id IS NOT NULL", name: "platform_capability_reviews_parent_valid"
     t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "platform_capability_reviews_decision_valid"
     t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND configuration_digest::text ~ '^[0-9a-f]{64}$'::text", name: "platform_capability_reviews_digests_valid"

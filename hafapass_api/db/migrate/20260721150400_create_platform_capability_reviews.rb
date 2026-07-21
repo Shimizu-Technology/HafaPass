@@ -33,7 +33,7 @@ class CreatePlatformCapabilityReviews < ActiveRecord::Migration[8.1]
     add_check_constraint :platform_capability_reviews, "decision IN (0, 1, 2, 3)",
       name: "platform_capability_reviews_decision_valid"
     add_check_constraint :platform_capability_reviews,
-      "capability IN ('stripe_live', 'resend_production', 'apple_wallet', 'google_wallet', 'policy_register')",
+      "capability IN ('stripe_live', 'resend_production', 'apple_wallet', 'google_wallet', 'clover_card_present', 'policy_register')",
       name: "platform_capability_reviews_capability_valid"
     add_check_constraint :platform_capability_reviews,
       "evidence_digest ~ '^[0-9a-f]{64}$' AND configuration_digest ~ '^[0-9a-f]{64}$'",

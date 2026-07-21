@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "uri"
 
 class PlatformCapabilities
   DEFINITIONS = {
@@ -27,6 +28,13 @@ class PlatformCapabilities
       required_env: %w[GOOGLE_WALLET_ISSUER_ID GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL GOOGLE_WALLET_PRIVATE_KEY
         PROVIDER_CONFIGURATION_REVISION],
       controls: %w[issuer_approved class_approved signing_tested device_install_tested invalidation_behavior_tested]
+    },
+    "clover_card_present" => {
+      label: "BOH/Clover card-present payments",
+      required_env: %w[CLOVER_REST_PAY_BASE_URL PROVIDER_CONFIGURATION_REVISION],
+      controls: %w[bank_merchant_contract_approved clover_app_and_rest_pay_approved device_provisioned
+        oauth_scope_reviewed sandbox_matrix_complete live_low_value_tested reconciliation_zero_variance
+        unknown_result_runbook_tested]
     },
     "policy_register" => {
       label: "Production policy register",
@@ -139,8 +147,16 @@ class PlatformCapabilities
 
     def provider_specific_configuration_valid?(name)
       return ENV["GOOGLE_WALLET_CLASS_REVIEW_STATUS"] == "APPROVED" if name == "google_wallet"
+      return approved_clover_endpoint? if name == "clover_card_present"
 
       true
+    end
+
+    def approved_clover_endpoint?
+      uri = URI.parse(ENV["CLOVER_REST_PAY_BASE_URL"].to_s)
+      uri.is_a?(URI::HTTPS) && (uri.host == "clover.com" || uri.host&.end_with?(".clover.com"))
+    rescue URI::InvalidURIError
+      false
     end
 
     def public_identifiers(name)
@@ -149,6 +165,7 @@ class PlatformCapabilities
       when "resend_production" then %w[MAILER_FROM_EMAIL]
       when "apple_wallet" then %w[APPLE_PASS_TYPE_IDENTIFIER APPLE_TEAM_IDENTIFIER APPLE_PASS_ICON_PATH]
       when "google_wallet" then %w[GOOGLE_WALLET_ISSUER_ID GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL GOOGLE_WALLET_CLASS_REVIEW_STATUS]
+      when "clover_card_present" then %w[CLOVER_REST_PAY_BASE_URL]
       else []
       end
       keys.to_h { |key| [key, ENV[key].to_s] }
