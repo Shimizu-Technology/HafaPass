@@ -29,3 +29,5 @@
 ## Release evidence
 
 For each production provider, retain the onboarding evidence, provider approval, connected-account identifier, signed terms, test transaction identifiers, settlement version and digest, payout identifier, bank receipt, reconciliation result, approving finance user, and audit-log request IDs. Link the restricted bundle through the append-only payment-readiness submission and independent approval described in [Gate B Payment Readiness Operations](./GATE_B_PAYMENT_READINESS_OPERATIONS.md).
+
+Before a paid public pilot, complete the real chronological charge → partial refund → settlement → payout/bank receipt → final refund → negative-balance settlement proof and independent approval in [Gate H Low-Value Live-Money Proof](./GATE_H_LIVE_MONEY_PROOF.md). A simulated payout, a `processing` manual transfer, or a provider dashboard screenshot without matching local/bank cents is not Gate H evidence.

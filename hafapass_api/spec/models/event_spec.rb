@@ -19,6 +19,22 @@ RSpec.describe Event, type: :model do
       # Slug should be auto-generated with suffix to avoid conflict
       expect(event).to be_valid
     end
+
+    it "only changes the live-money proof flag on an order-free draft" do
+      draft_event = create(:event)
+      expect(draft_event.update(live_money_proof_candidate: true)).to be(true)
+
+      published_event = create(:event, :published)
+      expect(published_event.update(live_money_proof_candidate: true)).to be(false)
+      expect(published_event.errors[:live_money_proof_candidate]).to include(
+        "can only change while the event is a draft"
+      )
+
+      ordered_event = create(:event)
+      create(:order, event: ordered_event)
+      expect(ordered_event.update(live_money_proof_candidate: true)).to be(false)
+      expect(ordered_event.errors[:live_money_proof_candidate]).to include("cannot change after the event has orders")
+    end
   end
 
   describe "slug generation" do

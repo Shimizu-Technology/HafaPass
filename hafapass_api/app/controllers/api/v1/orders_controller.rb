@@ -42,6 +42,11 @@ class Api::V1::OrdersController < ApplicationController
         status: :service_unavailable
     end
 
+    if release_gate == :live_money
+      return render json: { error: "Checkout is unavailable until this event has a current Gate H live-money approval" },
+        status: :service_unavailable
+    end
+
     unless params[:buyer_email].present? && params[:buyer_name].present?
       render json: { error: "buyer_email and buyer_name are required" }, status: :unprocessable_entity
       return
@@ -54,6 +59,11 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     buyer_terms = PolicyRegistry.buyer_terms
+    proof_authorization = proof_authorization_for(event)
+    if event.live_money_proof_candidate? && proof_authorization.nil?
+      return render json: { error: "An approved administrator live-money proof authorization is required" },
+        status: :forbidden
+    end
     result = Commerce::OrderCreator.call(
       event: event,
       line_items: params[:line_items],
@@ -71,7 +81,8 @@ class Api::V1::OrdersController < ApplicationController
       seat_hold_token: params[:seat_hold_token],
       buyer_terms_version: buyer_terms[:version],
       buyer_terms_digest: buyer_terms[:digest],
-      buyer_terms_accepted_at: Time.current
+      buyer_terms_accepted_at: Time.current,
+      live_money_proof_authorization: proof_authorization
     )
 
     response_payload = OrderPresenter.call(
@@ -91,6 +102,8 @@ class Api::V1::OrdersController < ApplicationController
     render json: response_payload, status: :created
   rescue Commerce::OrderCreator::CheckoutError => e
     render json: { error: e.message }, status: :unprocessable_entity
+  rescue LiveMoneyProofAuthorizations::Manager::AuthorizationError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   def show
@@ -99,6 +112,16 @@ class Api::V1::OrdersController < ApplicationController
       include_tickets: @order.completed? || @order.partially_refunded? || @order.refunded? || @order.cancelled?
     )
   end
+
+  def proof_authorization_for(event)
+    return unless event.live_money_proof_candidate?
+    return unless ActiveModel::Type::Boolean.new.cast(params[:live_money_proof]) && @current_user&.admin?
+
+    LiveMoneyProofAuthorizations::Manager.find_available(
+      event: event, user: @current_user, buyer_email: params[:buyer_email]
+    )
+  end
+  private :proof_authorization_for
 
   def cancel
     Commerce::OrderLifecycle.cancel!(@order)

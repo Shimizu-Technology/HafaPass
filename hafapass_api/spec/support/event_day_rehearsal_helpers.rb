@@ -62,6 +62,14 @@ module EventDayRehearsalHelpers
       effective_at: 1.minute.ago, expires_at: 7.days.from_now
     }
   end
+
+  def create_event_day_rehearsal_approval(event:, submitter: create(:user, :admin), approver: create(:user, :admin))
+    create_pilot_validation_approval(event: event)
+    submission = EventDayRehearsalReviews::Manager.submit!(
+      event: event, attributes: valid_event_day_rehearsal_attributes(event: event), actor: submitter
+    )
+    EventDayRehearsalReviews::Manager.approve!(submission: submission, actor: approver)
+  end
 end
 
 RSpec.configure do |config|

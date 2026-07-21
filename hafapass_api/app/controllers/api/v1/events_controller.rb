@@ -69,6 +69,11 @@ module Api
       end
 
       def show
+        if params[:live_money_proof] == "true" && @current_user&.admin?
+          event = Event.where(live_money_proof_candidate: true).find_by!(slug: params[:slug])
+          render json: event_json(event, include_ticket_types: true)
+          return
+        end
         # Allow organizers to preview their own draft events
         if params[:preview] == "true" && @current_user
           event = Event.find_by!(slug: params[:slug])
@@ -229,6 +234,7 @@ module Api
           age_restriction: event.age_restriction,
           max_capacity: event.max_capacity,
           is_featured: event.is_featured,
+          live_money_proof_candidate: event.live_money_proof_candidate,
           published_at: event.published_at,
           show_attendees: event.show_attendees,
           attendee_count: attendee_count,

@@ -215,6 +215,22 @@ Rails.application.routes.draw do
             post :reject
           end
         end
+        get "events/:event_id/live_money_proof", to: "live_money_proof_reviews#show"
+        post "events/:event_id/live_money_proof_authorizations", to: "live_money_proof_authorizations#create"
+        resources :live_money_proof_authorizations, only: [] do
+          member do
+            post :approve
+            post :revoke
+          end
+        end
+        post "events/:event_id/live_money_proof_reviews", to: "live_money_proof_reviews#create"
+        resources :live_money_proof_reviews, only: [] do
+          member do
+            post :approve
+            post :revoke
+            post :reject
+          end
+        end
         resources :users, only: [:index, :update]
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]

@@ -4,7 +4,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   # GET /api/v1/admin/events
   def index
     events = Event.includes(:organizer_profile, :ticket_types, :orders, :pilot_readiness_reviews,
-      :pilot_validation_reviews, :event_day_rehearsal_reviews)
+      :pilot_validation_reviews, :event_day_rehearsal_reviews, organization: :live_money_proof_reviews)
 
     events = events.where("title ILIKE ?", "%#{params[:search]}%") if params[:search].present?
     events = events.where(status: params[:status]) if params[:status].present?
@@ -36,7 +36,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   private
 
   def event_params
-    params.permit(:is_featured)
+    params.permit(:is_featured, :live_money_proof_candidate)
   end
 
   def event_json(e)
@@ -58,7 +58,9 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       organizer_email: e.organizer_profile&.user&.email,
       pilot_readiness: PilotReadiness.list_summary(e),
       pilot_validation: PilotValidation.list_summary(e),
-      event_day_rehearsal: EventDayRehearsal.list_summary(e)
+      event_day_rehearsal: EventDayRehearsal.list_summary(e),
+      live_money_proof_candidate: e.live_money_proof_candidate,
+      live_money_proof: LiveMoneyProof.list_summary(e.organization)
     }
   end
 end

@@ -39,6 +39,12 @@ class User < ApplicationRecord
     inverse_of: :actor_user
   has_many :event_day_rehearsal_reviews, foreign_key: :actor_user_id, dependent: :restrict_with_error,
     inverse_of: :actor_user
+  has_many :requested_live_money_proof_authorizations, class_name: "LiveMoneyProofAuthorization",
+    foreign_key: :requested_by_user_id, dependent: :restrict_with_error, inverse_of: :requested_by_user
+  has_many :approved_live_money_proof_authorizations, class_name: "LiveMoneyProofAuthorization",
+    foreign_key: :approved_by_user_id, dependent: :restrict_with_error, inverse_of: :approved_by_user
+  has_many :live_money_proof_reviews, foreign_key: :actor_user_id, dependent: :restrict_with_error,
+    inverse_of: :actor_user
 
   enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
 

@@ -14,6 +14,7 @@ export default function SEO({
   url,
   type = 'website',
   jsonLd,
+  noIndex = false,
 }) {
   const fullTitle = title ? `${title} | ${SITE_NAME}` : DEFAULT_TITLE
   const canonicalUrl = url || SITE_URL
@@ -22,6 +23,7 @@ export default function SEO({
     <Helmet>
       <title>{fullTitle}</title>
       <meta name="description" content={description} />
+      {noIndex && <meta name="robots" content="noindex, nofollow, noarchive" />}
 
       {/* Open Graph */}
       <meta property="og:title" content={title || DEFAULT_TITLE} />
@@ -40,7 +42,7 @@ export default function SEO({
       <link rel="canonical" href={canonicalUrl} />
 
       {/* JSON-LD Structured Data */}
-      {jsonLd && (
+      {jsonLd && !noIndex && (
         <script type="application/ld+json">
           {JSON.stringify(jsonLd)}
         </script>

@@ -18,6 +18,7 @@ export default function EventDetailPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const isPreview = searchParams.get('preview') === 'true'
+  const isLiveMoneyProof = searchParams.get('live_money_proof') === 'true'
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -27,11 +28,12 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     captureQueryAttribution(window.location.search)
-    const url = isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`
+    const url = isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
+      (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
     apiClient.get(url)
       .then(res => { setEvent(res.data); trackFunnel(apiClient, res.data.id, 'event_view'); setLoading(false) })
       .catch(() => { setError('Event not found.'); setLoading(false) })
-  }, [slug, isPreview])
+  }, [slug, isPreview, isLiveMoneyProof])
 
   useEffect(() => {
     if (!waitlistOfferToken) return
@@ -41,7 +43,7 @@ export default function EventDetailPage() {
   }, [waitlistOfferToken])
 
   const handleCheckout = (lineItems) => {
-    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken } })
+    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof } })
   }
 
   const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {
@@ -169,6 +171,7 @@ export default function EventDetailPage() {
         image={event.cover_image_url || undefined}
         url={eventUrl}
         jsonLd={eventJsonLd}
+        noIndex={isLiveMoneyProof}
       />
       {/* Hero Section — full-width cover image with dark overlay */}
       <div className="relative w-full h-[50vh] sm:h-[55vh] lg:h-[60vh] min-h-[340px] max-h-[600px] overflow-hidden bg-neutral-950">

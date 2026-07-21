@@ -59,7 +59,7 @@ module Api
       private
 
       def set_event
-        @event = Event.published.find_by!(slug: params[:slug])
+        @event = Event.published.where(live_money_proof_candidate: false).find_by!(slug: params[:slug])
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end

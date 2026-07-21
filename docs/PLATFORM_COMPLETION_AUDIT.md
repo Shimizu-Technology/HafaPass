@@ -1,8 +1,8 @@
 # HafaPass Platform Completion Audit and Launch Plan
 
-Status: Phase 0–10 and Gate A/B application controls delivered; Gate C controls under review; paid production launch blocked on external evidence
+Status: Phase 0–10 and Gate A–H application controls delivered; paid production launch blocked on dated external evidence and Gates I–J
 Last verified: July 21, 2026 (Pacific/Guam)
-Audited baseline: protected `main` at `9471d8c`, plus the Gate C change set documented here
+Audited baseline: protected `main` at `2d636b7`, plus the Gate H change set documented here
 
 ## Executive verdict
 
@@ -19,15 +19,15 @@ The right next move is not another broad feature sprint. It is to close the rele
 
 ## Evidence baseline
 
-The current Gate C candidate passed locally with:
+The current Gate H candidate passed locally with:
 
-- 548 RSpec examples.
-- 427 Ruby files with zero RuboCop offenses.
+- 642 RSpec examples.
+- 481 Ruby files with zero RuboCop offenses.
 - Zero Brakeman warnings.
 - Zero known Ruby dependency vulnerabilities.
-- 25 Vitest tests and zero ESLint warnings.
-- A successful Vite production build and zero known high production npm vulnerabilities.
-- 11 Playwright Chromium journeys, including offline scanning, finance isolation, service recovery, marketplace discovery, competitive checkout, exact keyboard seat selection, and automated serious/critical accessibility checks.
+- 38 Vitest tests and zero ESLint warnings.
+- A successful Vite production build and zero known npm vulnerabilities across development and production dependency graphs.
+- 16 Playwright Chromium journeys, including the hidden Gate H authorization, offline scanning, finance isolation, service recovery, marketplace discovery, competitive checkout, exact keyboard seat selection, and automated serious/critical accessibility checks.
 - Rails eager-load validation and an empty-data migration down/up drill for Phase 10.
 
 GitHub independently passed the backend, frontend, browser, security, hygiene, and deploy-preview checks on every final phase commit. Greptile review was repeated until the final Phase 10 commit had a passing review and no unresolved actionable thread.
@@ -250,6 +250,8 @@ Actions:
 
 Exit evidence: redacted provider IDs, settlement/payout digests, bank confirmation, two-person approval, and zero-cent unexplained variance.
 
+Application control: follow [Gate H Low-Value Live-Money Proof](GATE_H_LIVE_MONEY_PROOF.md). HafaPass now separates the circular first live transaction from normal commerce with a hidden, digest-bound, one-ticket candidate and an independently approved, admin-only, one-use authorization capped at $5 and two hours. It then requires an append-only independently approved record linking the actual payment, partial and final refunds, first settlement, paid payout, bank receipt, later negative-balance settlement, communications, provider/account/configuration digests, and zero unexplained variance/open exceptions. Normal paid publish/resume and checkout fail closed without current organization/account Gate H approval; free events are not blocked on irrelevant money evidence. The application does not claim the real provider/bank loop happened—the restricted evidence must still be produced and inspected.
+
 ### Gate I — Launch narrowly and operate it
 
 Owner: named incident commander and business owner.
@@ -289,4 +291,4 @@ The most important trust promise is simple: transparent total price, real Guam-l
 
 The original application had a strong visual shell but weak transactional and operational guarantees. That is no longer the accurate description. The merged application now has the architecture and feature surface of a proper Guam ticketing platform and a credible product advantage over GuamTime's assisted workflow.
 
-What remains is the part software cannot self-certify: legal authority, Guam money movement, real provider behavior, physical venue/device accessibility, local service capacity, and operational discipline. HafaPass should be described as **engineering-complete through Phase 10 and production-gated**, not “production ready,” until Gates A–H have dated evidence and named owners.
+What remains is the part software cannot self-certify: legal authority, Guam money movement, real provider behavior, physical venue/device accessibility, local service capacity, and operational discipline. HafaPass should be described as **engineering-complete through Phase 10 with software-enforced release controls through Gate H**, not “production ready,” until Gates A–H have dated external evidence and named owners and Gates I–J have been operated for the real pilot.
