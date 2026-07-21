@@ -20,8 +20,8 @@ module Seating
         event.lock!
         validate_configuration!
         existing = event.event_seating_configuration
-        if existing && (existing.event_seats.joins(:tickets).exists? || existing.seat_hold_sessions.where(status: [:active, :claimed]).exists?)
-          raise ConfigurationError, "A seating configuration with sales or active holds cannot be replaced"
+        if existing && replacement_history?(existing)
+          raise ConfigurationError, "A seating configuration with sales or operational history cannot be replaced"
         end
         if existing
           existing.event_seats.destroy_all
@@ -62,6 +62,14 @@ module Seating
         raise ConfigurationError, "The layout must belong to this event's venue and organization"
       end
       raise ConfigurationError, "A venue layout needs at least one active seat" unless venue_layout.venue_seats.where(active: true).exists?
+    end
+
+    def replacement_history?(configuration)
+      event_seat_ids = configuration.event_seats.select(:id)
+      configuration.seat_hold_sessions.exists? ||
+        Ticket.where(event_seat_id: event_seat_ids).exists? ||
+        AccessibleSeatRelease.where(event_seat_id: event_seat_ids).exists? ||
+        SeatAuditEvent.where(event_seat_id: event_seat_ids).exists?
     end
 
     def create_event_seats!(configuration)

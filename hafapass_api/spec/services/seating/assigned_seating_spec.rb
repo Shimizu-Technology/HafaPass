@@ -127,6 +127,19 @@ RSpec.describe "Assigned seating lifecycle" do
     expect(second.session).to be_status_active
   end
 
+  it "preserves expired hold history instead of crashing during configuration replacement" do
+    configuration = activate!
+    event_seat = configuration.event_seats.find_by!(venue_seat: standard_one)
+    hold = Seating::HoldAllocator.call(event: event, event_seat_ids: [event_seat.id], accessibility_attested: false)
+    Seating::SessionLifecycle.release!(hold.session, reason: "seat_hold_expired", expired: true)
+
+    expect do
+      activate!
+    end.to raise_error(Seating::ConfigurationActivator::ConfigurationError, /operational history cannot be replaced/)
+    expect(configuration.reload.event_seats.count).to eq(4)
+    expect(hold.session.reload).to be_status_expired
+  end
+
   it "exchanges an unused ticket atomically and rotates both credentials" do
     allow(StripeService).to receive(:payment_enabled?).and_return(false)
     configuration = activate!
