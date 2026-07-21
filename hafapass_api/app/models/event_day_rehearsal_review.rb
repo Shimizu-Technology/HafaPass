@@ -107,8 +107,10 @@ class EventDayRehearsalReview < ApplicationRecord
     end
     version = integer_value(result["version"], :manifest_results, "version")
     ticket_count = integer_value(result["ticket_count"], :manifest_results, "ticket_count")
-    errors.add(:manifest_results, "version must be positive") unless version.positive?
-    errors.add(:manifest_results, "must contain at least 500 generated tickets") if ticket_count < 500
+    errors.add(:manifest_results, "version must be positive") if version && !version.positive?
+    if ticket_count && ticket_count < 500
+      errors.add(:manifest_results, "must contain at least 500 generated tickets")
+    end
     generated_at = time_value(result["generated_at"], :manifest_results, "generated_at")
     expires_at = time_value(result["expires_at"], :manifest_results, "expires_at")
     if generated_at && expires_at && (expires_at <= generated_at || expires_at > generated_at + 24.hours)
@@ -137,25 +139,32 @@ class EventDayRehearsalReview < ApplicationRecord
           errors.add(:device_results, "device #{index + 1} must confirm #{field}")
         end
       end
-      reconnect_orders << integer_value(result["reconnect_order"], :device_results, "reconnect_order")
+      reconnect_order = integer_value(result["reconnect_order"], :device_results, "reconnect_order")
+      reconnect_orders << reconnect_order if reconnect_order
       queued_before = integer_value(result["queued_actions_before_sync"], :device_results, "queued_actions_before_sync")
       queued_after = integer_value(result["queued_actions_after_sync"], :device_results, "queued_actions_after_sync")
       conflicts = integer_value(result["conflicts_observed"], :device_results, "conflicts_observed")
-      conflict_total += conflicts
+      conflict_total += conflicts if conflicts
       p95 = integer_value(result["immediate_feedback_p95_ms"], :device_results, "immediate_feedback_p95_ms")
-      if [queued_before, queued_after, conflicts, p95].any?(&:negative?)
+      if [queued_before, queued_after, conflicts, p95].compact.any?(&:negative?)
         errors.add(:device_results, "device counters and latency cannot be negative")
       end
-      errors.add(:device_results, "every device must queue offline actions") unless queued_before.positive?
-      errors.add(:device_results, "every device queue must drain to zero") unless queued_after.zero?
-      unless p95.positive? && p95 <= 100
+      if queued_before && !queued_before.positive?
+        errors.add(:device_results, "every device must queue offline actions")
+      end
+      if queued_after && !queued_after.zero?
+        errors.add(:device_results, "every device queue must drain to zero")
+      end
+      if p95 && (!p95.positive? || p95 > 100)
         errors.add(:device_results, "offline feedback p95 must be positive and at most 100 ms")
       end
     end
-    unless reconnect_orders.sort == (1..results.length).to_a
+    if reconnect_orders.length == results.length && reconnect_orders.sort != (1..results.length).to_a
       errors.add(:device_results, "reconnect order must uniquely cover every device")
     end
-    errors.add(:device_results, "must observe at least one cross-device conflict") unless conflict_total.positive?
+    if results.all? { |result| strict_integer(normalized_hash(result)["conflicts_observed"]) } && !conflict_total.positive?
+      errors.add(:device_results, "must observe at least one cross-device conflict")
+    end
   end
 
   def complete_scan_results
@@ -213,8 +222,8 @@ class EventDayRehearsalReview < ApplicationRecord
       errors.add(:reconciliation_results, "counts, latency, and variance values cannot be negative")
     end
     errors.add(:reconciliation_results, "generated ticket count must be at least 500") if integers["generated_ticket_count"] < 500
-    if integers["generated_ticket_count"] != integer_value(normalized_hash(manifest_results)["ticket_count"],
-      :reconciliation_results, "manifest ticket_count")
+    manifest_ticket_count = strict_integer(normalized_hash(manifest_results)["ticket_count"])
+    if manifest_ticket_count && integers["generated_ticket_count"] != manifest_ticket_count
       errors.add(:reconciliation_results, "generated ticket count must match the signed manifest")
     end
     if integers["unique_admissions_expected"] != integers["unique_admissions_observed"]
@@ -269,7 +278,13 @@ class EventDayRehearsalReview < ApplicationRecord
     Integer(value, exception: true)
   rescue ArgumentError, TypeError
     errors.add(attribute, "#{field} must be an integer")
-    0
+    nil
+  end
+
+  def strict_integer(value)
+    Integer(value, exception: true)
+  rescue ArgumentError, TypeError
+    nil
   end
 
   def time_value(value, attribute, field)

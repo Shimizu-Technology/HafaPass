@@ -56,6 +56,43 @@ RSpec.describe EventDayRehearsalReview do
     expect(review.errors[:reconciliation_results]).to include(/must match the signed manifest/)
   end
 
+  it "reports malformed manifest integers once on the manifest field" do
+    review = build_review
+    review.manifest_results["version"] = "not-an-integer"
+    review.manifest_results["ticket_count"] = "not-an-integer"
+
+    expect(review).not_to be_valid
+    expect(review.errors[:manifest_results]).to include("version must be an integer", "ticket_count must be an integer")
+    expect(review.errors[:manifest_results]).not_to include("version must be positive")
+    expect(review.errors[:manifest_results]).not_to include("must contain at least 500 generated tickets")
+    expect(review.errors[:reconciliation_results]).not_to include(/manifest ticket_count/)
+    expect(review.errors[:reconciliation_results]).not_to include(/must match the signed manifest/)
+  end
+
+  it "does not add downstream device errors for malformed integer fields" do
+    review = build_review
+    review.device_results[0]["reconnect_order"] = "invalid"
+    review.device_results[0]["queued_actions_before_sync"] = "invalid"
+    review.device_results[0]["queued_actions_after_sync"] = "invalid"
+    review.device_results[0]["conflicts_observed"] = "invalid"
+    review.device_results[0]["immediate_feedback_p95_ms"] = "invalid"
+
+    expect(review).not_to be_valid
+    expect(review.errors[:device_results]).to include(
+      "reconnect_order must be an integer",
+      "queued_actions_before_sync must be an integer",
+      "queued_actions_after_sync must be an integer",
+      "conflicts_observed must be an integer",
+      "immediate_feedback_p95_ms must be an integer"
+    )
+    expect(review.errors[:device_results]).not_to include(
+      "reconnect order must uniquely cover every device",
+      "every device must queue offline actions",
+      "every device queue must drain to zero",
+      "offline feedback p95 must be positive and at most 100 ms"
+    )
+  end
+
   it "is append-only" do
     review = build_review
     review.save!
