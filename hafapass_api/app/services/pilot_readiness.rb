@@ -67,8 +67,22 @@ class PilotReadiness
     }
   end
 
+  def self.list_summary(event)
+    reviews = event.pilot_readiness_reviews.to_a
+    decided_submission_ids = reviews.filter_map do |review|
+      review.parent_review_id if review.decision_approval? || review.decision_rejection?
+    end
+    pending = reviews.select do |review|
+      review.decision_submission? && review.expires_at > Time.current && !decided_submission_ids.include?(review.id)
+    end.max_by(&:created_at)
+    latest_approval = reviews.select(&:decision_approval?).max_by(&:created_at)
+    {
+      approval_recorded: latest_approval.present?,
+      pending_submission: pending && { id: pending.id, created_at: pending.created_at }
+    }
+  end
+
   def self.snapshot(event)
-    event.reload
     ticket_types = event.ticket_types.includes(:pricing_tiers).order(:id).map do |ticket_type|
       ticket_type.attributes.slice(*TICKET_TYPE_FIELDS).merge(
         "pricing_tiers" => ticket_type.pricing_tiers.order(:id).map { |tier| tier.attributes.slice(*PRICING_TIER_FIELDS) }

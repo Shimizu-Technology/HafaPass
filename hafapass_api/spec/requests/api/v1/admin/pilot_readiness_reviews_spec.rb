@@ -32,6 +32,17 @@ RSpec.describe "Admin pilot readiness reviews", type: :request do
     expect(readiness.fetch("required_assignments")).to include("event_commander")
   end
 
+  it "keeps the paginated event list lightweight until an administrator opens readiness details" do
+    event
+    expect(PilotReadiness).not_to receive(:event_state_digest)
+
+    get "/api/v1/admin/events", headers: auth_headers(submitter)
+
+    expect(response).to have_http_status(:ok)
+    summary = response.parsed_body.fetch("events").first.fetch("pilot_readiness")
+    expect(summary).to include("approval_recorded" => false, "pending_submission" => nil)
+  end
+
   it "submits and independently approves event-bound evidence" do
     post "/api/v1/admin/events/#{event.id}/pilot_readiness_reviews", params: payload,
       headers: auth_headers(submitter)
@@ -50,6 +61,15 @@ RSpec.describe "Admin pilot readiness reviews", type: :request do
       params: payload.merge(controls: {}, assignments: {}), headers: auth_headers(submitter)
 
     expect(response).to have_http_status(:unprocessable_entity)
+    expect(PilotReadinessReview.count).to eq(0)
+  end
+
+  it "returns a clear bad request for malformed nested evidence" do
+    post "/api/v1/admin/events/#{event.id}/pilot_readiness_reviews",
+      params: payload.merge(controls: "yes"), headers: auth_headers(submitter)
+
+    expect(response).to have_http_status(:bad_request)
+    expect(response.parsed_body.fetch("error")).to eq("controls must be an object")
     expect(PilotReadinessReview.count).to eq(0)
   end
 

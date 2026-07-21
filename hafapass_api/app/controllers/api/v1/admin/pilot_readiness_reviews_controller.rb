@@ -15,6 +15,8 @@ class Api::V1::Admin::PilotReadinessReviewsController < Api::V1::Admin::BaseCont
     render json: pilot_readiness_review_json(review), status: :created
   rescue PilotReadinessReviews::Manager::ReviewError => e
     render json: { error: e.message }, status: :unprocessable_entity
+  rescue ActionController::BadRequest => e
+    render json: { error: e.message }, status: :bad_request
   end
 
   def approve
@@ -48,15 +50,20 @@ class Api::V1::Admin::PilotReadinessReviewsController < Api::V1::Admin::BaseCont
 
   def review_params
     permitted = params.permit(:evidence_reference, :evidence_digest, :effective_at, :expires_at)
-    controls = params[:controls].respond_to?(:permit) ?
-      params.require(:controls).permit(*PilotReadinessReview::CONTROL_KEYS).to_h : {}
-    assignments = params[:assignments].respond_to?(:permit) ?
-      params.require(:assignments).permit(
-        PilotReadinessReview::ASSIGNMENT_KEYS.index_with { PilotReadinessReview::ASSIGNMENT_FIELDS }
-      ).to_h : {}
+    controls = nested_hash(:controls, PilotReadinessReview::CONTROL_KEYS)
+    assignment_shape = PilotReadinessReview::ASSIGNMENT_KEYS.index_with { PilotReadinessReview::ASSIGNMENT_FIELDS }
+    assignments = nested_hash(:assignments, assignment_shape)
     permitted.to_h.merge(controls: controls, assignments: assignments)
-  rescue ArgumentError
-    {}
+  end
+
+  def nested_hash(key, permitted_shape)
+    value = params[key]
+    return {} if value.nil? || value == {}
+    unless value.respond_to?(:permit)
+      raise ActionController::BadRequest, "#{key} must be an object"
+    end
+
+    permitted_shape.is_a?(Hash) ? value.permit(permitted_shape).to_h : value.permit(*permitted_shape).to_h
   end
 
   def event_summary(event)

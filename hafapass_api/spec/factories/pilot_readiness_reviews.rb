@@ -20,19 +20,5 @@ FactoryBot.define do
       decision { :submission }
       parent_review { nil }
     end
-
-    trait :approval do
-      decision { :approval }
-    end
-
-    trait :revocation do
-      decision { :revocation }
-      reason { "Event conditions changed" }
-    end
-
-    trait :rejection do
-      decision { :rejection }
-      reason { "Pilot evidence is incomplete" }
-    end
   end
 end

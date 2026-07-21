@@ -1,10 +1,9 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
-  include PilotReadinessSerialization
   # GET /api/v1/admin/events
   def index
-    events = Event.includes(:organizer_profile, :ticket_types, :orders)
+    events = Event.includes(:organizer_profile, :ticket_types, :orders, :pilot_readiness_reviews)
 
     events = events.where("title ILIKE ?", "%#{params[:search]}%") if params[:search].present?
     events = events.where(status: params[:status]) if params[:status].present?
@@ -56,7 +55,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       financials: financials,
       organizer_name: e.organizer_profile&.business_name,
       organizer_email: e.organizer_profile&.user&.email,
-      pilot_readiness: pilot_readiness_json(e).slice(:required, :approved, :state_current, :pending_submission)
+      pilot_readiness: PilotReadiness.list_summary(e)
     }
   end
 end
