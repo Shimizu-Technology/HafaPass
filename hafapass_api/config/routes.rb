@@ -205,7 +205,7 @@ Rails.application.routes.draw do
         post "platform_capabilities/:capability/reviews", to: "platform_capability_reviews#create"
         resources :platform_capability_reviews, only: [] do
           member do
-            patch :approve
+            post :approve
             post :revoke
             post :reject
           end

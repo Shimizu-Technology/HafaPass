@@ -9,7 +9,7 @@ class PlatformCapabilityReview < ApplicationRecord
   enum :decision, { submission: 0, approval: 1, revocation: 2, rejection: 3 }, prefix: true
 
   validates :capability, inclusion: { in: PlatformCapabilities.names }
-  validates :evidence_reference, :effective_at, :expires_at, :configuration_digest, presence: true
+  validates :evidence_reference, :evidence_digest, :effective_at, :expires_at, :configuration_digest, presence: true
   validates :evidence_digest, :configuration_digest, format: { with: /\A[0-9a-f]{64}\z/ }
   validate :complete_control_snapshot
   validate :valid_parent_relationship

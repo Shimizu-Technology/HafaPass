@@ -24,6 +24,13 @@ RSpec.describe PlatformCapabilityReview do
     expect(review.errors[:controls].join).to include("counsel_approved")
   end
 
+  it "reports a missing evidence digest as blank at the application boundary" do
+    review = described_class.new(attributes.merge(evidence_digest: nil))
+
+    expect(review).not_to be_valid
+    expect(review.errors[:evidence_digest]).to include("can't be blank")
+  end
+
   it "is append-only" do
     review = described_class.create!(attributes)
 

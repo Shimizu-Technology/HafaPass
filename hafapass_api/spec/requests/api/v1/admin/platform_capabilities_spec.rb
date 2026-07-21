@@ -33,7 +33,7 @@ RSpec.describe "Admin platform capabilities", type: :request do
     expect(response).to have_http_status(:created)
     submission_id = response.parsed_body.fetch("id")
 
-    patch "/api/v1/admin/platform_capability_reviews/#{submission_id}/approve", headers: auth_headers(approver)
+    post "/api/v1/admin/platform_capability_reviews/#{submission_id}/approve", headers: auth_headers(approver)
 
     expect(response).to have_http_status(:created)
     expect(response.parsed_body).to include("decision" => "approval", "active" => true)

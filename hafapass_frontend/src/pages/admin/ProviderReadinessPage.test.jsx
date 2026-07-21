@@ -4,7 +4,7 @@ import apiClient from '../../api/client'
 import ProviderReadinessPage from './ProviderReadinessPage'
 
 vi.mock('../../api/client', () => ({
-  default: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  default: { get: vi.fn(), post: vi.fn() },
 }))
 
 vi.mock('./AdminLayout', () => ({
