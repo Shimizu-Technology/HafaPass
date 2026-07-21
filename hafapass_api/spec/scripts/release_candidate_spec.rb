@@ -6,6 +6,21 @@ require_relative "../../../scripts/check_release_freeze"
 require_relative "../../../scripts/release_candidate"
 
 RSpec.describe "release candidate tooling" do
+  describe HafaPass::ReleaseCandidate::Shell do
+    it "runs capture and stream commands with and without a working directory" do
+      Dir.mktmpdir do |directory|
+        expect(described_class.new.capture!("ruby", "-e", "print 'ok'")).to eq("ok")
+        expect(described_class.new.capture!("ruby", "-e", "print Dir.pwd", chdir: directory)).to eq(File.realpath(directory))
+        expect { described_class.new.stream!("ruby", "-e", "exit 0") }.not_to raise_error
+        expect do
+          described_class.new.stream!(
+            "ruby", "-e", "exit(Dir.pwd == ARGV.fetch(0) ? 0 : 1)", File.realpath(directory), chdir: directory
+          )
+        end.not_to raise_error
+      end
+    end
+  end
+
   describe HafaPass::ReleaseFreeze do
     it "blocks an unlabeled pull request while the freeze is active" do
       Dir.mktmpdir do |directory|

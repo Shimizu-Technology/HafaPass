@@ -27,7 +27,7 @@ module HafaPass
 
     class Shell
       def capture!(*command, chdir: nil)
-        stdout, stderr, status = Open3.capture3(*command, chdir: chdir)
+        stdout, stderr, status = Open3.capture3(*command, **spawn_options(chdir))
         return stdout if status.success?
 
         detail = stderr.strip.empty? ? stdout.strip : stderr.strip
@@ -35,9 +35,15 @@ module HafaPass
       end
 
       def stream!(*command, chdir: nil)
-        success = system(*command, chdir: chdir)
+        success = system(*command, **spawn_options(chdir))
         raise Error, "Command failed: #{command.join(' ')}" unless success
       end
+
+      private
+
+        def spawn_options(chdir)
+          chdir ? { chdir: chdir } : {}
+        end
     end
 
     module CandidateId
