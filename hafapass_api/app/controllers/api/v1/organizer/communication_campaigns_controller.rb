@@ -62,7 +62,14 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
   end
 
   def schedule(campaign)
-    return unless campaign.scheduled_at&.future?
+    unless campaign.scheduled_at&.future?
+      campaign.update!(status: :draft) if campaign.scheduled?
+      return
+    end
+
+    # Content-only edits retain the existing scheduled job. Enqueuing on every
+    # save would leave an unbounded number of no-op jobs in the scheduled set.
+    return unless campaign.saved_change_to_scheduled_at?
 
     campaign.update!(status: :scheduled)
     CommunicationCampaignJob.set(wait_until: campaign.scheduled_at).perform_later(campaign.id)

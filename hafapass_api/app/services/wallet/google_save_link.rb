@@ -52,7 +52,7 @@ module Wallet
       {
         id: class_id,
         issuerName: "HafaPass",
-        reviewStatus: "UNDER_REVIEW",
+        reviewStatus: ENV.fetch("GOOGLE_WALLET_CLASS_REVIEW_STATUS", "UNDER_REVIEW"),
         eventName: localized(event.title),
         venue: { name: localized(event.venue_name.to_s), address: localized(event.venue_address.to_s) },
         dateTime: { start: event.starts_at&.iso8601, end: (event.ends_at || event.starts_at)&.iso8601 }

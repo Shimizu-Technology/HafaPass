@@ -7,6 +7,7 @@ RSpec.describe Wallet::GoogleSaveLink do
       "GOOGLE_WALLET_ISSUER_ID" => "3388000000000000000",
       "GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL" => "wallet@example.iam.gserviceaccount.com",
       "GOOGLE_WALLET_PRIVATE_KEY" => key.to_pem,
+      "GOOGLE_WALLET_CLASS_REVIEW_STATUS" => "APPROVED",
       "FRONTEND_URL" => "https://hafapass.com"
     ))
     event = create(:event, :published)
@@ -20,6 +21,7 @@ RSpec.describe Wallet::GoogleSaveLink do
     payload, = JWT.decode(token, key.public_key, true, algorithm: "RS256")
 
     expect(payload).to include("iss" => "wallet@example.iam.gserviceaccount.com", "aud" => "google")
+    expect(payload.dig("payload", "eventTicketClasses", 0, "reviewStatus")).to eq("APPROVED")
     expect(payload.dig("payload", "eventTicketClasses", 0, "eventName", "defaultValue", "value")).to eq(event.title)
     expect(payload.dig("payload", "eventTicketObjects", 0, "barcode", "value")).to eq(ticket.scan_credential)
   end

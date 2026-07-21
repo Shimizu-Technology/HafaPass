@@ -45,6 +45,24 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     expect(campaign.message_deliveries.count).to eq(1)
   end
 
+  it "does not accumulate scheduled jobs for content-only campaign edits" do
+    scheduled_at = 2.days.from_now
+
+    expect {
+      post "#{base}/communication_campaigns", params: { name: "Reminder", subject: "Tonight", body: "See you soon",
+        scheduled_at: scheduled_at.iso8601, segment: { type: "all_attendees" } }, headers: headers
+    }.to have_enqueued_job(CommunicationCampaignJob).once
+
+    campaign = CommunicationCampaign.find(response.parsed_body.fetch("id"))
+    expect {
+      patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Updated reminder" }, headers: headers
+    }.not_to have_enqueued_job(CommunicationCampaignJob)
+
+    expect(response).to have_http_status(:ok)
+    expect(campaign.reload).to be_scheduled
+    expect(campaign.subject).to eq("Updated reminder")
+  end
+
   it "isolates another organizer's event" do
     other = create(:organizer_profile)
     get "/api/v1/organizer/events/#{create(:event, organizer_profile: other).id}/catalog_items", headers: headers

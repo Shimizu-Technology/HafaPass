@@ -50,8 +50,11 @@ module WaitlistOffers
     attr_reader :entry, :ticket_type
 
     def select_ticket_type
-      selected = ticket_type || entry.ticket_type || entry.event.ticket_types.order(:id).find(&:available_quantity&.positive?)
-      unless selected&.event_id == entry.event_id
+      selected = ticket_type || entry.ticket_type ||
+        entry.event.ticket_types.order(:id).find { |candidate| candidate.available_quantity.positive? }
+      raise OfferError, "No inventory is available for this waitlist entry" unless selected
+
+      unless selected.event_id == entry.event_id
         raise OfferError, "Ticket type is not available for this waitlist entry"
       end
 
