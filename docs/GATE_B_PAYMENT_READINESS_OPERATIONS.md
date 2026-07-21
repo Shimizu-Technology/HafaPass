@@ -64,7 +64,7 @@ A different administrator reviews the restricted evidence and uses:
 
 `PATCH /api/v1/admin/payment_readiness_reviews/:submission_id/approve`
 
-Self-approval, duplicate approval, expired evidence, incomplete controls, and approving while another approval is active all fail closed. Approval appends a new immutable record and removes the local readiness requirement only when provider requirements are also complete.
+Self-approval, duplicate approval, a future or expired approval window, incomplete controls, and approving while another approval is active all fail closed. Approval appends a new immutable record and removes the local readiness requirement only when provider requirements are also complete.
 
 Any later change to the provider account ID, territory, currency, capabilities, charge/payout flags, submitted-details state, requirements, or disabled state increments the readiness revision and invalidates that approval permanently. Restoring the same values does not revive old evidence.
 

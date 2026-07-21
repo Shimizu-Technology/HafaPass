@@ -63,6 +63,13 @@ RSpec.describe PaymentReadinessReviews::Manager do
     expect do
       described_class.approve!(submission: submission, actor: approver)
     end.to raise_error(described_class::ReviewError, /expired/)
+
+    future_submission = described_class.submit!(account: account, attributes: evidence.merge(
+      effective_at: 1.day.from_now, expires_at: 1.month.from_now
+    ), actor: submitter)
+    expect do
+      described_class.approve!(submission: future_submission, actor: approver)
+    end.to raise_error(described_class::ReviewError, /not yet effective/)
   end
 
   it "does not accept capability booleans as provider evidence" do

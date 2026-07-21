@@ -39,12 +39,14 @@ module PaymentReadinessReviews
       if submission.child_reviews.where(decision: [:approval, :rejection]).exists?
         raise ReviewError, "This submission already has a decision"
       end
+      raise ReviewError, "The evidence approval window is not yet effective" if submission.effective_at > Time.current
       raise ReviewError, "The evidence approval window has expired" if submission.expires_at <= Time.current
       review = nil
       submission.connected_account.with_lock do
         if submission.reload.child_reviews.where(decision: [:approval, :rejection]).exists?
           raise ReviewError, "This submission already has a decision"
         end
+        raise ReviewError, "The evidence approval window is not yet effective" if submission.effective_at > Time.current
         raise ReviewError, "The evidence approval window has expired" if submission.expires_at <= Time.current
         unless submission.provider_state_digest == submission.connected_account.readiness_state_digest
           raise ReviewError, "Provider state changed; submit a new evidence snapshot"
