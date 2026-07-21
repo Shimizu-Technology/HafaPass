@@ -9,6 +9,7 @@ import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { clearActiveCheckout, getActiveCheckout, orderAccessHeaders, saveActiveCheckout, saveOrderAccess } from '../utils/orderAccess'
+import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -155,6 +156,8 @@ export default function CheckoutPage() {
 
     setSubmitting(true)
     try {
+      trackFunnel(apiClient, event.id, 'checkout_started')
+      const storedAttribution = currentAttribution()
       const payload = {
         event_id: event.id,
         buyer_name: buyerName.trim(),
@@ -170,9 +173,12 @@ export default function CheckoutPage() {
         waiver_acceptances: (event.waivers || []).filter(waiver => acceptedWaivers[waiver.id]).map(waiver => ({ event_waiver_id: waiver.id, version: waiver.version })),
         referral_code: new URLSearchParams(location.search).get('ref'),
         attribution: {
-          source: new URLSearchParams(location.search).get('utm_source'),
-          medium: new URLSearchParams(location.search).get('utm_medium'),
-          campaign: new URLSearchParams(location.search).get('utm_campaign'),
+          source: new URLSearchParams(location.search).get('utm_source') || storedAttribution.source,
+          medium: new URLSearchParams(location.search).get('utm_medium') || storedAttribution.medium,
+          campaign: new URLSearchParams(location.search).get('utm_campaign') || storedAttribution.campaign,
+          distribution_code: storedAttribution.distribution_code,
+          event_referral_code: storedAttribution.event_referral_code,
+          anonymous_id: anonymousId(),
         },
         waitlist_offer_token: waitlistOfferToken,
         terms_accepted: termsAccepted,

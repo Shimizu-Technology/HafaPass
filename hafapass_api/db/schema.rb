@@ -10,9 +10,25 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_010100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "acquisition_attributions", force: :cascade do |t|
+    t.datetime "attributed_at", null: false
+    t.string "campaign"
+    t.datetime "created_at", null: false
+    t.bigint "distribution_link_id"
+    t.bigint "event_referral_id"
+    t.string "medium"
+    t.bigint "order_id", null: false
+    t.string "source"
+    t.datetime "updated_at", null: false
+    t.string "visitor_hash", null: false
+    t.index ["distribution_link_id"], name: "index_acquisition_attributions_on_distribution_link_id"
+    t.index ["event_referral_id"], name: "index_acquisition_attributions_on_event_referral_id"
+    t.index ["order_id"], name: "index_acquisition_attributions_on_order_id", unique: true
+  end
 
   create_table "admission_actions", force: :cascade do |t|
     t.string "action_uuid", null: false
@@ -277,7 +293,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
     t.index ["organization_id"], name: "index_connected_accounts_on_organization_id"
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
-    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying::text, 'manual'::character varying::text, 'stripe'::character varying::text, 'legacy_manual'::character varying::text])", name: "connected_accounts_provider_valid"
+    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying]::text[])", name: "connected_accounts_provider_valid"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
   end
 
@@ -301,6 +317,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
     t.check_constraint "amount_cents >= 0", name: "disputes_amount_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "disputes_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "disputes_status_valid"
+  end
+
+  create_table "distribution_links", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.string "campaign", null: false
+    t.string "code", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_user_id", null: false
+    t.bigint "distribution_partner_id", null: false
+    t.bigint "event_id", null: false
+    t.datetime "expires_at"
+    t.datetime "updated_at", null: false
+    t.index ["code"], name: "index_distribution_links_on_code", unique: true
+    t.index ["created_by_user_id"], name: "index_distribution_links_on_created_by_user_id"
+    t.index ["distribution_partner_id", "active"], name: "index_distribution_links_on_distribution_partner_id_and_active"
+    t.index ["distribution_partner_id"], name: "index_distribution_links_on_distribution_partner_id"
+    t.index ["event_id", "active"], name: "index_distribution_links_on_event_id_and_active"
+    t.index ["event_id"], name: "index_distribution_links_on_event_id"
+  end
+
+  create_table "distribution_partners", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.string "contact_email"
+    t.string "contact_name"
+    t.datetime "created_at", null: false
+    t.integer "kind", null: false
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.datetime "updated_at", null: false
+    t.string "website_url"
+    t.index ["active", "kind"], name: "index_distribution_partners_on_active_and_kind"
+    t.index ["slug"], name: "index_distribution_partners_on_slug", unique: true
+    t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3, 4])", name: "distribution_partners_kind_valid"
   end
 
   create_table "event_change_responses", force: :cascade do |t|
@@ -328,6 +377,44 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
     t.index ["actor_user_id"], name: "index_event_changes_on_actor_user_id"
     t.index ["event_id", "occurred_at"], name: "index_event_changes_on_event_id_and_occurred_at"
     t.index ["event_id"], name: "index_event_changes_on_event_id"
+  end
+
+  create_table "event_favorites", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["event_id"], name: "index_event_favorites_on_event_id"
+    t.index ["user_id", "event_id"], name: "index_event_favorites_on_user_id_and_event_id", unique: true
+    t.index ["user_id"], name: "index_event_favorites_on_user_id"
+  end
+
+  create_table "event_referrals", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.string "code", null: false
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["code"], name: "index_event_referrals_on_code", unique: true
+    t.index ["event_id"], name: "index_event_referrals_on_event_id"
+    t.index ["user_id", "event_id"], name: "index_event_referrals_on_user_id_and_event_id", unique: true
+    t.index ["user_id"], name: "index_event_referrals_on_user_id"
+  end
+
+  create_table "event_reminders", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.datetime "remind_at", null: false
+    t.datetime "sent_at"
+    t.integer "status", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["event_id"], name: "index_event_reminders_on_event_id"
+    t.index ["status", "remind_at"], name: "index_event_reminders_on_status_and_remind_at"
+    t.index ["user_id", "event_id"], name: "index_event_reminders_on_user_id_and_event_id", unique: true
+    t.index ["user_id"], name: "index_event_reminders_on_user_id"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "event_reminders_status_valid"
   end
 
   create_table "event_staff_assignments", force: :cascade do |t|
@@ -410,13 +497,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
     t.datetime "updated_at", null: false
     t.string "venue_address"
     t.string "venue_city"
+    t.bigint "venue_id"
     t.string "venue_name"
+    t.index "lower((venue_city)::text)", name: "index_events_on_lower_venue_city"
     t.index ["organization_id"], name: "index_events_on_organization_id"
     t.index ["organizer_profile_id"], name: "index_events_on_organizer_profile_id"
     t.index ["recurrence_parent_id"], name: "index_events_on_recurrence_parent_id"
     t.index ["slug"], name: "index_events_on_slug", unique: true
     t.index ["starts_at"], name: "index_events_on_starts_at"
+    t.index ["status", "starts_at", "category"], name: "index_events_discovery"
     t.index ["status"], name: "index_events_on_status"
+    t.index ["venue_id"], name: "index_events_on_venue_id"
     t.check_constraint "buyer_fee_percent >= 0 AND buyer_fee_percent <= 100", name: "events_buyer_fee_percent_valid"
     t.check_constraint "fee_policy = ANY (ARRAY[0, 1, 2])", name: "events_fee_policy_valid"
     t.check_constraint "max_capacity IS NULL OR max_capacity > 0", name: "events_capacity_positive"
@@ -480,6 +571,61 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
     t.index ["ticket_type_id"], name: "index_inventory_holds_on_ticket_type_id"
     t.check_constraint "quantity > 0", name: "inventory_holds_quantity_positive"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "inventory_holds_status_valid"
+  end
+
+  create_table "marketplace_collection_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "event_id", null: false
+    t.bigint "marketplace_collection_id", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_marketplace_collection_events_on_event_id"
+    t.index ["marketplace_collection_id", "event_id"], name: "index_collection_events_unique", unique: true
+    t.index ["marketplace_collection_id", "position"], name: "index_collection_events_position"
+    t.index ["marketplace_collection_id"], name: "idx_on_marketplace_collection_id_32110578bf"
+  end
+
+  create_table "marketplace_collections", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "created_by_user_id", null: false
+    t.text "description"
+    t.datetime "ends_at"
+    t.integer "position", default: 0, null: false
+    t.string "seo_description"
+    t.string "seo_title"
+    t.string "slug", null: false
+    t.datetime "starts_at"
+    t.integer "status", default: 0, null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_user_id"], name: "index_marketplace_collections_on_created_by_user_id"
+    t.index ["slug"], name: "index_marketplace_collections_on_slug", unique: true
+    t.index ["status", "position"], name: "index_marketplace_collections_on_status_and_position"
+    t.check_constraint "ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at", name: "marketplace_collections_dates_valid"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "marketplace_collections_status_valid"
+  end
+
+  create_table "marketplace_funnel_events", force: :cascade do |t|
+    t.string "campaign"
+    t.datetime "created_at", null: false
+    t.bigint "distribution_link_id"
+    t.bigint "event_id", null: false
+    t.bigint "event_referral_id"
+    t.string "medium"
+    t.datetime "occurred_at", null: false
+    t.bigint "order_id"
+    t.string "source"
+    t.integer "stage", null: false
+    t.datetime "updated_at", null: false
+    t.string "visitor_hash", null: false
+    t.index ["distribution_link_id"], name: "index_marketplace_funnel_events_on_distribution_link_id"
+    t.index ["event_id", "stage", "occurred_at"], name: "index_funnel_event_stage_time"
+    t.index ["event_id"], name: "index_marketplace_funnel_events_on_event_id"
+    t.index ["event_referral_id"], name: "index_marketplace_funnel_events_on_event_referral_id"
+    t.index ["order_id", "stage"], name: "index_funnel_order_stage_unique", unique: true, where: "(order_id IS NOT NULL)"
+    t.index ["order_id"], name: "index_marketplace_funnel_events_on_order_id"
+    t.index ["visitor_hash", "occurred_at"], name: "index_funnel_visitor_time"
+    t.check_constraint "stage = ANY (ARRAY[0, 1, 2, 3])", name: "marketplace_funnel_stage_valid"
   end
 
   create_table "message_deliveries", force: :cascade do |t|
@@ -672,6 +818,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
     t.index ["slug"], name: "index_organizations_on_slug", unique: true
     t.check_constraint "char_length(currency::text) = 3", name: "organizations_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organizations_status_valid"
+  end
+
+  create_table "organizer_follows", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "organization_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["organization_id"], name: "index_organizer_follows_on_organization_id"
+    t.index ["user_id", "organization_id"], name: "index_organizer_follows_on_user_id_and_organization_id", unique: true
+    t.index ["user_id"], name: "index_organizer_follows_on_user_id"
   end
 
   create_table "organizer_profiles", force: :cascade do |t|
@@ -1189,6 +1345,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
     t.index ["clerk_id"], name: "index_users_on_clerk_id", unique: true
   end
 
+  create_table "venues", force: :cascade do |t|
+    t.text "accessibility_notes"
+    t.boolean "active", default: true, null: false
+    t.string "address", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.datetime "updated_at", null: false
+    t.boolean "verified", default: false, null: false
+    t.string "village", null: false
+    t.string "website_url"
+    t.index ["active", "village", "name"], name: "index_venues_on_active_and_village_and_name"
+    t.index ["slug"], name: "index_venues_on_slug", unique: true
+  end
+
   create_table "waitlist_entries", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "email", null: false
@@ -1269,6 +1441,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "webhook_events_status_valid"
   end
 
+  add_foreign_key "acquisition_attributions", "distribution_links", on_delete: :restrict
+  add_foreign_key "acquisition_attributions", "event_referrals", on_delete: :restrict
+  add_foreign_key "acquisition_attributions", "orders", on_delete: :restrict
   add_foreign_key "admission_actions", "admission_actions", column: "reverses_action_id", on_delete: :restrict
   add_foreign_key "admission_actions", "events", on_delete: :restrict
   add_foreign_key "admission_actions", "organizations", on_delete: :restrict
@@ -1306,10 +1481,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
   add_foreign_key "connected_accounts", "organizations", on_delete: :restrict
   add_foreign_key "disputes", "orders", on_delete: :restrict
   add_foreign_key "disputes", "payments", on_delete: :restrict
+  add_foreign_key "distribution_links", "distribution_partners", on_delete: :restrict
+  add_foreign_key "distribution_links", "events", on_delete: :restrict
+  add_foreign_key "distribution_links", "users", column: "created_by_user_id", on_delete: :restrict
   add_foreign_key "event_change_responses", "event_changes", on_delete: :restrict
   add_foreign_key "event_change_responses", "orders", on_delete: :restrict
   add_foreign_key "event_changes", "events", on_delete: :restrict
   add_foreign_key "event_changes", "users", column: "actor_user_id", on_delete: :nullify
+  add_foreign_key "event_favorites", "events", on_delete: :cascade
+  add_foreign_key "event_favorites", "users", on_delete: :cascade
+  add_foreign_key "event_referrals", "events", on_delete: :restrict
+  add_foreign_key "event_referrals", "users", on_delete: :cascade
+  add_foreign_key "event_reminders", "events", on_delete: :cascade
+  add_foreign_key "event_reminders", "users", on_delete: :cascade
   add_foreign_key "event_staff_assignments", "events", on_delete: :restrict
   add_foreign_key "event_staff_assignments", "organizations", on_delete: :restrict
   add_foreign_key "event_staff_assignments", "users", column: "assigned_by_user_id", on_delete: :nullify
@@ -1319,6 +1503,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
   add_foreign_key "event_waivers", "events", on_delete: :restrict
   add_foreign_key "events", "organizations", on_delete: :restrict
   add_foreign_key "events", "organizer_profiles"
+  add_foreign_key "events", "venues", on_delete: :restrict
   add_foreign_key "fee_components", "order_items", on_delete: :restrict
   add_foreign_key "fee_components", "orders", on_delete: :restrict
   add_foreign_key "guest_list_entries", "events"
@@ -1329,6 +1514,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
   add_foreign_key "inventory_holds", "orders", on_delete: :restrict
   add_foreign_key "inventory_holds", "pricing_tiers", on_delete: :restrict
   add_foreign_key "inventory_holds", "ticket_types", on_delete: :restrict
+  add_foreign_key "marketplace_collection_events", "events", on_delete: :restrict
+  add_foreign_key "marketplace_collection_events", "marketplace_collections", on_delete: :cascade
+  add_foreign_key "marketplace_collections", "users", column: "created_by_user_id", on_delete: :restrict
+  add_foreign_key "marketplace_funnel_events", "distribution_links", on_delete: :restrict
+  add_foreign_key "marketplace_funnel_events", "event_referrals", on_delete: :restrict
+  add_foreign_key "marketplace_funnel_events", "events", on_delete: :restrict
+  add_foreign_key "marketplace_funnel_events", "orders", on_delete: :restrict
   add_foreign_key "message_deliveries", "communication_campaigns", on_delete: :restrict
   add_foreign_key "message_deliveries", "events", on_delete: :restrict
   add_foreign_key "message_deliveries", "orders", on_delete: :restrict
@@ -1345,6 +1537,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_230300) do
   add_foreign_key "organization_memberships", "organizations", on_delete: :restrict
   add_foreign_key "organization_memberships", "users", column: "invited_by_user_id", on_delete: :nullify
   add_foreign_key "organization_memberships", "users", on_delete: :restrict
+  add_foreign_key "organizer_follows", "organizations", on_delete: :cascade
+  add_foreign_key "organizer_follows", "users", on_delete: :cascade
   add_foreign_key "organizer_profiles", "organizations", on_delete: :restrict
   add_foreign_key "organizer_profiles", "users"
   add_foreign_key "organizer_profiles", "users", column: "verified_by_user_id"

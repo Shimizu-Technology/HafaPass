@@ -198,7 +198,13 @@ module Api
             financials: financials,
             tickets_checked_in: tickets_checked_in,
             tickets_by_type: tickets_by_type,
-            recent_orders: recent_orders
+            recent_orders: recent_orders,
+            marketplace_funnel: @event.marketplace_funnel_events.group(:stage).count,
+            acquisition_sources: @event.orders.joins(:acquisition_attribution)
+              .group("acquisition_attributions.source", "acquisition_attributions.medium", "acquisition_attributions.campaign")
+              .count.map { |(source, medium, campaign), count|
+                { source: source, medium: medium, campaign: campaign, orders: count }
+              }
           }
         end
 
@@ -260,7 +266,7 @@ module Api
         def event_params
           params.permit(
             :title, :description, :short_description, :cover_image_url,
-            :venue_name, :venue_address, :venue_city,
+            :venue_id, :venue_name, :venue_address, :venue_city,
             :starts_at, :ends_at, :doors_open_at, :timezone,
             :category, :age_restriction, :max_capacity,
             :recurrence_rule, :recurrence_end_date, :show_attendees,

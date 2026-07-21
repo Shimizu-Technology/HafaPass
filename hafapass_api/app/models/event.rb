@@ -3,6 +3,7 @@ class Event < ApplicationRecord
   has_many :support_notes, dependent: :restrict_with_error
   belongs_to :organizer_profile
   belongs_to :organization
+  belongs_to :venue, optional: true
   belongs_to :recurrence_parent, class_name: "Event", optional: true
   has_many :recurrence_children, class_name: "Event", foreign_key: "recurrence_parent_id", dependent: :nullify
   has_many :ticket_types, dependent: :destroy
@@ -29,6 +30,13 @@ class Event < ApplicationRecord
   has_many :event_waivers, dependent: :restrict_with_error
   has_many :promoters, dependent: :restrict_with_error
   has_many :communication_campaigns, dependent: :restrict_with_error
+  has_many :marketplace_collection_events, dependent: :restrict_with_error
+  has_many :marketplace_collections, through: :marketplace_collection_events
+  has_many :event_favorites, dependent: :destroy
+  has_many :event_reminders, dependent: :destroy
+  has_many :distribution_links, dependent: :restrict_with_error
+  has_many :marketplace_funnel_events, dependent: :restrict_with_error
+  has_many :event_referrals, dependent: :restrict_with_error
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -65,6 +73,7 @@ class Event < ApplicationRecord
   validate :chronological_event_times
 
   before_validation :generate_slug, if: -> { slug.blank? || title_changed? }
+  before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
 
   scope :published, -> { where(status: :published) }
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
@@ -192,6 +201,12 @@ class Event < ApplicationRecord
   end
 
   private
+
+  def copy_venue_details
+    self.venue_name = venue.name
+    self.venue_address = venue.address
+    self.venue_city = venue.village
+  end
 
   def fee_policy_matches_percent
     errors.add(:buyer_fee_percent, "must be 100 when the buyer pays fees") if buyer_pays? && buyer_fee_percent != 100

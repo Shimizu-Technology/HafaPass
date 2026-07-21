@@ -96,6 +96,18 @@ class EmailService
       delivery
     end
 
+    def send_event_reminder_async(reminder)
+      delivery = create_delivery(event: reminder.event, requested_by: reminder.user, template: "event_reminder",
+        recipient: reminder.user.email,
+        metadata: { event_reminder_id: reminder.id, scheduled_for: reminder.remind_at.iso8601(6) },
+        idempotency_key: "event-reminder/#{reminder.id}/#{reminder.remind_at.utc.strftime('%Y%m%d%H%M%S%6N')}")
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    rescue StandardError => e
+      record_enqueue_failure(delivery, e)
+      raise
+    end
+
     # ── Order Confirmation ──────────────────────────────────────────
     def send_order_confirmation(order, delivery: nil)
       event = order.event
@@ -206,6 +218,19 @@ class EmailService
         tag: "communication_campaign", delivery: delivery, campaign_id: delivery.communication_campaign_id)
     end
 
+    def send_event_reminder(reminder, delivery: nil)
+      event = reminder.event
+      html = email_wrapper("Event reminder") do
+        <<~HTML
+          <h2 style="color:#1f2937">#{h(event.title)} is coming up</h2>
+          <p style="color:#6b7280">#{h(event.venue_name)} · #{h(event.starts_at.in_time_zone(event.timezone).strftime('%A, %B %-d at %-I:%M %p %Z'))}</p>
+          <p><a href="#{frontend_url}/events/#{ERB::Util.url_encode(event.slug)}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">View event</a></p>
+        HTML
+      end
+      deliver(to: reminder.user.email, subject: safe_subject("Reminder: #{event.title}"), html: html,
+        tag: "event_reminder", delivery: delivery, reminder_id: reminder.id)
+    end
+
     # ── Guest List Notification ─────────────────────────────────────
     def send_guest_list_notification(guest_entry, delivery: nil)
       return unless guest_entry.guest_email.present?
@@ -220,10 +245,11 @@ class EmailService
 
     private
 
-    def create_delivery(order: nil, ticket: nil, event: nil, requested_by: nil, template:, recipient:, metadata: {})
+    def create_delivery(order: nil, ticket: nil, event: nil, requested_by: nil, template:, recipient:, metadata: {},
+      idempotency_key: nil)
       digest_source = [template, recipient.to_s.downcase, order&.cache_key_with_version,
         ticket&.cache_key_with_version, event&.cache_key_with_version, metadata.to_json].join("|")
-      MessageDelivery.create!(
+      attributes = {
         order: order,
         ticket: ticket,
         event: event,
@@ -235,7 +261,12 @@ class EmailService
         payload_digest: Digest::SHA256.hexdigest(digest_source),
         metadata: metadata,
         status: :queued
-      )
+      }
+      return MessageDelivery.create!(attributes) unless idempotency_key
+
+      MessageDelivery.find_or_create_by!(idempotency_key: idempotency_key) do |delivery|
+        delivery.assign_attributes(attributes)
+      end
     end
 
     def record_enqueue_failure(delivery, error)
