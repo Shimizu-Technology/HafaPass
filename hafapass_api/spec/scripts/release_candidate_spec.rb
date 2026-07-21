@@ -12,6 +12,11 @@ RSpec.describe "release candidate tooling" do
         expect(described_class.new.capture!("ruby", "-e", "print 'ok'")).to eq("ok")
         expect(described_class.new.capture!("ruby", "-e", "print Dir.pwd", chdir: directory)).to eq(File.realpath(directory))
         expect { described_class.new.stream!("ruby", "-e", "exit 0") }.not_to raise_error
+        expect do
+          described_class.new.stream!(
+            "ruby", "-e", "exit(Dir.pwd == ARGV.fetch(0) ? 0 : 1)", File.realpath(directory), chdir: directory
+          )
+        end.not_to raise_error
       end
     end
   end
