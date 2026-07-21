@@ -4,6 +4,8 @@ module Api
   module V1
     module Organizer
       class EventSeatingController < BaseController
+        SeatStatusUpdateError = Class.new(StandardError)
+
         before_action :set_event
 
         def show
@@ -81,7 +83,7 @@ module Api
           EventSeat.transaction do
             seats.each do |seat|
               if status != "available" && !seat.selectable?
-                raise Seating::HoldAllocator::HoldError, "Sold or held seats cannot be blocked"
+                raise SeatStatusUpdateError, "Sold or held seats cannot be blocked"
               end
               seat.update!(operational_status: status, status_reason: reason)
               Seating::Audit.record!(event: @event, action: "seat.status_changed", event_seat: seat,
@@ -90,7 +92,7 @@ module Api
             end
           end
           render json: { updated_event_seat_ids: updated, operational_status: status }
-        rescue Seating::HoldAllocator::HoldError => e
+        rescue SeatStatusUpdateError => e
           render json: { error: e.message }, status: :unprocessable_entity
         end
 

@@ -69,6 +69,42 @@ RSpec.describe "Assigned seating APIs", type: :request do
     expect(SeatHoldSession.last.reload).to be_status_released
   end
 
+  it "refuses to release a seat session after checkout has claimed it" do
+    layout = create_layout
+    zone_id = layout.fetch("price_zones").first.fetch("id")
+    post "/api/v1/organizer/events/#{event.id}/seating", headers: headers,
+      params: { venue_layout_id: layout.fetch("id"), zone_ticket_types: { zone_id => ticket_type.id } }
+    event_seat_id = response.parsed_body.dig("sections", 0, "rows", 0, "seats", 0, "id")
+    post "/api/v1/events/#{event.slug}/seat_holds", params: { event_seat_ids: [event_seat_id] }
+    token = response.parsed_body.fetch("token")
+    order = create(:order, :pending, event: event, expires_at: 10.minutes.from_now)
+    item = create(:order_item, order: order, ticket_type: ticket_type)
+    session = Seating::SessionLifecycle.claim!(token: token, event: event, order: order, order_items: [item])
+
+    delete "/api/v1/events/#{event.slug}/seat_holds", params: { token: token }
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body.fetch("error")).to match(/already been used for checkout/)
+    expect(session.reload).to be_status_claimed
+    expect(order.reload).to be_pending
+  end
+
+  it "does not let another authenticated user release an owned hold" do
+    layout = create_layout
+    zone_id = layout.fetch("price_zones").first.fetch("id")
+    post "/api/v1/organizer/events/#{event.id}/seating", headers: headers,
+      params: { venue_layout_id: layout.fetch("id"), zone_ticket_types: { zone_id => ticket_type.id } }
+    event_seat_id = response.parsed_body.dig("sections", 0, "rows", 0, "seats", 0, "id")
+    post "/api/v1/events/#{event.slug}/seat_holds", headers: headers, params: { event_seat_ids: [event_seat_id] }
+    token = response.parsed_body.fetch("token")
+    session = SeatHoldSession.last
+
+    delete "/api/v1/events/#{event.slug}/seat_holds", headers: auth_headers(create(:user)), params: { token: token }
+
+    expect(response).to have_http_status(:not_found)
+    expect(session.reload).to be_status_active
+  end
+
   it "requires inventory permission for organizer seating controls" do
     layout = create_layout
     zone_id = layout.fetch("price_zones").first.fetch("id")

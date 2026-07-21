@@ -164,7 +164,10 @@ module Commerce
           hold.release!(reason: reason, expired: expired, at: at)
         end
         release_waitlist_offer!(order, at: at)
-        Seating::SessionLifecycle.release!(order.seat_hold_session, reason: reason, expired: expired, at: at) if order.seat_hold_session
+        if order.seat_hold_session
+          Seating::SessionLifecycle.release!(order.seat_hold_session, reason: reason, expired: expired, at: at,
+            allow_claimed: true)
+        end
         order.promo_redemption&.update!(status: :released, released_at: at) if order.promo_redemption&.reserved?
         order.tickets.includes(:ticket_type, :pricing_tier, :order_item).where.not(status: :cancelled).each do |ticket|
           ticket.release_inventory! if ticket.order_item_id.nil?

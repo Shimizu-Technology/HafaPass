@@ -12,28 +12,23 @@ module Seating
     end
 
     def call
-      configuration.event_seats.includes(
+      event_seats = configuration.event_seats.includes(
         :active_tickets,
         :blocking_seat_holds,
-        ticket_type: [
-          :inventory_holds,
-          :waitlist_offers,
-          { event_seats: :active_precheckout_seat_holds },
-          { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }
-        ],
+        :ticket_type,
         venue_seat: [:seating_price_zone, { seating_row: :seating_section }]
-      ).then do |event_seats|
-        {
-          event_id: configuration.event_id,
-          configuration_id: configuration.id,
-          renderer: configuration.venue_layout.renderer,
-          provider_chart_key: configuration.venue_layout.provider_chart_key,
-          suspended: configuration.event.sales_suspended_at.present?,
-          suspension_reason: configuration.event.sales_suspension_reason,
-          hold_duration_seconds: HoldAllocator::HOLD_DURATION.to_i,
-          sections: grouped_sections(event_seats)
-        }
-      end
+      ).to_a
+      @prices = PriceResolver.call(ticket_types: event_seats.map(&:ticket_type), at: at)
+      {
+        event_id: configuration.event_id,
+        configuration_id: configuration.id,
+        renderer: configuration.venue_layout.renderer,
+        provider_chart_key: configuration.venue_layout.provider_chart_key,
+        suspended: configuration.event.sales_suspended_at.present?,
+        suspension_reason: configuration.event.sales_suspension_reason,
+        hold_duration_seconds: HoldAllocator::HOLD_DURATION.to_i,
+        sections: grouped_sections(event_seats)
+      }
     end
 
     private
@@ -72,7 +67,7 @@ module Seating
         id: seat.id,
         label: venue_seat.label,
         display_label: venue_seat.display_label,
-        price_cents: seat.ticket_type.current_price_cents(at: at),
+        price_cents: @prices.fetch(seat.ticket_type_id),
         ticket_type_id: seat.ticket_type_id,
         ticket_type_name: seat.ticket_type.name,
         price_zone: {

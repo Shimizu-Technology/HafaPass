@@ -44,9 +44,12 @@ module Seating
           metadata: { order_id: session.order_id })
       end
 
-      def release!(session, reason:, expired: false, at: Time.current)
+      def release!(session, reason:, expired: false, at: Time.current, allow_claimed: false)
         session.lock!
         return if session.status_released? || session.status_expired? || session.status_consumed?
+        if session.status_claimed? && !allow_claimed
+          raise SessionError, "This seat hold has already been used for checkout"
+        end
 
         target = expired ? :expired : :released
         session.seat_holds.where(status: [:active, :claimed]).order(:id).lock.each do |hold|
@@ -58,7 +61,7 @@ module Seating
       end
 
       def expire_stale!(event_seat_ids:, at: Time.current)
-        ids = SeatHoldSession.where(status: [:active, :claimed]).where("expires_at <= ?", at)
+        ids = SeatHoldSession.where(status: :active).where("expires_at <= ?", at)
           .joins(:seat_holds).where(seat_holds: { event_seat_id: event_seat_ids }).distinct.pluck(:id)
         SeatHoldSession.where(id: ids).order(:id).lock.each do |session|
           release!(session, reason: "seat_hold_expired", expired: true, at: at)

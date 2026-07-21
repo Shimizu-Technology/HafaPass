@@ -35,8 +35,6 @@ class EventSeat < ApplicationRecord
   end
 
   def active_ticket
-    return active_tickets.first if active_tickets.loaded?
-
     active_tickets.first
   end
 

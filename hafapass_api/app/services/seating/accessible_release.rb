@@ -71,8 +71,9 @@ module Seating
 
     def standard_event_seats
       @standard_event_seats ||= event.event_seating_configuration.event_seats
+        .joins(:venue_seat)
+        .where(venue_seats: { accessibility_kind: VenueSeat.accessibility_kinds[:standard] })
         .includes(:active_tickets, venue_seat: { seating_row: :seating_section })
-        .select { |candidate| candidate.venue_seat.accessibility_kind_standard? }
     end
 
     def sold_out?(seats)

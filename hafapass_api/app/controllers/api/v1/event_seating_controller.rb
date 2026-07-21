@@ -33,12 +33,15 @@ class Api::V1::EventSeatingController < ApplicationController
 
   def destroy_hold
     session = Seating::Credential.find_session(params[:token])
-    unless session&.event_seating_configuration&.event_id == @event.id
+    unless session&.event_seating_configuration&.event_id == @event.id &&
+        (session.user_id.nil? || session.user_id == @current_user&.id)
       return render json: { error: "Seat hold not found" }, status: :not_found
     end
 
     Seating::SessionLifecycle.release!(session, reason: "buyer_released")
     render json: { status: session.reload.status }
+  rescue Seating::SessionLifecycle::SessionError => e
+    render json: { error: "#{e.message}. Cancel the pending order to release its seats." }, status: :conflict
   end
 
   private

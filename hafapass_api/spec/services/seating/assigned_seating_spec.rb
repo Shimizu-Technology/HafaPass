@@ -48,6 +48,21 @@ RSpec.describe "Assigned seating lifecycle" do
     expect(map.to_json).not_to include("buyer_email", "attendee_name")
   end
 
+  it "prices the map from aggregate live holds instead of loading hold history per seat" do
+    tier = create(:pricing_tier, ticket_type: ticket_type, tier_type: :quantity_based, quantity_limit: 1,
+      price_cents: 1500, position: 0)
+    configuration = activate!
+    seat = configuration.event_seats.find_by!(venue_seat: standard_one)
+
+    expect(Seating::MapPresenter.call(configuration).dig(:sections, 0, :rows, 0, :seats, 0, :price_cents)).to eq(1500)
+    hold = Seating::HoldAllocator.call(event: event, event_seat_ids: [seat.id], accessibility_attested: false)
+    expect(hold.session.seat_holds.first.pricing_tier_id).to eq(tier.id)
+
+    prices = Seating::MapPresenter.call(configuration).fetch(:sections).flat_map { |item| item.fetch(:rows) }
+      .flat_map { |item| item.fetch(:seats) }.pluck(:price_cents)
+    expect(prices).to all(eq(ticket_type.price_cents))
+  end
+
   it "requires attestation and a wheelchair location for protected companion inventory" do
     configuration = activate!
     wheelchair_seat = configuration.event_seats.find_by!(venue_seat: wheelchair)

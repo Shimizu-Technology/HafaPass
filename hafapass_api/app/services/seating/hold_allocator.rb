@@ -14,7 +14,7 @@ module Seating
     def initialize(event:, event_seat_ids:, accessibility_attested:, user: nil, source: "online", at: Time.current)
       @event = event
       @event_seat_ids = Array(event_seat_ids).map(&:to_i).uniq.sort
-      @accessibility_attested = ActiveModel::Type::Boolean.new.cast(accessibility_attested)
+      @accessibility_attested = ActiveModel::Type::Boolean.new.cast(accessibility_attested) || false
       @user = user
       @source = source
       @at = at
