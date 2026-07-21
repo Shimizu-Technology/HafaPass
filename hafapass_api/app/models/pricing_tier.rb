@@ -18,17 +18,17 @@ class PricingTier < ApplicationRecord
 
   scope :ordered, -> { order(:position) }
 
-  def active?
+  def active?(at: Time.current)
     case tier_type
     when "quantity_based"
-      quantity_sold + inventory_holds.current.sum(:quantity) + waitlist_offers.holding_inventory.sum(:quantity) < quantity_limit
+      quantity_sold + active_holds_quantity(at) + active_waitlist_quantity(at) < quantity_limit
     when "time_based"
       if starts_at.present? && ends_at.present?
-        Time.current.between?(starts_at, ends_at)
+        at.between?(starts_at, ends_at)
       elsif starts_at.present?
-        Time.current >= starts_at
+        at >= starts_at
       elsif ends_at.present?
-        Time.current < ends_at
+        at < ends_at
       else
         false
       end
@@ -37,6 +37,20 @@ class PricingTier < ApplicationRecord
     end
   end
   private
+
+  def active_holds_quantity(at)
+    return inventory_holds.sum { |hold| hold.active? && hold.expires_at > at ? hold.quantity : 0 } if inventory_holds.loaded?
+
+    inventory_holds.current.sum(:quantity)
+  end
+
+  def active_waitlist_quantity(at)
+    if waitlist_offers.loaded?
+      return waitlist_offers.sum { |offer| offer.offered? && offer.expires_at > at ? offer.quantity : 0 }
+    end
+
+    waitlist_offers.holding_inventory(at).sum(:quantity)
+  end
 
   def chronological_time_window
     return unless time_based?

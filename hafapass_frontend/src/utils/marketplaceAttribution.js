@@ -12,7 +12,14 @@ export function anonymousId() {
 
 export function saveAttribution(attribution) {
   const values = Object.fromEntries(Object.entries(attribution).filter(([, value]) => value))
-  localStorage.setItem(ATTRIBUTION_KEY, JSON.stringify({ ...currentAttribution(), ...values, captured_at: new Date().toISOString() }))
+  const next = { ...currentAttribution(), ...values }
+  if (values.event_referral_code) delete next.distribution_code
+  else if (values.distribution_code) delete next.event_referral_code
+  else if (values.source || values.medium || values.campaign) {
+    delete next.distribution_code
+    delete next.event_referral_code
+  }
+  localStorage.setItem(ATTRIBUTION_KEY, JSON.stringify({ ...next, captured_at: new Date().toISOString() }))
 }
 
 export function currentAttribution() {

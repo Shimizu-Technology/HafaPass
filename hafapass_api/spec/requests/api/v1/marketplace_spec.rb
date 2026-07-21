@@ -70,4 +70,34 @@ RSpec.describe "Marketplace discovery", type: :request do
     expect(response.body).to include("/collections/#{collection.slug}", "/venues/#{venue.slug}",
       "/organizers/#{profile.organization.slug}")
   end
+
+  it "keeps collection and organizer index query counts bounded as shelves grow" do
+    first = create(:marketplace_collection)
+    first.marketplace_collection_events.create!(event: event)
+    baseline = count_select_queries { get "/api/v1/marketplace_collections" }
+
+    4.times do
+      collection = create(:marketplace_collection)
+      collection.marketplace_collection_events.create!(event: event)
+    end
+    expanded = count_select_queries { get "/api/v1/marketplace_collections" }
+    expect(expanded).to be <= baseline + 2
+
+    4.times do
+      another_profile = create(:organizer_profile)
+      another_event = create(:event, :published, organizer_profile: another_profile,
+        organization: another_profile.organization)
+      create(:ticket_type, event: another_event)
+    end
+    expect(count_select_queries { get "/api/v1/organizers" }).to be <= 8
+  end
+
+  def count_select_queries(&block)
+    count = 0
+    subscriber = lambda do |_name, _start, _finish, _id, payload|
+      count += 1 if !payload[:cached] && payload[:name] != "SCHEMA" && payload[:sql].lstrip.start_with?("SELECT")
+    end
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record", &block)
+    count
+  end
 end

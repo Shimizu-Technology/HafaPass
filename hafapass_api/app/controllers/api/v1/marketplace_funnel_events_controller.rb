@@ -10,8 +10,8 @@ class Api::V1::MarketplaceFunnelEventsController < ApplicationController
       return render json: { error: "Unsupported funnel stage" }, status: :unprocessable_entity
     end
 
-    link = DistributionLink.available.find_by(code: params[:distribution_code].to_s.upcase)
     referral = EventReferral.find_by(code: params[:event_referral_code].to_s.upcase, active: true)
+    link = DistributionLink.available.find_by(code: params[:distribution_code].to_s.upcase) unless referral
     if link && link.event_id != event.id
       return render json: { error: "Distribution link does not match this event" }, status: :unprocessable_entity
     end

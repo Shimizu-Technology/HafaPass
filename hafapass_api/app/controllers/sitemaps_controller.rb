@@ -3,7 +3,7 @@ class SitemapsController < ApplicationController
 
   def show
     @events = Event.published.where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current).order(updated_at: :desc)
-    @collections = MarketplaceCollection.currently_visible.select { |collection| collection.discoverable_events.exists? }
+    @collections = MarketplaceCollection.currently_visible.with_discoverable_events
     @venues = Venue.published.joins(:events).merge(Event.discoverable).distinct
     @organizers = Organization.status_active.joins(:events).merge(Event.discoverable).distinct
     base_url = PublicSiteUrl.base

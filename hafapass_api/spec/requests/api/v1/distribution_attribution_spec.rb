@@ -84,12 +84,17 @@ RSpec.describe "Privacy-safe distribution attribution", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig("attribution", "event_referral_code")).to eq(referral.code)
 
+    post "/api/v1/marketplace_funnel_events", params: { event_id: event.id, stage: "event_view",
+      anonymous_id: anonymous_id, event_referral_code: referral.code, distribution_code: link.code }
+    expect(MarketplaceFunnelEvent.last).to have_attributes(event_referral_id: referral.id, distribution_link_id: nil)
+
     result = Commerce::OrderCreator.call(event: event,
       line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }], buyer_email: "friend@example.com",
       buyer_name: "Friend", payment_required: false,
-      attribution: { event_referral_code: referral.code, anonymous_id: anonymous_id })
+      attribution: { event_referral_code: referral.code, distribution_code: link.code, anonymous_id: anonymous_id })
 
     expect(result.order.acquisition_attribution.event_referral).to eq(referral)
+    expect(result.order.acquisition_attribution.distribution_link).to be_nil
     expect(result.order.acquisition_attribution.source).to eq("user_referral")
     expect(referral.acquisition_attributions.count).to eq(1)
   end

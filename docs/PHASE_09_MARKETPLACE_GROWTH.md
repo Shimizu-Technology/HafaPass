@@ -65,7 +65,7 @@ Creating or rescheduling a reminder increments its effective schedule through th
 3. Create one event-specific link for each channel or campaign that needs independent measurement. Disable the link or partner when the relationship ends.
 4. Curate collections only from published events with live inventory. The public API and sitemap automatically suppress empty shelves, but the supply dashboard still reports them for remediation.
 5. Review unattributed/direct, partner, and referral conversion in aggregate. Do not use the anonymous visitor hash as a customer profile or export it to partners.
-6. Schedule `PurgeMarketplaceAnalyticsJob.perform_later` daily in production and alert on repeated job failure.
+6. Run the Procfile `clock` process. `Operations::CommerceClock` enqueues inventory expiry every minute and `PurgeMarketplaceAnalyticsJob` once per UTC date; alert on clock or job failure.
 
 ## Deployment and rollback
 

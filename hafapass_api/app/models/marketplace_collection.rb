@@ -15,6 +15,10 @@ class MarketplaceCollection < ApplicationRecord
   scope :currently_visible, ->(at = Time.current) {
     published.where("starts_at IS NULL OR starts_at <= ?", at).where("ends_at IS NULL OR ends_at > ?", at)
   }
+  scope :with_discoverable_events, -> {
+    where(id: MarketplaceCollectionEvent.where(event_id: Event.discoverable.select(:id))
+      .select(:marketplace_collection_id))
+  }
 
   def discoverable_events
     visible_ids = Event.discoverable.where(id: marketplace_collection_events.select(:event_id)).select(:id)

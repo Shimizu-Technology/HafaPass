@@ -4,6 +4,9 @@ class Api::V1::Admin::MarketplaceController < Api::V1::Admin::BaseController
   def show
     upcoming = Event.published.where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current)
     discoverable = Event.discoverable
+    collection_ids = MarketplaceCollectionEvent.where(event_id: discoverable.select(:id))
+      .select(:marketplace_collection_id)
+    organizer_ids = discoverable.select(:organization_id)
     funnel = MarketplaceFunnelEvent.group(:stage).count
     purchases = MarketplaceFunnelEvent.purchase.count
     checkout_starts = MarketplaceFunnelEvent.checkout_started.count
@@ -13,8 +16,8 @@ class Api::V1::Admin::MarketplaceController < Api::V1::Admin::BaseController
         published_upcoming: upcoming.distinct.count,
         purchasable_upcoming: discoverable.count,
         sold_out_or_unavailable: upcoming.distinct.count - discoverable.count,
-        empty_collections: MarketplaceCollection.published.count { |collection| !collection.discoverable_events.exists? },
-        organizers_without_upcoming_inventory: Organization.status_active.count { |org| !org.events.merge(discoverable).exists? },
+        empty_collections: MarketplaceCollection.published.where.not(id: collection_ids).count,
+        organizers_without_upcoming_inventory: Organization.status_active.where.not(id: organizer_ids).count,
         categories_without_inventory: Event.categories.keys - discoverable.distinct.pluck(:category),
         villages_with_inventory: discoverable.where.not(venue_city: [nil, ""]).distinct.order(:venue_city).pluck(:venue_city)
       },

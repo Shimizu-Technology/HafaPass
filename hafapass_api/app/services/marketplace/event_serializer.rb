@@ -2,12 +2,13 @@
 
 module Marketplace
   class EventSerializer
-    def self.call(event)
-      new(event).call
+    def self.call(event, purchasable: nil)
+      new(event, purchasable: purchasable).call
     end
 
-    def initialize(event)
+    def initialize(event, purchasable:)
       @event = event
+      @purchasable = purchasable
     end
 
     def call
@@ -30,14 +31,20 @@ module Marketplace
           slug: event.organization.slug,
           verified: event.organizer_profile.verification_status_verified?
         },
-        ticket_types: event.ticket_types.order(:sort_order, :id).map { |type| ticket_type_json(type) },
-        purchasable: event.sales_open? && event.has_available_inventory?
+        ticket_types: ordered_ticket_types.map { |type| ticket_type_json(type) },
+        purchasable: purchasable.nil? ? event.sales_open? && event.has_available_inventory? : purchasable
       }
     end
 
     private
 
-    attr_reader :event
+    attr_reader :event, :purchasable
+
+    def ordered_ticket_types
+      return event.ticket_types.sort_by { |type| [type.sort_order || 0, type.id] } if event.ticket_types.loaded?
+
+      event.ticket_types.order(:sort_order, :id)
+    end
 
     def ticket_type_json(type)
       {
