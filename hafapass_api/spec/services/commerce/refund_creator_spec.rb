@@ -301,4 +301,80 @@ RSpec.describe Commerce::RefundCreator do
     expect(ticket_type.reload.quantity_sold).to eq(1)
     expect(order.reconciliation_exceptions).to exist(code: "refund_terminal_status_conflict")
   end
+
+  it "blocks a new provider attempt after a failed selective refund receives contradictory success" do
+    selected = order.tickets.first
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_conflict_retry", status: "failed"))
+    failed = described_class.call(order: order, tickets: [selected], idempotency_key: "failed-conflict")
+    described_class.reconcile_refund!(refund: failed,
+      provider_refund: OpenStruct.new(id: "re_conflict_retry", status: "succeeded"))
+    expect(failed.reload.refund_tickets.active).to be_empty
+    allow(StripeService).to receive(:refund_payment)
+
+    expect { described_class.call(order: order, tickets: [selected], idempotency_key: "duplicate-conflict") }
+      .to raise_error(described_class::RefundError, /finance review/)
+
+    expect(order.refunds.count).to eq(1)
+    expect(selected.reload).to be_issued
+    expect(described_class.call(order: order, tickets: [selected], idempotency_key: "failed-conflict")).to be_failed
+    expect(StripeService).to have_received(:refund_payment).once
+    expect(Commerce::RefundOutcome.call(order: order, idempotency_key: "failed-conflict")).to include(
+      reconciliation_required: true, finance_review_required: true, refund_status: "failed"
+    )
+  end
+
+  it "blocks resubmission of an unknown pending request when a financial mismatch is open" do
+    pending = create(:refund, order: order, payment: payment, amount_cents: 1000,
+      status: :pending, provider_refund_id: nil, idempotency_key: "unknown-review")
+    create(:reconciliation_exception, order: nil, payment: payment, code: "refund_operation_mismatch")
+    allow(StripeService).to receive(:refund_payment)
+
+    expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: pending.idempotency_key) }
+      .to raise_error(described_class::RefundError, /finance review/)
+
+    expect(pending.reload).to be_pending
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "permits trusted provider reconciliation to record a known operation while financial review remains open" do
+    create(:reconciliation_exception, order: order, payment: payment, code: "refund_operation_not_found")
+    allow(StripeService).to receive(:refund_payment)
+
+    refund = described_class.call(order: order, payment: payment, amount_cents: 1000,
+      idempotency_key: "provider:reviewed-operation", provider_refund: OpenStruct.new(
+        id: "re_external_while_reviewing", amount: 1000, currency: "usd", status: "succeeded"
+      ))
+
+    expect(refund).to be_succeeded
+    expect(order.reload.refunded_cents).to eq(1000)
+    expect(StripeService).not_to have_received(:refund_payment)
+    expect(Commerce::RefundOutcome.call(order: order, idempotency_key: refund.idempotency_key))
+      .to include(finance_review_required: true, reconciliation_required: true)
+  end
+
+  it "applies a trusted final response to an acknowledged pending operation without resubmitting it" do
+    pending = create(:refund, order: order, payment: payment, amount_cents: 1000,
+      status: :pending, provider_refund_id: "re_acknowledged_review", idempotency_key: "acknowledged-review")
+    create(:reconciliation_exception, order: order, payment: payment, code: "refund_operation_mismatch")
+    allow(StripeService).to receive(:refund_payment)
+
+    result = described_class.call(order: order, amount_cents: 1000, idempotency_key: pending.idempotency_key,
+      provider_refund: OpenStruct.new(id: pending.provider_refund_id, amount: 1000, currency: "usd", status: "succeeded"))
+
+    expect(result.id).to eq(pending.id)
+    expect(result).to be_succeeded
+    expect(order.reload.refunded_cents).to eq(1000)
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "allows a new refund after finance explicitly resolves the ambiguity" do
+    exception = create(:reconciliation_exception, order: order, payment: payment, code: "refund_terminal_status_conflict")
+    exception.resolve!
+    expect(described_class.call(order: order, amount_cents: 1000, idempotency_key: "resolved-review")).to be_succeeded
+  end
+
+  it "does not block a refund for a nonfinancial exception" do
+    create(:reconciliation_exception, order: order, code: "ticket_email_delivery_failure")
+    expect(described_class.call(order: order, amount_cents: 1000, idempotency_key: "delivery-only")).to be_succeeded
+  end
 end

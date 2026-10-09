@@ -53,9 +53,10 @@ module Commerce
       refund = reserve_refund!
       return refund unless refund.pending?
       return refund if refund.provider_refund_id.present? && !provider_refund
+      return refund if !provider_refund && !provider_submission_allowed?(refund)
 
-      provider_refund = submit_provider_refund(refund)
-      finalize_refund!(refund, provider_refund)
+      response = submit_provider_refund(refund)
+      finalize_refund!(refund, response)
     rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError => e
       fail_refund!(refund, "provider_error", e.message)
       raise RefundError, "Refund provider rejected the request"
@@ -80,6 +81,8 @@ module Commerce
         unless order.completed? || order.partially_refunded?
           raise RefundError, "Only completed or partially refunded orders can be refunded"
         end
+
+        ensure_financial_review_resolved! unless provider_refund
 
         selected_tickets = lock_selected_tickets!
         captured = order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).to_a
@@ -134,6 +137,24 @@ module Commerce
       end
 
       raise
+    end
+
+    def provider_submission_allowed?(refund)
+      Refund.transaction do
+        order.event.organization.lock!
+        order.lock!
+        refund.lock!
+        return false unless refund.pending? && refund.provider_refund_id.blank?
+
+        ensure_financial_review_resolved!
+        true
+      end
+    end
+
+    def ensure_financial_review_resolved!
+      return unless RefundSafety.finance_review_required?(order)
+
+      raise RefundError, "Refund needs finance review; contact support before submitting another request"
     end
 
     def lock_selected_tickets!

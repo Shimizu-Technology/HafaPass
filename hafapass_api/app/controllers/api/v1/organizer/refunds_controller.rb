@@ -70,7 +70,7 @@ module Api
                 quantity: item.quantity
               }
             }
-          }
+          }.merge(Commerce::RefundOutcome.call(order: refund.order, idempotency_key: refund.idempotency_key))
         end
       end
     end
