@@ -22,14 +22,14 @@ RSpec.describe "Stripe webhooks", type: :request do
     }.to_json, headers: { "Content-Type" => "application/json" }
   end
 
-  def create_pending_checkout(intent_id: "pi_checkout")
+  def create_pending_checkout(intent_id: "pi_checkout", quantity: 1)
     allow(StripeService).to receive(:payment_enabled?).and_return(true)
     allow(StripeService).to receive(:create_payment_intent).and_return(
       OpenStruct.new(id: intent_id, client_secret: "#{intent_id}_secret")
     )
     Commerce::OrderCreator.call(
       event: event,
-      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: quantity }],
       buyer_email: "buyer@example.com",
       buyer_name: "Buyer"
     )
@@ -88,7 +88,8 @@ RSpec.describe "Stripe webhooks", type: :request do
     order = create(:order, event: event, total_cents: 5250, stripe_payment_intent_id: "pi_refunded")
     create(:ticket, order: order, event: event, ticket_type: ticket_type, pricing_tier: pricing_tier)
 
-    post_stripe_event("charge.refunded", { payment_intent: "pi_refunded", amount_refunded: 5250 })
+    post_stripe_event("charge.refunded", { payment_intent: "pi_refunded", amount_refunded: 5250,
+      refunds: { data: [{ id: "re_legacy", status: "succeeded" }] } })
 
     expect(response).to have_http_status(:ok)
     expect(order.reload).to be_completed
@@ -266,5 +267,210 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(Dispute.find_by(provider_dispute_id: "dp_warning")).to be_won
     expect(ticket.reload).to be_issued
     expect(checkout.order.reload.ticket_access_blocked?).to be(false)
+  end
+  it "reconciles a pending refund by operation ID and ignores later pending callbacks" do
+    checkout = create_pending_checkout(intent_id: "pi_async_refund")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_async_refund", amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_async", status: "pending"))
+    refund = Commerce::RefundCreator.call(order: checkout.order, amount_cents: checkout.payment.amount_cents)
+    payload = { id: "re_async", payment_intent: "pi_async_refund", amount: refund.amount_cents, currency: "usd", status: "succeeded" }
+    post_stripe_event("refund.updated", payload)
+    expect(response).to have_http_status(:ok)
+    expect(refund.reload).to be_succeeded
+    expect(checkout.order.reload).to be_refunded
+    expect(checkout.order.tickets.reload).to all(be_cancelled)
+    post_stripe_event("refund.updated", payload.merge(status: "pending"))
+    expect(refund.reload).to be_succeeded
+    expect(refund.refund_items.sum(:amount_cents)).to eq(refund.amount_cents)
+    expect(StripeService).to have_received(:refund_payment).once
+  end
+
+  it "does not treat a charge refund aggregate containing a pending operation as succeeded" do
+    checkout = create_pending_checkout(intent_id: "pi_charge_pending")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_charge_pending", amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_charge_pending", status: "pending"))
+    refund = Commerce::RefundCreator.call(order: checkout.order, amount_cents: checkout.payment.amount_cents)
+    post_stripe_event("charge.refunded", { id: "ch_pending", payment_intent: "pi_charge_pending", amount_refunded: refund.amount_cents,
+      refunds: { data: [{ id: "re_charge_pending", payment_intent: "pi_charge_pending", amount: refund.amount_cents, currency: "usd", status: "pending" }] } })
+    expect(refund.reload).to be_pending
+    expect(checkout.order.reload).to be_completed
+  end
+
+  it "rolls back a lost dispute if ticket revocation fails and completes on replay" do
+    checkout = create_pending_checkout(intent_id: "pi_lost_retry", quantity: 2)
+    post_stripe_event("payment_intent.succeeded", { id: "pi_lost_retry", amount_received: checkout.payment.amount_cents, currency: "usd" })
+    ticket = checkout.order.tickets.first
+    sold = ticket_type.reload.quantity_sold
+    payload = { id: "evt_lost_retry", type: "charge.dispute.closed", data: { object: { id: "dp_retry", payment_intent: "pi_lost_retry",
+      amount: checkout.payment.amount_cents, currency: "usd", status: "lost" } } }
+    provider_event = Stripe::Event.construct_from(payload)
+    updates = 0
+    allow_any_instance_of(Ticket).to receive(:update!).and_wrap_original do |original, *args|
+      updates += 1
+      raise StandardError, "injected ticket failure" if updates == 2
+      original.call(*args)
+    end
+    expect { StripeWebhookProcessor.call(event: provider_event, payload: payload) }.to raise_error(StandardError, /injected/)
+    expect(Dispute.find_by(provider_dispute_id: "dp_retry")).to be_nil
+    expect(ticket.reload).to be_issued
+    expect(ticket_type.reload.quantity_sold).to eq(sold)
+    allow_any_instance_of(Ticket).to receive(:update!).and_call_original
+    StripeWebhookProcessor.call(event: provider_event, payload: payload)
+    expect(ticket.reload).to be_cancelled
+    expect(Dispute.find_by!(provider_dispute_id: "dp_retry")).to be_lost
+    expect(checkout.order.tickets.reload).to all(be_cancelled)
+    expect(ticket_type.reload.quantity_sold).to eq(sold - 2)
+  end
+  it "binds a callback received after a lost response using provider operation metadata" do
+    checkout = create_pending_checkout(intent_id: "pi_lost_response")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_lost_response", amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError, "response lost")
+    expect { Commerce::RefundCreator.call(order: checkout.order, amount_cents: 1000, idempotency_key: "lost-response-key") }
+      .to raise_error(Commerce::RefundCreator::RefundError, /unknown/)
+    refund = checkout.order.refunds.last
+    post_stripe_event("refund.updated", { id: "re_lost_response", payment_intent: "pi_lost_response", amount: 1000,
+      currency: "usd", status: "succeeded", metadata: { hafapass_refund_key: "lost-response-key" } })
+    expect(refund.reload).to be_succeeded
+    expect(refund.provider_refund_id).to eq("re_lost_response")
+    expect(checkout.order.refunds.count).to eq(1)
+  end
+
+  it "applies matching pending operations independently when callbacks arrive in reverse order" do
+    checkout = create_pending_checkout(intent_id: "pi_reverse_refunds")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_reverse_refunds", amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_first", status: "pending"), OpenStruct.new(id: "re_second", status: "pending"))
+    first = Commerce::RefundCreator.call(order: checkout.order, amount_cents: 1000, idempotency_key: "first-operation")
+    second = Commerce::RefundCreator.call(order: checkout.order, amount_cents: 1000, idempotency_key: "second-operation")
+    payload = { payment_intent: "pi_reverse_refunds", amount: 1000, currency: "usd", status: "succeeded" }
+    post_stripe_event("refund.updated", payload.merge(id: "re_second"))
+    expect(first.reload).to be_pending
+    expect(second.reload).to be_succeeded
+    post_stripe_event("refund.updated", payload.merge(id: "re_first"))
+    expect(first.reload).to be_succeeded
+    expect(checkout.order.reload.refunded_cents).to eq(2000)
+  end
+  it "keeps a failed asynchronous refund unpaid and quarantines a contradictory success" do
+    checkout = create_pending_checkout(intent_id: "pi_async_failed")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_async_failed", amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_async_failed", status: "pending"))
+    refund = Commerce::RefundCreator.call(order: checkout.order, tickets: [checkout.order.tickets.first])
+    payload = { id: "re_async_failed", payment_intent: "pi_async_failed", amount: refund.amount_cents, currency: "usd", status: "failed" }
+    post_stripe_event("refund.failed", payload)
+    expect(refund.reload).to be_failed
+    expect(refund.refund_tickets.active).to be_empty
+    expect(refund.refund_tickets.count).to eq(1)
+    expect(checkout.order.reload).to be_completed
+    expect(checkout.order.tickets.reload).to all(be_issued)
+    post_stripe_event("refund.updated", payload.merge(status: "succeeded"))
+    expect(refund.reload).to be_failed
+    expect(checkout.order.reconciliation_exceptions).to exist(code: "refund_terminal_status_conflict")
+  end
+
+  [true, false].each do |includes_operation_amount|
+    it "reconciles charge totals per captured payment when operation amounts are #{includes_operation_amount ? 'included' : 'absent'}" do
+      checkout = create_pending_checkout(intent_id: "pi_multi_first")
+      post_stripe_event("payment_intent.succeeded", { id: "pi_multi_first",
+        amount_received: checkout.payment.amount_cents, currency: "usd" })
+      second_payment = create(:payment, :succeeded, order: checkout.order,
+        amount_cents: checkout.payment.amount_cents, provider_payment_id: "pi_multi_second")
+      first_operation = { id: "re_multi_first", amount: 500, currency: "usd", status: "succeeded" }
+      post_stripe_event("charge.refunded", { id: "ch_multi_first", payment_intent: "pi_multi_first",
+        amount_refunded: 500, currency: "usd", refunds: { data: [first_operation] } })
+      expect(response).to have_http_status(:ok)
+
+      second_operation = { id: "re_multi_second", status: "succeeded" }
+      second_operation.merge!(amount: 750, currency: "usd") if includes_operation_amount
+      post_stripe_event("charge.refunded", { id: "ch_multi_second", payment_intent: "pi_multi_second",
+        amount_refunded: 750, currency: "usd", refunds: { data: [second_operation] } })
+
+      expect(response).to have_http_status(:ok)
+      expect(checkout.payment.reload.refunds.succeeded.sum(:amount_cents)).to eq(500)
+      expect(second_payment.reload.refunds.succeeded.sum(:amount_cents)).to eq(750)
+      expect(checkout.order.reload.refunded_cents).to eq(1250)
+      expect(checkout.order.refunds.succeeded.sum(:amount_cents)).to eq(1250)
+      expect(checkout.order.refunds.joins(:refund_items).sum("refund_items.amount_cents")).to eq(1250)
+      expect(checkout.order.reconciliation_exceptions).to be_empty
+    end
+  end
+
+  it "ignores an older charge snapshot of exactly matching booked refunds after newer refunds succeeded" do
+    checkout = create_pending_checkout(intent_id: "pi_delayed_charge_refunds")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_delayed_charge_refunds",
+      amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_delayed_first", status: "succeeded"),
+      OpenStruct.new(id: "re_delayed_second", status: "succeeded")
+    )
+    2.times { |i| Commerce::RefundCreator.call(order: checkout.order, amount_cents: 500, idempotency_key: "delayed-#{i}") }
+    first_operation = { id: "re_delayed_first", amount: 500, currency: "usd", status: "succeeded" }
+    second_operation = first_operation.merge(id: "re_delayed_second")
+    post_stripe_event("charge.refunded", { id: "ch_delayed", payment_intent: "pi_delayed_charge_refunds",
+      amount_refunded: 1000, currency: "usd", refunds: { data: [first_operation, second_operation] } })
+    expect(response).to have_http_status(:ok)
+
+    expect do
+      post_stripe_event("charge.refunded", { id: "ch_delayed", payment_intent: "pi_delayed_charge_refunds",
+        amount_refunded: 500, currency: "usd", refunds: { data: [first_operation] } })
+    end.not_to change { [Refund.count, RefundItem.count] }
+
+    expect(response).to have_http_status(:ok)
+    expect(checkout.order.reload.refunded_cents).to eq(1000)
+    expect(checkout.payment.reload.refunds.succeeded.sum(:amount_cents)).to eq(1000)
+    expect(checkout.order.reconciliation_exceptions).to be_empty
+  end
+
+  it "defers an empty charge refund list to operation events without quarantining an old aggregate" do
+    checkout = create_pending_checkout(intent_id: "pi_unexplained_lower_total")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_unexplained_lower_total",
+      amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_booked", status: "succeeded"))
+    Commerce::RefundCreator.call(order: checkout.order, amount_cents: 1000, idempotency_key: "booked")
+
+    post_stripe_event("charge.refunded", { id: "ch_unexplained", payment_intent: "pi_unexplained_lower_total",
+      amount_refunded: 500, currency: "usd", refunds: { data: [] } })
+
+    expect(response).to have_http_status(:ok)
+    expect(checkout.order.reload.refunded_cents).to eq(1000)
+    expect(checkout.order.reconciliation_exceptions).to be_empty
+  end
+
+  it "defers a charge snapshot without embedded refunds and later books the operation event" do
+    checkout = create_pending_checkout(intent_id: "pi_no_embedded_refunds")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_no_embedded_refunds",
+      amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_unexpanded", status: "pending"))
+    refund = Commerce::RefundCreator.call(order: checkout.order, amount_cents: 1000, idempotency_key: "unexpanded")
+
+    post_stripe_event("charge.refunded", { id: "ch_unexpanded", payment_intent: "pi_no_embedded_refunds",
+      amount_refunded: 1000, currency: "usd" })
+    expect(response).to have_http_status(:ok)
+    expect(refund.reload).to be_pending
+    expect(checkout.order.reload.refunded_cents).to eq(0)
+    expect(checkout.order.reconciliation_exceptions).to be_empty
+
+    post_stripe_event("refund.updated", { id: "re_unexpanded", payment_intent: "pi_no_embedded_refunds",
+      amount: 1000, currency: "usd", status: "succeeded" })
+    expect(response).to have_http_status(:ok)
+    expect(refund.reload).to be_succeeded
+    expect(checkout.order.reload.refunded_cents).to eq(1000)
+    expect(checkout.order.reconciliation_exceptions).to be_empty
+  end
+
+  it "quarantines a lower charge snapshot whose listed operation does not match its booked amount" do
+    checkout = create_pending_checkout(intent_id: "pi_mismatched_lower_total")
+    post_stripe_event("payment_intent.succeeded", { id: "pi_mismatched_lower_total",
+      amount_received: checkout.payment.amount_cents, currency: "usd" })
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_mismatch_booked", status: "succeeded"))
+    Commerce::RefundCreator.call(order: checkout.order, amount_cents: 1000, idempotency_key: "mismatch-booked")
+
+    post_stripe_event("charge.refunded", { id: "ch_mismatch", payment_intent: "pi_mismatched_lower_total",
+      amount_refunded: 500, currency: "usd", refunds: { data: [
+        { id: "re_mismatch_booked", amount: 500, currency: "usd", status: "succeeded" }
+      ] } })
+
+    expect(response).to have_http_status(:ok)
+    expect(checkout.order.reload.refunded_cents).to eq(1000)
+    expect(checkout.order.reconciliation_exceptions).to exist(code: "refund_operation_mismatch")
+    expect(checkout.order.reconciliation_exceptions).to exist(code: "provider_refund_total_decreased")
   end
 end

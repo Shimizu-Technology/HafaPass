@@ -59,6 +59,7 @@ class PlatformCapabilities
 
     def configured?(name)
       name = name.to_s
+      return false if Rails.env.staging? && name != "policy_register"
       return true if name == "policy_register"
 
       definition(name).fetch(:required_env).all? { |key| ENV[key].present? } && provider_specific_configuration_valid?(name)

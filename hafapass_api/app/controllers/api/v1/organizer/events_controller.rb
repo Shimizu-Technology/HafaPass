@@ -28,6 +28,7 @@ module Api
           return unless authorize_organization!(:manage_events)
 
           event = current_organization.events.build(parsed_event_params)
+          event.transfers_enabled = false unless LaunchCapabilities.enabled?(:ticket_transfers)
           event.organizer_profile = current_organizer_profile
           if event.save
             render json: event_json(event), status: :created
@@ -38,11 +39,13 @@ module Api
 
         def update
           attributes = parsed_event_params
-          unless OrganizationAuthorization.allowed?(
+          can_manage = OrganizationAuthorization.allowed?(
             user: current_user, organization: current_organization, permission: :manage_events, event: @event
           )
+          unless can_manage
             attributes.slice!("title", "description", "short_description", "cover_image_url", "category")
           end
+          attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
           reschedule = reschedule?(attributes)
           change_reason = params[:change_reason].to_s.strip.presence
           if reschedule && change_reason.blank?

@@ -27,8 +27,11 @@ class OrganizationInvitation
 
       membership.with_lock do
         unless membership.status_invited? && membership.invitation_version == version &&
-            membership.expires_at&.future? && email_matches?(membership, user)
+            membership.expires_at&.future?
           raise InvitationError, "Invitation is invalid or expired"
+        end
+        unless email_matches?(membership, user)
+          raise InvitationError, "We could not verify the recipient email. Sign in with the verified email address that received this invitation and try again."
         end
         if membership.organization.organization_memberships.effective.exists?(user: user)
           raise InvitationError, "You are already a member of this organization"
@@ -51,7 +54,7 @@ class OrganizationInvitation
     private
 
     def email_matches?(membership, user)
-      membership.invited_email.to_s.casecmp?(user.email.to_s)
+      ClerkIdentity.email_matches?(user: user, email: membership.invited_email)
     end
   end
 end

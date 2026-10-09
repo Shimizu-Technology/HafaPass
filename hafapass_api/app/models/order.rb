@@ -52,7 +52,15 @@ class Order < ApplicationRecord
   end
 
   def ticket_fulfilled?
-    completed? || partially_refunded?
+    return false unless completed? || partially_refunded?
+    return true unless Rails.env.production? && total_cents.positive?
+
+    captured = payments.loaded? ? payments.select { |payment| payment.succeeded? || payment.partially_refunded? } :
+      payments.where(status: [:succeeded, :partially_refunded]).to_a
+    captured.any? do |payment|
+      payment.amount_cents >= total_cents && payment.currency == currency && payment.provider_payment_id.present? &&
+        !payment.provider_payment_id.start_with?("sim_") && payment.provider_payload.to_h["simulated"] != true
+    end
   end
 
   def ticket_record_available?

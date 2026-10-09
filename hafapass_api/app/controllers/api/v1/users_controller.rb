@@ -4,6 +4,8 @@ module Api
       def sync
         user = current_user
 
+        # Email here is editable contact information; recipient identity is checked
+        # server-side through ClerkIdentity, never inferred from these attributes.
         # Only update attributes that are actually present in the request
         # to avoid wiping existing data on partial syncs
         attrs = {}

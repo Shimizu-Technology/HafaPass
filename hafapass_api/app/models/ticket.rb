@@ -1,4 +1,5 @@
 class Ticket < ApplicationRecord
+  class AdmissionError < RuntimeError; end
   belongs_to :order
   belongs_to :ticket_type
   belongs_to :event
@@ -63,17 +64,32 @@ class Ticket < ApplicationRecord
     allocation[tickets.index(id)] || 0
   end
 
-  def check_in!
-    raise "Ticket is not in issued status" unless issued?
-    raise "Ticket order is not fulfilled" unless order&.ticket_fulfilled?
+  def check_in!(credential: nil)
+    order.with_lock do
+      with_lock do
+        raise AdmissionError, "Ticket is not in issued status" unless issued?
+        raise AdmissionError, "Ticket order is not fulfilled" unless order.ticket_fulfilled?
+        if order.ticket_access_blocked?
+          raise AdmissionError, "Ticket access is suspended while a payment dispute is reviewed"
+        end
+        raise AdmissionError, "Event is #{event.status}; check-in is unavailable" unless event.reload.published?
+        if credential && !TicketCredential.valid_scan_for?(self, credential)
+          raise AdmissionError, "Ticket credential has been replaced"
+        end
 
-    update!(status: :checked_in, checked_in_at: Time.current)
+        update!(status: :checked_in, checked_in_at: Time.current)
+      end
+    end
   end
 
   def reverse_check_in!
-    raise "Ticket is not checked in" unless checked_in?
+    order.with_lock do
+      with_lock do
+        raise AdmissionError, "Ticket is not checked in" unless checked_in?
 
-    update!(status: :issued, checked_in_at: nil)
+        update!(status: :issued, checked_in_at: nil)
+      end
+    end
   end
 
   def release_inventory!

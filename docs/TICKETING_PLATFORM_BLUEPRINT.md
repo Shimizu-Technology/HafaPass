@@ -590,7 +590,7 @@ Public flows target WCAG 2.2 AA. Assigned seating must implement accessible-seat
 
 ## 12. Delivery phases
 
-Implementation details, branch names, test protocol, PR requirements, and Greptile loop are defined in [PHASE_DELIVERY_PLAYBOOK.md](PHASE_DELIVERY_PLAYBOOK.md).
+Implementation details, branch names, test protocol, PR requirements, and CodeRabbit review cycle are defined in [PHASE_DELIVERY_PLAYBOOK.md](PHASE_DELIVERY_PLAYBOOK.md).
 
 | Phase | Outcome | Exit gate |
 |---|---|---|
@@ -633,7 +633,7 @@ The program is complete only when every requirement allocated through Phase 10 h
 2. Automated tests at the appropriate unit, request, integration, or end-to-end layer.
 3. Runtime/browser evidence for user-visible behavior.
 4. Passing CI and local gate evidence.
-5. A clean Greptile 5/5 review with actionable comments resolved.
+5. A completed current-head CodeRabbit review, green required checks, resolved required conversations, and no unresolved material finding.
 6. Updated documentation and operational runbooks.
 7. No contradictory current-state evidence in the completion audit.
 

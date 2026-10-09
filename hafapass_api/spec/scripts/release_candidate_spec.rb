@@ -84,7 +84,173 @@ RSpec.describe "release candidate tooling" do
     end
   end
 
+  describe HafaPass::ReleaseCandidate::CodeRabbitEvidence do
+    let(:sha) { "a" * 40 }
+    let(:status) do
+      {
+        "context" => "CodeRabbit", "state" => "success", "description" => "Review completed",
+        "creator" => { "login" => "coderabbitai[bot]", "type" => "Bot" }
+      }
+    end
+    let(:review) do
+      {
+        "id" => 123, "html_url" => "https://github.com/owner/repo/pull/1#pullrequestreview-123",
+        "user" => { "login" => "coderabbitai[bot]", "type" => "Bot" },
+        "commit_id" => sha, "submitted_at" => "2026-10-09T12:00:00Z", "state" => "COMMENTED",
+        "body" => "**Actionable comments posted: 0**"
+      }
+    end
+
+    def verify(statuses: [status], reviews: [review])
+      described_class.verify!(statuses: statuses, reviews: reviews, sha: sha)
+    end
+
+    it "retains a completed bot review for the exact head" do
+      expect(verify).to include("head_sha" => sha, "review_id" => 123, "review_state" => "COMMENTED")
+    end
+
+    it "rejects success statuses that skipped, paused, or never completed review" do
+      ["Review skipped: 142 files exceed the limit of 100", "Review paused", "Review in progress",
+       "Review completed; review skipped", ""].each do |description|
+        expect { verify(statuses: [status.merge("description" => description)]) }
+          .to raise_error(HafaPass::ReleaseCandidate::Error, /completed review status/)
+      end
+    end
+
+    it "rejects missing, failed, or superseded status even when an older run succeeded" do
+      expect { verify(statuses: []) }.to raise_error(HafaPass::ReleaseCandidate::Error)
+      expect { verify(statuses: [status.merge("state" => "pending"), status]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error)
+    end
+
+    it "ignores newer same-context statuses from another issuer and requires actual bot evidence" do
+      fake_status = status.merge("creator" => { "login" => "repository-writer", "type" => "User" })
+      expect(verify(statuses: [fake_status, status])).to include("status_description" => "Review completed")
+      expect { verify(statuses: [fake_status]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /completed review status/)
+      expect { verify(statuses: [status.merge("creator" => nil)]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /completed review status/)
+      expect { verify(statuses: [status.merge("creator" => { "login" => "coderabbitai[bot]", "type" => "User" })]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /completed review status/)
+    end
+
+    it "cannot conceal a later skipped bot review with a newer forged completed status" do
+      fake_status = status.merge("creator" => { "login" => "repository-writer", "type" => "User" })
+      skipped_status = status.merge("description" => "Review skipped: file limit exceeded")
+      expect { verify(statuses: [fake_status, skipped_status, status]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /skipped reviews do not qualify/)
+    end
+
+    it "rejects absent, stale, impersonated, empty, pending, or dismissed reviews" do
+      invalid_reviews = [
+        [], [review.merge("commit_id" => "b" * 40)],
+        [review.merge("user" => { "login" => "coderabbitai[bot]", "type" => "User" })],
+        [review.merge("user" => { "login" => "someone-else[bot]", "type" => "Bot" })],
+        [review.merge("body" => "")], [review.merge("submitted_at" => nil)],
+        [review.merge("state" => "PENDING")], [review.merge("state" => "DISMISSED")],
+        [review.merge("body" => "> ## Review skipped\nToo many files!")]
+      ]
+      invalid_reviews.each do |reviews|
+        expect { verify(reviews: reviews) }.to raise_error(HafaPass::ReleaseCandidate::Error, /submitted, completed review/)
+      end
+    end
+
+    it "does not hide a newer request for changes behind an earlier approval" do
+      newer_review = review.merge("id" => 124, "submitted_at" => "2026-10-09T12:01:00Z", "state" => "CHANGES_REQUESTED")
+      expect { verify(reviews: [review.merge("state" => "APPROVED"), newer_review]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /submitted, completed review/)
+    end
+  end
+
   describe HafaPass::ReleaseCandidate::GitHubEvidence do
+    let(:protection) do
+      {
+        "required_status_checks" => {
+          "strict" => true, "contexts" => HafaPass::ReleaseCandidate::PR_CHECKS,
+          "checks" => [{ "context" => "CodeRabbit", "app_id" => 347564 }]
+        },
+        "required_pull_request_reviews" => {}, "enforce_admins" => { "enabled" => true },
+        "required_conversation_resolution" => { "enabled" => true }
+      }
+    end
+
+    it "requires the CodeRabbit check to be bound to the installed GitHub App" do
+      evidence = described_class.new
+      expect { evidence.send(:validate_protection!, protection) }.not_to raise_error
+      [nil, -1, 15368].each do |app_id|
+        protection["required_status_checks"]["checks"][0]["app_id"] = app_id
+        expect { evidence.send(:validate_protection!, protection) }
+          .to raise_error(HafaPass::ReleaseCandidate::Error, /bind CodeRabbit/)
+      end
+    end
+
+    it "rejects the obsolete reviewer contract even when all engineering checks are present" do
+      protection["required_status_checks"]["contexts"] = HafaPass::ReleaseCandidate::MAIN_CHECKS + ["Greptile Review"]
+      expect { described_class.new.send(:validate_protection!, protection) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /missing required checks: CodeRabbit/)
+    end
+
+    it "captures the actual paginated status and review payloads alongside engineering checks" do
+      shell = instance_double(HafaPass::ReleaseCandidate::Shell)
+      sha = "a" * 40
+      pr = {
+        "number" => 57, "url" => "https://github.com/owner/repo/pull/57", "headRefOid" => sha,
+        "state" => "MERGED", "mergedAt" => "2026-10-09T12:30:00Z",
+        "statusCheckRollup" => HafaPass::ReleaseCandidate::PR_CHECKS.map { |name| { "name" => name, "conclusion" => "success" } }
+      }
+      status = {
+        "context" => "CodeRabbit", "state" => "success", "description" => "Review completed",
+        "creator" => { "login" => "coderabbitai[bot]", "type" => "Bot" }
+      }
+      review = {
+        "id" => 123, "html_url" => "https://github.com/owner/repo/pull/57#pullrequestreview-123",
+        "user" => { "login" => "coderabbitai[bot]", "type" => "Bot" }, "commit_id" => sha,
+        "state" => "COMMENTED", "body" => "**Actionable comments posted: 0**", "submitted_at" => "2026-10-09T12:00:00Z"
+      }
+      allow(shell).to receive(:capture!) do |*command|
+        payload = case command.join(" ")
+        when /check-runs/
+          { "check_runs" => HafaPass::ReleaseCandidate::MAIN_CHECKS.map { |name| { "name" => name, "conclusion" => "success" } } }
+        when /pr view/ then pr
+        when /statuses\?per_page/ then [[status]]
+        when /reviews\?per_page/ then [[review]]
+        when /graphql/
+          { "data" => { "repository" => { "pullRequest" => { "reviewThreads" => {
+            "nodes" => [], "pageInfo" => { "hasNextPage" => false }
+          } } } } }
+        when /issue list/ then []
+        when /branches\/main\/protection/ then protection
+        else raise "Unexpected command: #{command}"
+        end
+        JSON.generate(payload)
+      end
+      evidence = described_class.new(shell: shell)
+      expect(evidence.collect(repository: "owner/repo", sha: "b" * 40, source_pr_number: 57))
+        .to include("source_pull_request" => include("code_review" => include("head_sha" => sha, "review_id" => 123)))
+
+      status["description"] = "Review skipped: 142 files exceed the limit of 100"
+      expect { evidence.collect(repository: "owner/repo", sha: "b" * 40, source_pr_number: 57) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /skipped reviews do not qualify/)
+    end
+
+    it "counts unresolved threads beyond the first page and rejects missing thread evidence" do
+      shell = instance_double(HafaPass::ReleaseCandidate::Shell)
+      payload = ->(nodes, has_next, cursor = nil) do
+        JSON.generate({ "data" => { "repository" => { "pullRequest" => { "reviewThreads" => {
+          "nodes" => nodes, "pageInfo" => { "hasNextPage" => has_next, "endCursor" => cursor }
+        } } } } })
+      end
+      allow(shell).to receive(:capture!).and_return(
+        payload.call(Array.new(100) { { "isResolved" => true } }, true, "page-1"),
+        payload.call([{ "isResolved" => false }], false)
+      )
+      expect(described_class.new(shell: shell).send(:unresolved_review_threads, "owner/repo", 57)).to eq(1)
+      expect(shell).to have_received(:capture!).with(any_args, "cursor=page-1")
+      allow(shell).to receive(:capture!).and_return(JSON.generate({ "errors" => [{ "message" => "Unavailable" }] }))
+      expect { described_class.new(shell: shell).send(:unresolved_review_threads, "owner/repo", 57) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /could not be verified/)
+    end
+
     it "normalizes malformed pull-request JSON into a release-candidate error" do
       shell = instance_double(HafaPass::ReleaseCandidate::Shell)
       allow(shell).to receive(:capture!).and_return("not-json")

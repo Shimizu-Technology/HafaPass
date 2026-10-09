@@ -5,20 +5,28 @@ require "ostruct"
 module Commerce
   class RefundCreator
     class RefundError < StandardError; end
+    # Stripe may prune POST identities after 24 hours. Leave a margin and
+    # never create a second operation merely because reconciliation found none.
+    PROVIDER_REPLAY_WINDOW = 23.hours
 
     def self.call(**)
       new(**).call
     end
 
     def self.reconcile_provider_total!(order:, payment:, amount_cents:, provider_refund_id:, idempotency_key:)
-      succeeded_total = order.refunds.succeeded.sum(:amount_cents)
+      succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
       delta = amount_cents.to_i - succeeded_total
       return if delta <= 0
 
       provider_refund = OpenStruct.new(id: provider_refund_id, status: "succeeded")
-      pending = order.refunds.pending.where(payment: payment, amount_cents: delta).order(:id).first
+      pending = order.refunds.pending.find_by(payment: payment, provider_refund_id: provider_refund_id)
+      unless pending
+        candidates = order.refunds.pending.where(payment: payment, amount_cents: delta, provider_refund_id: nil)
+        pending = candidates.first if candidates.count == 1
+      end
       creator = new(
         order: order,
+        payment: payment,
         amount_cents: delta,
         reason: "provider_webhook_reconciliation",
         idempotency_key: pending&.idempotency_key || idempotency_key,
@@ -27,8 +35,13 @@ module Commerce
       creator.call
     end
 
+    def self.reconcile_refund!(refund:, provider_refund:)
+      new(order: refund.order, reason: refund.reason, idempotency_key: refund.idempotency_key,
+        provider_refund: provider_refund).send(:finalize_refund!, refund, provider_refund)
+    end
+
     def initialize(order:, amount_cents: nil, reason: nil, requested_by: nil, idempotency_key: nil,
-      provider_refund: nil, tickets: nil)
+      provider_refund: nil, tickets: nil, payment: nil)
       @order = order
       @requested_amount_cents = amount_cents&.to_i
       @reason = reason
@@ -36,37 +49,67 @@ module Commerce
       @idempotency_key = idempotency_key.presence || "refund:order:#{order.id}:#{SecureRandom.uuid}"
       @provider_refund = provider_refund
       @tickets = tickets.nil? ? nil : Array(tickets).compact
+      @captured_payment = payment
     end
 
     def call
       refund = reserve_refund!
       return refund unless refund.pending?
+      return refund if refund.provider_refund_id.present? && !provider_refund
+      return refund if !provider_refund && !provider_submission_allowed?(refund)
 
-      provider_refund = submit_provider_refund(refund)
-      finalize_refund!(refund, provider_refund)
-    rescue Stripe::StripeError, StripeService::PaymentError => e
-      refund&.refund_tickets&.delete_all
-      refund&.update!(status: :failed, failed_at: Time.current, failure_code: "provider_error", failure_message: e.message)
+      response = if !provider_refund && (refund.failure_code == "provider_result_unknown" || @replayed_refund)
+        recover_provider_refund(refund)
+      end
+      if !response && !provider_refund && !provider_submission_allowed?(refund, mark_unknown: true)
+        return refund.reload
+      end
+      response ||= submit_provider_refund(refund)
+      finalize_refund!(refund, response)
+    rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError => e
+      fail_refund!(refund, "provider_error", e.message)
       raise RefundError, "Refund provider rejected the request"
+    rescue Stripe::StripeError, IOError, Timeout::Error => e
+      refund&.update!(failure_code: "provider_result_unknown", failure_message: e.message)
+      raise RefundError, "Refund provider result is unknown; retry with the same idempotency key"
     end
 
     private
 
-    attr_reader :order, :requested_amount_cents, :reason, :requested_by, :idempotency_key, :provider_refund, :tickets
+    attr_reader :order, :requested_amount_cents, :reason, :requested_by, :idempotency_key, :provider_refund, :tickets, :captured_payment
 
     def reserve_refund!
       existing = order.refunds.find_by(idempotency_key: idempotency_key)
-      return existing if existing
+      return validate_replay!(existing) if existing
 
       Order.transaction do
+        order.event.organization.lock!
         order.lock!
+        existing = order.refunds.find_by(idempotency_key: idempotency_key)
+        next validate_replay!(existing) if existing
         unless order.completed? || order.partially_refunded?
           raise RefundError, "Only completed or partially refunded orders can be refunded"
         end
 
+        ensure_financial_review_resolved! unless provider_refund
+
         selected_tickets = lock_selected_tickets!
-        payment = order.payments.succeeded.order(:id).last
-        remaining = order.refundable_cents
+        captured = order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).to_a
+        if captured_payment.nil? && captured.many?
+          raise RefundError, "Multiple captured payments require finance reconciliation before a refund"
+        end
+        payment = captured_payment || captured.first
+        unless payment && payment.order_id == order.id && (payment.succeeded? || payment.partially_refunded?)
+          raise RefundError, "A captured payment is required for a refund"
+        end
+        unless payment.provider == "stripe" && payment.provider_payment_id.present?
+          raise RefundError, "Automated refunds are not supported for this payment provider"
+        end
+        if Rails.env.production? && (payment.provider_payment_id.start_with?("sim_") || payment.provider_payload["simulated"] == true)
+          raise RefundError, "Simulated payments cannot be refunded in production"
+        end
+        payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
+        remaining = [order.refundable_cents, payment_remaining].min
         amount = requested_amount_cents || selected_tickets&.sum(&:refundable_cents) || remaining
         if selected_tickets && requested_amount_cents && requested_amount_cents != selected_tickets.sum(&:refundable_cents)
           raise RefundError, "Ticket refunds must match the selected ticket value"
@@ -78,7 +121,7 @@ module Commerce
         refund = order.refunds.create!(
           payment: payment,
           requested_by: requested_by,
-          provider: payment&.provider || "stripe",
+          provider: payment.provider,
           idempotency_key: idempotency_key,
           amount_cents: amount,
           currency: order.currency,
@@ -105,6 +148,29 @@ module Commerce
       raise
     end
 
+    def provider_submission_allowed?(refund, mark_unknown: false)
+      Refund.transaction do
+        order.event.organization.lock!
+        order.lock!
+        refund.lock!
+        return false unless refund.pending? && refund.provider_refund_id.blank?
+
+        ensure_financial_review_resolved!
+        # Persist uncertainty before leaving the locks for the external call.
+        # A process crash must not make an attempted operation look unsubmitted.
+        if mark_unknown
+          refund.update!(failure_code: "provider_result_unknown", failure_message: "Refund provider response is pending")
+        end
+        true
+      end
+    end
+
+    def ensure_financial_review_resolved!
+      return unless RefundSafety.finance_review_required?(order)
+
+      raise RefundError, "Refund needs finance review; contact support before submitting another request"
+    end
+
     def lock_selected_tickets!
       return if tickets.nil?
       raise RefundError, "At least one ticket is required" if tickets.empty?
@@ -112,7 +178,7 @@ module Commerce
       selected = order.tickets.where(id: tickets.map(&:id)).order(:id).lock.to_a
       raise RefundError, "Ticket not found for this order" unless selected.length == tickets.map(&:id).uniq.length
       raise RefundError, "Only unused active tickets can be refunded" if selected.any? { |ticket| ticket.cancelled? || ticket.transferred? || ticket.checked_in? }
-      if RefundTicket.where(ticket_id: selected.map(&:id)).exists?
+      if RefundTicket.active.where(ticket_id: selected.map(&:id)).exists?
         raise RefundError, "A selected ticket already has a refund"
       end
 
@@ -133,32 +199,108 @@ module Commerce
       return provider_refund if provider_refund
 
       payment = refund.payment
-      if payment&.provider_payment_id.present? && !payment.provider_payment_id.start_with?("sim_")
-        StripeService.refund_payment(
-          payment.provider_payment_id,
-          amount_cents: refund.amount_cents,
-          reason: reason,
-          idempotency_key: refund.idempotency_key
-        )
-      else
-        OpenStruct.new(id: "sim_re_#{SecureRandom.hex(12)}", status: "succeeded")
+      unless payment&.provider == "stripe" && payment.provider_payment_id.present?
+        raise RefundError, "Automated refunds are not supported for this payment provider"
+      end
+      StripeService.refund_payment(
+        payment.provider_payment_id,
+        amount_cents: refund.amount_cents,
+        reason: refund.reason,
+        idempotency_key: refund.idempotency_key
+      )
+    rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError
+      raise
+    rescue StandardError => e
+      refund.update!(failure_code: "provider_result_unknown", failure_message: e.message)
+      Sentry.capture_exception(e)
+      raise RefundError, "Refund provider result is unknown; retry with the same idempotency key"
+    end
+
+    def recover_provider_refund(refund)
+      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key)
+      return response if response
+      return if refund.created_at > PROVIDER_REPLAY_WINDOW.ago
+
+      raise RefundError, "Refund provider result is unknown; finance must reconcile before another submission"
+    rescue RefundError
+      raise
+    rescue StandardError => e
+      refund.update!(failure_code: "provider_result_unknown", failure_message: e.message)
+      Sentry.capture_exception(e)
+      raise RefundError, "Refund provider result is unknown; provider lookup failed, reconcile before retrying"
+    end
+
+    def validate_replay!(refund)
+      unless (requested_amount_cents.nil? || requested_amount_cents == refund.amount_cents) &&
+          (tickets.nil? || tickets.map(&:id).sort == refund.refund_tickets.pluck(:ticket_id).sort)
+        raise RefundError, "Idempotency-Key was already used for a different refund request"
+      end
+      @replayed_refund = true
+      refund
+    end
+
+    def fail_refund!(refund, code, message, status: :failed)
+      return unless refund
+
+      refund.with_lock do
+        return refund if refund.succeeded?
+
+        refund.refund_tickets.update_all(released_at: Time.current)
+        refund.update!(status: status, failed_at: Time.current, failure_code: code, failure_message: message)
       end
     end
 
     def finalize_refund!(refund, provider_refund)
       full_refund = false
+      validation_error = nil
+      provider_status = provider_refund.respond_to?(:status) ? provider_refund.status.to_s : ""
 
       Refund.transaction do
-        refund.lock!
-        return refund if refund.succeeded?
-
+        refund.order.event.organization.lock!
         refund.order.lock!
+        refund.lock!
+        # A webhook can finish this operation while the original POST is still
+        # in flight. Re-read every terminal state under the same locks before
+        # touching its released ticket reservations or financial allocations.
+        if refund.succeeded? || refund.failed? || refund.cancelled?
+          contradictory = (refund.succeeded? && %w[failed canceled cancelled].include?(provider_status)) ||
+            (!refund.succeeded? && provider_status == "succeeded")
+          if contradictory
+            ReconciliationException.create!(order: refund.order, payment: refund.payment,
+              code: "refund_terminal_status_conflict")
+          end
+          return refund
+        end
+
+        unless %w[succeeded pending requires_action failed canceled cancelled].include?(provider_status) && provider_refund.respond_to?(:id) && provider_refund.id.present?
+          refund.update!(failure_code: "provider_result_unknown", failure_message: "Refund response is incomplete")
+          validation_error = "Refund provider result is unknown; reconcile before retrying"
+          next
+        end
+
+        if (provider_refund.respond_to?(:amount) && provider_refund.amount.to_i != refund.amount_cents) ||
+            (provider_refund.respond_to?(:currency) && provider_refund.currency.to_s.downcase != refund.currency)
+          refund.update!(failure_code: "provider_result_mismatch", failure_message: "Refund response does not match the reservation")
+          ReconciliationException.create!(order: refund.order, payment: refund.payment, code: "refund_operation_mismatch")
+          validation_error = "Refund provider result does not match the reservation; reconcile before retrying"
+          next
+        end
+
         refund.update!(
           provider_refund_id: provider_refund.id,
           provider_payload: { status: provider_refund.respond_to?(:status) ? provider_refund.status : nil }.compact,
-          status: :succeeded,
-          succeeded_at: Time.current
+          failure_code: nil,
+          failure_message: nil,
+          status: :pending
         )
+        if %w[failed canceled cancelled].include?(provider_status)
+          fail_refund!(refund, "provider_#{provider_status}", "Provider refund #{provider_status}",
+            status: provider_status == "failed" ? :failed : :cancelled)
+          return refund.reload
+        end
+        return refund.reload unless provider_status == "succeeded"
+
+        refund.update!(status: :succeeded, succeeded_at: Time.current, failure_code: nil, failure_message: nil)
         allocate_items!(refund)
         record_promoter_commission_reversal!(refund)
 
@@ -171,13 +313,15 @@ module Commerce
           refunded_at: Time.current,
           stripe_refund_id: provider_refund.id
         )
-        update_payment_refund_status!(refund.payment, succeeded_total)
+        update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
         if refund.refund_tickets.any?
           release_refunded_tickets!(refund)
         elsif full_refund
           release_fully_refunded_inventory!(refund.order)
         end
       end
+
+      raise RefundError, validation_error if validation_error
 
       EmailService.send_refund_notification_async(refund.order)
       refund.order.event.notify_waitlist_if_available if full_refund || refund.refund_tickets.any?
@@ -250,7 +394,7 @@ module Commerce
     end
 
     def release_fully_refunded_inventory!(refunded_order)
-      refunded_order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).each do |ticket|
+      refunded_order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
         ticket.release_inventory!
         cancel_ticket!(ticket)
       end
@@ -264,7 +408,7 @@ module Commerce
     end
 
     def release_refunded_tickets!(refund)
-      refund.tickets.includes(:ticket_type, :pricing_tier).each do |ticket|
+      refund.tickets.includes(:ticket_type, :pricing_tier).order(:id).lock.each do |ticket|
         ticket.release_inventory!
         cancel_ticket!(ticket)
       end

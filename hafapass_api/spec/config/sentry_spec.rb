@@ -1,15 +1,19 @@
 require "rails_helper"
 
 RSpec.describe "Sentry configuration" do
-  let(:request_type) { Struct.new(:data) }
-  let(:event_type) { Struct.new(:request) }
+  def event_with_data(data)
+    event = Sentry::ErrorEvent.new(configuration: Sentry.configuration)
+    event.rack_env = Rack::MockRequest.env_for("https://app.example.test/api/v1/events")
+    event.request.data = data
+    event
+  end
 
   it "recursively filters sensitive request data before reporting" do
-    event = event_type.new(request_type.new({
+    event = event_with_data({
       "buyer" => { "email" => "guest@example.com", "phone" => "671-555-0100" },
       "payment" => { "card_number" => "4242424242424242", "cvc" => "123" },
       "event_id" => 42
-    }))
+    })
 
     Sentry.configuration.before_send.call(event, nil)
 
@@ -21,7 +25,7 @@ RSpec.describe "Sentry configuration" do
   end
 
   it "drops unstructured request bodies" do
-    event = event_type.new(request_type.new("raw payment body"))
+    event = event_with_data("raw payment body")
 
     Sentry.configuration.before_send.call(event, nil)
 

@@ -30,10 +30,12 @@ class PilotReadiness
   end
 
   def self.application_revision
-    ENV["GIT_SHA"].presence || "development"
+    ApplicationRevision.current
   end
 
   def self.active_approval(event, at: Time.current, state_digest: nil)
+    return if Rails.env.production? && !ApplicationRevision.configured?
+
     revoked_ids = event.pilot_readiness_reviews.revocations.select(:parent_review_id)
     state_digest ||= event_state_digest(event)
     event.pilot_readiness_reviews.approvals

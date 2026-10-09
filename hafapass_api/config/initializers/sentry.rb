@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require Rails.root.join("lib/telemetry_privacy")
+
 Sentry.init do |config|
   config.dsn = ENV["SENTRY_DSN"]
   config.environment = ENV.fetch("SENTRY_ENVIRONMENT", Rails.env)
@@ -15,13 +17,7 @@ Sentry.init do |config|
     "ActiveRecord::RecordNotFound"
   ]
 
-  config.before_send = lambda do |event, _hint|
-    if event.request&.data.is_a?(Hash)
-      filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
-      event.request.data = filter.filter(event.request.data)
-    elsif event.request
-      event.request.data = nil
-    end
-    event
-  end
+  config.before_breadcrumb = ->(breadcrumb, _hint) { TelemetryPrivacy.breadcrumb(breadcrumb) }
+  config.before_send = ->(event, _hint) { TelemetryPrivacy.event(event) }
+  config.before_send_transaction = ->(event, _hint) { TelemetryPrivacy.event(event) }
 end

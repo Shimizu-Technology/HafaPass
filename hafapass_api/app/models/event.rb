@@ -210,6 +210,7 @@ class Event < ApplicationRecord
       live_pilot_approved =
       production_release_approvals(at: at)
     checks = [
+      checklist_item("launch_scope", "Event features supported for this release", LaunchCapabilities.event_supported?(self)),
       checklist_item("production_policy_approved", "Production policy register approved",
         !Rails.env.production? || PolicyRegistry.production_approved?),
       checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?),

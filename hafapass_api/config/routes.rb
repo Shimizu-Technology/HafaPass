@@ -29,6 +29,7 @@ Rails.application.routes.draw do
 
       # Presigned upload URL (authenticated) - works in simulate mode too
       post "uploads/presign", to: "uploads#presign"
+      post "uploads/complete", to: "uploads#complete"
 
       # Orders (public create for guest checkout)
       resources :orders, only: [:create, :show] do

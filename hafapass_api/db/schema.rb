@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -644,6 +644,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_220000) do
     t.index ["event_id"], name: "index_guest_list_entries_on_event_id"
     t.index ["order_id"], name: "index_guest_list_entries_on_order_id"
     t.index ["ticket_type_id"], name: "index_guest_list_entries_on_ticket_type_id"
+  end
+
+  create_table "image_upload_receipts", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.bigint "organization_id", null: false
+    t.bigint "event_id"
+    t.string "source_key", null: false
+    t.string "final_key", null: false
+    t.string "public_url"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_image_upload_receipts_on_event_id"
+    t.index ["organization_id"], name: "index_image_upload_receipts_on_organization_id"
+    t.index ["source_key"], name: "index_image_upload_receipts_on_source_key", unique: true
+    t.index ["user_id"], name: "index_image_upload_receipts_on_user_id"
   end
 
   create_table "inventory_holds", force: :cascade do |t|
@@ -1540,10 +1556,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_220000) do
     t.integer "amount_cents", null: false
     t.datetime "created_at", null: false
     t.bigint "refund_id", null: false
+    t.datetime "released_at"
     t.bigint "ticket_id", null: false
     t.datetime "updated_at", null: false
     t.index ["refund_id"], name: "index_refund_tickets_on_refund_id"
-    t.index ["ticket_id"], name: "index_refund_tickets_on_ticket_id", unique: true
+    t.index ["ticket_id"], name: "index_refund_tickets_on_ticket_id", unique: true, where: "(released_at IS NULL)"
     t.check_constraint "amount_cents >= 0", name: "refund_tickets_amount_nonnegative"
   end
 
@@ -2131,6 +2148,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_220000) do
   add_foreign_key "guest_list_entries", "events"
   add_foreign_key "guest_list_entries", "orders"
   add_foreign_key "guest_list_entries", "ticket_types"
+  add_foreign_key "image_upload_receipts", "events", on_delete: :cascade
+  add_foreign_key "image_upload_receipts", "organizations", on_delete: :cascade
+  add_foreign_key "image_upload_receipts", "users", on_delete: :cascade
   add_foreign_key "inventory_holds", "events", on_delete: :restrict
   add_foreign_key "inventory_holds", "order_items", on_delete: :restrict
   add_foreign_key "inventory_holds", "orders", on_delete: :restrict

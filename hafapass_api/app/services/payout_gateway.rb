@@ -6,6 +6,8 @@ class PayoutGateway
   Result = Data.define(:provider_payout_id, :status)
 
   def self.submit(payout)
+    raise PayoutError, "Payout submission is disabled in staging" if Rails.env.staging?
+
     if Rails.env.test? || SiteSetting.instance.simulate_mode?
       return Result.new(provider_payout_id: "sim_po_#{SecureRandom.hex(12)}", status: :paid)
     end

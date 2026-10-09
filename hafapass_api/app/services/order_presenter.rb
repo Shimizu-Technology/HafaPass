@@ -32,6 +32,7 @@ class OrderPresenter
       wallet_type: order.wallet_type,
       guest_access_token: guest_access_token,
       payment_status: latest_payment&.status,
+      confirmation_delivery: confirmation_delivery,
       ticket_access_blocked: order.ticket_access_blocked?,
       promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,
       event: event_json,
@@ -148,6 +149,19 @@ class OrderPresenter
     return payments.max_by(&:id) if payments.loaded?
 
     payments.order(:id).last
+  end
+
+  def confirmation_delivery
+    deliveries = order.message_deliveries
+    templates = %w[order_confirmation fulfillment_resend]
+    delivery = if deliveries.loaded?
+      deliveries.select { |item| templates.include?(item.template) }.max_by(&:id)
+    else
+      deliveries.where(template: templates).order(id: :desc).first
+    end
+    return unless delivery
+
+    { status: delivery.status, simulated: delivery.provider == "simulated", updated_at: delivery.updated_at }
   end
 
   def ordered_order_items

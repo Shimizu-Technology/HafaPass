@@ -43,18 +43,46 @@ class StripeService
       settings = SiteSetting.instance
 
       if settings.simulate_mode?
+        unless payment_intent_id.start_with?("sim_")
+          raise PaymentError, "A real payment cannot be refunded in simulation mode"
+        end
         simulate_refund(payment_intent_id, amount_cents)
       else
         api_key = resolve_api_key!(settings)
-        params = { payment_intent: payment_intent_id }
+        params = { payment_intent: payment_intent_id, metadata: { hafapass_refund_key: idempotency_key } }
         params[:amount] = amount_cents if amount_cents.present?
         params[:reason] = stripe_refund_reason(reason) if reason.present?
         Stripe::Refund.create(params, { api_key: api_key, idempotency_key: idempotency_key })
       end
     end
 
+    # The POST idempotency cache expires. Find an acknowledged operation by
+    # our durable metadata before ever replaying an uncertain refund request.
+    def find_refund(payment_intent_id, idempotency_key:)
+      settings = SiteSetting.instance
+      if settings.simulate_mode?
+        raise PaymentError, "A real payment cannot be reconciled in simulation mode" unless payment_intent_id.start_with?("sim_")
+
+        return nil
+      end
+
+      client = Stripe::StripeClient.new(resolve_api_key!(settings))
+      match = nil
+      client.v1.refunds.list({ payment_intent: payment_intent_id, limit: 100 }).auto_paging_each do |refund|
+        next unless refund.metadata&.[]("hafapass_refund_key") == idempotency_key
+
+        raise PaymentError, "Multiple provider refunds match this operation; finance review is required" if match
+
+        match = refund
+      end
+      match
+    end
+
     def cancel_payment_intent(payment_intent_id, idempotency_key:)
       settings = SiteSetting.instance
+      if Rails.env.staging? && !payment_intent_id.start_with?("sim_")
+        raise PaymentError, "Staging cannot cancel external payments"
+      end
       if settings.simulate_mode? || payment_intent_id.start_with?("sim_")
         return OpenStruct.new(id: payment_intent_id, status: "canceled")
       end
@@ -72,6 +100,7 @@ class StripeService
     # True when Stripe API calls will actually be made (test or live mode).
     def payment_enabled?
       settings = SiteSetting.instance
+      return false if Rails.env.staging?
       if settings.live_mode? && !settings.can_enable_live?
         raise PaymentError, "Live payments are disabled until current provider evidence is independently approved"
       end
@@ -81,6 +110,8 @@ class StripeService
 
     # Returns the publishable key the frontend should use.
     def publishable_key
+      return nil if Rails.env.staging?
+
       SiteSetting.instance.stripe_publishable_key
     end
 
@@ -93,6 +124,8 @@ class StripeService
 
     # Returns the API key for per-request Stripe calls (thread-safe).
     def resolve_api_key!(settings)
+      raise PaymentError, "External payments are disabled in staging; select simulation mode" if Rails.env.staging?
+
       if settings.live_mode? && !settings.can_enable_live?
         raise PaymentError, "Live payments are disabled until current provider evidence is independently approved"
       end

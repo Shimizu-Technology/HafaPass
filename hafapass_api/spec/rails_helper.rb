@@ -1,6 +1,10 @@
 # This file is copied to spec/ when you run 'rails generate rspec:install'
 require 'spec_helper'
 ENV['RAILS_ENV'] ||= 'test'
+# Production-readiness examples need a stable candidate identity even when
+# they switch Rails.env within an example. Missing/invalid identity regressions
+# explicitly remove or replace this fixture value.
+ENV['GIT_SHA'] ||= 'a' * 40
 require_relative '../config/environment'
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?

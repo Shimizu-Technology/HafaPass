@@ -10,11 +10,14 @@ class Api::V1::Support::SearchController < Api::V1::Support::BaseController
     return render json: { error: "Enter at least 3 characters" }, status: :unprocessable_entity if query.length < 3
 
     pattern = "%#{ActiveRecord::Base.sanitize_sql_like(query)}%"
+    printed_id = query.match(/\AHP-T([1-9]\d*)\z/i)&.captures&.first&.to_i
+    printed_id = nil if printed_id && printed_id > 9_223_372_036_854_775_807
     orders = Order.includes(:event, :tickets, :message_deliveries)
       .where("reference ILIKE :pattern OR buyer_email ILIKE :pattern OR buyer_name ILIKE :pattern", pattern: pattern)
       .order(created_at: :desc).limit(LIMIT)
     tickets = Ticket.includes(:event, :ticket_type, :order)
-      .where("attendee_email ILIKE :pattern OR attendee_name ILIKE :pattern OR qr_code = :exact", pattern: pattern, exact: query)
+      .where("attendee_email ILIKE :pattern OR attendee_name ILIKE :pattern OR qr_code = :exact OR tickets.id = :printed_id",
+        pattern: pattern, exact: query, printed_id: printed_id)
       .order(created_at: :desc).limit(LIMIT)
     events = Event.includes(:organization).where("title ILIKE :pattern OR slug ILIKE :pattern", pattern: pattern)
       .order(starts_at: :desc).limit(LIMIT)

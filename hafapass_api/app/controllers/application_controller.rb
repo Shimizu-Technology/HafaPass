@@ -1,10 +1,18 @@
 class ApplicationController < ActionController::API
+  rescue_from ClerkIdentity::LookupUnavailable do
+    response.set_header("Retry-After", "5")
+    render json: { error: "We could not verify your account yet. Please try again shortly.",
+      code: "identity_verification_unavailable", retryable: true }, status: :service_unavailable
+  end
+
   rescue_from ActionController::BadRequest do |error|
     render json: { error: error.message }, status: :bad_request
   end
 
+  around_action :with_identity_verification_cache
   before_action :authenticate_user!
   before_action :set_observability_context
+  before_action :enforce_launch_capability
 
   def append_info_to_payload(payload)
     super
@@ -13,6 +21,20 @@ class ApplicationController < ActionController::API
   end
 
   private
+
+  def with_identity_verification_cache(&block)
+    ClerkIdentity.with_request_cache(&block)
+  end
+
+  def enforce_launch_capability
+    feature = LaunchCapabilities.required_for(controller: controller_path, action: action_name, params: params)
+    return unless feature && !LaunchCapabilities.enabled?(feature)
+
+    render json: {
+      error: "#{feature.to_s.humanize} is not available for this release.",
+      code: "launch_capability_disabled"
+    }, status: :unprocessable_entity
+  end
 
   def set_observability_context
     Sentry.set_tags(request_id: request.request_id)
@@ -61,7 +83,7 @@ class ApplicationController < ActionController::API
       user.email = clerk_email
       user.first_name = @clerk_payload["first_name"]
       user.last_name = @clerk_payload["last_name"]
-      user.role = initial_role_for(user.email)
+      user.role = initial_role_for(user)
     end
   end
 
@@ -69,8 +91,13 @@ class ApplicationController < ActionController::API
     @clerk_payload["email"] || @clerk_payload.dig("email_addresses", 0, "email_address")
   end
 
-  def initial_role_for(email)
-    return :admin if admin_email?(email)
+  def initial_role_for(user)
+    # Standard Clerk session tokens have no email claim. Resolve the server's
+    # admin allowlist against verified provider addresses, not contact data.
+    if ENV.fetch("ADMIN_EMAILS", "").present? &&
+        ClerkIdentity.verified_email_addresses(user.clerk_id, require_available: true).any? { |email| admin_email?(email) }
+      return :admin
+    end
     return :admin if first_user_admin_bootstrap_enabled?
 
     :attendee
