@@ -57,4 +57,12 @@ RSpec.describe Commerce::RefundOutcome do
       reconciliation_required: false, finance_review_required: false
     )
   end
+
+  it "identifies simulated captures so a completed test refund is not presented as real money returned" do
+    payment = create(:payment, :succeeded, order: order, provider_payload: { "simulated" => true })
+    refund = create(:refund, order: order, payment: payment, idempotency_key: "simulated")
+    expect(described_class.call(order: order, idempotency_key: refund.idempotency_key)).to include(
+      refund_status: "succeeded", refund_simulated: true
+    )
+  end
 end

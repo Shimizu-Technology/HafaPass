@@ -8,6 +8,7 @@ module Commerce
       {
         reconciliation_required: finance_review || refund&.pending? || false,
         finance_review_required: finance_review,
+        refund_simulated: refund&.payment&.provider_payload&.[]("simulated") == true ? true : nil,
         refund_id: refund&.id,
         refund_status: refund&.status
       }.compact
