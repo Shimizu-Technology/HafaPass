@@ -59,7 +59,7 @@ async function upload(file, eventId, scope, key) {
     uploaded = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
   }
   if (!uploaded.ok) {
-    window.sessionStorage.removeItem(key)
+    forgetUploadToken(key, upload_token)
     throw new Error('Image storage could not accept this upload. Please try again.')
   }
   return completeUpload(key, upload_token, scope)

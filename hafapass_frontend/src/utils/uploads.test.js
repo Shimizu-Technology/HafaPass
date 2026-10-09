@@ -98,4 +98,16 @@ describe('verified uploads', () => {
     expect(oversized.arrayBuffer).not.toHaveBeenCalled()
     expect(apiClient.post).not.toHaveBeenCalled()
   })
+
+  it('keeps replacement recovery identity when an older storage upload is rejected', async () => {
+    let finish
+    fetch.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = uploadImage(file, 37)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    const key = window.sessionStorage.key(0)
+    window.sessionStorage.setItem(key, 'replacement-token')
+    finish({ ok: false, status: 403 })
+    await expect(pending).rejects.toThrow('could not accept')
+    expect(window.sessionStorage.getItem(key)).toBe('replacement-token')
+  })
 })
