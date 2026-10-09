@@ -55,3 +55,67 @@ describe('guest order recovery actions', () => {
   })
 
 })
+
+describe('truthful ticket email status', () => {
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
+
+  const orderWithDelivery = confirmation_delivery => ({
+    id: 924, reference: 'HP-924', status: 'completed', buyer_email: 'guest@example.invalid', total_cents: 0, order_items: [],
+    tickets: [{ id: 1, status: 'issued', refundable_cents: 0, display_credential: 'signed-display', ticket_type: { id: 7, name: 'Free admission' } }],
+    event: { id: 37, slug: 'email-event', title: 'Email Event', status: 'published', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
+    confirmation_delivery,
+  })
+  const mount = () => render(<MemoryRouter initialEntries={['/orders/924/confirmation?guest_token=guest-token']}><Routes><Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+  const mockOrder = order => apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+
+  it('identifies simulated delivery even when its recorded state is delivered', async () => {
+    mockOrder(orderWithDelivery({ status: 'delivered', simulated: true, updated_at: '2026-10-09T05:00:00Z' }))
+    mount()
+    expect(await screen.findByText('Email is simulated in this test environment. Open or download your tickets below.')).toBeInTheDocument()
+    expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View ticket' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['queued', 'Your ticket email is queued for delivery. You can open or download your tickets below.'],
+    ['delayed', 'Your ticket email is queued for delivery. You can open or download your tickets below.'],
+    ['sent', 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'],
+    ['delivered', 'Your ticket email was delivered.'],
+  ])('shows the provider’s %s state without claiming a later outcome', async (status, message) => {
+    mockOrder(orderWithDelivery({ status, simulated: false }))
+    mount()
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    if (status !== 'delivered') expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
+  })
+
+  it.each(['failed', 'bounced', 'complained', 'suppressed'])('offers ticket access and support when delivery is %s', async status => {
+    mockOrder(orderWithDelivery({ status, simulated: false }))
+    mount()
+    await screen.findByText('We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.')
+    expect(screen.getByRole('link', { name: 'Open or download tickets' })).toHaveAttribute('href', '#order-tickets')
+    expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', expect.stringContaining('mailto:contact@hafapass.com'))
+    expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
+  })
+
+  it('keeps completed orders neutral about email when delivery evidence is absent', async () => {
+    mockOrder(orderWithDelivery(null))
+    mount()
+    expect(await screen.findByText('Your tickets are ready below. You can request a confirmation email using Resend.')).toBeInTheDocument()
+    expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
+  })
+
+  it('refreshes actual delivery evidence after resend while keeping guest access attached', async () => {
+    mockOrder(orderWithDelivery({ status: 'failed', simulated: false }))
+    apiClient.post.mockImplementation(() => {
+      mockOrder(orderWithDelivery({ status: 'queued', simulated: false }))
+      return Promise.resolve({ data: { status: 'queued' } })
+    })
+    mount()
+    await screen.findByText('We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.')
+    await userEvent.click(screen.getByRole('button', { name: 'Resend', exact: true }))
+    expect(await screen.findByText('Your ticket email is queued for delivery. You can open or download your tickets below.')).toBeInTheDocument()
+    expect(await screen.findByText('Your email request was saved. Check the delivery status above.')).toBeInTheDocument()
+    expect(apiClient.post).toHaveBeenCalledWith('/orders/924/resend', {}, { headers: { 'X-Guest-Order-Token': 'guest-token' } })
+    expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
+  })
+})

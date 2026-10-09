@@ -66,6 +66,22 @@ export default function OrderConfirmationPage() {
   const event = order?.event
   const isProcessing = order && !finalStatuses.has(order.status)
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
+  const usableTickets = Boolean(order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
+  const delivery = order?.confirmation_delivery
+  const deliveryFailed = !delivery?.simulated && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
+  const deliveryMessage = delivery?.simulated
+    ? 'Email is simulated in this test environment. Open or download your tickets below.'
+    : delivery?.status === 'delivered'
+      ? 'Your ticket email was delivered.'
+      : delivery?.status === 'sent'
+        ? 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'
+        : ['queued', 'delayed'].includes(delivery?.status)
+          ? 'Your ticket email is queued for delivery. You can open or download your tickets below.'
+          : deliveryFailed
+            ? 'We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.'
+            : usableTickets
+              ? 'Your tickets are ready below. You can request a confirmation email using Resend.'
+              : 'You can view your order and ticket statuses here. Email delivery will appear when a confirmation is available.'
   const change = order?.latest_event_change
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
     ticket.status === 'issued' && ticket.refundable_cents >= 0
@@ -79,7 +95,8 @@ export default function OrderConfirmationPage() {
     setResendState('sending')
     try {
       await apiClient.post(`/orders/${id}/resend`, {}, { headers: orderHeaders() })
-      setResendState('sent')
+      await fetchOrder()
+      setResendState('requested')
     } catch (err) {
       setResendState(err.response?.status === 429 ? 'cooldown' : 'error')
     }
@@ -206,6 +223,15 @@ export default function OrderConfirmationPage() {
           {isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
         </div>
 
+        <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">
+          <h2 id="confirmation-delivery-title" className="font-semibold">Ticket email</h2>
+          <p className="mt-1" role="status">{deliveryMessage}</p>
+          {deliveryFailed && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+            {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
+            <a href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Ticket email for order ${order.reference}`)}`} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
+          </div>}
+        </section>
+
         {change && (
           <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
             <h2 className="font-semibold text-amber-950">Event {change.change_type}</h2>
@@ -242,15 +268,15 @@ export default function OrderConfirmationPage() {
         </section>
 
         {ticketsAvailable && (
-          <section className="card mb-6 p-5 sm:p-6">
+          <section id="order-tickets" className="card mb-6 scroll-mt-24 p-5 sm:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold text-neutral-950">Tickets ({order.tickets.length})</h2>
               {['completed', 'partially_refunded'].includes(order.status) && (
                 <button onClick={resend} disabled={resendState === 'sending'} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600"><Mail className="h-4 w-4" /> Resend</button>
               )}
             </div>
-            {resendState === 'sent' && <p className="mb-3 text-sm text-emerald-700">A fresh confirmation was queued for delivery.</p>}
-            {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">A message was sent recently. Please wait two minutes.</p>}
+            {resendState === 'requested' && <p className="mb-3 text-sm text-neutral-700">Your email request was saved. Check the delivery status above.</p>}
+            {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">An email request was made recently. Please wait two minutes.</p>}
             {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             <div className="divide-y divide-neutral-100">
