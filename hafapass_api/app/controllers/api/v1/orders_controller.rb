@@ -202,8 +202,9 @@ class Api::V1::OrdersController < ApplicationController
       requested_by: @current_user,
       idempotency_key: idempotency_key
     )
-    render json: { refund_id: refund.id, refund_status: refund.status,
-      reconciliation_required: refund.pending?, order: OrderPresenter.call(@order.reload, include_tickets: true) }, status: :created
+    render json: Commerce::RefundOutcome.call(order: @order, idempotency_key: refund.idempotency_key).merge(
+      order: OrderPresenter.call(@order.reload, include_tickets: true)
+    ), status: :created
   rescue Commerce::RefundCreator::RefundError => e
     render json: { error: e.message }.merge(
       Commerce::RefundOutcome.call(order: @order, idempotency_key: request.headers["Idempotency-Key"])
