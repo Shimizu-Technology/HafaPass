@@ -54,19 +54,19 @@ end
 
 RSpec.describe ReleaseMigrationConfiguration do
   it "uses the direct connection only inside the release process" do
-    env = { "RAILS_ENV" => "production", "DATABASE_URL" => "postgresql://pooler/app",
-      "DATABASE_MIGRATION_URL" => "postgresql://direct/app?sslmode=require" }
+    env = { "RAILS_ENV" => "production", "DATABASE_URL" => "postgresql://ep-app-pooler.us-east-2.aws.neon.tech/app",
+      "DATABASE_MIGRATION_URL" => "postgresql://ep-app.us-east-2.aws.neon.tech/app?sslmode=require" }
     described_class.apply!(environment: env)
     expect(env["DATABASE_URL"]).to eq(env["DATABASE_MIGRATION_URL"])
   end
 
   it "keeps the staging aliases bound to the same dedicated direct database" do
-    env = { "RAILS_ENV" => "staging", "DATABASE_URL" => "postgresql://pooler/app_staging",
-      "DATABASE_MIGRATION_URL" => "postgresql://direct/app_staging?sslmode=require" }
+    env = { "RAILS_ENV" => "staging", "DATABASE_URL" => "postgresql://ep-app-pooler.us-east-2.aws.neon.tech/app_staging",
+      "DATABASE_MIGRATION_URL" => "postgresql://ep-app.us-east-2.aws.neon.tech/app_staging?sslmode=require" }
     described_class.apply!(environment: env)
     expect(env.values_at("DATABASE_URL", "STAGING_DATABASE_URL")).to eq([env["DATABASE_MIGRATION_URL"]] * 2)
     env["DATABASE_MIGRATION_URL"] = "postgresql://direct/app_production"
-    expect { described_class.apply!(environment: env) }.to raise_error(ArgumentError, /configured application database/)
+    expect { described_class.apply!(environment: env) }.to raise_error(ArgumentError, /configured application endpoint and database/)
   end
 
   it "rejects missing and pooled release URLs without revealing their values" do
@@ -87,7 +87,31 @@ RSpec.describe ReleaseMigrationConfiguration do
   it "rejects a release URL targeting a different database" do
     env = { "RAILS_ENV" => "production", "DATABASE_URL" => "postgresql://pooled/app",
       "DATABASE_MIGRATION_URL" => "postgresql://direct/other" }
-    expect { described_class.apply!(environment: env) }.to raise_error(ArgumentError, /configured application database/)
+    expect { described_class.apply!(environment: env) }.to raise_error(ArgumentError, /configured application endpoint and database/)
     expect(env["DATABASE_URL"]).to eq("postgresql://pooled/app")
+  end
+
+  it "rejects a different Neon endpoint even when both databases have the default name" do
+    original = "postgresql://ep-app-pooler.us-east-2.aws.neon.tech/neondb"
+    env = { "RAILS_ENV" => "production", "DATABASE_URL" => original,
+      "DATABASE_MIGRATION_URL" => "postgresql://ep-other.us-east-2.aws.neon.tech/neondb" }
+    expect { described_class.apply!(environment: env) }.to raise_error(ArgumentError, /configured application endpoint/)
+    expect(env["DATABASE_URL"]).to eq(original)
+  end
+
+  it "permits a dedicated migration role and an explicitly specified default port on the same Neon endpoint" do
+    env = { "RAILS_ENV" => "production",
+      "DATABASE_URL" => "postgresql://app_role@ep-app-pooler.us-east-2.aws.neon.tech/neondb",
+      "DATABASE_MIGRATION_URL" => "postgresql://migration_role@ep-app.us-east-2.aws.neon.tech:5432/neondb" }
+    described_class.apply!(environment: env)
+    expect(env["DATABASE_URL"]).to eq(env["DATABASE_MIGRATION_URL"])
+  end
+
+  it "rejects a mismatched port and does not invent pooled hostname mappings for another provider" do
+    ["postgresql://db.example:5433/app", "postgresql://other.example/app"].each do |url|
+      env = { "RAILS_ENV" => "production", "DATABASE_URL" => "postgresql://db.example/app",
+        "DATABASE_MIGRATION_URL" => url }
+      expect { described_class.apply!(environment: env) }.to raise_error(ArgumentError, /configured application endpoint/)
+    end
   end
 end

@@ -11,7 +11,7 @@ Production requires four independently supervised runtime processes/services:
 3. Redis service shared by Active Job, Sidekiq, and Rack::Attack
 4. Clock process: `bundle exec rails runner script/commerce_clock.rb`
 
-Use `bin/render-build.sh` to install dependencies and `bin/release-migrate` once as the web service release/pre-deploy command. Supply a direct `DATABASE_MIGRATION_URL` for Rails PostgreSQL migration advisory locks; web/worker/clock retain the pooled application URL. Builds and process startup do not migrate.
+Use `bin/render-build.sh` to install dependencies and `bin/release-migrate` once as the web service release/pre-deploy command. Supply a direct `DATABASE_MIGRATION_URL` for Rails PostgreSQL migration advisory locks; web/worker/clock retain the pooled application URL. The release wrapper binds database path, endpoint host and port, allowing only Neon's matching `-pooler`/direct hostname difference. A dedicated migration role may differ from the application role. Builds and process startup do not migrate.
 
 Start with one Puma process (`workers 0`), `RAILS_MAX_THREADS=3`, `SIDEKIQ_CONCURRENCY=3` and `DB_POOL=5`. The shared capacity contract rejects a database pool smaller than configured request/job concurrency. Count pools across all services against the database connection budget, and measure before increasing concurrency.
 

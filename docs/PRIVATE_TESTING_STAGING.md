@@ -55,7 +55,7 @@ RAILS_ENV=staging bundle exec rails runner 'puts StageSafety.call(runtime: true)
 RAILS_ENV=staging bundle exec puma -C config/puma.rb
 ```
 
-Builds install dependencies only. Run `bin/release-migrate` once from the web service's release/pre-deploy command, using a direct `DATABASE_MIGRATION_URL` for the same dedicated staging database. The wrapper replaces both database aliases inside that release process. Keep the pooled application URL on web, worker and clock; no process start command migrates. Rails PostgreSQL advisory locking protects overlapping release tasks.
+Builds install dependencies only. Run `bin/release-migrate` once from the web service's release/pre-deploy command, using a direct `DATABASE_MIGRATION_URL` for the same dedicated staging database. The wrapper requires the same database path, endpoint host and port; for Neon, only its matching `-pooler`/direct hostname pair is accepted. A dedicated migration database role is permitted. It replaces both database aliases inside that release process. Keep the pooled application URL on web, worker and clock; no process start command migrates. Rails PostgreSQL advisory locking protects overlapping release tasks.
 
 Set `RAILS_MAX_THREADS=3`, `SIDEKIQ_CONCURRENCY=3` and `DB_POOL=5` initially. The shared configuration rejects invalid capacity or a pool smaller than request/job concurrency. Measure the total database connection budget across all three services before increasing it.
 
