@@ -192,9 +192,79 @@ RSpec.describe Commerce::RefundCreator do
     pending = order.refunds.find_by!(idempotency_key: "uncertain")
     expect(pending).to be_pending
     expect(order.refundable_cents).to eq(4250)
+    allow(StripeService).to receive(:find_refund).and_return(nil)
     allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_retry", status: "succeeded"))
     expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "uncertain") }.not_to change(Refund, :count)
     expect(pending.reload).to be_succeeded
+    expect(StripeService).to have_received(:find_refund).with(payment.provider_payment_id, idempotency_key: "uncertain")
+  end
+
+  it "recovers an old uncertain operation by metadata without creating another provider refund" do
+    pending = create(:refund, order: order, payment: payment, amount_cents: 1000, status: :pending,
+      provider_refund_id: nil, failure_code: "provider_result_unknown", idempotency_key: "old-uncertain", created_at: 3.days.ago)
+    allow(StripeService).to receive(:find_refund).and_return(
+      OpenStruct.new(id: "re_found", amount: 1000, currency: "usd", status: "succeeded"))
+    allow(StripeService).to receive(:refund_payment)
+
+    result = described_class.call(order: order, amount_cents: 1000, idempotency_key: pending.idempotency_key)
+
+    expect(result).to be_succeeded
+    expect(result.provider_refund_id).to eq("re_found")
+    expect(order.refunds.count).to eq(1)
+    expect(order.reload.refunded_cents).to eq(1000)
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "retains a missing old operation for finance instead of reusing an expired provider identity" do
+    selected = order.tickets.first
+    pending = create(:refund, order: order, payment: payment, amount_cents: selected.refundable_cents, status: :pending,
+      provider_refund_id: nil, failure_code: "provider_result_unknown", idempotency_key: "expired-uncertain", created_at: 24.hours.ago)
+    pending.refund_tickets.create!(ticket: selected, amount_cents: selected.refundable_cents)
+    allow(StripeService).to receive(:find_refund).and_return(nil)
+    allow(StripeService).to receive(:refund_payment)
+
+    expect { described_class.call(order: order, tickets: [selected], idempotency_key: pending.idempotency_key) }
+      .to raise_error(described_class::RefundError, /finance must reconcile/)
+
+    expect(pending.reload).to be_pending
+    expect(pending.refund_tickets.active).to exist
+    expect(order.reload.refundable_cents).to eq(2625)
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "keeps uncertainty reserved when the provider lookup fails" do
+    pending = create(:refund, order: order, payment: payment, amount_cents: 1000, status: :pending,
+      provider_refund_id: nil, failure_code: "provider_result_unknown", idempotency_key: "lookup-outage")
+    allow(StripeService).to receive(:find_refund).and_raise(Stripe::APIConnectionError, "lookup unavailable")
+    allow(StripeService).to receive(:refund_payment)
+
+    expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: pending.idempotency_key) }
+      .to raise_error(described_class::RefundError, /lookup failed/)
+    expect(pending.reload).to be_pending
+    expect(order.refundable_cents).to eq(4250)
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "records submission uncertainty before contacting the provider and clears it on acknowledgment" do
+    allow(StripeService).to receive(:refund_payment) do
+      expect(order.refunds.find_by!(idempotency_key: "crash-safe").failure_code).to eq("provider_result_unknown")
+      OpenStruct.new(id: "re_ack", status: "pending")
+    end
+    result = described_class.call(order: order, amount_cents: 1000, idempotency_key: "crash-safe")
+    expect(result).to be_pending
+    expect(result.failure_code).to be_nil
+    expect(result.provider_refund_id).to eq("re_ack")
+  end
+
+  it "treats a legacy pending reservation without a recorded response as uncertain after the replay window" do
+    pending = create(:refund, order: order, payment: payment, amount_cents: 1000, status: :pending,
+      provider_refund_id: nil, failure_code: nil, idempotency_key: "old-reservation", created_at: 2.days.ago)
+    allow(StripeService).to receive(:find_refund).and_return(nil)
+    allow(StripeService).to receive(:refund_payment)
+    expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: pending.idempotency_key) }
+      .to raise_error(described_class::RefundError, /finance must reconcile/)
+    expect(pending.reload).to be_pending
+    expect(StripeService).not_to have_received(:refund_payment)
   end
 
   it "does not resubmit an acknowledged pending refund or accept a changed replay amount" do

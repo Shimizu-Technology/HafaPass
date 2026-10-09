@@ -5,6 +5,9 @@ require "ostruct"
 module Commerce
   class RefundCreator
     class RefundError < StandardError; end
+    # Stripe may prune POST identities after 24 hours. Leave a margin and
+    # never create a second operation merely because reconciliation found none.
+    PROVIDER_REPLAY_WINDOW = 23.hours
 
     def self.call(**)
       new(**).call
@@ -55,7 +58,13 @@ module Commerce
       return refund if refund.provider_refund_id.present? && !provider_refund
       return refund if !provider_refund && !provider_submission_allowed?(refund)
 
-      response = submit_provider_refund(refund)
+      response = if !provider_refund && (refund.failure_code == "provider_result_unknown" || @replayed_refund)
+        recover_provider_refund(refund)
+      end
+      if !response && !provider_refund && !provider_submission_allowed?(refund, mark_unknown: true)
+        return refund.reload
+      end
+      response ||= submit_provider_refund(refund)
       finalize_refund!(refund, response)
     rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError => e
       fail_refund!(refund, "provider_error", e.message)
@@ -139,7 +148,7 @@ module Commerce
       raise
     end
 
-    def provider_submission_allowed?(refund)
+    def provider_submission_allowed?(refund, mark_unknown: false)
       Refund.transaction do
         order.event.organization.lock!
         order.lock!
@@ -147,6 +156,11 @@ module Commerce
         return false unless refund.pending? && refund.provider_refund_id.blank?
 
         ensure_financial_review_resolved!
+        # Persist uncertainty before leaving the locks for the external call.
+        # A process crash must not make an attempted operation look unsubmitted.
+        if mark_unknown
+          refund.update!(failure_code: "provider_result_unknown", failure_message: "Refund provider response is pending")
+        end
         true
       end
     end
@@ -202,11 +216,26 @@ module Commerce
       raise RefundError, "Refund provider result is unknown; retry with the same idempotency key"
     end
 
+    def recover_provider_refund(refund)
+      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key)
+      return response if response
+      return if refund.created_at > PROVIDER_REPLAY_WINDOW.ago
+
+      raise RefundError, "Refund provider result is unknown; finance must reconcile before another submission"
+    rescue RefundError
+      raise
+    rescue StandardError => e
+      refund.update!(failure_code: "provider_result_unknown", failure_message: e.message)
+      Sentry.capture_exception(e)
+      raise RefundError, "Refund provider result is unknown; provider lookup failed, reconcile before retrying"
+    end
+
     def validate_replay!(refund)
       unless (requested_amount_cents.nil? || requested_amount_cents == refund.amount_cents) &&
           (tickets.nil? || tickets.map(&:id).sort == refund.refund_tickets.pluck(:ticket_id).sort)
         raise RefundError, "Idempotency-Key was already used for a different refund request"
       end
+      @replayed_refund = true
       refund
     end
 
@@ -260,6 +289,8 @@ module Commerce
         refund.update!(
           provider_refund_id: provider_refund.id,
           provider_payload: { status: provider_refund.respond_to?(:status) ? provider_refund.status : nil }.compact,
+          failure_code: nil,
+          failure_message: nil,
           status: :pending
         )
         if %w[failed canceled cancelled].include?(provider_status)

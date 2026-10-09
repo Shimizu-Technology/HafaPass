@@ -27,6 +27,8 @@ module Settlements
           raise FinalizationError, "Resolve pending refunds and open disputes before finalizing"
         end
 
+        # The event-day closeout contract requires an empty reconciliation
+        # queue, even when an item would not prevent a buyer refund attempt.
         if event.orders.joins(:reconciliation_exceptions).merge(ReconciliationException.open).exists? ||
             ReconciliationException.open.joins(:payment).where(payments: { order_id: event.orders.select(:id) }).exists?
           raise FinalizationError, "Resolve open reconciliation exceptions before finalizing"

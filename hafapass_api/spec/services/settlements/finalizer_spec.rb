@@ -166,13 +166,29 @@ RSpec.describe Settlements::Finalizer do
     expect { PayoutCreator.call(settlement: second, actor: actor, amount_cents: 4817, idempotency_key: "overdraw") }.to raise_error(PayoutCreator::PayoutError, /available balance/)
   end
 
-  it "blocks closeout and organization payouts for unresolved financial exceptions" do
+  it "blocks closeout and organization payouts for an uncatalogued reconciliation code" do
     order, = record_sale!(event)
     settlement = described_class.call(event: event, actor: actor)
     exception = ReconciliationException.create!(order: order, code: "late_capture")
     expect { described_class.call(event: event, actor: actor) }.to raise_error(described_class::FinalizationError, /reconciliation/)
     expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
     exception.resolve!
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(settlement.payable_cents)
+  end
+
+  it "requires delivery reconciliation at closeout even though it does not prevent buyer refund attempts" do
+    order, = record_sale!(event)
+    payment = create(:payment, :succeeded, order: order)
+    settlement = described_class.call(event: event, actor: actor)
+    exception = ReconciliationException.create!(order: nil, payment: payment, code: "ticket_email_delivery_failure")
+
+    expect(Commerce::RefundSafety.finance_review_required?(order)).to be(false)
+    expect { described_class.call(event: event, actor: actor) }
+      .to raise_error(described_class::FinalizationError, /reconciliation/)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
+
+    exception.resolve!
+    expect(described_class.call(event: event, actor: actor)).to eq(settlement)
     expect(OrganizationPayoutBalance.available_cents(organization)).to eq(settlement.payable_cents)
   end
 

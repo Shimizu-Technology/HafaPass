@@ -181,6 +181,11 @@ class StripeWebhookProcessor
     end
 
     provider_refunds = Array(nested_value(value(object, :refunds), :data))
+    # Modern charge snapshots need not embed refund operations. Their aggregate
+    # cannot identify or verify an operation, and may predate later refunds.
+    # The subscribed refund.created/updated events carry the durable identities.
+    return if provider_refunds.empty?
+
     provider_refunds.each do |entry|
       next unless value(entry, :amount).present?
 
