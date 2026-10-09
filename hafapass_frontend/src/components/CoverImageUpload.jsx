@@ -10,6 +10,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
   const [dragOver, setDragOver] = useState(false)
+  const [retryFile, setRetryFile] = useState(null)
   const inputRef = useRef(null)
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
@@ -17,6 +18,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
   const handleFile = async (file) => {
     if (!file || disabled || uploading) return
     setError(null)
+    setRetryFile(null)
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
       setError('Please upload a JPG, PNG, or WebP image.')
@@ -36,8 +38,9 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
       const finalUrl = await uploadImage(file, eventId)
       onUploaded(finalUrl)
       setPreview(null)
-    } catch {
-      setError('Upload failed. Please try again.')
+    } catch (uploadError) {
+      setError(uploadError.response?.data?.error || uploadError.message || 'Upload failed. Please try again.')
+      setRetryFile(file)
       setPreview(null)
     } finally {
       setUploading(false)
@@ -106,10 +109,11 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
         type="file"
         accept=".jpg,.jpeg,.png,.webp"
         className="hidden"
-        onChange={(e) => handleFile(e.target.files[0])}
+        onChange={(e) => { const file = e.target.files[0]; e.target.value = ''; handleFile(file) }}
       />
 
       {error && <p role="alert" className="mt-1 text-sm text-red-600">{error}</p>}
+      {retryFile && <button type="button" className="btn-secondary mt-2" disabled={disabled || uploading} onClick={() => handleFile(retryFile)}>Retry image upload</button>}
     </div>
   )
 }
