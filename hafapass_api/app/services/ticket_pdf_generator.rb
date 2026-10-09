@@ -42,7 +42,7 @@ class TicketPdfGenerator
 
     pdf.fill_color MUTED_TEXT
     pdf.font "Helvetica", size: 8
-    pdf.text "EVENT TICKET"
+    pdf.text Rails.env.production? ? "EVENT TICKET" : "TEST TICKET - REHEARSAL ONLY"
     pdf.move_down 16
   end
 
@@ -127,7 +127,7 @@ class TicketPdfGenerator
   def render_footer(pdf)
     pdf.fill_color MUTED_TEXT
     pdf.font "Helvetica", size: 9
-    pdf.text "Present this QR code at the door", align: :center
+    pdf.text Rails.env.production? ? "Present this QR code at the door" : "For testing only - no real event admission", align: :center
     pdf.move_down 4
     pdf.font "Helvetica", size: 7
     pdf.text "Powered by HafaPass", align: :center, color: "9CA3AF"
