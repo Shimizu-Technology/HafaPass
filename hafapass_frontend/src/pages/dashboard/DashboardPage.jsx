@@ -1,3 +1,4 @@
+import { uploadImage } from '../../utils/uploads'
 import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
@@ -155,17 +156,7 @@ function EditProfileModal({ profile, onClose, onSaved }) {
   setUploading(true)
   setError(null)
   try {
-   const presignRes = await apiClient.post('/uploads/presign', { filename: file.name, content_type: file.type })
-   const { url, fields, public_url } = presignRes.data
-   if (fields) {
-    const fd = new FormData()
-    Object.entries(fields).forEach(([k, v]) => fd.append(k, v))
-    fd.append('file', file)
-    await fetch(url, { method: 'POST', body: fd })
-   } else {
-    await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-   }
-   setLogoUrl(public_url || url.split('?')[0])
+   setLogoUrl(await uploadImage(file))
   } catch {
    setError('Logo upload failed')
   } finally {

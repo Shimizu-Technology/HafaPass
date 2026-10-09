@@ -1,14 +1,18 @@
+import { useLocation } from 'react-router-dom'
+import { safeReturnPath } from '../utils/authDestination'
 import { SignIn } from '@clerk/clerk-react'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 export default function SignInPage() {
+  const location = useLocation()
+  const returnTo = safeReturnPath(new URLSearchParams(location.search).get('returnTo'))
   if (!clerkPubKey) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50">
         <div className="text-center p-8 bg-white rounded-xl shadow-sm max-w-md">
           <h1 className="text-2xl font-bold text-neutral-800 mb-2">Sign In</h1>
-          <p className="text-neutral-500">Authentication is not configured. Set VITE_CLERK_PUBLISHABLE_KEY to enable sign in.</p>
+          <p className="text-neutral-500">Sign-in is temporarily unavailable. Please try again later.</p>
         </div>
       </div>
     )
@@ -25,8 +29,8 @@ export default function SignInPage() {
       <SignIn
         routing="path"
         path="/sign-in"
-        signUpUrl="/sign-up"
-        forceRedirectUrl="/"
+        signUpUrl={`/sign-up?returnTo=${encodeURIComponent(returnTo)}`}
+        forceRedirectUrl={returnTo}
       />
     </div>
   )

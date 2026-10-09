@@ -1,3 +1,4 @@
+import { currentScannerOwner } from '../../utils/admissionStore'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
@@ -7,45 +8,75 @@ const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-$
 
 export default function RefundsPage() {
  const { id: eventId } = useParams()
+ const storageKey = `hafapass:pending-refund:${currentScannerOwner()}:${eventId}`
+ const [pendingRequest, setPendingRequest] = useState(() => {
+  try { return JSON.parse(window.sessionStorage.getItem(storageKey) || 'null') } catch { return null }
+ })
+ const [notice, setNotice] = useState('')
+ const [loadError, setLoadError] = useState('')
  const [orders, setOrders] = useState([])
  const [loading, setLoading] = useState(true)
- const [refundingId, setRefundingId] = useState(null)
- const [refundForm, setRefundForm] = useState({ amount: '', reason: '', type: 'full' })
- const [refundRequestKey, setRefundRequestKey] = useState(null)
+ const [refundingId, setRefundingId] = useState(pendingRequest?.orderId || null)
+ const [refundForm, setRefundForm] = useState(pendingRequest ? { amount: pendingRequest.payload.amount_cents ? String(pendingRequest.payload.amount_cents / 100) : '', reason: pendingRequest.payload.reason || '', type: pendingRequest.payload.amount_cents ? 'partial' : 'full' } : { amount: '', reason: '', type: 'full' })
+ const [refundRequestKey, setRefundRequestKey] = useState(pendingRequest?.key || null)
  const [processing, setProcessing] = useState(false)
 
  const fetchOrders = useCallback(async () => {
+  setLoadError('')
   try {
    const res = await apiClient.get(`/organizer/events/${eventId}/stats`)
    setOrders(res.data.recent_orders || [])
-  } catch (e) { console.error(e) }
+  } catch { setLoadError('Recent orders could not be loaded. Please try again.') }
   setLoading(false)
  }, [eventId])
 
  useEffect(() => { fetchOrders() }, [fetchOrders])
 
  const handleRefund = async (orderId) => {
+  if (processing) return
   setProcessing(true)
+  setNotice('')
   try {
    const payload = { reason: refundForm.reason || null }
    if (refundForm.type === 'partial' && refundForm.amount) {
     const parsed = parseFloat(refundForm.amount)
     if (Number.isNaN(parsed) || parsed <= 0) {
-     alert('Please enter a valid refund amount')
+     setNotice('Please enter a valid refund amount.')
      setProcessing(false)
      return
     }
     payload.amount_cents = Math.round(parsed * 100)
    }
-   await apiClient.post(`/organizer/events/${eventId}/orders/${orderId}/refund`, payload, {
-    headers: { 'Idempotency-Key': refundRequestKey },
+   const request = pendingRequest || { orderId, key: refundRequestKey || newRefundRequestKey(), payload }
+   window.sessionStorage.setItem(storageKey, JSON.stringify(request))
+   setPendingRequest(request)
+   const response = await apiClient.post(`/organizer/events/${eventId}/orders/${orderId}/refund`, request.payload, {
+    headers: { 'Idempotency-Key': request.key },
    })
-   setRefundingId(null)
-   setRefundRequestKey(null)
-   setRefundForm({ amount: '', reason: '', type: 'full' })
+   const status = response.data.status
+   if (status === 'pending') {
+    setNotice('Refund pending — waiting for the payment provider. Retry this saved request to check its status; do not create another refund.')
+   } else if (['succeeded', 'failed', 'cancelled'].includes(status)) {
+    setNotice(status === 'succeeded' ? 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
+    window.sessionStorage.removeItem(storageKey)
+    setPendingRequest(null)
+    setRefundingId(null)
+    setRefundRequestKey(null)
+    setRefundForm({ amount: '', reason: '', type: 'full' })
+   } else { setNotice('The refund outcome is not confirmed. Retry this saved request before starting another refund.') }
    fetchOrders()
   } catch (e) {
-   alert(e.response?.data?.error || 'Refund failed')
+   const data = e.response?.data
+   if (data?.reconciliation_required === false) {
+    window.sessionStorage.removeItem(storageKey)
+    setPendingRequest(null)
+    setRefundingId(null)
+    setRefundRequestKey(null)
+    setRefundForm({ amount: '', reason: '', type: 'full' })
+    setNotice(`${data.error || 'The request was rejected.'} No new refund was confirmed by this request.`)
+   } else {
+    setNotice(`${data?.error || 'The refund response could not be confirmed.'} Retry this saved request to check the outcome; do not create another refund.`)
+   }
   }
   setProcessing(false)
  }
@@ -63,6 +94,10 @@ export default function RefundsPage() {
     <p className="text-sm text-neutral-500 mt-1">Process full or partial refunds for completed orders</p>
    </div>
 
+   {notice && <p role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{notice}</p>}
+   {pendingRequest && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
+   {pendingRequest && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>Retry saved refund</button>}
+   {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{loadError} <button className="min-h-11 font-semibold underline" onClick={fetchOrders}>Retry</button></p>}
    {orders.length === 0 ? (
     <div className="card p-12 text-center">
      <DollarSign className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
@@ -87,12 +122,12 @@ export default function RefundsPage() {
         </div>
         {refundingId !== order.id ? (
          <button onClick={() => { setRefundingId(order.id); setRefundRequestKey(newRefundRequestKey()); setRefundForm({ amount: '', reason: '', type: 'full' }) }}
-          disabled={order.refundable_cents <= 0}
+          disabled={processing || Boolean(pendingRequest) || order.refundable_cents <= 0}
           className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50 shrink-0 self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed">
           <RotateCcw className="w-3 h-3" /> Refund
          </button>
         ) : (
-         <button onClick={() => { setRefundingId(null); setRefundRequestKey(null) }} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
+         <button disabled={processing || Boolean(pendingRequest)} onClick={() => { setRefundingId(null); setRefundRequestKey(null) }} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
         )}
        </div>
 
@@ -100,33 +135,33 @@ export default function RefundsPage() {
         <div className="mt-4 pt-4 border-t border-neutral-100">
          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-          <p className="text-sm text-amber-700">This action cannot be undone. The refund will be processed through Stripe.</p>
+          <p className="text-sm text-amber-700">The original payment provider determines the outcome. Pending requests are not completed refunds. Cash and unsupported terminal payments need a manager to arrange repayment.</p>
          </div>
          <div className="flex gap-3 items-end flex-wrap">
           <div>
-           <label className="block text-sm font-medium text-neutral-700 mb-1.5">Type</label>
-           <select value={refundForm.type} onChange={e => setRefundForm({...refundForm, type: e.target.value})} className="input !py-2 text-sm w-32">
+           <label htmlFor={`refund-type-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">Type</label>
+           <select id={`refund-type-${order.id}`} disabled={processing || Boolean(pendingRequest)} value={refundForm.type} onChange={e => setRefundForm({...refundForm, type: e.target.value})} className="input !py-2 text-sm w-32">
             <option value="full">Full</option>
             <option value="partial">Partial</option>
            </select>
           </div>
           {refundForm.type === 'partial' && (
            <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">Amount ($)</label>
-            <input type="number" step="0.01" min="0.01" max={(order.refundable_cents / 100).toFixed(2)}
+            <label htmlFor={`refund-amount-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">Amount ($)</label>
+            <input id={`refund-amount-${order.id}`} disabled={processing || Boolean(pendingRequest)} type="number" step="0.01" min="0.01" max={(order.refundable_cents / 100).toFixed(2)}
              value={refundForm.amount} onChange={e => setRefundForm({...refundForm, amount: e.target.value})}
              className="input !py-2 text-sm w-28" placeholder="0.00" />
            </div>
           )}
           <div className="flex-1 min-w-[200px]">
-           <label className="block text-sm font-medium text-neutral-700 mb-1.5">Reason (optional)</label>
-           <input value={refundForm.reason} onChange={e => setRefundForm({...refundForm, reason: e.target.value})}
+           <label htmlFor={`refund-reason-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">Reason (optional)</label>
+           <input id={`refund-reason-${order.id}`} disabled={processing || Boolean(pendingRequest)} value={refundForm.reason} onChange={e => setRefundForm({...refundForm, reason: e.target.value})}
             className="input !py-2 text-sm" placeholder="Customer request, event cancelled..." />
           </div>
           <button onClick={() => handleRefund(order.id)} disabled={processing || (refundForm.type === 'partial' && !refundForm.amount)}
            className="btn-primary text-sm !py-2.5 !bg-red-500 hover:!bg-red-600 gap-1 disabled:opacity-50">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-           Process Refund
+           {pendingRequest ? 'Retry saved refund' : 'Process Refund'}
           </button>
          </div>
         </div>

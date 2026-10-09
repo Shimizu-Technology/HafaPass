@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { signedManifest } from '../test/manifestFixture'
 import {
-  applySyncResults, canonicalJson, clearEventAdmissionData, loadUsableManifest, queueAdmission,
+  applySyncResults, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission,
   queuedActions, saveDevice, saveVerifiedManifest, sha256Hex,
 } from './admissionStore'
 
@@ -9,6 +10,7 @@ const toBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
 const toBase64Url = bytes => toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
 describe('admissionStore', () => {
+  afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
   let signingKeys
 
   beforeAll(async () => {
@@ -57,7 +59,7 @@ describe('admissionStore', () => {
 
   it('allocates durable device sequences and removes only server-acknowledged actions', async () => {
     const eventId = 91002
-    const device = { id: 42, event_id: eventId, last_sequence: 7, effective: true }
+    const device = { id: 42, event_id: eventId, last_sequence: 7, effective: true, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
     const ticket = { ticket_id: 12, attendee_name: 'Mina', ticket_type: 'General' }
     await clearEventAdmissionData(eventId)
     await saveDevice(eventId, device)
@@ -77,6 +79,55 @@ describe('admissionStore', () => {
       occurred_at: first.occurred_at,
     }])
     expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([second.action_uuid])
+  })
+
+  it('atomically admits one ticket when camera and manual entry overlap', async () => {
+    const eventId = 91003
+    const device = { id: 43, effective: true, last_sequence: 0, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    const payload = { eventId, deviceId: device.id, manifestVersion: 1, ticket: { ticket_id: 14 }, credentialHash: 'c'.repeat(64), source: 'offline' }
+    const results = await Promise.all([queueAdmission(payload), queueAdmission(payload)])
+    expect(results.filter(Boolean)).toHaveLength(1)
+    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+    expect((await loadDevice(eventId)).next_sequence).toBe(1)
+  })
+
+  it('purges signed-out access and attendee details while retaining a journal only the original account can recover', async () => {
+    const eventId = 91004
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    const device = { id: 44, identifier: 'device-owned-by-a', effective: true, last_sequence: 0, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId))
+    await queueAdmission({ eventId, deviceId: 44, manifestVersion: 1, ticket: { ticket_id: 15, attendee_name: 'Private attendee' }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    await clearAllAdmissionData()
+    expect(await loadAuthorizedScanner(eventId)).toBeNull()
+    expect(await localScanState(eventId, 15)).toBeNull()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-b')
+    expect(await queuedActions(eventId, 44)).toHaveLength(0)
+    expect(await loadPendingDeviceIdentity(eventId)).toBeUndefined()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: 44, identifier: 'device-owned-by-a' })
+    const pending = await queuedActions(eventId, 44)
+    expect(pending).toHaveLength(1)
+    expect(JSON.stringify(pending)).not.toContain('Private attendee')
+    await saveDevice(eventId, device)
+    expect((await loadDevice(eventId)).next_sequence).toBe(1)
+    await applySyncResults(eventId, { ...device, last_sequence: 1 }, [{ action_uuid: pending[0].action_uuid, ticket_id: 15, kind: 'admit', result: 'accepted' }])
+    expect(await queuedActions(eventId, 44)).toHaveLength(0)
+  })
+
+  it('removes expired authorization and attendee data without losing unacknowledged scans', async () => {
+    const eventId = 91005
+    const now = Date.now()
+    const device = { id: 45, identifier: 'expiring-device', effective: true, last_sequence: 0, authorization_expires_at: new Date(now + 1_000).toISOString() }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId))
+    await queueAdmission({ eventId, deviceId: 45, manifestVersion: 1, ticket: { ticket_id: 16, attendee_name: 'Private attendee' }, credentialHash: 'e'.repeat(64), source: 'offline' })
+    vi.spyOn(Date, 'now').mockReturnValue(now + 2_000)
+    expect(await loadAuthorizedScanner(eventId)).toBeNull()
+    expect(await loadUsableManifest(eventId)).toBeNull()
+    expect(await localScanState(eventId, 16)).toBeNull()
+    expect(await queuedActions(eventId, 45)).toHaveLength(1)
   })
 
   it('finds and hashes a credential in a 500-ticket cached manifest within 100ms at p95', async () => {

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle, ChevronRight, Clock3, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
+import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { clearActiveCheckout, getOrderAccess, orderAccessHeaders, saveOrderAccess } from '../utils/orderAccess'
@@ -12,6 +13,7 @@ export default function OrderConfirmationPage() {
   const { id } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
+  const capabilities = useLaunchCapabilities()
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -70,12 +72,13 @@ export default function OrderConfirmationPage() {
   ))
   const canRespondToChange = change && (!change.response || refundNeedsRetry) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
   const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
-  const orderHeaders = useMemo(() => orderAccessHeaders(id), [id])
+  // Recovery links import credentials after mount. Read the current credential for every action.
+  const orderHeaders = () => orderAccessHeaders(id)
 
   async function resend() {
     setResendState('sending')
     try {
-      await apiClient.post(`/orders/${id}/resend`, {}, { headers: orderHeaders })
+      await apiClient.post(`/orders/${id}/resend`, {}, { headers: orderHeaders() })
       setResendState('sent')
     } catch (err) {
       setResendState(err.response?.status === 429 ? 'cooldown' : 'error')
@@ -90,7 +93,7 @@ export default function OrderConfirmationPage() {
         decision,
       }, {
         headers: {
-          ...orderHeaders,
+          ...orderHeaders(),
           ...(decision === 'refund_requested' ? { 'Idempotency-Key': crypto.randomUUID() } : {}),
         },
       })
@@ -106,9 +109,11 @@ export default function OrderConfirmationPage() {
     setCancellingTicketId(ticket.id)
     try {
       await apiClient.post(`/orders/${id}/tickets/${ticket.id}/cancel`, {}, {
-        headers: { ...orderHeaders, 'Idempotency-Key': crypto.randomUUID() },
+        headers: { ...orderHeaders(), 'Idempotency-Key': crypto.randomUUID() },
       })
       await fetchOrder()
+    } catch (err) {
+      setTicketActionError(err.response?.data?.error || 'Unable to cancel this ticket. Please refresh before retrying.')
     } finally {
       setCancellingTicketId(null)
     }
@@ -118,7 +123,10 @@ export default function OrderConfirmationPage() {
     if (!window.confirm('Replace this ticket’s entry QR? Any saved copy of the old QR will stop working.')) return
     setRotatingTicketId(ticket.id)
     try {
-      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/rotate_scan`, {}, { headers: orderHeaders })
+      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/rotate_scan`, {}, { headers: orderHeaders() })
+      await fetchOrder()
+    } catch (err) {
+      setTicketActionError(err.response?.data?.error || 'Unable to replace the QR. Please refresh before retrying.')
     } finally {
       setRotatingTicketId(null)
     }
@@ -130,7 +138,7 @@ export default function OrderConfirmationPage() {
     setTransferringTicketId(ticket.id)
     setTicketActionError(null)
     try {
-      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/transfer`, { recipient_email: recipientEmail }, { headers: orderHeaders })
+      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/transfer`, { recipient_email: recipientEmail }, { headers: orderHeaders() })
       window.alert('Transfer invitation sent. You retain control until the recipient accepts it.')
     } catch (err) {
       setTicketActionError(err.response?.data?.error || 'Unable to transfer this ticket.')
@@ -160,7 +168,7 @@ export default function OrderConfirmationPage() {
       await apiClient.post(`/orders/${id}/tickets/${ticket.id}/exchange_seat`, {
         event_seat_id: Number(exchangeSeatId),
         accessibility_attested: exchangeAttested,
-      }, { headers: orderHeaders })
+      }, { headers: orderHeaders() })
       setExchangeTicketId(null)
       setExchangeMap(null)
       await fetchOrder()
@@ -217,14 +225,14 @@ export default function OrderConfirmationPage() {
 
         <section className="card mb-6 overflow-hidden">
           <div className="border-b border-neutral-100 p-5 sm:p-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-brand-600">{event.status}</p>
+            <p className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wider text-brand-600">{event.status}</p>
             <h2 className="mt-1 text-xl font-bold text-neutral-950">{event.title}</h2>
             <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
             <p className="text-sm text-neutral-500">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
           </div>
           <div className="space-y-2 p-5 text-sm sm:p-6">
             {order.order_items.map(item => (
-              <div key={item.id} className="flex justify-between gap-4"><span>{item.name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
+              <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
             ))}
             <div className="flex justify-between border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee</span><span>{formatPrice(order.service_fee_cents)}</span></div>
             {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
@@ -253,29 +261,29 @@ export default function OrderConfirmationPage() {
                 )) || []
                 const selectedExchangeSeat = exchangeOptions.find(seat => seat.id === Number(exchangeSeatId))
                 return <div key={ticket.id} className="py-3">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                     {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
                     <p className="text-xs capitalize text-neutral-500">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {ticket.status === 'issued' && (
-                      <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
+                      <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
                     )}
                     {ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) && (
-                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id} className="text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Cancelling…' : ticket.refundable_cents > 0 ? 'Refund' : 'Cancel'}</button>
+                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Cancelling…' : ticket.refundable_cents > 0 ? 'Refund' : 'Cancel'}</button>
                     )}
-                    {ticket.status === 'issued' && event.transfers_enabled !== false && (
-                      <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="text-xs font-semibold text-brand-600">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
+                    {ticket.status === 'issued' && capabilities.ticket_transfers && event.transfers_enabled !== false && (
+                      <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-brand-600">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
                     )}
                     {ticket.status === 'issued' && ticket.seat && (
-                      <button onClick={() => openSeatExchange(ticket)} className="text-xs font-semibold text-brand-600">Change seat</button>
+                      <button onClick={() => openSeatExchange(ticket)} className="min-h-11 px-2 text-xs font-semibold text-brand-600">Change seat</button>
                     )}
                     {ticket.status === 'issued' && !order.ticket_access_blocked && (
-                      <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
+                      <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="inline-flex min-h-11 min-w-11 items-center justify-center" aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
                     )}
-                    {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>}
+                    {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="inline-flex min-h-11 min-w-11 items-center justify-center" aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>}
                   </div>
                 </div>
                 {exchangeTicketId === ticket.id && (

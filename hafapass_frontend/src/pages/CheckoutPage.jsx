@@ -19,7 +19,8 @@ export default function CheckoutPage() {
   const { t } = useTranslation()
   const [event, setEvent] = useState(location.state?.event || null)
   const [loading, setLoading] = useState(!location.state?.event)
-  const lineItems = location.state?.lineItems || null
+  // Keep this checkout selection stable while a lazy confirmation route is loading.
+  const [lineItems] = useState(() => location.state?.lineItems || null)
   const waitlistOfferToken = location.state?.waitlistOfferToken || null
   const seatHoldToken = location.state?.seatHoldToken || null
   const seatHoldExpiresAt = location.state?.seatHoldExpiresAt || null
@@ -71,8 +72,10 @@ export default function CheckoutPage() {
   }, [])
 
   useEffect(() => {
+    if (!location.pathname.startsWith('/checkout/')) return
     if (!lineItems || lineItems.length === 0) {
-      navigate(`/events/${slug}`, { replace: true })
+      const activeOrderId = getActiveCheckout(slug)
+      navigate(activeOrderId ? `/orders/${activeOrderId}/confirmation` : `/events/${slug}`, { replace: true })
       return
     }
     if (!event) {
@@ -81,7 +84,7 @@ export default function CheckoutPage() {
         .then(res => { setEvent(res.data); setLoading(false) })
         .catch(() => { setError('Unable to load event details.'); setLoading(false) })
     }
-  }, [slug, event, lineItems, navigate, liveMoneyProof])
+  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname])
 
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
@@ -157,7 +160,11 @@ export default function CheckoutPage() {
     e.preventDefault()
     setSubmitError(null)
     const errors = validateForm()
-    if (Object.keys(errors).length > 0) { setFormErrors(errors); return }
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      requestAnimationFrame(() => document.getElementById(Object.keys(errors)[0] === 'name' ? 'buyerName' : Object.keys(errors)[0] === 'email' ? 'buyerEmail' : 'termsAccepted')?.focus())
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -392,7 +399,7 @@ export default function CheckoutPage() {
                   <span className="text-sm font-medium text-emerald-700">{promoData.code}</span>
                   <span className="text-xs text-emerald-600">{promoData.description}</span>
                 </div>
-                <button onClick={clearPromo} className="text-emerald-600 hover:text-emerald-800 transition-colors">
+                <button aria-label="Remove promo code" onClick={clearPromo} className="text-emerald-600 hover:text-emerald-800 transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -400,14 +407,14 @@ export default function CheckoutPage() {
               <div className="flex gap-2">
                 <input
                   type="text" value={promoInput} onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
-                  placeholder={t('checkout.enterCode')} className="input flex-1 !py-2.5 text-sm uppercase"
+                  aria-label="Promo code" placeholder={t('checkout.enterCode')} className="input flex-1 !py-2.5 text-sm uppercase"
                   onKeyDown={(e) => e.key === 'Enter' && handlePromoValidate()}
                 />
                 <button onClick={handlePromoValidate} disabled={promoLoading || !promoInput.trim()}
                   className="btn-secondary !py-2.5 text-sm disabled:opacity-50">
                   {promoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('checkout.apply')}
                 </button>
-                <button onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-400 hover:text-neutral-600">
+                <button aria-label="Close promo code entry" onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-400 hover:text-neutral-600">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -429,19 +436,19 @@ export default function CheckoutPage() {
               <div className="space-y-4">
                 <div>
                   <label htmlFor="buyerName" className="block text-sm font-medium text-neutral-700 mb-1.5">{t('checkout.fullName')}</label>
-                  <input id="buyerName" type="text" value={buyerName}
+                  <input id="buyerName" autoComplete="name" required aria-invalid={Boolean(formErrors.name)} aria-describedby={formErrors.name ? 'buyer-name-error' : undefined} type="text" value={buyerName}
                     onChange={(e) => { setBuyerName(e.target.value); setFormErrors(p => ({ ...p, name: null })) }}
                     className={`input ${formErrors.name ? 'input-error' : ''}`}
                     placeholder="Enter your full name" disabled={submitting} />
-                  {formErrors.name && <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
+                  {formErrors.name && <p id="buyer-name-error" role="alert" className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
                 </div>
                 <div>
                   <label htmlFor="buyerEmail" className="block text-sm font-medium text-neutral-700 mb-1.5">{t('checkout.emailAddress')}</label>
-                  <input id="buyerEmail" type="email" value={buyerEmail}
+                  <input id="buyerEmail" autoComplete="email" required aria-invalid={Boolean(formErrors.email)} aria-describedby={formErrors.email ? 'buyer-email-error' : undefined} type="email" value={buyerEmail}
                     onChange={(e) => { setBuyerEmail(e.target.value); setFormErrors(p => ({ ...p, email: null })) }}
                     className={`input ${formErrors.email ? 'input-error' : ''}`}
                     placeholder="you@example.com" disabled={submitting} />
-                  {formErrors.email && <p className="text-red-500 text-xs mt-1">{formErrors.email}</p>}
+                  {formErrors.email && <p id="buyer-email-error" role="alert" className="text-red-500 text-xs mt-1">{formErrors.email}</p>}
                 </div>
                 <div>
                   <label htmlFor="buyerPhone" className="block text-sm font-medium text-neutral-700 mb-1.5">
@@ -527,22 +534,24 @@ export default function CheckoutPage() {
           <div className="card p-5 sm:p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-semibold text-neutral-900">Payment</h2>
-              <button onClick={() => {
-                if (orderId) {
-                  apiClient.post(`/orders/${orderId}/cancel`, {}, { headers: orderAccessHeaders(orderId) }).catch((err) => {
-                  alert(`Warning: Could not cancel order. ${err.response?.data?.error || 'Please contact support.'}`)
-                  console.warn('Failed to cancel order:', err.response?.data?.error || err.message)
-                })
-                }
-                clearActiveCheckout(slug)
-                setStep('info')
-                setClientSecret(null)
-                setStripePublishableKey(null)
-                setOrderId(null)
-                setOrderData(null)
+              <button disabled={submitting} onClick={async () => {
+                setSubmitting(true)
+                setSubmitError(null)
+                try {
+                  if (orderId) await apiClient.post(`/orders/${orderId}/cancel`, {}, { headers: orderAccessHeaders(orderId) })
+                  clearActiveCheckout(slug)
+                  setStep('info')
+                  setClientSecret(null)
+                  setStripePublishableKey(null)
+                  setOrderId(null)
+                  setOrderData(null)
+                } catch (err) {
+                  setSubmitError(err.response?.data?.error || 'We could not confirm cancellation. Please refresh this order before starting another checkout.')
+                } finally { setSubmitting(false) }
               }}
                 className="text-sm text-brand-500 hover:text-brand-600 font-medium">{t('checkout.editInfo')}</button>
             </div>
+            {submitError && <p role="alert" className="mb-4 text-sm text-red-700">{submitError}</p>}
             <div className="bg-neutral-50 rounded-xl p-3 mb-4 text-sm text-neutral-600">
               <span className="font-medium">{buyerName}</span> &middot; {buyerEmail}
             </div>

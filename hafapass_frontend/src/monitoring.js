@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/react'
+import { scrubTelemetry } from './utils/telemetryPrivacy'
 
 export function initializeMonitoring() {
   const dsn = import.meta.env.VITE_SENTRY_DSN
@@ -17,8 +18,10 @@ export function initializeMonitoring() {
       const message = event.exception?.values?.[0]?.value || ''
       if (message.includes('ResizeObserver')) return null
       if (message.includes('chrome-extension://')) return null
-      return event
+      return scrubTelemetry(event)
     },
+    beforeBreadcrumb: breadcrumb => scrubTelemetry(breadcrumb),
+    beforeSendTransaction: transaction => scrubTelemetry(transaction),
   })
 }
 

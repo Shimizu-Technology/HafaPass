@@ -1,12 +1,15 @@
+import { currentScannerOwner } from '../../utils/admissionStore'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import QRCode from '../../components/QRCode'
+import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import SeatSelector from '../../components/SeatSelector'
 
 export default function BoxOfficePage() {
   const { id } = useParams()
+  const capabilities = useLaunchCapabilities()
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -21,7 +24,13 @@ export default function BoxOfficePage() {
   const [saleError, setSaleError] = useState(null)
   const [seatReservation, setSeatReservation] = useState(null)
   const [seatSelectorKey, setSeatSelectorKey] = useState(0)
-  const cardIdempotencyRef = useRef(null)
+  const saleStorageKey = `hafapass:pending-box-office:${currentScannerOwner()}:${id}`
+  const [pendingSale, setPendingSale] = useState(() => {
+    try { return JSON.parse(window.sessionStorage.getItem(saleStorageKey) || 'null') } catch { return null }
+  })
+  const pendingSaleRef = useRef(pendingSale)
+  const saleLocked = submitting || Boolean(pendingSale)
+
 
   const fetchEvent = useCallback(async () => {
     try {
@@ -30,7 +39,14 @@ export default function BoxOfficePage() {
       // Initialize quantities to 0
       const initial = {}
       res.data.ticket_types?.forEach(tt => { initial[tt.id] = 0 })
-      setQuantities(initial)
+      if (!pendingSaleRef.current) setQuantities(initial)
+      else {
+        const payload = pendingSaleRef.current.payload
+        setQuantities(Object.fromEntries(payload.line_items.map(item => [item.ticket_type_id, item.quantity])))
+        setBuyerName(payload.buyer_name || '')
+        setBuyerEmail(payload.buyer_email || '')
+        setPaymentMethod(payload.payment_method)
+      }
     } catch {
       setError('Failed to load event.')
     } finally {
@@ -69,7 +85,7 @@ export default function BoxOfficePage() {
     : event?.ticket_types?.reduce((s, tt) => s + (quantities[tt.id] || 0) * tt.price_cents, 0) || 0
 
   const handleSale = async () => {
-    if (totalItems === 0) return
+    if (submitting || (!pendingSaleRef.current && totalItems === 0)) return
     setSubmitting(true)
     setLastOrder(null)
     setSaleError(null)
@@ -79,18 +95,30 @@ export default function BoxOfficePage() {
       .map(([ttId, qty]) => ({ ticket_type_id: parseInt(ttId), quantity: qty }))
 
     try {
-      if (paymentMethod === 'door_card' && !cardIdempotencyRef.current) {
-        cardIdempotencyRef.current = `box-office-${crypto.randomUUID()}`
+      let sale = pendingSaleRef.current
+      if (!sale) {
+        sale = {
+          key: `box-office-${crypto.randomUUID()}`,
+          payload: {
+            line_items,
+            seat_hold_token: seatReservation?.seatHoldToken,
+            payment_method: paymentMethod,
+            buyer_name: buyerName || undefined,
+            buyer_email: buyerEmail || undefined,
+          },
+          total_cents: totalCents,
+          created_at: new Date().toISOString(),
+        }
+        // Persist before contacting the terminal: a lost response or reload keeps the same sale identity.
+        window.sessionStorage.setItem(saleStorageKey, JSON.stringify(sale))
+        pendingSaleRef.current = sale
+        setPendingSale(sale)
       }
-      const res = await apiClient.post(`/organizer/events/${id}/box_office`, {
-        line_items,
-        seat_hold_token: seatReservation?.seatHoldToken,
-        payment_method: paymentMethod,
-        buyer_name: buyerName || undefined,
-        buyer_email: buyerEmail || undefined,
-      }, paymentMethod === 'door_card' ? { headers: { 'Idempotency-Key': cardIdempotencyRef.current } } : undefined)
+      const res = await apiClient.post(`/organizer/events/${id}/box_office`, sale.payload, { headers: { 'Idempotency-Key': sale.key } })
       setLastOrder(res.data)
-      cardIdempotencyRef.current = null
+      window.sessionStorage.removeItem(saleStorageKey)
+      pendingSaleRef.current = null
+      setPendingSale(null)
       // Reset form
       const reset = {}
       event.ticket_types?.forEach(tt => { reset[tt.id] = 0 })
@@ -103,12 +131,17 @@ export default function BoxOfficePage() {
       fetchEvent() // refresh availability
     } catch (err) {
       const data = err.response?.data
+      const uncertain = !err.response || err.response.status >= 500 || [408, 409, 429].includes(err.response.status) || Boolean(data?.reconciliation_required)
       setSaleError({
-        message: data?.error || 'Failed to process sale.',
-        reconciliationRequired: Boolean(data?.reconciliation_required),
+        message: data?.error || (uncertain ? 'The connection was interrupted. This sale may have completed. Retry this saved sale or ask a manager to verify its outcome.' : 'Failed to process sale.'),
+        reconciliationRequired: uncertain,
         orderId: data?.order_id,
       })
-      if (!data?.reconciliation_required) cardIdempotencyRef.current = null
+      if (!uncertain) {
+        window.sessionStorage.removeItem(saleStorageKey)
+        pendingSaleRef.current = null
+        setPendingSale(null)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -137,11 +170,16 @@ export default function BoxOfficePage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Ticket Selection */}
         <div className="lg:col-span-2 space-y-4">
+          {pendingSale && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+            <p className="font-semibold">A saved sale needs confirmation</p>
+            <p className="mt-1">Retry uses the original sale and payment identity. Do not create another sale or collect another payment until its outcome is confirmed.</p>
+            <p className="mt-2 break-all font-mono text-xs">Reference: {pendingSale.key}</p>
+          </div>}
           <h2 className="text-lg font-semibold text-neutral-900">Select Tickets</h2>
 
           {event.assigned_seating ? (
             <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
-              <SeatSelector
+              {saleLocked ? <p className="text-sm text-neutral-600">Seat selection is locked while the saved sale is being confirmed.</p> : <SeatSelector
                 key={seatSelectorKey}
                 event={event}
                 source="box_office"
@@ -153,7 +191,7 @@ export default function BoxOfficePage() {
                   setQuantities(next)
                   setSeatReservation(reservation)
                 }}
-              />
+              />}
               {seatReservation && (
                 <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status">
                   <p className="font-semibold">Seats held for this sale</p>
@@ -175,7 +213,7 @@ export default function BoxOfficePage() {
                   <button
                     onClick={() => updateQty(tt.id, -1)}
                     aria-label={`Remove ${tt.name}`}
-                    disabled={!quantities[tt.id]}
+                    disabled={saleLocked || !quantities[tt.id]}
                     className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-neutral-100 hover:bg-neutral-200 disabled:opacity-30 transition"
                   >
                     <Minus className="w-5 h-5" />
@@ -184,7 +222,7 @@ export default function BoxOfficePage() {
                   <button
                     onClick={() => updateQty(tt.id, 1)}
                     aria-label={`Add ${tt.name}`}
-                    disabled={(quantities[tt.id] || 0) >= available}
+                    disabled={saleLocked || (quantities[tt.id] || 0) >= available}
                     className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-30 transition"
                   >
                     <Plus className="w-5 h-5" />
@@ -200,14 +238,14 @@ export default function BoxOfficePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 type="text"
-                placeholder="Name"
+                aria-label="Buyer name" disabled={saleLocked} placeholder="Name"
                 value={buyerName}
                 onChange={e => setBuyerName(e.target.value)}
                 className="px-4 py-2.5 rounded-xl border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
               />
               <input
                 type="email"
-                placeholder="Email"
+                aria-label="Buyer email" disabled={saleLocked} placeholder="Email"
                 value={buyerEmail}
                 onChange={e => setBuyerEmail(e.target.value)}
                 className="px-4 py-2.5 rounded-xl border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
@@ -220,7 +258,7 @@ export default function BoxOfficePage() {
             <h2 className="text-lg font-semibold text-neutral-900 mb-3">Payment Method</h2>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => setPaymentMethod('door_cash')}
+                disabled={saleLocked} onClick={() => setPaymentMethod('door_cash')}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
                   paymentMethod === 'door_cash'
                     ? 'border-brand-500 bg-brand-50 text-brand-700'
@@ -231,7 +269,7 @@ export default function BoxOfficePage() {
               </button>
               <button
                 onClick={() => setPaymentMethod('door_card')}
-                disabled={!cardAccount?.payment_ready}
+                disabled={saleLocked || !capabilities.door_card || !cardAccount?.payment_ready}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
                   paymentMethod === 'door_card'
                     ? 'border-brand-500 bg-brand-50 text-brand-700'
@@ -241,7 +279,7 @@ export default function BoxOfficePage() {
                 <CreditCard className="w-5 h-5" /> Card at Door
               </button>
             </div>
-            {!cardAccount?.payment_ready && (
+            {(!capabilities.door_card || !cardAccount?.payment_ready) && (
               <p className="mt-2 text-xs text-amber-700">Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HafaPass. Never record a card sale manually.</p>
             )}
           </div>
@@ -251,20 +289,20 @@ export default function BoxOfficePage() {
               <p className="font-semibold">{saleError.reconciliationRequired ? 'Do not charge the card again' : 'Sale not completed'}</p>
               <p className="mt-1">{saleError.message}</p>
               {saleError.orderId && <p className="mt-1 font-mono text-xs">Order #{saleError.orderId}</p>}
-              {saleError.reconciliationRequired && <p className="mt-2">Keep this screen open and use Process Sale again to retry the same provider idempotency key, or ask a manager to reconcile the terminal receipt.</p>}
+              {saleError.reconciliationRequired && <p className="mt-2">Use Retry saved sale to check the original sale, or ask a manager to compare the terminal receipt. The saved reference survives a reload in this tab.</p>}
             </div>
           )}
 
           {/* Process Sale Button */}
           <button
             onClick={handleSale}
-            disabled={totalItems === 0 || submitting || (event.assigned_seating && !seatReservation)}
+            disabled={submitting || (!pendingSale && (totalItems === 0 || (event.assigned_seating && !seatReservation)))}
             className="w-full mt-6 py-4 rounded-xl bg-brand-600 text-white font-semibold text-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
           >
             {submitting ? (
               <><Loader2 className="w-5 h-5 animate-spin" /> {paymentMethod === 'door_card' ? 'Waiting for terminal…' : 'Processing…'}</>
             ) : (
-              <>Process Sale · ${(totalCents / 100).toFixed(2)} ({totalItems} ticket{totalItems !== 1 ? 's' : ''})</>
+              <>{pendingSale ? 'Retry saved sale' : 'Process Sale'} · ${((pendingSale?.total_cents ?? totalCents) / 100).toFixed(2)} ({totalItems} ticket{totalItems !== 1 ? 's' : ''})</>
             )}
           </button>
         </div>

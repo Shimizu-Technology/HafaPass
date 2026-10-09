@@ -5,8 +5,8 @@ import {
 } from 'lucide-react'
 import apiClient from '../../api/client'
 import {
-  applySyncResults, clearEventAdmissionData, loadDevice, loadUsableManifest, localScanState, queueAdmission,
-  queuedActions, queueReversal, saveDevice, saveVerifiedManifest, sha256Hex,
+  applySyncResults, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
+  queuedActions, queueReversal, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess,
 } from '../../utils/admissionStore'
 
 const browserIdentifier = () => {
@@ -56,14 +56,14 @@ function ResultPanel({ result }) {
   )
 }
 
-export default function ScannerPage() {
+export default function ScannerPage({ offlineOnly = false }) {
   const [events, setEvents] = useState([])
   const [eventId, setEventId] = useState('')
   const [device, setDevice] = useState(null)
   const [manifest, setManifest] = useState(null)
   const [dashboard, setDashboard] = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
-  const [online, setOnline] = useState(navigator.onLine)
+  const [online, setOnline] = useState(navigator.onLine && !offlineOnly)
   const [setupBusy, setSetupBusy] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState(null)
@@ -82,6 +82,13 @@ export default function ScannerPage() {
   const zxingControlsRef = useRef(null)
   const scanCooldownRef = useRef(false)
   const syncingRef = useRef(false)
+  const setupGenerationRef = useRef(0)
+  const eventIdRef = useRef(eventId)
+  eventIdRef.current = eventId
+  const processCredentialRef = useRef(null)
+  const cameraGenerationRef = useRef(0)
+  const currentManifestRef = useRef(manifest)
+  currentManifestRef.current = manifest
 
   const ticketsByHash = useMemo(
     () => new Map((manifest?.payload?.tickets || []).map(ticket => [ticket.credential_hash, ticket])),
@@ -94,24 +101,32 @@ export default function ScannerPage() {
 
   const refreshPending = useCallback(async (selectedEventId, selectedDevice) => {
     if (!selectedEventId || !selectedDevice) return setPendingCount(0)
-    setPendingCount((await queuedActions(selectedEventId, selectedDevice.id)).length)
+    const count = (await queuedActions(selectedEventId, selectedDevice.id)).length
+    if (eventIdRef.current === String(selectedEventId)) setPendingCount(count)
   }, [])
 
   const fetchDashboard = useCallback(async selectedEventId => {
-    if (!selectedEventId || !navigator.onLine) return
+    if (!selectedEventId || !online) return
     const response = await apiClient.get(`/organizer/events/${selectedEventId}/admissions`)
-    setDashboard(response.data)
-  }, [])
+    if (eventIdRef.current === String(selectedEventId)) setDashboard(response.data)
+  }, [online])
 
   const downloadManifest = useCallback(async (selectedEventId, selectedDevice) => {
     const response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`)
-    await saveVerifiedManifest(response.data)
-    setManifest(response.data)
+    if (selectedDevice.owner_user_id !== currentScannerOwner()) return null
+    try {
+      if (Number(response.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event.')
+      await saveVerifiedManifest(response.data)
+    } catch (verificationError) {
+      verificationError.manifestInvalid = true
+      throw verificationError
+    }
+    if (eventIdRef.current === String(selectedEventId)) setManifest(response.data)
     return response.data
   }, [])
 
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
-    if (!selectedEventId || !selectedDevice || !navigator.onLine || syncingRef.current) return
+    if (!selectedEventId || !selectedDevice || !online || syncingRef.current) return
     syncingRef.current = true
     setSyncing(true)
     try {
@@ -125,61 +140,108 @@ export default function ScannerPage() {
         const batch = remaining.slice(0, 500)
         const response = await apiClient.post(
           `/organizer/events/${selectedEventId}/scanner_devices/${currentDevice.id}/sync`,
-          { actions: batch.map(({ event_id: _eventId, device_id: _deviceId, ...action }) => action) },
+          { actions: batch.map(({ event_id: _eventId, device_id: _deviceId, owner_user_id: _ownerId, ...action }) => action) },
         )
+        const results = response.data?.results
+        if (response.data?.device?.id !== currentDevice.id || !Array.isArray(results) || batch.some(action => !results.some(result => result.action_uuid === action.action_uuid))) {
+          throw new Error('The server did not confirm every saved scan. They remain on this device; please retry synchronization.')
+        }
         await applySyncResults(selectedEventId, response.data.device, response.data.results)
-        currentDevice = response.data.device
-        setDashboard(current => current ? { ...current, counts: response.data.summary } : current)
+        if (eventIdRef.current === String(selectedEventId)) setScanResult(current => {
+          if (!current?.ticket) return current
+          const result = results.find(item => item.kind === 'admit' && Number(item.ticket_id) === Number(current.ticket.ticket_id))
+          if (!result) return current
+          if (result.result === 'accepted') return { ...current, type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
+          return { ...current, type: result.result === 'conflict' ? 'warning' : 'error', message: result.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
+        })
+        currentDevice = { ...currentDevice, ...response.data.device }
+        if (eventIdRef.current === String(selectedEventId)) setDashboard(current => current ? { ...current, counts: response.data.summary } : current)
         remaining = await queuedActions(selectedEventId, currentDevice.id)
       }
-      setDevice(currentDevice)
+      if (eventIdRef.current === String(selectedEventId)) setDevice(currentDevice)
       await refreshPending(selectedEventId, currentDevice)
       await Promise.all([downloadManifest(selectedEventId, currentDevice), fetchDashboard(selectedEventId)])
     } catch (syncError) {
-      if (!quiet) setError(syncError.response?.data?.error || 'Queued scans could not be synchronized.')
+      if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
+        await purgeExpiredAdmissionAccess(selectedEventId)
+        if (eventIdRef.current === String(selectedEventId)) { setDevice(null); setManifest(null) }
+        setError(syncError.response?.data?.error || 'Scanner authorization was refused. Saved scans remain available to the original staff account after access is restored.')
+      } else if (syncError.manifestInvalid) {
+        setDevice(null)
+        setManifest(null)
+        setError(syncError.message)
+      } else if (!quiet) setError(syncError.response?.data?.error || 'Queued scans could not be synchronized. They remain saved on this device; reconnect and retry.')
     } finally {
       syncingRef.current = false
       setSyncing(false)
     }
-  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending])
+  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending, online])
 
   const configureEvent = useCallback(async selectedEventId => {
     if (!selectedEventId) return
+    const generation = ++setupGenerationRef.current
+    const owner = currentScannerOwner()
+    const current = () => generation === setupGenerationRef.current && eventIdRef.current === String(selectedEventId) && owner === currentScannerOwner()
     setSetupBusy(true)
     setError(null)
     setScanResult(null)
+    setDevice(null)
+    setManifest(null)
+    setDashboard(null)
+    setSearchResults([])
     try {
-      let storedDevice = await loadDevice(selectedEventId)
-      let storedManifest = await loadUsableManifest(selectedEventId)
-      if (navigator.onLine) {
-        const registration = await apiClient.post(`/organizer/events/${selectedEventId}/scanner_devices`, {
-          identifier: browserIdentifier(),
-          name: `Scanner · ${navigator.platform || 'browser'}`,
-        })
-        storedDevice = registration.data
-        await saveDevice(selectedEventId, storedDevice)
-        storedManifest = await downloadManifest(selectedEventId, storedDevice)
-        await fetchDashboard(selectedEventId)
+      let cached = await loadAuthorizedScanner(selectedEventId)
+      if (online) {
+        let networkPhase = true
+        try {
+          let previousIdentity = await loadPendingDeviceIdentity(selectedEventId)
+          if (!previousIdentity) {
+            const me = await apiClient.get('/me')
+            previousIdentity = await loadPendingDeviceIdentity(selectedEventId, me.data.id)
+          }
+          const registration = await apiClient.post(`/organizer/events/${selectedEventId}/scanner_devices`, {
+            identifier: previousIdentity?.identifier || browserIdentifier(),
+            name: `Scanner · ${navigator.platform || 'browser'}`,
+          })
+          networkPhase = false
+          if (!current()) return
+          await saveDevice(selectedEventId, registration.data)
+          networkPhase = true
+          const downloaded = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${registration.data.id}/manifest`)
+          networkPhase = false
+          if (!current()) return
+          if (Number(downloaded.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event. Ask a manager to check this device.')
+          await saveVerifiedManifest(downloaded.data)
+          cached = await loadAuthorizedScanner(selectedEventId)
+          if (current()) await fetchDashboard(selectedEventId).catch(() => {})
+        } catch (connectionError) {
+          // Explicit authorization failures invalidate local trust. Dependency outages do not.
+          if (connectionError.response?.status >= 400 && connectionError.response.status < 500 && ![408, 429].includes(connectionError.response.status)) {
+            await purgeExpiredAdmissionAccess(selectedEventId)
+            throw connectionError
+          }
+          if (!cached || !networkPhase) throw connectionError
+          if (current()) setError('Connection unavailable. Using saved access; scans remain on this device until sync succeeds.')
+        }
       }
-      if (!storedDevice || !storedManifest) throw new Error('Connect once to authorize this scanner and download the event manifest.')
-      if (!storedDevice.effective || new Date(storedDevice.authorization_expires_at).getTime() <= Date.now()) {
-        throw new Error('This scanner authorization has expired. Reconnect and ask an event manager to renew access.')
-      }
-      setDevice(storedDevice)
-      setManifest(storedManifest)
-      await refreshPending(selectedEventId, storedDevice)
+      if (!cached) throw new Error('Connect once to authorize this scanner and download the event list. Expired saved access is removed from this device.')
+      if (!current()) return
+      setDevice(cached.device)
+      setManifest(cached.manifest)
+      await refreshPending(selectedEventId, cached.device)
     } catch (setupError) {
-      setDevice(null)
-      setManifest(null)
-      setDashboard(null)
-      setError(setupError.response?.data?.error || setupError.message || 'Scanner setup failed.')
+      if (current()) {
+        setDevice(null)
+        setManifest(null)
+        setError(setupError.response?.data?.error || setupError.message || 'Scanner setup failed.')
+      }
     } finally {
-      setSetupBusy(false)
+      if (current()) setSetupBusy(false)
     }
-  }, [downloadManifest, fetchDashboard, refreshPending])
+  }, [fetchDashboard, refreshPending, online])
 
   useEffect(() => {
-    const handleOnline = () => setOnline(true)
+    const handleOnline = () => setOnline(!offlineOnly)
     const handleOffline = () => setOnline(false)
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
@@ -187,9 +249,21 @@ export default function ScannerPage() {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [])
+  }, [offlineOnly])
 
   useEffect(() => {
+    const restoreSaved = async () => {
+      const saved = window.localStorage.getItem('hafapass_scanner_event_id')
+      const cached = saved ? await loadAuthorizedScanner(saved).catch(() => null) : null
+      if (cached) {
+        setEvents([{ ...cached.manifest.payload.event, id: Number(saved) }])
+        setEventId(saved)
+      } else {
+        setError('Could not load assigned events. Connect once to authorize this scanner and download an event list.')
+        setSetupBusy(false)
+      }
+    }
+    if (offlineOnly) { void restoreSaved(); return }
     apiClient.get('/organizer/events').then(response => {
       const accessible = response.data.events || []
       setEvents(accessible)
@@ -197,18 +271,8 @@ export default function ScannerPage() {
       const initial = accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
       if (initial) setEventId(String(initial))
       else setSetupBusy(false)
-    }).catch(async () => {
-      const saved = window.localStorage.getItem('hafapass_scanner_event_id')
-      const cached = saved ? await loadUsableManifest(saved).catch(() => null) : null
-      if (cached) {
-        setEvents([{ ...cached.payload.event, id: Number(saved) }])
-        setEventId(saved)
-      } else {
-        setError('Could not load assigned events. Connect once to authorize this scanner and download a manifest.')
-        setSetupBusy(false)
-      }
-    })
-  }, [])
+    }).catch(restoreSaved)
+  }, [offlineOnly])
 
   useEffect(() => {
     if (!eventId) return
@@ -217,7 +281,7 @@ export default function ScannerPage() {
   }, [configureEvent, eventId])
 
   useEffect(() => {
-    if (online && eventId && device) syncQueue({ quiet: true })
+    if (online && eventId && device && device.owner_user_id === currentScannerOwner()) syncQueue({ quiet: true })
   }, [device, eventId, online, syncQueue])
 
   const showResult = useCallback(result => {
@@ -227,7 +291,14 @@ export default function ScannerPage() {
   }, [])
 
   const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted') => {
-    if (!device || !manifest) return
+    if (!device || !manifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== manifest.digest) return
+    if (!device.effective || new Date(device.authorization_expires_at).getTime() <= Date.now() || new Date(manifest.payload.expires_at).getTime() <= Date.now()) {
+      showResult({ type: 'error', message: 'Scanner access expired', detail: 'Reconnect before admitting another ticket.' })
+      await purgeExpiredAdmissionAccess(eventId)
+      setDevice(null)
+      setManifest(null)
+      return
+    }
     const localState = await localScanState(eventId, ticket.ticket_id)
     if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket,
@@ -241,21 +312,25 @@ export default function ScannerPage() {
       return
     }
 
-    await queueAdmission({
+    const action = await queueAdmission({
       eventId,
       deviceId: device.id,
       manifestVersion: manifest.payload.version,
       ticket,
       credentialHash: hash,
-      source: navigator.onLine ? 'online' : 'offline',
+      source: online ? 'online' : 'offline',
       clientStatus,
     })
+    if (!action) {
+      showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket })
+      return
+    }
     await refreshPending(eventId, device)
-    showResult({ type: 'success', message: navigator.onLine ? 'Admitted — syncing' : 'Admitted offline',
-      detail: navigator.onLine ? 'Local validation passed. Server confirmation is in progress.' : 'Saved safely on this device and queued for reconciliation.',
+    showResult({ type: 'success', message: online ? 'Admitted — syncing' : 'Admitted offline',
+      detail: online ? 'Saved on this device. Server confirmation follows a successful sync.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
       ticket, latency: performance.now() - startedAt })
-    if (navigator.onLine) syncQueue({ quiet: true })
-  }, [device, eventId, manifest, refreshPending, showResult, syncQueue])
+    if (online) syncQueue({ quiet: true })
+  }, [device, eventId, manifest, refreshPending, showResult, syncQueue, online])
 
   const processCredential = useCallback(async raw => {
     const startedAt = performance.now()
@@ -267,6 +342,7 @@ export default function ScannerPage() {
         throw new Error('The offline manifest is missing or expired. Reconnect before scanning.')
       }
       const hash = await sha256Hex(credentialValue(raw))
+      if (eventIdRef.current !== eventId || currentManifestRef.current?.digest !== manifest.digest) return
       const ticket = ticketsByHash.get(hash)
       if (!ticket) {
         showResult({ type: 'error', message: 'Invalid ticket', detail: 'This credential is not in the signed event manifest.',
@@ -277,9 +353,10 @@ export default function ScannerPage() {
     } catch (scanError) {
       showResult({ type: 'error', message: 'Scanner unavailable', detail: scanError.message, latency: performance.now() - startedAt })
     }
-  }, [admitEntry, device, manifest, showResult, ticketsByHash])
+  }, [admitEntry, device, eventId, manifest, showResult, ticketsByHash])
 
   const stopCamera = useCallback(() => {
+    cameraGenerationRef.current += 1
     if (detectorTimerRef.current) clearInterval(detectorTimerRef.current)
     detectorTimerRef.current = null
     zxingControlsRef.current?.stop()
@@ -290,18 +367,22 @@ export default function ScannerPage() {
     setScanning(false)
   }, [])
 
+  processCredentialRef.current = processCredential
+
   const handleDecoded = useCallback(code => {
     if (!code || scanCooldownRef.current) return
     scanCooldownRef.current = true
-    processCredential(code).finally(() => setTimeout(() => { scanCooldownRef.current = false }, 1800))
-  }, [processCredential])
+    processCredentialRef.current(code).finally(() => setTimeout(() => { scanCooldownRef.current = false }, 1800))
+  }, [])
 
   const startCamera = useCallback(async () => {
+    const generation = ++cameraGenerationRef.current
     setCameraError(null)
     setScanning(true)
     try {
       if ('BarcodeDetector' in window) {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+        if (generation !== cameraGenerationRef.current) { stream.getTracks().forEach(track => track.stop()); return }
         streamRef.current = stream
         videoRef.current.srcObject = stream
         await videoRef.current.play()
@@ -309,14 +390,16 @@ export default function ScannerPage() {
         detectorTimerRef.current = setInterval(async () => {
           if (!videoRef.current || scanCooldownRef.current) return
           const codes = await detector.detect(videoRef.current).catch(() => [])
-          handleDecoded(codes[0]?.rawValue)
+          if (generation === cameraGenerationRef.current) handleDecoded(codes[0]?.rawValue)
         }, 250)
       } else {
         const { BrowserQRCodeReader } = await import('@zxing/browser')
         const reader = new BrowserQRCodeReader()
-        zxingControlsRef.current = await reader.decodeFromVideoDevice(undefined, videoRef.current, result => {
-          if (result) handleDecoded(result.getText())
+        const controls = await reader.decodeFromVideoDevice(undefined, videoRef.current, result => {
+          if (result && generation === cameraGenerationRef.current) handleDecoded(result.getText())
         })
+        if (generation !== cameraGenerationRef.current) { controls.stop(); return }
+        zxingControlsRef.current = controls
       }
     } catch (cameraFailure) {
       stopCamera()
@@ -326,7 +409,23 @@ export default function ScannerPage() {
     }
   }, [handleDecoded, stopCamera])
 
-  useEffect(() => () => stopCamera(), [stopCamera])
+  // Keep the reader running across verified refreshes; its callback always reads current state.
+  // Event/device changes and loss of authorization stop the old camera immediately.
+  const manifestReady = Boolean(manifest)
+  useEffect(() => { stopCamera(); return () => stopCamera() }, [eventId, device?.id, manifestReady, stopCamera])
+
+  useEffect(() => {
+    if (!device || !manifest) return
+    const expiresAt = Math.min(new Date(device.authorization_expires_at).getTime(), new Date(manifest.payload.expires_at).getTime())
+    const timer = window.setTimeout(() => {
+      stopCamera()
+      setDevice(null)
+      setManifest(null)
+      setError('Saved scanner access has expired. Reconnect with the original staff account to renew access and sync saved scans.')
+      void purgeExpiredAdmissionAccess(eventId)
+    }, Math.max(0, expiresAt - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [device, eventId, manifest, stopCamera])
 
   const runSearch = async event => {
     event.preventDefault()
@@ -346,10 +445,10 @@ export default function ScannerPage() {
     if (!device || !manifest) return
     try {
       await queueReversal({ eventId, deviceId: device.id, manifestVersion: manifest.payload.version,
-        ticketId: action.ticket_id, reversesActionUuid: action.action_uuid, source: navigator.onLine ? 'online' : 'offline' })
+        ticketId: action.ticket_id, reversesActionUuid: action.action_uuid, source: online ? 'online' : 'offline' })
       await refreshPending(eventId, device)
       showResult({ type: 'success', message: 'Reversal queued', detail: 'The admission reversal will be reconciled append-only.' })
-      if (navigator.onLine) syncQueue()
+      if (online) syncQueue()
     } catch (reversalError) {
       setError(reversalError.message)
     }
@@ -385,7 +484,8 @@ export default function ScannerPage() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-600">Event day</p>
           <h1 className="font-display text-3xl font-bold text-neutral-950">Admissions control</h1>
-          <p className="mt-1 text-sm text-neutral-600">Signed offline manifests, local-first QR checks, and cross-device reconciliation.</p>
+          <p className="mt-1 text-sm text-neutral-600">Scan tickets at the door. Prepare this device online before the event, then sync saved scans when connected.</p>
+          <p className="mt-1 text-xs text-neutral-500">Sync saved scans before signing out or changing accounts. Signing out removes saved access and attendee details. Unsent scans can only be recovered by the original staff account after reconnecting.</p>
         </div>
         <select value={eventId} onChange={event => setEventId(event.target.value)} className="input max-w-sm" aria-label="Event to scan">
           {!events.length && <option value="">No assigned events</option>}
@@ -398,7 +498,7 @@ export default function ScannerPage() {
           <p className="flex items-center gap-2 text-sm font-semibold">{online ? <ShieldCheck className="h-4 w-4" /> : <CloudOff className="h-4 w-4" />}{online ? 'Online' : 'Offline mode'}</p>
         </div>
         <div className="rounded-xl border border-neutral-200 bg-white p-3"><p className="text-xs text-neutral-500">Queued locally</p><p className="text-xl font-bold" data-testid="scanner-pending-count">{pendingCount}</p></div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-3"><p className="text-xs text-neutral-500">This session</p><p className="text-xl font-bold">{sessionCount}</p></div>
+        <div className="rounded-xl border border-neutral-200 bg-white p-3"><p className="text-xs text-neutral-500">Scanned this session</p><p className="text-xl font-bold">{sessionCount}</p></div>
         <button onClick={() => syncQueue()} disabled={!ready || !online || syncing} className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync now
         </button>
@@ -430,8 +530,8 @@ export default function ScannerPage() {
           <section className="rounded-2xl border border-neutral-200 bg-white p-5">
             <h2 className="font-semibold text-neutral-950">Manual credential</h2>
             <p className="mb-3 text-sm text-neutral-500">Paste the QR value when the camera cannot read a damaged screen or printout.</p>
-            <form onSubmit={event => { event.preventDefault(); processCredential(manualCode); setManualCode('') }} className="flex gap-2">
-              <input value={manualCode} onChange={event => setManualCode(event.target.value)} className="input flex-1" placeholder="Ticket QR credential" disabled={!ready} />
+            <form onSubmit={event => { event.preventDefault(); processCredential(manualCode); setManualCode('') }} className="flex flex-col gap-2 sm:flex-row">
+              <input value={manualCode} onChange={event => setManualCode(event.target.value)} className="input flex-1" aria-label="Ticket QR credential" placeholder="Ticket QR credential" disabled={!ready} />
               <button className="btn-primary" disabled={!ready || !manualCode.trim()}>Validate</button>
             </form>
           </section>
@@ -439,8 +539,8 @@ export default function ScannerPage() {
           <section className="rounded-2xl border border-neutral-200 bg-white p-5">
             <h2 className="font-semibold text-neutral-950">Attendee lookup</h2>
             <p className="mb-3 text-sm text-neutral-500">Online fallback by attendee name or HafaPass ticket number. Email addresses are never returned.</p>
-            <form onSubmit={runSearch} className="flex gap-2">
-              <input value={searchQuery} onChange={event => setSearchQuery(event.target.value)} className="input flex-1" placeholder="Name or HP-T123" disabled={!online} />
+            <form onSubmit={runSearch} className="flex flex-col gap-2 sm:flex-row">
+              <input value={searchQuery} onChange={event => setSearchQuery(event.target.value)} className="input flex-1" aria-label="Attendee name or ticket number" placeholder="Name or HP-T123" disabled={!online} />
               <button className="btn-secondary flex items-center gap-2" disabled={!online || searching || searchQuery.trim().length < 2}><Search className="h-4 w-4" /> Search</button>
             </form>
             <div className="mt-3 space-y-2">

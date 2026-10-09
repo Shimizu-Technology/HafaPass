@@ -46,12 +46,12 @@
            active:translate-y-0 active:shadow-md
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2
            disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none;
-    background: linear-gradient(135deg, #f0564a 0%, #dd3d33 100%);
+    background: #c9362e;
     box-shadow: 0 1px 3px rgba(240,86,74,0.3), 0 1px 2px rgba(0,0,0,0.06);
   }
 
   .btn-primary:hover {
-    background: linear-gradient(135deg, #ff7a6e 0%, #f0564a 100%);
+    background: #ad2b24;
   }
 
   .btn-secondary {
@@ -95,4 +95,14 @@
     background-color: rgb(239 68 68 / 0.025);
     --tw-ring-color: rgb(239 68 68 / 0.2);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn-primary:hover, .btn-secondary:hover, .card-hover:hover { transform: none; }
 }
