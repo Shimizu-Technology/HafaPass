@@ -3,7 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
-import { clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, localScanState, queuedActions, queueAdmission, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
+import { clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, localScanState, queuedActions, purgeExpiredAdmissionAccess, queueAdmission, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
 
@@ -154,4 +154,84 @@ describe('scanner recovery and camera ownership', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
     expect(await queuedActions(eventId, device.id)).toHaveLength(0)
   })
+  it.each(['empty', 'unknown'])('retains queued scans and stops after a %s synchronization response', async kind => {
+    const eventId = 92001
+    const device = { id: 91, identifier: 'unconfirmed-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'valid', credential_hash: await sha256Hex('unconfirmed-qr') }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    const action = await queueAdmission({ eventId, deviceId: 91, manifestVersion: 1, ticket, credentialHash: ticket.credential_hash, source: 'offline' })
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    apiClient.get.mockRejectedValue(new Error('API unavailable'))
+    let syncCalls = 0
+    apiClient.post.mockImplementation(url => {
+      if (!url.endsWith('/sync')) return Promise.reject(new Error('registration unavailable'))
+      syncCalls += 1
+      return Promise.resolve({ data: { device, results: kind === 'empty' ? [] : [{ action_uuid: action.action_uuid, kind: 'admit', result: 'processing' }] } })
+    })
+    render(<ScannerPage />)
+    await waitFor(() => expect(syncCalls).toBe(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Sync now' }))
+    expect(await screen.findByText(/server did not confirm every saved scan/)).toBeInTheDocument()
+    expect(syncCalls).toBe(2) // automatic startup and the explicit retry each make one attempt
+    expect(await queuedActions(eventId, 91)).toHaveLength(1)
+  })
+
+  it('finishes a successful acknowledgement when manifest expiry removes access during the request', async () => {
+    const eventId = 92001
+    const device = { id: 91, identifier: 'expiry-recovery-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'valid', credential_hash: await sha256Hex('expiry-recovery-qr') }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    const action = await queueAdmission({ eventId, deviceId: 91, manifestVersion: 1, ticket, credentialHash: ticket.credential_hash, source: 'offline' })
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    apiClient.get.mockRejectedValue(new Error('API unavailable'))
+    let finishSync
+    let syncCalls = 0
+    apiClient.post.mockImplementation(url => {
+      if (!url.endsWith('/sync')) return Promise.reject(new Error('registration unavailable'))
+      syncCalls += 1
+      return new Promise(resolve => { finishSync = resolve })
+    })
+    render(<ScannerPage />)
+    await waitFor(() => expect(finishSync).toBeTypeOf('function'))
+    await purgeExpiredAdmissionAccess(eventId)
+    await act(async () => finishSync({ data: { device: { ...device, last_sequence: 1 }, results: [{ action_uuid: action.action_uuid, ticket_id: ticket.ticket_id, kind: 'admit', result: 'accepted' }], summary: {} } }))
+    await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
+    expect(syncCalls).toBe(1)
+    expect(await queuedActions(eventId, 91)).toHaveLength(0)
+    expect(await loadAuthorizedScanner(eventId)).toBeNull()
+    expect(await localScanState(eventId, ticket.ticket_id)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeDisabled()
+    expect(screen.getByLabelText('Ticket QR credential')).toBeDisabled()
+    expect(await screen.findByText(/Saved scans synchronized/)).toBeInTheDocument()
+  })
+
+  it.each(['account', 'device'])('ignores an obsolete authorization failure after a %s change without purging current access', async change => {
+    const eventId = 92001
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    const device = { id: 91, identifier: 'switching-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'valid', credential_hash: await sha256Hex('switching-qr') }
+    await saveDevice(eventId, device)
+    const envelope = await signedManifest(eventId, [ticket])
+    await saveVerifiedManifest(envelope)
+    await queueAdmission({ eventId, deviceId: 91, manifestVersion: 1, ticket, credentialHash: ticket.credential_hash, source: 'offline' })
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    apiClient.get.mockRejectedValue(new Error('API unavailable'))
+    let rejectSync
+    apiClient.post.mockImplementation(url => url.endsWith('/sync') ? new Promise((_resolve, reject) => { rejectSync = reject }) : Promise.reject(new Error('registration unavailable')))
+    render(<ScannerPage />)
+    await waitFor(() => expect(rejectSync).toBeTypeOf('function'))
+    await clearAllAdmissionData()
+    if (change === 'account') window.localStorage.setItem('hafapass_scanner_user_id', 'staff-b')
+    await saveDevice(eventId, { ...device, id: 92, identifier: 'new-account-device' })
+    await saveVerifiedManifest(envelope)
+    await act(async () => rejectSync({ response: { status: 403, data: { error: 'Old account refused' } } }))
+    expect((await loadAuthorizedScanner(eventId))?.device.id).toBe(92)
+    expect(screen.queryByText('Old account refused')).not.toBeInTheDocument()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    expect(await queuedActions(eventId, 91)).toHaveLength(1)
+  })
+
 })

@@ -129,9 +129,17 @@ export default function ScannerPage({ offlineOnly = false }) {
 
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
     if (!selectedEventId || !selectedDevice || selectedDevice.owner_user_id !== currentScannerOwner() || !online || syncingRef.current) return
+    const owner = currentScannerOwner()
+    const generation = setupGenerationRef.current
+    const current = () => owner === currentScannerOwner() && eventIdRef.current === String(selectedEventId) && generation === setupGenerationRef.current
+    const ownsJournal = async () => {
+      const identity = await loadPendingDeviceIdentity(selectedEventId)
+      return current() && identity?.device_id === selectedDevice.id
+    }
     syncingRef.current = true
     setSyncing(true)
     try {
+      if (!await ownsJournal()) return
       let remaining = await queuedActions(selectedEventId, selectedDevice.id)
       if (!remaining.length) {
         if (!quiet) await Promise.all([downloadManifest(selectedEventId, selectedDevice), fetchDashboard(selectedEventId)])
@@ -139,16 +147,23 @@ export default function ScannerPage({ offlineOnly = false }) {
       }
       let currentDevice = selectedDevice
       while (remaining.length) {
+        if (!await ownsJournal()) return
         const batch = remaining.slice(0, 500)
         const response = await apiClient.post(
           `/organizer/events/${selectedEventId}/scanner_devices/${currentDevice.id}/sync`,
           { actions: batch.map(({ event_id: _eventId, device_id: _deviceId, owner_user_id: _ownerId, ...action }) => action) },
         )
+        if (!await ownsJournal()) return
         const results = response.data?.results
-        if (response.data?.device?.id !== currentDevice.id || !Array.isArray(results) || batch.some(action => !results.some(result => result.action_uuid === action.action_uuid))) {
+        if (response.data?.device?.id !== currentDevice.id || !Array.isArray(results) || batch.some(action => !results.some(result => result.action_uuid === action.action_uuid && result.kind === action.kind && ['accepted', 'conflict', 'rejected'].includes(result.result)))) {
           throw new Error('The server did not confirm every saved scan. They remain on this device; please retry synchronization.')
         }
-        await applySyncResults(selectedEventId, response.data.device, response.data.results)
+        await applySyncResults(selectedEventId, response.data.device, response.data.results, owner)
+        if (!current()) return
+        const pendingAfterSync = await queuedActions(selectedEventId, currentDevice.id)
+        if (batch.some(action => pendingAfterSync.some(pending => pending.action_uuid === action.action_uuid))) {
+          throw new Error('Saved scans could not be acknowledged on this device. They remain saved; reconnect and retry synchronization.')
+        }
         if (eventIdRef.current === String(selectedEventId)) setScanResult(current => {
           if (!current?.ticket) return current
           const result = results.find(item => item.kind === 'admit' && Number(item.ticket_id) === Number(current.ticket.ticket_id))
@@ -158,12 +173,23 @@ export default function ScannerPage({ offlineOnly = false }) {
         })
         currentDevice = { ...currentDevice, ...response.data.device }
         if (eventIdRef.current === String(selectedEventId)) setDashboard(current => current ? { ...current, counts: response.data.summary } : current)
-        remaining = await queuedActions(selectedEventId, currentDevice.id)
+        remaining = pendingAfterSync
       }
-      if (eventIdRef.current === String(selectedEventId)) setDevice(currentDevice)
+      if (!await ownsJournal()) return
       await refreshPending(selectedEventId, currentDevice)
+      const retainedAccess = await loadDevice(selectedEventId)
+      if (!current()) return
+      if (!retainedAccess || retainedAccess.id !== currentDevice.id) {
+        setDevice(null)
+        setManifest(null)
+        setRecoveryDevice(currentDevice)
+        setError('Saved scans synchronized. Reload while connected to renew scanner access before admitting more guests.')
+        return
+      }
+      setDevice(currentDevice)
       await Promise.all([downloadManifest(selectedEventId, currentDevice), fetchDashboard(selectedEventId)])
     } catch (syncError) {
+      if (!await ownsJournal()) return
       if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
         await purgeExpiredAdmissionAccess(selectedEventId)
         if (eventIdRef.current === String(selectedEventId)) { setDevice(null); setManifest(null); setRecoveryDevice(null) }
@@ -172,7 +198,7 @@ export default function ScannerPage({ offlineOnly = false }) {
         setDevice(null)
         setManifest(null)
         setError(syncError.message)
-      } else if (!quiet) setError(syncError.response?.data?.error || 'Queued scans could not be synchronized. They remain saved on this device; reconnect and retry.')
+      } else if (!quiet) setError(syncError.response?.data?.error || syncError.message || 'Queued scans could not be synchronized. They remain saved on this device; reconnect and retry.')
     } finally {
       syncingRef.current = false
       setSyncing(false)

@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { signedManifest } from '../test/manifestFixture'
 import {
   applySyncResults, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission,
-  queuedActions, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex,
+  queuedActions, purgeExpiredAdmissionAccess, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex,
 } from './admissionStore'
 
 const toBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
@@ -169,4 +169,72 @@ describe('admissionStore', () => {
     const replacementKey = new TextEncoder().encode('replacement-spki')
     await expect(saveVerifiedManifest({ ...envelope, public_key_spki: toBase64(replacementKey), key_id: await sha256Hex(replacementKey) })).rejects.toThrow('Scanner signing key changed')
   })
+  it('acknowledges the original account journal after access expires without recreating attendee access', async () => {
+    const eventId = 91007
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    const device = { id: 47, identifier: 'expired-manifest-device', effective: true, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId))
+    const action = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1, ticket: { ticket_id: 18, attendee_name: 'Private attendee' }, credentialHash: 'a'.repeat(64), source: 'offline' })
+    await purgeExpiredAdmissionAccess(eventId)
+    expect(await applySyncResults(eventId, { ...device, last_sequence: 1 }, [{ action_uuid: action.action_uuid, ticket_id: 18, kind: 'admit', result: 'accepted' }], 'staff-a')).toBe(1)
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+    expect(await loadDevice(eventId)).toBeNull()
+    expect(await loadUsableManifest(eventId)).toBeNull()
+    expect(await localScanState(eventId, 18)).toBeNull()
+  })
+
+  it('serializes renewed device sequence snapshots with an admission from another tab', async () => {
+    const eventId = 91008
+    const device = { id: 48, user: { id: 7 }, identifier: 'renewed-device', effective: true, last_sequence: 0, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    let otherTabFinished
+    let overlap = true
+    const originalGetAll = IDBIndex.prototype.getAll
+    vi.spyOn(IDBIndex.prototype, 'getAll').mockImplementation(function (...args) {
+      const request = originalGetAll.apply(this, args)
+      if (overlap && this.name === 'event_device') {
+        overlap = false
+        // A second connection requests admission writes exactly while renewal reads
+        // its queue snapshot. IndexedDB must serialize the complete renewal with it.
+        const transaction = this.objectStore.transaction.db.transaction(['devices', 'queue'], 'readwrite')
+        otherTabFinished = new Promise((resolve, reject) => {
+          transaction.oncomplete = resolve
+          transaction.onerror = reject
+        })
+        const getDevice = transaction.objectStore('devices').get(eventId)
+        getDevice.onsuccess = () => {
+          const sequence = Number(getDevice.result.next_sequence || 0) + 1
+          transaction.objectStore('devices').put({ ...getDevice.result, next_sequence: sequence })
+          transaction.objectStore('queue').put({ action_uuid: 'other-tab-admission', event_id: eventId, device_id: device.id, owner_user_id: getDevice.result.owner_user_id, sequence, kind: 'admit', ticket_id: 1900 })
+        }
+      }
+      return request
+    })
+    await saveDevice(eventId, device)
+    await otherTabFinished
+    const admission = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1, ticket: { ticket_id: 2000 }, credentialHash: 'c'.repeat(64), source: 'offline' })
+    expect((await queuedActions(eventId, device.id)).map(action => action.sequence)).toEqual([1, 2])
+    expect(admission.sequence).toBe(2)
+    expect((await loadDevice(eventId)).next_sequence).toBe(2)
+  })
+
+  it('does not apply a previous account response or another device acknowledgement to current access', async () => {
+    const eventId = 91009
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    const device = { id: 49, identifier: 'account-a-device', effective: true, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    const action = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1, ticket: { ticket_id: 20 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    const result = { action_uuid: action.action_uuid, ticket_id: 20, kind: 'admit', result: 'accepted' }
+    await clearAllAdmissionData()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-b')
+    const currentDevice = { ...device, id: 50, identifier: 'account-b-device' }
+    await saveDevice(eventId, currentDevice)
+    expect(await applySyncResults(eventId, device, [result], 'staff-a')).toBe(0)
+    expect(await loadDevice(eventId)).toMatchObject({ id: 50, owner_user_id: 'staff-b' })
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    expect(await applySyncResults(eventId, currentDevice, [result], 'staff-a')).toBe(0)
+    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+  })
+
 })
