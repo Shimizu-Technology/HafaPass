@@ -2,6 +2,8 @@
 
 class Payment < ApplicationRecord
   belongs_to :order
+  has_one :stripe_fee_evidence, dependent: :restrict_with_error
+  has_many :reconciliation_exceptions, dependent: :restrict_with_error
   has_many :payment_events, dependent: :restrict_with_error
   has_many :refunds, dependent: :restrict_with_error
   has_many :card_present_payment_attempts, dependent: :restrict_with_error

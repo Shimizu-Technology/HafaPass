@@ -154,6 +154,7 @@ module Commerce
         return unless payment
 
         payment.update!(status: :succeeded, succeeded_at: payment.succeeded_at || Time.current)
+        StripeProcessingFees.request!(payment)
       end
 
       def release_locked_order!(order, reason:, expired: false, at: Time.current)

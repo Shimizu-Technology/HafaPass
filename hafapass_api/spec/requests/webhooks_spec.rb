@@ -389,7 +389,7 @@ RSpec.describe "Stripe webhooks", type: :request do
       expect(checkout.order.reload.refunded_cents).to eq(1250)
       expect(checkout.order.refunds.succeeded.sum(:amount_cents)).to eq(1250)
       expect(checkout.order.refunds.joins(:refund_items).sum("refund_items.amount_cents")).to eq(1250)
-      expect(checkout.order.reconciliation_exceptions).to be_empty
+      expect(checkout.order.reconciliation_exceptions.pluck(:code).uniq).to eq(["stripe_fee_adjustment_review_required"])
     end
   end
 

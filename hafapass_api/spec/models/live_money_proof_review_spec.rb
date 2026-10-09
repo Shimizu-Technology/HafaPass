@@ -31,6 +31,20 @@ RSpec.describe LiveMoneyProofReview do
     expect(review.errors[:reconciliation_results]).to include(/charge_variance_cents must be zero/)
   end
 
+  it "rejects missing processing fee proof even when the recorded amounts have zero variance" do
+    chain = create_live_money_proof_chain
+    chain[:payment].stripe_fee_evidence.update!(status: :pending)
+    review = described_class.new(chain[:attributes].merge(
+      organization: chain[:organization], connected_account: chain[:organization].payout_account,
+      proof_event: chain[:event], actor_user: create(:user, :admin), decision: :submission,
+      application_revision: PilotReadiness.application_revision,
+      provider_state_digest: chain[:organization].payout_account.readiness_state_digest,
+      platform_configuration_digest: LiveMoneyProof.platform_configuration_digest
+    ))
+    expect(review).not_to be_valid
+    expect(review.errors[:payment]).to include(/verified actual provider processing fee evidence/)
+  end
+
   it "is append-only" do
     chain = create_live_money_proof_chain
     submission = LiveMoneyProofReviews::Manager.submit!(

@@ -139,4 +139,14 @@ RSpec.describe StripeService do
     expect { described_class.find_refund(payment.provider_payment_id, payment: payment, idempotency_key: "unknown-platform") }
       .to raise_error(described_class::PaymentError, /platform account context is missing/)
   end
+  it "retrieves expanded fee evidence using the original verified platform and connected scope" do
+    payment = create(:payment, provider_account_id: "acct_organizer")
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("rk_test_feeproof")
+    intents = double("payment intents API")
+    client = instance_double(Stripe::StripeClient, v1: double("v1", accounts: accounts_api, payment_intents: intents))
+    allow(Stripe::StripeClient).to receive(:new).with("rk_test_feeproof").and_return(client)
+    expect(intents).to receive(:retrieve).with(payment.provider_payment_id,
+      { expand: ["latest_charge.balance_transaction"] }, { stripe_account: "acct_organizer" })
+    described_class.retrieve_fee_payment_intent(payment)
+  end
 end

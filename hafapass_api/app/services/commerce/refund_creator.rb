@@ -315,6 +315,7 @@ module Commerce
           stripe_refund_id: provider_refund.id
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+        StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
         if refund.refund_tickets.any?
           release_refunded_tickets!(refund)
         elsif full_refund

@@ -119,6 +119,12 @@ class StripeService
       client.v1.payment_intents.retrieve(payment.provider_payment_id, {}, options)
     end
 
+    def retrieve_fee_payment_intent(payment)
+      client, options = operation_client(payment: payment, settings: SiteSetting.instance)
+      client.v1.payment_intents.retrieve(payment.provider_payment_id,
+        { expand: ["latest_charge.balance_transaction"] }, options)
+    end
+
     # ── Query helpers ────────────────────────────────────────────────
 
     # True when Stripe API calls will actually be made (test or live mode).

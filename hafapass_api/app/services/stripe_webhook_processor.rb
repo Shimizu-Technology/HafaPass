@@ -51,6 +51,8 @@ class StripeWebhookProcessor
     case event.type
     when "payment_intent.succeeded"
       process_success!(receipt, payment, object)
+    when "charge.updated"
+      StripeProcessingFees.request!(payment, recheck: true) if payment
     when "payment_intent.processing"
       record_pending_provider_state!(payment, "processing")
     when "payment_intent.payment_failed"
@@ -358,6 +360,7 @@ class StripeWebhookProcessor
         provider_payload: { status: provider_status }.compact
       )
       dispute.save!
+      StripeProcessingFees.require_adjustment_review!(payment, reference: "dispute:#{provider_id}:#{provider_status}") if status != :open
       cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
     end
   end

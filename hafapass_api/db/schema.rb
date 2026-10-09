@@ -1836,6 +1836,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
   end
 
+  create_table "stripe_fee_evidences", force: :cascade do |t|
+    t.bigint "payment_id", null: false
+    t.bigint "fee_component_id"
+    t.string "status", default: "pending", null: false
+    t.string "context_digest", null: false
+    t.string "provider_charge_id"
+    t.string "provider_balance_transaction_id"
+    t.string "evidence_digest"
+    t.integer "amount_cents"
+    t.integer "fee_cents"
+    t.integer "net_cents"
+    t.string "currency"
+    t.string "balance_status"
+    t.jsonb "fee_details", default: [], null: false
+    t.integer "attempts", default: 0, null: false
+    t.string "last_error_code"
+    t.datetime "next_attempt_at"
+    t.datetime "verified_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["context_digest", "provider_balance_transaction_id"], name: "idx_stripe_fee_provider_identity", unique: true, where: "(provider_balance_transaction_id IS NOT NULL)"
+    t.index ["fee_component_id"], name: "index_stripe_fee_evidences_on_fee_component_id", unique: true
+    t.index ["payment_id"], name: "index_stripe_fee_evidences_on_payment_id", unique: true
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'verified'::character varying::text, 'review_required'::character varying::text])", name: "stripe_fee_evidence_status"
+  end
+
   create_table "support_notes", force: :cascade do |t|
     t.bigint "author_user_id", null: false
     t.text "body", null: false
@@ -2306,6 +2332,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
   add_foreign_key "settlement_items", "settlements", on_delete: :restrict
   add_foreign_key "settlements", "events", on_delete: :restrict
   add_foreign_key "settlements", "organizations", on_delete: :restrict
+  add_foreign_key "stripe_fee_evidences", "fee_components"
+  add_foreign_key "stripe_fee_evidences", "payments"
   add_foreign_key "support_notes", "events", on_delete: :restrict
   add_foreign_key "support_notes", "orders", on_delete: :restrict
   add_foreign_key "support_notes", "tickets", on_delete: :restrict

@@ -9,6 +9,8 @@ class OrganizationPayoutBalance
     return 0 if ReconciliationException.open.where(order_id: order_ids).exists? ||
       ReconciliationException.open.joins(:payment).where(payments: { order_id: order_ids }).exists?
 
+    return 0 if StripeProcessingFees.missing_count(order_ids).positive?
+
     latest_settlements = organization.settlements.status_finalized
       .select("DISTINCT ON (event_id) settlements.*")
       .order(:event_id, version: :desc)
