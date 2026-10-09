@@ -28,6 +28,7 @@ module Api
           return unless authorize_organization!(:manage_events)
 
           event = current_organization.events.build(parsed_event_params)
+          event.transfers_enabled = false unless LaunchCapabilities.enabled?(:ticket_transfers)
           event.organizer_profile = current_organizer_profile
           if event.save
             render json: event_json(event), status: :created

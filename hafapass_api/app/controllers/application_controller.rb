@@ -5,6 +5,7 @@ class ApplicationController < ActionController::API
 
   before_action :authenticate_user!
   before_action :set_observability_context
+  before_action :enforce_launch_capability
 
   def append_info_to_payload(payload)
     super
@@ -13,6 +14,16 @@ class ApplicationController < ActionController::API
   end
 
   private
+
+  def enforce_launch_capability
+    feature = LaunchCapabilities.required_for(controller: controller_path, action: action_name, params: params)
+    return unless feature && !LaunchCapabilities.enabled?(feature)
+
+    render json: {
+      error: "#{feature.to_s.humanize} is not available for this release.",
+      code: "launch_capability_disabled"
+    }, status: :unprocessable_entity
+  end
 
   def set_observability_context
     Sentry.set_tags(request_id: request.request_id)
