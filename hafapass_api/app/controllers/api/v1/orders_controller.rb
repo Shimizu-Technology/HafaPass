@@ -194,9 +194,12 @@ class Api::V1::OrdersController < ApplicationController
       requested_by: @current_user,
       idempotency_key: idempotency_key
     )
-    render json: { refund_id: refund.id, order: OrderPresenter.call(@order.reload, include_tickets: true) }, status: :created
+    render json: { refund_id: refund.id, refund_status: refund.status,
+      reconciliation_required: refund.pending?, order: OrderPresenter.call(@order.reload, include_tickets: true) }, status: :created
   rescue Commerce::RefundCreator::RefundError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }.merge(
+      Commerce::RefundOutcome.call(order: @order, idempotency_key: request.headers["Idempotency-Key"])
+    ), status: :unprocessable_entity
   end
 
   def create_transfer
@@ -293,7 +296,9 @@ class Api::V1::OrdersController < ApplicationController
   rescue ActiveRecord::RecordInvalid => e
     render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
   rescue Commerce::RefundCreator::RefundError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }.merge(
+      Commerce::RefundOutcome.call(order: @order, idempotency_key: request.headers["Idempotency-Key"])
+    ), status: :unprocessable_entity
   end
 
   private

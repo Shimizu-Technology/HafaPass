@@ -31,6 +31,7 @@ RSpec.describe ApplicationRevision do
     allow(Rails.env).to receive(:production?).and_return(true)
     expect(described_class.current).to be_nil
     expect(described_class).not_to be_configured
+    expect(PilotReadiness.active_approval(create(:event))).to be_nil
   end
 
   it "requires a complete commit digest for production configuration" do
