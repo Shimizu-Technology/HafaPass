@@ -37,12 +37,15 @@ class MessageDeliveryJob < ApplicationJob
       end
       raise ReplayExpired, "Provider result requires reconciliation before replay" if delivery.provider_replay_expired?
 
-      real_provider = EmailService.configured?
-      if !real_provider && Rails.env.production?
-        raise EmailService::ProviderDisabled, "Production email is disabled until current Resend evidence is independently approved"
-      end
       previously_unknown = delivery.provider_outcome_unknown? ||
         (delivery.provider == "resend" && delivery.provider_attempted_at.nil? && delivery.attempts.positive?)
+      available = EmailService.configured?
+      frozen_request = delivery.outbound_payload.present? || delivery.provider_attempted_at.present? || previously_unknown ||
+        (%w[resend simulated].include?(delivery.provider) && delivery.attempts.positive?)
+      real_provider = frozen_request ? delivery.provider == "resend" : available
+      if (real_provider && !available) || (!real_provider && Rails.env.production?)
+        raise EmailService::ProviderDisabled, "The original email transport is unavailable; reconcile before retrying"
+      end
       payload = delivery.outbound_payload.presence || EmailService.prepare_delivery_payload(delivery)
       delivery.update!(outbound_payload: payload, payload_digest: Digest::SHA256.hexdigest(JSON.generate(payload.sort.to_h)),
         provider: real_provider ? "resend" : "simulated", attempts: delivery.attempts + 1, status: :queued, last_error: nil,

@@ -10,6 +10,35 @@ RSpec.describe MessageDeliveryJob do
     allow(Resend::Emails).to receive(:send).and_return({ id: "email_contract" })
   end
 
+  it "keeps lost Resend acceptance uncertain when staging transport is disabled" do
+    allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("staging"))
+    allow(ProviderRehearsal).to receive(:email_payload_allowed?).and_return(true)
+    requests = []
+    allow(Resend::Emails).to receive(:send) do |params, options:|
+      requests << [params.deep_dup, options.deep_dup]
+      raise IOError, "response lost after acceptance"
+    end
+    expect { described_class.new.perform(delivery.id) }.to raise_error(IOError)
+    previous = delivery.reload.attributes.slice("provider", "attempts", "outbound_payload", "idempotency_key",
+      "provider_attempted_at", "provider_outcome_unknown")
+    allow(EmailService).to receive(:configured?).and_return(false)
+    expect { described_class.new.perform(delivery.id) }.to raise_error(EmailService::ProviderDisabled)
+    expect(requests.length).to eq(1)
+    expect(delivery.reload.attributes.slice(*previous.keys)).to eq(previous)
+    expect(delivery.provider_outcome_unknown?).to be(true)
+  end
+
+  it "does not promote a frozen simulated request when real transport becomes available" do
+    allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("staging"))
+    frozen_payload = { "to" => order.buyer_email, "subject" => "Original rehearsal", "html" => "Synthetic" }
+    simulated = create(:message_delivery, order: order, provider: "simulated", status: :failed,
+      attempts: 1, outbound_payload: frozen_payload, idempotency_key: "frozen-simulation")
+    described_class.new.perform(simulated.id)
+    expect(Resend::Emails).not_to have_received(:send)
+    expect(simulated.reload).to have_attributes(provider: "simulated", outbound_payload: frozen_payload,
+      idempotency_key: "frozen-simulation", provider_outcome_unknown: false)
+  end
+
   it "retries a lost response with identical HTML, original recipient, and provider key" do
     requests = []
     allow(Resend::Emails).to receive(:send) do |params, options:|
