@@ -99,7 +99,12 @@ module HafaPass
       # CodeRabbit can publish success when it skips a review. A green status
       # alone is therefore insufficient: retain a submitted review on this head.
       def verify!(statuses:, reviews:, sha:)
-        status = statuses.find { |entry| entry["context"] == CODERABBIT_CONTEXT }
+        # Status contexts are not exclusive to their provider: repository writers
+        # can publish the same name. Select the latest status from the actual bot.
+        status = statuses.find do |entry|
+          entry["context"] == CODERABBIT_CONTEXT && entry.dig("creator", "login") == "coderabbitai[bot]" &&
+            entry.dig("creator", "type") == "Bot"
+        end
         unless status && CheckEvidence.success?(status["state"]) &&
             status["description"].to_s.match?(/\breview completed\b/i) &&
             !status["description"].match?(/\breview (?:skipped|paused)\b/i)

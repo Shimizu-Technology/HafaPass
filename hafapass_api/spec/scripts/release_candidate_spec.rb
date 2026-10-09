@@ -86,7 +86,12 @@ RSpec.describe "release candidate tooling" do
 
   describe HafaPass::ReleaseCandidate::CodeRabbitEvidence do
     let(:sha) { "a" * 40 }
-    let(:status) { { "context" => "CodeRabbit", "state" => "success", "description" => "Review completed" } }
+    let(:status) do
+      {
+        "context" => "CodeRabbit", "state" => "success", "description" => "Review completed",
+        "creator" => { "login" => "coderabbitai[bot]", "type" => "Bot" }
+      }
+    end
     let(:review) do
       {
         "id" => 123, "html_url" => "https://github.com/owner/repo/pull/1#pullrequestreview-123",
@@ -116,6 +121,24 @@ RSpec.describe "release candidate tooling" do
       expect { verify(statuses: []) }.to raise_error(HafaPass::ReleaseCandidate::Error)
       expect { verify(statuses: [status.merge("state" => "pending"), status]) }
         .to raise_error(HafaPass::ReleaseCandidate::Error)
+    end
+
+    it "ignores newer same-context statuses from another issuer and requires actual bot evidence" do
+      fake_status = status.merge("creator" => { "login" => "repository-writer", "type" => "User" })
+      expect(verify(statuses: [fake_status, status])).to include("status_description" => "Review completed")
+      expect { verify(statuses: [fake_status]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /completed review status/)
+      expect { verify(statuses: [status.merge("creator" => nil)]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /completed review status/)
+      expect { verify(statuses: [status.merge("creator" => { "login" => "coderabbitai[bot]", "type" => "User" })]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /completed review status/)
+    end
+
+    it "cannot conceal a later skipped bot review with a newer forged completed status" do
+      fake_status = status.merge("creator" => { "login" => "repository-writer", "type" => "User" })
+      skipped_status = status.merge("description" => "Review skipped: file limit exceeded")
+      expect { verify(statuses: [fake_status, skipped_status, status]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /skipped reviews do not qualify/)
     end
 
     it "rejects absent, stale, impersonated, empty, pending, or dismissed reviews" do
@@ -175,7 +198,10 @@ RSpec.describe "release candidate tooling" do
         "state" => "MERGED", "mergedAt" => "2026-10-09T12:30:00Z",
         "statusCheckRollup" => HafaPass::ReleaseCandidate::PR_CHECKS.map { |name| { "name" => name, "conclusion" => "success" } }
       }
-      status = { "context" => "CodeRabbit", "state" => "success", "description" => "Review completed" }
+      status = {
+        "context" => "CodeRabbit", "state" => "success", "description" => "Review completed",
+        "creator" => { "login" => "coderabbitai[bot]", "type" => "Bot" }
+      }
       review = {
         "id" => 123, "html_url" => "https://github.com/owner/repo/pull/57#pullrequestreview-123",
         "user" => { "login" => "coderabbitai[bot]", "type" => "Bot" }, "commit_id" => sha,
