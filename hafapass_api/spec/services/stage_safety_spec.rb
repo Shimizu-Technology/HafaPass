@@ -30,8 +30,16 @@ RSpec.describe StageSafety do
     }
   end
 
+  around do |example|
+    original = stage_env.keys.index_with { |key| ENV[key] }
+    stage_env.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+    example.run
+  ensure
+    original.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+  end
+
   it "rejects missing or short application secrets without disclosing them" do
-    [nil, "", " " * 65, "a" * 64].each do |value|
+    [nil, "", " " * 65, "a" * 64, " #{'a' * 65}", "#{'a' * 65} "].each do |value|
       value.nil? ? ENV.delete("SECRET_KEY_BASE") : ENV["SECRET_KEY_BASE"] = value
       expect(described_class.call.dig(:checks, :application_secret)).to be(false)
       expect { described_class.validate! }.to raise_error(
@@ -58,13 +66,7 @@ RSpec.describe StageSafety do
     expect(described_class.call.dig(:checks, :admission_signing)).to be(true)
   end
 
-  around do |example|
-    original = stage_env.keys.index_with { |key| ENV[key] }
-    stage_env.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
-    example.run
-  ensure
-    original.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
-  end
+
 
   it "accepts a separate simulation runtime without requiring optional S3 or production provider credentials" do
     expect(described_class.call).to include(ready: true, status: "simulation_only")

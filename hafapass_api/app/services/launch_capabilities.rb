@@ -46,6 +46,8 @@ class LaunchCapabilities
       :advanced_sales_tools unless %w[index show].include?(action)
     when "api/v1/ticket_transfers"
       :ticket_transfers unless action == "destroy"
+    when "api/v1/me/ticket_transfers"
+      :ticket_transfers unless action == "destroy"
     when "api/v1/orders"
       return :ticket_transfers if action == "create_transfer"
       return :assigned_seating if action == "exchange_seat"

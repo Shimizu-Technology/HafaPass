@@ -44,6 +44,7 @@ module Api
           )
             attributes.slice!("title", "description", "short_description", "cover_image_url", "category")
           end
+          attributes["transfers_enabled"] = false unless LaunchCapabilities.enabled?(:ticket_transfers)
           reschedule = reschedule?(attributes)
           change_reason = params[:change_reason].to_s.strip.presence
           if reschedule && change_reason.blank?

@@ -16,7 +16,7 @@ class StageSafety
         redis: staging_redis?,
         clerk_test_identity: clerk_test_identity?,
         public_urls: public_urls?,
-        application_secret: ENV["SECRET_KEY_BASE"].to_s.strip.length > 64,
+        application_secret: application_secret?,
         admission_signing: admission_signing?,
         admin_bootstrap_disabled: !ActiveModel::Type::Boolean.new.cast(ENV["ENABLE_FIRST_USER_ADMIN_BOOTSTRAP"]),
         no_live_stripe_credentials: no_live_stripe_credentials?,
@@ -36,6 +36,11 @@ class StageSafety
 
       failures = result[:checks].reject { |_key, passed| passed }.keys.join(", ")
       raise ConfigurationError, "Staging configuration failed: #{failures}"
+    end
+
+    def application_secret?
+      secret = ENV["SECRET_KEY_BASE"].to_s
+      secret.length > 64 && secret == secret.strip
     end
 
     private

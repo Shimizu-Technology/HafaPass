@@ -59,7 +59,7 @@ class Order < ApplicationRecord
       payments.where(status: [:succeeded, :partially_refunded]).to_a
     captured.any? do |payment|
       payment.amount_cents >= total_cents && payment.currency == currency && payment.provider_payment_id.present? &&
-        !payment.provider_payment_id.start_with?("sim_") && payment.provider_payload["simulated"] != true
+        !payment.provider_payment_id.start_with?("sim_") && payment.provider_payload.to_h["simulated"] != true
     end
   end
 
