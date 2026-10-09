@@ -10,7 +10,8 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     clean_test_data
     allow(StripeService).to receive(:payment_enabled?).and_return(true)
     allow(StripeService).to receive(:create_payment_intent) do |order, idempotency_key:, **_context|
-      OpenStruct.new(id: "pi_concurrent_#{order.id}", client_secret: "#{idempotency_key}_secret")
+      OpenStruct.new(id: "pi_concurrent_#{order.id}", client_secret: "#{idempotency_key}_secret",
+        allowed_payment_method_types: ["card"], payment_method_types: ["card"])
     end
     allow(EmailService).to receive(:send_refund_notification_async)
   end
@@ -43,7 +44,8 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     allow(StripeService).to receive(:publishable_key).and_return("pk_test_recovery")
     allow(StripeService).to receive(:retrieve_payment_intent) do |payment|
       OpenStruct.new(id: payment.provider_payment_id, amount: payment.amount_cents, currency: payment.currency,
-        status: "requires_payment_method", livemode: false, client_secret: "original_secret")
+        status: "requires_payment_method", livemode: false, client_secret: "original_secret",
+        allowed_payment_method_types: ["card"], payment_method_types: ["card"])
     end
     event = create(:event, :published, starts_at: 5.days.from_now)
     ticket_type = create(:ticket_type, event: event, quantity_available: 1, max_per_order: 1)

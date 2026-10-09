@@ -25,7 +25,8 @@ RSpec.describe "Stripe webhooks", type: :request do
   def create_pending_checkout(intent_id: "pi_checkout", quantity: 1)
     allow(StripeService).to receive(:payment_enabled?).and_return(true)
     allow(StripeService).to receive(:create_payment_intent).and_return(
-      OpenStruct.new(id: intent_id, client_secret: "#{intent_id}_secret")
+      OpenStruct.new(id: intent_id, client_secret: "#{intent_id}_secret",
+        allowed_payment_method_types: ["card"], payment_method_types: ["card"])
     )
     Commerce::OrderCreator.call(
       event: event,

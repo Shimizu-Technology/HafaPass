@@ -15,7 +15,8 @@ module Commerce
     end
 
     def call
-      @order.with_lock do
+      card_policy_blocked = false
+      recovery = @order.with_lock do
         payment = @order.payments.order(:id).last
         return result(nil, nil) unless @order.pending?
         if @order.expires_at.present? && @order.expires_at <= Time.current
@@ -52,11 +53,22 @@ module Commerce
         if resumable && payment.provider_environment == "live" && !SiteSetting.instance.can_enable_live?
           raise RecoveryError, "Live payment confirmation is unavailable; contact support"
         end
+        if resumable && !StripeService.card_only_intent?(intent)
+          StripeService.record_card_policy_mismatch!(payment)
+          card_policy_blocked = true
+          next
+        end
         key = StripeService.publishable_key(payment: payment)
         raise RecoveryError, "Payment configuration is unavailable; contact support" if resumable && key.blank?
 
         result(resumable ? intent : nil, state, key)
       end
+      # Raise only after committing the reconciliation hold; raising inside the
+      # order lock transaction would roll the evidence back.
+      if card_policy_blocked
+        raise RecoveryError, "This saved payment configuration needs support review. No additional payment was submitted"
+      end
+      recovery
     rescue Stripe::StripeError, StripeService::PaymentError => e
       raise RecoveryError, e.message
     end

@@ -724,7 +724,16 @@ module Commerce
         payment.update!(provider_payment_id: intent.id, provider_payload: { client_secret_present: intent.client_secret.present? })
         order.update!(stripe_payment_intent_id: intent.id)
       end
+      unless payment.provider_environment == "simulate" || StripeService.card_only_intent?(intent)
+        StripeService.record_card_policy_mismatch!(payment)
+        raise StripeService::CardPolicyError, "Payment method configuration needs support review; retry your saved checkout instead of creating another order"
+      end
       intent
+    rescue StripeService::CardPolicyError => e
+      # The operation already exists at Stripe. Preserve its attached identity,
+      # reservation, and reconciliation hold rather than treating it as a failed
+      # setup or blindly cancelling a potentially processing payment.
+      raise CheckoutError, e.message
     rescue ActiveRecord::ActiveRecordError => e
       cancel_unattached_provider_payment!(order, payment, intent, e)
       OrderLifecycle.fail!(order, payment: payment, failure_code: "payment_setup_failed", failure_message: e.message,

@@ -4,6 +4,7 @@ require "ostruct"
 
 class StripeService
   class PaymentError < StandardError; end
+  class CardPolicyError < PaymentError; end
 
   class << self
     # ── Payment Intents ──────────────────────────────────────────────
@@ -42,6 +43,19 @@ class StripeService
           options.merge(idempotency_key: idempotency_key)
         )
       end
+    end
+
+    # Both fields are required: a legacy automatic intent may currently offer
+    # cards yet still lack the fixed allowlist required for this release.
+    def card_only_intent?(intent)
+      allowed = intent.respond_to?(:allowed_payment_method_types) ? intent.allowed_payment_method_types : nil
+      compatible = intent.respond_to?(:payment_method_types) ? intent.payment_method_types : nil
+      allowed == ["card"] && compatible == ["card"]
+    end
+
+    def record_card_policy_mismatch!(payment)
+      payment.order.reconciliation_exceptions.find_or_create_by!(payment: payment,
+        code: "payment_method_policy_mismatch", status: :open)
     end
 
     # ── Refunds ──────────────────────────────────────────────────────

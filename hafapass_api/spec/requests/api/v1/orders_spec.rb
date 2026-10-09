@@ -176,7 +176,8 @@ RSpec.describe "Api::V1::Orders", type: :request do
       )
       LiveMoneyProofAuthorizations::Manager.approve!(authorization: authorization, actor: create(:user, :admin))
       allow(StripeService).to receive(:create_payment_intent).and_return(
-        double(id: "pi_live_checkout", client_secret: "pi_live_checkout_secret")
+        double(id: "pi_live_checkout", client_secret: "pi_live_checkout_secret",
+          allowed_payment_method_types: ["card"], payment_method_types: ["card"])
       )
 
       proof_params = {

@@ -12,7 +12,8 @@ RSpec.describe "Buyer payment recovery", type: :request do
   let(:intents) { double("payment intent API") }
   let(:intent) do
     OpenStruct.new(id: "pi_recover", client_secret: "pi_recover_secret", amount: @order.total_cents,
-      currency: "usd", livemode: false, status: "requires_payment_method", amount_received: 0)
+      currency: "usd", livemode: false, status: "requires_payment_method", amount_received: 0,
+      allowed_payment_method_types: ["card"], payment_method_types: ["card"])
   end
 
   before do
@@ -22,7 +23,8 @@ RSpec.describe "Buyer payment recovery", type: :request do
     allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("sk_test_recovery")
     allow(ENV).to receive(:[]).with("STRIPE_TEST_PLATFORM_ACCOUNT_ID").and_return("acct_testplatform")
     allow(ENV).to receive(:[]).with("STRIPE_TEST_PUBLISHABLE_KEY").and_return("pk_test_recovery")
-    allow(StripeService).to receive(:create_payment_intent).and_return(OpenStruct.new(id: "pi_recover", client_secret: "pi_recover_secret"))
+    allow(StripeService).to receive(:create_payment_intent).and_return(OpenStruct.new(id: "pi_recover", client_secret: "pi_recover_secret",
+      allowed_payment_method_types: ["card"], payment_method_types: ["card"]))
     client = instance_double(Stripe::StripeClient, v1: double("v1", payment_intents: intents, accounts: double("accounts", retrieve_current: OpenStruct.new(id: "acct_testplatform"))))
     allow(Stripe::StripeClient).to receive(:new).with("sk_test_recovery").and_return(client)
     allow(intents).to receive(:retrieve) { intent }
@@ -44,6 +46,41 @@ RSpec.describe "Buyer payment recovery", type: :request do
     expect(@order.reload).to be_pending
     expect(@order.tickets).to be_empty
     expect(StripeService).to have_received(:create_payment_intent).once
+  end
+
+  [nil, [], ["card", "us_bank_account"], ["unknown_method"]].each do |allowed|
+    it "blocks the unsupported #{allowed.inspect} policy without duplicating or cancelling the original operation" do
+      intent.allowed_payment_method_types = allowed
+      intent.payment_method_types = allowed || ["card"]
+      intent.automatic_payment_methods = OpenStruct.new(enabled: true) if allowed.nil?
+      expect { resume }.not_to change { [Order.count, Payment.count, InventoryHold.count] }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body).not_to have_key("client_secret")
+      expect(@order.reload).to be_pending
+      expect(@order.payments.last.provider_payment_id).to eq("pi_recover")
+      expect(@order.reconciliation_exceptions.open).to exist(code: "payment_method_policy_mismatch")
+      expect(intents).not_to have_received(:cancel)
+      expect(StripeService).to have_received(:create_payment_intent).once
+    end
+  end
+
+  it "blocks an unexpectedly broad compatible response even when its declared allowlist is card-only" do
+    intent.payment_method_types = ["card", "us_bank_account"]
+    resume
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body).not_to have_key("client_secret")
+  end
+
+  it "leaves an already processing legacy bank operation intact and exposes no confirmation secret" do
+    intent.status = "processing"
+    intent.allowed_payment_method_types = nil
+    intent.payment_method_types = ["us_bank_account"]
+    expect { resume }.not_to change { [Order.count, Payment.count, InventoryHold.count] }
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("payment_state" => "processing", "payment_resumable" => false)
+    expect(response.parsed_body).not_to have_key("client_secret")
+    expect(@order.reload).to be_pending
+    expect(intents).not_to have_received(:cancel)
   end
 
   it "returns no secret to anonymous strangers or administrators managing another buyer" do
