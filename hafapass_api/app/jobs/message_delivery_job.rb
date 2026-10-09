@@ -1,62 +1,105 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 class MessageDeliveryJob < ApplicationJob
   queue_as :emails
 
+  class UnknownProviderResult < StandardError; end
+  class ReplayExpired < StandardError; end
+
   retry_on StandardError, wait: :polynomially_longer, attempts: 5
+
+  SEND_LEASE = 5.minutes
+  PROVIDER_TIMEOUT = 30.seconds
 
   def perform(delivery_id)
     delivery = MessageDelivery.find(delivery_id)
-    delivery.with_lock do
+    lease_token = SecureRandom.uuid
+    previously_unknown = nil
+    outcome = delivery.with_lock do
       if terminal?(delivery)
         mark_reminder_sent!(delivery) if delivery.sent? || delivery.delivered?
-        return
+        next :done
       end
-
+      if delivery.send_lease_expires_at.present? && delivery.send_lease_expires_at > Time.current
+        self.class.set(wait_until: delivery.send_lease_expires_at).perform_later(delivery.id)
+        next :busy
+      end
       if obsolete_reminder?(delivery)
-        delivery.update!(status: :suppressed, suppressed_at: Time.current,
-          last_error: "Reminder was cancelled or rescheduled")
-        return
+        delivery.update!(status: :cancelled, last_error: "Reminder was cancelled or rescheduled")
+        next :done
       end
-
       if delivery.suppressed_recipient?
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
           last_error: "Recipient has a prior bounce, complaint, or suppression")
-        return
+        next :done
       end
+      raise ReplayExpired, "Provider result requires reconciliation before replay" if delivery.provider_replay_expired?
 
-      delivery.update!(attempts: delivery.attempts + 1, status: :queued, last_error: nil)
-      response = dispatch(delivery)
-      delivery.update!(
-        status: :sent,
-        provider_id: provider_id(response),
-        sent_at: Time.current,
-        failed_at: nil,
-        last_error: nil
-      )
+      real_provider = EmailService.configured?
+      if !real_provider && Rails.env.production?
+        raise EmailService::ProviderDisabled, "Production email is disabled until current Resend evidence is independently approved"
+      end
+      previously_unknown = delivery.provider_outcome_unknown? ||
+        (delivery.provider == "resend" && delivery.provider_attempted_at.nil? && delivery.attempts.positive?)
+      payload = delivery.outbound_payload.presence || EmailService.prepare_delivery_payload(delivery)
+      delivery.update!(outbound_payload: payload, payload_digest: Digest::SHA256.hexdigest(JSON.generate(payload.sort.to_h)),
+        provider: real_provider ? "resend" : "simulated", attempts: delivery.attempts + 1, status: :queued, last_error: nil,
+        provider_attempted_at: real_provider ? (delivery.provider_attempted_at || Time.current) : nil,
+        provider_outcome_unknown: real_provider, send_lease_token: lease_token,
+        send_lease_expires_at: SEND_LEASE.from_now)
+      :send
+    end
+    unless outcome == :send
+      MessageProviderEventProcessor.reconcile_for!(delivery) if outcome == :done
+      return
+    end
+
+    # Lease, payload and unknown marker are durable before any network activity.
+    # This works with transaction-pooled PostgreSQL, without session affinity.
+    response = Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) }
+    simulated = response.is_a?(Hash) && (response[:simulated] || response["simulated"])
+    id = response[:id] || response["id"] if response.respond_to?(:[])
+    if delivery.provider == "resend" && (simulated || !id.is_a?(String) || id.blank?)
+      raise UnknownProviderResult, "Email provider acceptance did not include a message ID"
+    end
+    delivery.with_lock do
+      unless delivery.send_lease_token == lease_token
+        raise UnknownProviderResult, "Provider request lease changed; reconcile acceptance before replay"
+      end
+      delivery.update!(status: :sent, provider_id: id, sent_at: Time.current,
+        failed_at: nil, last_error: nil, provider_outcome_unknown: false,
+        send_lease_token: nil, send_lease_expires_at: nil)
       mark_reminder_sent!(delivery)
     end
     MessageProviderEventProcessor.reconcile_for!(delivery)
-  rescue StandardError => e
+  rescue StandardError => error
     delivery&.with_lock do
-      unless terminal?(delivery)
-        delivery.update_columns(
-          status: MessageDelivery.statuses.fetch("failed"),
-          attempts: delivery.attempts + 1,
-          failed_at: Time.current,
-          last_error: "#{e.class}: #{e.message}".first(1000),
-          updated_at: Time.current
-        )
+      if !terminal?(delivery) && (delivery.send_lease_token.nil? || delivery.send_lease_token == lease_token)
+        # A definite rejection can clear uncertainty only if no older attempt
+        # was already unknown. Never reinterpret an earlier lost response.
+        unknown = delivery.provider_outcome_unknown?
+        unknown = false if !previously_unknown && known_rejection?(error)
+        delivery.update!(status: :failed, failed_at: Time.current,
+          provider_outcome_unknown: unknown, last_error: "#{error.class}: #{error.message}".first(1000),
+          send_lease_token: nil, send_lease_expires_at: nil)
       end
     end
-    Sentry.capture_exception(e, extra: { message_delivery_id: delivery_id })
+    Sentry.capture_exception(error, extra: { message_delivery_id: delivery_id })
     raise
   end
 
   private
 
+  def known_rejection?(error)
+    error.is_a?(Resend::Error::InvalidRequestError) || error.is_a?(Resend::Error::RateLimitExceededError) ||
+      error.is_a?(EmailService::ProviderDisabled)
+  end
+
   def terminal?(delivery)
-    delivery.sent? || delivery.delivered? || delivery.bounced? || delivery.complained? || delivery.suppressed?
+    delivery.provider_id.present? || delivery.sent? || delivery.delivered? || delivery.bounced? ||
+      delivery.complained? || delivery.suppressed? || delivery.cancelled?
   end
 
   def obsolete_reminder?(delivery)
@@ -75,46 +118,5 @@ class MessageDeliveryJob < ApplicationJob
     return unless reminder.remind_at.iso8601(6) == delivery.metadata["scheduled_for"]
 
     reminder.update!(status: :sent, sent_at: delivery.sent_at || Time.current)
-  end
-
-  def dispatch(delivery)
-    case delivery.template
-    when "order_confirmation", "fulfillment_resend"
-      EmailService.send_order_confirmation(delivery.order, delivery: delivery)
-    when "ticket_delivery"
-      EmailService.send_ticket_email(delivery.ticket, delivery: delivery)
-    when "order_recovery"
-      EmailService.send_order_recovery(delivery.order, delivery: delivery)
-    when "event_change"
-      change = EventChange.find(delivery.metadata.fetch("event_change_id"))
-      EmailService.send_event_change_notification(change, delivery.order, delivery: delivery)
-    when "refund_notification"
-      EmailService.send_refund_notification(delivery.order, delivery: delivery)
-    when "guest_list"
-      entry = GuestListEntry.find(delivery.metadata.fetch("guest_list_entry_id"))
-      EmailService.send_guest_list_notification(entry, delivery: delivery)
-    when "waitlist_notification"
-      entry = WaitlistEntry.find(delivery.metadata.fetch("waitlist_entry_id"))
-      EmailService.send_waitlist_notification(entry, delivery: delivery)
-    when "ticket_transfer"
-      transfer = TicketTransfer.find(delivery.metadata.fetch("ticket_transfer_id"))
-      EmailService.send_ticket_transfer(transfer, delivery: delivery)
-    when "waitlist_offer"
-      offer = WaitlistOffer.find(delivery.metadata.fetch("waitlist_offer_id"))
-      EmailService.send_waitlist_offer(offer, delivery: delivery)
-    when "communication_campaign"
-      EmailService.send_communication_campaign(delivery)
-    when "event_reminder"
-      reminder = EventReminder.find(delivery.metadata.fetch("event_reminder_id"))
-      EmailService.send_event_reminder(reminder, delivery: delivery)
-    else
-      raise ArgumentError, "Unsupported message template"
-    end
-  end
-
-  def provider_id(response)
-    return if response.blank? || response[:simulated]
-
-    response[:id] || response["id"]
   end
 end

@@ -981,6 +981,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.string "template", null: false
     t.bigint "ticket_id"
     t.datetime "updated_at", null: false
+    t.jsonb "outbound_payload", default: {}, null: false
+    t.datetime "provider_attempted_at"
+    t.boolean "provider_outcome_unknown", default: false, null: false
+    t.string "send_lease_token"
+    t.datetime "send_lease_expires_at"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
@@ -992,7 +997,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
     t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
     t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "message_deliveries_subject_present"
-    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7])", name: "message_deliveries_status_valid"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7, 8])", name: "message_deliveries_status_valid"
   end
 
   create_table "message_provider_events", force: :cascade do |t|

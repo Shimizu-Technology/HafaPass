@@ -11,6 +11,58 @@ class EmailService
       PlatformCapabilities.enabled?("resend_production")
     end
 
+    # Capture the exact recipient/body once; retries never regenerate access links.
+    def prepare_delivery_payload(delivery)
+      delivery.preparing_outbound_payload = true
+      case delivery.template
+      when "order_confirmation", "fulfillment_resend"
+        send_order_confirmation(delivery.order, delivery: delivery)
+      when "ticket_delivery"
+        send_ticket_email(delivery.ticket, delivery: delivery)
+      when "order_recovery"
+        send_order_recovery(delivery.order, delivery: delivery)
+      when "event_change"
+        change = EventChange.find(delivery.metadata.fetch("event_change_id"))
+        send_event_change_notification(change, delivery.order, delivery: delivery)
+      when "refund_notification"
+        send_refund_notification(delivery.order, delivery: delivery)
+      when "guest_list"
+        entry = GuestListEntry.find(delivery.metadata.fetch("guest_list_entry_id"))
+        send_guest_list_notification(entry, delivery: delivery)
+      when "waitlist_notification"
+        entry = WaitlistEntry.find(delivery.metadata.fetch("waitlist_entry_id"))
+        send_waitlist_notification(entry, delivery: delivery)
+      when "ticket_transfer"
+        transfer = TicketTransfer.find(delivery.metadata.fetch("ticket_transfer_id"))
+        send_ticket_transfer(transfer, delivery: delivery)
+      when "waitlist_offer"
+        offer = WaitlistOffer.find(delivery.metadata.fetch("waitlist_offer_id"))
+        send_waitlist_offer(offer, delivery: delivery)
+      when "communication_campaign"
+        send_communication_campaign(delivery)
+      when "event_reminder"
+        reminder = EventReminder.find(delivery.metadata.fetch("event_reminder_id"))
+        send_event_reminder(reminder, delivery: delivery)
+      else
+        raise ArgumentError, "Unsupported message template"
+      end
+    ensure
+      delivery.preparing_outbound_payload = false
+    end
+
+    def send_delivery_payload(delivery)
+      if delivery.provider == "simulated"
+        raise ProviderDisabled, "Production email cannot simulate a delivery" if Rails.env.production?
+
+        return { simulated: true }
+      end
+      unless delivery.provider == "resend" && configured?
+        raise ProviderDisabled, "The prepared email provider is unavailable"
+      end
+
+      deliver_payload(delivery.outbound_payload, delivery: delivery)
+    end
+
     # ── Async Methods (use these from controllers) ──────────────────
     # These enqueue background jobs for better performance
 
@@ -285,24 +337,21 @@ class EmailService
 
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, **log_meta)
+      params = { from: FROM_EMAIL, to: delivery ? delivery.recipient : to, subject: subject, html: html }
+      params[:tags] = [{ name: "category", value: tag }] if tag.present?
+      return params.deep_stringify_keys if delivery&.preparing_outbound_payload
+
+      deliver_payload(params, delivery: delivery)
+    end
+
+    def deliver_payload(params, delivery: nil)
       unless configured?
-        if Rails.env.production?
+        if Rails.env.production? || (delivery&.provider == "resend" && delivery.outbound_payload.present?)
           raise ProviderDisabled, "Production email is disabled until current Resend evidence is independently approved"
         end
-        meta_str = log_meta.map { |k, v| "#{k}=#{v}" }.join(", ")
-        Rails.logger.info(
-          "[EmailService SIMULATE] Would send to=#{to} subject=\"#{subject}\" tag=#{tag} #{meta_str}"
-        )
-        return { simulated: true, to: to, subject: subject }
+        Rails.logger.info("[EmailService SIMULATE] delivery=#{delivery&.id} template=#{delivery&.template}")
+        return { simulated: true }
       end
-
-      params = {
-        from: FROM_EMAIL,
-        to: to,
-        subject: subject,
-        html: html
-      }
-      params[:tags] = [{ name: "category", value: tag }] if tag.present?
 
       options = delivery ? { idempotency_key: delivery.idempotency_key } : {}
       Resend::Emails.send(params, options: options)

@@ -9,27 +9,54 @@ class MessageDelivery < ApplicationRecord
   has_many :message_provider_events, dependent: :nullify
 
   enum :status, {
-    queued: 0, sent: 1, failed: 2, suppressed: 3, delivered: 4, delayed: 5, bounced: 6, complained: 7
+    queued: 0, sent: 1, failed: 2, suppressed: 3, delivered: 4, delayed: 5, bounced: 6, complained: 7, cancelled: 8
   }
 
   validates :channel, :template, :recipient, :provider, :idempotency_key, presence: true
   validates :idempotency_key, uniqueness: true, length: { maximum: 256 }
   validates :attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :subject_present
+  validate :immutable_provider_request
+
+  attr_accessor :preparing_outbound_payload
+
+  PROVIDER_REPLAY_WINDOW = 23.hours
 
   before_validation :assign_idempotency_key, on: :create
 
   def retryable?
-    failed? && provider_id.blank?
+    failed? && provider_id.blank? && !provider_replay_expired?
+  end
+
+  def provider_replay_expired?
+    # Legacy attempted rows have no marker: a crash may have followed acceptance.
+    unknown = provider_outcome_unknown? || (provider == "resend" && provider_attempted_at.nil? && attempts.positive?)
+    unknown && (provider_attempted_at || created_at) <= PROVIDER_REPLAY_WINDOW.ago
   end
 
   def suppressed_recipient?
-    self.class.where("LOWER(recipient) = ?", recipient.to_s.strip.downcase).
-      where(status: [:bounced, :complained, :suppressed]).
-      where.not(id: id).exists?
+    history = self.class.where("LOWER(recipient) = ?", recipient.to_s.strip.downcase)
+    # Local cancellation/propagated suppression is not provider evidence.
+    transient_bounces = MessageProviderEvent.where(event_type: "email.bounced")
+      .where.not(message_delivery_id: nil)
+      .where("occurred_at = message_deliveries.last_event_at")
+      .where("payload #>> '{bounce,type}' = 'Transient'")
+      .select(:message_delivery_id)
+    hard_bounces = history.where(status: :bounced).where.not(id: transient_bounces)
+    hard_bounces.or(history.where(status: :complained)).or(
+      history.where(status: :suppressed).where.not(provider_id: [nil, ""])
+    ).where.not(id: id).exists?
   end
 
   private
+
+  def immutable_provider_request
+    return if outbound_payload_in_database.blank?
+
+    %w[outbound_payload recipient idempotency_key].each do |field|
+      errors.add(field, "cannot change after the provider request is prepared") if will_save_change_to_attribute?(field)
+    end
+  end
 
   def subject_present
     errors.add(:base, "Order, ticket, or event is required") if order_id.blank? && ticket_id.blank? && event_id.blank?
