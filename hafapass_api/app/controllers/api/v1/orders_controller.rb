@@ -290,7 +290,8 @@ class Api::V1::OrdersController < ApplicationController
       end
     end
 
-    render json: { decision: response.decision, order: OrderPresenter.call(@order.reload, include_tickets: true) }
+    outcome = decision == "refund_requested" ? Commerce::RefundOutcome.call(order: @order, idempotency_key: idempotency_key) : {}
+    render json: { decision: response.decision, order: OrderPresenter.call(@order.reload, include_tickets: true) }.merge(outcome)
   rescue ActiveRecord::RecordNotUnique
     render json: { error: "This event-change response has already been recorded" }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e

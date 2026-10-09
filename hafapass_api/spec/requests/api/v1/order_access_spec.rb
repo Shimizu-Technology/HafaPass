@@ -91,4 +91,34 @@ RSpec.describe "Buyer order access", type: :request do
     expect(Commerce::RefundCreator).not_to have_received(:call)
     expect(change.event_change_responses.find_by(order: order).decision).to eq("accepted")
   end
+
+  it "reports pending and terminal failed event refunds without reporting completion or resubmitting a replay" do
+    order.update!(subtotal_cents: 1000, service_fee_cents: 0, total_cents: 1000)
+    item = create(:order_item, order: order, ticket_type: ticket_type, unit_price_cents: 1000,
+      subtotal_cents: 1000, fee_cents: 0, organizer_proceeds_cents: 1000)
+    ticket = create(:ticket, order: order, order_item: item, event: event, ticket_type: ticket_type)
+    create(:payment, :succeeded, order: order)
+    change = event.event_changes.create!(change_type: "cancelled", occurred_at: Time.current)
+    provider_pending = OpenStruct.new(id: "re_buyer_pending", status: "pending", amount: 1000, currency: "usd")
+    allow(StripeService).to receive(:refund_payment).and_return(provider_pending)
+    headers = access_headers.merge("Idempotency-Key" => "buyer-event-outcome")
+    params = { event_change_id: change.id, decision: "refund_requested" }
+
+    post "/api/v1/orders/#{order.id}/event_change_response", params: params, headers: headers
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("decision" => "refund_requested", "refund_status" => "pending", "reconciliation_required" => true)
+    refund = order.refunds.sole
+    expect(response.parsed_body["refund_id"]).to eq(refund.id)
+    expect(ticket.reload).to be_issued
+
+    Commerce::RefundCreator.reconcile_refund!(refund: refund,
+      provider_refund: OpenStruct.new(id: provider_pending.id, status: "failed", amount: 1000, currency: "usd"))
+    post "/api/v1/orders/#{order.id}/event_change_response", params: params, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("refund_id" => refund.id, "refund_status" => "failed", "reconciliation_required" => false)
+    expect(StripeService).to have_received(:refund_payment).once
+    expect(order.refunds.count).to eq(1)
+    expect(ticket.reload).to be_issued
+  end
 end
