@@ -26,7 +26,10 @@ class StripeService
           {
             amount: order.total_cents,
             currency: "usd",
-            automatic_payment_methods: { enabled: true },
+            # The ten-minute inventory reservation supports card confirmation,
+            # not bank methods that may settle days later. This explicit API
+            # allowlist also survives future Dashboard method enablement.
+            allowed_payment_method_types: ["card"],
             metadata: {
               order_id: order.id,
               event_id: order.event_id,

@@ -60,7 +60,8 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
       setPreview(null)
     } catch (uploadError) {
       if (!current()) return
-      setError(uploadError.response?.data?.error || uploadError.message || 'Upload failed. Please try again.')
+      const interrupted = ['Network Error', 'Failed to fetch'].includes(uploadError.message) || uploadError.code === 'ECONNABORTED'
+      setError(uploadError.response?.data?.error || (interrupted ? 'Image upload was interrupted. Retry the upload to recover it.' : uploadError.message) || 'Upload failed. Please try again.')
       setRetryFile(file)
       setPreview(null)
     } finally {

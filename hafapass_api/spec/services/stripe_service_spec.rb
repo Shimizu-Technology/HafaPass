@@ -8,6 +8,23 @@ RSpec.describe StripeService do
   def accounts_api(id = "acct_testplatform")
     double("accounts API", retrieve_current: OpenStruct.new(id: id))
   end
+  it "limits a new ticket intent to cards without incompatible dynamic method parameters" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("rk_test_cards")
+    order = create(:order)
+    intents = double("payment intents API")
+    client = instance_double(Stripe::StripeClient, v1: double("v1", accounts: accounts_api, payment_intents: intents))
+    allow(Stripe::StripeClient).to receive(:new).with("rk_test_cards").and_return(client)
+    expect(intents).to receive(:create) do |params, options|
+      expect(params).to include(allowed_payment_method_types: ["card"], amount: order.total_cents, currency: "usd")
+      %i[automatic_payment_methods payment_method_types excluded_payment_method_types payment_method_configuration].each do |field|
+        expect(params).not_to have_key(field)
+      end
+      expect(options).to include(idempotency_key: "card-policy")
+      OpenStruct.new(id: "pi_test_cards")
+    end
+    described_class.create_payment_intent(order, idempotency_key: "card-policy")
+  end
   it "refuses legacy live mode when current provider evidence is not approved" do
     settings = instance_double(
       SiteSetting,
