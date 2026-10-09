@@ -6,7 +6,7 @@ import {
 import apiClient from '../../api/client'
 import {
   applySyncResults, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
-  queuedActions, queueReversal, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess,
+  queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess,
 } from '../../utils/admissionStore'
 
 const browserIdentifier = () => {
@@ -60,6 +60,7 @@ export default function ScannerPage({ offlineOnly = false }) {
   const [events, setEvents] = useState([])
   const [eventId, setEventId] = useState('')
   const [device, setDevice] = useState(null)
+  const [recoveryDevice, setRecoveryDevice] = useState(null)
   const [manifest, setManifest] = useState(null)
   const [dashboard, setDashboard] = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
@@ -118,6 +119,7 @@ export default function ScannerPage({ offlineOnly = false }) {
       if (Number(response.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event.')
       await saveVerifiedManifest(response.data)
     } catch (verificationError) {
+      await invalidateManifestAccess(selectedEventId)
       verificationError.manifestInvalid = true
       throw verificationError
     }
@@ -126,7 +128,7 @@ export default function ScannerPage({ offlineOnly = false }) {
   }, [])
 
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
-    if (!selectedEventId || !selectedDevice || !online || syncingRef.current) return
+    if (!selectedEventId || !selectedDevice || selectedDevice.owner_user_id !== currentScannerOwner() || !online || syncingRef.current) return
     syncingRef.current = true
     setSyncing(true)
     try {
@@ -164,7 +166,7 @@ export default function ScannerPage({ offlineOnly = false }) {
     } catch (syncError) {
       if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
         await purgeExpiredAdmissionAccess(selectedEventId)
-        if (eventIdRef.current === String(selectedEventId)) { setDevice(null); setManifest(null) }
+        if (eventIdRef.current === String(selectedEventId)) { setDevice(null); setManifest(null); setRecoveryDevice(null) }
         setError(syncError.response?.data?.error || 'Scanner authorization was refused. Saved scans remain available to the original staff account after access is restored.')
       } else if (syncError.manifestInvalid) {
         setDevice(null)
@@ -186,10 +188,13 @@ export default function ScannerPage({ offlineOnly = false }) {
     setError(null)
     setScanResult(null)
     setDevice(null)
+    setRecoveryDevice(null)
     setManifest(null)
     setDashboard(null)
     setSearchResults([])
     try {
+      const pendingIdentity = await loadPendingDeviceIdentity(selectedEventId)
+      await refreshPending(selectedEventId, pendingIdentity ? { id: pendingIdentity.device_id } : null)
       let cached = await loadAuthorizedScanner(selectedEventId)
       if (online) {
         let networkPhase = true
@@ -206,18 +211,27 @@ export default function ScannerPage({ offlineOnly = false }) {
           networkPhase = false
           if (!current()) return
           await saveDevice(selectedEventId, registration.data)
+          const registeredDevice = await loadDevice(selectedEventId)
+          if (current()) setRecoveryDevice(registeredDevice)
+          await refreshPending(selectedEventId, registeredDevice)
           networkPhase = true
           const downloaded = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${registration.data.id}/manifest`)
           networkPhase = false
           if (!current()) return
-          if (Number(downloaded.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event. Ask a manager to check this device.')
-          await saveVerifiedManifest(downloaded.data)
+          try {
+            if (Number(downloaded.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event. Ask a manager to check this device.')
+            await saveVerifiedManifest(downloaded.data)
+          } catch (verificationError) {
+            await invalidateManifestAccess(selectedEventId)
+            throw verificationError
+          }
           cached = await loadAuthorizedScanner(selectedEventId)
           if (current()) await fetchDashboard(selectedEventId).catch(() => {})
         } catch (connectionError) {
           // Explicit authorization failures invalidate local trust. Dependency outages do not.
           if (connectionError.response?.status >= 400 && connectionError.response.status < 500 && ![408, 429].includes(connectionError.response.status)) {
             await purgeExpiredAdmissionAccess(selectedEventId)
+            if (current()) setRecoveryDevice(null)
             throw connectionError
           }
           if (!cached || !networkPhase) throw connectionError
@@ -431,9 +445,11 @@ export default function ScannerPage({ offlineOnly = false }) {
     event.preventDefault()
     if (!online || searchQuery.trim().length < 2) return
     setSearching(true)
+    const selectedEventId = eventId
+    const generation = setupGenerationRef.current
     try {
       const response = await apiClient.get(`/organizer/events/${eventId}/admissions/search`, { params: { q: searchQuery.trim() } })
-      setSearchResults(response.data)
+      if (eventIdRef.current === selectedEventId && setupGenerationRef.current === generation) setSearchResults(response.data)
     } catch (searchError) {
       setError(searchError.response?.data?.error || 'Attendee search failed.')
     } finally {
@@ -466,13 +482,24 @@ export default function ScannerPage({ offlineOnly = false }) {
 
   const resetScanner = async () => {
     if (!online) return setError('Reconnect before resetting this scanner.')
-    if (pendingCount) return setError('Sync every queued action before resetting this scanner.')
+    if (syncingRef.current) return setError('Wait for synchronization to finish before resetting this scanner.')
+    const identity = await loadPendingDeviceIdentity(eventId)
+    const pending = identity ? await queuedActions(eventId, identity.device_id) : []
+    if (pending.length) { setPendingCount(pending.length); return setError('Sync every queued action before resetting this scanner.') }
     if (!window.confirm('Reset this event scanner and trust a newly downloaded signing key?')) return
     stopCamera()
-    await clearEventAdmissionData(eventId)
+    currentManifestRef.current = null
     setDevice(null)
     setManifest(null)
-    await configureEvent(eventId)
+    try {
+      // The store checks inside the deletion transaction as well, so an overlapping scan is retained.
+      await clearEventAdmissionData(eventId, { requireEmptyQueue: true })
+      await configureEvent(eventId)
+    } catch (resetError) {
+      setError(resetError.message)
+      const retainedIdentity = await loadPendingDeviceIdentity(eventId)
+      await refreshPending(eventId, retainedIdentity ? { id: retainedIdentity.device_id } : null)
+    }
   }
 
   const selectedEvent = events.find(event => String(event.id) === eventId)
@@ -561,7 +588,9 @@ export default function ScannerPage({ offlineOnly = false }) {
               <h2 className="font-semibold">{device?.name || 'Device not authorized'}</h2>
               <p className="text-xs text-neutral-500">{selectedEvent?.title}</p>
               {manifest && <p className="mt-2 text-xs text-neutral-500">Manifest v{manifest.payload.version} · {manifest.payload.tickets.length} tickets<br />Expires {new Date(manifest.payload.expires_at).toLocaleString()}</p>}
-              {ready && <button onClick={resetScanner} className="mt-3 text-xs font-semibold text-neutral-500 hover:text-red-700">Reset trusted device</button>}
+              {!ready && pendingCount > 0 && <p className="mt-3 text-sm text-amber-950">Saved scans are retained. Reconnect with the original staff account to confirm them before resetting this device. Ask a manager if authorization cannot be restored.</p>}
+              {!ready && recoveryDevice && pendingCount > 0 && <button disabled={!online || syncing || setupBusy} onClick={() => syncQueue({ selectedDevice: recoveryDevice })} className="btn-secondary mt-3 text-sm">Sync saved scans</button>}
+              {eventId && <button disabled={!online || syncing || setupBusy} onClick={resetScanner} className="mt-3 block min-h-11 text-xs font-semibold text-neutral-500 hover:text-red-700 disabled:opacity-50">Reset trusted device</button>}
             </div></div>
           </section>
 

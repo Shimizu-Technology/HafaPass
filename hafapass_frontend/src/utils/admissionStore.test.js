@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { signedManifest } from '../test/manifestFixture'
 import {
   applySyncResults, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission,
-  queuedActions, saveDevice, saveVerifiedManifest, sha256Hex,
+  queuedActions, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex,
 } from './admissionStore'
 
 const toBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
@@ -147,5 +147,26 @@ describe('admissionStore', () => {
     }
     samples.sort((left, right) => left - right)
     expect(samples[Math.ceil(samples.length * 0.95) - 1]).toBeLessThan(100)
+  })
+
+  it('removes admission access and attendee state after invalid verification while retaining pinned trust and minimal pending journal', async () => {
+    const eventId = 91006
+    const device = { id: 46, identifier: 'invalid-manifest-device', effective: true, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    const envelope = await signedManifest(eventId)
+    await saveVerifiedManifest(envelope)
+    await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1, ticket: { ticket_id: 17, attendee_name: 'Private attendee' }, credentialHash: 'f'.repeat(64), source: 'offline' })
+    await invalidateManifestAccess(eventId)
+    expect(await loadAuthorizedScanner(eventId)).toBeNull()
+    expect(await localScanState(eventId, 17)).toBeUndefined()
+    expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: device.id })
+    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+    expect(JSON.stringify(await queuedActions(eventId, device.id))).not.toContain('Private attendee')
+    await expect(clearEventAdmissionData(eventId, { requireEmptyQueue: true })).rejects.toThrow('Sync every queued action')
+    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+    expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: device.id })
+    // The old trust pin still refuses a changed key until a deliberate reset.
+    const replacementKey = new TextEncoder().encode('replacement-spki')
+    await expect(saveVerifiedManifest({ ...envelope, public_key_spki: toBase64(replacementKey), key_id: await sha256Hex(replacementKey) })).rejects.toThrow('Scanner signing key changed')
   })
 })

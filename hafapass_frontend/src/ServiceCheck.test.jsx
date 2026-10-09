@@ -11,7 +11,7 @@ vi.mock('./hooks/useBackendAvailability', () => ({
 }))
 
 vi.mock('./components/ClerkProviderWrapper', () => ({
-  default: ({ children }) => <div data-testid="clerk-provider">{children}</div>,
+  default: ({ children, loadingFallback }) => <div data-testid="clerk-provider">{loadingFallback && <div data-testid="auth-loading-fallback">{loadingFallback}</div>}{children}</div>,
 }))
 
 vi.mock('./utils/admissionStore', () => ({ loadAuthorizedScanner: vi.fn() }))
@@ -68,5 +68,24 @@ describe('ServiceCheck', () => {
     render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
 
     expect(screen.getByTestId('clerk-provider')).toHaveTextContent('Public application')
+  })
+
+  it('supplies the verified scanner cache during Clerk loading even when backend health is available', async () => {
+    window.localStorage.setItem('hafapass_scanner_event_id', '37')
+    loadAuthorizedScanner.mockResolvedValue({ device: { id: 9 }, manifest: { payload: { event: { id: 37 } } } })
+    useBackendAvailability.mockReturnValue({ status: 'available', retry })
+    render(<MemoryRouter initialEntries={['/dashboard/scanner']}><ServiceCheck /></MemoryRouter>)
+    expect(await screen.findByTestId('auth-loading-fallback')).toHaveTextContent('Cached door scanner')
+  })
+
+  it('reloads saved authorization when health changes after an online scanner was prepared', async () => {
+    window.localStorage.setItem('hafapass_scanner_event_id', '37')
+    useBackendAvailability.mockReturnValue({ status: 'available', retry })
+    const { rerender } = render(<MemoryRouter initialEntries={['/dashboard/scanner']}><ServiceCheck /></MemoryRouter>)
+    await screen.findByText('Public application')
+    loadAuthorizedScanner.mockResolvedValue({ device: { id: 9 }, manifest: { payload: { event: { id: 37 } } } })
+    useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
+    rerender(<MemoryRouter initialEntries={['/dashboard/scanner']}><ServiceCheck /></MemoryRouter>)
+    expect(await screen.findByText('Cached door scanner')).toBeInTheDocument()
   })
 })

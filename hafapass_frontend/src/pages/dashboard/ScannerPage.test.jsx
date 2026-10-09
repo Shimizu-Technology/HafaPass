@@ -3,7 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
-import { clearAllAdmissionData, clearEventAdmissionData, queuedActions, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
+import { clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, localScanState, queuedActions, queueAdmission, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
 
@@ -110,5 +110,48 @@ describe('scanner recovery and camera ownership', () => {
     await screen.findByText('Admitted — syncing')
     expect(await queuedActions(92002, 92)).toHaveLength(1)
     expect(await queuedActions(92001, 91)).toHaveLength(0)
+  })
+
+  it('retains and reconciles saved scans across a signing-key change before allowing a trust reset', async () => {
+    const eventId = 92001
+    const device = { id: 91, identifier: 'original-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'valid', attendee_name: 'Guest', ticket_type: 'General', credential_hash: await sha256Hex('saved-key-qr') }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    const action = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1, ticket, credentialHash: ticket.credential_hash, source: 'offline' })
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    const changed = await signedManifest(eventId, [ticket], { version: 2 })
+    const keys = await crypto.subtle.generateKey({ name: 'RSA-PSS', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify'])
+    const publicKey = await crypto.subtle.exportKey('spki', keys.publicKey)
+    const signature = await crypto.subtle.sign({ name: 'RSA-PSS', saltLength: 32 }, keys.privateKey, new TextEncoder().encode(changed.digest))
+    const base64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    Object.assign(changed, { key_id: await sha256Hex(publicKey), public_key_spki: base64(publicKey), signature: base64(signature).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '') })
+    apiClient.get.mockImplementation(url => {
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, title: 'Rotated Key Event' }] } })
+      if (url.endsWith('/manifest')) return Promise.resolve({ data: changed })
+      return Promise.resolve({ data: { counts: {}, permissions: {}, recent_actions: [] } })
+    })
+    apiClient.post.mockImplementation(url => Promise.resolve({ data: url.endsWith('/sync') ? {
+      device: { ...device, last_sequence: 1 },
+      results: [{ action_uuid: action.action_uuid, ticket_id: ticket.ticket_id, kind: 'admit', result: 'accepted' }], summary: {},
+    } : device }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<ScannerPage />)
+    const user = userEvent.setup()
+    await screen.findByText(/Scanner signing key changed/)
+    expect(await loadAuthorizedScanner(eventId)).toBeNull()
+    expect(await localScanState(eventId, ticket.ticket_id)).toBeUndefined()
+    expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Reset trusted device' }))
+    expect(await screen.findByText('Sync every queued action before resetting this scanner.')).toBeInTheDocument()
+    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Sync saved scans' }))
+    await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reset trusted device' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Reset trusted device' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
   })
 })

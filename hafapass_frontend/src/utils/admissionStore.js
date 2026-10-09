@@ -168,6 +168,20 @@ export async function loadAuthorizedScanner(eventId) {
   return manifest ? { device, manifest } : null
 }
 
+// A failed verification removes cached admission access and attendee details, while keeping
+// the pinned key and minimal journal so existing scans can sync before an explicit trust reset.
+export async function invalidateManifestAccess(eventId) {
+  const db = await database()
+  const transaction = db.transaction(['devices', 'manifests', 'scan_states'], 'readwrite')
+  const device = await transaction.objectStore('devices').get(Number(eventId))
+  if (device?.owner_user_id === currentScannerOwner()) {
+    await transaction.objectStore('manifests').delete(Number(eventId))
+    const keys = await transaction.objectStore('scan_states').getAllKeys()
+    for (const key of keys.filter(key => key[0] === Number(eventId))) await transaction.objectStore('scan_states').delete(key)
+  }
+  await transaction.done
+}
+
 // Expiry removes access and attendee data; unacknowledged actions are retained for renewal and sync.
 export async function purgeExpiredAdmissionAccess(eventId) {
   const db = await database()
@@ -316,16 +330,22 @@ export async function applySyncResults(eventId, device, results) {
   await transaction.done
 }
 
-export async function clearEventAdmissionData(eventId) {
+export async function clearEventAdmissionData(eventId, { requireEmptyQueue = false } = {}) {
   const db = await database()
   const transaction = db.transaction(['manifests', 'devices', 'trusted_keys', 'queue', 'scan_states', 'journal_devices'], 'readwrite')
-  await transaction.objectStore('manifests').delete(Number(eventId))
-  await transaction.objectStore('devices').delete(Number(eventId))
-  await transaction.objectStore('trusted_keys').delete(Number(eventId))
   const queued = await transaction.objectStore('queue').index('event_device').getAll(
     IDBKeyRange.bound([Number(eventId), 0], [Number(eventId), Number.MAX_SAFE_INTEGER]),
   )
-  for (const action of queued.filter(action => action.owner_user_id === currentScannerOwner())) await transaction.objectStore('queue').delete(action.action_uuid)
+  const ownedActions = queued.filter(action => action.owner_user_id === currentScannerOwner())
+  if (requireEmptyQueue && ownedActions.length) {
+    transaction.abort()
+    await transaction.done.catch(() => {})
+    throw new Error('Sync every queued action before resetting this scanner.')
+  }
+  await transaction.objectStore('manifests').delete(Number(eventId))
+  await transaction.objectStore('devices').delete(Number(eventId))
+  await transaction.objectStore('trusted_keys').delete(Number(eventId))
+  for (const action of ownedActions) await transaction.objectStore('queue').delete(action.action_uuid)
   if (currentScannerOwner()) await transaction.objectStore('journal_devices').delete([currentScannerOwner(), Number(eventId)])
   const states = await transaction.objectStore('scan_states').getAllKeys()
   for (const key of states.filter(key => key[0] === Number(eventId))) {
