@@ -25,9 +25,9 @@ Supply these variables from the deployment's secret/configuration store:
 | `ENABLE_FIRST_USER_ADMIN_BOOTSTRAP` | `false` |
 | `ADMIN_EMAILS` | Approved testers' verified Clerk email addresses for initial administrator access |
 | `HAFAPASS_LAUNCH_SCOPE` | Omit or set `general_admission` |
-| `SECRET_KEY_BASE` | A separate random staging secret |
+| `SECRET_KEY_BASE` | A separate random staging secret longer than 64 characters; retain it across restarts and deploys |
 | `GIT_SHA` | Exact deployed commit |
-| `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` | A separate staging signing key when testing signed offline admission manifests; retain the same key across web/worker restarts and deploys |
+| `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` | A required RSA private staging signing key of at least 2048 bits; retain the same key across web/worker restarts and deploys |
 
 Database naming and explicit URL matching catch common accidental reuse. Operators must also verify that the selected hosts, database and Redis credentials are separate from production. A name is not proof of isolation. A shared Redis database can mix queues and worker registration and invalidate readiness.
 

@@ -2,6 +2,7 @@
 
 require "uri"
 require "base64"
+require "openssl"
 
 # Staging runs the production runtime against separate data, with real test
 # identity and simulated commerce. It never supplies production approvals.
@@ -15,6 +16,8 @@ class StageSafety
         redis: staging_redis?,
         clerk_test_identity: clerk_test_identity?,
         public_urls: public_urls?,
+        application_secret: ENV["SECRET_KEY_BASE"].to_s.strip.length > 64,
+        admission_signing: admission_signing?,
         admin_bootstrap_disabled: !ActiveModel::Type::Boolean.new.cast(ENV["ENABLE_FIRST_USER_ADMIN_BOOTSTRAP"]),
         no_live_stripe_credentials: no_live_stripe_credentials?,
         launch_scope: ENV.fetch("HAFAPASS_LAUNCH_SCOPE", "general_admission") == "general_admission"
@@ -36,6 +39,16 @@ class StageSafety
     end
 
     private
+
+    def admission_signing?
+      pem = ENV["ADMISSION_MANIFEST_PRIVATE_KEY_PEM"]
+      return false if pem.blank?
+
+      key = OpenSSL::PKey::RSA.new(pem)
+      key.private? && key.n.num_bits >= 2048
+    rescue OpenSSL::PKey::PKeyError, ArgumentError
+      false
+    end
 
     def simulated_payments?
       SiteSetting.instance.simulate_mode?

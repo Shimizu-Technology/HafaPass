@@ -15,6 +15,8 @@ RSpec.describe StageSafety do
       "FRONTEND_URL" => "https://staging.hafapass.example",
       "PUBLIC_WEB_URL" => "https://staging.hafapass.example",
       "PUBLIC_API_URL" => "https://api-staging.hafapass.example",
+      "SECRET_KEY_BASE" => SecureRandom.hex(64),
+      "ADMISSION_MANIFEST_PRIVATE_KEY_PEM" => OpenSSL::PKey::RSA.generate(2048).to_pem,
       "ALLOWED_ORIGINS" => "https://staging.hafapass.example",
       "CLERK_AUTHORIZED_PARTIES" => nil,
       "ENABLE_FIRST_USER_ADMIN_BOOTSTRAP" => "false",
@@ -26,6 +28,34 @@ RSpec.describe StageSafety do
       "STRIPE_PUBLISHABLE_KEY" => nil,
       "STRIPE_TEST_PUBLISHABLE_KEY" => nil
     }
+  end
+
+  it "rejects missing or short application secrets without disclosing them" do
+    [nil, "", " " * 65, "a" * 64].each do |value|
+      value.nil? ? ENV.delete("SECRET_KEY_BASE") : ENV["SECRET_KEY_BASE"] = value
+      expect(described_class.call.dig(:checks, :application_secret)).to be(false)
+      expect { described_class.validate! }.to raise_error(
+        described_class::ConfigurationError, "Staging configuration failed: application_secret"
+      )
+    end
+    ENV["SECRET_KEY_BASE"] = SecureRandom.hex(33)
+    expect(described_class.call.dig(:checks, :application_secret)).to be(true)
+  end
+
+  it "requires a persistent RSA private admission key with at least 2048 bits" do
+    valid_key = OpenSSL::PKey::RSA.new(ENV.fetch("ADMISSION_MANIFEST_PRIVATE_KEY_PEM"))
+    invalid_keys = [nil, "not a private key", valid_key.public_key.to_pem,
+      OpenSSL::PKey::RSA.generate(1024).to_pem, OpenSSL::PKey::EC.generate("prime256v1").to_pem]
+    invalid_keys.each do |pem|
+      pem.nil? ? ENV.delete("ADMISSION_MANIFEST_PRIVATE_KEY_PEM") : ENV["ADMISSION_MANIFEST_PRIVATE_KEY_PEM"] = pem
+      expect(described_class.call.dig(:checks, :admission_signing)).to be(false)
+      expect { described_class.validate! }.to raise_error(
+        described_class::ConfigurationError, "Staging configuration failed: admission_signing"
+      )
+      expect(described_class.call.to_json).not_to include("BEGIN", "not a private key")
+    end
+    ENV["ADMISSION_MANIFEST_PRIVATE_KEY_PEM"] = valid_key.to_pem
+    expect(described_class.call.dig(:checks, :admission_signing)).to be(true)
   end
 
   around do |example|
@@ -83,6 +113,19 @@ RSpec.describe StageSafety do
       expect(LaunchCapabilities.scope).to eq("general_admission")
       expect(SystemReadiness.call[:status]).to eq("not_ready")
       expect(described_class.call(runtime: true).dig(:checks, :simulated_payments)).to be(false)
+    end
+
+    it "fails readiness if persistent application or admission secrets disappear after boot" do
+      allow(SystemReadiness).to receive_messages(
+        database_check: { ready: true }, job_queue_check: { ready: true }, worker_check: { ready: true }
+      )
+      %w[SECRET_KEY_BASE ADMISSION_MANIFEST_PRIVATE_KEY_PEM].each do |name|
+        original = ENV.delete(name)
+        result = SystemReadiness.call
+        expect(result[:status]).to eq("not_ready")
+        expect(result.dig(:checks, :configuration, :ready)).to be(false)
+        ENV[name] = original
+      end
     end
 
     it "requires a durable queue and a registered worker" do
