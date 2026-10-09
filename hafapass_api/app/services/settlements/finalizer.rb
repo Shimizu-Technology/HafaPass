@@ -18,12 +18,18 @@ module Settlements
       settlement = nil
       source_digest = nil
       Event.transaction do
+        event.organization.lock!
         event.lock!
         unless event.completed? || event.cancelled?
           raise FinalizationError, "Only completed or cancelled events can be finalized"
         end
         if event.orders.joins(:refunds).merge(Refund.pending).exists? || event.orders.joins(:disputes).merge(Dispute.open).exists?
           raise FinalizationError, "Resolve pending refunds and open disputes before finalizing"
+        end
+
+        if event.orders.joins(:reconciliation_exceptions).merge(ReconciliationException.open).exists? ||
+            ReconciliationException.open.joins(:payment).where(payments: { order_id: event.orders.select(:id) }).exists?
+          raise FinalizationError, "Resolve open reconciliation exceptions before finalizing"
         end
 
         result = Calculator.call(event)

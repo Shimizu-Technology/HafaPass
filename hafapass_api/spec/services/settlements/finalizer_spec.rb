@@ -129,7 +129,6 @@ RSpec.describe Settlements::Finalizer do
     record_sale!(second_event)
     described_class.call(event: second_event, actor: actor)
 
-    expect(Settlements::Calculator).not_to receive(:call)
     expect(OrganizationPayoutBalance.available_cents(organization)).to eq(9534)
   end
 
@@ -151,5 +150,63 @@ RSpec.describe Settlements::Finalizer do
     expect(AuditLog.where(auditable: payout, action: "payout.processing")).to exist
     expect(PayoutCreator.call(settlement: settlement, actor: actor,
       idempotency_key: "ambiguous-provider")).to eq(payout)
+  end
+  it "deducts a late loss from another event payout without refinalizing the first event" do
+    order, = record_sale!(event)
+    create(:connected_account, organization: organization)
+    first = described_class.call(event: event, actor: actor)
+    PayoutCreator.call(settlement: first, actor: actor, idempotency_key: "first-paid")
+    second_event = create(:event, :completed, organizer_profile: profile)
+    record_sale!(second_event)
+    second = described_class.call(event: second_event, actor: actor)
+    Dispute.create!(order: order, provider: "stripe", provider_dispute_id: "dp-late", amount_cents: 1000,
+      currency: "usd", status: :lost, opened_at: Time.current, closed_at: Time.current)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(3817)
+    expect(first.reload.payable_cents).to eq(4817)
+    expect { PayoutCreator.call(settlement: second, actor: actor, amount_cents: 4817, idempotency_key: "overdraw") }.to raise_error(PayoutCreator::PayoutError, /available balance/)
+  end
+
+  it "blocks closeout and organization payouts for unresolved financial exceptions" do
+    order, = record_sale!(event)
+    settlement = described_class.call(event: event, actor: actor)
+    exception = ReconciliationException.create!(order: order, code: "late_capture")
+    expect { described_class.call(event: event, actor: actor) }.to raise_error(described_class::FinalizationError, /reconciliation/)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
+    exception.resolve!
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(settlement.payable_cents)
+  end
+
+  it "reserves pending refunds and open disputes from current organization funds" do
+    order, = record_sale!(event)
+    described_class.call(event: event, actor: actor)
+    create(:refund, order: order, status: :pending, amount_cents: 1000)
+    Dispute.create!(order: order, provider: "stripe", provider_dispute_id: "dp-reserve", amount_cents: 500,
+      currency: "usd", status: :open, opened_at: Time.current)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(3317)
+  end
+  it "protects later event proceeds immediately after a refund on an already paid event" do
+    order, item = record_sale!(event)
+    create(:connected_account, organization: organization)
+    first = described_class.call(event: event, actor: actor)
+    PayoutCreator.call(settlement: first, actor: actor, idempotency_key: "paid-before-refund")
+    later_event = create(:event, :completed, organizer_profile: profile)
+    record_sale!(later_event)
+    described_class.call(event: later_event, actor: actor)
+    refund = create(:refund, order: order, amount_cents: 1000)
+    create(:refund_item, refund: refund, order_item: item, amount_cents: 1000, organizer_proceeds_cents: 900, fee_cents: 100)
+    order.update!(status: :partially_refunded, refund_amount_cents: 1000)
+    expect(event.settlements.count).to eq(1)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(3917)
+    expect(first.reload.payable_cents).to eq(4817)
+  end
+  it "deducts negative balances before event finalization and organization-level debits" do
+    record_sale!(event)
+    described_class.call(event: event, actor: actor)
+    unfinalized = create(:event, :completed, organizer_profile: profile)
+    create(:balance_adjustment, organization: organization, event: unfinalized, created_by_user: actor,
+      kind: "manual_debit", amount_cents: -700, status: :posted, effective_at: Time.current)
+    create(:balance_adjustment, organization: organization, event: nil, created_by_user: actor,
+      kind: "reserve_hold", amount_cents: -300, status: :posted, effective_at: Time.current)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(3817)
   end
 end

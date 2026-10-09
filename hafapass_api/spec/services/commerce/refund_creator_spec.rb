@@ -58,6 +58,7 @@ RSpec.describe Commerce::RefundCreator do
       amount_cents: 1000,
       currency: order.currency,
       status: :pending,
+      provider_refund_id: nil,
       idempotency_key: "original-refund"
     )
 
@@ -145,5 +146,95 @@ RSpec.describe Commerce::RefundCreator do
     end.to raise_error(described_class::RefundError, /unused active/)
 
     expect(StripeService).not_to have_received(:refund_payment)
+  end
+  it "submits every partial refund against the original captured payment" do
+    payment.update!(provider_payment_id: "pi_original")
+    allow(StripeService).to receive(:refund_payment) { OpenStruct.new(id: "re_#{SecureRandom.hex(8)}", status: "succeeded") }
+    2.times { |i| described_class.call(order: order, amount_cents: 1000, idempotency_key: "partial-#{i}") }
+    expect(StripeService).to have_received(:refund_payment).with("pi_original", anything).twice
+    expect(order.refunds.pluck(:payment_id)).to eq([payment.id, payment.id])
+  end
+
+  %w[pending requires_action failed canceled].each do |provider_status|
+    it "does not book #{provider_status} refunds as returned money or revoke tickets" do
+      allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_non_success", status: provider_status))
+      result = described_class.call(order: order, amount_cents: order.total_cents)
+      expected = { "requires_action" => "pending", "canceled" => "cancelled" }.fetch(provider_status, provider_status)
+      expect(result.status).to eq(expected)
+      expect(order.reload).to be_completed
+      expect(order.refunded_cents).to eq(0)
+      expect(result.refund_items).to be_empty
+      expect(order.tickets.reload).to all(be_issued)
+      expect(EmailService).not_to have_received(:send_refund_notification_async)
+    end
+  end
+
+  %w[door_cash boh_clover].each do |provider|
+    it "refuses unsupported #{provider} before reserving a refund" do
+      payment.destroy!
+      create(:payment, :succeeded, order: order, provider: provider, provider_payment_id: "#{provider}_captured")
+      allow(StripeService).to receive(:refund_payment)
+      expect { described_class.call(order: order, amount_cents: 1000) }.to raise_error(described_class::RefundError, /not supported/)
+      expect(order.refunds).to be_empty
+      expect(StripeService).not_to have_received(:refund_payment)
+    end
+  end
+
+  it "fails explicitly when the captured payment is missing" do
+    payment.destroy!
+    expect { described_class.call(order: order, amount_cents: 1000) }.to raise_error(described_class::RefundError, /captured payment/)
+    expect(order.refunds).to be_empty
+  end
+
+  it "keeps an uncertain submission reserved and retries the same operation identity" do
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError, "response lost")
+    expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "uncertain") }.to raise_error(described_class::RefundError, /unknown/)
+    pending = order.refunds.find_by!(idempotency_key: "uncertain")
+    expect(pending).to be_pending
+    expect(order.refundable_cents).to eq(4250)
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_retry", status: "succeeded"))
+    expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "uncertain") }.not_to change(Refund, :count)
+    expect(pending.reload).to be_succeeded
+  end
+
+  it "does not resubmit an acknowledged pending refund or accept a changed replay amount" do
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_pending", status: "pending"))
+    first = described_class.call(order: order, amount_cents: 1000, idempotency_key: "acknowledged")
+    expect(described_class.call(order: order, amount_cents: 1000, idempotency_key: "acknowledged")).to eq(first)
+    expect(StripeService).to have_received(:refund_payment).once
+    expect { described_class.call(order: order, amount_cents: 500, idempotency_key: "acknowledged") }.to raise_error(described_class::RefundError, /different refund/)
+  end
+
+  it "releases failed selective reservations so the ticket can be refunded again" do
+    selected = order.tickets.first
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_failed", status: "failed"))
+    failed = described_class.call(order: order, tickets: [selected], idempotency_key: "failed-selective")
+    expect(failed).to be_failed
+    expect(failed.refund_tickets.active).to be_empty
+    expect(failed.refund_tickets.count).to eq(1)
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_success", status: "succeeded"))
+    expect(described_class.call(order: order, tickets: [selected], idempotency_key: "retry-selective")).to be_succeeded
+  end
+
+  it "refuses to simulate a refund of a real captured payment" do
+    payment.update!(provider_payment_id: "pi_real")
+    expect { described_class.call(order: order, amount_cents: 1000) }.to raise_error(described_class::RefundError, /rejected/)
+    expect(order.refunds.last).to be_failed
+    expect(order.reload).to be_completed
+  end
+  it "reserves mismatched provider amounts for reconciliation without booking success" do
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_wrong_amount", status: "succeeded", amount: 500, currency: "usd"))
+    expect { described_class.call(order: order, amount_cents: 1000) }.to raise_error(described_class::RefundError, /does not match/)
+    expect(order.refunds.last).to be_pending
+    expect(order.reload).to be_completed
+    expect(order.reconciliation_exceptions).to exist(code: "refund_operation_mismatch")
+  end
+  it "retains the webhook payment identity when the order has a newer captured payment" do
+    payment.update!(provider_payment_id: "pi_original_capture")
+    create(:payment, :succeeded, order: order, provider_payment_id: "pi_newer_capture")
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_original_capture", status: "succeeded"))
+    refund = described_class.call(order: order, payment: payment, amount_cents: 1000)
+    expect(refund.payment_id).to eq(payment.id)
+    expect(StripeService).to have_received(:refund_payment).with("pi_original_capture", anything)
   end
 end

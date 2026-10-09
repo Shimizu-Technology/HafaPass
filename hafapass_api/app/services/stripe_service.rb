@@ -43,10 +43,13 @@ class StripeService
       settings = SiteSetting.instance
 
       if settings.simulate_mode?
+        unless payment_intent_id.start_with?("sim_")
+          raise PaymentError, "A real payment cannot be refunded in simulation mode"
+        end
         simulate_refund(payment_intent_id, amount_cents)
       else
         api_key = resolve_api_key!(settings)
-        params = { payment_intent: payment_intent_id }
+        params = { payment_intent: payment_intent_id, metadata: { hafapass_refund_key: idempotency_key } }
         params[:amount] = amount_cents if amount_cents.present?
         params[:reason] = stripe_refund_reason(reason) if reason.present?
         Stripe::Refund.create(params, { api_key: api_key, idempotency_key: idempotency_key })

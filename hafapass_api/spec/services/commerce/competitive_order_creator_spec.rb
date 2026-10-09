@@ -85,6 +85,7 @@ RSpec.describe Commerce::OrderCreator do
 
   it "fully reverses buyer and organizer fee shares, catalog inventory, and promoter commission on refund" do
     order = create_order.order
+    create(:payment, :succeeded, order: order, provider_payment_id: "sim_pi_competitive")
     refund = Commerce::RefundCreator.call(order: order, idempotency_key: "phase8-full-refund")
 
     expect(refund.refund_items.sum(:amount_cents)).to eq(order.total_cents)

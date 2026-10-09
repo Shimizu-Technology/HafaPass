@@ -36,7 +36,7 @@ RSpec.describe StripeService do
     )
 
     expect(Stripe::Refund).to have_received(:create).with(
-      { payment_intent: "pi_test", amount: 500, reason: "requested_by_customer" },
+      { payment_intent: "pi_test", amount: 500, reason: "requested_by_customer", metadata: { hafapass_refund_key: "refund-reason-test" } },
       { api_key: "sk_test_fake", idempotency_key: "refund-reason-test" }
     )
   end

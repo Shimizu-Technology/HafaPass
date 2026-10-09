@@ -54,6 +54,8 @@ class StripeWebhookProcessor
       process_failure!(payment, object)
     when "payment_intent.canceled"
       process_cancellation!(payment)
+    when "refund.created", "refund.updated", "refund.failed", "charge.refund.updated"
+      process_refund_operation!(receipt, payment, object)
     when "charge.refunded"
       process_refund!(receipt, payment, object)
     when "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"
@@ -143,12 +145,58 @@ class StripeWebhookProcessor
     Commerce::OrderLifecycle.fail!(payment.order, payment: payment, reason: "payment_cancelled")
   end
 
+  def process_refund_operation!(receipt, payment, object)
+    refund = Refund.find_by(provider: "stripe", provider_refund_id: value(object, :id))
+    operation_key = nested_value(value(object, :metadata), :hafapass_refund_key)
+    refund ||= Refund.find_by(provider: "stripe", idempotency_key: operation_key) if operation_key.present?
+    if refund.nil?
+      ReconciliationException.create!(order: payment&.order, payment: payment, webhook_event: receipt,
+        code: "refund_operation_not_found")
+      return
+    end
+    unless payment == refund.payment && value(object, :amount).to_i == refund.amount_cents &&
+        value(object, :currency).to_s.downcase == refund.currency
+      ReconciliationException.create!(order: refund.order, payment: refund.payment, webhook_event: receipt,
+        code: "refund_operation_mismatch")
+      return
+    end
+    if refund.succeeded? || refund.failed? || refund.cancelled?
+      incoming = value(object, :status).to_s
+      contradictory = (refund.succeeded? && %w[failed canceled cancelled].include?(incoming)) ||
+        (!refund.succeeded? && incoming == "succeeded")
+      if contradictory
+        ReconciliationException.create!(order: refund.order, payment: refund.payment, webhook_event: receipt,
+          code: "refund_terminal_status_conflict")
+      end
+      return
+    end
+
+    Commerce::RefundCreator.reconcile_refund!(refund: refund, provider_refund: object)
+  end
+
   def process_refund!(receipt, payment, object)
     unless payment
       ReconciliationException.create!(webhook_event: receipt, code: "refunded_payment_not_found")
       return
     end
 
+    provider_refunds = Array(nested_value(value(object, :refunds), :data))
+    provider_refunds.each do |entry|
+      next unless value(entry, :amount).present?
+
+      if Refund.exists?(provider: "stripe", provider_refund_id: value(entry, :id)) ||
+          nested_value(value(entry, :metadata), :hafapass_refund_key).present?
+        process_refund_operation!(receipt, payment, entry)
+      elsif value(entry, :status) == "succeeded"
+        Commerce::RefundCreator.call(order: payment.order, payment: payment, amount_cents: value(entry, :amount),
+          reason: "provider_webhook_reconciliation", idempotency_key: "provider:stripe:refund:#{value(entry, :id)}",
+          provider_refund: entry)
+      else
+        ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt,
+          code: "refund_operation_not_found")
+      end
+    end
+    return if provider_refunds.any? { |entry| value(entry, :status).to_s != "succeeded" }
     provider_total = value(object, :amount_refunded).to_i
     if payment.order.order_items.empty?
       ReconciliationException.create!(
@@ -174,11 +222,18 @@ class StripeWebhookProcessor
     end
     return if provider_total == succeeded_total
 
+    new_provider_id = provider_refund_id(object)
+    unless new_provider_id && provider_refunds.length == 1 && provider_total <= payment.amount_cents
+      ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt,
+        code: "refund_aggregate_requires_reconciliation", actual_amount_cents: provider_total)
+      return
+    end
+
     Commerce::RefundCreator.reconcile_provider_total!(
       order: payment.order,
       payment: payment,
       amount_cents: provider_total,
-      provider_refund_id: provider_refund_id(object) || "webhook_re_#{receipt.provider_event_id}",
+      provider_refund_id: new_provider_id,
       idempotency_key: "webhook:#{receipt.provider_event_id}:refund",
     )
   end
@@ -189,41 +244,48 @@ class StripeWebhookProcessor
       return
     end
 
-    provider_id = value(object, :id)
-    dispute = Dispute.find_or_initialize_by(provider: "stripe", provider_dispute_id: provider_id)
-    return if dispute.persisted? && (dispute.won? || dispute.lost?)
-
-    provider_status = value(object, :status).to_s
-    status = if event.type == "charge.dispute.closed"
-      case provider_status
-      when "won", "warning_closed" then :won
-      when "lost" then :lost
-      else :open
+    Dispute.transaction do
+      payment.order.event.organization.lock!
+      payment.order.lock!
+      provider_id = value(object, :id)
+      dispute = Dispute.find_or_initialize_by(provider: "stripe", provider_dispute_id: provider_id)
+      if dispute.persisted? && (dispute.won? || dispute.lost?)
+        cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
+        next
       end
-    else
-      :open
-    end
-    if dispute.new_record?
+
+      provider_status = value(object, :status).to_s
+      status = if event.type == "charge.dispute.closed"
+        case provider_status
+        when "won", "warning_closed" then :won
+        when "lost" then :lost
+        else :open
+        end
+      else
+        :open
+      end
+      if dispute.new_record?
+        dispute.assign_attributes(
+          order: payment.order,
+          payment: payment,
+          amount_cents: value(object, :amount).to_i,
+          currency: value(object, :currency).to_s.downcase.presence || payment.currency,
+          opened_at: receipt.provider_created_at || Time.current
+        )
+      end
       dispute.assign_attributes(
-        order: payment.order,
-        payment: payment,
-        amount_cents: value(object, :amount).to_i,
-        currency: value(object, :currency).to_s.downcase.presence || payment.currency,
-        opened_at: receipt.provider_created_at || Time.current
+        reason: value(object, :reason),
+        status: status,
+        closed_at: status == :open ? nil : Time.current,
+        provider_payload: { status: provider_status }.compact
       )
+      dispute.save!
+      cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
     end
-    dispute.assign_attributes(
-      reason: value(object, :reason),
-      status: status,
-      closed_at: status == :open ? nil : Time.current,
-      provider_payload: { status: provider_status }.compact
-    )
-    dispute.save!
-    cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
   end
 
   def cancel_disputed_tickets!(order, dispute)
-    order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).find_each do |ticket|
+    order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
       ticket.release_inventory!
       ticket.update!(
         status: :cancelled,

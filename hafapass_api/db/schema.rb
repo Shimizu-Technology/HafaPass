@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_051000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1540,10 +1540,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_220000) do
     t.integer "amount_cents", null: false
     t.datetime "created_at", null: false
     t.bigint "refund_id", null: false
+    t.datetime "released_at"
     t.bigint "ticket_id", null: false
     t.datetime "updated_at", null: false
     t.index ["refund_id"], name: "index_refund_tickets_on_refund_id"
-    t.index ["ticket_id"], name: "index_refund_tickets_on_ticket_id", unique: true
+    t.index ["ticket_id"], name: "index_refund_tickets_on_ticket_id", unique: true, where: "(released_at IS NULL)"
     t.check_constraint "amount_cents >= 0", name: "refund_tickets_amount_nonnegative"
   end
 
