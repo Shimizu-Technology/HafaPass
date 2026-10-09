@@ -30,7 +30,7 @@ class PilotReadiness
   end
 
   def self.application_revision
-    ENV["GIT_SHA"].presence || "development"
+    ApplicationRevision.current
   end
 
   def self.active_approval(event, at: Time.current, state_digest: nil)

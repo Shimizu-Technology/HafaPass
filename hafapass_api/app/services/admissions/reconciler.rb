@@ -119,7 +119,11 @@ module Admissions
       ticket, manifest_entry, rejection = resolve_ticket(input)
       return record_action(input, ticket: ticket, result: :rejected, reason_code: rejection) if rejection
 
+      ticket.order.lock!
       ticket.lock!
+      unless secure_equal?(Digest::SHA256.hexdigest(ticket.scan_credential), input[:credential_hash])
+        return record_action(input, ticket: ticket, result: :rejected, reason_code: "credential_revoked")
+      end
       if ticket.checked_in?
         return record_action(input, ticket: ticket, result: :conflict, reason_code: "already_admitted")
       end
@@ -146,6 +150,7 @@ module Admissions
         return record_action(input, result: :rejected, reason_code: "admission_not_found", kind: :reverse)
       end
       ticket = original.ticket
+      ticket.order.lock!
       ticket.lock!
       if original.reversal_action.present?
         return record_action(input, ticket: ticket, result: :conflict, reason_code: "already_reversed",
