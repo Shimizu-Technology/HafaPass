@@ -31,9 +31,13 @@ module Admissions
 
       device = nil
       ScannerDevice.transaction do
+        event.lock!
         device = event.scanner_devices.lock.find_or_initialize_by(identifier: identifier)
         if device.persisted? && device.user_id != user.id
           raise RegistrationError, "This browser identifier is already registered to another staff member"
+        end
+        if device.persisted? && (device.status_revoked? || device.revoked_at.present?)
+          raise RegistrationError, "This scanner device was revoked; ask the event manager for access"
         end
         device.assign_attributes(
           organization: event.organization,
