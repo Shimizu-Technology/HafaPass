@@ -138,6 +138,29 @@ describe('buyer refund outcomes and terminal retries', () => {
     await screen.findByText('Refund confirmed by the payment provider.')
     expect(apiClient.post.mock.calls[1][2].headers['Idempotency-Key']).toBe(key)
   })
+  it.each(['ticket', 'event'])('retains a %s finance-review hold and status-check action after reload with cancelled tickets', async kind => {
+    const withChange = kind === 'event' ? { ...paidOrder, latest_event_change: { id: 4, change_type: 'cancelled', response: 'refund_requested' } } : paidOrder
+    mockOrder(withChange)
+    apiClient.post.mockRejectedValueOnce({ response: { data: { refund_status: 'failed', finance_review_required: true, reconciliation_required: true } } })
+    const first = mount()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: kind === 'event' ? 'Retry refund' : 'Refund', exact: true }))
+    const notice = 'The payment records need a finance review. Contact support before requesting another refund. Check this saved request for updates.'
+    await screen.findByText(notice)
+    const key = apiClient.post.mock.calls[0][2].headers['Idempotency-Key']
+    expect(screen.queryByRole('button', { name: 'Try refund again' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Refund pending — waiting for the payment provider/)).not.toBeInTheDocument()
+    first.unmount()
+    mockOrder({ ...withChange, status: 'refunded', tickets: [{ ...paidOrder.tickets[0], status: 'cancelled', refundable_cents: 0 }] })
+    mount()
+    await screen.findByText(notice)
+    expect(screen.getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', expect.stringContaining('mailto:contact@hafapass.com'))
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'failed', finance_review_required: true, reconciliation_required: true } })
+    await user.click(screen.getByRole('button', { name: 'Check refund status' }))
+    await screen.findByText(notice)
+    expect(apiClient.post.mock.calls[1][2].headers['Idempotency-Key']).toBe(key)
+    expect(screen.queryByRole('button', { name: 'Try refund again' })).not.toBeInTheDocument()
+  })
 })
 
 describe('truthful ticket email status', () => {

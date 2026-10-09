@@ -5,6 +5,7 @@ import { ArrowLeft, RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 
 import apiClient from '../../api/client'
 
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
+const needsFinanceReview = (data, request) => data?.finance_review_required === true || (request?.financeReview && data?.finance_review_required !== false)
 
 export default function RefundsPage() {
  const { id: eventId } = useParams()
@@ -36,6 +37,7 @@ export default function RefundsPage() {
   if (processing) return
   setProcessing(true)
   setNotice('')
+  let request = pendingRequest
   try {
    const payload = { reason: refundForm.reason || null }
    if (refundForm.type === 'partial' && refundForm.amount) {
@@ -47,14 +49,19 @@ export default function RefundsPage() {
     }
     payload.amount_cents = Math.round(parsed * 100)
    }
-   const request = pendingRequest || { orderId, key: refundRequestKey || newRefundRequestKey(), payload }
+   request ||= { orderId, key: refundRequestKey || newRefundRequestKey(), payload }
    window.sessionStorage.setItem(storageKey, JSON.stringify(request))
    setPendingRequest(request)
    const response = await apiClient.post(`/organizer/events/${eventId}/orders/${orderId}/refund`, request.payload, {
     headers: { 'Idempotency-Key': request.key },
    })
    const status = response.data.status
-   if (status === 'pending') {
+   request = { ...request, financeReview: Boolean(needsFinanceReview(response.data, request)) }
+   window.sessionStorage.setItem(storageKey, JSON.stringify(request))
+   setPendingRequest(request)
+   if (request.financeReview) {
+    // The persistent review banner owns this outcome, including after reload.
+   } else if (status === 'pending') {
     setNotice('Refund pending — waiting for the payment provider. Retry this saved request to check its status; do not create another refund.')
    } else if (['succeeded', 'failed', 'cancelled'].includes(status)) {
     setNotice(status === 'succeeded' ? 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
@@ -67,7 +74,16 @@ export default function RefundsPage() {
    fetchOrders()
   } catch (e) {
    const data = e.response?.data
-   if (data?.reconciliation_required === false) {
+   if (request?.financeReview && data?.finance_review_required === false) {
+    request = { ...request, financeReview: false }
+    window.sessionStorage.setItem(storageKey, JSON.stringify(request))
+    setPendingRequest(request)
+   }
+   if (needsFinanceReview(data, request)) {
+    request = { ...request, financeReview: true }
+    window.sessionStorage.setItem(storageKey, JSON.stringify(request))
+    setPendingRequest(request)
+   } else if (data?.reconciliation_required === false) {
     window.sessionStorage.removeItem(storageKey)
     setPendingRequest(null)
     setRefundingId(null)
@@ -94,9 +110,13 @@ export default function RefundsPage() {
     <p className="text-sm text-neutral-500 mt-1">Process full or partial refunds for completed orders</p>
    </div>
 
-   {notice && <p role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{notice}</p>}
+   {notice && !pendingRequest?.financeReview && <p role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{notice}</p>}
+   {pendingRequest?.financeReview && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+    <p>The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.</p>
+    <a className="inline-flex min-h-11 items-center font-semibold underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${pendingRequest.orderId}`)}`}>Contact support</a>
+   </div>}
    {pendingRequest && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
-   {pendingRequest && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>Retry saved refund</button>}
+   {pendingRequest && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : 'Retry saved refund'}</button>}
    {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{loadError} <button className="min-h-11 font-semibold underline" onClick={fetchOrders}>Retry</button></p>}
    {orders.length === 0 ? (
     <div className="card p-12 text-center">
@@ -161,7 +181,7 @@ export default function RefundsPage() {
           <button onClick={() => handleRefund(order.id)} disabled={processing || (refundForm.type === 'partial' && !refundForm.amount)}
            className="btn-primary text-sm !py-2.5 !bg-red-500 hover:!bg-red-600 gap-1 disabled:opacity-50">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-           {pendingRequest ? 'Retry saved refund' : 'Process Refund'}
+           {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? 'Retry saved refund' : 'Process Refund'}
           </button>
          </div>
         </div>

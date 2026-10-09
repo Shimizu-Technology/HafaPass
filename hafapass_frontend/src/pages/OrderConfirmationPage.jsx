@@ -15,10 +15,12 @@ const refundNotice = attempt => ({
   cancelled: 'Refund cancelled. No refund was confirmed. You can try again.',
   rejected: 'The refund request was rejected. No refund was confirmed. Contact support or retry this request.',
   succeeded: 'Refund confirmed by the payment provider.',
+  finance_review: 'The payment records need a finance review. Contact support before requesting another refund. Check this saved request for updates.',
 }[attempt?.status])
+const refundNeedsStatusCheck = attempt => ['pending', 'unconfirmed', 'finance_review'].includes(attempt?.status)
 const refundButton = (attempt, initial = 'Refund') => ['failed', 'cancelled'].includes(attempt?.status)
   ? 'Try refund again'
-  : ['pending', 'unconfirmed'].includes(attempt?.status) ? 'Check refund status'
+  : refundNeedsStatusCheck(attempt) ? 'Check refund status'
     : attempt?.status === 'rejected' ? 'Retry refund request' : initial
 
 export default function OrderConfirmationPage() {
@@ -100,7 +102,7 @@ export default function OrderConfirmationPage() {
     ticket.status === 'issued' && ticket.refundable_cents >= 0
   ))
   const eventRefundAttempt = change ? getBuyerRefundAttempt(id, `event:${change.id}`) : null
-  const canRespondToChange = change && (!change.response || refundNeedsRetry || ['pending', 'unconfirmed'].includes(eventRefundAttempt?.status)) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
+  const canRespondToChange = change && (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt)) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
   const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
   // Recovery links import credentials after mount. Read the current credential for every action.
   const orderHeaders = () => orderAccessHeaders(id)
@@ -145,7 +147,7 @@ export default function OrderConfirmationPage() {
   async function cancelTicket(ticket) {
     const operation = `ticket:${ticket.id}`
     const isPaidRefund = ticket.refundable_cents > 0 || Boolean(getBuyerRefundAttempt(id, operation))
-    const checkingSavedRefund = isPaidRefund && ['pending', 'unconfirmed'].includes(getBuyerRefundAttempt(id, operation)?.status)
+    const checkingSavedRefund = isPaidRefund && refundNeedsStatusCheck(getBuyerRefundAttempt(id, operation))
     if (!checkingSavedRefund && !window.confirm(isPaidRefund ? `Request a refund for this ${ticket.ticket_type.name} ticket? Cancellation follows a confirmed refund.` : `Cancel this ${ticket.ticket_type.name} ticket? This cannot be undone.`)) return
     setCancellingTicketId(ticket.id)
     setTicketActionError(null)
@@ -275,6 +277,7 @@ export default function OrderConfirmationPage() {
               </div>
             )}
             {eventRefundAttempt && <p role="status" className="mt-3 text-sm text-amber-950">{refundNotice(eventRefundAttempt)}</p>}
+            {eventRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${order.reference}`)}`}>Contact support</a>}
             {decisionState === 'error' && !eventRefundAttempt && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
           </section>
         )}
@@ -328,7 +331,7 @@ export default function OrderConfirmationPage() {
                     {ticket.status === 'issued' && (
                       <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
                     )}
-                    {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) || ['pending', 'unconfirmed'].includes(ticketRefundAttempt?.status)) && (
+                    {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) || refundNeedsStatusCheck(ticketRefundAttempt)) && (
                       <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Checking…' : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : 'Cancel'}</button>
                     )}
                     {ticket.status === 'issued' && capabilities.ticket_transfers && event.transfers_enabled !== false && (
@@ -344,6 +347,7 @@ export default function OrderConfirmationPage() {
                   </div>
                 </div>
                 {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
+                {ticketRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${order.reference}`)}`}>Contact support</a>}
                 {exchangeTicketId === ticket.id && (
                   <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
                     <label className="block text-sm font-medium text-neutral-800">Available equivalent seats

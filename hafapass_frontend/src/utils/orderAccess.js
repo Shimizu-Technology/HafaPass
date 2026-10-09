@@ -58,7 +58,9 @@ export function recordBuyerRefundOutcome(orderId, operation, data = {}) {
   if (!attempt) return null
   const outcome = data || {}
   const reported = outcome.refund_status === 'canceled' ? 'cancelled' : outcome.refund_status
-  const status = outcome.reconciliation_required ? 'pending'
+  const financeReview = outcome.finance_review_required === true || (attempt.status === 'finance_review' && outcome.finance_review_required !== false)
+  const status = financeReview ? 'finance_review'
+    : outcome.reconciliation_required ? 'pending'
     : ['succeeded', 'failed', 'cancelled', 'pending'].includes(reported) ? reported
       : outcome.error && outcome.reconciliation_required === false ? 'rejected' : 'unconfirmed'
   const updated = { ...attempt, status }
