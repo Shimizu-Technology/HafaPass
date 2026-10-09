@@ -94,7 +94,7 @@ export default function OrderConfirmationPage() {
       }, {
         headers: {
           ...orderHeaders(),
-          ...(decision === 'refund_requested' ? { 'Idempotency-Key': crypto.randomUUID() } : {}),
+          ...(decision === 'refund_requested' ? { 'Idempotency-Key': `buyer-event-refund:${id}:${change.id}` } : {}),
         },
       })
       await fetchOrder()
@@ -109,7 +109,7 @@ export default function OrderConfirmationPage() {
     setCancellingTicketId(ticket.id)
     try {
       await apiClient.post(`/orders/${id}/tickets/${ticket.id}/cancel`, {}, {
-        headers: { ...orderHeaders(), 'Idempotency-Key': crypto.randomUUID() },
+        headers: { ...orderHeaders(), 'Idempotency-Key': `buyer-ticket-cancel:${id}:${ticket.id}` },
       })
       await fetchOrder()
     } catch (err) {
