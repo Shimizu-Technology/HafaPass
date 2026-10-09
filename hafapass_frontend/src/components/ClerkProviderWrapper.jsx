@@ -9,8 +9,11 @@ const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 function AuthTokenSync({ children, loadingFallback }) {
   const [boundUser, setBoundUser] = useState(null)
   const [bindingReady, setBindingReady] = useState(false)
+  const [bindingFailed, setBindingFailed] = useState(false)
+  const [bindingAttempt, setBindingAttempt] = useState(0)
   const { getToken } = useAuth()
   const { isLoaded, isSignedIn, user } = useUser()
+  const currentUserId = isSignedIn && user ? user.id : null
 
   useEffect(() => {
     setAuthTokenGetter(() => getToken())
@@ -18,33 +21,39 @@ function AuthTokenSync({ children, loadingFallback }) {
 
   useEffect(() => {
     if (!isLoaded) return
-    Sentry.setUser(isSignedIn && user ? { id: user.id } : null)
+    Sentry.setUser(currentUserId ? { id: currentUserId } : null)
     const key = 'hafapass_scanner_user_id'
-    const previous = window.localStorage.getItem(key)
-    const current = isSignedIn && user ? user.id : null
     let active = true
     setBindingReady(false)
-    if (previous && previous !== current) {
-      void clearAllAdmissionData().then(() => {
+    setBindingFailed(false)
+    const prepareBinding = async () => {
+      try {
+        const previous = window.localStorage.getItem(key)
+        const changed = previous && previous !== currentUserId
+        if (changed) await clearAllAdmissionData()
         if (!active) return
-        if (current) window.localStorage.setItem(key, current)
+        if (changed) window.localStorage.removeItem('hafapass_organization_id')
+        if (currentUserId) window.localStorage.setItem(key, currentUserId)
         else window.localStorage.removeItem(key)
-        window.localStorage.removeItem('hafapass_organization_id')
-        setBoundUser(current)
+        setBoundUser(currentUserId)
         setBindingReady(true)
-      })
-    } else {
-      if (current) window.localStorage.setItem(key, current)
-      if (active) setBoundUser(current)
-      setBindingReady(true)
+      } catch {
+        // Keep the previous owner and cached routes inaccessible until a full purge succeeds.
+        if (active) setBindingFailed(true)
+      }
     }
+    void prepareBinding()
     return () => { active = false }
-  }, [isLoaded, isSignedIn, user])
+  }, [isLoaded, currentUserId, bindingAttempt])
 
   // Only the account-bound, verified door cache can operate before Clerk loads.
   // A definitive sign-out or account switch still purges that cache before routes mount.
+  if (bindingFailed) return <div className="mx-auto max-w-md px-4 py-12" role="alert">
+    <p>We could not clear this device’s saved event access. Your account is still locked for privacy. Please try again.</p>
+    <button className="btn-primary mt-4" onClick={() => setBindingAttempt(attempt => attempt + 1)}>Retry account preparation</button>
+  </div>
   if (!isLoaded && loadingFallback) return loadingFallback
-  if (isLoaded && (!bindingReady || boundUser !== (isSignedIn ? user?.id : null))) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  if (isLoaded && (!bindingReady || boundUser !== currentUserId)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
   return children
 }
 
