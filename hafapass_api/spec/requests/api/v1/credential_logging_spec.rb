@@ -15,12 +15,13 @@ RSpec.describe "Credential API logging", type: :request do
 
     get "/api/v1/tickets/#{display}?campaign=synthetic-sensitive-query", headers: headers
     expect(response).to have_http_status(:not_found)
-    post "/api/v1/check_in/#{scan}?campaign=synthetic-sensitive-query", headers: headers
+    post "/api/v1/check_in/#{scan}?campaign=synthetic-sensitive-query", params: { qr_code: scan }, headers: headers
     expect(response).to have_http_status(:not_found)
 
     expect(TicketCredential).to have_received(:find_display).with(display)
     expect(TicketCredential).to have_received(:find_scan).with(scan)
     expect(events.size).to eq(2)
+    expect(events.last[:params]["qr_code"]).to eq("[FILTERED]")
     expect(events.map { |event| event[:path] }).to eq(["/api/v1/tickets/[FILTERED]", "/api/v1/check_in/[FILTERED]"])
     expect(events.map { |event| event[:method] }).to eq(%w[GET POST])
     expect(events.map { |event| event[:request_id] }).to all(eq("privacy-api-request-123"))

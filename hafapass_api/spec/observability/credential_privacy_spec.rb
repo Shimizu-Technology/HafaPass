@@ -24,7 +24,7 @@ RSpec.describe "Backend credential observability privacy" do
     event.transaction = url
     event.add_exception_interface(StandardError.new("Failed to fetch #{url}"), mechanism: Sentry::Mechanism.new)
     event.breadcrumbs = Sentry::BreadcrumbBuffer.new
-    event.breadcrumbs.record(Sentry::Breadcrumb.new(message: "GET #{url}", data: { url: url, token: credential }))
+    event.breadcrumbs.record(Sentry::Breadcrumb.new(message: "GET #{url}", data: { url: url, token: credential, qr_code: credential }))
     event
   end
 
