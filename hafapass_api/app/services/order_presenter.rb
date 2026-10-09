@@ -32,6 +32,10 @@ class OrderPresenter
       wallet_type: order.wallet_type,
       guest_access_token: guest_access_token,
       payment_status: latest_payment&.status,
+      payment_state: latest_payment&.provider_payload.to_h["status"],
+      payment_resumable: order.pending? && latest_payment&.provider == "stripe" &&
+        latest_payment&.provider_payment_id.present? && latest_payment&.pending? &&
+        order.expires_at&.future? && latest_payment&.provider_payload.to_h["status"] != "processing",
       confirmation_delivery: confirmation_delivery,
       ticket_access_blocked: order.ticket_access_blocked?,
       promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,

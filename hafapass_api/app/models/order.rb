@@ -1,4 +1,6 @@
 class Order < ApplicationRecord
+  attr_readonly :checkout_key_digest, :checkout_request_digest, :checkout_recovery_expires_at
+
   has_one :live_money_proof_authorization, dependent: :restrict_with_error
   belongs_to :user, optional: true
   belongs_to :event
@@ -59,6 +61,7 @@ class Order < ApplicationRecord
       payments.where(status: [:succeeded, :partially_refunded]).to_a
     captured.any? do |payment|
       payment.amount_cents >= total_cents && payment.currency == currency && payment.provider_payment_id.present? &&
+        (payment.provider != "stripe" || payment.provider_environment == "live") &&
         !payment.provider_payment_id.start_with?("sim_") && payment.provider_payload.to_h["simulated"] != true
     end
   end

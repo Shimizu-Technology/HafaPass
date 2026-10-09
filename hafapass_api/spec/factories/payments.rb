@@ -2,6 +2,7 @@ FactoryBot.define do
   factory :payment do
     association :order, factory: [:order, :pending]
     provider { "stripe" }
+    provider_environment { "test" }
     sequence(:provider_payment_id) { |n| "pi_test_#{n}" }
     sequence(:idempotency_key) { |n| "payment-test-#{n}" }
     amount_cents { order.total_cents }

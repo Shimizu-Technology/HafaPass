@@ -2,15 +2,15 @@
 
 class Api::V1::OrdersController < ApplicationController
   skip_before_action :authenticate_user!, only: [
-    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :optional_authenticate_user!, only: [
-    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :set_accessible_order, only: [
-    :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
 
@@ -74,8 +74,21 @@ class Api::V1::OrdersController < ApplicationController
       return render json: { error: "An approved administrator live-money proof authorization is required" },
         status: :forbidden
     end
+    checkout_key = params[:checkout_key].presence
+    if checkout_key && !checkout_key.match?(/\A[0-9a-f]{64}\z/)
+      return render json: { error: "Checkout recovery key is invalid" }, status: :unprocessable_entity
+    end
+    # The random key is a temporary recovery capability. Persist only its hash,
+    # and bind it to the full request plus authenticated buyer identity.
+    checkout_digest = if checkout_key
+      canonical = params.to_unsafe_h.except("controller", "action", "checkout_key")
+      canonical["authenticated_buyer_id"] = @current_user&.id
+      Digest::SHA256.hexdigest(JSON.generate(canonical_checkout_request(canonical)))
+    end
     result = Commerce::OrderCreator.call(
       event: event,
+      checkout_key_digest: checkout_key && Digest::SHA256.hexdigest(checkout_key),
+      checkout_request_digest: checkout_digest,
       line_items: params[:line_items],
       buyer_email: params[:buyer_email],
       buyer_name: params[:buyer_name],
@@ -100,18 +113,20 @@ class Api::V1::OrdersController < ApplicationController
       include_tickets: result.payment_intent.nil?,
       guest_access_token: result.guest_access_token
     ).merge(
-      payment_mode: StripeService.payment_mode
+      payment_mode: result.payment&.provider_environment || StripeService.payment_mode
     )
     if result.payment_intent
       response_payload.merge!(
         client_secret: result.payment_intent.client_secret,
-        stripe_publishable_key: StripeService.publishable_key
+        stripe_publishable_key: StripeService.publishable_key(payment: result.payment),
+        stripe_account: result.payment&.provider_account_id
       )
     end
 
     render json: response_payload, status: :created
-  rescue Commerce::OrderCreator::CheckoutError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+  rescue Commerce::OrderCreator::CheckoutError, Commerce::PaymentRecovery::RecoveryError => e
+    retained = checkout_key.present? && Order.exists?(checkout_key_digest: Digest::SHA256.hexdigest(checkout_key))
+    render json: { error: e.message, checkout_recovery_required: retained }, status: :unprocessable_entity
   rescue LiveMoneyProofAuthorizations::Manager::AuthorizationError => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue LivePilot::InventoryLimitError => e
@@ -124,6 +139,33 @@ class Api::V1::OrdersController < ApplicationController
       include_tickets: @order.completed? || @order.partially_refunded? || @order.refunded? || @order.cancelled?
     )
   end
+
+  def payment_resume
+    buyer_authorized = (@order.user_id.present? && @order.user_id == @current_user&.id) ||
+      GuestOrderAccess.find(guest_access_token)&.id == @order.id
+    return render json: { error: "Order not found" }, status: :not_found unless buyer_authorized
+
+    recovery = Commerce::PaymentRecovery.call(order: @order)
+    payload = OrderPresenter.call(recovery.order).merge(payment_state: recovery.payment_state,
+      payment_mode: @order.payments.order(:id).last&.provider_environment)
+    if recovery.payment_intent
+      payload.merge!(client_secret: recovery.payment_intent.client_secret,
+        stripe_publishable_key: recovery.publishable_key,
+        stripe_account: @order.payments.order(:id).last.provider_account_id)
+    end
+    render json: payload
+  rescue Commerce::PaymentRecovery::RecoveryError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def canonical_checkout_request(value)
+    case value
+    when Hash then value.keys.sort.to_h { |key| [key, canonical_checkout_request(value[key])] }
+    when Array then value.map { |entry| canonical_checkout_request(entry) }
+    else value
+    end
+  end
+  private :canonical_checkout_request
 
   def proof_authorization_for(event)
     return unless event.live_money_proof_candidate?

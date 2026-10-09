@@ -74,6 +74,10 @@ class Rack::Attack
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/resend\z}) && req.post?
   end
 
+  throttle("payment-resume/ip", limit: 20, period: 1.minute) do |req|
+    req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/payment_resume\z}) && req.post?
+  end
+
   # ─── Check-in Throttles ───────────────────────────────────────────────────
 
   # Throttle check-in attempts (60 per minute per IP - for scanning)

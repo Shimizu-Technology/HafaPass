@@ -26,7 +26,10 @@ RSpec.describe StripeService do
       payment_mode: "test"
     )
     allow(SiteSetting).to receive(:instance).and_return(settings)
-    allow(Stripe::Refund).to receive(:create).and_return(OpenStruct.new(id: "re_test"))
+    refunds = double("refunds service")
+    client = instance_double(Stripe::StripeClient, v1: double("v1", refunds: refunds))
+    allow(Stripe::StripeClient).to receive(:new).with("sk_test_fake").and_return(client)
+    allow(refunds).to receive(:create).and_return(OpenStruct.new(id: "re_test"))
 
     described_class.refund_payment(
       "pi_test",
@@ -35,9 +38,9 @@ RSpec.describe StripeService do
       idempotency_key: "refund-reason-test"
     )
 
-    expect(Stripe::Refund).to have_received(:create).with(
+    expect(refunds).to have_received(:create).with(
       { payment_intent: "pi_test", amount: 500, reason: "requested_by_customer", metadata: { hafapass_refund_key: "refund-reason-test" } },
-      { api_key: "sk_test_fake", idempotency_key: "refund-reason-test" }
+      { idempotency_key: "refund-reason-test" }
     )
   end
 
@@ -51,7 +54,7 @@ RSpec.describe StripeService do
       allow(SiteSetting).to receive(:instance).and_return(settings)
       client = instance_double(Stripe::StripeClient, v1: double("v1 services", refunds: refunds_api))
       allow(Stripe::StripeClient).to receive(:new).with("sk_test_lookup").and_return(client)
-      allow(refunds_api).to receive(:list).with({ payment_intent: "pi_lookup", limit: 100 }).and_return(list)
+      allow(refunds_api).to receive(:list).with({ payment_intent: "pi_lookup", limit: 100 }, {}).and_return(list)
     end
 
     it "looks through every page and matches the durable operation metadata rather than the amount" do
@@ -83,5 +86,27 @@ RSpec.describe StripeService do
       expect { described_class.find_refund("pi_lookup", idempotency_key: "duplicate-key") }
         .to raise_error(described_class::PaymentError, /Multiple provider refunds/)
     end
+  end
+  it "routes an old test payment by its snapshot after the global mode changes" do
+    payment = create(:payment, provider_environment: "test", provider_account_id: "acct_original")
+    SiteSetting.instance.update!(payment_mode: "simulate")
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("sk_test_original")
+    refunds = double("refunds API")
+    client = instance_double(Stripe::StripeClient, v1: double("v1", refunds: refunds))
+    allow(Stripe::StripeClient).to receive(:new).with("sk_test_original").and_return(client)
+    expect(refunds).to receive(:create).with(anything, hash_including(stripe_account: "acct_original"))
+    described_class.refund_payment(payment.provider_payment_id, payment: payment, idempotency_key: "snapshot")
+  end
+
+  it "does not claim a real intent was cancelled when global mode is simulate" do
+    expect { described_class.cancel_payment_intent("pi_real", idempotency_key: "cancel-real") }
+      .to raise_error(described_class::PaymentError, /real payment cannot be cancelled/)
+  end
+
+  it "requires finance review for legacy external payments without an environment snapshot" do
+    payment = create(:payment, provider_environment: nil)
+    expect { described_class.refund_payment(payment.provider_payment_id, payment: payment, idempotency_key: "legacy") }
+      .to raise_error(described_class::PaymentError, /context is missing/)
   end
 end

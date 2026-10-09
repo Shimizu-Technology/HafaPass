@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import OrderConfirmationPage from './OrderConfirmationPage'
 import apiClient from '../api/client'
 
@@ -224,5 +224,29 @@ describe('truthful ticket email status', () => {
     expect(await screen.findByText('Your email request was saved. Check the delivery status above.')).toBeInTheDocument()
     expect(apiClient.post).toHaveBeenCalledWith('/orders/924/resend', {}, { headers: { 'X-Guest-Order-Token': 'guest-token' } })
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('pending payment status and private redirect data', () => {
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
+  const pending = {
+    id: 950, reference: 'HP-950', status: 'pending', payment_resumable: true,
+    expires_at: new Date(Date.now() + 300000).toISOString(), total_cents: 1080,
+    buyer_email: 'guest@example.invalid', order_items: [], tickets: [],
+    event: { id: 1, slug: 'pending-event', title: 'Pending event', timezone: 'Pacific/Guam', status: 'published' },
+  }
+  function LocationProbe() { const location = useLocation(); return <p data-testid='query'>{location.search || 'clean-query'}</p> }
+  it('shows awaiting payment, preserves the saved checkout and links back to the original order', async () => {
+    window.sessionStorage.setItem('hafapass:active-checkout:pending-event', '950')
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : pending }))
+    render(<MemoryRouter initialEntries={['/orders/950/confirmation?payment_intent_client_secret=private&payment_intent=pi_950&redirect_status=succeeded']}>
+      <LocationProbe /><Routes><Route path='/orders/:id/confirmation' element={<OrderConfirmationPage />} /></Routes>
+    </MemoryRouter>)
+    expect(await screen.findByRole('heading', { name: 'Your payment is not complete' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Resume payment' })).toHaveAttribute('href', '/checkout/pending-event?resume=950')
+    expect(window.sessionStorage.getItem('hafapass:active-checkout:pending-event')).toBe('950')
+    expect(screen.getByTestId('query')).toHaveTextContent('clean-query')
+    expect(screen.queryByText('This page refreshes automatically. Do not submit another payment.')).not.toBeInTheDocument()
   })
 })

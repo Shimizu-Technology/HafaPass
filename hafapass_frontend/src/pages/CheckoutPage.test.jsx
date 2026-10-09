@@ -50,4 +50,40 @@ describe('checkout navigation', () => {
     expect(screen.queryByText('Unexpected event redirect')).not.toBeInTheDocument()
     expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 37, buyer_name: 'Guest Buyer', buyer_email: 'guest@example.invalid', terms_accepted: true, terms_version: 'buyer-v1', line_items: [{ ticket_type_id: 7, quantity: 1 }] })
   })
+  it('restores an unpaid checkout after reload using its original intent and guest access', async () => {
+    window.sessionStorage.setItem('hafapass:active-checkout:paid-event', '923')
+    window.sessionStorage.setItem('hafapass:order-access:923', 'saved-buyer-token')
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
+    apiClient.post.mockResolvedValue({ data: {
+      id: 923, status: 'pending', client_secret: 'original-secret', stripe_publishable_key: 'pk_test',
+      total_cents: 1080, expires_at: new Date(Date.now() + 300000).toISOString(),
+      event: { slug: 'paid-event', title: 'Paid event', timezone: 'Pacific/Guam' },
+      order_items: [{ id: 1, name: 'Admission', quantity: 1, unit_price_cents: 1000, subtotal_cents: 1000 }],
+    } })
+    render(<MemoryRouter initialEntries={['/checkout/paid-event']}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+      <Route path='/events/:slug' element={<p>Incorrect redirect</p>} />
+    </Routes></MemoryRouter>)
+    expect(await screen.findByText('Payment form')).toBeInTheDocument()
+    expect(screen.queryByText('Incorrect redirect')).not.toBeInTheDocument()
+    expect(apiClient.post).toHaveBeenCalledWith('/orders/923/payment_resume', {}, { headers: { 'X-Guest-Order-Token': 'saved-buyer-token' } })
+    expect(apiClient.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers a lost order response with the persisted request before resuming', async () => {
+    const payload = { event_id: 1, buyer_email: 'buyer@example.invalid', checkout_key: 'a'.repeat(64) }
+    window.sessionStorage.setItem('hafapass:checkout-attempt:paid-event', JSON.stringify({ payload, expiresAt: Date.now() + 300000 }))
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
+    apiClient.post.mockImplementation(url => Promise.resolve({ data: url === '/orders'
+      ? { id: 924, guest_access_token: 'recovered-access' }
+      : { id: 924, status: 'completed' } }))
+    render(<MemoryRouter initialEntries={['/checkout/paid-event']}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+      <Route path='/orders/:id/confirmation' element={<h1>Recovered confirmation</h1>} />
+      <Route path='/events/:slug' element={<p>Incorrect redirect</p>} />
+    </Routes></MemoryRouter>)
+    expect(await screen.findByText('Recovered confirmation')).toBeInTheDocument()
+    expect(apiClient.post).toHaveBeenNthCalledWith(1, '/orders', payload)
+    expect(apiClient.post).toHaveBeenNthCalledWith(2, '/orders/924/payment_resume', {}, { headers: { 'X-Guest-Order-Token': 'recovered-access' } })
+  })
 })

@@ -46,10 +46,13 @@ class StripeWebhookProcessor
     object = event.data.object
     payment = find_payment(object)
     create_payment_event!(receipt, payment, object)
+    return unless valid_payment_context?(receipt, payment)
 
     case event.type
     when "payment_intent.succeeded"
       process_success!(receipt, payment, object)
+    when "payment_intent.processing"
+      record_pending_provider_state!(payment, "processing")
     when "payment_intent.payment_failed"
       process_failure!(payment, object)
     when "payment_intent.canceled"
@@ -66,6 +69,24 @@ class StripeWebhookProcessor
     end
 
     receipt.update!(status: :processed, processed_at: Time.current)
+  end
+
+  def valid_payment_context?(receipt, payment)
+    return true unless payment
+
+    incoming_mode = payload["livemode"]
+    incoming_account = payload["account"].presence
+    context_known = %w[test live].include?(payment.provider_environment)
+    mode_matches = context_known && incoming_mode == (payment.provider_environment == "live")
+    # Old local fixtures predate context snapshots. Production always requires
+    # explicit mode evidence; no test event may grant production admission.
+    mode_matches = true if !Rails.env.production? && !payload.key?("livemode")
+    return true if mode_matches && incoming_account == payment.provider_account_id
+
+    ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt,
+      code: "payment_context_mismatch")
+    receipt.update!(status: :processed, processed_at: Time.current)
+    false
   end
 
   def find_payment(object)
@@ -130,6 +151,10 @@ class StripeWebhookProcessor
     return unless payment
 
     error = value(object, :last_payment_error)
+    if value(object, :status) == "requires_payment_method"
+      record_pending_provider_state!(payment, "requires_payment_method", error: error)
+      return
+    end
     Commerce::OrderLifecycle.fail!(
       payment.order,
       payment: payment,
@@ -137,6 +162,22 @@ class StripeWebhookProcessor
       failure_message: nested_value(error, :message),
       reason: "payment_failed"
     )
+  end
+
+  def record_pending_provider_state!(payment, state, error: nil)
+    return unless payment
+
+    payment.order.with_lock do
+      payment.lock!
+      if payment.order.pending? && payment.pending?
+        previous_time = payment.provider_payload.to_h["state_created_at"]
+        created_at = event.respond_to?(:created) ? event.created : nil
+        return if previous_time && created_at && created_at.to_i < previous_time.to_i
+
+        payment.update!(failure_code: nested_value(error, :code), failure_message: nested_value(error, :message),
+          provider_payload: payment.provider_payload.to_h.merge("status" => state, "state_created_at" => created_at))
+      end
+    end
   end
 
   def process_cancellation!(payment)

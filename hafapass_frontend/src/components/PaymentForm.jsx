@@ -31,7 +31,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
         return_url: returnUrl,
       },
       redirect: 'if_required',
-    })
+    }).catch(() => ({ error: { type: 'connection_error' } }))
 
     if (error) {
       if (error.type === 'card_error' || error.type === 'validation_error') {

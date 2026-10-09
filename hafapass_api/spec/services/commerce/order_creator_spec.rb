@@ -175,7 +175,7 @@ RSpec.describe Commerce::OrderCreator do
     order = event.orders.last
     expect(StripeService).to have_received(:cancel_payment_intent).with(
       intent.id,
-      idempotency_key: "cancel:payment-setup:#{order.payments.first.id}"
+      idempotency_key: "cancel:payment-setup:#{order.payments.first.id}", payment: order.payments.first
     )
     expect(order.reload).to be_cancelled
     expect(order.inventory_holds).to all(be_released)

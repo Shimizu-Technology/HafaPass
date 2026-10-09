@@ -282,7 +282,8 @@ module Commerce
 
           StripeService.cancel_payment_intent(
             payment.provider_payment_id,
-            idempotency_key: "cancel:payment:#{payment.id}"
+            idempotency_key: "cancel:payment:#{payment.id}",
+            payment: payment
           )
         rescue Stripe::StripeError, StripeService::PaymentError => e
           ReconciliationException.create!(

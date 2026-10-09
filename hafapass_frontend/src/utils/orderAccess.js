@@ -67,3 +67,28 @@ export function recordBuyerRefundOutcome(orderId, operation, data = {}) {
   window.sessionStorage.setItem(buyerRefundStorageKey(orderId, operation), JSON.stringify(updated))
   return updated
 }
+
+const checkoutAttemptKey = slug => `hafapass:checkout-attempt:${slug}`
+export function getCheckoutAttempt(slug) {
+  try {
+    const attempt = JSON.parse(window.sessionStorage.getItem(checkoutAttemptKey(slug)) || 'null')
+    if (!attempt || attempt.expiresAt <= Date.now()) {
+      window.sessionStorage.removeItem(checkoutAttemptKey(slug))
+      return null
+    }
+    return attempt
+  } catch { return null }
+}
+export function prepareCheckoutAttempt(slug, payload) {
+  const previous = getCheckoutAttempt(slug)
+  if (previous) return previous
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  const key = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  const attempt = { payload: { ...payload, checkout_key: key }, expiresAt: Date.now() + 30 * 60 * 1000 }
+  // Fail before posting if persistence is unavailable: a lost response must be recoverable.
+  window.sessionStorage.setItem(checkoutAttemptKey(slug), JSON.stringify(attempt))
+  return attempt
+}
+export function clearCheckoutAttempt(slug) {
+  window.sessionStorage.removeItem(checkoutAttemptKey(slug))
+}

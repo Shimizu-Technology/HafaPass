@@ -46,9 +46,10 @@ export default function OrderConfirmationPage() {
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const token = params.get('guest_token')
-    if (!token) return
-    saveOrderAccess(id, token)
-    params.delete('guest_token')
+    if (token) saveOrderAccess(id, token)
+    const privateParams = ['guest_token', 'payment_intent_client_secret', 'payment_intent', 'redirect_status']
+    if (!privateParams.some(key => params.has(key))) return
+    privateParams.forEach(key => params.delete(key))
     navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '' }, { replace: true })
   }, [id, location.pathname, location.search, navigate])
 
@@ -57,7 +58,7 @@ export default function OrderConfirmationPage() {
       const response = await apiClient.get(`/orders/${id}`, { headers: orderAccessHeaders(id) })
       setOrder(response.data)
       setError(null)
-      if (response.data.event?.slug) clearActiveCheckout(response.data.event.slug)
+      if (response.data.event?.slug && finalStatuses.has(response.data.status)) clearActiveCheckout(response.data.event.slug)
     } catch (err) {
       setError(err.response?.status === 404
         ? 'We could not securely open this order. Use the recovery page with your order reference and email.'
@@ -79,6 +80,7 @@ export default function OrderConfirmationPage() {
 
   const formatPrice = (cents = 0) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
   const event = order?.event
+  const awaitingPayment = order?.status === 'pending' && order?.payment_resumable === true
   const isProcessing = order && !finalStatuses.has(order.status)
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
   const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
@@ -248,10 +250,13 @@ export default function OrderConfirmationPage() {
             {isProcessing ? <Clock3 className="h-8 w-8 text-amber-700" /> : <CheckCircle className="h-8 w-8 text-emerald-700" />}
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-neutral-950">
-            {isProcessing ? 'Payment is processing' : order.status === 'refunded' ? 'Your order was refunded' : order.status === 'partially_refunded' ? 'Your order was partially refunded' : order.status === 'cancelled' || order.status === 'expired' ? 'Order closed' : 'Your order is confirmed'}
+            {awaitingPayment ? 'Your payment is not complete' : isProcessing ? 'Payment is processing' : order.status === 'refunded' ? 'Your order was refunded' : order.status === 'partially_refunded' ? 'Your order was partially refunded' : order.status === 'cancelled' || order.status === 'expired' ? 'Order closed' : 'Your order is confirmed'}
           </h1>
           <p className="mt-2 text-neutral-500">Order {order.reference} · {order.buyer_email}</p>
-          {isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
+          {awaitingPayment ? <div className="mt-3">
+            <p className="mb-3 text-sm text-amber-700">Your tickets are held until {new Date(order.expires_at).toLocaleTimeString()}. Resume the original checkout to pay.</p>
+            <Link to={`/checkout/${event.slug}?resume=${order.id}`} className="btn-primary">Resume payment</Link>
+          </div> : isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
         </div>
 
         <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">

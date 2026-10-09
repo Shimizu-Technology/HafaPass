@@ -8,7 +8,7 @@ import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { clearActiveCheckout, getActiveCheckout, orderAccessHeaders, saveActiveCheckout, saveOrderAccess } from '../utils/orderAccess'
+import { clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout, saveOrderAccess } from '../utils/orderAccess'
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function CheckoutPage() {
@@ -52,15 +52,54 @@ export default function CheckoutPage() {
   // Stripe
   const [clientSecret, setClientSecret] = useState(null)
   const [stripePublishableKey, setStripePublishableKey] = useState(null)
+  const [stripeAccount, setStripeAccount] = useState(null)
+  const [recovering, setRecovering] = useState(false)
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
   const [step, setStep] = useState('info')
   const [secondsRemaining, setSecondsRemaining] = useState(null)
 
   useEffect(() => {
-    const activeOrderId = getActiveCheckout(slug)
-    if (activeOrderId) navigate(`/orders/${activeOrderId}/confirmation`, { replace: true })
-  }, [navigate, slug])
+    if (!location.pathname.startsWith('/checkout/')) return undefined
+    const resumeId = new URLSearchParams(location.search).get('resume')
+    const activeOrderId = /^\d+$/.test(resumeId || '') ? resumeId : getActiveCheckout(slug)
+    const attempt = getCheckoutAttempt(slug)
+    if (!activeOrderId && !attempt) return undefined
+    let cancelled = false
+    setRecovering(true)
+    const recover = async () => {
+      let id = activeOrderId
+      if (!id) {
+        const response = await apiClient.post('/orders', attempt.payload)
+        id = response.data.id
+        saveOrderAccess(id, response.data.guest_access_token)
+        saveActiveCheckout(slug, id)
+        clearCheckoutAttempt(slug)
+      }
+      const response = await apiClient.post(`/orders/${id}/payment_resume`, {}, { headers: orderAccessHeaders(id) })
+      if (cancelled) return
+      const order = response.data
+      if (!order.client_secret) {
+        navigate(`/orders/${id}/confirmation`, { replace: true })
+        return
+      }
+      setEvent(order.event)
+      setOrderData(order)
+      setOrderId(id)
+      setClientSecret(order.client_secret)
+      setStripePublishableKey(order.stripe_publishable_key)
+      setStripeAccount(order.stripe_account || null)
+      setStep('payment')
+      setLoading(false)
+    }
+    recover().catch(err => {
+      if (!cancelled) {
+        setError(err.response?.data?.error || 'We could not restore your checkout. Retry this page before starting another order.')
+        setLoading(false)
+      }
+    }).finally(() => { if (!cancelled) setRecovering(false) })
+    return () => { cancelled = true }
+  }, [navigate, slug, location.pathname, location.search])
 
   useEffect(() => {
     apiClient.get('/config')
@@ -75,7 +114,7 @@ export default function CheckoutPage() {
     if (!location.pathname.startsWith('/checkout/')) return
     if (!lineItems || lineItems.length === 0) {
       const activeOrderId = getActiveCheckout(slug)
-      navigate(activeOrderId ? `/orders/${activeOrderId}/confirmation` : `/events/${slug}`, { replace: true })
+      if (!activeOrderId && !getCheckoutAttempt(slug) && !new URLSearchParams(location.search).has('resume')) navigate(`/events/${slug}`, { replace: true })
       return
     }
     if (!event) {
@@ -84,7 +123,7 @@ export default function CheckoutPage() {
         .then(res => { setEvent(res.data); setLoading(false) })
         .catch(() => { setError('Unable to load event details.'); setLoading(false) })
     }
-  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname])
+  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname, location.search])
 
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
@@ -198,14 +237,17 @@ export default function CheckoutPage() {
         terms_version: config.buyer_terms_version,
         live_money_proof: liveMoneyProof,
       }
-      const response = await apiClient.post('/orders', payload)
+      const attempt = prepareCheckoutAttempt(slug, payload)
+      const response = await apiClient.post('/orders', attempt.payload)
       const order = response.data
       saveOrderAccess(order.id, order.guest_access_token)
       saveActiveCheckout(slug, order.id)
+      clearCheckoutAttempt(slug)
 
       if (order.client_secret && order.stripe_publishable_key) {
         setClientSecret(order.client_secret)
         setStripePublishableKey(order.stripe_publishable_key)
+        setStripeAccount(order.stripe_account || null)
         setOrderId(order.id)
         setOrderData(order)
         setStep('payment')
@@ -213,7 +255,8 @@ export default function CheckoutPage() {
         navigate(`/orders/${order.id}/confirmation`, { state: { order, event }, replace: true })
       }
     } catch (err) {
-      setSubmitError(err.response?.data?.error || 'Something went wrong.')
+      if (err.response?.data?.checkout_recovery_required === false) clearCheckoutAttempt(slug)
+      setSubmitError(err.response?.data?.error || 'Something went wrong. Retry to recover the same checkout.')
     } finally {
       setSubmitting(false)
     }
@@ -232,7 +275,7 @@ export default function CheckoutPage() {
     </div>
   )
 
-  if (loading) return (
+  if (loading || recovering) return (
     <div className="flex justify-center py-20">
       <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
     </div>
@@ -242,12 +285,13 @@ export default function CheckoutPage() {
     <div className="max-w-2xl mx-auto px-4 py-16">
       <div className="card p-8 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        <Link to={`/events/${slug}`} className="btn-primary">Back to Event</Link>
+        <button type="button" onClick={() => window.location.reload()} className="btn-primary mb-3">Retry saved checkout</button>
+        <Link to={`/events/${slug}`} className="block font-semibold underline">Back to Event</Link>
       </div>
     </div>
   )
 
-  if (!event || !lineItems) return null
+  if (!event || (!lineItems && !orderData)) return null
 
   if (!config) return (
     <div className="flex justify-center py-20">
@@ -258,7 +302,9 @@ export default function CheckoutPage() {
   const feePercent = parseFloat(config.service_fee_percent) || 3.0
   const feeFlatCents = config ? config.service_fee_flat_cents : 50
 
-  const orderLines = lineItems.map(item => {
+  const orderLines = orderData ? (orderData.order_items || []).map(item => ({
+    ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents,
+  })) : lineItems.map(item => {
     const tt = event.ticket_types.find(t => t.id === item.ticket_type_id)
     if (!tt) return null
     const price = tt.current_price_cents ?? tt.price_cents
@@ -285,7 +331,7 @@ export default function CheckoutPage() {
     ? null
     : `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, '0')}`
 
-  const paymentMode = config?.payment_mode || 'simulate'
+  const paymentMode = orderData?.payment_mode || config?.payment_mode || 'simulate'
   const isSimulate = paymentMode === 'simulate'
 
   return (
@@ -563,7 +609,7 @@ export default function CheckoutPage() {
             )}
             <PaymentModeBanner mode={paymentMode} />
             <div className="relative z-[60]">
-              <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret}>
+              <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret} stripeAccount={stripeAccount}>
                 {!checkoutExpired && (
                   <PaymentForm
                     totalCents={displayedTotal}

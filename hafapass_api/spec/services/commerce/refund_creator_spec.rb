@@ -98,7 +98,8 @@ RSpec.describe Commerce::RefundCreator do
       "pi_real_refund",
       amount_cents: 1000,
       reason: nil,
-      idempotency_key: "provider-refund-key"
+      idempotency_key: "provider-refund-key",
+      payment: payment
     )
   end
 
@@ -196,7 +197,7 @@ RSpec.describe Commerce::RefundCreator do
     allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_retry", status: "succeeded"))
     expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "uncertain") }.not_to change(Refund, :count)
     expect(pending.reload).to be_succeeded
-    expect(StripeService).to have_received(:find_refund).with(payment.provider_payment_id, idempotency_key: "uncertain")
+    expect(StripeService).to have_received(:find_refund).with(payment.provider_payment_id, idempotency_key: "uncertain", payment: payment)
   end
 
   it "recovers an old uncertain operation by metadata without creating another provider refund" do

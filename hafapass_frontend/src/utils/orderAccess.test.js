@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getBuyerRefundAttempt, prepareBuyerRefundAttempt, recordBuyerRefundOutcome } from './orderAccess'
+import { prepareCheckoutAttempt, getCheckoutAttempt, clearCheckoutAttempt, getBuyerRefundAttempt, prepareBuyerRefundAttempt, recordBuyerRefundOutcome } from './orderAccess'
 
 describe('buyer refund request persistence', () => {
   beforeEach(() => window.sessionStorage.clear())
@@ -44,5 +44,13 @@ describe('buyer refund request persistence', () => {
     recordBuyerRefundOutcome(12, 'ticket:34', { refund_status: status, finance_review_required: false, reconciliation_required: false })
     expect(getBuyerRefundAttempt(12, 'ticket:34').status).toBe(status)
     expect(prepareBuyerRefundAttempt(12, 'ticket:34').key === initial.key).toBe(status === 'succeeded')
+  })
+  it('persists a secret checkout capability before posting and reuses it for an uncertain response', () => {
+    const first = prepareCheckoutAttempt('event', { buyer_email: 'buyer@example.invalid' })
+    expect(first.payload.checkout_key).toMatch(/^[0-9a-f]{64}$/)
+    expect(prepareCheckoutAttempt('event', { buyer_email: 'changed@example.invalid' })).toEqual(first)
+    expect(getCheckoutAttempt('event')).toEqual(first)
+    clearCheckoutAttempt('event')
+    expect(getCheckoutAttempt('event')).toBeNull()
   })
 })

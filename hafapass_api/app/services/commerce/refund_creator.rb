@@ -206,7 +206,8 @@ module Commerce
         payment.provider_payment_id,
         amount_cents: refund.amount_cents,
         reason: refund.reason,
-        idempotency_key: refund.idempotency_key
+        idempotency_key: refund.idempotency_key,
+        payment: payment
       )
     rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError
       raise
@@ -217,7 +218,7 @@ module Commerce
     end
 
     def recover_provider_refund(refund)
-      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key)
+      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key, payment: refund.payment)
       return response if response
       return if refund.created_at > PROVIDER_REPLAY_WINDOW.ago
 

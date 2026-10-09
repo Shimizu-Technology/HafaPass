@@ -17,7 +17,7 @@ module Commerce
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
       attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
-      cash_sale_key: nil, cash_sale_request_digest: nil)
+      cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -42,6 +42,8 @@ module Commerce
       @waitlist_offer_token = waitlist_offer_token
       @seat_hold_token = seat_hold_token
       @live_money_proof_authorization = live_money_proof_authorization
+      @checkout_key_digest = checkout_key_digest
+      @checkout_request_digest = checkout_request_digest
       @cash_sale_key = cash_sale_key
       @cash_sale_request_digest = cash_sale_request_digest
     end
@@ -53,6 +55,15 @@ module Commerce
 
       Order.transaction do
         event.lock!
+        if @checkout_key_digest && (previous = Order.find_by(checkout_key_digest: @checkout_key_digest))
+          unless previous.event_id == event.id && previous.checkout_request_digest == @checkout_request_digest &&
+              previous.checkout_recovery_expires_at&.future?
+            raise CheckoutError, "Checkout recovery does not match this request or has expired"
+          end
+          order = previous
+          payment = previous.payments.order(:id).last
+          next
+        end
         validate_launch_scope!
         release_gate = event.production_release_gate_status
         if release_gate == :pilot_readiness
@@ -105,6 +116,9 @@ module Commerce
           buyer_phone: buyer_phone,
           source: source,
           payment_method: payment_method,
+          checkout_key_digest: @checkout_key_digest,
+          checkout_request_digest: @checkout_request_digest,
+          checkout_recovery_expires_at: @checkout_key_digest ? 30.minutes.from_now : nil,
           cash_sale_key: @cash_sale_key,
           cash_sale_request_digest: @cash_sale_request_digest,
           buyer_terms_version: buyer_terms_version,
@@ -135,6 +149,7 @@ module Commerce
           provider = payment_provider.presence || "stripe"
           payment = order.payments.create!(
             provider: provider,
+            provider_environment: provider == "stripe" ? SiteSetting.instance.payment_mode : nil,
             idempotency_key: "#{provider}:payment:order:#{order.id}",
             amount_cents: order.total_cents,
             currency: order.currency,
@@ -159,6 +174,7 @@ module Commerce
         elsif order.total_cents.positive? && !Rails.env.production? && SiteSetting.instance.simulate_mode?
           payment = order.payments.create!(
             provider: "stripe",
+            provider_environment: "simulate",
             provider_payment_id: "sim_pi_#{SecureRandom.hex(12)}",
             provider_payload: { simulated: true },
             idempotency_key: "simulation:payment:order:#{order.id}",
@@ -173,7 +189,11 @@ module Commerce
         end
       end
 
-      intent = create_provider_payment!(order, payment)
+      intent = if payment&.provider == "stripe" && payment.provider_payment_id.present? && order.pending?
+        PaymentRecovery.call(order: order).payment_intent
+      else
+        create_provider_payment!(order, payment)
+      end
       order.reload
       guest_access_token = GuestOrderAccess.issue!(order) if order.user_id.nil?
       Result.new(order: order, payment: payment&.reload, payment_intent: intent, guest_access_token: guest_access_token)
@@ -697,7 +717,7 @@ module Commerce
     def create_provider_payment!(order, payment)
       return unless payment&.provider == "stripe" && payment.pending?
 
-      intent = StripeService.create_payment_intent(order, idempotency_key: payment.idempotency_key)
+      intent = StripeService.create_payment_intent(order, idempotency_key: payment.idempotency_key, payment: payment)
       Payment.transaction do
         payment.lock!
         payment.update!(provider_payment_id: intent.id, provider_payload: { client_secret_present: intent.client_secret.present? })
@@ -718,7 +738,7 @@ module Commerce
     def cancel_unattached_provider_payment!(order, payment, intent, attachment_error)
       return unless intent&.id
 
-      StripeService.cancel_payment_intent(intent.id, idempotency_key: "cancel:payment-setup:#{payment.id}")
+      StripeService.cancel_payment_intent(intent.id, idempotency_key: "cancel:payment-setup:#{payment.id}", payment: payment)
     rescue Stripe::StripeError, StripeService::PaymentError => e
       ReconciliationException.create!(
         order: order,

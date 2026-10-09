@@ -14,7 +14,9 @@ class Payment < ApplicationRecord
   validates :amount_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :currency, length: { is: 3 }
 
-  attr_readonly :order_id, :provider, :idempotency_key, :amount_cents, :currency
+  validates :provider_environment, inclusion: { in: %w[simulate test live] }, allow_nil: true
+
+  attr_readonly :provider_environment, :provider_account_id, :order_id, :provider, :idempotency_key, :amount_cents, :currency
 
   def refunded_cents
     refunds.succeeded.sum(:amount_cents)

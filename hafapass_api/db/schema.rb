@@ -1094,8 +1094,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.string "wallet_type"
     t.string "cash_sale_key"
     t.string "cash_sale_request_digest"
+    t.string "checkout_key_digest"
+    t.string "checkout_request_digest"
+    t.datetime "checkout_recovery_expires_at"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
+    t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
     t.index ["event_id"], name: "index_orders_on_event_id"
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
@@ -1255,6 +1259,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.integer "status", default: 0, null: false
     t.datetime "succeeded_at"
     t.datetime "updated_at", null: false
+    t.string "provider_environment"
+    t.string "provider_account_id"
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
