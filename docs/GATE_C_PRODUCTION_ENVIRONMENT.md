@@ -48,7 +48,7 @@ Payment, wallet, and card-present credentials remain feature-specific gates. Do 
 
 For the exact candidate commit:
 
-1. confirm protected-main CI and the source PR, including Greptile, are green;
+1. confirm protected-main CI and the source PR, including a completed current-head CodeRabbit review, are green;
 2. confirm web, worker, and clock are separate supervised services using the same release;
 3. capture redacted `/api/v1/health` and `/api/v1/readiness` responses;
 4. confirm readiness reports database connected, queue connected, worker active, commerce clock active, and configuration configured;

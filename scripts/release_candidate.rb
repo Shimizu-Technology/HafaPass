@@ -20,7 +20,9 @@ module HafaPass
       "Repository / Secret and debug hygiene",
       "Release / Freeze contract"
     ].freeze
-    PR_CHECKS = (MAIN_CHECKS + ["Greptile Review"]).freeze
+    CODERABBIT_CONTEXT = "CodeRabbit"
+    CODERABBIT_APP_ID = 347564
+    PR_CHECKS = (MAIN_CHECKS + [CODERABBIT_CONTEXT]).freeze
     CANDIDATE_PATTERN = /\A[a-z0-9][a-z0-9._-]{2,63}\z/
 
     class Error < StandardError; end
@@ -91,6 +93,41 @@ module HafaPass
       end
     end
 
+    module CodeRabbitEvidence
+      module_function
+
+      # CodeRabbit can publish success when it skips a review. A green status
+      # alone is therefore insufficient: retain a submitted review on this head.
+      def verify!(statuses:, reviews:, sha:)
+        status = statuses.find { |entry| entry["context"] == CODERABBIT_CONTEXT }
+        unless status && CheckEvidence.success?(status["state"]) &&
+            status["description"].to_s.match?(/\breview completed\b/i) &&
+            !status["description"].match?(/\breview (?:skipped|paused)\b/i)
+          raise Error, "CodeRabbit must have a completed review status on the source pull-request head; skipped reviews do not qualify."
+        end
+
+        review = reviews.select do |entry|
+          entry.dig("user", "login") == "coderabbitai[bot]" && entry.dig("user", "type") == "Bot" &&
+            entry["commit_id"] == sha && entry["submitted_at"]
+        end.max_by { |entry| [entry["submitted_at"], entry.fetch("id")] }
+        unless review && %w[COMMENTED APPROVED].include?(review["state"]) &&
+            !review["body"].to_s.strip.empty? &&
+            !review["body"].match?(/(?:\A|\n)\s*(?:>\s*)?(?:\#+\s*)?Review (?:skipped|paused)\b/i)
+          raise Error, "CodeRabbit must have a submitted, completed review on the source pull-request head."
+        end
+
+        {
+          "provider" => CODERABBIT_CONTEXT,
+          "head_sha" => sha,
+          "status_description" => status.fetch("description"),
+          "review_id" => review.fetch("id"),
+          "review_url" => review.fetch("html_url"),
+          "review_state" => review.fetch("state"),
+          "submitted_at" => review.fetch("submitted_at")
+        }
+      end
+    end
+
     class GitHubEvidence
       def initialize(shell: Shell.new)
         @shell = shell
@@ -111,6 +148,7 @@ module HafaPass
         end
         pr_checks = CheckEvidence.summarize(pr_entries, PR_CHECKS)
         CheckEvidence.assert_passed!(pr_checks, "Source pull request")
+        code_review = code_review_evidence(repository, source_pr_number, pr.fetch("headRefOid"))
 
         unresolved_threads = unresolved_review_threads(repository, source_pr_number)
         raise Error, "Source pull request has #{unresolved_threads} unresolved review thread(s)." if unresolved_threads.positive?
@@ -129,6 +167,7 @@ module HafaPass
             "head_sha" => pr.fetch("headRefOid"),
             "merged_at" => pr.fetch("mergedAt"),
             "checks" => pr_checks,
+            "code_review" => code_review,
             "unresolved_review_threads" => unresolved_threads
           },
           "open_p0_p1_issues" => blockers,
@@ -136,6 +175,7 @@ module HafaPass
             "enabled" => true,
             "strict_status_checks" => protection.dig("required_status_checks", "strict") == true,
             "required_checks" => Array(protection.dig("required_status_checks", "contexts")).sort,
+            "review_check_app_id" => CODERABBIT_APP_ID,
             "pull_request_required" => !protection["required_pull_request_reviews"].nil?,
             "administrators_enforced" => protection.dig("enforce_admins", "enabled") == true,
             "conversation_resolution_required" => protection.dig("required_conversation_resolution", "enabled") == true,
@@ -170,26 +210,52 @@ module HafaPass
           )
         end
 
+        def code_review_evidence(repository, number, sha)
+          statuses = json!(
+            "gh", "api", "--paginate", "--slurp", "repos/#{repository}/commits/#{sha}/statuses?per_page=100"
+          ).flatten
+          reviews = json!(
+            "gh", "api", "--paginate", "--slurp", "repos/#{repository}/pulls/#{number}/reviews?per_page=100"
+          ).flatten
+          CodeRabbitEvidence.verify!(statuses: statuses, reviews: reviews, sha: sha)
+        end
+
         def unresolved_review_threads(repository, number)
           owner, name = repository.split("/", 2)
           query = <<~GRAPHQL
-          query($owner: String!, $name: String!, $number: Int!) {
+          query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
             repository(owner: $owner, name: $name) {
               pullRequest(number: $number) {
-                reviewThreads(first: 100) { nodes { isResolved } }
+                reviewThreads(first: 100, after: $cursor) {
+                  nodes { isResolved }
+                  pageInfo { hasNextPage endCursor }
+                }
               }
             }
           }
         GRAPHQL
-          payload = json!(
-            "gh", "api", "graphql",
-            "-f", "query=#{query}",
-            "-f", "owner=#{owner}",
-            "-f", "name=#{name}",
-            "-F", "number=#{number}"
-          )
-          threads = payload.dig("data", "repository", "pullRequest", "reviewThreads", "nodes")
-          Array(threads).count { |thread| !thread.fetch("isResolved") }
+          unresolved = 0
+          cursor = nil
+          loop do
+            command = [
+              "gh", "api", "graphql", "-f", "query=#{query}", "-f", "owner=#{owner}",
+              "-f", "name=#{name}", "-F", "number=#{number}"
+            ]
+            command += ["-f", "cursor=#{cursor}"] if cursor
+            connection = json!(*command).dig("data", "repository", "pullRequest", "reviewThreads")
+            unless connection && connection["nodes"].is_a?(Array) &&
+                [true, false].include?(connection.dig("pageInfo", "hasNextPage"))
+              raise Error, "GitHub review-thread evidence could not be verified."
+            end
+            unresolved += connection.fetch("nodes").count { |thread| thread["isResolved"] != true }
+            break unless connection.dig("pageInfo", "hasNextPage")
+
+            next_cursor = connection.dig("pageInfo", "endCursor")
+            raise Error, "GitHub review-thread pagination could not be verified." if next_cursor.nil? || next_cursor == cursor
+
+            cursor = next_cursor
+          end
+          unresolved
         end
 
         def open_priority_issues(repository)
@@ -214,6 +280,12 @@ module HafaPass
           contexts = Array(protection.dig("required_status_checks", "contexts"))
           missing = PR_CHECKS - contexts
           raise Error, "Main branch protection is missing required checks: #{missing.join(', ')}" if missing.any?
+          review_check = Array(protection.dig("required_status_checks", "checks")).find do |check|
+            check["context"] == CODERABBIT_CONTEXT
+          end
+          unless review_check && review_check["app_id"] == CODERABBIT_APP_ID
+            raise Error, "Main branch protection must bind CodeRabbit to its GitHub App (#{CODERABBIT_APP_ID})."
+          end
           raise Error, "Main branch protection must require branches to be current." unless protection.dig("required_status_checks", "strict") == true
           raise Error, "Main branch protection must require pull requests." if protection["required_pull_request_reviews"].nil?
           raise Error, "Main branch protection must include administrators." unless protection.dig("enforce_admins", "enabled") == true

@@ -1,7 +1,7 @@
 # HafaPass Phase Delivery Playbook
 
 Status: required implementation and review process
-Last verified: July 20, 2026 (Pacific/Guam)
+Last verified: October 9, 2026 (Pacific/Guam)
 Product requirements: [TICKETING_PLATFORM_BLUEPRINT.md](TICKETING_PLATFORM_BLUEPRINT.md)
 
 ## 1. Purpose
@@ -18,14 +18,15 @@ No phase is complete merely because code was written or automated tests are gree
 6. Exercise relevant public/authenticated flows in a browser.
 7. Fix defects and repeat the gate/runtime checks.
 8. Push a dedicated phase branch and open a PR.
-9. Address Greptile feedback until the PR is a clean 5/5.
+9. Complete the current-head CodeRabbit review and resolve material findings.
 10. Confirm CI and review state, merge to `main`, update local `main`, and only then create the next phase branch.
 
 ## 2. Non-negotiable source-control rules
 
-- Each phase has exactly one primary phase branch from the latest `origin/main`.
+- Each phase has one primary integration branch from the latest `origin/main`; independently writable tasks use separate worktrees and branches.
 - Branches use the `codex/phase-NN-description` convention.
 - Never build the next phase on an unmerged phase branch.
+- For the October 2026 launch repair, the existing 142-file implementation may be split into dependent backend and frontend PRs within this same phase so each review stays at or below CodeRabbit’s 100-file limit. The dependent PR targets the backend branch until it merges, then targets current `main` and repeats required checks and current-head review. This exception does not authorize starting the next phase before this phase merges.
 - Never mix unrelated user worktree changes into a phase commit.
 - Stage explicit files when the worktree is mixed.
 - Migrations are additive and reversible where the data model permits.
@@ -137,24 +138,20 @@ Capture screenshots for material UI changes and attach them to the PR when possi
 
 Payment, email, upload, and payout phases require sandbox/provider evidence in addition to mocked tests. Provider callbacks must be exercised through signed test events or provider CLI tooling. Test records must be clearly identifiable and removable through safe application workflows.
 
-## 5. Greptile 5/5 review loop
+## 5. CodeRabbit review cycle
 
-Every phase PR follows this loop:
+Follow the shared Shimizu PR workflow and the repository's actual required checks. CodeRabbit is the active reviewer; historical Greptile evidence remains historical and is not a current approval requirement.
 
-1. Push the branch and open the PR as draft while validation is being completed.
-2. Request or trigger Greptile review according to repository integration behavior.
-3. Read the full PR review, inline threads, score, and CI state.
-4. Classify every comment as actionable, clarification, duplicate, outdated, or incorrect.
-5. Implement all valid actionable feedback and add regression tests.
-6. For a technically incorrect or conflicting comment, respond with concrete code/test evidence; do not make a harmful change solely to increase the score.
-7. Push fixes and re-request review.
-8. Repeat until Greptile reports a clean 5/5 and no unresolved actionable thread remains.
-9. Re-run/confirm the full gate on the reviewed commit.
-10. Mark the PR ready and merge only when required GitHub checks are green.
+1. Push the branch and open a draft PR while validation is being completed.
+2. Let the configured CodeRabbit integration review the PR. Avoid duplicate requests while a review is running. Use `@coderabbitai review` for new changes; request a full review only when a complete pass is needed.
+3. Inspect the current head SHA, completed review, required checks, inline threads, and general comments. A successful status saying “Review skipped” does not count as a review.
+4. Classify findings as material/actionable, clarification, duplicate, outdated, incorrect, or nonblocking preference. Trace material concerns to the code and tests.
+5. Fix valid material issues, add meaningful regression coverage, and rerun the affected checks and full gate. Respond to false positives with evidence rather than changing correct code to satisfy a bot.
+6. Push fixes and verify review coverage of the changed code on the new head. CodeRabbit's incremental review is acceptable; a stale review of an earlier head is not.
+7. Aim for about two substantive fix/review rounds. Continue for new correctness, security, data-integrity, acceptance, or deployment blockers. Stop repetitive cosmetic feedback, record the remaining nonblocking items, and make a readiness decision.
+8. Mark ready and merge only when the full local gate, relevant runtime checks, required GitHub checks, current-head CodeRabbit review, and conversation-resolution contract pass. Do not bypass protection or merge unresolved material findings.
 
-A 5/5 score does not override failing tests, an unresolved security defect, or a contradiction with the blueprint.
-
-If Greptile is unavailable, delayed, uninstalled, or cannot produce a score, do not misrepresent the phase as Greptile-approved. Continue all local/CI verification and record the external-review blocker until the integration becomes available.
+An unavailable, skipped, rate-limited, or incomplete review is an external blocker. Continue local verification and retain the tested PR, but do not describe it as reviewed or approved. Green CI and review completion do not replace a working user flow or independent assessment of material findings.
 
 ## 6. Phase plan
 
@@ -181,7 +178,7 @@ Verification:
 
 Exit:
 
-- Documentation PR has Greptile 5/5, green checks, and is merged.
+- Documentation PR has a completed current-head CodeRabbit review, green required checks, resolved conversations, and is merged.
 
 ### Phase 1 — Engineering safety and production visibility
 
@@ -518,8 +515,8 @@ Acceptance:
 - [ ] Documentation and runbooks reflect behavior.
 - [ ] PR targets current `main` and contains only phase changes.
 - [ ] GitHub CI is green.
-- [ ] Greptile reports 5/5.
-- [ ] No unresolved actionable review thread remains.
+- [ ] CodeRabbit completed a review on the current PR head; a skipped success status does not qualify.
+- [ ] No unresolved material finding remains, and required review conversations are resolved; nonblocking residuals are documented.
 - [ ] Migration, rollback, security, privacy, and operations impacts are understood.
 - [ ] PR is merged.
 - [ ] Local `main` is updated from `origin/main` before the next branch.
