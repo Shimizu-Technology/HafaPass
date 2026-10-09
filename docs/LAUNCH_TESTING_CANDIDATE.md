@@ -28,6 +28,8 @@ Migration `20261009051000` retains historical refund-ticket reservations and enf
 
 Also run migration `20261009090000` for durable image-upload receipts. Configure production `CLERK_AUTHORIZED_PARTIES` with the exact trusted frontend origins before rollout; production authentication requires it independently of CORS settings.
 
+Migration `20261009110000` adds durable cash-sale identity and request digests. Run it before deploying the cash retry API. A saved box-office request recovers its original order and tickets; a changed request using that reference is rejected. Preserve these receipts during rollback and recovery, and roll application code forward when needed.
+
 Review required status checks on the exact PR head before merging. Verify both the API and frontend after deployment. A frontend deploy preview connected to an older backend is not a staging rehearsal environment.
 
 ## External evidence still required
