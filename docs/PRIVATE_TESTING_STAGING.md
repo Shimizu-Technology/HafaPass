@@ -1,6 +1,6 @@
 # Private testing runtime
 
-`RAILS_ENV=staging` runs production loading and logging, a separate Sidekiq worker and singleton commerce clock, HTTPS enforcement, and Clerk authentication. It supports free registrations and simulated payments against test data. It defaults to general admission. `/api/v1/config` reports `environment: "staging"`, which the existing interface displays as a test environment.
+`RAILS_ENV=staging` runs production loading and logging, a separate Sidekiq worker and singleton commerce clock, HTTPS enforcement, and Clerk authentication. By default it supports free registrations and simulated payments against test data. The optional controlled provider rehearsal below permits Stripe test payments and real email to an explicit tester list. It defaults to general admission. `/api/v1/config` reports `environment: "staging"`, which the existing interface displays as a test environment.
 
 This change defines the runtime contract. It does not provision a staging host, publish a frontend, create a Clerk instance, send real email, or establish payment-provider approval.
 
@@ -33,7 +33,7 @@ Supply these variables from the deployment's secret/configuration store:
 
 Database naming and explicit URL matching catch common accidental reuse. Operators must also verify that the selected hosts, database and Redis credentials are separate from production. A name is not proof of isolation. A shared Redis database can mix queues and worker registration and invalidate readiness.
 
-Do not supply Stripe live credentials. Boot rejects live keys in both the live slots and generic/test aliases. Staging disables every production provider capability even if stale keys and approval records exist: Resend, Stripe live, Clover, Apple Wallet and Google Wallet. Stripe API calls in test mode are also blocked in this first release. Keep `SiteSetting.payment_mode` at `simulate`; readiness fails if an administrator changes it to `test` or `live`. Payout submission is disabled, including simulated marking of payouts as paid.
+Do not supply Stripe live credentials. Boot rejects live keys in both the live slots and generic/test aliases. Staging disables production provider capabilities even if stale keys and approval records exist: production Resend delivery, Stripe live, Clover, Apple Wallet and Google Wallet. With provider rehearsal off, Stripe test API calls are blocked and `SiteSetting.payment_mode` must stay at `simulate`. With a valid Stripe rehearsal configuration, that setting must be `test` instead. Readiness checks the selected mode. Payout submission is disabled in both arrangements, including simulated marking of payouts as paid.
 
 S3 is optional for this release. Without its credentials, authenticated upload signing returns an unavailable response; the API can still boot. If image uploads are needed, use a separate staging bucket and scoped credentials. Do not invent credentials to satisfy readiness.
 
@@ -83,10 +83,27 @@ Use the repository's development lifecycle helper to claim each local server or 
 
 ## Acceptance and remaining proof
 
-Check `/api/v1/readiness`: staging requires its safe configuration, connected database, connected Redis, simulation mode, Sidekiq adapter, a registered worker and an active clock lease. It intentionally does not convert unavailable production approvals into success. Production capability readiness remains visible and disabled. Liveness alone does not confirm a usable release.
+Check `/api/v1/readiness`: staging requires its safe configuration, connected database, connected Redis, the selected simulation/test payment mode, Sidekiq adapter, a registered worker and an active clock lease. It intentionally does not convert unavailable production approvals into success. Production capability readiness remains visible and disabled. Liveness alone does not confirm a usable release.
 
 Complete the organizer → free/simulated checkout → confirmation → ticket download → admission journey with actual Clerk test accounts. Repeat it on desktop and mobile, and verify that users cannot read another organizer's records. Check missing storage, duplicate/canceled tickets, reload and outage recovery. Actual physical phones and venue connectivity remain separate proof.
 
-Email is simulated and its delivery history says so. Staging does not send recovery or confirmation email through Resend. The normal order confirmation and ticket download can be exercised, but an actual inbox/recovery-link delivery test remains pending a separate, explicitly controlled test delivery arrangement. A simulated message is not email-delivery evidence.
+Ordinary staging simulates email and its delivery history says so. An actual inbox/recovery-link test requires the controlled Resend rehearsal below. A simulated message is not email-delivery evidence.
+
+## Controlled provider rehearsal
+
+Keep the dedicated staging data, queue, Clerk test instance, signing keys and HTTPS origins described above. Use separate staging services; the production defaults in `render.yaml` do not configure this runtime.
+
+Set `HAFAPASS_PROVIDER_REHEARSAL=true` and `PROVIDER_REHEARSAL_SERVICES` to `stripe`, `resend`, or `stripe,resend`. Supply every requirement for each selected provider; a partially configured selection fails boot validation. Production rejects the rehearsal flag.
+
+| Selected provider | Required private/configuration values |
+| --- | --- |
+| Stripe | `STRIPE_TEST_SECRET_KEY` (`sk_test_` or `rk_test_`), matching `STRIPE_TEST_PUBLISHABLE_KEY` (`pk_test_`), exact `STRIPE_TEST_PLATFORM_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, and `PROVIDER_CONFIGURATION_REVISION` |
+| Resend | Domain-scoped sending `RESEND_API_KEY`, verified `MAILER_FROM_EMAIL`, `RESEND_WEBHOOK_SECRET`, `PROVIDER_CONFIGURATION_REVISION`, and `PROVIDER_REHEARSAL_EMAIL_RECIPIENTS` containing one to ten authorized tester email addresses |
+
+Set the staging database's `SiteSetting.payment_mode` to `test` when Stripe is selected, or `simulate` otherwise. This database setting is separate from the environment variables: boot validation can pass while runtime readiness correctly fails on the wrong payment mode.
+
+Stripe calls bind the original test platform account and accept only card payments; signed callbacks must describe test-mode objects. This exercises real Stripe test transport without real-money sales. Resend sends actual messages with a test subject marker. All frozen `to`, `cc` and `bcc` recipients must match the tester list; changing the list cannot redirect an existing message. Subscribe the staging provider endpoints to the required signed events and verify delivery through the durable worker, callback history and recipient inbox.
+
+Record the exact deployed commit on web, worker, clock and frontend. Test decline/retry/reload, lost responses, duplicate callbacks, confirmation/recovery links, delivery failures and provider outcome reconciliation. This rehearsal grants no production capability approval, live payment permission or organizer payout eligibility.
 
 AWS deployment, verified Resend delivery, production provider approval, authorized live charge/refund/settlement/bank receipt, backup restore, operational alerts, production load, and physical venue/device tests remain pending. Passing staging readiness permits the bounded simulation runtime; it does not declare paid public launch ready.
