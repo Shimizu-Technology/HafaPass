@@ -43,17 +43,101 @@ describe('guest order recovery actions', () => {
     const first = mount()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Retry refund' }))
-    await screen.findByText('We could not save that choice. Please try again.')
+    await screen.findByText('The refund outcome is not confirmed. Check this saved request before starting another refund.')
     const original = apiClient.post.mock.calls[0]
     first.unmount()
     apiClient.post.mockResolvedValueOnce({ data: {} })
     mount()
-    await user.click(await screen.findByRole('button', { name: 'Retry refund' }))
+    await user.click(await screen.findByRole('button', { name: 'Check refund status' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
     expect(apiClient.post.mock.calls[1]).toEqual(original)
     expect(original[2].headers).toMatchObject({ 'X-Guest-Order-Token': 'guest-token', 'Idempotency-Key': 'buyer-event-refund:923:4' })
   })
 
+})
+
+describe('buyer refund outcomes and terminal retries', () => {
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); vi.spyOn(window, 'confirm').mockReturnValue(true) })
+  const paidOrder = {
+    id: 925, reference: 'HP-925', status: 'completed', buyer_email: 'guest@example.invalid', total_cents: 500, order_items: [],
+    tickets: [{ id: 1, status: 'issued', refundable_cents: 500, display_credential: 'display', ticket_type: { id: 7, name: 'Admission' } }],
+    event: { id: 37, slug: 'refund-event', title: 'Refund Event', status: 'cancelled', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
+  }
+  const mockOrder = order => apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+  const mount = () => render(<MemoryRouter initialEntries={['/orders/925/confirmation?guest_token=guest-token']}><Routes><Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+
+  it.each(['failed', 'cancelled'])('allows a new ticket refund attempt only after the provider confirms %s, and retains the next pending identity after reload', async status => {
+    mockOrder(paidOrder)
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: status, reconciliation_required: false } })
+    const first = mount()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
+    await screen.findByText(`Refund ${status}. No refund was confirmed. You can try again.`)
+    const originalKey = apiClient.post.mock.calls[0][2].headers['Idempotency-Key']
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'pending', reconciliation_required: true } })
+    await user.click(screen.getByRole('button', { name: 'Try refund again' }))
+    await screen.findByText(/Refund pending — waiting for the payment provider/)
+    const nextKey = apiClient.post.mock.calls[1][2].headers['Idempotency-Key']
+    expect(nextKey).not.toBe(originalKey)
+    first.unmount()
+    mount()
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'pending', reconciliation_required: true } })
+    await user.click(await screen.findByRole('button', { name: 'Check refund status' }))
+    expect(apiClient.post.mock.calls[2][2].headers).toMatchObject({ 'Idempotency-Key': nextKey, 'X-Guest-Order-Token': 'guest-token' })
+  })
+
+  it('keeps a lost ticket refund response on the same operation after reload and exposes definitive failure before offering a new attempt', async () => {
+    mockOrder(paidOrder)
+    apiClient.post.mockRejectedValueOnce(new Error('response lost'))
+    const first = mount()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
+    await screen.findByText('The refund outcome is not confirmed. Check this saved request before starting another refund.')
+    const key = apiClient.post.mock.calls[0][2].headers['Idempotency-Key']
+    first.unmount()
+    mount()
+    apiClient.post.mockRejectedValueOnce({ response: { data: { error: 'Provider rejected refund', refund_status: 'failed', reconciliation_required: false } } })
+    await user.click(await screen.findByRole('button', { name: 'Check refund status' }))
+    await screen.findByText('Refund failed. No refund was confirmed. You can try again.')
+    expect(apiClient.post.mock.calls[1][2].headers['Idempotency-Key']).toBe(key)
+    expect(screen.getByRole('button', { name: 'Try refund again' })).toBeEnabled()
+  })
+
+  it('shows pending event refunds and rekeys only a confirmed terminal event refund failure', async () => {
+    mockOrder({ ...paidOrder, latest_event_change: { id: 4, change_type: 'cancelled', response: 'refund_requested' } })
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'pending', reconciliation_required: true } })
+    mount()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Retry refund' }))
+    await screen.findByText(/Refund pending — waiting for the payment provider/)
+    const key = apiClient.post.mock.calls[0][2].headers['Idempotency-Key']
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'failed', reconciliation_required: false } })
+    await user.click(screen.getByRole('button', { name: 'Check refund status' }))
+    await screen.findByText('Refund failed. No refund was confirmed. You can try again.')
+    expect(apiClient.post.mock.calls[1][2].headers['Idempotency-Key']).toBe(key)
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'succeeded', reconciliation_required: false } })
+    await user.click(screen.getByRole('button', { name: 'Try refund again' }))
+    await screen.findByText('Refund confirmed by the payment provider.')
+    expect(apiClient.post.mock.calls[2][2].headers['Idempotency-Key']).not.toBe(key)
+  })
+
+  it.each(['ticket', 'event'])('can retrieve the saved %s refund result after ticket cancellation completes while the page is closed', async kind => {
+    const withChange = kind === 'event' ? { ...paidOrder, latest_event_change: { id: 4, change_type: 'cancelled', response: 'refund_requested' } } : paidOrder
+    mockOrder(withChange)
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'pending', reconciliation_required: true } })
+    const first = mount()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: kind === 'event' ? 'Retry refund' : 'Refund', exact: true }))
+    await screen.findByText(/Refund pending — waiting for the payment provider/)
+    const key = apiClient.post.mock.calls[0][2].headers['Idempotency-Key']
+    first.unmount()
+    mockOrder({ ...withChange, status: 'refunded', tickets: [{ ...paidOrder.tickets[0], status: 'cancelled', refundable_cents: 0 }] })
+    apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'succeeded', reconciliation_required: false } })
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Check refund status' }))
+    await screen.findByText('Refund confirmed by the payment provider.')
+    expect(apiClient.post.mock.calls[1][2].headers['Idempotency-Key']).toBe(key)
+  })
 })
 
 describe('truthful ticket email status', () => {

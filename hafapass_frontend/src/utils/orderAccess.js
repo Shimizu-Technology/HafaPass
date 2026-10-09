@@ -29,3 +29,39 @@ export function clearActiveCheckout(slug) {
   if (!slug) return
   window.sessionStorage.removeItem(activeCheckoutKey(slug))
 }
+
+const buyerRefundStorageKey = (orderId, operation) => `hafapass:buyer-refund:${orderId}:${operation}`
+const terminalFailedRefunds = new Set(['failed', 'cancelled'])
+
+export function getBuyerRefundAttempt(orderId, operation) {
+  try {
+    const attempt = JSON.parse(window.sessionStorage.getItem(buyerRefundStorageKey(orderId, operation)) || 'null')
+    return typeof attempt?.key === 'string' ? attempt : null
+  } catch { return null }
+}
+
+export function prepareBuyerRefundAttempt(orderId, operation) {
+  const previous = getBuyerRefundAttempt(orderId, operation)
+  const [kind, resourceId] = operation.split(':')
+  const originalKey = `${kind === 'ticket' ? 'buyer-ticket-cancel' : 'buyer-event-refund'}:${orderId}:${resourceId}`
+  // Keep the original deterministic key compatible with requests made before persistence.
+  // Only an explicit next click after a definitive failure starts a new provider operation.
+  const attempt = previous && !terminalFailedRefunds.has(previous.status)
+    ? previous
+    : { key: previous ? `${originalKey}:${crypto.randomUUID()}` : originalKey, status: 'unconfirmed' }
+  window.sessionStorage.setItem(buyerRefundStorageKey(orderId, operation), JSON.stringify(attempt))
+  return attempt
+}
+
+export function recordBuyerRefundOutcome(orderId, operation, data = {}) {
+  const attempt = getBuyerRefundAttempt(orderId, operation)
+  if (!attempt) return null
+  const outcome = data || {}
+  const reported = outcome.refund_status === 'canceled' ? 'cancelled' : outcome.refund_status
+  const status = outcome.reconciliation_required ? 'pending'
+    : ['succeeded', 'failed', 'cancelled', 'pending'].includes(reported) ? reported
+      : outcome.error && outcome.reconciliation_required === false ? 'rejected' : 'unconfirmed'
+  const updated = { ...attempt, status }
+  window.sessionStorage.setItem(buyerRefundStorageKey(orderId, operation), JSON.stringify(updated))
+  return updated
+}

@@ -5,9 +5,21 @@ import apiClient from '../api/client'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { clearActiveCheckout, getOrderAccess, orderAccessHeaders, saveOrderAccess } from '../utils/orderAccess'
+import { clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 
 const finalStatuses = new Set(['completed', 'partially_refunded', 'refunded', 'cancelled', 'expired'])
+const refundNotice = attempt => ({
+  pending: 'Refund pending — waiting for the payment provider. Check this saved request; a refund has not been confirmed.',
+  unconfirmed: 'The refund outcome is not confirmed. Check this saved request before starting another refund.',
+  failed: 'Refund failed. No refund was confirmed. You can try again.',
+  cancelled: 'Refund cancelled. No refund was confirmed. You can try again.',
+  rejected: 'The refund request was rejected. No refund was confirmed. Contact support or retry this request.',
+  succeeded: 'Refund confirmed by the payment provider.',
+}[attempt?.status])
+const refundButton = (attempt, initial = 'Refund') => ['failed', 'cancelled'].includes(attempt?.status)
+  ? 'Try refund again'
+  : ['pending', 'unconfirmed'].includes(attempt?.status) ? 'Check refund status'
+    : attempt?.status === 'rejected' ? 'Retry refund request' : initial
 
 export default function OrderConfirmationPage() {
   const { id } = useParams()
@@ -27,6 +39,7 @@ export default function OrderConfirmationPage() {
   const [exchangeSeatId, setExchangeSeatId] = useState('')
   const [exchangeAttested, setExchangeAttested] = useState(false)
   const [ticketActionError, setTicketActionError] = useState(null)
+  const [, refreshRefundAttempts] = useState(0)
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -86,7 +99,8 @@ export default function OrderConfirmationPage() {
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
     ticket.status === 'issued' && ticket.refundable_cents >= 0
   ))
-  const canRespondToChange = change && (!change.response || refundNeedsRetry) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
+  const eventRefundAttempt = change ? getBuyerRefundAttempt(id, `event:${change.id}`) : null
+  const canRespondToChange = change && (!change.response || refundNeedsRetry || ['pending', 'unconfirmed'].includes(eventRefundAttempt?.status)) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
   const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
   // Recovery links import credentials after mount. Read the current credential for every action.
   const orderHeaders = () => orderAccessHeaders(id)
@@ -104,34 +118,49 @@ export default function OrderConfirmationPage() {
 
   async function respondToChange(decision) {
     setDecisionState(decision)
+    const operation = `event:${change.id}`
+    const isPaidRefund = decision === 'refund_requested' && (getBuyerRefundAttempt(id, operation) || order.tickets?.some(ticket => ticket.status === 'issued' && ticket.refundable_cents > 0))
     try {
-      await apiClient.post(`/orders/${id}/event_change_response`, {
+      const attempt = isPaidRefund ? prepareBuyerRefundAttempt(id, operation) : null
+      const response = await apiClient.post(`/orders/${id}/event_change_response`, {
         event_change_id: change.id,
         decision,
       }, {
         headers: {
           ...orderHeaders(),
-          ...(decision === 'refund_requested' ? { 'Idempotency-Key': `buyer-event-refund:${id}:${change.id}` } : {}),
+          ...(decision === 'refund_requested' ? { 'Idempotency-Key': attempt?.key || `buyer-event-refund:${id}:${change.id}` } : {}),
         },
       })
+      if (attempt) recordBuyerRefundOutcome(id, operation, response.data)
       await fetchOrder()
       setDecisionState('done')
-    } catch {
+    } catch (err) {
+      if (isPaidRefund) recordBuyerRefundOutcome(id, operation, err.response?.data)
       setDecisionState('error')
+    } finally {
+      refreshRefundAttempts(value => value + 1)
     }
   }
 
   async function cancelTicket(ticket) {
-    if (!window.confirm(`Cancel this ${ticket.ticket_type.name} ticket? This cannot be undone.`)) return
+    const operation = `ticket:${ticket.id}`
+    const isPaidRefund = ticket.refundable_cents > 0 || Boolean(getBuyerRefundAttempt(id, operation))
+    const checkingSavedRefund = isPaidRefund && ['pending', 'unconfirmed'].includes(getBuyerRefundAttempt(id, operation)?.status)
+    if (!checkingSavedRefund && !window.confirm(isPaidRefund ? `Request a refund for this ${ticket.ticket_type.name} ticket? Cancellation follows a confirmed refund.` : `Cancel this ${ticket.ticket_type.name} ticket? This cannot be undone.`)) return
     setCancellingTicketId(ticket.id)
+    setTicketActionError(null)
     try {
-      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/cancel`, {}, {
-        headers: { ...orderHeaders(), 'Idempotency-Key': `buyer-ticket-cancel:${id}:${ticket.id}` },
+      const attempt = isPaidRefund ? prepareBuyerRefundAttempt(id, operation) : null
+      const response = await apiClient.post(`/orders/${id}/tickets/${ticket.id}/cancel`, {}, {
+        headers: { ...orderHeaders(), 'Idempotency-Key': attempt?.key || `buyer-ticket-cancel:${id}:${ticket.id}` },
       })
+      if (attempt) recordBuyerRefundOutcome(id, operation, response.data)
       await fetchOrder()
     } catch (err) {
+      if (isPaidRefund) recordBuyerRefundOutcome(id, operation, err.response?.data)
       setTicketActionError(err.response?.data?.error || 'Unable to cancel this ticket. Please refresh before retrying.')
     } finally {
+      refreshRefundAttempts(value => value + 1)
       setCancellingTicketId(null)
     }
   }
@@ -242,10 +271,11 @@ export default function OrderConfirmationPage() {
                 {!change.response && (
                   <button className="btn-secondary" disabled={decisionBusy} onClick={() => respondToChange('accepted')}>Keep my tickets</button>
                 )}
-                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy} onClick={() => respondToChange('refund_requested')}>{refundNeedsRetry ? 'Retry refund' : 'Request refund'}</button>
+                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy || eventRefundAttempt?.status === 'succeeded'} onClick={() => respondToChange('refund_requested')}>{refundButton(eventRefundAttempt, refundNeedsRetry ? 'Retry refund' : 'Request refund')}</button>
               </div>
             )}
-            {decisionState === 'error' && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
+            {eventRefundAttempt && <p role="status" className="mt-3 text-sm text-amber-950">{refundNotice(eventRefundAttempt)}</p>}
+            {decisionState === 'error' && !eventRefundAttempt && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
           </section>
         )}
 
@@ -281,6 +311,7 @@ export default function OrderConfirmationPage() {
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             <div className="divide-y divide-neutral-100">
               {order.tickets.map(ticket => {
+                const ticketRefundAttempt = getBuyerRefundAttempt(id, `ticket:${ticket.id}`)
                 const exchangeOptions = exchangeMap?.sections.flatMap(section => section.rows.flatMap(row =>
                   row.seats.filter(seat => seat.status === 'available' && seat.ticket_type_id === ticket.ticket_type.id &&
                     seat.accessibility_kind === ticket.seat?.accessibility_kind)
@@ -297,8 +328,8 @@ export default function OrderConfirmationPage() {
                     {ticket.status === 'issued' && (
                       <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
                     )}
-                    {ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) && (
-                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Cancelling…' : ticket.refundable_cents > 0 ? 'Refund' : 'Cancel'}</button>
+                    {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) || ['pending', 'unconfirmed'].includes(ticketRefundAttempt?.status)) && (
+                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Checking…' : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : 'Cancel'}</button>
                     )}
                     {ticket.status === 'issued' && capabilities.ticket_transfers && event.transfers_enabled !== false && (
                       <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-brand-600">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
@@ -312,6 +343,7 @@ export default function OrderConfirmationPage() {
                     {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="inline-flex min-h-11 min-w-11 items-center justify-center" aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>}
                   </div>
                 </div>
+                {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
                 {exchangeTicketId === ticket.id && (
                   <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
                     <label className="block text-sm font-medium text-neutral-800">Available equivalent seats
