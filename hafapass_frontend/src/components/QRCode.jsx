@@ -11,7 +11,7 @@ export default function QRCode({ value, size = 256, bgColor = '#ffffff', fgColor
       marginSize={2}
       title="Ticket entry QR code"
       role="img"
-      aria-label={`QR code for ${value}`}
+      aria-label="Ticket entry QR code"
     />
   )
 }
