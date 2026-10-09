@@ -22,6 +22,56 @@ RSpec.describe Ticket, type: :model do
   end
 
   describe "#check_in!" do
+    let(:admission_event) { create(:event, :published) }
+    let(:admission_ticket_type) { create(:ticket_type, event: admission_event) }
+    let(:admission_order) { create(:order, event: admission_event) }
+    let(:admission_ticket) do
+      create(:ticket, order: admission_order, ticket_type: admission_ticket_type, event: admission_event)
+    end
+
+    it "rejects a second reader loaded before the first admission" do
+      first = Ticket.find(admission_ticket.id)
+      second = Ticket.find(admission_ticket.id)
+      first.check_in!
+      timestamp = first.checked_in_at
+
+      expect { second.check_in! }.to raise_error(Ticket::AdmissionError, "Ticket is not in issued status")
+      expect(admission_ticket.reload.checked_in_at).to eq(timestamp)
+    end
+
+    it "does not overwrite cancellation from a stale reader" do
+      stale = Ticket.find(admission_ticket.id)
+      admission_ticket.update!(status: :cancelled)
+
+      expect { stale.check_in! }.to raise_error(Ticket::AdmissionError, "Ticket is not in issued status")
+      expect(admission_ticket.reload).to be_cancelled
+    end
+
+    it "checks current order fulfillment rather than an earlier association" do
+      admission_ticket.order
+      admission_order.update!(status: :cancelled)
+
+      expect { admission_ticket.check_in! }.to raise_error(Ticket::AdmissionError, "Ticket order is not fulfilled")
+      expect(admission_ticket.reload).to be_issued
+    end
+
+    it "rejects a credential rotated after it was initially resolved" do
+      credential = admission_ticket.scan_credential
+      stale = TicketCredential.find_scan(credential)
+      admission_ticket.rotate_scan_credential!
+
+      expect { stale.check_in!(credential: credential) }.to raise_error(Ticket::AdmissionError, "Ticket credential has been replaced")
+      expect(admission_ticket.reload).to be_issued
+    end
+
+    it "checks the current event status" do
+      admission_ticket.event
+      admission_event.update!(status: :cancelled)
+
+      expect { admission_ticket.check_in! }.to raise_error(Ticket::AdmissionError, /Event is cancelled/)
+      expect(admission_ticket.reload).to be_issued
+    end
+
     it "updates status to checked_in" do
       event = create(:event, :published)
       ticket_type = create(:ticket_type, event: event)
@@ -63,6 +113,19 @@ RSpec.describe Ticket, type: :model do
       order = create(:order, event: event)
       ticket = create(:ticket, order: order, ticket_type: ticket_type, event: event, status: :transferred)
       expect { ticket.check_in! }.to raise_error(RuntimeError, "Ticket is not in issued status")
+    end
+  end
+
+  describe "#reverse_check_in!" do
+    it "does not restore an issued ticket after another reader canceled it" do
+      event = create(:event, :published)
+      ticket = create(:ticket, :checked_in, event: event, order: create(:order, event: event),
+        ticket_type: create(:ticket_type, event: event))
+      stale = Ticket.find(ticket.id)
+      ticket.update!(status: :cancelled)
+
+      expect { stale.reverse_check_in! }.to raise_error(Ticket::AdmissionError, "Ticket is not checked in")
+      expect(ticket.reload).to be_cancelled
     end
   end
 

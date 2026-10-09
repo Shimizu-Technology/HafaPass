@@ -33,7 +33,8 @@ module Api
 
           render json: refund_json(refund), status: :created
         rescue Commerce::RefundCreator::RefundError => e
-          render json: { error: e.message }, status: :unprocessable_entity
+          outcome = Commerce::RefundOutcome.call(order: @order, idempotency_key: request.headers["Idempotency-Key"])
+          render json: { error: e.message }.merge(outcome), status: :unprocessable_entity
         end
 
         private
@@ -69,7 +70,7 @@ module Api
                 quantity: item.quantity
               }
             }
-          }
+          }.merge(Commerce::RefundOutcome.call(order: refund.order, idempotency_key: refund.idempotency_key))
         end
       end
     end

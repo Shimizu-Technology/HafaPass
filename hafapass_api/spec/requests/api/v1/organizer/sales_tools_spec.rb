@@ -45,6 +45,24 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     expect(campaign.message_deliveries.count).to eq(1)
   end
 
+  it "neutralizes spreadsheet formulas while preserving original attendee values" do
+    type = create(:ticket_type, event: event, name: "=HYPERLINK(\"https://example.invalid\")")
+    order = create(:order, event: event)
+    item = create(:order_item, order: order, ticket_type: type)
+    names = ["=1+1", "+SUM(1,2)", "-1+1", "@SUM(1,2)", "  =1+1", "\t=1+1", "\rDanger", "Ordinary Name"]
+    tickets = names.map do |name|
+      create(:ticket, order: order, event: event, ticket_type: type, order_item: item,
+        attendee_name: name, holder_email: "guest@example.com")
+    end
+
+    get "#{base}/crm/export", headers: headers
+    expect(response).to have_http_status(:ok)
+    records = CSV.parse(response.body, headers: true)
+    expect(records.map { |record| record["name"] }).to eq(names.map { |name| name == "Ordinary Name" ? name : "'#{name}" })
+    expect(records.map { |record| record["ticket_type"] }).to all(start_with("'="))
+    expect(tickets.map { |ticket| ticket.reload.attendee_name }).to eq(names)
+  end
+
   it "does not accumulate scheduled jobs for content-only campaign edits" do
     scheduled_at = 2.days.from_now
 

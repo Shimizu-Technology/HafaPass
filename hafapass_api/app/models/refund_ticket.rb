@@ -4,7 +4,9 @@ class RefundTicket < ApplicationRecord
   belongs_to :refund
   belongs_to :ticket
 
-  validates :ticket_id, uniqueness: true
+  scope :active, -> { where(released_at: nil) }
+
+  validates :ticket_id, uniqueness: { conditions: -> { where(released_at: nil) } }, if: -> { released_at.nil? }
   validates :amount_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :ticket_belongs_to_refund_order
 

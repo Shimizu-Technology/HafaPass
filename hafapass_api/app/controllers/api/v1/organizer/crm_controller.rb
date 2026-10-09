@@ -22,13 +22,20 @@ class Api::V1::Organizer::CrmController < Api::V1::Organizer::EventResourcesCont
       output << %w[name email ticket_type ticket_status checked_in_at order_reference purchased_at]
       active_tickets.includes(:ticket_type, :order).order(:id).each do |ticket|
         output << [ticket.attendee_name, ticket.holder_email, ticket.ticket_type.name, ticket.status,
-          ticket.checked_in_at, ticket.order.reference, ticket.order.completed_at]
+          ticket.checked_in_at, ticket.order.reference, ticket.order.completed_at].map { |value| spreadsheet_safe(value) }
       end
     end
     send_data csv, type: "text/csv", filename: "#{event.slug}-attendees.csv", disposition: "attachment"
   end
 
   private
+
+  def spreadsheet_safe(value)
+    return value unless value.is_a?(String)
+
+    # Quoting CSV fields does not prevent formula execution in spreadsheet apps.
+    value.match?(/\A[[:space:]\u0000-\u001f]*[=+@-]/) || value.match?(/\A[\t\r\n]/) ? "'#{value}" : value
+  end
 
   def resource_permission
     :view_attendees

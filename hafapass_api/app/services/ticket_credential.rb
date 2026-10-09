@@ -21,6 +21,17 @@ class TicketCredential
       find(token, purpose: SCAN_PURPOSE, version_attribute: :scan_credential_version)
     end
 
+    def valid_scan_for?(ticket, token)
+      payload = SignedCredential.verify(namespace: SCAN_PURPOSE, token: token)
+      return false if payload.blank?
+
+      id = payload["ticket_id"] || payload[:ticket_id]
+      version = payload["version"] || payload[:version]
+      id.to_s == ticket.id.to_s && ActiveSupport::SecurityUtils.secure_compare(
+        ticket.scan_credential_version.to_s, version.to_s
+      )
+    end
+
     private
 
     def issue(ticket, purpose:, version:)

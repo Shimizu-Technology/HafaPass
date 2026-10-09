@@ -50,6 +50,7 @@ module Commerce
 
       Order.transaction do
         event.lock!
+        validate_launch_scope!
         release_gate = event.production_release_gate_status
         if release_gate == :pilot_readiness
           raise CheckoutError, "This event does not have a current pilot readiness approval"
@@ -82,6 +83,7 @@ module Commerce
         validate_registration!
         promoter = locked_promoter
         totals = calculate_totals(selections, catalog_selections)
+        validate_production_payment!(totals, requires_payment)
         validate_live_money_proof_scope!(totals)
         expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now
 
@@ -140,6 +142,7 @@ module Commerce
             idempotency_key: "#{payment_method}:order:#{order.id}",
             amount_cents: order.total_cents,
             currency: order.currency,
+            provider_payload: { simulated: !Rails.env.production? },
             status: :pending
           )
           OrderLifecycle.complete!(
@@ -148,6 +151,18 @@ module Commerce
             provider_amount_cents: payment.amount_cents,
             provider_currency: payment.currency
           )
+        elsif order.total_cents.positive? && !Rails.env.production? && SiteSetting.instance.simulate_mode?
+          payment = order.payments.create!(
+            provider: "stripe",
+            provider_payment_id: "sim_pi_#{SecureRandom.hex(12)}",
+            provider_payload: { simulated: true },
+            idempotency_key: "simulation:payment:order:#{order.id}",
+            amount_cents: order.total_cents,
+            currency: order.currency,
+            status: :pending
+          )
+          OrderLifecycle.complete!(order, payment: payment, provider_amount_cents: payment.amount_cents,
+            provider_currency: payment.currency)
         else
           OrderLifecycle.complete!(order)
         end
@@ -170,6 +185,35 @@ module Commerce
     attr_reader :buyer_terms_version, :buyer_terms_digest, :buyer_terms_accepted_at
     attr_reader :catalog_items, :registration_answers, :waiver_acceptances, :referral_code, :attribution,
       :waitlist_offer_token, :seat_hold_token, :live_money_proof_authorization
+
+    def validate_launch_scope!
+      unless LaunchCapabilities.enabled?(:assigned_seating)
+        selected_ids = normalized_quantities.keys
+        seated = event.event_seating_configuration&.event_seats&.where(ticket_type_id: selected_ids)&.exists?
+        if seat_hold_token.present? || seated
+          raise CheckoutError, "Assigned seating is not available in this release"
+        end
+      end
+      unless LaunchCapabilities.enabled?(:advanced_sales_tools)
+        required_definitions = event.registration_questions.published.where(required: true).exists? ||
+          event.event_waivers.published.where(required: true).exists?
+        if catalog_items.present? || registration_answers.present? || waiver_acceptances.present? || required_definitions
+          raise CheckoutError, "Event extras and custom registration are not available in this release"
+        end
+      end
+    end
+
+    def validate_production_payment!(totals, requires_payment)
+      return unless Rails.env.production? && totals[:total_cents].positive?
+      return if !requires_payment && source == "box_office" && payment_method == "door_cash"
+
+      unless requires_payment
+        raise CheckoutError, "A recorded payment is required for paid tickets"
+      end
+      if (payment_provider.blank? || payment_provider == "stripe") && SiteSetting.instance.simulate_mode?
+        raise CheckoutError, "Simulated payments cannot be used for paid tickets in production"
+      end
+    end
 
     def validate_live_money_proof_scope!(totals)
       unless event.live_money_proof_candidate?
@@ -646,7 +690,7 @@ module Commerce
     end
 
     def create_provider_payment!(order, payment)
-      return unless payment&.provider == "stripe"
+      return unless payment&.provider == "stripe" && payment.pending?
 
       intent = StripeService.create_payment_intent(order, idempotency_key: payment.idempotency_key)
       Payment.transaction do

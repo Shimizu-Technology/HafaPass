@@ -22,6 +22,21 @@ RSpec.describe "Api::V1::Support", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
+  it "finds the printed ticket number without exposing admission credentials" do
+    ticket = create(:ticket, order: order, event: order.event, ticket_type: create(:ticket_type, event: order.event))
+    get "/api/v1/support/search", params: { q: "hp-t#{ticket.id}" }, headers: auth_headers(support_user)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("tickets").map { |item| item.fetch("id") }).to eq([ticket.id])
+    expect(response.parsed_body.to_json).not_to include(ticket.qr_code.to_s, ticket.scan_credential, ticket.display_credential)
+  end
+
+  it "treats an out-of-range printed number as an empty search" do
+    get "/api/v1/support/search", params: { q: "HP-T999999999999999999999999" }, headers: auth_headers(support_user)
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("tickets")).to be_empty
+  end
+
   it "replays only failed delivery records and audits the actor" do
     delivery = create(:message_delivery, order: order, event: order.event, status: :failed)
 

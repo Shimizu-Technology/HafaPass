@@ -57,4 +57,26 @@ RSpec.describe "Organizer refunds", type: :request do
     end.not_to change(Refund, :count)
     expect(response).to have_http_status(:created)
   end
+
+  it "exposes financial review on a safe terminal replay and prevents a new provider attempt" do
+    refund = create(:refund, order: order, payment: payment, status: :failed, amount_cents: 1000,
+      idempotency_key: "organizer-refund-request")
+    create(:reconciliation_exception, order: nil, payment: payment, code: "refund_terminal_status_conflict")
+    allow(StripeService).to receive(:refund_payment)
+    path = "/api/v1/organizer/events/#{event.id}/orders/#{order.id}/refund"
+
+    post path, params: { amount_cents: 1000 }, headers: headers
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body).to include("refund_id" => refund.id, "refund_status" => "failed",
+      "reconciliation_required" => true, "finance_review_required" => true)
+    expect(response.parsed_body).not_to have_key("reconciliation_exception_id")
+
+    post path, params: { amount_cents: 1000 }, headers: headers.merge("Idempotency-Key" => "new-unsafe-attempt")
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body).to include("reconciliation_required" => true, "finance_review_required" => true)
+    expect(order.refunds.count).to eq(1)
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
 end

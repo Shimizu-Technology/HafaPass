@@ -48,20 +48,24 @@ class Api::V1::CheckInsController < ApplicationController
       return
     end
 
-    ticket.check_in!
-    AuditLogger.record!(
+    Ticket.transaction do
+      ticket.check_in!(credential: credential)
+      AuditLogger.record!(
       action: "ticket.checked_in",
       auditable: ticket,
       actor: current_user,
       organization: ticket.event.organization,
       metadata: { event_id: ticket.event_id },
       request: request
-    )
-    if ticket.event_seat
-      Seating::Audit.record!(event: ticket.event, action: "seat.checked_in", event_seat: ticket.event_seat,
-        ticket: ticket, actor: current_user)
+      )
+      if ticket.event_seat
+        Seating::Audit.record!(event: ticket.event, action: "seat.checked_in", event_seat: ticket.event_seat,
+          ticket: ticket, actor: current_user)
+      end
     end
     render json: { message: "Check-in successful", ticket: ticket_json(ticket) }, status: :ok
+  rescue Ticket::AdmissionError => e
+    render json: { error: e.message, ticket: ticket_json(ticket.reload) }, status: :unprocessable_entity
   end
 
   private

@@ -171,6 +171,14 @@ class Api::V1::OrdersController < ApplicationController
     ticket = @order.tickets.find_by(id: params[:ticket_id])
     return render json: { error: "Ticket not found" }, status: :not_found unless ticket
     return render json: { error: "Transferred tickets are controlled by their current holder" }, status: :forbidden unless controls_ticket?(ticket)
+    if ticket.cancelled? && (key = request.headers["Idempotency-Key"].presence)
+      previous = @order.refunds.find_by(idempotency_key: key, reason: "buyer_ticket_cancellation")
+      if previous && previous.refund_tickets.pluck(:ticket_id) == [ticket.id]
+        return render json: Commerce::RefundOutcome.call(order: @order, idempotency_key: key).merge(
+          order: OrderPresenter.call(@order.reload, include_tickets: true)
+        ), status: :created
+      end
+    end
     return render json: { error: "Ticket is already cancelled" }, status: :unprocessable_entity if ticket.cancelled?
     return render json: { error: "Used or transferred tickets cannot be cancelled" }, status: :unprocessable_entity unless ticket.issued?
 
@@ -194,9 +202,13 @@ class Api::V1::OrdersController < ApplicationController
       requested_by: @current_user,
       idempotency_key: idempotency_key
     )
-    render json: { refund_id: refund.id, order: OrderPresenter.call(@order.reload, include_tickets: true) }, status: :created
+    render json: Commerce::RefundOutcome.call(order: @order, idempotency_key: refund.idempotency_key).merge(
+      order: OrderPresenter.call(@order.reload, include_tickets: true)
+    ), status: :created
   rescue Commerce::RefundCreator::RefundError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }.merge(
+      Commerce::RefundOutcome.call(order: @order, idempotency_key: request.headers["Idempotency-Key"])
+    ), status: :unprocessable_entity
   end
 
   def create_transfer
@@ -287,13 +299,16 @@ class Api::V1::OrdersController < ApplicationController
       end
     end
 
-    render json: { decision: response.decision, order: OrderPresenter.call(@order.reload, include_tickets: true) }
+    outcome = decision == "refund_requested" ? Commerce::RefundOutcome.call(order: @order, idempotency_key: idempotency_key) : {}
+    render json: { decision: response.decision, order: OrderPresenter.call(@order.reload, include_tickets: true) }.merge(outcome)
   rescue ActiveRecord::RecordNotUnique
     render json: { error: "This event-change response has already been recorded" }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e
     render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
   rescue Commerce::RefundCreator::RefundError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }.merge(
+      Commerce::RefundOutcome.call(order: @order, idempotency_key: request.headers["Idempotency-Key"])
+    ), status: :unprocessable_entity
   end
 
   private

@@ -254,4 +254,70 @@ RSpec.describe Commerce::OrderCreator do
       )
     end.to raise_error(described_class::CheckoutError, /Purchase limit is 2/)
   end
+  describe "initial release scope" do
+    def scoped_checkout(**overrides)
+      described_class.call(**{
+        event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+        buyer_email: "test@example.com", buyer_name: "Tester", payment_required: false
+      }.merge(overrides))
+    end
+
+    before { allow(LaunchCapabilities).to receive(:enabled?).and_return(false) }
+
+    it "rejects an explicit seat hold before creating records" do
+      expect { scoped_checkout(seat_hold_token: "disabled-seat-hold") }.to raise_error(described_class::CheckoutError, /Assigned seating/)
+      expect(event.orders).to be_empty
+    end
+
+    it "rejects reserved ticket inventory even when no seat hold is supplied" do
+      event.update!(venue: create(:venue))
+      configuration = create(:event_seating_configuration, event: event)
+      create(:event_seat, event_seating_configuration: configuration, ticket_type: ticket_type)
+      expect { scoped_checkout }.to raise_error(described_class::CheckoutError, /Assigned seating/)
+      expect(event.orders).to be_empty
+    end
+
+    it "rejects explicit advanced input" do
+      expect { scoped_checkout(registration_answers: { "123" => "answer" }) }.to raise_error(described_class::CheckoutError, /custom registration/)
+      expect(event.orders).to be_empty
+    end
+
+    it "rejects required active registration definitions without submitted answers" do
+      create(:registration_question, event: event, required: true)
+      expect { scoped_checkout }.to raise_error(described_class::CheckoutError, /custom registration/)
+      expect(event.orders).to be_empty
+    end
+
+    it "rejects required active waivers without submitted acceptance" do
+      create(:event_waiver, event: event, required: true)
+      expect { scoped_checkout }.to raise_error(described_class::CheckoutError, /custom registration/)
+      expect(event.orders).to be_empty
+    end
+  end
+
+  describe "production paid checkout" do
+    before do
+      allow(Rails.env).to receive(:production?).and_return(true)
+      allow(event).to receive(:production_release_gate_status).and_return(nil)
+      allow(LivePilot).to receive(:enforce_inventory_cap!)
+    end
+
+    it "rejects simulated paid checkout without creating an order or contacting Stripe" do
+      allow(StripeService).to receive(:create_payment_intent)
+      expect do
+        described_class.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+          buyer_email: "test@example.com", buyer_name: "Tester", payment_required: true)
+      end.to raise_error(described_class::CheckoutError, /Simulated payments/)
+      expect(event.orders).to be_empty
+      expect(StripeService).not_to have_received(:create_payment_intent)
+    end
+
+    it "rejects an unrecorded positive-total checkout bypass" do
+      expect do
+        described_class.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+          buyer_email: "test@example.com", buyer_name: "Tester", payment_required: false)
+      end.to raise_error(described_class::CheckoutError, /recorded payment/)
+      expect(event.orders).to be_empty
+    end
+  end
 end
