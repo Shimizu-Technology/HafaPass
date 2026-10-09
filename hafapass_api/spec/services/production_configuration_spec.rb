@@ -8,6 +8,7 @@ RSpec.describe ProductionConfiguration do
     "REDIS_URL" => "configured",
     "CLERK_SECRET_KEY" => "configured",
     "CLERK_PUBLISHABLE_KEY" => "configured",
+    "CLERK_ISSUER" => "https://fixture.clerk.accounts.dev",
     "FRONTEND_URL" => "https://hafapass.example/",
     "PUBLIC_WEB_URL" => "https://hafapass.example/",
     "ALLOWED_ORIGINS" => "https://hafapass.example/,https://admin.hafapass.example",
@@ -54,5 +55,10 @@ RSpec.describe ProductionConfiguration do
       monitoring: false,
       admin_bootstrap_disabled: false
     )
+  end
+
+  it "reports invalid authentication configuration rather than just nonempty credentials" do
+    ENV["CLERK_ISSUER"] = "http://untrusted.example"
+    expect(described_class.call[:checks][:clerk]).to be(false)
   end
 end

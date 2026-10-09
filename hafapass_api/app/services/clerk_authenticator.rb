@@ -59,7 +59,7 @@ class ClerkAuthenticator
     def authorized_parties
       configured = ENV["CLERK_AUTHORIZED_PARTIES"].presence || ENV["ALLOWED_ORIGINS"].presence
       configured ||= "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176" unless Rails.env.production?
-      configured.to_s.split(",").map(&:strip).reject(&:empty?)
+      configured.to_s.split(",").map { |origin| origin.strip.delete_suffix("/") }.reject(&:empty?)
     end
 
     def configured?
