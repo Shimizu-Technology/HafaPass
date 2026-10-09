@@ -144,11 +144,14 @@ export default function EditEventPage() {
     setSuccessMessage(null)
   }
 
-  const scheduleChanged = Boolean(event) && (
-    form.starts_at !== toEventLocalInput(event.starts_at, event.timezone) ||
-    form.ends_at !== toEventLocalInput(event.ends_at, event.timezone) ||
-    form.doors_open_at !== toEventLocalInput(event.doors_open_at, event.timezone)
+  // Keep seconds in untouched API timestamps instead of rewriting them from
+  // minute-precision inputs. Null explicitly clears an edited optional time.
+  const scheduleChanges = Object.fromEntries(
+    ['starts_at', 'ends_at', 'doors_open_at']
+      .filter(field => event && form[field] !== toEventLocalInput(event[field], event.timezone))
+      .map(field => [field, form[field] || null]),
   )
+  const scheduleChanged = Object.keys(scheduleChanges).length > 0
 
   const validate = () => {
     const errors = {}
@@ -195,9 +198,7 @@ export default function EditEventPage() {
         venue_address: form.venue_address.trim() || null,
         venue_city: form.venue_city.trim() || 'Guam',
         timezone: event?.timezone || 'Pacific/Guam',
-        starts_at: form.starts_at || undefined,
-        ends_at: form.ends_at || undefined,
-        doors_open_at: form.doors_open_at || undefined,
+        ...scheduleChanges,
         max_capacity: form.max_capacity ? parseInt(form.max_capacity, 10) : null,
         cover_image_url: form.cover_image_url.trim() || null,
         recurrence_rule: form.recurrence_rule || null,
