@@ -64,6 +64,22 @@ RSpec.describe ClerkAuthenticator do
     expect(described_class.verify(token)).to be_nil
   end
 
+  it "requires a dedicated production authorized-party allowlist despite valid CORS origins" do
+    allow(Rails.env).to receive(:production?).and_return(true)
+    allow(ENV).to receive(:[]).with("CLERK_AUTHORIZED_PARTIES").and_return(nil)
+    allow(ENV).to receive(:[]).with("ALLOWED_ORIGINS").and_return("https://web.example")
+    expect(described_class.verify(token(claims.merge("azp" => "https://web.example")))).to be_nil
+    allow(ENV).to receive(:[]).with("CLERK_AUTHORIZED_PARTIES").and_return("https://web.example/")
+    expect(described_class.verify(token(claims.merge("azp" => "https://web.example")))).to be_present
+    expect(described_class.verify(token(claims.merge("azp" => "https://cors-only.example")))).to be_nil
+  end
+
+  it "retains the explicit CORS fallback only for non-production test runtimes" do
+    allow(ENV).to receive(:[]).with("CLERK_AUTHORIZED_PARTIES").and_return(nil)
+    allow(ENV).to receive(:[]).with("ALLOWED_ORIGINS").and_return("http://localhost:5173")
+    expect(described_class.verify(token)).to be_present
+  end
+
   it "derives the issuer from a valid publishable key and rejects generic placeholders" do
     allow(ENV).to receive(:[]).with("CLERK_ISSUER").and_return(nil)
     allow(ENV).to receive(:[]).with("CLERK_PUBLISHABLE_KEY")

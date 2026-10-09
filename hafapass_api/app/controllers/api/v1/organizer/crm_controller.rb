@@ -18,7 +18,7 @@ class Api::V1::Organizer::CrmController < Api::V1::Organizer::EventResourcesCont
   end
 
   def export
-    csv = CSV.generate(headers: true) do |output|
+    csv = CSV.generate(headers: true, force_quotes: true) do |output|
       output << %w[name email ticket_type ticket_status checked_in_at order_reference purchased_at]
       active_tickets.includes(:ticket_type, :order).order(:id).each do |ticket|
         output << [ticket.attendee_name, ticket.holder_email, ticket.ticket_type.name, ticket.status,
@@ -33,8 +33,10 @@ class Api::V1::Organizer::CrmController < Api::V1::Organizer::EventResourcesCont
   def spreadsheet_safe(value)
     return value unless value.is_a?(String)
 
-    # Quoting CSV fields does not prevent formula execution in spreadsheet apps.
-    value.match?(/\A[[:space:]\u0000-\u001f]*[=+@-]/) || value.match?(/\A[\t\r\n]/) ? "'#{value}" : value
+    # OWASP's Excel-resistant mitigation is a tab inside a quoted field. An
+    # apostrophe alone may be stripped when Excel saves/reopens a CSV. This
+    # export is for spreadsheet viewing; the protective tab is exported data.
+    value.match?(/\A[[:space:]\u0000-\u001f]*[=+@\-＝＋＠－]/) || value.match?(/\A[\t\r\n]/) ? "\t#{value}" : value
   end
 
   def resource_permission

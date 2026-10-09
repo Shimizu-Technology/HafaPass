@@ -49,7 +49,8 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     type = create(:ticket_type, event: event, name: "=HYPERLINK(\"https://example.invalid\")")
     order = create(:order, event: event)
     item = create(:order_item, order: order, ticket_type: type)
-    names = ["=1+1", "+SUM(1,2)", "-1+1", "@SUM(1,2)", "  =1+1", "\t=1+1", "\rDanger", "Ordinary Name"]
+    names = ["=1+1", "+SUM(1,2)", "-1+1", "@SUM(1,2)", "  =1+1", "\t=1+1", "\rDanger",
+      "＝1+1", "＋1+1", "－1+1", "＠SUM(1,2)", "=1+2\";,=1+2", "Ordinary Name"]
     tickets = names.map do |name|
       create(:ticket, order: order, event: event, ticket_type: type, order_item: item,
         attendee_name: name, holder_email: "guest@example.com")
@@ -58,8 +59,13 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     get "#{base}/crm/export", headers: headers
     expect(response).to have_http_status(:ok)
     records = CSV.parse(response.body, headers: true)
-    expect(records.map { |record| record["name"] }).to eq(names.map { |name| name == "Ordinary Name" ? name : "'#{name}" })
-    expect(records.map { |record| record["ticket_type"] }).to all(start_with("'="))
+    protected_names = names.map { |name| name == "Ordinary Name" ? name : "\t#{name}" }
+    expect(records.map { |record| record["name"] }).to eq(protected_names)
+    expect(records.map { |record| record["ticket_type"] }).to all(start_with("\t="))
+    expect(response.body).to include("\"\t=1+1\"", "\"\t=1+2\"\";,=1+2\"")
+    # The protective tab is data: retain it through CSV parse/save/reopen.
+    reopened = CSV.parse(CSV.generate { |csv| records.each { |record| csv << record.fields } })
+    expect(reopened.map(&:first)).to eq(protected_names)
     expect(tickets.map { |ticket| ticket.reload.attendee_name }).to eq(names)
   end
 

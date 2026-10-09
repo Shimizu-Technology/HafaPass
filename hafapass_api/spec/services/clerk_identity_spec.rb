@@ -43,4 +43,31 @@ RSpec.describe ClerkIdentity do
     expect(described_class.email_matches?(user: user, email: user.email)).to be(false)
     expect(described_class.email_matches?(user: user, email: "TEAM@example.com")).to be(true)
   end
+
+  it "deduplicates within one request but refetches revoked identities on the next request" do
+    described_class.with_request_cache do
+      2.times { expect(described_class.verified_email_addresses("user_recipient")).to eq(["team@example.com"]) }
+    end
+    expect(http).to have_received(:request).once
+    allow(http).to receive(:request).and_return(double(code: "200", body: {
+      id: "user_recipient", email_addresses: []
+    }.to_json))
+    described_class.with_request_cache do
+      expect(described_class.verified_email_addresses("user_recipient")).to eq([])
+    end
+    expect(http).to have_received(:request).twice
+    expect(described_class::RequestCache.verified_emails).to be_nil
+  end
+
+  it "clears the request cache after an exception and never caches non-request calls" do
+    expect {
+      described_class.with_request_cache do
+        described_class.verified_email_addresses("user_recipient")
+        raise "request interrupted"
+      end
+    }.to raise_error("request interrupted")
+    expect(described_class::RequestCache.verified_emails).to be_nil
+    2.times { described_class.verified_email_addresses("user_recipient") }
+    expect(http).to have_received(:request).exactly(3).times
+  end
 end

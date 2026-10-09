@@ -30,8 +30,28 @@ module Api
         return unless scope
         return uploads_unavailable unless S3Service.configured?
 
-        render json: S3Service.complete_upload(key: payload.fetch("key"),
-          content_type: payload.fetch("content_type"), byte_size: payload.fetch("byte_size"), **scope)
+        receipt = ImageUploadReceipt.find_by(source_key: payload.fetch("key"))
+        receipt ||= ImageUploadReceipt.create_or_find_by!(source_key: payload.fetch("key")) do |record|
+          record.user = current_user
+          record.assign_attributes(scope)
+          record.final_key = S3Service.final_key(content_type: payload.fetch("content_type"), **scope)
+        end
+        unless receipt.user_id == current_user.id && receipt.event_id == scope[:event_id] &&
+            receipt.organization_id == scope[:organization_id]
+          return render json: { error: "Upload authorization does not match this image." }, status: :forbidden
+        end
+
+        receipt.with_lock do
+          unless receipt.completed_at?
+            result = S3Service.complete_upload(key: receipt.source_key, final_key: receipt.final_key,
+              content_type: payload.fetch("content_type"), byte_size: payload.fetch("byte_size"), **scope)
+            receipt.update!(public_url: result.fetch(:public_url), completed_at: Time.current)
+          end
+        end
+        # The receipt is durable before deleting the pending source. Cleanup
+        # failure must not turn a successful upload into a retry/new copy.
+        S3Service.delete_pending_upload(receipt.source_key)
+        render json: { key: receipt.final_key, public_url: receipt.public_url }
       end
 
       private

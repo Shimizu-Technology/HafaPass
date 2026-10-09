@@ -61,6 +61,26 @@ RSpec.describe S3Service do
     expect(client.api_requests.map { |entry| entry[:operation_name] }).not_to include(:copy_object)
   end
 
+  it "uses the receipt destination on retry and removes only pending objects" do
+    client.stub_responses(:head_object, content_type: "image/jpeg", content_length: 100, etag: "source-version")
+    client.stub_responses(:get_object, body: "\xFF\xD8\xFFfixture".b)
+    2.times do
+      described_class.complete_upload(key: "pending/image.jpg", content_type: "image/jpeg", byte_size: 100,
+        final_key: "uploads/events/1/receipt.jpg")
+    end
+    copies = client.api_requests.select { |entry| entry[:operation_name] == :copy_object }
+    expect(copies.map { |entry| entry[:params][:key] }).to eq(["uploads/events/1/receipt.jpg"] * 2)
+    described_class.delete_pending_upload("uploads/events/1/receipt.jpg")
+    expect(client.api_requests.map { |entry| entry[:operation_name] }).not_to include(:delete_object)
+    described_class.delete_pending_upload("pending/image.jpg")
+    expect(client.api_requests.last[:params]).to include(key: "pending/image.jpg")
+  end
+
+  it "does not fail the completed upload when pending cleanup is unavailable" do
+    client.stub_responses(:delete_object, "AccessDenied")
+    expect { described_class.delete_pending_upload("pending/image.jpg") }.not_to raise_error
+  end
+
   it "fails closed if the verified source is replaced before copy" do
     client.stub_responses(:head_object, content_type: "image/png", content_length: 100, etag: "old")
     client.stub_responses(:get_object, body: "\x89PNG\r\n\x1A\nfixture".b)

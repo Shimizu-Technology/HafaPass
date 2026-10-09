@@ -35,6 +35,12 @@ Do not supply Stripe live credentials. Boot rejects live keys in both the live s
 
 S3 is optional for this release. Without its credentials, authenticated upload signing returns an unavailable response; the API can still boot. If image uploads are needed, use a separate staging bucket and scoped credentials. Do not invent credentials to satisfy readiness.
 
+Configure a bucket lifecycle rule expiring the `pending/` prefix after one day and aborting incomplete multipart uploads. Completion deletes its pending source only after the immutable-copy receipt commits; denied or failed cleanup is logged and left for that lifecycle rule. Abandoned or invalid uploads also require lifecycle expiry. Keep final `uploads/` objects outside that rule. This document does not mutate AWS configuration. Completion tokens expire after 15 minutes; retries within that authorization window return the recorded URL and never allocate another destination, even after a copy timeout.
+
+Production requires `CLERK_AUTHORIZED_PARTIES` explicitly, independently of CORS `ALLOWED_ORIGINS`. Supply the exact trusted HTTPS frontend origins before deploying this change or authentication fails closed. Staging may use the documented `ALLOWED_ORIGINS` fallback. An unrelated CORS expansion must not expand production token authority.
+
+Attendee CSV downloads quote all fields and prepend a tab to formula-like values, including full-width variants. This follows [OWASP's Excel-resistant guidance](https://community.owasp.org/attacks/CSV_Injection); the protective tab remains in exported data. These exports are for viewing in spreadsheets. Source attendee records are unchanged. No CSV strategy is universal across every application and downstream transformation; retain protection when re-exporting and do not strip tabs from untrusted fields.
+
 ## Build and run
 
 Select the reviewed commit in an isolated checkout and record that same SHA in `GIT_SHA`. Inject the staging configuration before these backend commands:

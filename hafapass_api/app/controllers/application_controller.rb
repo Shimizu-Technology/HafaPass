@@ -3,6 +3,7 @@ class ApplicationController < ActionController::API
     render json: { error: error.message }, status: :bad_request
   end
 
+  around_action :with_identity_verification_cache
   before_action :authenticate_user!
   before_action :set_observability_context
   before_action :enforce_launch_capability
@@ -14,6 +15,10 @@ class ApplicationController < ActionController::API
   end
 
   private
+
+  def with_identity_verification_cache(&block)
+    ClerkIdentity.with_request_cache(&block)
+  end
 
   def enforce_launch_capability
     feature = LaunchCapabilities.required_for(controller: controller_path, action: action_name, params: params)

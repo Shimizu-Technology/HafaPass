@@ -23,7 +23,7 @@ class S3Service
     # Only completion publishes a URL. Check the stored bytes and copy to a new
     # immutable key which the browser's POST policy cannot overwrite. Conditional
     # reads/copy prevent replacement of the pending object during verification.
-    def complete_upload(key:, content_type:, byte_size:, event_id: nil, organization_id: nil)
+    def complete_upload(key:, content_type:, byte_size:, event_id: nil, organization_id: nil, final_key: nil)
       validate_upload!(key, content_type, byte_size)
       object = s3_client.head_object(bucket: bucket_name, key: key)
       unless object.content_type == content_type && object.content_length == Integer(byte_size)
@@ -32,8 +32,7 @@ class S3Service
       bytes = s3_client.get_object(bucket: bucket_name, key: key, range: "bytes=0-15", if_match: object.etag).body.read
       raise UploadError, "Choose a valid JPG, PNG, or WebP image" unless image_signature_matches?(bytes, content_type)
 
-      final_key = build_key("image.#{CONTENT_TYPES.fetch(content_type)}", event_id: event_id,
-        organization_id: organization_id)
+      final_key ||= self.final_key(content_type: content_type, event_id: event_id, organization_id: organization_id)
       s3_client.copy_object(bucket: bucket_name, key: final_key,
         copy_source: "#{bucket_name}/#{key}", copy_source_if_match: object.etag,
         metadata_directive: "REPLACE", content_type: content_type,
@@ -42,6 +41,18 @@ class S3Service
     rescue Aws::S3::Errors::ServiceError => error
       Rails.logger.warn("Image upload verification failed (#{error.class})")
       raise UploadError, "The image could not be verified. Please upload it again."
+    end
+
+    def final_key(content_type:, event_id: nil, organization_id: nil)
+      build_key("image.#{CONTENT_TYPES.fetch(content_type)}", event_id: event_id, organization_id: organization_id)
+    end
+
+    def delete_pending_upload(key)
+      return unless key.start_with?("pending/")
+
+      s3_client.delete_object(bucket: bucket_name, key: key)
+    rescue Aws::S3::Errors::ServiceError, Seahorse::Client::NetworkingError => error
+      Rails.logger.warn("Pending image cleanup deferred to bucket lifecycle (#{error.class})")
     end
 
     def generate_presigned_get(key)
