@@ -81,6 +81,13 @@ RSpec.describe "Buyer payment recovery", type: :request do
     end
   end
 
+  it "does not expose another confirmation secret after event sales are suspended" do
+    event.update!(sales_suspended_at: Time.current)
+    resume
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body).not_to have_key("client_secret")
+  end
+
   it "keeps a provider-processing payment on confirmation without allowing another confirmation" do
     intent.status = "processing"
     resume

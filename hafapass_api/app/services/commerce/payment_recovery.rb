@@ -45,6 +45,10 @@ module Commerce
           OrderLifecycle.fail!(@order, payment: payment, reason: "payment_cancelled")
         end
         resumable = @order.pending? && RESUMABLE.include?(state) && @order.expires_at&.future?
+        if resumable && (!@order.event.sales_open? || @order.event.production_release_gate_status != :ready ||
+            (Rails.env.production? && !PolicyRegistry.production_approved?))
+          raise RecoveryError, "Payment confirmation is unavailable for this event; contact support"
+        end
         if resumable && payment.provider_environment == "live" && !SiteSetting.instance.can_enable_live?
           raise RecoveryError, "Live payment confirmation is unavailable; contact support"
         end

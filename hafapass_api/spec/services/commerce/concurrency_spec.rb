@@ -9,7 +9,7 @@ RSpec.describe "Commerce concurrency", :non_transactional do
 
     clean_test_data
     allow(StripeService).to receive(:payment_enabled?).and_return(true)
-    allow(StripeService).to receive(:create_payment_intent) do |order, idempotency_key:|
+    allow(StripeService).to receive(:create_payment_intent) do |order, idempotency_key:, **_context|
       OpenStruct.new(id: "pi_concurrent_#{order.id}", client_secret: "#{idempotency_key}_secret")
     end
     allow(EmailService).to receive(:send_refund_notification_async)
@@ -36,6 +36,28 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(outcomes.count { |outcome| outcome.is_a?(Commerce::OrderCreator::CheckoutError) }).to eq(1)
     expect(InventoryHold.current.sum(:quantity)).to eq(1)
     expect(ticket_type.reload.available_quantity).to eq(0)
+  end
+
+  it "recovers concurrent retries as the same order and inventory reservation" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    allow(StripeService).to receive(:publishable_key).and_return("pk_test_recovery")
+    allow(StripeService).to receive(:retrieve_payment_intent) do |payment|
+      OpenStruct.new(id: payment.provider_payment_id, amount: payment.amount_cents, currency: payment.currency,
+        status: "requires_payment_method", livemode: false, client_secret: "original_secret")
+    end
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    ticket_type = create(:ticket_type, event: event, quantity_available: 1, max_per_order: 1)
+    digest = Digest::SHA256.hexdigest(SecureRandom.hex(32))
+    outcomes = run_concurrently(2) do
+      Commerce::OrderCreator.call(event: Event.find(event.id),
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+        buyer_email: "samebuyer@example.invalid", buyer_name: "Same Buyer",
+        checkout_key_digest: digest, checkout_request_digest: "b" * 64)
+    end
+    expect(outcomes).to all(be_a(Commerce::OrderCreator::Result))
+    expect(outcomes.map { |result| result.order.id }.uniq.length).to eq(1)
+    expect(Order.count).to eq(1)
+    expect(InventoryHold.current.sum(:quantity)).to eq(1)
   end
 
   it "enforces shared event capacity across concurrent ticket types" do
