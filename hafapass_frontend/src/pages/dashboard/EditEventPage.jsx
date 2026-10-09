@@ -6,6 +6,9 @@ import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
 import useEventCategories from '../../hooks/useEventCategories'
+import Dialog from '../../components/Dialog'
+import { organizerChecklist } from '../../utils/organizerChecklist'
+import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
 
 const AGE_RESTRICTIONS = [
@@ -25,9 +28,8 @@ const STATUS_BADGES = {
 
 function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading, reason, onReasonChange, requireReason = false }) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-        <h3 className="text-lg font-semibold text-neutral-900 mb-2">{title}</h3>
+    <Dialog labelledBy="event-confirm-title" onClose={onCancel} busy={loading} className="max-w-md">
+        <h3 id="event-confirm-title" className="text-lg font-semibold text-neutral-900 mb-2">{title}</h3>
         <p className="text-sm text-neutral-600 mb-4">{message}</p>
         {requireReason && (
           <div className="mb-4">
@@ -41,8 +43,7 @@ function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, o
             {loading ? 'Processing...' : confirmLabel}
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -50,6 +51,7 @@ export default function EditEventPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const categories = useEventCategories()
+  const capabilities = useLaunchCapabilities()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [event, setEvent] = useState(null)
@@ -268,6 +270,9 @@ export default function EditEventPage() {
 
   const eventEndedInPast = event?.ends_at && new Date(event.ends_at) < new Date()
   const publishChecklist = event?.publish_checklist || []
+  const remainingTicketCapacity = event?.max_capacity == null ? null : Math.max(0,
+    Number(event.max_capacity) - (event.ticket_types || []).reduce((sum, ticket) => sum + Number(ticket.quantity_available || 0), 0))
+  const organizerSteps = organizerChecklist(publishChecklist)
   const readyToPublish = publishChecklist.length > 0 && publishChecklist.every(item => item.complete)
 
   if (loading) {
@@ -291,14 +296,14 @@ export default function EditEventPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <Link to="/dashboard" className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
           Back to Dashboard
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
           {event?.slug && (
             <a
               href={`/events/${event.slug}${event.status === 'published' || event.status === 'completed' ? '' : '?preview=true'}`}
@@ -330,9 +335,9 @@ export default function EditEventPage() {
           <Link to={`/dashboard/events/${id}/box-office`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ShoppingCart className="w-4 h-4" /> Box Office
           </Link>
-          <Link to={`/dashboard/events/${id}/seating`} className="text-brand-500 hover:text-brand-700 text-sm font-medium">
+          {capabilities.assigned_seating && <Link to={`/dashboard/events/${id}/seating`} className="text-brand-500 hover:text-brand-700 text-sm font-medium">
             Assigned Seating
-          </Link>
+          </Link>}
           <Link to={`/dashboard/events/${id}/attendees`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <Users className="w-4 h-4" /> Attendees
           </Link>
@@ -342,9 +347,9 @@ export default function EditEventPage() {
           <Link to={`/dashboard/events/${id}/waitlist`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ClipboardList className="w-4 h-4" /> Waitlist
           </Link>
-          <Link to={`/dashboard/events/${id}/sales-tools`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+          {capabilities.advanced_sales_tools && <Link to={`/dashboard/events/${id}/sales-tools`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ShoppingCart className="w-4 h-4" /> Sales tools
-          </Link>
+          </Link>}
           {['published', 'completed', 'cancelled'].includes(event?.status) && (
             <Link to={`/dashboard/events/${id}/analytics`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
               View Analytics
@@ -366,18 +371,20 @@ export default function EditEventPage() {
       {/* Publish Button for Draft Events */}
       {event?.status === 'draft' && (
         <div className="mb-6 p-4 bg-brand-50 border border-brand-200 rounded-xl">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <div>
-              <p className="text-sm font-medium text-brand-800">Ready to go live?</p>
-              <p className="text-xs text-brand-600 mt-0.5">Publishing will make this event visible to the public.</p>
+              <p className="text-sm font-medium text-brand-800">Prepare your event for publishing</p>
+              <p className="text-xs text-brand-600 mt-0.5">Complete the steps below, save your changes, and preview your event before publishing.</p>
             </div>
             <button onClick={() => setShowPublishConfirm(true)} disabled={!readyToPublish} className="btn-primary text-sm px-4 py-2 disabled:opacity-50">Publish Event</button>
           </div>
           <ul className="grid sm:grid-cols-2 gap-2 mt-4" aria-label="Publishing checklist">
-            {publishChecklist.map(item => (
+            {organizerSteps.map(item => (
               <li key={item.code} className={`flex items-center gap-2 text-xs ${item.complete ? 'text-emerald-700' : 'text-neutral-600'}`}>
                 {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-                {item.label}
+                <div>{item.href && !item.complete ? <a href={item.href} className="underline underline-offset-2">{item.label}</a> : item.label}
+                  {item.detail && <p className="mt-1 text-xs font-normal text-neutral-600">{item.detail}</p>}
+                </div>
               </li>
             ))}
           </ul>
@@ -448,11 +455,11 @@ export default function EditEventPage() {
       )}
 
       {successMessage && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">{successMessage}</div>
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm" role="status">{successMessage}</div>
       )}
 
       {submitError && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{submitError}</div>
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm" role="alert">{submitError}</div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
@@ -460,6 +467,7 @@ export default function EditEventPage() {
         <section>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Cover Image</h2>
           <CoverImageUpload
+            eventId={id}
             currentUrl={form.cover_image_url}
             onUploaded={(url) => updateField('cover_image_url', url)}
             disabled={submitting}
@@ -583,7 +591,7 @@ export default function EditEventPage() {
         </section>
 
         {/* Recurring Event Section */}
-        <section>
+        <section hidden={!capabilities.recurring_events}>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Recurring Event</h2>
           <div className="space-y-4">
             <div>
@@ -661,13 +669,13 @@ export default function EditEventPage() {
       </form>
 
       {/* Ticket Types CRUD */}
-      <TicketTypeCRUD eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} />
+      <section id="ticket-types" className="scroll-mt-24"><TicketTypeCRUD remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} /></section>
 
       {/* Danger Zone — HP-28 */}
       {event && event.status !== 'archived' && (
-        <div className="mt-8 border border-red-200 rounded-xl p-5 sm:p-6">
+        <div className="mt-8 border border-neutral-200 rounded-xl p-5 sm:p-6">
           <h2 className="text-lg font-semibold text-red-700 mb-1 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5" /> Danger Zone
+            <AlertTriangle className="w-5 h-5" /> Event actions
           </h2>
           <p className="text-sm text-neutral-500 mb-4">These actions affect sales and public visibility and are recorded in event history.</p>
           <div className="space-y-3">

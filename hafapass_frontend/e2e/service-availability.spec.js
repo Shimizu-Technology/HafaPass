@@ -18,7 +18,7 @@ test('opens the public marketplace when backend services are available', async (
   await expect(page.getByRole('link', { name: /start hosting/i }).first()).toBeVisible()
 })
 
-test('fails safely into private preview when backend services are unavailable', async ({ page }) => {
+test('shows a recoverable connection failure and blocks public sales when backend services are unavailable', async ({ page }) => {
   let healthChecks = 0
   await page.route('**/api/v1/health', route => {
     healthChecks += 1
@@ -31,7 +31,10 @@ test('fails safely into private preview when backend services are unavailable', 
 
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: /A better way to run events on Guam is still coming/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Please try connecting again/i })).toBeVisible()
+  await expect(page.getByText('We cannot load event listings or checkout right now.', { exact: false })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', /^mailto:/)
+  await expect(page.getByRole('link', { name: /start hosting/i })).toHaveCount(0)
   await page.getByRole('button', { name: /check services again/i }).click()
   await expect.poll(() => healthChecks).toBeGreaterThan(1)
 })

@@ -9,13 +9,17 @@ export default function OrderRecoveryPage() {
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleSubmit(event) {
     event.preventDefault()
     setSubmitting(true)
+    setError('')
     try {
       await apiClient.post('/order_lookup', { reference: reference.trim(), buyer_email: email.trim() })
       setSubmitted(true)
+    } catch (requestError) {
+      setError(requestError.response?.status === 429 ? 'Please wait before requesting another access link.' : 'We could not request the link right now. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -35,7 +39,7 @@ export default function OrderRecoveryPage() {
             <div className="text-center">
               <CheckCircle className="mx-auto mb-3 h-10 w-10 text-emerald-600" />
               <h2 className="font-semibold text-neutral-950">Check your email</h2>
-              <p className="mt-2 text-sm text-neutral-600">If those details match an order, we sent a new secure access link. The same message appears whether or not a match exists.</p>
+              <p className="mt-2 text-sm text-neutral-600">If those details match an order, a new secure access link will arrive in your inbox. Check your spam folder too.</p>
               <button onClick={() => setSubmitted(false)} className="mt-5 text-sm font-semibold text-brand-600">Try another order</button>
             </div>
           ) : (
@@ -46,9 +50,10 @@ export default function OrderRecoveryPage() {
               </div>
               <div>
                 <label htmlFor="recovery-email" className="mb-1.5 block text-sm font-medium text-neutral-700">Email address</label>
-                <input id="recovery-email" type="email" className="input" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" required />
+                <input id="recovery-email" type="email" autoComplete="email" className="input" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" required />
               </div>
               <button disabled={submitting} className="btn-primary flex w-full items-center justify-center gap-2"><Mail className="h-4 w-4" />{submitting ? 'Sending…' : 'Email secure link'}</button>
+              {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
             </form>
           )}
         </div>

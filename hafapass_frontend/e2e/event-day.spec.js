@@ -36,6 +36,8 @@ function signedManifest(tickets) {
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+  await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: { door_card: true } }))
+  await page.route('**/api/v1/me', route => json(route, { id: 7, role: 'organizer' }))
 })
 
 test('scanner validates locally, records an offline scan, and reconciles it after reconnecting', async ({ page, context }) => {
@@ -48,7 +50,7 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
     ticket_type: 'General Admission',
     state: 'valid',
   })))
-  const device = { id: 8, identifier: 'browser-test', name: 'North door', effective: true, status: 'active', authorization_expires_at: new Date(Date.now() + 86_400_000).toISOString(), last_sequence: 0 }
+  const device = { id: 8, identifier: 'browser-test', name: 'North door', effective: true, status: 'active', authorization_expires_at: new Date(Date.now() + 86_400_000).toISOString(), last_sequence: 0, user: { id: 7, name: 'Door Staff' } }
   const syncedActions = []
 
   await page.route('**/api/v1/organizer/events', route => json(route, { events: [{ id: 42, title: 'Guam Night Market', status: 'published' }], meta: {} }))
@@ -83,6 +85,21 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
   await context.setOffline(false)
   await expect.poll(() => syncedActions.length).toBe(1)
   await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
+
+  // The app shell can reload while its API is unavailable; verified IndexedDB access remains usable.
+  await page.route('**/api/v1/health', route => json(route, { status: 'unavailable' }, 503))
+  await page.reload()
+  await expect(page.getByText('Using this device’s saved event access.', { exact: false })).toBeVisible()
+  await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
+  await page.getByLabel('Ticket QR credential').fill(credentials[0])
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect(page.getByText('Admitted offline')).toBeVisible()
+  await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
+
+  await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+  await page.getByRole('button', { name: 'Check connection', exact: true }).click()
+  await expect.poll(() => syncedActions.length).toBe(2)
+  await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
 })
 
 test('box office exposes card sales only for a verified terminal and sends an idempotency key', async ({ page }) => {
@@ -112,3 +129,19 @@ test('box office exposes card sales only for a verified terminal and sends an id
   await expect(page.getByText('Sale Complete!')).toBeVisible()
   expect(receivedIdempotencyKey).toMatch(/^box-office-/)
 })
+
+for (const scenario of [
+  { name: 'a restricted launch scope', doorCard: false, paymentReady: true },
+  { name: 'an unverified terminal', doorCard: true, paymentReady: false },
+]) {
+  test(`box office keeps card sales disabled for ${scenario.name}`, async ({ page }) => {
+    await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: { door_card: scenario.doorCard } }))
+    await page.route('**/api/v1/organizer/events/42', route => json(route, { id: 42, title: 'Door Event', ticket_types: [{ id: 2, name: 'General Admission', price_cents: 2500, quantity_available: 10, quantity_sold: 0 }] }))
+    await page.route('**/api/v1/organizer/card_present_account', route => json(route, { payment_ready: scenario.paymentReady, status: scenario.paymentReady ? 'verified' : 'pending' }))
+    await page.route('**/api/v1/organizer/events/42/box_office/summary', route => json(route, { total_orders: 0, total_tickets: 0, total_revenue_cents: 0, by_payment_method: {} }))
+    await page.goto('/dashboard/events/42/box-office')
+    await page.getByRole('button', { name: 'Add General Admission' }).click()
+    await expect(page.getByRole('button', { name: 'Card at Door' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeEnabled()
+  })
+}

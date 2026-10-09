@@ -1,28 +1,53 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2, X, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, ChevronDown, Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
 import PricingTiersCRUD from './PricingTiersCRUD'
 import { compareLocalDateTimes, formatEventDateTime, toEventLocalInput } from '../utils/eventTime'
 
-const EMPTY_FORM = { name: '', description: '', price: '', quantity_available: '', door_allocation: '', max_per_order: '', max_per_buyer: '', sales_start_at: '', sales_end_at: '' }
+const EMPTY_FORM = { name: '', description: '', price: '0.00', quantity_available: '', door_allocation: '', max_per_order: '', max_per_buyer: '', sales_start_at: '', sales_end_at: '' }
 
-function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone }) {
-  const [form, setForm] = useState(initial || EMPTY_FORM)
+function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone, defaultQuantity }) {
+  const [form, setForm] = useState(() => initial || { ...EMPTY_FORM, quantity_available: Number.isInteger(defaultQuantity) && defaultQuantity > 0 ? String(defaultQuantity) : '' })
   const [error, setError] = useState(null)
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!form.name.trim()) { setError('Name is required'); return }
+    const invalid = (message, field) => {
+      setError(message)
+      const input = document.getElementById(field)
+      const options = input?.closest('details')
+      if (options) options.open = true
+      input?.focus()
+    }
+    if (!form.name.trim()) { invalid('Give this ticket type a name.', 'ticket-type-name'); return }
+    const quantity = Number(form.quantity_available)
+    if (!form.quantity_available.trim() || !Number.isSafeInteger(quantity) || quantity <= 0) {
+      invalid('Enter a positive whole number of tickets available.', 'ticket-type-quantity')
+      return
+    }
+    const price = Number(form.price)
+    if (!form.price.trim() || !Number.isFinite(price) || price < 0 || !/^\d+(?:\.\d{1,2})?$/.test(form.price)) {
+      invalid('Enter a price in dollars and cents, or 0 for free tickets.', 'ticket-type-price')
+      return
+    }
+    for (const [field, label] of [['door_allocation', 'Door allocation'], ['max_per_order', 'Tickets per order'], ['max_per_buyer', 'Tickets per buyer']]) {
+      const value = form[field]
+      const number = Number(value)
+      if (value !== '' && (!Number.isSafeInteger(number) || number < (field === 'door_allocation' ? 0 : 1))) {
+        invalid(`${label} must be a ${field === 'door_allocation' ? 'non-negative' : 'positive'} whole number.`, `ticket-type-${field === 'door_allocation' ? 'door-allocation' : field === 'max_per_order' ? 'max-order' : 'max-buyer'}`)
+        return
+      }
+    }
     if (form.sales_start_at && form.sales_end_at && compareLocalDateTimes(form.sales_end_at, form.sales_start_at) <= 0) {
-      setError('Sales end must be after sales start')
+      invalid('Sales end must be after sales start.', 'ticket-type-sales-end')
       return
     }
     setError(null)
     onSave({
       name: form.name.trim(),
       description: form.description.trim() || null,
-      price_cents: Math.round(parseFloat(form.price || '0') * 100),
-      quantity_available: form.quantity_available ? parseInt(form.quantity_available, 10) : null,
+      price_cents: Math.round(price * 100),
+      quantity_available: quantity,
       door_allocation: form.door_allocation === '' ? null : parseInt(form.door_allocation, 10),
       max_per_order: form.max_per_order ? parseInt(form.max_per_order, 10) : null,
       max_per_buyer: form.max_per_buyer ? parseInt(form.max_per_buyer, 10) : null,
@@ -32,55 +57,65 @@ function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+    <form onSubmit={handleSubmit} noValidate className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <div>
-        <label htmlFor="ticket-type-name" className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
-        <input id="ticket-type-name" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., General Admission" disabled={saving} />
+        <label htmlFor="ticket-type-name" className="block text-sm font-medium text-neutral-700 mb-1">Name <span aria-hidden="true" className="text-red-500">*</span></label>
+        <input id="ticket-type-name" required value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., General Admission" disabled={saving} />
       </div>
-      <div>
-        <label htmlFor="ticket-type-door-allocation" className="block text-sm font-medium text-neutral-700 mb-1">Door allocation</label>
-        <input id="ticket-type-door-allocation" type="number" min="0" value={form.door_allocation} onChange={e => setForm(f => ({ ...f, door_allocation: e.target.value }))} className="input" placeholder="Uses all remaining inventory" disabled={saving} />
-        <p className="mt-1 text-xs text-neutral-500">Optional cap reserved for cash and verified terminal sales at the venue.</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor="ticket-type-price" className="block text-sm font-medium text-neutral-700 mb-1">Price ($) <span aria-hidden="true" className="text-red-500">*</span></label>
+          <input id="ticket-type-price" type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} className="input" placeholder="0.00" aria-describedby="ticket-type-price-help" disabled={saving} />
+          <p id="ticket-type-price-help" className="mt-1 text-xs text-neutral-500">Enter 0 for free tickets.</p>
+        </div>
+        <div>
+          <label htmlFor="ticket-type-quantity" className="block text-sm font-medium text-neutral-700 mb-1">Tickets available <span aria-hidden="true" className="text-red-500">*</span></label>
+          <input id="ticket-type-quantity" type="number" min="1" step="1" required value={form.quantity_available} onChange={e => setForm(f => ({ ...f, quantity_available: e.target.value }))} className="input" placeholder="e.g., 30" aria-describedby="ticket-type-quantity-help" disabled={saving} />
+          <p id="ticket-type-quantity-help" className="mt-1 text-xs text-neutral-500">Total tickets for this type, including any already sold.{!initial && defaultQuantity != null && ` ${Math.max(0, defaultQuantity)} places remain in the event capacity.`}</p>
+        </div>
       </div>
-      <div>
-        <p className="text-xs text-neutral-500 mb-2">Optional sales window in {eventTimezone || 'Pacific/Guam'}.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <details className="group rounded-xl border border-neutral-200 bg-white px-3">
+        <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-neutral-700">More ticket options<ChevronDown aria-hidden="true" className="ml-auto h-4 w-4 group-open:rotate-180" /></summary>
+        <div className="space-y-4 pb-4 pt-2">
           <div>
-            <label htmlFor="ticket-type-sales-start" className="block text-sm font-medium text-neutral-700 mb-1">Sales Start</label>
-            <input id="ticket-type-sales-start" type="datetime-local" value={form.sales_start_at} onChange={e => setForm(current => ({ ...current, sales_start_at: e.target.value }))} className="input" disabled={saving} />
+            <label htmlFor="ticket-type-description" className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
+            <input id="ticket-type-description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="Optional description" disabled={saving} />
           </div>
           <div>
-            <label htmlFor="ticket-type-sales-end" className="block text-sm font-medium text-neutral-700 mb-1">Sales End</label>
-            <input id="ticket-type-sales-end" type="datetime-local" value={form.sales_end_at} onChange={e => setForm(current => ({ ...current, sales_end_at: e.target.value }))} className="input" disabled={saving} />
+            <label htmlFor="ticket-type-door-allocation" className="block text-sm font-medium text-neutral-700 mb-1">Door allocation</label>
+            <input id="ticket-type-door-allocation" type="number" min="0" step="1" value={form.door_allocation} onChange={e => setForm(f => ({ ...f, door_allocation: e.target.value }))} className="input" placeholder="No separate cap" disabled={saving} />
+            <p className="mt-1 text-xs text-neutral-500">Optional cap for sales at the venue. Leave blank to use the remaining ticket inventory.</p>
           </div>
+          <div>
+            <p className="text-xs text-neutral-500 mb-2">Optional sales dates in {eventTimezone || 'Pacific/Guam'}.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="ticket-type-sales-start" className="block text-sm font-medium text-neutral-700 mb-1">Sales start</label>
+                <input id="ticket-type-sales-start" type="datetime-local" value={form.sales_start_at} onChange={e => setForm(current => ({ ...current, sales_start_at: e.target.value }))} className="input" disabled={saving} />
+              </div>
+              <div>
+                <label htmlFor="ticket-type-sales-end" className="block text-sm font-medium text-neutral-700 mb-1">Sales end</label>
+                <input id="ticket-type-sales-end" type="datetime-local" value={form.sales_end_at} onChange={e => setForm(current => ({ ...current, sales_end_at: e.target.value }))} className="input" disabled={saving} />
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="ticket-type-max-order" className="block text-sm font-medium text-neutral-700 mb-1">Tickets per order</label>
+              <input id="ticket-type-max-order" type="number" min="1" step="1" value={form.max_per_order} onChange={e => setForm(f => ({ ...f, max_per_order: e.target.value }))} className="input" placeholder="No additional limit" disabled={saving} />
+            </div>
+            <div>
+              <label htmlFor="ticket-type-max-buyer" className="block text-sm font-medium text-neutral-700 mb-1">Tickets per buyer</label>
+              <input id="ticket-type-max-buyer" type="number" min="1" step="1" value={form.max_per_buyer} onChange={e => setForm(f => ({ ...f, max_per_buyer: e.target.value }))} className="input" placeholder="No additional limit" disabled={saving} />
+            </div>
+          </div>
+          <p className="text-xs text-neutral-500">Blank purchase limits add no separate cap; event capacity and remaining ticket inventory still apply.</p>
         </div>
-      </div>
-      <div>
-        <label htmlFor="ticket-type-description" className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
-        <input id="ticket-type-description" value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} className="input" placeholder="Optional description" disabled={saving} />
-      </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div>
-          <label htmlFor="ticket-type-price" className="block text-sm font-medium text-neutral-700 mb-1">Price ($)</label>
-          <input id="ticket-type-price" type="number" step="0.01" min="0" value={form.price} onChange={e => setForm(f => ({...f, price: e.target.value}))} className="input" placeholder="0.00" disabled={saving} />
-        </div>
-        <div>
-          <label htmlFor="ticket-type-quantity" className="block text-sm font-medium text-neutral-700 mb-1">Qty Available</label>
-          <input id="ticket-type-quantity" type="number" min="1" value={form.quantity_available} onChange={e => setForm(f => ({...f, quantity_available: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
-        </div>
-        <div>
-          <label htmlFor="ticket-type-max-order" className="block text-sm font-medium text-neutral-700 mb-1">Max/Order</label>
-          <input id="ticket-type-max-order" type="number" min="1" value={form.max_per_order} onChange={e => setForm(f => ({...f, max_per_order: e.target.value}))} className="input" placeholder="∞" disabled={saving} />
-        </div>
-        <div>
-          <label htmlFor="ticket-type-max-buyer" className="block text-sm font-medium text-neutral-700 mb-1">Max/Buyer</label>
-          <input id="ticket-type-max-buyer" type="number" min="1" value={form.max_per_buyer} onChange={e => setForm(f => ({...f, max_per_buyer: e.target.value}))} className="input" placeholder="None" disabled={saving} />
-        </div>
-      </div>
+      </details>
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} disabled={saving} className="px-3 py-1.5 text-sm text-neutral-600 hover:text-neutral-800">Cancel</button>
-        <button type="submit" disabled={saving} className="btn-primary text-sm px-4 py-1.5">
+        <button type="button" onClick={onCancel} disabled={saving} className="min-h-11 px-3 py-1.5 text-sm text-neutral-600 hover:text-neutral-800">Cancel</button>
+        <button type="submit" disabled={saving} className="btn-primary min-h-11 text-sm px-4 py-1.5">
           {saving ? 'Saving...' : initial ? 'Update' : 'Add Ticket Type'}
         </button>
       </div>
@@ -88,7 +123,7 @@ function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone }) {
   )
 }
 
-export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh, eventTimezone = 'Pacific/Guam' }) {
+export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh, remainingCapacity, eventTimezone = 'Pacific/Guam' }) {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -150,12 +185,12 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh, e
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>
+        <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>
       )}
 
       {showForm && (
         <div className="mb-4">
-          <TicketTypeForm onSave={handleCreate} onCancel={() => setShowForm(false)} saving={saving} eventTimezone={eventTimezone} />
+          <TicketTypeForm onSave={handleCreate} onCancel={() => setShowForm(false)} saving={saving} eventTimezone={eventTimezone} defaultQuantity={remainingCapacity} />
         </div>
       )}
 
@@ -215,10 +250,10 @@ export default function TicketTypeCRUD({ eventId, ticketTypes = [], onRefresh, e
                       </div>
                     ) : (
                       <>
-                        <button onClick={() => { setEditingId(tt.id); setShowForm(false) }} className="p-1.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors">
+                        <button aria-label={`Edit ${tt.name}`} onClick={() => { setEditingId(tt.id); setShowForm(false) }} className="p-1.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors">
                           <Pencil className="w-4 h-4" />
                         </button>
-                        <button onClick={() => setConfirmDeleteId(tt.id)} className="p-1.5 text-neutral-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
+                        <button aria-label={`Delete ${tt.name}`} onClick={() => setConfirmDeleteId(tt.id)} className="p-1.5 text-neutral-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </>

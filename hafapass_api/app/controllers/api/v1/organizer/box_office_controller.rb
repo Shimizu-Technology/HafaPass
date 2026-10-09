@@ -28,21 +28,17 @@ module Api
             return
           end
 
-          result = Commerce::OrderCreator.call(
+          result = Commerce::CashSaleCreator.call(
             event: @event,
-            line_items: line_items,
-            buyer_email: buyer_email,
-            buyer_name: buyer_name,
-            buyer_phone: params[:buyer_phone],
             user: current_user,
-            payment_required: false,
-            service_fee: false,
-            source: "box_office",
-            payment_method: payment_method,
-            seat_hold_token: params[:seat_hold_token]
+            parameters: params.permit(:buyer_name, :buyer_email, :buyer_phone, :payment_method, :seat_hold_token,
+              line_items: [:ticket_type_id, :quantity]),
+            idempotency_key: request.headers["Idempotency-Key"]
           )
 
-          render json: order_json(result.order), status: :created
+          render json: order_json(result.order), status: result.replayed ? :ok : :created
+        rescue Commerce::CashSaleCreator::Conflict => e
+          render json: { error: e.message }, status: :conflict
         rescue Commerce::OrderCreator::CheckoutError => e
           render json: { error: e.message }, status: :unprocessable_entity
         rescue CardPresentPayments::Processor::ProcessingError => e

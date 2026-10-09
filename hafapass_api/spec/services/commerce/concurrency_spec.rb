@@ -116,6 +116,46 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(order.reload.refundable_cents).to eq(1250)
   end
 
+  it "recovers one cash order under concurrent identical requests for the last ticket" do
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    user = event.organizer_profile.user
+    ticket_type = create(:ticket_type, event: event, quantity_available: 1, max_per_order: 1, price_cents: 500)
+    parameters = { line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }], payment_method: "door_cash" }
+
+    outcomes = run_concurrently(2) do
+      Commerce::CashSaleCreator.call(event: Event.find(event.id), user: user, parameters: parameters,
+        idempotency_key: "concurrent-identical-cash")
+    end
+
+    expect(outcomes).to all(be_a(Commerce::CashSaleCreator::Result))
+    expect(outcomes.map { |result| result.order.id }.uniq.length).to eq(1)
+    expect(outcomes.map(&:replayed)).to contain_exactly(false, true)
+    expect(Order.count).to eq(1)
+    expect(Ticket.count).to eq(1)
+    expect(Payment.succeeded.sum(:amount_cents)).to eq(500)
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+  end
+
+  it "rolls back the losing cash sale when different events race with the same key" do
+    SiteSetting.instance
+    events = 2.times.map { create(:event, :published, starts_at: 5.days.from_now) }
+    types = events.map { |event| create(:ticket_type, event: event, price_cents: 500, quantity_available: 1) }
+
+    outcomes = run_concurrently(2) do |index|
+      event = Event.find(events[index].id)
+      Commerce::CashSaleCreator.call(event: event, user: event.organizer_profile.user,
+        parameters: { line_items: [{ ticket_type_id: types[index].id, quantity: 1 }], payment_method: "door_cash" },
+        idempotency_key: "concurrent-conflicting-cash")
+    end
+
+    expect(outcomes.count { |result| result.is_a?(Commerce::CashSaleCreator::Result) }).to eq(1)
+    expect(outcomes.count { |result| result.is_a?(Commerce::CashSaleCreator::Conflict) }).to eq(1)
+    expect(Order.count).to eq(1)
+    expect(Ticket.count).to eq(1)
+    expect(Payment.succeeded.sum(:amount_cents)).to eq(500)
+    expect(types.sum { |type| type.reload.quantity_sold }).to eq(1)
+  end
+
   it "allows exactly one checkout to reserve the final catalog item" do
     event = create(:event, :published, starts_at: 5.days.from_now)
     ticket_type = create(:ticket_type, event: event, quantity_available: 2, max_per_order: 1)

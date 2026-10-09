@@ -1,12 +1,7 @@
 import axios from 'axios'
 import { Sentry } from '../monitoring'
-
-export function monitoringPath(url) {
-  return url
-    ?.split('?')[0]
-    .replace(/\/[0-9a-f-]{8,}/gi, '/:id')
-    .replace(/\/\d+/g, '/:id')
-}
+import { monitoringPath } from '../utils/telemetryPrivacy'
+export { monitoringPath } from '../utils/telemetryPrivacy'
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1',

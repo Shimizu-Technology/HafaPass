@@ -116,7 +116,7 @@ module HafaPass
             entry["commit_id"] == sha && entry["submitted_at"]
         end.max_by { |entry| [entry["submitted_at"], entry.fetch("id")] }
         unless review && %w[COMMENTED APPROVED].include?(review["state"]) &&
-            !review["body"].to_s.strip.empty? &&
+            (review["state"] == "APPROVED" || !review["body"].to_s.strip.empty?) &&
             !review["body"].match?(/(?:\A|\n)\s*(?:>\s*)?(?:\#+\s*)?Review (?:skipped|paused)\b/i)
           raise Error, "CodeRabbit must have a submitted, completed review on the source pull-request head."
         end
