@@ -109,7 +109,7 @@ export default function BoxOfficePage() {
           total_cents: totalCents,
           created_at: new Date().toISOString(),
         }
-        // Persist before contacting the terminal: a lost response or reload keeps the same sale identity.
+        // Persist before recording the sale: a lost response or reload keeps the same cash or card identity.
         window.sessionStorage.setItem(saleStorageKey, JSON.stringify(sale))
         pendingSaleRef.current = sale
         setPendingSale(sale)
@@ -286,10 +286,10 @@ export default function BoxOfficePage() {
 
           {saleError && (
             <div className={`rounded-xl border p-4 text-sm ${saleError.reconciliationRequired ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
-              <p className="font-semibold">{saleError.reconciliationRequired ? 'Do not charge the card again' : 'Sale not completed'}</p>
+              <p className="font-semibold">{saleError.reconciliationRequired ? paymentMethod === 'door_card' ? 'Do not charge the card again' : 'Do not record another cash sale' : 'Sale not completed'}</p>
               <p className="mt-1">{saleError.message}</p>
               {saleError.orderId && <p className="mt-1 font-mono text-xs">Order #{saleError.orderId}</p>}
-              {saleError.reconciliationRequired && <p className="mt-2">Use Retry saved sale to check the original sale, or ask a manager to compare the terminal receipt. The saved reference survives a reload in this tab.</p>}
+              {saleError.reconciliationRequired && <p className="mt-2">Use Retry saved sale to check the original sale, or ask a manager to compare {paymentMethod === 'door_card' ? 'the terminal receipt' : 'the cash sale records'}. The saved reference survives a reload in this tab.</p>}
             </div>
           )}
 

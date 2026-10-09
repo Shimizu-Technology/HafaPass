@@ -16,7 +16,8 @@ module Commerce
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
-      attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil)
+      attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
+      cash_sale_key: nil, cash_sale_request_digest: nil)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -41,6 +42,8 @@ module Commerce
       @waitlist_offer_token = waitlist_offer_token
       @seat_hold_token = seat_hold_token
       @live_money_proof_authorization = live_money_proof_authorization
+      @cash_sale_key = cash_sale_key
+      @cash_sale_request_digest = cash_sale_request_digest
     end
 
     def call
@@ -102,6 +105,8 @@ module Commerce
           buyer_phone: buyer_phone,
           source: source,
           payment_method: payment_method,
+          cash_sale_key: @cash_sale_key,
+          cash_sale_request_digest: @cash_sale_request_digest,
           buyer_terms_version: buyer_terms_version,
           buyer_terms_digest: buyer_terms_digest,
           buyer_terms_accepted_at: buyer_terms_accepted_at,

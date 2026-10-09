@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_09_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1087,6 +1087,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_090000) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.string "wallet_type"
+    t.string "cash_sale_key"
+    t.string "cash_sale_request_digest"
+    t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["event_id"], name: "index_orders_on_event_id"
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"

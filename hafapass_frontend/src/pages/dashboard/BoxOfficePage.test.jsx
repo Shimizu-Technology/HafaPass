@@ -40,4 +40,23 @@ describe('uncertain box office sale', () => {
     expect(await screen.findByText('Sale Complete!')).toBeInTheDocument()
     expect(window.sessionStorage.getItem('hafapass:pending-box-office:local-preview:37')).toBeNull()
   })
+
+  it('preserves a cash sale identity across a lost response and reload', async () => {
+    apiClient.post.mockRejectedValueOnce(new Error('cash response lost'))
+    const first = mountBoxOffice()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
+    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    await screen.findByText('A saved sale needs confirmation')
+    expect(screen.getByText('Do not record another cash sale')).toBeInTheDocument()
+    const original = apiClient.post.mock.calls[0]
+    expect(original[1].payment_method).toBe('door_cash')
+    first.unmount()
+    apiClient.post.mockResolvedValueOnce({ data: { id: 922, buyer_name: 'Walk-in', total_cents: 500, tickets: [] } })
+    mountBoxOffice()
+    await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
+    await screen.findByText('Sale Complete!')
+    expect(apiClient.post.mock.calls[1]).toEqual(original)
+    expect(window.sessionStorage.getItem('hafapass:pending-box-office:local-preview:37')).toBeNull()
+  })
 })
