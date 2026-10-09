@@ -81,11 +81,11 @@ export default function OrderConfirmationPage() {
   const event = order?.event
   const isProcessing = order && !finalStatuses.has(order.status)
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
-  const usableTickets = Boolean(order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
+  const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
   const delivery = order?.confirmation_delivery
   const deliveryFailed = !delivery?.simulated && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
   const deliveryMessage = delivery?.simulated
-    ? 'Email is simulated in this test environment. Open or download your tickets below.'
+    ? usableTickets ? 'Email is simulated in this test environment. Open or download your tickets below.' : 'Email is simulated in this test environment. Check your order and ticket statuses below.'
     : delivery?.status === 'delivered'
       ? 'Your ticket email was delivered.'
       : delivery?.status === 'sent'
@@ -248,7 +248,7 @@ export default function OrderConfirmationPage() {
             {isProcessing ? <Clock3 className="h-8 w-8 text-amber-700" /> : <CheckCircle className="h-8 w-8 text-emerald-700" />}
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-neutral-950">
-            {isProcessing ? 'Payment is processing' : order.status === 'cancelled' || order.status === 'expired' ? 'Order closed' : 'Your order is confirmed'}
+            {isProcessing ? 'Payment is processing' : order.status === 'refunded' ? 'Your order was refunded' : order.status === 'partially_refunded' ? 'Your order was partially refunded' : order.status === 'cancelled' || order.status === 'expired' ? 'Order closed' : 'Your order is confirmed'}
           </h1>
           <p className="mt-2 text-neutral-500">Order {order.reference} · {order.buyer_email}</p>
           {isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
