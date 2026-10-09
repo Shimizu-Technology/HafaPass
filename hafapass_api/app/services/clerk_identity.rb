@@ -6,6 +6,8 @@ require "json"
 # Contact information submitted to /users/sync is never identity evidence.
 # Read verified ownership directly from Clerk at each recipient acceptance.
 class ClerkIdentity
+  class LookupUnavailable < StandardError; end
+
   class RequestCache < ActiveSupport::CurrentAttributes
     attribute :verified_emails
   end
@@ -15,13 +17,18 @@ class ClerkIdentity
       RequestCache.set(verified_emails: {}, &block)
     end
 
-    def verified_email_addresses(clerk_id)
+    def verified_email_addresses(clerk_id, require_available: false)
       cache = RequestCache.verified_emails
-      return fetch_verified_email_addresses(clerk_id) unless cache
-
       # Cache only within this request, including failures. The next acceptance
       # request rechecks the provider, so revoked addresses cannot linger.
-      cache.fetch(clerk_id) { cache[clerk_id] = fetch_verified_email_addresses(clerk_id).freeze }
+      addresses = if cache
+        cache.fetch(clerk_id) { cache[clerk_id] = fetch_verified_email_addresses(clerk_id)&.freeze }
+      else
+        fetch_verified_email_addresses(clerk_id)
+      end
+      raise LookupUnavailable, "Verified identity lookup is unavailable" if require_available && addresses.nil?
+
+      addresses || []
     end
 
     def email_matches?(user:, email:)
@@ -32,7 +39,7 @@ class ClerkIdentity
     private
 
     def fetch_verified_email_addresses(clerk_id)
-      return [] if clerk_id.blank? || ENV["CLERK_SECRET_KEY"].blank?
+      return nil if clerk_id.blank? || ENV["CLERK_SECRET_KEY"].blank?
 
       uri = URI("https://api.clerk.com/v1/users/#{ERB::Util.url_encode(clerk_id)}")
       response = Net::HTTP.start(uri.host, uri.port, use_ssl: true,
@@ -41,10 +48,10 @@ class ClerkIdentity
         request["Authorization"] = "Bearer #{ENV.fetch('CLERK_SECRET_KEY')}"
         http.request(request)
       end
-      return [] unless response.code == "200"
+      return nil unless response.code == "200"
 
       user = JSON.parse(response.body)
-      return [] unless user["id"] == clerk_id
+      return nil unless user["id"] == clerk_id && user["email_addresses"].is_a?(Array)
 
       Array(user["email_addresses"]).filter_map do |address|
         next unless address.dig("verification", "status") == "verified"
@@ -53,7 +60,7 @@ class ClerkIdentity
       end.uniq
     rescue StandardError => error
       Rails.logger.warn("Clerk identity verification unavailable (#{error.class})")
-      []
+      nil
     end
   end
 end

@@ -1,4 +1,10 @@
 class ApplicationController < ActionController::API
+  rescue_from ClerkIdentity::LookupUnavailable do
+    response.set_header("Retry-After", "5")
+    render json: { error: "We could not verify your account yet. Please try again shortly.",
+      code: "identity_verification_unavailable", retryable: true }, status: :service_unavailable
+  end
+
   rescue_from ActionController::BadRequest do |error|
     render json: { error: error.message }, status: :bad_request
   end
@@ -89,7 +95,7 @@ class ApplicationController < ActionController::API
     # Standard Clerk session tokens have no email claim. Resolve the server's
     # admin allowlist against verified provider addresses, not contact data.
     if ENV.fetch("ADMIN_EMAILS", "").present? &&
-        ClerkIdentity.verified_email_addresses(user.clerk_id).any? { |email| admin_email?(email) }
+        ClerkIdentity.verified_email_addresses(user.clerk_id, require_available: true).any? { |email| admin_email?(email) }
       return :admin
     end
     return :admin if first_user_admin_bootstrap_enabled?

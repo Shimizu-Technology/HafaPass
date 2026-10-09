@@ -4,6 +4,7 @@ class S3Service
   CONTENT_TYPES = { "image/jpeg" => "jpg", "image/png" => "png", "image/webp" => "webp" }.freeze
   MAX_BYTES = 5.megabytes
   class UploadError < StandardError; end
+  class UploadUnavailable < UploadError; end
 
   class << self
     def configured?
@@ -38,6 +39,9 @@ class S3Service
         metadata_directive: "REPLACE", content_type: content_type,
         cache_control: "public, max-age=31536000, immutable")
       { key: final_key, public_url: public_url(final_key) }
+    rescue Seahorse::Client::NetworkingError => error
+      Rails.logger.warn("Image upload verification interrupted (#{error.class})")
+      raise UploadUnavailable, "Image verification was interrupted. Please retry the upload completion."
     rescue Aws::S3::Errors::ServiceError => error
       Rails.logger.warn("Image upload verification failed (#{error.class})")
       raise UploadError, "The image could not be verified. Please upload it again."

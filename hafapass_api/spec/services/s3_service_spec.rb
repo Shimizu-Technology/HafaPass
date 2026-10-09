@@ -81,6 +81,19 @@ RSpec.describe S3Service do
     expect { described_class.delete_pending_upload("pending/image.jpg") }.not_to raise_error
   end
 
+  %i[head_object get_object copy_object].each do |operation|
+    it "returns a retryable error when #{operation} has a network failure" do
+      client.stub_responses(:head_object, content_type: "image/jpeg", content_length: 100, etag: "source-version")
+      client.stub_responses(:get_object, body: "\xFF\xD8\xFFfixture".b)
+      client.stub_responses(operation, Seahorse::Client::NetworkingError.new(Net::ReadTimeout.new))
+      expect {
+        described_class.complete_upload(key: "pending/image.jpg", content_type: "image/jpeg", byte_size: 100,
+          final_key: "uploads/events/1/receipt.jpg")
+      }.to raise_error(described_class::UploadUnavailable, /retry/)
+      expect(client.api_requests.map { |entry| entry[:operation_name] }).not_to include(:delete_object)
+    end
+  end
+
   it "fails closed if the verified source is replaced before copy" do
     client.stub_responses(:head_object, content_type: "image/png", content_length: 100, etag: "old")
     client.stub_responses(:get_object, body: "\x89PNG\r\n\x1A\nfixture".b)

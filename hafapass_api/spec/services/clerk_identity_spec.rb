@@ -38,6 +38,33 @@ RSpec.describe ClerkIdentity do
     expect(described_class.verified_email_addresses("user_recipient")).to eq([])
   end
 
+  it "distinguishes unavailable evidence from a successful empty verified-address list" do
+    allow(http).to receive(:request).and_return(double(code: "200", body: {
+      id: "user_recipient", email_addresses: []
+    }.to_json))
+    expect(described_class.verified_email_addresses("user_recipient", require_available: true)).to eq([])
+    allow(http).to receive(:request).and_raise(Net::ReadTimeout)
+    described_class.with_request_cache do
+      expect(described_class.verified_email_addresses("user_recipient")).to eq([])
+      expect { described_class.verified_email_addresses("user_recipient", require_available: true) }
+        .to raise_error(described_class::LookupUnavailable)
+    end
+    expect(http).to have_received(:request).twice
+  end
+
+  it "requires available evidence for provider errors, malformed identities and missing credentials" do
+    [double(code: "503", body: "unavailable"), double(code: "200", body: "invalid"),
+      double(code: "200", body: { id: "another_user", email_addresses: [] }.to_json),
+      double(code: "200", body: { id: "user_recipient" }.to_json)].each do |provider_response|
+      allow(http).to receive(:request).and_return(provider_response)
+      expect { described_class.verified_email_addresses("user_recipient", require_available: true) }
+        .to raise_error(described_class::LookupUnavailable)
+    end
+    allow(ENV).to receive(:[]).with("CLERK_SECRET_KEY").and_return(nil)
+    expect { described_class.verified_email_addresses("user_recipient", require_available: true) }
+      .to raise_error(described_class::LookupUnavailable)
+  end
+
   it "does not treat an editable contact email as verified ownership" do
     user = build(:user, clerk_id: "user_recipient", email: "unverified@example.com")
     expect(described_class.email_matches?(user: user, email: user.email)).to be(false)

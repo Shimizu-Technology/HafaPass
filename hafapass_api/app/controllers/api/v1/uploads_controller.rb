@@ -6,6 +6,11 @@ module Api
       rescue_from S3Service::UploadError do |error|
         render json: { error: error.message }, status: :unprocessable_entity
       end
+      rescue_from S3Service::UploadUnavailable do |error|
+        response.set_header("Retry-After", "5")
+        render json: { error: error.message, code: "upload_temporarily_unavailable", retryable: true },
+          status: :service_unavailable
+      end
 
       def presign
         scope = authorized_scope(event_id: params[:event_id])

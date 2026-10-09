@@ -96,6 +96,35 @@ RSpec.describe "Api::V1 image uploads", type: :request do
     expect(S3Service).to have_received(:delete_pending_upload).once
   end
 
+  it "returns controlled retryable network failure and completes the same receipt after recovery" do
+    client = Aws::S3::Client.new(stub_responses: true, region: "us-west-2",
+      credentials: Aws::Credentials.new("fixture", "fixture"))
+    allow(S3Service).to receive(:s3_client).and_return(client)
+    allow(S3Service).to receive(:bucket_name).and_return("fixture-bucket")
+    allow(S3Service).to receive(:complete_upload).and_call_original
+    client.stub_responses(:head_object, content_type: "image/jpeg", content_length: 100, etag: "source-version")
+    client.stub_responses(:get_object, body: "\xFF\xD8\xFFfixture".b)
+    client.stub_responses(:copy_object, Seahorse::Client::NetworkingError.new(Net::ReadTimeout.new))
+    post "/api/v1/uploads/presign", params: params, headers: auth_headers(owner), as: :json
+    token = response.parsed_body.fetch("upload_token")
+    post "/api/v1/uploads/complete", params: { upload_token: token }, headers: auth_headers(owner), as: :json
+    expect(response).to have_http_status(:service_unavailable)
+    expect(response.parsed_body).to include("code" => "upload_temporarily_unavailable", "retryable" => true)
+    expect(response.headers["Retry-After"]).to eq("5")
+    receipt = ImageUploadReceipt.sole
+    expect(receipt.completed_at).to be_nil
+    expect(S3Service).not_to have_received(:delete_pending_upload)
+
+    client.stub_responses(:copy_object, copy_object_result: { etag: "final-version" })
+    post "/api/v1/uploads/complete", params: { upload_token: token }, headers: auth_headers(owner), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(ImageUploadReceipt.sole.id).to eq(receipt.id)
+    expect(receipt.reload.completed_at).to be_present
+    copies = client.api_requests.select { |entry| entry[:operation_name] == :copy_object }
+    expect(copies.map { |entry| entry[:params][:key] }.uniq).to eq([receipt.final_key])
+    expect(S3Service).to have_received(:delete_pending_upload).once
+  end
+
   it "still enforces current permissions on a completed receipt" do
     marketer = create(:user)
     membership = create(:organization_membership, organization: event.organization, user: marketer, role: :marketer)
