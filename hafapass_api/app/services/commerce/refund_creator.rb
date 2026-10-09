@@ -82,12 +82,19 @@ module Commerce
         end
 
         selected_tickets = lock_selected_tickets!
-        payment = captured_payment || order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).last
+        captured = order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).to_a
+        if captured_payment.nil? && captured.many?
+          raise RefundError, "Multiple captured payments require finance reconciliation before a refund"
+        end
+        payment = captured_payment || captured.first
         unless payment && payment.order_id == order.id && (payment.succeeded? || payment.partially_refunded?)
           raise RefundError, "A captured payment is required for a refund"
         end
         unless payment.provider == "stripe" && payment.provider_payment_id.present?
           raise RefundError, "Automated refunds are not supported for this payment provider"
+        end
+        if Rails.env.production? && (payment.provider_payment_id.start_with?("sim_") || payment.provider_payload["simulated"] == true)
+          raise RefundError, "Simulated payments cannot be refunded in production"
         end
         payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
         remaining = [order.refundable_cents, payment_remaining].min

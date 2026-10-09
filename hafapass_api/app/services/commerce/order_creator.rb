@@ -142,6 +142,7 @@ module Commerce
             idempotency_key: "#{payment_method}:order:#{order.id}",
             amount_cents: order.total_cents,
             currency: order.currency,
+            provider_payload: { simulated: !Rails.env.production? },
             status: :pending
           )
           OrderLifecycle.complete!(
@@ -150,6 +151,18 @@ module Commerce
             provider_amount_cents: payment.amount_cents,
             provider_currency: payment.currency
           )
+        elsif order.total_cents.positive? && !Rails.env.production? && SiteSetting.instance.simulate_mode?
+          payment = order.payments.create!(
+            provider: "stripe",
+            provider_payment_id: "sim_pi_#{SecureRandom.hex(12)}",
+            provider_payload: { simulated: true },
+            idempotency_key: "simulation:payment:order:#{order.id}",
+            amount_cents: order.total_cents,
+            currency: order.currency,
+            status: :pending
+          )
+          OrderLifecycle.complete!(order, payment: payment, provider_amount_cents: payment.amount_cents,
+            provider_currency: payment.currency)
         else
           OrderLifecycle.complete!(order)
         end
@@ -677,7 +690,7 @@ module Commerce
     end
 
     def create_provider_payment!(order, payment)
-      return unless payment&.provider == "stripe"
+      return unless payment&.provider == "stripe" && payment.pending?
 
       intent = StripeService.create_payment_intent(order, idempotency_key: payment.idempotency_key)
       Payment.transaction do
