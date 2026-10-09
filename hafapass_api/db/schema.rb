@@ -1261,6 +1261,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.datetime "updated_at", null: false
     t.string "provider_environment"
     t.string "provider_account_id"
+    t.string "provider_platform_account_id"
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"

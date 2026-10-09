@@ -1,6 +1,13 @@
 require "rails_helper"
 
 RSpec.describe StripeService do
+  before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_PLATFORM_ACCOUNT_ID").and_return("acct_testplatform")
+  end
+  def accounts_api(id = "acct_testplatform")
+    double("accounts API", retrieve_current: OpenStruct.new(id: id))
+  end
   it "refuses legacy live mode when current provider evidence is not approved" do
     settings = instance_double(
       SiteSetting,
@@ -27,7 +34,7 @@ RSpec.describe StripeService do
     )
     allow(SiteSetting).to receive(:instance).and_return(settings)
     refunds = double("refunds service")
-    client = instance_double(Stripe::StripeClient, v1: double("v1", refunds: refunds))
+    client = instance_double(Stripe::StripeClient, v1: double("v1", refunds: refunds, accounts: accounts_api))
     allow(Stripe::StripeClient).to receive(:new).with("sk_test_fake").and_return(client)
     allow(refunds).to receive(:create).and_return(OpenStruct.new(id: "re_test"))
 
@@ -52,7 +59,7 @@ RSpec.describe StripeService do
       settings = instance_double(SiteSetting, simulate_mode?: false, live_mode?: false,
         stripe_secret_key: "sk_test_lookup", payment_mode: "test")
       allow(SiteSetting).to receive(:instance).and_return(settings)
-      client = instance_double(Stripe::StripeClient, v1: double("v1 services", refunds: refunds_api))
+      client = instance_double(Stripe::StripeClient, v1: double("v1 services", refunds: refunds_api, accounts: accounts_api))
       allow(Stripe::StripeClient).to receive(:new).with("sk_test_lookup").and_return(client)
       allow(refunds_api).to receive(:list).with({ payment_intent: "pi_lookup", limit: 100 }, {}).and_return(list)
     end
@@ -93,7 +100,7 @@ RSpec.describe StripeService do
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("sk_test_original")
     refunds = double("refunds API")
-    client = instance_double(Stripe::StripeClient, v1: double("v1", refunds: refunds))
+    client = instance_double(Stripe::StripeClient, v1: double("v1", refunds: refunds, accounts: accounts_api))
     allow(Stripe::StripeClient).to receive(:new).with("sk_test_original").and_return(client)
     expect(refunds).to receive(:create).with(anything, hash_including(stripe_account: "acct_original"))
     described_class.refund_payment(payment.provider_payment_id, payment: payment, idempotency_key: "snapshot")
@@ -108,5 +115,28 @@ RSpec.describe StripeService do
     payment = create(:payment, provider_environment: nil)
     expect { described_class.refund_payment(payment.provider_payment_id, payment: payment, idempotency_key: "legacy") }
       .to raise_error(described_class::PaymentError, /context is missing/)
+  end
+  it "rejects a different platform account even when the key still belongs to test mode" do
+    payment = create(:payment)
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("sk_test_changed")
+    client = instance_double(Stripe::StripeClient, v1: double("v1", accounts: accounts_api("acct_otherplatform")))
+    allow(Stripe::StripeClient).to receive(:new).with("sk_test_changed").and_return(client)
+    expect { described_class.cancel_payment_intent(payment.provider_payment_id, payment: payment, idempotency_key: "wrong-account") }
+      .to raise_error(described_class::PaymentError, /different platform account/)
+  end
+
+  it "rejects live credentials in the test slot before constructing any client" do
+    payment = create(:payment)
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("rk_live_misconfigured")
+    expect(Stripe::StripeClient).not_to receive(:new)
+    expect { described_class.refund_payment(payment.provider_payment_id, payment: payment, idempotency_key: "wrong-mode") }
+      .to raise_error(described_class::PaymentError, /do not match the payment environment/)
+  end
+
+  it "requires finance review for a legacy payment with unknown platform ownership" do
+    payment = create(:payment, provider_platform_account_id: nil)
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("sk_test_present")
+    expect { described_class.find_refund(payment.provider_payment_id, payment: payment, idempotency_key: "unknown-platform") }
+      .to raise_error(described_class::PaymentError, /platform account context is missing/)
   end
 end

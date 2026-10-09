@@ -101,6 +101,16 @@ class StripeService
       )
     end
 
+    def platform_account_id(environment)
+      ENV[environment == "live" ? "STRIPE_LIVE_PLATFORM_ACCOUNT_ID" : "STRIPE_TEST_PLATFORM_ACCOUNT_ID"].presence if
+        %w[test live].include?(environment)
+    end
+
+    def verify_payment_context!(payment)
+      operation_client(payment: payment, settings: SiteSetting.instance)
+      true
+    end
+
     def retrieve_payment_intent(payment)
       raise PaymentError, "Payment context is missing; finance review is required" if payment.provider_environment.blank?
       raise PaymentError, "Simulated payments cannot be resumed with Stripe" if payment.provider_environment == "simulate"
@@ -159,8 +169,21 @@ class StripeService
       else
         key = resolve_api_key!(settings)
       end
+      environment = payment ? payment.provider_environment : settings.payment_mode
+      unless %w[test live].include?(environment) && key.start_with?("sk_#{environment}_", "rk_#{environment}_")
+        raise PaymentError, "Stripe credentials do not match the payment environment"
+      end
+      expected_platform = payment ? payment.provider_platform_account_id : platform_account_id(environment)
+      unless expected_platform&.match?(/\Aacct_[a-zA-Z0-9]+\z/)
+        raise PaymentError, "Payment platform account context is missing; finance review is required"
+      end
+      client = Stripe::StripeClient.new(key)
+      actual_platform = client.v1.accounts.retrieve_current.id
+      unless actual_platform == expected_platform
+        raise PaymentError, "Stripe credentials belong to a different platform account; finance review is required"
+      end
       options = payment&.provider_account_id.present? ? { stripe_account: payment.provider_account_id } : {}
-      [Stripe::StripeClient.new(key), options]
+      [client, options]
     end
 
     # Returns the API key for per-request Stripe calls (thread-safe).

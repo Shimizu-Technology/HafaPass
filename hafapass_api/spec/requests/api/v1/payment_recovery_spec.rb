@@ -20,9 +20,10 @@ RSpec.describe "Buyer payment recovery", type: :request do
     SiteSetting.instance.update!(payment_mode: "test")
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("sk_test_recovery")
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_PLATFORM_ACCOUNT_ID").and_return("acct_testplatform")
     allow(ENV).to receive(:[]).with("STRIPE_TEST_PUBLISHABLE_KEY").and_return("pk_test_recovery")
     allow(StripeService).to receive(:create_payment_intent).and_return(OpenStruct.new(id: "pi_recover", client_secret: "pi_recover_secret"))
-    client = instance_double(Stripe::StripeClient, v1: double("v1", payment_intents: intents))
+    client = instance_double(Stripe::StripeClient, v1: double("v1", payment_intents: intents, accounts: double("accounts", retrieve_current: OpenStruct.new(id: "acct_testplatform"))))
     allow(Stripe::StripeClient).to receive(:new).with("sk_test_recovery").and_return(client)
     allow(intents).to receive(:retrieve) { intent }
     allow(intents).to receive(:cancel).and_return(OpenStruct.new(status: "canceled"))

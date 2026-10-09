@@ -150,6 +150,7 @@ module Commerce
           payment = order.payments.create!(
             provider: provider,
             provider_environment: provider == "stripe" ? SiteSetting.instance.payment_mode : nil,
+            provider_platform_account_id: provider == "stripe" ? StripeService.platform_account_id(SiteSetting.instance.payment_mode) : nil,
             idempotency_key: "#{provider}:payment:order:#{order.id}",
             amount_cents: order.total_cents,
             currency: order.currency,

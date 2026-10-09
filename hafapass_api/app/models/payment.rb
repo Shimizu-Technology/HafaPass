@@ -16,7 +16,7 @@ class Payment < ApplicationRecord
 
   validates :provider_environment, inclusion: { in: %w[simulate test live] }, allow_nil: true
 
-  attr_readonly :provider_environment, :provider_account_id, :order_id, :provider, :idempotency_key, :amount_cents, :currency
+  attr_readonly :provider_environment, :provider_platform_account_id, :provider_account_id, :order_id, :provider, :idempotency_key, :amount_cents, :currency
 
   def refunded_cents
     refunds.succeeded.sum(:amount_cents)

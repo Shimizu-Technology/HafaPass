@@ -81,7 +81,16 @@ class StripeWebhookProcessor
     # Old local fixtures predate context snapshots. Production always requires
     # explicit mode evidence; no test event may grant production admission.
     mode_matches = true if !Rails.env.production? && !payload.key?("livemode")
-    return true if mode_matches && incoming_account == payment.provider_account_id
+    if mode_matches && incoming_account == payment.provider_account_id
+      if payload.key?("livemode") || Rails.env.production?
+        begin
+          StripeService.verify_payment_context!(payment)
+        rescue StripeService::PaymentError
+          mode_matches = false
+        end
+      end
+      return true if mode_matches
+    end
 
     ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt,
       code: "payment_context_mismatch")
