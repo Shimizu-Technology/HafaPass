@@ -64,7 +64,7 @@ export default function RefundsPage() {
    } else if (status === 'pending') {
     setNotice('Refund pending — waiting for the payment provider. Retry this saved request to check its status; do not create another refund.')
    } else if (['succeeded', 'failed', 'cancelled'].includes(status)) {
-    setNotice(status === 'succeeded' ? 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
+    setNotice(status === 'succeeded' ? response.data.refund_simulated ? 'Test refund complete. No real money was returned.' : 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
     window.sessionStorage.removeItem(storageKey)
     setPendingRequest(null)
     setRefundingId(null)

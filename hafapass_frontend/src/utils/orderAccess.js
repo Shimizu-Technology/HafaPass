@@ -63,7 +63,7 @@ export function recordBuyerRefundOutcome(orderId, operation, data = {}) {
     : outcome.reconciliation_required ? 'pending'
     : ['succeeded', 'failed', 'cancelled', 'pending'].includes(reported) ? reported
       : outcome.error && outcome.reconciliation_required === false ? 'rejected' : 'unconfirmed'
-  const updated = { ...attempt, status }
+  const updated = { ...attempt, status, simulated: outcome.refund_simulated === true || attempt.simulated === true }
   window.sessionStorage.setItem(buyerRefundStorageKey(orderId, operation), JSON.stringify(updated))
   return updated
 }

@@ -49,6 +49,15 @@ describe('refund outcome and recovery', () => {
     expect(apiClient.post.mock.calls[1]).toEqual(original)
     expect(window.sessionStorage.getItem('hafapass:pending-refund:local-preview:37')).toBeNull()
   })
+  it('labels a completed simulation without claiming actual provider money was returned', async () => {
+    apiClient.post.mockResolvedValueOnce({ data: { status: 'succeeded', refund_simulated: true } })
+    mountRefunds()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Process Refund' }))
+    expect(await screen.findByText('Test refund complete. No real money was returned.')).toBeInTheDocument()
+    expect(screen.queryByText('Refund confirmed by the payment provider.')).not.toBeInTheDocument()
+  })
 
   it('releases the form only when the server explicitly confirms there is no uncertain provider operation', async () => {
     apiClient.post.mockRejectedValueOnce({ response: { status: 422, data: { error: 'Cash repayment requires a manager', reconciliation_required: false } } })

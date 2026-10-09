@@ -25,6 +25,13 @@ describe('buyer refund request persistence', () => {
     expect(getBuyerRefundAttempt(12, 'ticket:34').status).toBe('rejected')
     expect(prepareBuyerRefundAttempt(12, 'ticket:34').key).toBe(initial.key)
   })
+  it('retains simulated status through a lost response and a later completion', () => {
+    prepareBuyerRefundAttempt(12, 'ticket:34')
+    recordBuyerRefundOutcome(12, 'ticket:34', { refund_status: 'pending', refund_simulated: true })
+    recordBuyerRefundOutcome(12, 'ticket:34', null)
+    recordBuyerRefundOutcome(12, 'ticket:34', { refund_status: 'succeeded' })
+    expect(getBuyerRefundAttempt(12, 'ticket:34')).toMatchObject({ status: 'succeeded', simulated: true })
+  })
   it.each(['failed', 'cancelled', 'succeeded'])('holds a %s operation for finance review without rotating identity until the server explicitly clears review', status => {
     const initial = prepareBuyerRefundAttempt(12, 'ticket:34')
     recordBuyerRefundOutcome(12, 'ticket:34', { refund_status: status, finance_review_required: true, reconciliation_required: true })

@@ -14,7 +14,7 @@ const refundNotice = attempt => ({
   failed: 'Refund failed. No refund was confirmed. You can try again.',
   cancelled: 'Refund cancelled. No refund was confirmed. You can try again.',
   rejected: 'The refund request was rejected. No refund was confirmed. Contact support or retry this request.',
-  succeeded: 'Refund confirmed by the payment provider.',
+  succeeded: attempt?.simulated ? 'Test refund complete. No real money was returned.' : 'Refund confirmed by the payment provider.',
   finance_review: 'The payment records need a finance review. Contact support before requesting another refund. Check this saved request for updates.',
 }[attempt?.status])
 const refundNeedsStatusCheck = attempt => ['pending', 'unconfirmed', 'finance_review'].includes(attempt?.status)
