@@ -2,7 +2,8 @@ import { lazy, Suspense } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useOutlet } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import CheckoutPage from './CheckoutPage'
 import apiClient from '../api/client'
 import { getActiveCheckout, getOrderAccess } from '../utils/orderAccess'
@@ -14,6 +15,12 @@ vi.mock('../components/PaymentForm', () => ({ default: () => <p>Payment form</p>
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }))
 vi.mock('../utils/marketplaceAttribution', () => ({ anonymousId: () => 'test-anonymous', currentAttribution: () => ({}), trackFunnel: vi.fn() }))
 
+function RetainedRoute() {
+  const location = useLocation()
+  const outlet = useOutlet()
+  return <AnimatePresence mode="popLayout"><motion.div key={location.pathname} exit={{ opacity: 0 }} transition={{ duration: 1 }}>{outlet}</motion.div></AnimatePresence>
+}
+
 describe('checkout navigation', () => {
   beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
 
@@ -24,11 +31,11 @@ describe('checkout navigation', () => {
     let openConfirmation
     const Confirmation = lazy(() => new Promise(resolve => { openConfirmation = () => resolve({ default: () => <h1>Confirmed order 922</h1> }) }))
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/free-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}>
-      <Suspense fallback={<p>Loading confirmation</p>}><Routes>
+      <Suspense fallback={<p>Loading confirmation</p>}><Routes><Route element={<RetainedRoute />}>
         <Route path="/checkout/:slug" element={<CheckoutPage />} />
         <Route path="/orders/:id/confirmation" element={<Confirmation />} />
         <Route path="/events/:slug" element={<h1>Unexpected event redirect</h1>} />
-      </Routes></Suspense>
+      </Route></Routes></Suspense>
     </MemoryRouter>)
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText('checkout.fullName'), 'Guest Buyer')
