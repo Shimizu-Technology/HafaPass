@@ -1,6 +1,10 @@
 require "active_support/core_ext/integer/time"
 require_relative "../runtime_configuration"
 
+if Rails.env.production? && ActiveModel::Type::Boolean.new.cast(ENV["HAFAPASS_PROVIDER_REHEARSAL"])
+  raise "Provider rehearsal requires an isolated staging environment"
+end
+
 Rails.application.configure do
   config.enable_reloading = false
   config.eager_load = true

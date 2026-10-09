@@ -3,6 +3,7 @@
 require "uri"
 require "base64"
 require "openssl"
+require_relative "provider_rehearsal"
 
 # Staging runs the production runtime against separate data, with real test
 # identity and simulated commerce. It never supplies production approvals.
@@ -20,14 +21,20 @@ class StageSafety
         admission_signing: admission_signing?,
         admin_bootstrap_disabled: !ActiveModel::Type::Boolean.new.cast(ENV["ENABLE_FIRST_USER_ADMIN_BOOTSTRAP"]),
         no_live_stripe_credentials: no_live_stripe_credentials?,
+        provider_rehearsal: ProviderRehearsal.configuration_valid?,
         launch_scope: ENV.fetch("HAFAPASS_LAUNCH_SCOPE", "general_admission") == "general_admission"
       }
       if runtime
-        checks[:simulated_payments] = simulated_payments?
+        if ProviderRehearsal.stripe_enabled?
+          checks[:test_provider_payments] = SiteSetting.instance.test_mode?
+        else
+          checks[:simulated_payments] = simulated_payments?
+        end
         checks[:durable_jobs] = ActiveJob::Base.queue_adapter_name == "sidekiq"
       end
       ready = checks.values.all?
-      { ready: ready, status: ready ? "simulation_only" : "unsafe_staging_configuration", checks: checks }
+      status = ProviderRehearsal.enabled? ? "provider_rehearsal" : "simulation_only"
+      { ready: ready, status: ready ? status : "unsafe_staging_configuration", checks: checks }
     end
 
     def validate!

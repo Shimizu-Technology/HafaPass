@@ -1,9 +1,9 @@
 import apiClient from '../api/client'
+import { forgetUploadToken, uploadRecoveryPrefix, uploadScope, uploadScopeCurrent } from './uploadRecovery'
 
 const inFlight = new Map()
-const owner = () => window.localStorage.getItem('hafapass_scanner_user_id')
 
-async function recoveryKey(file, eventId, userId) {
+async function recoveryKey(file, scope) {
   const bytes = file.arrayBuffer ? await file.arrayBuffer() : await new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result)
@@ -11,27 +11,32 @@ async function recoveryKey(file, eventId, userId) {
     reader.readAsArrayBuffer(file)
   })
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(value => value.toString(16).padStart(2, '0')).join('')
-  return `hafapass:upload-completion:${userId}:${eventId || 'profile'}:${file.type}:${hash}`
+  return `${uploadRecoveryPrefix(scope)}${file.type}:${hash}`
 }
 
-async function completeUpload(key, uploadToken, userId) {
-  if (owner() !== userId) throw new Error('Your account changed. Sign in with the original account to finish this image.')
+function requireScope(scope) {
+  if (!uploadScopeCurrent(scope)) throw new Error('Your account or organization changed. Please select the image again.')
+}
+
+async function completeUpload(key, uploadToken, scope) {
+  requireScope(scope)
   try {
     const completed = await apiClient.post('/uploads/complete', { upload_token: uploadToken })
+    requireScope(scope)
     if (!completed.data.public_url) throw new Error('The uploaded image could not be verified. Retry this image upload.')
-    window.sessionStorage.removeItem(key)
+    forgetUploadToken(key, uploadToken)
     return completed.data.public_url
   } catch (error) {
     // Network/5xx failures may follow a committed completion; retain its identity.
-    if ([401, 403, 404, 422].includes(error.response?.status)) window.sessionStorage.removeItem(key)
+    if ([401, 403, 404, 422].includes(error.response?.status)) forgetUploadToken(key, uploadToken)
     throw error
   }
 }
 
-async function upload(file, eventId, userId, key) {
-  if (owner() !== userId) throw new Error('Your account changed. Please select the image again.')
+async function upload(file, eventId, scope, key) {
+  requireScope(scope)
   const savedToken = window.sessionStorage.getItem(key)
-  if (savedToken) return completeUpload(key, savedToken, userId)
+  if (savedToken) return completeUpload(key, savedToken, scope)
   const response = await apiClient.post('/uploads/presign', {
     filename: file.name,
     content_type: file.type,
@@ -40,7 +45,7 @@ async function upload(file, eventId, userId, key) {
   })
   const { url, fields, upload_token } = response.data
   if (!upload_token) throw new Error('Upload authorization is missing. Please try again.')
-  if (owner() !== userId) throw new Error('Your account changed. Please select the image again.')
+  requireScope(scope)
   // Persist before storage receives bytes. An interrupted upload/completion can
   // be verified through the same server receipt after retry or page reload.
   window.sessionStorage.setItem(key, upload_token)
@@ -57,17 +62,17 @@ async function upload(file, eventId, userId, key) {
     window.sessionStorage.removeItem(key)
     throw new Error('Image storage could not accept this upload. Please try again.')
   }
-  return completeUpload(key, upload_token, userId)
+  return completeUpload(key, upload_token, scope)
 }
 
 export async function uploadImage(file, eventId) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file?.type)) throw new Error('Choose a JPG, PNG, or WebP image.')
   if (!file.size || file.size > 5 * 1024 * 1024) throw new Error('Image must be between 1 byte and 5 MB.')
-  const userId = owner()
-  if (!userId) throw new Error('Sign in before uploading an image.')
-  const key = await recoveryKey(file, eventId, userId)
+  const scope = uploadScope(eventId)
+  if (!scope.userId) throw new Error('Sign in before uploading an image.')
+  const key = await recoveryKey(file, scope)
   if (inFlight.has(key)) return inFlight.get(key)
-  const operation = upload(file, eventId, userId, key)
+  const operation = upload(file, eventId, scope, key)
   inFlight.set(key, operation)
   try { return await operation } finally { inFlight.delete(key) }
 }

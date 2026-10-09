@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Loader2, Image as ImageIcon } from 'lucide-react'
 import { uploadImage } from '../utils/uploads'
+import { uploadScope, uploadScopeCurrent } from '../utils/uploadRecovery'
 
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -12,11 +13,29 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
   const [dragOver, setDragOver] = useState(false)
   const [retryFile, setRetryFile] = useState(null)
   const inputRef = useRef(null)
+  const active = useRef(true)
+  const generation = useRef(0)
+  const currentEvent = useRef(eventId)
+  currentEvent.current = eventId
+  const currentScope = uploadScope(eventId)
+
+  useEffect(() => { active.current = true; return () => { active.current = false; generation.current += 1 } }, [])
+  useEffect(() => {
+    generation.current += 1
+    setUploading(false)
+    setError(null)
+    setRetryFile(null)
+    setPreview(null)
+  }, [eventId, currentScope.userId, currentScope.organizationId])
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
 
   const handleFile = async (file) => {
     if (!file || disabled || uploading) return
+    const startedEvent = eventId
+    const startedGeneration = generation.current
+    const startedScope = uploadScope(eventId)
+    const current = () => active.current && generation.current === startedGeneration && currentEvent.current === startedEvent && uploadScopeCurrent(startedScope)
     setError(null)
     setRetryFile(null)
 
@@ -36,14 +55,16 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
 
     try {
       const finalUrl = await uploadImage(file, eventId)
+      if (!current()) return
       onUploaded(finalUrl)
       setPreview(null)
     } catch (uploadError) {
+      if (!current()) return
       setError(uploadError.response?.data?.error || uploadError.message || 'Upload failed. Please try again.')
       setRetryFile(file)
       setPreview(null)
     } finally {
-      setUploading(false)
+      if (current()) setUploading(false)
     }
   }
 

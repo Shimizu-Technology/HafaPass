@@ -8,7 +8,7 @@ class EmailService
 
   class << self
     def configured?
-      PlatformCapabilities.enabled?("resend_production")
+      ProviderRehearsal.email_enabled? || PlatformCapabilities.enabled?("resend_production")
     end
 
     # Capture the exact recipient/body once; retries never regenerate access links.
@@ -338,6 +338,7 @@ class EmailService
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, **log_meta)
       params = { from: FROM_EMAIL, to: delivery ? delivery.recipient : to, subject: subject, html: html }
+      params[:subject] = "[HafaPass TEST] #{subject}" if ProviderRehearsal.enabled?
       params[:tags] = [{ name: "category", value: tag }] if tag.present?
       return params.deep_stringify_keys if delivery&.preparing_outbound_payload
 
@@ -345,6 +346,9 @@ class EmailService
     end
 
     def deliver_payload(params, delivery: nil)
+      if Rails.env.staging? && configured? && !ProviderRehearsal.email_payload_allowed?(params)
+        raise ProviderDisabled, "Staging email is restricted to approved rehearsal recipients"
+      end
       unless configured?
         if Rails.env.production? || (delivery&.provider == "resend" && delivery.outbound_payload.present?)
           raise ProviderDisabled, "Production email is disabled until current Resend evidence is independently approved"

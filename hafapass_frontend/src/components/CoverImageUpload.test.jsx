@@ -25,4 +25,17 @@ describe('cover image recovery', () => {
     expect(uploadImage.mock.calls.map(([selected]) => selected)).toEqual([file, file])
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
+
+  it('does not attach an old upload to a newly selected event', async () => {
+    let finish
+    uploadImage.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const onUploaded = vi.fn()
+    const { container, rerender } = render(<CoverImageUpload eventId={37} onUploaded={onUploaded} />)
+    const file = new File(['image bytes'], 'cover.png', { type: 'image/png' })
+    fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [file] } })
+    rerender(<CoverImageUpload eventId={38} onUploaded={onUploaded} />)
+    finish('https://images.invalid/old-event.png')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Upload cover image' })).toBeInTheDocument())
+    expect(onUploaded).not.toHaveBeenCalled()
+  })
 })

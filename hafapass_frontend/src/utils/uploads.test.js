@@ -56,6 +56,31 @@ describe('verified uploads', () => {
     expect(apiClient.post.mock.calls[3][1]).toEqual({ upload_token: 'other-token' })
   })
 
+  it('does not reuse another organization’s pending logo completion', async () => {
+    window.localStorage.setItem('hafapass_organization_id', 'org-a')
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    await expect(uploadImage(file)).rejects.toThrow()
+    window.localStorage.setItem('hafapass_organization_id', 'org-b')
+    apiClient.post.mockResolvedValueOnce({ data: { url: 'https://storage.invalid/org-b', fields: {}, upload_token: 'org-b-token' } })
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/org-b.png' } })
+    await uploadImage(file)
+    expect(apiClient.post.mock.calls[2][0]).toBe('/uploads/presign')
+    expect(apiClient.post.mock.calls[3][1]).toEqual({ upload_token: 'org-b-token' })
+  })
+
+  it('rejects a completion result after organization changes and preserves a replacement token', async () => {
+    let finish
+    apiClient.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = uploadImage(file, 37)
+    await vi.waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
+    const key = window.sessionStorage.key(0)
+    window.sessionStorage.setItem(key, 'replacement-token')
+    window.localStorage.setItem('hafapass_organization_id', 'new-org')
+    finish({ data: { public_url: 'https://images.invalid/old.png' } })
+    await expect(pending).rejects.toThrow('organization changed')
+    expect(window.sessionStorage.getItem(key)).toBe('replacement-token')
+  })
+
   it('requires a fresh authorization after a definitively rejected completion', async () => {
     apiClient.post.mockRejectedValueOnce({ response: { status: 403 } })
     await expect(uploadImage(file, 37)).rejects.toEqual({ response: { status: 403 } })

@@ -11,6 +11,7 @@ class Api::V1::ConfigController < ApplicationController
     render json: {
       payment_mode: settings.payment_mode,
       environment: Rails.env.to_s,
+      provider_rehearsal: ProviderRehearsal.enabled?,
       launch_capabilities: LaunchCapabilities.public_configuration,
       stripe_publishable_key: settings.stripe_publishable_key,
       platform_name: settings.platform_name,

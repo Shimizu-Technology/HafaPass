@@ -3,6 +3,7 @@ import { Sentry } from '../monitoring'
 import { useEffect, useState } from 'react'
 import { setAuthTokenGetter } from '../api/client'
 import { clearAllAdmissionData } from '../utils/admissionStore'
+import { clearUploadRecovery } from '../utils/uploadRecovery'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -30,7 +31,10 @@ function AuthTokenSync({ children, loadingFallback }) {
       try {
         const previous = window.localStorage.getItem(key)
         const changed = previous && previous !== currentUserId
-        if (changed) await clearAllAdmissionData()
+        if (changed) {
+          await clearAllAdmissionData()
+          clearUploadRecovery(previous)
+        }
         if (!active) return
         if (changed) window.localStorage.removeItem('hafapass_organization_id')
         if (currentUserId) window.localStorage.setItem(key, currentUserId)

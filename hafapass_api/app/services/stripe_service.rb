@@ -13,7 +13,7 @@ class StripeService
     def create_payment_intent(order, idempotency_key:, payment: nil)
       settings = SiteSetting.instance
       raise PaymentError, "External payments are disabled in staging; select simulation mode" if
-        Rails.env.staging? && !settings.simulate_mode?
+        Rails.env.staging? && !settings.simulate_mode? && !ProviderRehearsal.stripe_enabled?
       environment = payment ? payment.provider_environment : settings.payment_mode
 
       if environment == "simulate"
@@ -85,7 +85,7 @@ class StripeService
 
     def cancel_payment_intent(payment_intent_id, idempotency_key:, payment: nil)
       settings = SiteSetting.instance
-      if Rails.env.staging? && !payment_intent_id.start_with?("sim_")
+      if Rails.env.staging? && !payment_intent_id.start_with?("sim_") && !ProviderRehearsal.stripe_enabled?
         raise PaymentError, "Staging cannot cancel external payments"
       end
       if simulated_operation?(payment_intent_id, payment, settings)
@@ -124,7 +124,7 @@ class StripeService
     # True when Stripe API calls will actually be made (test or live mode).
     def payment_enabled?
       settings = SiteSetting.instance
-      return false if Rails.env.staging?
+      return false if Rails.env.staging? && !ProviderRehearsal.stripe_enabled?
       if settings.live_mode? && !settings.can_enable_live?
         raise PaymentError, "Live payments are disabled until current provider evidence is independently approved"
       end
@@ -134,7 +134,7 @@ class StripeService
 
     # Returns the publishable key the frontend should use.
     def publishable_key(payment: nil)
-      return nil if Rails.env.staging?
+      return nil if Rails.env.staging? && !ProviderRehearsal.stripe_enabled?
       if payment
         return ENV["STRIPE_LIVE_PUBLISHABLE_KEY"] if payment.provider_environment == "live"
         return ENV["STRIPE_TEST_PUBLISHABLE_KEY"].presence || ENV["STRIPE_PUBLISHABLE_KEY"] if payment.provider_environment == "test"
@@ -157,7 +157,9 @@ class StripeService
     def operation_client(payment:, settings:)
       if payment
         raise PaymentError, "Payment context is missing; finance review is required" if payment.provider_environment.blank?
-        raise PaymentError, "External payments are disabled in staging" if Rails.env.staging?
+        if Rails.env.staging? && (!ProviderRehearsal.stripe_enabled? || payment.provider_environment != "test")
+          raise PaymentError, "External payments are disabled in staging; only configured test-provider payments are permitted"
+        end
 
         environment = payment.provider_environment
         key = if environment == "live"
@@ -170,6 +172,7 @@ class StripeService
         key = resolve_api_key!(settings)
       end
       environment = payment ? payment.provider_environment : settings.payment_mode
+      raise PaymentError, "Staging cannot use live Stripe credentials" if Rails.env.staging? && environment != "test"
       unless %w[test live].include?(environment) && key.start_with?("sk_#{environment}_", "rk_#{environment}_")
         raise PaymentError, "Stripe credentials do not match the payment environment"
       end
@@ -188,7 +191,9 @@ class StripeService
 
     # Returns the API key for per-request Stripe calls (thread-safe).
     def resolve_api_key!(settings)
-      raise PaymentError, "External payments are disabled in staging; select simulation mode" if Rails.env.staging?
+      if Rails.env.staging? && (!ProviderRehearsal.stripe_enabled? || !settings.test_mode?)
+        raise PaymentError, "External payments are disabled in staging; only configured test-provider payments are permitted"
+      end
 
       if settings.live_mode? && !settings.can_enable_live?
         raise PaymentError, "Live payments are disabled until current provider evidence is independently approved"
