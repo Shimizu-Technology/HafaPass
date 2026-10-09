@@ -1,6 +1,10 @@
 class Api::V1::Me::OrdersController < ApplicationController
   include Paginatable
 
+  def recover_guest
+    render json: GuestPurchaseRecovery.call(user: current_user, request: request)
+  end
+
   def index
     orders = current_user.orders
       .includes(:payments, :refunds, :disputes, :order_items, :promo_code,

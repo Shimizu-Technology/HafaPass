@@ -61,7 +61,9 @@ Rails.application.routes.draw do
 
       # Authenticated user endpoints
       namespace :me do
-        resources :orders, only: [:index, :show]
+        resources :orders, only: [:index, :show] do
+          collection { post :recover_guest }
+        end
         resources :tickets, only: [:index]
         post "ticket_transfers/accept", to: "ticket_transfers#accept"
         post "tickets/:ticket_id/transfer", to: "ticket_transfers#create"

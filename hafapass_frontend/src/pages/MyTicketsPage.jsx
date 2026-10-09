@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight, Download } from 'lucide-react'
@@ -12,18 +12,31 @@ export default function MyTicketsPage() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [recovering, setRecovering] = useState(false)
+  const [recoveryError, setRecoveryError] = useState(null)
 
-  useEffect(() => {
-    fetchOrders()
+  const recoverGuestPurchases = useCallback(async () => {
+    setRecovering(true)
+    setRecoveryError(null)
+    try {
+      await apiClient.post('/me/orders/recover_guest')
+      const response = await apiClient.get('/me/tickets')
+      setOrders((response.data.tickets || []).map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
+    } catch {
+      setRecoveryError('We could not check for guest purchases yet. Please try again shortly.')
+    } finally {
+      setRecovering(false)
+    }
   }, [])
 
-  async function fetchOrders() {
-    setLoading(true)
+  const fetchOrders = useCallback(async () => {
     setError(null)
     try {
       const response = await apiClient.get('/me/tickets')
       const tickets = response.data.tickets || []
       setOrders(tickets.map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
+      setLoading(false)
+      await recoverGuestPurchases()
     } catch (err) {
       if (err.response?.status === 401) {
         setError('Please sign in to view your tickets.')
@@ -33,7 +46,21 @@ export default function MyTicketsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [recoverGuestPurchases])
+
+  useEffect(() => {
+    fetchOrders()
+  }, [fetchOrders])
+
+  const recoveryNotice = (
+    <div className="mb-5 text-sm" role="status">
+      {recovering && <p className="text-neutral-600">Checking for purchases made before you signed in…</p>}
+      {recoveryError && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+        <p>{recoveryError}</p>
+        <button onClick={recoverGuestPurchases} disabled={recovering} className="mt-2 min-h-11 font-semibold underline">Retry guest purchase recovery</button>
+      </div>}
+    </div>
+  )
 
   if (loading) {
     return (
@@ -109,10 +136,12 @@ export default function MyTicketsPage() {
             animate={{ opacity: 1, y: 0 }}
             className="max-w-2xl mx-auto px-4 py-12 text-center"
           >
+            {recoveryNotice}
             <div className="card p-8">
               <Ticket className="mx-auto h-16 w-16 text-neutral-300" />
-              <h2 className="mt-4 text-xl font-semibold text-neutral-800">No tickets yet</h2>
-              <p className="mt-2 text-neutral-500">Browse events to get started!</p>
+              <h2 className="mt-4 text-xl font-semibold text-neutral-800">{recovering ? 'Looking for your tickets' : recoveryError ? 'Guest purchases need another check' : 'No tickets yet'}</h2>
+              <p className="mt-2 text-neutral-500">Purchases made with a verified email on your account appear here after recovery.</p>
+              <Link to="/orders/recover" className="mt-3 inline-block min-h-11 font-semibold text-brand-600 underline">Recover an order by email</Link>
               <Link
                 to="/events"
                 className="mt-6 inline-block btn-primary px-6 py-3"
@@ -180,6 +209,7 @@ export default function MyTicketsPage() {
           animate={{ opacity: 1, y: 0 }}
           className="max-w-3xl mx-auto px-4 py-8"
         >
+          {recoveryNotice}
           <StaggerContainer className="space-y-6">
             {eventGroups.map(({ event, tickets }, index) => {
               const eventDate = new Date(event.starts_at)
