@@ -270,6 +270,8 @@ export default function EditEventPage() {
 
   const eventEndedInPast = event?.ends_at && new Date(event.ends_at) < new Date()
   const publishChecklist = event?.publish_checklist || []
+  const remainingTicketCapacity = event?.max_capacity == null ? null : Math.max(0,
+    Number(event.max_capacity) - (event.ticket_types || []).reduce((sum, ticket) => sum + Number(ticket.quantity_available || 0), 0))
   const organizerSteps = organizerChecklist(publishChecklist)
   const readyToPublish = publishChecklist.length > 0 && publishChecklist.every(item => item.complete)
 
@@ -667,7 +669,7 @@ export default function EditEventPage() {
       </form>
 
       {/* Ticket Types CRUD */}
-      <section id="ticket-types" className="scroll-mt-24"><TicketTypeCRUD eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} /></section>
+      <section id="ticket-types" className="scroll-mt-24"><TicketTypeCRUD remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} /></section>
 
       {/* Danger Zone — HP-28 */}
       {event && event.status !== 'archived' && (
