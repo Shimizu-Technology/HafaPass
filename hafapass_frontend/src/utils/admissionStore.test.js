@@ -237,4 +237,16 @@ describe('admissionStore', () => {
     expect(await queuedActions(eventId, device.id)).toHaveLength(1)
   })
 
+  it('retains a scan when acknowledgement is nonterminal or has a different action kind', async () => {
+    const eventId = 91010
+    const device = { id: 51, identifier: 'terminal-result-device', effective: true, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    const action = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1, ticket: { ticket_id: 21 }, credentialHash: 'e'.repeat(64), source: 'offline' })
+    expect(await applySyncResults(eventId, device, [{ action_uuid: action.action_uuid, kind: 'admit', result: 'processing' }])).toBe(0)
+    expect(await applySyncResults(eventId, device, [{ action_uuid: action.action_uuid, kind: 'reverse', result: 'accepted' }])).toBe(0)
+    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+    expect(await applySyncResults(eventId, device, [{ action_uuid: action.action_uuid, kind: 'admit', result: 'accepted' }])).toBe(1)
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+  })
+
 })

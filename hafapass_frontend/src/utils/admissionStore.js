@@ -325,8 +325,9 @@ export async function applySyncResults(eventId, device, results, owner = current
   }
   let acknowledged = 0
   for (const result of results) {
+    if (!['accepted', 'conflict', 'rejected'].includes(result.result)) continue
     const queued = await transaction.objectStore('queue').get(result.action_uuid)
-    if (!queued || queued.owner_user_id !== owner || queued.event_id !== Number(eventId) || queued.device_id !== device.id) continue
+    if (!queued || queued.kind !== result.kind || queued.owner_user_id !== owner || queued.event_id !== Number(eventId) || queued.device_id !== device.id) continue
     if (owner !== currentScannerOwner()) {
       transaction.abort()
       await transaction.done.catch(() => {})

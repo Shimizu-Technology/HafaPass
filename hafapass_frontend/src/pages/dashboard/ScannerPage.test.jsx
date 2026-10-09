@@ -20,7 +20,7 @@ describe('scanner recovery and camera ownership', () => {
     camera.stops = []
     window.localStorage.clear()
     await clearAllAdmissionData()
-    for (const id of [92001, 92002]) await clearEventAdmissionData(id)
+    for (const id of [92001, 92002, 92003]) await clearEventAdmissionData(id)
   })
   afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
 
@@ -232,6 +232,36 @@ describe('scanner recovery and camera ownership', () => {
     expect(screen.queryByText('Old account refused')).not.toBeInTheDocument()
     window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
     expect(await queuedActions(eventId, 91)).toHaveLength(1)
+  })
+
+  it('reports a journal storage failure during sync recovery without deleting saved access or scans', async () => {
+    const eventId = 92003
+    const device = { id: 91, identifier: 'storage-recovery-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'valid', credential_hash: await sha256Hex('storage-recovery-qr') }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    await queueAdmission({ eventId, deviceId: 91, manifestVersion: 1, ticket, credentialHash: ticket.credential_hash, source: 'offline' })
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    apiClient.get.mockRejectedValue(new Error('API unavailable'))
+    let syncCalls = 0
+    apiClient.post.mockImplementation(url => {
+      if (url.endsWith('/sync')) syncCalls += 1
+      return Promise.reject(new Error('API unavailable'))
+    })
+    render(<ScannerPage />)
+    await waitFor(() => expect(syncCalls).toBe(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+    const originalGet = IDBObjectStore.prototype.get
+    vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(function (...args) {
+      if (this.name === 'journal_devices') throw new DOMException('Storage unavailable', 'UnknownError')
+      return originalGet.apply(this, args)
+    })
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Sync now' }))
+    expect(await screen.findByText(/Saved scanner data could not be read/)).toBeInTheDocument()
+    expect(syncCalls).toBe(1)
+    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+    expect((await loadAuthorizedScanner(eventId))?.device.id).toBe(device.id)
+    expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled()
   })
 
 })

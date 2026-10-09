@@ -189,7 +189,15 @@ export default function ScannerPage({ offlineOnly = false }) {
       setDevice(currentDevice)
       await Promise.all([downloadManifest(selectedEventId, currentDevice), fetchDashboard(selectedEventId)])
     } catch (syncError) {
-      if (!await ownsJournal()) return
+      if (!current()) return
+      try {
+        if (!await ownsJournal()) return
+      } catch {
+        // Storage failure is not an authorization verdict. Keep both access and the
+        // pending journal untouched rather than throwing again from recovery.
+        if (current()) setError('Saved scanner data could not be read. Reload this device and retry; saved scans have not been removed.')
+        return
+      }
       if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
         await purgeExpiredAdmissionAccess(selectedEventId)
         if (eventIdRef.current === String(selectedEventId)) { setDevice(null); setManifest(null); setRecoveryDevice(null) }
