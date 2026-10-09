@@ -208,8 +208,12 @@ class StripeWebhookProcessor
       )
       return
     end
-    succeeded_total = payment.order.refunds.succeeded.sum(:amount_cents)
+    succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
     if provider_total < succeeded_total
+      # Charge events carry a point-in-time aggregate. A delayed snapshot of
+      # already-booked operations must not undo or quarantine newer refunds.
+      return if recorded_refund_snapshot?(payment, provider_refunds, provider_total)
+
       ReconciliationException.create!(
         order: payment.order,
         payment: payment,
@@ -236,6 +240,25 @@ class StripeWebhookProcessor
       provider_refund_id: new_provider_id,
       idempotency_key: "webhook:#{receipt.provider_event_id}:refund",
     )
+  end
+
+  def recorded_refund_snapshot?(payment, provider_refunds, provider_total)
+    return false if provider_refunds.empty?
+
+    ids = provider_refunds.map { |entry| value(entry, :id) }
+    return false if ids.any?(&:blank?) || ids.uniq.length != ids.length
+
+    booked_total = 0
+    matches = provider_refunds.all? do |entry|
+      refund = payment.refunds.succeeded.find_by(provider: "stripe", provider_refund_id: value(entry, :id))
+      next false unless refund && value(entry, :status) == "succeeded"
+      next false if value(entry, :amount).present? && value(entry, :amount).to_i != refund.amount_cents
+      next false if value(entry, :currency).present? && value(entry, :currency).to_s.downcase != refund.currency
+
+      booked_total += refund.amount_cents
+      true
+    end
+    matches && booked_total == provider_total
   end
 
   def process_dispute!(receipt, payment, object)

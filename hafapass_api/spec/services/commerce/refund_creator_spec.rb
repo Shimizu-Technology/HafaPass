@@ -237,4 +237,68 @@ RSpec.describe Commerce::RefundCreator do
     expect(refund.payment_id).to eq(payment.id)
     expect(StripeService).to have_received(:refund_payment).with("pi_original_capture", anything)
   end
+
+  %w[failed canceled].each do |terminal_status|
+    it "preserves a #{terminal_status} webhook that arrives before a pending POST response" do
+      selected = order.tickets.first
+      allow(StripeService).to receive(:refund_payment) do
+        webhook_refund = order.refunds.find_by!(idempotency_key: "in-flight-refund")
+        described_class.reconcile_refund!(refund: webhook_refund,
+          provider_refund: OpenStruct.new(id: "re_in_flight", status: terminal_status))
+        OpenStruct.new(id: "re_in_flight", status: "pending")
+      end
+
+      result = described_class.call(order: order, tickets: [selected], idempotency_key: "in-flight-refund")
+
+      expect(result.status).to eq(terminal_status == "canceled" ? "cancelled" : "failed")
+      expect(result.refund_tickets.active).to be_empty
+      expect(result.refund_tickets.count).to eq(1)
+      expect(order.reload.refundable_cents).to eq(order.total_cents)
+      expect(selected.reload).to be_issued
+      expect(result.refund_items).to be_empty
+      expect(EmailService).not_to have_received(:send_refund_notification_async)
+    end
+  end
+
+  it "quarantines a stale successful response after a failed refund released its ticket reservation" do
+    selected = order.tickets.first
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_late", status: "pending"))
+    first = described_class.call(order: order, tickets: [selected], idempotency_key: "late-first")
+    stale = Refund.find(first.id)
+    described_class.reconcile_refund!(refund: first,
+      provider_refund: OpenStruct.new(id: "re_late", status: "failed"))
+    replacement = create(:refund, order: order, payment: payment, status: :pending,
+      amount_cents: selected.refundable_cents, idempotency_key: "replacement")
+    replacement.refund_tickets.create!(ticket: selected, amount_cents: selected.refundable_cents)
+
+    result = described_class.reconcile_refund!(refund: stale,
+      provider_refund: OpenStruct.new(id: "re_late", status: "succeeded"))
+
+    expect(result).to be_failed
+    expect(result.refund_tickets.active).to be_empty
+    expect(replacement.refund_tickets.active).to exist
+    expect(order.reload).to be_completed
+    expect(order.refunded_cents).to eq(0)
+    expect(selected.reload).to be_issued
+    expect(ticket_type.reload.quantity_sold).to eq(2)
+    expect(order.reconciliation_exceptions).to exist(code: "refund_terminal_status_conflict")
+  end
+
+  it "quarantines a stale failure after success without releasing successful ticket reservations" do
+    selected = order.tickets.first
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_success_first", status: "pending"))
+    pending = described_class.call(order: order, tickets: [selected], idempotency_key: "success-first")
+    stale = Refund.find(pending.id)
+    described_class.reconcile_refund!(refund: pending,
+      provider_refund: OpenStruct.new(id: "re_success_first", status: "succeeded"))
+
+    result = described_class.reconcile_refund!(refund: stale,
+      provider_refund: OpenStruct.new(id: "re_success_first", status: "failed"))
+
+    expect(result).to be_succeeded
+    expect(result.refund_tickets.active).to exist
+    expect(selected.reload).to be_cancelled
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(order.reconciliation_exceptions).to exist(code: "refund_terminal_status_conflict")
+  end
 end

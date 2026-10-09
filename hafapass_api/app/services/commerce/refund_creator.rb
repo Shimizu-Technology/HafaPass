@@ -11,7 +11,7 @@ module Commerce
     end
 
     def self.reconcile_provider_total!(order:, payment:, amount_cents:, provider_refund_id:, idempotency_key:)
-      succeeded_total = order.refunds.succeeded.sum(:amount_cents)
+      succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
       delta = amount_cents.to_i - succeeded_total
       return if delta <= 0
 
@@ -202,24 +202,39 @@ module Commerce
 
     def finalize_refund!(refund, provider_refund)
       full_refund = false
+      validation_error = nil
       provider_status = provider_refund.respond_to?(:status) ? provider_refund.status.to_s : ""
-      unless %w[succeeded pending requires_action failed canceled cancelled].include?(provider_status) && provider_refund.respond_to?(:id) && provider_refund.id.present?
-        refund.update!(failure_code: "provider_result_unknown", failure_message: "Refund response is incomplete")
-        raise RefundError, "Refund provider result is unknown; reconcile before retrying"
-      end
-
-      if (provider_refund.respond_to?(:amount) && provider_refund.amount.to_i != refund.amount_cents) ||
-          (provider_refund.respond_to?(:currency) && provider_refund.currency.to_s.downcase != refund.currency)
-        refund.update!(failure_code: "provider_result_mismatch", failure_message: "Refund response does not match the reservation")
-        ReconciliationException.create!(order: refund.order, payment: refund.payment, code: "refund_operation_mismatch")
-        raise RefundError, "Refund provider result does not match the reservation; reconcile before retrying"
-      end
 
       Refund.transaction do
         refund.order.event.organization.lock!
         refund.order.lock!
         refund.lock!
-        return refund if refund.succeeded?
+        # A webhook can finish this operation while the original POST is still
+        # in flight. Re-read every terminal state under the same locks before
+        # touching its released ticket reservations or financial allocations.
+        if refund.succeeded? || refund.failed? || refund.cancelled?
+          contradictory = (refund.succeeded? && %w[failed canceled cancelled].include?(provider_status)) ||
+            (!refund.succeeded? && provider_status == "succeeded")
+          if contradictory
+            ReconciliationException.create!(order: refund.order, payment: refund.payment,
+              code: "refund_terminal_status_conflict")
+          end
+          return refund
+        end
+
+        unless %w[succeeded pending requires_action failed canceled cancelled].include?(provider_status) && provider_refund.respond_to?(:id) && provider_refund.id.present?
+          refund.update!(failure_code: "provider_result_unknown", failure_message: "Refund response is incomplete")
+          validation_error = "Refund provider result is unknown; reconcile before retrying"
+          next
+        end
+
+        if (provider_refund.respond_to?(:amount) && provider_refund.amount.to_i != refund.amount_cents) ||
+            (provider_refund.respond_to?(:currency) && provider_refund.currency.to_s.downcase != refund.currency)
+          refund.update!(failure_code: "provider_result_mismatch", failure_message: "Refund response does not match the reservation")
+          ReconciliationException.create!(order: refund.order, payment: refund.payment, code: "refund_operation_mismatch")
+          validation_error = "Refund provider result does not match the reservation; reconcile before retrying"
+          next
+        end
 
         refund.update!(
           provider_refund_id: provider_refund.id,
@@ -253,6 +268,8 @@ module Commerce
           release_fully_refunded_inventory!(refund.order)
         end
       end
+
+      raise RefundError, validation_error if validation_error
 
       EmailService.send_refund_notification_async(refund.order)
       refund.order.event.notify_waitlist_if_available if full_refund || refund.refund_tickets.any?
