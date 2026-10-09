@@ -26,6 +26,8 @@ Run `scripts/gate.sh` with the repository's Ruby/Node versions, an isolated test
 
 Migration `20261009051000` retains historical refund-ticket reservations and enforces uniqueness only for active reservations. Deploy the migration before the API change. Its rollback deliberately refuses to discard repeated history; use a forward repair when those records exist. Keep web and worker revisions/configuration aligned. Set `GIT_SHA` or `COMMIT_REF` to the deployed revision; production rejects pilot approval without a valid release identity.
 
+Also run migration `20261009090000` for durable image-upload receipts. Configure production `CLERK_AUTHORIZED_PARTIES` with the exact trusted frontend origins before rollout; production authentication requires it independently of CORS settings.
+
 Review required status checks on the exact PR head before merging. Verify both the API and frontend after deployment. A frontend deploy preview connected to an older backend is not a staging rehearsal environment.
 
 ## External evidence still required

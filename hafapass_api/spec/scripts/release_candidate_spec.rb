@@ -109,6 +109,13 @@ RSpec.describe "release candidate tooling" do
       expect(verify).to include("head_sha" => sha, "review_id" => 123, "review_state" => "COMMENTED")
     end
 
+    it "accepts CodeRabbit's empty-body approval only alongside its completed status" do
+      approval = review.merge("state" => "APPROVED", "body" => "")
+      expect(verify(reviews: [approval])).to include("review_state" => "APPROVED")
+      expect { verify(reviews: [approval], statuses: [status.merge("description" => "Review rate limited")]) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /completed review status/)
+    end
+
     it "rejects success statuses that skipped, paused, or never completed review" do
       ["Review skipped: 142 files exceed the limit of 100", "Review paused", "Review in progress",
        "Review completed; review skipped", ""].each do |description|
