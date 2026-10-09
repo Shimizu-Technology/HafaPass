@@ -8,7 +8,7 @@ class SystemReadiness
         job_queue: job_queue_check,
         worker: worker_check,
         commerce_clock: commerce_clock_check,
-        configuration: ProductionConfiguration.call,
+        configuration: Rails.env.staging? ? StageSafety.call(runtime: true) : ProductionConfiguration.call,
         providers: provider_configuration,
         provider_policy_controls: PlatformCapabilities.readiness,
         operations: operational_signals
@@ -17,6 +17,8 @@ class SystemReadiness
       required_checks = checks.values_at(:database, :job_queue)
       if Rails.env.production?
         required_checks.concat(checks.values_at(:worker, :commerce_clock, :configuration, :provider_policy_controls))
+      elsif Rails.env.staging?
+        required_checks.concat(checks.values_at(:worker, :configuration))
       end
 
       {
@@ -54,7 +56,7 @@ class SystemReadiness
       require "sidekiq/api"
       process_count = Sidekiq::ProcessSet.new.size
       {
-        ready: !Rails.env.production? || process_count.positive?,
+        ready: !(Rails.env.production? || Rails.env.staging?) || process_count.positive?,
         status: process_count.positive? ? "active" : "no_active_process",
         processes: process_count
       }

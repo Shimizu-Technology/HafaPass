@@ -5,7 +5,7 @@ class LaunchCapabilities
   SCOPES = %w[general_admission full].freeze
 
   def self.scope
-    ENV["HAFAPASS_LAUNCH_SCOPE"].presence || (Rails.env.production? ? "general_admission" : "full")
+    ENV["HAFAPASS_LAUNCH_SCOPE"].presence || ((Rails.env.production? || Rails.env.staging?) ? "general_admission" : "full")
   end
 
   def self.configured?
