@@ -70,4 +70,16 @@ RSpec.describe "General admission launch scope", type: :request do
     expect(response).to have_http_status(:ok)
     expect(event.reload.transfers_enabled).to be(false)
   end
+
+  it "does not let a content-only editor change an event's transfer setting" do
+    profile = create(:organizer_profile)
+    event = create(:event, organizer_profile: profile, transfers_enabled: true)
+    editor = create(:user)
+    event.organization.organization_memberships.create!(user: editor, role: :marketer, status: :active, accepted_at: Time.current)
+    patch "/api/v1/organizer/events/#{event.id}", params: { description: "New content" }, headers: auth_headers(editor)
+    expect(response).to have_http_status(:ok)
+    expect(event.reload.description).to eq("New content")
+    expect(event.transfers_enabled).to be(true)
+    expect(LaunchCapabilities.enabled?(:ticket_transfers)).to be(false)
+  end
 end
