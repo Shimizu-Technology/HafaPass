@@ -19,6 +19,8 @@ The backend `Procfile` declares the web, worker, and clock commands. The clock e
 
 Production never falls back to an in-memory or inline queue. Rails boot fails when `REDIS_URL` is missing, making a broken worker topology visible during deployment instead of silently losing work.
 
+The concrete Singapore deployment, secret references, release owner and acceptance sequence are in [Hosted backend deployment](RENDER_DEPLOYMENT_CONTRACT.md). The singleton clock also recovers pending Stripe fee evidence every five minutes through the existing worker; do not add a second scheduler.
+
 ## Probes and expected behavior
 
 | Probe | Purpose | Healthy response | Load-balancer use |

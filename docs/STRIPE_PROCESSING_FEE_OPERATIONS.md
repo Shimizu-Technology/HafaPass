@@ -18,7 +18,7 @@ Cash and simulated captures do not create Stripe fee evidence and do not prove l
 
 Deploy migration `20261010040000` before starting the new code. Subscribe the Stripe webhook to `charge.updated` as well as the existing payment, refund, and dispute events.
 
-The per-payment `StripeProcessingFeeJob` retries transient errors. Run `SweepPendingStripeFeesJob` periodically, at least every five minutes, to recover lost queue entries, expired job retries, or imported captures without an evidence row. The sweep queues work from durable database state; it makes no provider request itself.
+The per-payment `StripeProcessingFeeJob` retries transient errors. The existing singleton commerce clock queues `SweepPendingStripeFeesJob` immediately on start and every five minutes to recover lost queue entries, expired job retries, or imported captures without an evidence row. Keep that clock supervised alongside the worker; do not add a second cron or scheduler for this sweep. A delayed tick schedules one recovery sweep, and a restart may safely schedule another because the job reconciles durable evidence. The sweep queues work from database state; it makes no provider request itself.
 
 ```ruby
 SweepPendingStripeFeesJob.perform_later
