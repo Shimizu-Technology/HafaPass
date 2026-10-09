@@ -49,6 +49,8 @@ HafaPass/
 
 The Phase 0–10 engineering program is merged, but HafaPass is not yet authorized for production real-money ticketing because external approvals and live drills remain open. Use these documents as the source of truth:
 
+- [General-admission testing candidate](docs/LAUNCH_TESTING_CANDIDATE.md) — supported rehearsal, recovery checks, deployment impact, and remaining launch evidence.
+- [Private testing staging](docs/PRIVATE_TESTING_STAGING.md) — isolated production-style loading with simulated money and delivery.
 - [Ticketing Platform Blueprint](docs/TICKETING_PLATFORM_BLUEPRINT.md) — what HafaPass is, verified risks, required capabilities, architecture, compliance, metrics, and completion criteria.
 - [Phase Delivery Playbook](docs/PHASE_DELIVERY_PLAYBOOK.md) — the exact phase branches, implementation scope, automated/runtime testing, Greptile 5/5 loop, and merge gates.
 - [Platform Completion Audit](docs/PLATFORM_COMPLETION_AUDIT.md) — requirement evidence, market revalidation, honest production-readiness verdict, and ordered launch plan.
