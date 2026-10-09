@@ -68,6 +68,14 @@ RSpec.describe StripeService do
       expect(described_class.find_refund("pi_lookup", idempotency_key: "missing-key")).to be_nil
     end
 
+    it "continues past null metadata to recover a matching refund on a later page" do
+      unrelated = OpenStruct.new(id: "re_no_metadata", metadata: nil)
+      matching = OpenStruct.new(id: "re_after_null", metadata: { "hafapass_refund_key" => "our-key" })
+      allow(list).to receive(:auto_paging_each).and_yield(unrelated).and_yield(matching)
+
+      expect(described_class.find_refund("pi_lookup", idempotency_key: "our-key")).to eq(matching)
+    end
+
     it "quarantines duplicate metadata matches instead of guessing one operation" do
       first = OpenStruct.new(id: "re_one", metadata: { "hafapass_refund_key" => "duplicate-key" })
       second = OpenStruct.new(id: "re_two", metadata: { "hafapass_refund_key" => "duplicate-key" })

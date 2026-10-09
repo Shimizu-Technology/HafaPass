@@ -69,7 +69,7 @@ class StripeService
       client = Stripe::StripeClient.new(resolve_api_key!(settings))
       match = nil
       client.v1.refunds.list({ payment_intent: payment_intent_id, limit: 100 }).auto_paging_each do |refund|
-        next unless refund.metadata["hafapass_refund_key"] == idempotency_key
+        next unless refund.metadata&.[]("hafapass_refund_key") == idempotency_key
 
         raise PaymentError, "Multiple provider refunds match this operation; finance review is required" if match
 
