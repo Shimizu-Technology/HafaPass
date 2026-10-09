@@ -1,19 +1,21 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Loader2, Image as ImageIcon } from 'lucide-react'
-import apiClient from '../api/client'
+import { uploadImage } from '../utils/uploads'
 
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
-export default function CoverImageUpload({ currentUrl, onUploaded, disabled }) {
+export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eventId }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef(null)
 
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
+
   const handleFile = async (file) => {
-    if (!file) return
+    if (!file || disabled || uploading) return
     setError(null)
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -31,32 +33,9 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled }) {
     setUploading(true)
 
     try {
-      // 1. Get presigned URL
-      const presignRes = await apiClient.post('/uploads/presign', {
-        filename: file.name,
-        content_type: file.type
-      })
-      const { url, fields, public_url } = presignRes.data
-
-      // 2. Upload to S3
-      if (fields) {
-        // Presigned POST
-        const formData = new FormData()
-        Object.entries(fields).forEach(([k, v]) => formData.append(k, v))
-        formData.append('file', file)
-        await fetch(url, { method: 'POST', body: formData })
-      } else {
-        // Presigned PUT
-        await fetch(url, {
-          method: 'PUT',
-          headers: { 'Content-Type': file.type },
-          body: file
-        })
-      }
-
-      // 3. Notify parent with the S3 URL
-      const finalUrl = public_url || url.split('?')[0]
+      const finalUrl = await uploadImage(file, eventId)
       onUploaded(finalUrl)
+      setPreview(null)
     } catch {
       setError('Upload failed. Please try again.')
       setPreview(null)
@@ -80,7 +59,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled }) {
       {displayUrl ? (
         <div className="relative rounded-xl overflow-hidden border border-neutral-200">
           <img src={displayUrl} alt="Cover" className="w-full h-48 object-cover" />
-          <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+          <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center opacity-100 sm:opacity-0 sm:hover:opacity-100 focus-within:opacity-100">
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
@@ -98,6 +77,10 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled }) {
         </div>
       ) : (
         <div
+          role="button"
+          tabIndex={disabled || uploading ? -1 : 0}
+          aria-label="Upload cover image"
+          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); inputRef.current?.click() } }}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
@@ -126,7 +109,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled }) {
         onChange={(e) => handleFile(e.target.files[0])}
       />
 
-      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="mt-1 text-sm text-red-600">{error}</p>}
     </div>
   )
 }

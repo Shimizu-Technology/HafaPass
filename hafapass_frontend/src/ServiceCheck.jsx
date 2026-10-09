@@ -1,13 +1,39 @@
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import ClerkProviderWrapper from './components/ClerkProviderWrapper'
 import App from './App'
 import { useBackendAvailability } from './hooks/useBackendAvailability'
 import PrivatePreviewPage from './pages/PrivatePreviewPage'
+import EnvironmentBanner from './components/EnvironmentBanner'
+import { loadAuthorizedScanner } from './utils/admissionStore'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1').replace(/\/$/, '')
 const HEALTH_URL = `${API_BASE_URL}/health`
+const ScannerPage = lazy(() => import('./pages/dashboard/ScannerPage'))
 
 export default function ServiceCheck() {
   const { status, retry } = useBackendAvailability(HEALTH_URL)
+  const location = useLocation()
+  const [cachedScanner, setCachedScanner] = useState(null)
+
+  useEffect(() => {
+    let current = true
+    if (location.pathname !== '/dashboard/scanner') { setCachedScanner(null); return }
+    const eventId = window.localStorage.getItem('hafapass_scanner_event_id')
+    loadAuthorizedScanner(eventId).then(scanner => { if (current) setCachedScanner(scanner) }).catch(() => { if (current) setCachedScanner(null) })
+    return () => { current = false }
+  }, [location.pathname, status])
+
+  // Previously authorized door access must survive an API or authentication-service outage.
+  const cachedDoor = location.pathname === '/dashboard/scanner' && cachedScanner ? <main className="min-h-screen bg-neutral-50">
+      <EnvironmentBanner offlineOnly />
+      <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+        Using this device’s saved event access. Scans stay on this device until services reconnect.
+        <button className="ml-3 min-h-11 font-semibold underline" onClick={retry}>Check connection</button>
+      </div>
+      <Suspense fallback={<p className="px-4 py-8" role="status">Opening the saved scanner…</p>}><ScannerPage offlineOnly /></Suspense>
+    </main> : null
+  if (cachedDoor && status !== 'available') return cachedDoor
 
   if (status === 'checking') {
     return (
@@ -21,5 +47,5 @@ export default function ServiceCheck() {
   }
 
   if (status === 'unavailable') return <PrivatePreviewPage onRetry={retry} />
-  return <ClerkProviderWrapper><App /></ClerkProviderWrapper>
+  return <ClerkProviderWrapper loadingFallback={cachedDoor}><App /></ClerkProviderWrapper>
 }

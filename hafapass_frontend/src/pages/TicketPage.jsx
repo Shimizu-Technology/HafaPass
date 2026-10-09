@@ -96,6 +96,7 @@ export default function TicketPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState(null)
   const [walletLoading, setWalletLoading] = useState(null)
   const [walletError, setWalletError] = useState(null)
 
@@ -122,23 +123,26 @@ export default function TicketPage() {
   }, [credential, orderId])
 
   async function handleDownload() {
+    let downloadUrl
+    let downloadLink
     try {
       setDownloading(true)
+      setDownloadError(null)
       const response = await api.get(`/tickets/${encodeURIComponent(credential)}/download`, {
         headers: orderAccessHeaders(orderId),
         responseType: 'blob',
       })
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `hafapass-ticket-${ticket.id}.pdf`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
+      downloadUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+      downloadLink = document.createElement('a')
+      downloadLink.href = downloadUrl
+      downloadLink.setAttribute('download', `hafapass-ticket-${ticket.id}.pdf`)
+      document.body.appendChild(downloadLink)
+      downloadLink.click()
     } catch {
-      // Silently fail — user can retry
+      setDownloadError('We couldn’t download the PDF. Your ticket is still available here. Check your connection and try Download PDF again.')
     } finally {
+      downloadLink?.remove()
+      if (downloadUrl) window.URL.revokeObjectURL(downloadUrl)
       setDownloading(false)
     }
   }
@@ -350,6 +354,7 @@ export default function TicketPage() {
               )}
               <span>{downloading ? 'Generating...' : 'Download PDF'}</span>
             </button>
+            {downloadError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">{downloadError}</p>}
 
             {/* Share */}
             {typeof navigator !== 'undefined' && navigator.share && (

@@ -1,17 +1,33 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle, ChevronRight, Clock3, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
+import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { clearActiveCheckout, getOrderAccess, orderAccessHeaders, saveOrderAccess } from '../utils/orderAccess'
+import { clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 
 const finalStatuses = new Set(['completed', 'partially_refunded', 'refunded', 'cancelled', 'expired'])
+const refundNotice = attempt => ({
+  pending: 'Refund pending — waiting for the payment provider. Check this saved request; a refund has not been confirmed.',
+  unconfirmed: 'The refund outcome is not confirmed. Check this saved request before starting another refund.',
+  failed: 'Refund failed. No refund was confirmed. You can try again.',
+  cancelled: 'Refund cancelled. No refund was confirmed. You can try again.',
+  rejected: 'The refund request was rejected. No refund was confirmed. Contact support or retry this request.',
+  succeeded: 'Refund confirmed by the payment provider.',
+  finance_review: 'The payment records need a finance review. Contact support before requesting another refund. Check this saved request for updates.',
+}[attempt?.status])
+const refundNeedsStatusCheck = attempt => ['pending', 'unconfirmed', 'finance_review'].includes(attempt?.status)
+const refundButton = (attempt, initial = 'Refund') => ['failed', 'cancelled'].includes(attempt?.status)
+  ? 'Try refund again'
+  : refundNeedsStatusCheck(attempt) ? 'Check refund status'
+    : attempt?.status === 'rejected' ? 'Retry refund request' : initial
 
 export default function OrderConfirmationPage() {
   const { id } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
+  const capabilities = useLaunchCapabilities()
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -25,6 +41,7 @@ export default function OrderConfirmationPage() {
   const [exchangeSeatId, setExchangeSeatId] = useState('')
   const [exchangeAttested, setExchangeAttested] = useState(false)
   const [ticketActionError, setTicketActionError] = useState(null)
+  const [, refreshRefundAttempts] = useState(0)
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -64,19 +81,38 @@ export default function OrderConfirmationPage() {
   const event = order?.event
   const isProcessing = order && !finalStatuses.has(order.status)
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
+  const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
+  const delivery = order?.confirmation_delivery
+  const deliveryFailed = !delivery?.simulated && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
+  const deliveryMessage = delivery?.simulated
+    ? usableTickets ? 'Email is simulated in this test environment. Open or download your tickets below.' : 'Email is simulated in this test environment. Check your order and ticket statuses below.'
+    : delivery?.status === 'delivered'
+      ? 'Your ticket email was delivered.'
+      : delivery?.status === 'sent'
+        ? 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'
+        : ['queued', 'delayed'].includes(delivery?.status)
+          ? 'Your ticket email is queued for delivery. You can open or download your tickets below.'
+          : deliveryFailed
+            ? 'We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.'
+            : usableTickets
+              ? 'Your tickets are ready below. You can request a confirmation email using Resend.'
+              : 'You can view your order and ticket statuses here. Email delivery will appear when a confirmation is available.'
   const change = order?.latest_event_change
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
     ticket.status === 'issued' && ticket.refundable_cents >= 0
   ))
-  const canRespondToChange = change && (!change.response || refundNeedsRetry) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
+  const eventRefundAttempt = change ? getBuyerRefundAttempt(id, `event:${change.id}`) : null
+  const canRespondToChange = change && (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt)) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
   const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
-  const orderHeaders = useMemo(() => orderAccessHeaders(id), [id])
+  // Recovery links import credentials after mount. Read the current credential for every action.
+  const orderHeaders = () => orderAccessHeaders(id)
 
   async function resend() {
     setResendState('sending')
     try {
-      await apiClient.post(`/orders/${id}/resend`, {}, { headers: orderHeaders })
-      setResendState('sent')
+      await apiClient.post(`/orders/${id}/resend`, {}, { headers: orderHeaders() })
+      await fetchOrder()
+      setResendState('requested')
     } catch (err) {
       setResendState(err.response?.status === 429 ? 'cooldown' : 'error')
     }
@@ -84,32 +120,49 @@ export default function OrderConfirmationPage() {
 
   async function respondToChange(decision) {
     setDecisionState(decision)
+    const operation = `event:${change.id}`
+    const isPaidRefund = decision === 'refund_requested' && (getBuyerRefundAttempt(id, operation) || order.tickets?.some(ticket => ticket.status === 'issued' && ticket.refundable_cents > 0))
     try {
-      await apiClient.post(`/orders/${id}/event_change_response`, {
+      const attempt = isPaidRefund ? prepareBuyerRefundAttempt(id, operation) : null
+      const response = await apiClient.post(`/orders/${id}/event_change_response`, {
         event_change_id: change.id,
         decision,
       }, {
         headers: {
-          ...orderHeaders,
-          ...(decision === 'refund_requested' ? { 'Idempotency-Key': crypto.randomUUID() } : {}),
+          ...orderHeaders(),
+          ...(decision === 'refund_requested' ? { 'Idempotency-Key': attempt?.key || `buyer-event-refund:${id}:${change.id}` } : {}),
         },
       })
+      if (attempt) recordBuyerRefundOutcome(id, operation, response.data)
       await fetchOrder()
       setDecisionState('done')
-    } catch {
+    } catch (err) {
+      if (isPaidRefund) recordBuyerRefundOutcome(id, operation, err.response?.data)
       setDecisionState('error')
+    } finally {
+      refreshRefundAttempts(value => value + 1)
     }
   }
 
   async function cancelTicket(ticket) {
-    if (!window.confirm(`Cancel this ${ticket.ticket_type.name} ticket? This cannot be undone.`)) return
+    const operation = `ticket:${ticket.id}`
+    const isPaidRefund = ticket.refundable_cents > 0 || Boolean(getBuyerRefundAttempt(id, operation))
+    const checkingSavedRefund = isPaidRefund && refundNeedsStatusCheck(getBuyerRefundAttempt(id, operation))
+    if (!checkingSavedRefund && !window.confirm(isPaidRefund ? `Request a refund for this ${ticket.ticket_type.name} ticket? Cancellation follows a confirmed refund.` : `Cancel this ${ticket.ticket_type.name} ticket? This cannot be undone.`)) return
     setCancellingTicketId(ticket.id)
+    setTicketActionError(null)
     try {
-      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/cancel`, {}, {
-        headers: { ...orderHeaders, 'Idempotency-Key': crypto.randomUUID() },
+      const attempt = isPaidRefund ? prepareBuyerRefundAttempt(id, operation) : null
+      const response = await apiClient.post(`/orders/${id}/tickets/${ticket.id}/cancel`, {}, {
+        headers: { ...orderHeaders(), 'Idempotency-Key': attempt?.key || `buyer-ticket-cancel:${id}:${ticket.id}` },
       })
+      if (attempt) recordBuyerRefundOutcome(id, operation, response.data)
       await fetchOrder()
+    } catch (err) {
+      if (isPaidRefund) recordBuyerRefundOutcome(id, operation, err.response?.data)
+      setTicketActionError(err.response?.data?.error || 'Unable to cancel this ticket. Please refresh before retrying.')
     } finally {
+      refreshRefundAttempts(value => value + 1)
       setCancellingTicketId(null)
     }
   }
@@ -118,7 +171,10 @@ export default function OrderConfirmationPage() {
     if (!window.confirm('Replace this ticket’s entry QR? Any saved copy of the old QR will stop working.')) return
     setRotatingTicketId(ticket.id)
     try {
-      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/rotate_scan`, {}, { headers: orderHeaders })
+      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/rotate_scan`, {}, { headers: orderHeaders() })
+      await fetchOrder()
+    } catch (err) {
+      setTicketActionError(err.response?.data?.error || 'Unable to replace the QR. Please refresh before retrying.')
     } finally {
       setRotatingTicketId(null)
     }
@@ -130,7 +186,7 @@ export default function OrderConfirmationPage() {
     setTransferringTicketId(ticket.id)
     setTicketActionError(null)
     try {
-      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/transfer`, { recipient_email: recipientEmail }, { headers: orderHeaders })
+      await apiClient.post(`/orders/${id}/tickets/${ticket.id}/transfer`, { recipient_email: recipientEmail }, { headers: orderHeaders() })
       window.alert('Transfer invitation sent. You retain control until the recipient accepts it.')
     } catch (err) {
       setTicketActionError(err.response?.data?.error || 'Unable to transfer this ticket.')
@@ -160,7 +216,7 @@ export default function OrderConfirmationPage() {
       await apiClient.post(`/orders/${id}/tickets/${ticket.id}/exchange_seat`, {
         event_seat_id: Number(exchangeSeatId),
         accessibility_attested: exchangeAttested,
-      }, { headers: orderHeaders })
+      }, { headers: orderHeaders() })
       setExchangeTicketId(null)
       setExchangeMap(null)
       await fetchOrder()
@@ -192,11 +248,20 @@ export default function OrderConfirmationPage() {
             {isProcessing ? <Clock3 className="h-8 w-8 text-amber-700" /> : <CheckCircle className="h-8 w-8 text-emerald-700" />}
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-neutral-950">
-            {isProcessing ? 'Payment is processing' : order.status === 'cancelled' || order.status === 'expired' ? 'Order closed' : 'Your order is confirmed'}
+            {isProcessing ? 'Payment is processing' : order.status === 'refunded' ? 'Your order was refunded' : order.status === 'partially_refunded' ? 'Your order was partially refunded' : order.status === 'cancelled' || order.status === 'expired' ? 'Order closed' : 'Your order is confirmed'}
           </h1>
           <p className="mt-2 text-neutral-500">Order {order.reference} · {order.buyer_email}</p>
           {isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
         </div>
+
+        <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">
+          <h2 id="confirmation-delivery-title" className="font-semibold">Ticket email</h2>
+          <p className="mt-1" role="status">{deliveryMessage}</p>
+          {deliveryFailed && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+            {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
+            <a href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Ticket email for order ${order.reference}`)}`} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
+          </div>}
+        </section>
 
         {change && (
           <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
@@ -208,23 +273,25 @@ export default function OrderConfirmationPage() {
                 {!change.response && (
                   <button className="btn-secondary" disabled={decisionBusy} onClick={() => respondToChange('accepted')}>Keep my tickets</button>
                 )}
-                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy} onClick={() => respondToChange('refund_requested')}>{refundNeedsRetry ? 'Retry refund' : 'Request refund'}</button>
+                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy || eventRefundAttempt?.status === 'succeeded'} onClick={() => respondToChange('refund_requested')}>{refundButton(eventRefundAttempt, refundNeedsRetry ? 'Retry refund' : 'Request refund')}</button>
               </div>
             )}
-            {decisionState === 'error' && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
+            {eventRefundAttempt && <p role="status" className="mt-3 text-sm text-amber-950">{refundNotice(eventRefundAttempt)}</p>}
+            {eventRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${order.reference}`)}`}>Contact support</a>}
+            {decisionState === 'error' && !eventRefundAttempt && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
           </section>
         )}
 
         <section className="card mb-6 overflow-hidden">
           <div className="border-b border-neutral-100 p-5 sm:p-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-brand-600">{event.status}</p>
+            <p className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wider text-brand-600">{event.status}</p>
             <h2 className="mt-1 text-xl font-bold text-neutral-950">{event.title}</h2>
             <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
             <p className="text-sm text-neutral-500">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
           </div>
           <div className="space-y-2 p-5 text-sm sm:p-6">
             {order.order_items.map(item => (
-              <div key={item.id} className="flex justify-between gap-4"><span>{item.name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
+              <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
             ))}
             <div className="flex justify-between border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee</span><span>{formatPrice(order.service_fee_cents)}</span></div>
             {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
@@ -234,50 +301,53 @@ export default function OrderConfirmationPage() {
         </section>
 
         {ticketsAvailable && (
-          <section className="card mb-6 p-5 sm:p-6">
+          <section id="order-tickets" className="card mb-6 scroll-mt-24 p-5 sm:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold text-neutral-950">Tickets ({order.tickets.length})</h2>
               {['completed', 'partially_refunded'].includes(order.status) && (
                 <button onClick={resend} disabled={resendState === 'sending'} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600"><Mail className="h-4 w-4" /> Resend</button>
               )}
             </div>
-            {resendState === 'sent' && <p className="mb-3 text-sm text-emerald-700">A fresh confirmation was queued for delivery.</p>}
-            {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">A message was sent recently. Please wait two minutes.</p>}
+            {resendState === 'requested' && <p className="mb-3 text-sm text-neutral-700">Your email request was saved. Check the delivery status above.</p>}
+            {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">An email request was made recently. Please wait two minutes.</p>}
             {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             <div className="divide-y divide-neutral-100">
               {order.tickets.map(ticket => {
+                const ticketRefundAttempt = getBuyerRefundAttempt(id, `ticket:${ticket.id}`)
                 const exchangeOptions = exchangeMap?.sections.flatMap(section => section.rows.flatMap(row =>
                   row.seats.filter(seat => seat.status === 'available' && seat.ticket_type_id === ticket.ticket_type.id &&
                     seat.accessibility_kind === ticket.seat?.accessibility_kind)
                 )) || []
                 const selectedExchangeSeat = exchangeOptions.find(seat => seat.id === Number(exchangeSeatId))
                 return <div key={ticket.id} className="py-3">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                     {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
                     <p className="text-xs capitalize text-neutral-500">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {ticket.status === 'issued' && (
-                      <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
+                      <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
                     )}
-                    {ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) && (
-                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id} className="text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Cancelling…' : ticket.refundable_cents > 0 ? 'Refund' : 'Cancel'}</button>
+                    {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) || refundNeedsStatusCheck(ticketRefundAttempt)) && (
+                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Checking…' : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : 'Cancel'}</button>
                     )}
-                    {ticket.status === 'issued' && event.transfers_enabled !== false && (
-                      <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="text-xs font-semibold text-brand-600">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
+                    {ticket.status === 'issued' && capabilities.ticket_transfers && event.transfers_enabled !== false && (
+                      <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-brand-600">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
                     )}
                     {ticket.status === 'issued' && ticket.seat && (
-                      <button onClick={() => openSeatExchange(ticket)} className="text-xs font-semibold text-brand-600">Change seat</button>
+                      <button onClick={() => openSeatExchange(ticket)} className="min-h-11 px-2 text-xs font-semibold text-brand-600">Change seat</button>
                     )}
                     {ticket.status === 'issued' && !order.ticket_access_blocked && (
-                      <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
+                      <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="inline-flex min-h-11 min-w-11 items-center justify-center" aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
                     )}
-                    {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>}
+                    {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="inline-flex min-h-11 min-w-11 items-center justify-center" aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>}
                   </div>
                 </div>
+                {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
+                {ticketRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${order.reference}`)}`}>Contact support</a>}
                 {exchangeTicketId === ticket.id && (
                   <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
                     <label className="block text-sm font-medium text-neutral-800">Available equivalent seats
