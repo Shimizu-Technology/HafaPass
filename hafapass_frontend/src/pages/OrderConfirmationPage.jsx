@@ -3,6 +3,7 @@ import { useAuth } from '@clerk/clerk-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle, ChevronRight, Clock3, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
+import { supportMailto } from '../utils/supportContact'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
@@ -296,7 +297,7 @@ function OrderConfirmationContent() {
           <p className="mt-1" role="status">{deliveryMessage}</p>
           {deliveryFailed && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
             {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
-            <a href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Ticket email for order ${order.reference}`)}`} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
+            <a href={supportMailto(`Ticket email for order ${order.reference}`)} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
           </div>}
         </section>
 
@@ -314,7 +315,7 @@ function OrderConfirmationContent() {
               </div>
             )}
             {eventRefundAttempt && <p role="status" className="mt-3 text-sm text-amber-950">{refundNotice(eventRefundAttempt)}</p>}
-            {eventRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${order.reference}`)}`}>Contact support</a>}
+            {eventRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline" href={supportMailto(`Refund review for order ${order.reference}`)}>Contact support</a>}
             {decisionState === 'error' && !eventRefundAttempt && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
           </section>
         )}
@@ -384,7 +385,7 @@ function OrderConfirmationContent() {
                   </div>
                 </div>
                 {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
-                {ticketRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${order.reference}`)}`}>Contact support</a>}
+                {ticketRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline" href={supportMailto(`Refund review for order ${order.reference}`)}>Contact support</a>}
                 {exchangeTicketId === ticket.id && (
                   <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
                     <label className="block text-sm font-medium text-neutral-800">Available equivalent seats

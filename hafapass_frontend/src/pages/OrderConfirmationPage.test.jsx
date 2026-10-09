@@ -10,6 +10,7 @@ import { getActiveCheckout, saveActiveCheckout } from '../utils/orderAccess'
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: vi.fn() }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
+beforeEach(() => vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test'))
 afterEach(() => vi.unstubAllEnvs())
 
 describe('guest order recovery actions', () => {
@@ -202,7 +203,7 @@ describe('buyer refund outcomes and terminal retries', () => {
     mockOrder({ ...withChange, status: 'refunded', tickets: [{ ...paidOrder.tickets[0], status: 'cancelled', refundable_cents: 0 }] })
     mount()
     await screen.findByText(notice)
-    expect(screen.getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', expect.stringContaining('mailto:contact@hafapass.com'))
+    expect(screen.getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', 'mailto:operator@example.test?subject=Refund%20review%20for%20order%20HP-925')
     apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'failed', finance_review_required: true, reconciliation_required: true } })
     await user.click(screen.getByRole('button', { name: 'Check refund status' }))
     await screen.findByText(notice)
@@ -248,7 +249,7 @@ describe('truthful ticket email status', () => {
     mount()
     await screen.findByText('We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.')
     expect(screen.getByRole('link', { name: 'Open or download tickets' })).toHaveAttribute('href', '#order-tickets')
-    expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', expect.stringContaining('mailto:contact@hafapass.com'))
+    expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=Ticket%20email%20for%20order%20HP-924')
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
   })
 

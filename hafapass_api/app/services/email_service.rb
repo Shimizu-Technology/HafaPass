@@ -359,6 +359,8 @@ class EmailService
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, **log_meta)
       params = { from: FROM_EMAIL, to: delivery ? delivery.recipient : to, subject: subject, html: html }
+      reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
+      params[:reply_to] = reply_to if reply_to
       params[:subject] = "[HafaPass TEST] #{subject}" if ProviderRehearsal.enabled?
       params[:tags] = [{ name: "category", value: tag }] if tag.present?
       return params.deep_stringify_keys if delivery&.preparing_outbound_payload
