@@ -51,8 +51,8 @@ module TicketTransfers
           transfer.lock!
           transfer.ticket.lock!
           raise TransferError, "Transfer is no longer available" unless transfer.active?
-          unless transfer.recipient_email.casecmp?(user.email.to_s.strip)
-            raise TransferError, "Sign in with the email address that received this transfer"
+          unless ClerkIdentity.email_matches?(user: user, email: transfer.recipient_email)
+            raise TransferError, "Sign in with the verified email address that received this transfer and try again"
           end
           validate_transferable!(transfer.ticket)
 

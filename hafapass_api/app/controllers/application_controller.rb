@@ -72,7 +72,7 @@ class ApplicationController < ActionController::API
       user.email = clerk_email
       user.first_name = @clerk_payload["first_name"]
       user.last_name = @clerk_payload["last_name"]
-      user.role = initial_role_for(user.email)
+      user.role = initial_role_for(user)
     end
   end
 
@@ -80,8 +80,13 @@ class ApplicationController < ActionController::API
     @clerk_payload["email"] || @clerk_payload.dig("email_addresses", 0, "email_address")
   end
 
-  def initial_role_for(email)
-    return :admin if admin_email?(email)
+  def initial_role_for(user)
+    # Standard Clerk session tokens have no email claim. Resolve the server's
+    # admin allowlist against verified provider addresses, not contact data.
+    if ENV.fetch("ADMIN_EMAILS", "").present? &&
+        ClerkIdentity.verified_email_addresses(user.clerk_id).any? { |email| admin_email?(email) }
+      return :admin
+    end
     return :admin if first_user_admin_bootstrap_enabled?
 
     :attendee

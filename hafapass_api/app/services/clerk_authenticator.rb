@@ -3,24 +3,13 @@ require "json"
 require "base64"
 
 class ClerkAuthenticator
-  # Derive JWKS URL from CLERK_PUBLISHABLE_KEY (base64-encoded instance domain)
-  # Falls back to ENV var if set, or generic Clerk URL as last resort
-  JWKS_URL = ENV.fetch("CLERK_JWKS_URL") {
-    pk = ENV["CLERK_PUBLISHABLE_KEY"].to_s
-    # pk_test_<base64domain> or pk_live_<base64domain>
-    encoded = pk.split("_").last.to_s
-    if encoded.present?
-      domain = Base64.decode64(encoded).gsub(/\$\z/, "")
-      "https://#{domain}/.well-known/jwks.json"
-    else
-      "https://api.clerk.com/.well-known/jwks.json"
-    end
-  }
   JWKS_CACHE_TTL = 1.hour
 
   class << self
     def verify(token)
       return nil if token.blank?
+
+      return nil unless configured?
 
       jwks = fetch_jwks
       return nil if jwks.nil?
@@ -29,8 +18,16 @@ class ClerkAuthenticator
       jwks["keys"].each do |jwk_data|
         begin
           jwk = JWT::JWK.new(jwk_data)
-          decoded = JWT.decode(token, jwk.public_key, true, { algorithms: ["RS256"] })
-          return decoded.first # Return the payload
+          options = { algorithms: ["RS256"], verify_iss: true, iss: issuer,
+            required_claims: %w[iss sub exp], verify_expiration: true, verify_not_before: true }
+          options.merge!(verify_aud: true, aud: audiences) if audiences.any?
+          payload = JWT.decode(token, jwk.public_key, true, options).first
+          next if payload["sub"].blank?
+          # Clerk permits azp to be absent (no frontend Origin was supplied).
+          # When present it must match our explicit allowed frontend origins.
+          next if payload.key?("azp") && !authorized_parties.include?(payload["azp"])
+
+          return payload
         rescue JWT::DecodeError
           next
         end
@@ -42,7 +39,57 @@ class ClerkAuthenticator
       nil
     end
 
+    def issuer
+      explicit = ENV["CLERK_ISSUER"].presence
+      return explicit if explicit
+
+      key = ENV["CLERK_PUBLISHABLE_KEY"].to_s
+      return nil unless key.match?(/\Apk_(?:test|live)_/)
+
+      encoded = key.split("_", 3).last
+      encoded += "=" * ((4 - encoded.length % 4) % 4)
+      domain = Base64.strict_decode64(encoded).delete_suffix("$")
+      return nil unless domain.match?(/\A[a-zA-Z0-9.-]+\z/)
+
+      "https://#{domain}"
+    rescue ArgumentError
+      nil
+    end
+
+    def authorized_parties
+      configured = ENV["CLERK_AUTHORIZED_PARTIES"].presence || ENV["ALLOWED_ORIGINS"].presence
+      configured ||= "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176" unless Rails.env.production?
+      configured.to_s.split(",").map(&:strip).reject(&:empty?)
+    end
+
+    def configured?
+      valid_origin?(issuer, https_only: true) && authorized_parties.any? &&
+        authorized_parties.all? { |origin| valid_origin?(origin, https_only: Rails.env.production?) } &&
+        jwks_url.present?
+    end
+
     private
+
+    def audiences
+      ENV["CLERK_AUDIENCE"].to_s.split(",").map(&:strip).reject(&:empty?)
+    end
+
+    def valid_origin?(value, https_only:)
+      uri = URI.parse(value.to_s)
+      schemes = https_only ? ["https"] : %w[http https]
+      schemes.include?(uri.scheme) && uri.host.present? && uri.userinfo.nil? &&
+        uri.path.empty? && uri.query.nil? && uri.fragment.nil?
+    rescue URI::InvalidURIError
+      false
+    end
+
+    def jwks_url
+      value = ENV["CLERK_JWKS_URL"].presence || ("#{issuer}/.well-known/jwks.json" if issuer.present?)
+      uri = URI.parse(value.to_s)
+      value if uri.scheme == "https" && uri.host.present? && uri.userinfo.nil? && uri.fragment.nil?
+    rescue URI::InvalidURIError
+      nil
+    end
 
     def fetch_jwks
       if cached_jwks_valid?
@@ -52,17 +99,18 @@ class ClerkAuthenticator
         return nil unless response
 
         @cached_jwks = response
+        @cached_url = jwks_url
         @cached_at = Time.current
         @cached_jwks
       end
     end
 
     def cached_jwks_valid?
-      @cached_jwks.present? && @cached_at.present? && (Time.current - @cached_at) < JWKS_CACHE_TTL
+      @cached_url == jwks_url && @cached_jwks.present? && @cached_at.present? && (Time.current - @cached_at) < JWKS_CACHE_TTL
     end
 
     def fetch_jwks_from_clerk
-      uri = URI.parse(JWKS_URL)
+      uri = URI.parse(jwks_url)
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true
       http.verify_mode = OpenSSL::SSL::VERIFY_PEER

@@ -9,6 +9,11 @@ RSpec.describe TicketTransfers::Manager do
   let(:item) { create(:order_item, order: order, ticket_type: ticket_type) }
   let(:ticket) { create(:ticket, order: order, event: event, ticket_type: ticket_type, order_item: item) }
 
+  before do
+    allow(ClerkIdentity).to receive(:verified_email_addresses).and_return([])
+    allow(ClerkIdentity).to receive(:verified_email_addresses).with(recipient.clerk_id).and_return([recipient.email])
+  end
+
   it "accepts only as the invited user and rotates both credentials" do
     old_display = ticket.display_credential
     old_scan = ticket.scan_credential
@@ -25,6 +30,18 @@ RSpec.describe TicketTransfers::Manager do
     expect(TicketTransferCredential.find(token)).to be_nil
     expect(OrderPresenter.call(order.reload, include_tickets: true)[:tickets].first)
       .to include(status: "transferred", display_credential: nil, scan_credential: nil)
+  end
+
+  it "rejects contact spoofing and accepts independent verified ownership" do
+    transfer = described_class.create!(ticket: ticket, recipient_email: recipient.email)
+    token = TicketTransferCredential.issue(transfer)
+    attacker = create(:user, email: recipient.email)
+    expect { described_class.accept!(token: token, user: attacker) }
+      .to raise_error(described_class::TransferError, /email address that received/)
+    expect(transfer.reload).to be_pending
+
+    recipient.update!(email: "different-contact@example.com")
+    expect(described_class.accept!(token: token, user: recipient)).to be_accepted
   end
 
   it "prevents two active transfers for one ticket" do
