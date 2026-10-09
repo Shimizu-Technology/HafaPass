@@ -1,6 +1,6 @@
 # Private testing runtime
 
-`RAILS_ENV=staging` runs production loading and logging, a separate Sidekiq worker, HTTPS enforcement, and Clerk authentication. It supports free registrations and simulated payments against test data. It defaults to general admission. `/api/v1/config` reports `environment: "staging"`, which the existing interface displays as a test environment.
+`RAILS_ENV=staging` runs production loading and logging, a separate Sidekiq worker and singleton commerce clock, HTTPS enforcement, and Clerk authentication. It supports free registrations and simulated payments against test data. It defaults to general admission. `/api/v1/config` reports `environment: "staging"`, which the existing interface displays as a test environment.
 
 This change defines the runtime contract. It does not provision a staging host, publish a frontend, create a Clerk instance, send real email, or establish payment-provider approval.
 
@@ -14,6 +14,8 @@ Supply these variables from the deployment's secret/configuration store:
 | --- | --- |
 | `RAILS_ENV` | `staging` |
 | `DATABASE_URL`, `STAGING_DATABASE_URL` | Identical PostgreSQL URLs pointing to a dedicated database whose name contains `staging` |
+| `DATABASE_MIGRATION_URL` | Direct connection to the same dedicated staging database, used only by the release command; never a transaction-pooled hostname |
+| `RAILS_MAX_THREADS`, `SIDEKIQ_CONCURRENCY`, `DB_POOL` | Initially `3`, `3`, `5`; pool must cover both concurrency values |
 | `REDIS_URL`, `STAGING_REDIS_URL` | Identical dedicated Redis URLs with an explicit nonzero database number; use TLS on remote infrastructure |
 | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | Matching valid `sk_test_` and `pk_test_` keys from the separate Clerk test instance |
 | `CLERK_ISSUER` | HTTPS origin matching the host encoded in that publishable key |
@@ -48,10 +50,14 @@ Select the reviewed commit in an isolated checkout and record that same SHA in `
 ```sh
 cd hafapass_api
 bundle install
-RAILS_ENV=staging bundle exec rails db:prepare
+RAILS_ENV=staging bin/release-migrate
 RAILS_ENV=staging bundle exec rails runner 'puts StageSafety.call(runtime: true).to_json'
 RAILS_ENV=staging bundle exec puma -C config/puma.rb
 ```
+
+Builds install dependencies only. Run `bin/release-migrate` once from the web service's release/pre-deploy command, using a direct `DATABASE_MIGRATION_URL` for the same dedicated staging database. The wrapper replaces both database aliases inside that release process. Keep the pooled application URL on web, worker and clock; no process start command migrates. Rails PostgreSQL advisory locking protects overlapping release tasks.
+
+Set `RAILS_MAX_THREADS=3`, `SIDEKIQ_CONCURRENCY=3` and `DB_POOL=5` initially. The shared configuration rejects invalid capacity or a pool smaller than request/job concurrency. Measure the total database connection budget across all three services before increasing it.
 
 Start the worker as a separate supervised process with the same environment and revision:
 
@@ -59,6 +65,15 @@ Start the worker as a separate supervised process with the same environment and 
 cd hafapass_api
 RAILS_ENV=staging bundle exec sidekiq -C config/sidekiq.yml
 ```
+
+Start the singleton clock as a third supervised process with the same environment and revision:
+
+```sh
+cd hafapass_api
+RAILS_ENV=staging bundle exec rails runner script/commerce_clock.rb
+```
+
+Its renewable Redis lease prevents duplicate expiry authorities. Staging readiness fails when the clock is absent, so the hosted rehearsal tests inventory expiry as well as queued delivery.
 
 Configure the TLS reverse proxy and trusted network path so Rails receives the correct HTTPS scheme. The API accepts only its configured hostname. Keep private testing access limited to the selected testers at the hosting layer; application authentication and organization permissions remain enforced.
 
@@ -68,7 +83,7 @@ Use the repository's development lifecycle helper to claim each local server or 
 
 ## Acceptance and remaining proof
 
-Check `/api/v1/health/readiness`: staging requires its safe configuration, connected database, connected Redis, simulation mode, Sidekiq adapter and a registered worker. It intentionally does not convert unavailable production approvals into success. Production capability readiness remains visible and disabled. Liveness alone does not confirm a usable release.
+Check `/api/v1/readiness`: staging requires its safe configuration, connected database, connected Redis, simulation mode, Sidekiq adapter, a registered worker and an active clock lease. It intentionally does not convert unavailable production approvals into success. Production capability readiness remains visible and disabled. Liveness alone does not confirm a usable release.
 
 Complete the organizer → free/simulated checkout → confirmation → ticket download → admission journey with actual Clerk test accounts. Repeat it on desktop and mobile, and verify that users cannot read another organizer's records. Check missing storage, duplicate/canceled tickets, reload and outage recovery. Actual physical phones and venue connectivity remain separate proof.
 

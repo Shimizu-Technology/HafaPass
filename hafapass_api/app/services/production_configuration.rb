@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "uri"
+require Rails.root.join("config/runtime_configuration").to_s
 
 class ProductionConfiguration
   class << self
@@ -17,6 +18,7 @@ class ProductionConfiguration
         object_storage: configured?(*%w[AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET AWS_REGION]),
         admission_signing: configured?(*%w[ADMISSION_MANIFEST_PRIVATE_KEY_PEM]),
         launch_scope: LaunchCapabilities.configured?,
+        runtime_capacity: runtime_capacity?,
         admin_bootstrap_disabled: !ActiveModel::Type::Boolean.new.cast(ENV["ENABLE_FIRST_USER_ADMIN_BOOTSTRAP"])
       }
 
@@ -38,13 +40,20 @@ class ProductionConfiguration
     end
 
     def secure_public_urls?
+      api = parse_https_url(ENV["PUBLIC_API_URL"])
       frontend = parse_https_url(ENV["FRONTEND_URL"])
       public_web = parse_https_url(ENV["PUBLIC_WEB_URL"])
       origins = ENV["ALLOWED_ORIGINS"].to_s.split(",").map(&:strip).reject(&:blank?)
       parsed_origins = origins.map { |origin| parse_https_url(origin) }
 
-      frontend.present? && public_web.present? && origins.present? && parsed_origins.all?(&:present?) &&
+      api.present? && frontend.present? && public_web.present? && origins.present? && parsed_origins.all?(&:present?) &&
         parsed_origins.map(&:origin).include?(frontend.origin)
+    end
+
+    def runtime_capacity?
+      RuntimeConfiguration.database_pool.positive?
+    rescue ArgumentError
+      false
     end
 
     def parse_https_url(value)

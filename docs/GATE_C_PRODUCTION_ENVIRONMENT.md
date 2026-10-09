@@ -26,12 +26,15 @@ The commerce clock now owns a renewable Redis lease. A second clock exits instea
 
 ## Runtime configuration contract
 
-The readiness configuration check requires the following groups without returning their values:
+Configure the following groups without exposing their values in diagnostics. Runtime readiness checks the application/provider configuration; the direct migration connection is required only by the release command:
 
 - database: `DATABASE_URL`;
 - queue/lease: `REDIS_URL`;
+- release migrations: direct `DATABASE_MIGRATION_URL`, run once through `bin/release-migrate` from the web release/pre-deploy hook;
+- capacity: one Puma process, initially `RAILS_MAX_THREADS=3`, `SIDEKIQ_CONCURRENCY=3`, `DB_POOL=5`; pools must cover configured request/job concurrency;
+- persistent application signing: dedicated `SECRET_KEY_BASE`;
 - authentication: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`;
-- public routing: HTTPS `FRONTEND_URL`, HTTPS `PUBLIC_WEB_URL`, and HTTPS-only `ALLOWED_ORIGINS` containing the frontend origin;
+- public routing: HTTPS `FRONTEND_URL`, HTTPS `PUBLIC_WEB_URL`, exact HTTPS `PUBLIC_API_URL`, and HTTPS-only `ALLOWED_ORIGINS` containing the frontend origin;
 - release correlation: `GIT_SHA` or an explicitly configured `COMMIT_REF` containing the full 40- or 64-hex commit digest—not a branch name;
 - monitoring: `SENTRY_DSN`;
 - mail: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `MAILER_FROM_EMAIL`;
@@ -50,7 +53,7 @@ For the exact candidate commit:
 
 1. confirm protected-main CI and the source PR, including a completed current-head CodeRabbit review, are green;
 2. confirm web, worker, and clock are separate supervised services using the same release;
-3. capture redacted `/api/v1/health` and `/api/v1/readiness` responses;
+3. confirm `/up` succeeds without querying dependencies and capture redacted `/api/v1/health` and `/api/v1/readiness` responses;
 4. confirm readiness reports database connected, queue connected, worker active, commerce clock active, and configuration configured;
 5. confirm TLS, HSTS/cache behavior, allowed origins, private-route cache headers, webhook signature rejection, and rate limits;
 6. trigger controlled non-PII web and job exceptions and acknowledge both primary and backup routes;

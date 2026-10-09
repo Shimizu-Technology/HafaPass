@@ -11,6 +11,7 @@ RSpec.describe ProductionConfiguration do
     "CLERK_ISSUER" => "https://fixture.clerk.accounts.dev",
     "FRONTEND_URL" => "https://hafapass.example/",
     "PUBLIC_WEB_URL" => "https://hafapass.example/",
+    "PUBLIC_API_URL" => "https://api.hafapass.example",
     "ALLOWED_ORIGINS" => "https://hafapass.example/,https://admin.hafapass.example",
     "GIT_SHA" => "a" * 40,
     "SENTRY_DSN" => "configured",
@@ -60,5 +61,10 @@ RSpec.describe ProductionConfiguration do
   it "reports invalid authentication configuration rather than just nonempty credentials" do
     ENV["CLERK_ISSUER"] = "http://untrusted.example"
     expect(described_class.call[:checks][:clerk]).to be(false)
+  end
+
+  it "requires the API origin independently of the frontend origins" do
+    ENV["PUBLIC_API_URL"] = "http://api.hafapass.example"
+    expect(described_class.call[:checks][:public_urls]).to be(false)
   end
 end

@@ -11,6 +11,10 @@ Production requires four independently supervised runtime processes/services:
 3. Redis service shared by Active Job, Sidekiq, and Rack::Attack
 4. Clock process: `bundle exec rails runner script/commerce_clock.rb`
 
+Use `bin/render-build.sh` to install dependencies and `bin/release-migrate` once as the web service release/pre-deploy command. Supply a direct `DATABASE_MIGRATION_URL` for Rails PostgreSQL migration advisory locks; web/worker/clock retain the pooled application URL. Builds and process startup do not migrate.
+
+Start with one Puma process (`workers 0`), `RAILS_MAX_THREADS=3`, `SIDEKIQ_CONCURRENCY=3` and `DB_POOL=5`. The shared capacity contract rejects a database pool smaller than configured request/job concurrency. Count pools across all services against the database connection budget, and measure before increasing concurrency.
+
 The backend `Procfile` declares the web, worker, and clock commands. The clock enqueues order/inventory and assigned-seat hold expiry every minute and privacy-retention cleanup once per UTC date. It must own the renewable Redis singleton lease; a second process exits and a missing heartbeat fails production readiness. The frontend is a separate static Vite deployment.
 
 Production never falls back to an in-memory or inline queue. Rails boot fails when `REDIS_URL` is missing, making a broken worker topology visible during deployment instead of silently losing work.
@@ -19,8 +23,9 @@ Production never falls back to an in-memory or inline queue. Rails boot fails wh
 
 | Probe | Purpose | Healthy response | Load-balancer use |
 |---|---|---|---|
-| `GET /api/v1/health` | Web-process liveness | HTTP 200, `{"status":"ok"}` | Restart a wedged web process |
-| `GET /api/v1/readiness` | Database, queue, worker, commerce clock, redacted configuration, provider, and operational state | HTTP 200 with `status: ready` | Stop routing traffic when required dependencies fail |
+| `GET /up` | Dependency-free boot liveness | HTTP 200 | Render platform health path |
+| `GET /api/v1/health` | Application liveness | HTTP 200, `{"status":"ok"}` | Operator verification |
+| `GET /api/v1/readiness` | Database, queue, worker, commerce clock, redacted configuration, provider, and operational state | HTTP 200 with `status: ready` | Separately monitored dependency diagnostics; never the frequent platform probe |
 
 In production, readiness requires:
 
@@ -30,7 +35,7 @@ In production, readiness requires:
 - an active singleton commerce-clock lease; and
 - a complete redacted production configuration contract.
 
-Provider checks return booleans only. They intentionally never return credentials. Provider configuration is advisory in Phase 1 because payment, storage, email, and monitoring may be enabled at different deployment stages; each later launch phase promotes its own provider to a hard release gate.
+Provider checks return booleans only. They intentionally never return credentials. Production configuration and provider-policy controls are required readiness checks. Resend and the policy register need current independent approvals; live payment mode additionally requires Stripe approval. Redacted configuration presence does not prove actual provider behavior. Staging requires its separate safety configuration, worker and clock, while production provider operations remain disabled.
 
 ## Required production configuration
 
@@ -42,6 +47,9 @@ Core runtime:
 - `ALLOWED_ORIGINS`
 - `FRONTEND_URL`
 - `PUBLIC_WEB_URL`
+- `PUBLIC_API_URL` (exact HTTPS API origin; application Host authorization)
+- `SECRET_KEY_BASE` (persistent release-independent application secret)
+- `DATABASE_MIGRATION_URL` (direct release-only connection; never the pooled host)
 - `SENTRY_DSN`
 - `GIT_SHA` or an explicitly configured `COMMIT_REF` containing the full commit digest for release correlation
 
@@ -66,7 +74,7 @@ Route routine alerts to the engineering operations channel. Route payment, webho
 
 ## Incident triage
 
-1. Confirm scope with `/health` and `/readiness`; record timestamps, HTTP status, release, and request IDs.
+1. Confirm scope with `/up`, `/api/v1/health` and `/api/v1/readiness`; record timestamps, HTTP status, release, and request IDs.
 2. Check the latest deploy and configuration change without printing secret values.
 3. Check PostgreSQL connectivity and saturation.
 4. Check Redis connectivity, memory, and eviction status.
@@ -90,7 +98,7 @@ After restoring Redis or restarting Sidekiq:
 
 Every release must pass `./scripts/gate.sh` and CI before merge. After deployment:
 
-1. Verify `/health` and `/readiness`.
+1. Verify `/up`, `/api/v1/health` and `/api/v1/readiness`. Configure Render's platform health path as `/up`; it never probes dependencies. Production HTTPS/HSTS and exact API Host authorization apply to application paths. Only `/up` bypasses SSL redirect and Host enforcement for the platform probe.
 2. Verify the reported release in Sentry.
 3. Trigger a controlled non-sensitive test exception in the monitoring environment, then remove/disable the trigger.
 4. Verify the Sidekiq process and perform one safe queued test job.

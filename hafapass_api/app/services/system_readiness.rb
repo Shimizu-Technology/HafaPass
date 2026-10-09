@@ -18,7 +18,7 @@ class SystemReadiness
       if Rails.env.production?
         required_checks.concat(checks.values_at(:worker, :commerce_clock, :configuration, :provider_policy_controls))
       elsif Rails.env.staging?
-        required_checks.concat(checks.values_at(:worker, :configuration))
+        required_checks.concat(checks.values_at(:worker, :commerce_clock, :configuration))
       end
 
       {
@@ -77,7 +77,7 @@ class SystemReadiness
     end
 
     def commerce_clock_check
-      return { ready: true, status: "not_required", lease_ttl_seconds: 0 } unless Rails.env.production?
+      return { ready: true, status: "not_required", lease_ttl_seconds: 0 } unless Rails.env.production? || Rails.env.staging?
       return { ready: false, status: "redis_not_configured", lease_ttl_seconds: 0 } if ENV["REDIS_URL"].blank?
 
       Operations::CommerceClockLease.status
