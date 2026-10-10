@@ -14,7 +14,7 @@ class Api::V1::Me::EventRemindersController < ApplicationController
     reminder = current_user.event_reminders.find_or_initialize_by(event: event)
     reminder.assign_attributes(remind_at: remind_at, status: :pending, sent_at: nil)
     reminder.save!
-    EventReminderJob.set(wait_until: remind_at).perform_later(reminder.id, remind_at.iso8601)
+    EventReminderJob.set(wait_until: remind_at).perform_later(reminder.id, reminder.remind_at.utc.iso8601)
     render json: reminder_json(reminder), status: :created
   rescue ArgumentError
     render json: { error: "remind_at must be a valid future time before the event" }, status: :unprocessable_entity

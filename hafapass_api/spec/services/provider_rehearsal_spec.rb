@@ -81,10 +81,13 @@ RSpec.describe ProviderRehearsal do
   end
 
   it "rechecks every actual Resend payload before sending" do
-    params = { from: "tickets@example.invalid", to: "owned@example.invalid", subject: "Test", html: "Synthetic" }
-    expect(Resend::Emails).to receive(:send).with(params, options: {}).and_return({ "id" => "provider-fixture" })
-    EmailService.send(:deliver_payload, params)
-    expect { EmailService.send(:deliver_payload, params.merge(bcc: "other@example.invalid")) }
+    params = { "from" => "tickets@example.invalid", "to" => "owned@example.invalid", "subject" => "Test", "html" => "Synthetic" }
+    delivery = create(:message_delivery, recipient: params.fetch("to"), outbound_payload: params)
+    expect(Resend::Emails).to receive(:send).with(params, options: { idempotency_key: delivery.idempotency_key })
+      .and_return({ "id" => "provider-fixture" })
+    MessageDeliveryJob.new.perform(delivery.id)
+    blocked = create(:message_delivery, recipient: params.fetch("to"), outbound_payload: params.merge("bcc" => "other@example.invalid"))
+    expect { MessageDeliveryJob.new.perform(blocked.id) }
       .to raise_error(EmailService::ProviderDisabled, /restricted/)
   end
 end

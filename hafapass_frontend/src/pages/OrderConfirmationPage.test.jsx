@@ -10,6 +10,7 @@ import { getActiveCheckout, saveActiveCheckout } from '../utils/orderAccess'
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: vi.fn() }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
+beforeEach(() => vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test'))
 afterEach(() => vi.unstubAllEnvs())
 
 describe('guest order recovery actions', () => {
@@ -202,7 +203,7 @@ describe('buyer refund outcomes and terminal retries', () => {
     mockOrder({ ...withChange, status: 'refunded', tickets: [{ ...paidOrder.tickets[0], status: 'cancelled', refundable_cents: 0 }] })
     mount()
     await screen.findByText(notice)
-    expect(screen.getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', expect.stringContaining('mailto:contact@hafapass.com'))
+    expect(screen.getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', 'mailto:operator@example.test?subject=Refund%20review%20for%20order%20HP-925')
     apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'failed', finance_review_required: true, reconciliation_required: true } })
     await user.click(screen.getByRole('button', { name: 'Check refund status' }))
     await screen.findByText(notice)
@@ -233,7 +234,7 @@ describe('truthful ticket email status', () => {
 
   it.each([
     ['queued', 'Your ticket email is queued for delivery. You can open or download your tickets below.'],
-    ['delayed', 'Your ticket email is queued for delivery. You can open or download your tickets below.'],
+    ['delayed', 'Your ticket email is delayed. Delivery has not been confirmed. You can open or download your tickets below.'],
     ['sent', 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'],
     ['delivered', 'Your ticket email was delivered.'],
   ])('shows the provider’s %s state without claiming a later outcome', async (status, message) => {
@@ -246,9 +247,9 @@ describe('truthful ticket email status', () => {
   it.each(['failed', 'bounced', 'complained', 'suppressed'])('offers ticket access and support when delivery is %s', async status => {
     mockOrder(orderWithDelivery({ status, simulated: false }))
     mount()
-    await screen.findByText('We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.')
+    await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets below, or contact support.')
     expect(screen.getByRole('link', { name: 'Open or download tickets' })).toHaveAttribute('href', '#order-tickets')
-    expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', expect.stringContaining('mailto:contact@hafapass.com'))
+    expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=Ticket%20email%20for%20order%20HP-924')
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
   })
 
@@ -266,7 +267,7 @@ describe('truthful ticket email status', () => {
       return Promise.resolve({ data: { status: 'queued' } })
     })
     mount()
-    await screen.findByText('We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.')
+    await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets below, or contact support.')
     await userEvent.click(screen.getByRole('button', { name: 'Resend', exact: true }))
     expect(await screen.findByText('Your ticket email is queued for delivery. You can open or download your tickets below.')).toBeInTheDocument()
     expect(await screen.findByText('Your email request was saved. Check the delivery status above.')).toBeInTheDocument()

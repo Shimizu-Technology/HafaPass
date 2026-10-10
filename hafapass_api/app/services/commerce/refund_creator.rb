@@ -321,11 +321,11 @@ module Commerce
         elsif full_refund
           release_fully_refunded_inventory!(refund.order)
         end
+        EmailService.send_refund_notification_async(refund.order, refund: refund)
       end
 
       raise RefundError, validation_error if validation_error
 
-      EmailService.send_refund_notification_async(refund.order)
       refund.order.event.notify_waitlist_if_available if full_refund || refund.refund_tickets.any?
       refund.reload
     end

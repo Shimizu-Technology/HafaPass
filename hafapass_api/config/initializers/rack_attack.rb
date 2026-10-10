@@ -4,14 +4,20 @@
 # https://github.com/rack/rack-attack
 
 class Rack::Attack
-  # Use Redis for throttle store if available, otherwise use memory store
-  if ENV["REDIS_URL"].present?
+  # SQL profiles persist atomic counters in PostgreSQL; legacy profiles use Redis.
+  if RuntimeConfiguration.solid_queue?
+    require Rails.root.join("app/services/operations/postgres_throttle_store").to_s
+    Rack::Attack.cache.store = Operations::PostgresThrottleStore.new
+  elsif ENV["REDIS_URL"].present?
     Rack::Attack.cache.store = ActiveSupport::Cache::RedisCacheStore.new(url: ENV["REDIS_URL"])
   else
     Rails.logger.warn("[Rack::Attack] REDIS_URL not set — falling back to in-memory store (not suitable for multi-process)")
   end
 
   # ─── Safelist ─────────────────────────────────────────────────────────────
+  safelist("boot-liveness") do |req|
+    req.get? && req.path == "/up"
+  end
   # Allow all requests from localhost in development
   safelist("allow-localhost") do |req|
     req.ip == "127.0.0.1" || req.ip == "::1" if Rails.env.development?

@@ -10,14 +10,9 @@ class SendOrderConfirmationJob < ApplicationJob
     order = Order.find_by(id: order_id)
     return unless order # Order was deleted
 
-    delivery = MessageDelivery.find_by(id: delivery_id)
-    delivery&.update!(attempts: delivery.attempts + 1)
-    EmailService.send_order_confirmation(order)
-    delivery&.update!(status: :sent, sent_at: Time.current, last_error: nil)
-    Rails.logger.info("[SendOrderConfirmationJob] Sent confirmation for order #{order_id}")
-  rescue => e
-    delivery&.update!(status: :failed, last_error: e.message)
-    Rails.logger.error("[SendOrderConfirmationJob] Failed for order #{order_id}: #{e.message}")
-    raise # Re-raise to trigger retry
+    delivery = MessageDelivery.find_by(id: delivery_id, order_id: order.id, template: %w[order_confirmation fulfillment_resend])
+    raise MessageWirePayload::Unavailable, "Legacy order email requires its existing durable delivery; reconcile before sending" unless delivery
+
+    MessageDeliveryJob.new.perform(delivery.id)
   end
 end

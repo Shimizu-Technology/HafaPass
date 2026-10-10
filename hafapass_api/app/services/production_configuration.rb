@@ -8,7 +8,7 @@ class ProductionConfiguration
     def call
       checks = {
         database: configured?(*%w[DATABASE_URL]),
-        redis: configured?(*%w[REDIS_URL]),
+        redis: RuntimeConfiguration.solid_queue? || configured?(*%w[REDIS_URL]),
         clerk: configured?(*%w[CLERK_SECRET_KEY CLERK_PUBLISHABLE_KEY]) && ClerkAuthenticator.configured?,
         public_urls: secure_public_urls?,
         release: ApplicationRevision.configured?,

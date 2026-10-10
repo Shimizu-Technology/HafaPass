@@ -17,12 +17,31 @@ class MessageDelivery < ApplicationRecord
   validates :attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :subject_present
   validate :immutable_provider_request
+  validate :consistent_wire_body
 
   attr_accessor :preparing_outbound_payload
+
+  TICKET_EMAIL_TEMPLATES = %w[order_confirmation fulfillment_resend].freeze
+  scope :ticket_email, -> { where(channel: "email", template: TICKET_EMAIL_TEMPLATES) }
+  scope :unconfirmed_provider_result, -> {
+    where(provider_outcome_unknown: true).or(
+      where(provider: "resend", provider_attempted_at: nil)
+        .where("provider_id IS NULL OR provider_id ~ '^[[:space:]]*$'").where("attempts > 0")
+    )
+  }
 
   PROVIDER_REPLAY_WINDOW = 23.hours
 
   before_validation :assign_idempotency_key, on: :create
+
+  def ticket_email?
+    channel == "email" && TICKET_EMAIL_TEMPLATES.include?(template)
+  end
+
+  def unconfirmed_provider_result?
+    provider_outcome_unknown? || (provider == "resend" && provider_id.blank? &&
+      provider_attempted_at.nil? && attempts.positive?)
+  end
 
   def retryable?
     failed? && provider_id.blank? && !provider_replay_expired?
@@ -60,6 +79,11 @@ class MessageDelivery < ApplicationRecord
   private
 
   def immutable_provider_request
+    %w[outbound_wire_body wire_body_digest].each do |field|
+      if attribute_in_database(field).present? && will_save_change_to_attribute?(field)
+        errors.add(field, "cannot change after the provider wire request is prepared")
+      end
+    end
     if transport_context_digest_in_database.present? && will_save_change_to_transport_context_digest?
       errors.add(:transport_context_digest, "cannot change after the provider context is prepared")
     end
@@ -68,6 +92,17 @@ class MessageDelivery < ApplicationRecord
     %w[outbound_payload recipient idempotency_key].each do |field|
       errors.add(field, "cannot change after the provider request is prepared") if will_save_change_to_attribute?(field)
     end
+  end
+
+  def consistent_wire_body
+    return if outbound_wire_body.nil? && wire_body_digest.nil?
+
+    unless outbound_wire_body.present? && wire_body_digest == Digest::SHA256.hexdigest(outbound_wire_body) &&
+        JSON.parse(outbound_wire_body) == outbound_payload
+      errors.add(:outbound_wire_body, "must match the frozen payload and wire digest")
+    end
+  rescue JSON::ParserError
+    errors.add(:outbound_wire_body, "must be valid JSON")
   end
 
   def subject_present

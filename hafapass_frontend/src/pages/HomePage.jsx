@@ -129,7 +129,7 @@ export default function HomePage() {
                     : 'The island\'s modern ticketing platform is here. Events are coming soon.'}
                 </p>
                 <Link
-                  to={hasEvents ? '/events' : '/sign-up'}
+                  to={hasEvents ? '/events' : '/dashboard'}
                   className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0"
                 >
                   {hasEvents ? 'Browse Events' : 'Start Hosting'}
@@ -268,7 +268,7 @@ export default function HomePage() {
             Create your organizer profile and start selling tickets in minutes.
           </p>
           <Link
-            to="/sign-up"
+            to="/dashboard"
             className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0"
           >
             Start Hosting
