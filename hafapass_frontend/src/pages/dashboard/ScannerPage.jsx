@@ -33,6 +33,7 @@ const credentialValue = raw => {
 function ResultPanel({ result }) {
   if (!result) return null
   const styles = {
+    pending: ['bg-neutral-50 border-neutral-300 text-neutral-900', Loader2],
     success: ['bg-emerald-50 border-emerald-300 text-emerald-900', CheckCircle2],
     warning: ['bg-amber-50 border-amber-300 text-amber-900', AlertTriangle],
     error: ['bg-red-50 border-red-300 text-red-900', XCircle],
@@ -172,9 +173,8 @@ export default function ScannerPage({ offlineOnly = false }) {
         }
         if (eventIdRef.current === String(selectedEventId)) setScanResult(current => {
           if (!current) return current
-          const result = current.actionUuid
-            ? results.find(item => item.action_uuid === current.actionUuid && item.kind === 'reverse')
-            : current.ticket && results.find(item => item.kind === 'admit' && Number(item.ticket_id) === Number(current.ticket.ticket_id))
+          const result = current.actionUuid && results.find(item => item.action_uuid === current.actionUuid
+            && item.kind === current.actionKind)
           if (!result) return current
           if (result.kind === 'reverse') {
             if (result.result === 'accepted') return { ...current, type: 'success', message: 'Admission reversal confirmed', detail: 'The server confirmed the Undo. Current ticket status determines whether it can be admitted again.' }
@@ -352,8 +352,8 @@ export default function ScannerPage({ offlineOnly = false }) {
 
   const showResult = useCallback(result => {
     setScanResult(result)
-    if (result.type === 'success') setSessionCount(count => count + 1)
-    if (navigator.vibrate) navigator.vibrate(result.type === 'success' ? 80 : [100, 60, 100])
+    if (result.type === 'success' || (result.type === 'pending' && result.actionKind === 'admit')) setSessionCount(count => count + 1)
+    if (navigator.vibrate && result.type !== 'pending') navigator.vibrate(result.type === 'success' ? 80 : [100, 60, 100])
   }, [])
 
   const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted') => {
@@ -368,6 +368,7 @@ export default function ScannerPage({ offlineOnly = false }) {
     const localState = await localScanState(eventId, ticket.ticket_id)
     if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket,
+        ...(localState.status === 'pending' ? { actionUuid: localState.action_uuid, actionKind: 'admit' } : {}),
         latency: performance.now() - startedAt })
       return
     }
@@ -392,8 +393,9 @@ export default function ScannerPage({ offlineOnly = false }) {
       return
     }
     await refreshPending(eventId, device)
-    showResult({ type: 'success', message: online ? 'Admitted — syncing' : 'Admitted offline',
-      detail: online ? 'Saved on this device. Server confirmation follows a successful sync.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
+    showResult({ type: online ? 'pending' : 'success', message: online ? 'Waiting for server confirmation' : 'Admitted offline',
+      actionUuid: action.action_uuid, actionKind: 'admit',
+      detail: online ? 'Saved on this device. Entry is not confirmed until the server responds.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
       ticket, latency: performance.now() - startedAt })
     if (online) syncQueue({ quiet: true })
   }, [device, eventId, manifest, refreshPending, showResult, syncQueue, online])
@@ -515,7 +517,7 @@ export default function ScannerPage({ offlineOnly = false }) {
       const reversal = await queueReversal({ eventId, deviceId: device.id, manifestVersion: manifest.payload.version,
         ticketId: action.ticket_id, reversesActionUuid: action.action_uuid, source: online ? 'online' : 'offline' })
       await refreshPending(eventId, device)
-      showResult({ type: 'success', message: 'Reversal queued', actionUuid: reversal.action_uuid, detail: 'The admission reversal will be reconciled append-only.' })
+      showResult({ type: 'pending', message: 'Reversal queued', actionUuid: reversal.action_uuid, actionKind: 'reverse', detail: 'The admission reversal will be reconciled append-only.' })
       if (online) syncQueue()
     } catch (reversalError) {
       setError(reversalError.message)
