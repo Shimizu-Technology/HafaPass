@@ -92,6 +92,7 @@ describe('scanner recovery and camera ownership', () => {
     await act(async () => loseResponse())
     expect(await queuedActions(eventId, device.id)).toHaveLength(1)
     expect(screen.queryByText('Admission confirmed')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Sync now' }))
     await waitFor(() => expect(sent).toHaveLength(2))
     expect(sent[1]).toEqual(sent[0])
