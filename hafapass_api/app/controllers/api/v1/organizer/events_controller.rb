@@ -67,10 +67,10 @@ module Api
                 after_data: event_change_snapshot(@event),
                 occurred_at: Time.current
               )
+              EmailService.send_event_change_notifications_async(event_change)
             end
           end
           if updated
-            EmailService.send_event_change_notifications_async(event_change) if event_change
             render json: event_json(@event)
           else
             render json: { errors: @event.errors.full_messages }, status: :unprocessable_entity
