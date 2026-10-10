@@ -12,13 +12,16 @@ function AuthTokenSync({ children, loadingFallback }) {
   const [bindingReady, setBindingReady] = useState(false)
   const [bindingFailed, setBindingFailed] = useState(false)
   const [bindingAttempt, setBindingAttempt] = useState(0)
-  const { getToken } = useAuth()
+  const { getToken, isLoaded: authLoaded, sessionId, userId } = useAuth()
   const { isLoaded, isSignedIn, user } = useUser()
   const currentUserId = isSignedIn && user ? user.id : null
 
   useEffect(() => {
-    setAuthTokenGetter(() => getToken())
-  }, [getToken])
+    return setAuthTokenGetter(() => getToken(), {
+      userId: currentUserId, sessionId,
+      ready: Boolean(authLoaded && isLoaded && currentUserId && userId === currentUserId),
+    })
+  }, [getToken, authLoaded, isLoaded, currentUserId, userId, sessionId])
 
   useEffect(() => {
     if (!isLoaded) return
