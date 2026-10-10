@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import TicketPage from './TicketPage'
 import api from '../api/client'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
+vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
 vi.mock('../components/QRCode', () => ({ default: () => <div>Entry QR</div> }))
 
 describe('ticket download recovery', () => {

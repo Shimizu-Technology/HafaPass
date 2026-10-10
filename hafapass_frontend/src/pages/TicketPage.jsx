@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useAuth } from '@clerk/clerk-react'
 import { useLocation, useParams, Link } from 'react-router-dom'
 import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import api from '../api/client'
+import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { orderAccessHeaders } from '../utils/orderAccess'
+import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
 
 function AddToHomeScreenInstructions() {
   const [expanded, setExpanded] = useState(false)
@@ -92,6 +93,29 @@ export default function TicketPage() {
   const { credential } = useParams()
   const location = useLocation()
   const orderId = new URLSearchParams(location.search).get('order')
+  const routeKey = JSON.stringify([credential, orderId])
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+    ? <AuthenticatedTicket key={routeKey} /> : <TicketContent key={routeKey} />
+}
+
+function AuthenticatedTicket() {
+  const { isLoaded, userId, sessionId } = useAuth()
+  const context = useSyncExternalStore(subscribeApiAuthContext, getApiAuthContext)
+  const accountReady = context?.ready && context.userId === userId && context.sessionId === sessionId
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)
+    || (userId ? !accountReady : context?.userId)) {
+    return <div className="grid min-h-[60vh] place-items-center" role="status">Preparing your account…</div>
+  }
+  // Guests keep their explicit order capability; signed-in requests bind to the
+  // authoritative session. A changed session remounts private state immediately.
+  return <TicketContent key={JSON.stringify([userId, sessionId, context?.generation])}
+    authContext={userId ? context : undefined} />
+}
+
+function TicketContent({ authContext }) {
+  const { credential } = useParams()
+  const location = useLocation()
+  const orderId = new URLSearchParams(location.search).get('order')
   const [ticket, setTicket] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -99,39 +123,65 @@ export default function TicketPage() {
   const [downloadError, setDownloadError] = useState(null)
   const [walletLoading, setWalletLoading] = useState(null)
   const [walletError, setWalletError] = useState(null)
+  const lifecycle = useRef({ active: false, generation: 0 })
+  const access = useRef({ buyerId: checkoutBuyerIdentity(), auth: getApiAuthContext(), token: getOrderAccess(orderId) })
+  useLayoutEffect(() => {
+    const state = lifecycle.current
+    state.active = true
+    state.generation += 1
+    return () => { state.active = false; state.generation += 1 }
+  }, [])
+
+  function currentOperation() {
+    const generation = lifecycle.current.generation
+    return () => lifecycle.current.active && lifecycle.current.generation === generation
+      && checkoutBuyerIdentity() === access.current.buyerId && getApiAuthContext() === access.current.auth
+      && getOrderAccess(orderId) === access.current.token
+  }
 
   useEffect(() => {
+    let active = true
+    const generation = lifecycle.current.generation
+    const current = () => active && lifecycle.current.active && lifecycle.current.generation === generation
+      && checkoutBuyerIdentity() === access.current.buyerId && getApiAuthContext() === access.current.auth
+      && getOrderAccess(orderId) === access.current.token
     async function fetchTicket() {
       try {
         setLoading(true)
         setError(null)
         const response = await api.get(`/tickets/${encodeURIComponent(credential)}`, {
-          headers: orderAccessHeaders(orderId),
+          headers: orderAccessHeaders(orderId, access.current.token), authContext,
         })
+        if (!current()) return
         setTicket(response.data)
       } catch (err) {
+        if (!current()) return
         if (err.response?.status === 404) {
           setError('Ticket not found.')
         } else {
           setError('Failed to load ticket. Please try again.')
         }
       } finally {
-        setLoading(false)
+        if (current()) setLoading(false)
       }
     }
     fetchTicket()
-  }, [credential, orderId])
+    return () => { active = false }
+  }, [credential, orderId, authContext])
 
   async function handleDownload() {
+    const current = currentOperation()
+    if (!current()) return
     let downloadUrl
     let downloadLink
     try {
       setDownloading(true)
       setDownloadError(null)
       const response = await api.get(`/tickets/${encodeURIComponent(credential)}/download`, {
-        headers: orderAccessHeaders(orderId),
+        headers: orderAccessHeaders(orderId, access.current.token), authContext,
         responseType: 'blob',
       })
+      if (!current()) return
       downloadUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
       downloadLink = document.createElement('a')
       downloadLink.href = downloadUrl
@@ -139,10 +189,12 @@ export default function TicketPage() {
       document.body.appendChild(downloadLink)
       downloadLink.click()
     } catch (error) {
+      if (!current()) return
       let failure = error.response?.data
       if (error.response?.status === 422 && typeof failure?.text === 'function') {
         try { failure = JSON.parse(await failure.text()) } catch { failure = null }
       }
+      if (!current()) return
       const unsupportedText = error.response?.status === 422 && failure?.error_code === 'unsupported_pdf_text'
       setDownloadError(unsupportedText
         ? 'The PDF cannot display some text on this ticket. Your ticket and entry QR are still available here. Use this browser ticket or contact the organizer.'
@@ -150,11 +202,12 @@ export default function TicketPage() {
     } finally {
       downloadLink?.remove()
       if (downloadUrl) window.URL.revokeObjectURL(downloadUrl)
-      setDownloading(false)
+      if (current()) setDownloading(false)
     }
   }
 
   async function handleShare() {
+    if (!currentOperation()()) return
     if (navigator.share) {
       try {
         await navigator.share({
@@ -169,29 +222,34 @@ export default function TicketPage() {
   }
 
   async function handleWallet(kind) {
+    const current = currentOperation()
+    if (!current()) return
+    let walletUrl
     setWalletLoading(kind)
     setWalletError(null)
     try {
       if (kind === 'apple') {
         const response = await api.get(`/tickets/${encodeURIComponent(credential)}/wallet/apple`, {
-          headers: orderAccessHeaders(orderId), responseType: 'blob',
+          headers: orderAccessHeaders(orderId, access.current.token), authContext, responseType: 'blob',
         })
-        const url = window.URL.createObjectURL(response.data)
+        if (!current()) return
+        walletUrl = window.URL.createObjectURL(response.data)
         const link = document.createElement('a')
-        link.href = url
+        link.href = walletUrl
         link.download = `hafapass-ticket-${ticket.id}.pkpass`
         link.click()
-        window.URL.revokeObjectURL(url)
       } else {
         const response = await api.get(`/tickets/${encodeURIComponent(credential)}/wallet/google`, {
-          params: { response: 'json' }, headers: orderAccessHeaders(orderId),
+          params: { response: 'json' }, headers: orderAccessHeaders(orderId, access.current.token), authContext,
         })
+        if (!current()) return
         window.location.assign(response.data.url)
       }
     } catch (err) {
-      setWalletError(err.response?.data?.error || `${kind === 'apple' ? 'Apple' : 'Google'} Wallet is unavailable.`)
+      if (current()) setWalletError(err.response?.data?.error || `${kind === 'apple' ? 'Apple' : 'Google'} Wallet is unavailable.`)
     } finally {
-      setWalletLoading(null)
+      if (walletUrl) window.URL.revokeObjectURL(walletUrl)
+      if (current()) setWalletLoading(null)
     }
   }
 
