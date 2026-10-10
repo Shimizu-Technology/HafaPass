@@ -6,6 +6,10 @@ class MessageWirePayload
   class Unavailable < StandardError; end
   LEGACY_PROFILE = "hafapass_6b_resend_v1"
   LEGACY_KEYS = %w[from to subject html reply_to tags].freeze
+  # Rails' original SDK Hash#to_json escaped these characters by default.
+  # Pin that known profile without consulting mutable ActiveSupport settings.
+  LEGACY_ESCAPES = { "<" => '\u003c', ">" => '\u003e', "&" => '\u0026',
+    "\u2028" => '\u2028', "\u2029" => '\u2029' }.freeze
   LEGACY_TAGS = %w[order_confirmation order_recovery event_change ticket_delivery refund_notification
     guest_list waitlist_notification ticket_transfer waitlist_offer communication_campaign event_reminder].freeze
 
@@ -104,7 +108,7 @@ class MessageWirePayload
 
       ordered = LEGACY_KEYS.each_with_object({}) { |key, result| result[key] = payload.fetch(key) if payload.key?(key) }
       ordered["tags"] = [{ "name" => tags.first.fetch("name"), "value" => tags.first.fetch("value") }]
-      JSON.generate(ordered)
+      JSON.generate(ordered).gsub(/[<>&\u2028\u2029]/, LEGACY_ESCAPES)
     end
   end
 end

@@ -3,10 +3,12 @@ require "rails_helper"
 RSpec.describe MessageWirePayload do
   let(:payload) do
     { "from" => "sender@example.invalid", "to" => "fixture@example.invalid", "subject" => "Håfa <fixture>",
-      "html" => "<p>Frozen & fixture \u2028</p>", "reply_to" => "reply@example.invalid",
+      "html" => "<p>Frozen & fixture \u2028\u2029</p>", "reply_to" => "reply@example.invalid",
       "tags" => [{ "name" => "category", "value" => "communication_campaign" }] }
   end
-  let(:body) { JSON.generate(payload) }
+  let(:body) do
+    '{"from":"sender@example.invalid","to":"fixture@example.invalid","subject":"Håfa \u003cfixture\u003e","html":"\u003cp\u003eFrozen \u0026 fixture \u2028\u2029\u003c/p\u003e","reply_to":"reply@example.invalid","tags":[{"name":"category","value":"communication_campaign"}]}'
+  end
   let(:digest) { Digest::SHA256.hexdigest(body) }
   let(:delivery) do
     create(:message_delivery, recipient: payload.fetch("to"), template: "communication_campaign",
@@ -64,7 +66,7 @@ RSpec.describe MessageWirePayload do
   end
 
   it "rejects a different schema or encoder even when its supplied digest matches" do
-    different = ActiveSupport::JSON.encode(payload)
+    different = JSON.generate(payload)
     expect(different).not_to eq(body)
     expect { hydrate(verified_wire_body: different, verified_wire_digest: Digest::SHA256.hexdigest(different)) }
       .to raise_error(described_class::Unavailable, /documented original schema/)
