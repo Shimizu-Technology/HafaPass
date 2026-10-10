@@ -17,6 +17,19 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "keeps frozen email wire bytes and digest out of buyer order responses" do
+    payload = { "to" => "buyer@synthetic.invalid", "html" => "<a href='https://synthetic.invalid/?guest_token=private-fixture-link'>Order</a>" }
+    body = JSON.generate(payload)
+    digest = Digest::SHA256.hexdigest(body)
+    create(:message_delivery, order: order, recipient: payload.fetch("to"), outbound_payload: payload,
+      outbound_wire_body: body, wire_body_digest: digest)
+
+    get "/api/v1/orders/#{order.id}", headers: access_headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include("outbound_wire_body", "wire_body_digest", "private-fixture-link", digest)
+  end
+
   it "accepts a URL token only for read-only bootstrap access" do
     get "/api/v1/orders/#{order.id}", params: { guest_token: token }
     expect(response).to have_http_status(:ok)

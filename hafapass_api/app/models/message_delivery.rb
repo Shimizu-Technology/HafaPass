@@ -17,6 +17,7 @@ class MessageDelivery < ApplicationRecord
   validates :attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :subject_present
   validate :immutable_provider_request
+  validate :consistent_wire_body
 
   attr_accessor :preparing_outbound_payload
 
@@ -60,6 +61,11 @@ class MessageDelivery < ApplicationRecord
   private
 
   def immutable_provider_request
+    %w[outbound_wire_body wire_body_digest].each do |field|
+      if attribute_in_database(field).present? && will_save_change_to_attribute?(field)
+        errors.add(field, "cannot change after the provider wire request is prepared")
+      end
+    end
     if transport_context_digest_in_database.present? && will_save_change_to_transport_context_digest?
       errors.add(:transport_context_digest, "cannot change after the provider context is prepared")
     end
@@ -68,6 +74,17 @@ class MessageDelivery < ApplicationRecord
     %w[outbound_payload recipient idempotency_key].each do |field|
       errors.add(field, "cannot change after the provider request is prepared") if will_save_change_to_attribute?(field)
     end
+  end
+
+  def consistent_wire_body
+    return if outbound_wire_body.nil? && wire_body_digest.nil?
+
+    unless outbound_wire_body.present? && wire_body_digest == Digest::SHA256.hexdigest(outbound_wire_body) &&
+        JSON.parse(outbound_wire_body) == outbound_payload
+      errors.add(:outbound_wire_body, "must match the frozen payload and wire digest")
+    end
+  rescue JSON::ParserError
+    errors.add(:outbound_wire_body, "must be valid JSON")
   end
 
   def subject_present

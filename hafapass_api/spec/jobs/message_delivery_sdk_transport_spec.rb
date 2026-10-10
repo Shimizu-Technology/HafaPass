@@ -30,6 +30,7 @@ RSpec.describe MessageDeliveryJob do
     expect(delivery.transport_context_digest).to eq(EmailService.transport_context_digest)
     expect(http).to have_received(:request) do |request|
       expect(request["Idempotency-Key"]).to eq(delivery.idempotency_key)
+      expect(request.body.b).to eq(delivery.outbound_wire_body.b)
       expect(JSON.parse(request.body)).to eq(delivery.outbound_payload)
     end
   end
@@ -37,14 +38,18 @@ RSpec.describe MessageDeliveryJob do
   it "replays the frozen request after an HTTP acknowledgement is lost" do
     requests = []
     allow(http).to receive(:request) do |request|
-      requests << [JSON.parse(request.body), request["Idempotency-Key"]]
+      prepared = MessageDelivery.find(delivery.id)
+      expect(prepared.outbound_wire_body.b).to eq(request.body.b)
+      expect(prepared.wire_body_digest).to eq(Digest::SHA256.hexdigest(request.body))
+      expect(prepared.provider_outcome_unknown).to be(true)
+      requests << [request.body.dup, request["Idempotency-Key"]]
       raise IOError, "synthetic response lost after acceptance" if requests.one?
 
       provider_response(200, '{"id":"sdk_original_message"}')
     end
     expect { described_class.new.perform(delivery.id) }.to raise_error(IOError)
     original = delivery.reload.attributes.slice("outbound_payload", "payload_digest", "idempotency_key",
-      "transport_context_digest", "provider_attempted_at")
+      "transport_context_digest", "provider_attempted_at", "outbound_wire_body", "wire_body_digest")
     expect(delivery).to have_attributes(status: "failed", provider_id: nil, provider_outcome_unknown: true)
     delivery.order.update!(buyer_email: "changed@example.invalid", buyer_name: "Changed fixture")
 
