@@ -29,6 +29,19 @@ RSpec.describe "Api::V1::Orders", type: :request do
     end
 
     context "with valid params" do
+      it "keeps recovery identity stable across wrapped params and ignored schema metadata" do
+        keyed = valid_params.merge(checkout_key: SecureRandom.hex(32))
+        post_json "/api/v1/orders", params: keyed
+        expect(response).to have_http_status(:created)
+        original_id = response.parsed_body["id"]
+        expect do
+          post_json "/api/v1/orders", params: keyed.merge(order: { buyer_name: "Wrapper changed" },
+            schema_metadata: "new unrelated column")
+        end.not_to change(Order, :count)
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["id"]).to eq(original_id)
+      end
+
       it "fences a rejected keyed request before allowing a corrected checkout with a new key" do
         key = SecureRandom.hex(32)
         rejected_params = valid_params.merge(checkout_key: key, buyer_name: "")

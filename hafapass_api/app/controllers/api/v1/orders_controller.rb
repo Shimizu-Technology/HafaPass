@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 class Api::V1::OrdersController < ApplicationController
+  CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id catalog_items
+    registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
+    terms_accepted terms_version live_money_proof].freeze
   skip_before_action :authenticate_user!, only: [
     :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
@@ -22,7 +25,9 @@ class Api::V1::OrdersController < ApplicationController
     # Claim before any validation. A final rejected key can never be revived by
     # an earlier request which has not yet reached inventory reservation.
     checkout_digest = if checkout_key
-      canonical = params.to_unsafe_h.except("controller", "action", "checkout_key")
+      # Parameter wrapping follows the Order schema; it must not change a
+      # previously issued recovery identity when unrelated columns are added.
+      canonical = params.to_unsafe_h.slice(*CHECKOUT_DIGEST_FIELDS)
       canonical["authenticated_buyer_id"] = @current_user&.id
       Digest::SHA256.hexdigest(JSON.generate(canonical_checkout_request(canonical)))
     end

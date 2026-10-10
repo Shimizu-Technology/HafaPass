@@ -58,7 +58,7 @@ Use the authorized environment's Rails console for this read-only inventory. Rec
 
 ```ruby
 legacy = Payment.where(provider: "stripe").where.not(provider_payment_id: nil)
-  .where("provider_payment_id NOT LIKE 'sim_%'")
+  .where("LEFT(provider_payment_id, 4) <> 'sim_'")
   .where("provider_environment IS NULL OR provider_platform_account_id IS NULL")
 legacy.group(:status).count
 Order.where.not(stripe_payment_intent_id: nil).left_joins(:payments)
