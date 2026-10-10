@@ -138,8 +138,15 @@ export default function TicketPage() {
       downloadLink.setAttribute('download', `hafapass-ticket-${ticket.id}.pdf`)
       document.body.appendChild(downloadLink)
       downloadLink.click()
-    } catch {
-      setDownloadError('We couldn’t download the PDF. Your ticket is still available here. Check your connection and try Download PDF again.')
+    } catch (error) {
+      let failure = error.response?.data
+      if (error.response?.status === 422 && typeof failure?.text === 'function') {
+        try { failure = JSON.parse(await failure.text()) } catch { failure = null }
+      }
+      const unsupportedText = error.response?.status === 422 && failure?.error_code === 'unsupported_pdf_text'
+      setDownloadError(unsupportedText
+        ? 'The PDF cannot display some text on this ticket. Your ticket and entry QR are still available here. Use this browser ticket or contact the organizer.'
+        : 'We couldn’t download the PDF. Your ticket is still available here. Check your connection and try Download PDF again.')
     } finally {
       downloadLink?.remove()
       if (downloadUrl) window.URL.revokeObjectURL(downloadUrl)
