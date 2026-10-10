@@ -99,7 +99,13 @@ export async function saveVerifiedManifest(envelope) {
   const db = await database()
   const trustedKey = await db.get('trusted_keys', eventId)
   const preparedDevice = await db.get('devices', eventId)
-  await verifyManifestEnvelope(verifiedEnvelope, trustedKey)
+  const preparedManifest = await db.get('manifests', eventId)
+  let verificationFailure
+  try {
+    await verifyManifestEnvelope(verifiedEnvelope, trustedKey)
+  } catch (error) {
+    verificationFailure = error
+  }
   const transaction = db.transaction(['manifests', 'trusted_keys', 'devices', 'queue', 'scan_states'], 'readwrite')
   let retained = false
   try {
@@ -109,11 +115,22 @@ export async function saveVerifiedManifest(envelope) {
     const sameKey = (left, right) => left?.key_id === right?.key_id && left?.public_key_spki === right?.public_key_spki
     if (owner !== currentScannerOwner() || (saved && saved.owner_user_id !== owner)
       || (device && device.owner_user_id !== owner)) throw manifestContextError('Scanner account changed while verifying the manifest')
-    if ((trustedKey && !sameKey(trustedKey, currentKey)) || (currentKey && !sameKey(currentKey, verifiedEnvelope))) {
+    if (!sameKey(trustedKey, currentKey)) {
       throw manifestContextError('Scanner signing key changed while verifying the manifest')
     }
     if (preparedDevice?.id !== device?.id || preparedDevice?.owner_user_id !== device?.owner_user_id) {
       throw manifestContextError('Scanner access changed while verifying the manifest')
+    }
+    // Even a failed old verification must not invalidate a replacement account/key.
+    // A failure in the unchanged context remains a normal fail-closed verdict.
+    if (verificationFailure) {
+      if (saved?.envelope?.digest !== preparedManifest?.envelope?.digest) {
+        throw manifestContextError('Scanner manifest changed while verifying the manifest')
+      }
+      throw verificationFailure
+    }
+    if (currentKey && !sameKey(currentKey, verifiedEnvelope)) {
+      throw manifestContextError('Scanner signing key changed while verifying the manifest')
     }
     const savedVersion = saved?.envelope?.payload?.version
     if (savedVersion === version && saved.envelope.digest !== verifiedEnvelope.digest) {
@@ -336,6 +353,7 @@ export async function queueReversal({ eventId, deviceId, manifestVersion, ticket
     manifest_version: manifestVersion,
     occurred_at: new Date().toISOString(),
     reverses_action_uuid: reversesActionUuid,
+    ticket_id: Number(ticketId),
   }
   storedDevice.next_sequence = sequence
   await devices.put(storedDevice)
@@ -391,13 +409,25 @@ export async function applySyncResults(eventId, device, results, owner = current
     }
     await transaction.objectStore('queue').delete(result.action_uuid)
     acknowledged += 1
-    if (!hasAccess || !result.ticket_id) continue
-    const key = [Number(eventId), Number(result.ticket_id)]
+    if (!hasAccess) continue
+    let ticketId = result.kind === 'reverse' ? queued.ticket_id || result.ticket_id : result.ticket_id
+    if (!ticketId && result.kind === 'reverse') {
+      // Older journals did not store the reverse target. A null-ticket rejection
+      // can restore only the uniquely matching local command, never another receipt.
+      const states = await transaction.objectStore('scan_states').getAll(IDBKeyRange.bound([Number(eventId), 0], [Number(eventId), Infinity]))
+      const matches = states.filter(state => state.reversal_action_uuid === result.action_uuid)
+      if (matches.length === 1) ticketId = matches[0].ticket_id
+    }
+    if (!ticketId) continue
+    const key = [Number(eventId), Number(ticketId)]
     const state = await transaction.objectStore('scan_states').get(key)
     // An older Undo acknowledgement cannot release a newer pending Undo or
     // erase the protection from a later admission on the same ticket.
     if (result.kind === 'reverse' && state?.reversal_action_uuid !== result.action_uuid) continue
-    if (result.kind === 'reverse' && (result.result === 'accepted' || ['already_reversed', 'ticket_not_admitted'].includes(result.reason_code))) {
+    const reversesTrackedReceipt = !state?.action_uuid || state.action_uuid === queued.reverses_action_uuid
+    const matchesTicket = !result.ticket_id || Number(result.ticket_id) === Number(ticketId)
+    if (result.kind === 'reverse' && reversesTrackedReceipt && matchesTicket
+      && (result.result === 'accepted' || ['already_reversed', 'ticket_not_admitted'].includes(result.reason_code))) {
       await transaction.objectStore('scan_states').delete(key)
     } else if (result.kind === 'reverse') {
       // A refused Undo does not cancel the original admission. Keep that local

@@ -663,7 +663,7 @@ export default function ScannerPage({ offlineOnly = false }) {
                 {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => (
                   <div key={action.action_uuid} className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 p-2 text-xs">
                     <span>{action.attendee?.attendee_name || action.attendee?.code}</span>
-                    <button onClick={() => reverseAdmission(action)} className="flex items-center gap-1 font-semibold text-amber-700"><RotateCcw className="h-3.5 w-3.5" /> Undo</button>
+                    <button disabled={action.reversed} onClick={() => reverseAdmission(action)} className="flex items-center gap-1 font-semibold text-amber-700 disabled:cursor-default disabled:text-neutral-500"><RotateCcw className="h-3.5 w-3.5" /> {action.reversed ? 'Reversed' : 'Undo'}</button>
                   </div>
                 ))}
               </div>

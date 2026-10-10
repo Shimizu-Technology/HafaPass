@@ -78,8 +78,13 @@ RSpec.describe Admissions::ManifestBuilder do
     later_manifest = described_class.call(event: event, actor: staff)
     expect(later_manifest.payload.dig("tickets", 0)).to include("state" => "admitted",
       "reversed_admission_action_uuids" => [admitted.action_uuid])
+    stale_undo = Admissions::Reconciler.call(device: manager_device, actor: profile.user,
+      actions: [undo.merge(action_uuid: "manager-stale-first-undo", sequence: 3)]).first.action
+    expect(stale_undo).to be_result_conflict
+    expect(stale_undo.reason_code).to eq("already_reversed")
+    expect(ticket.reload).to be_checked_in
     Admissions::Reconciler.call(device: manager_device, actor: profile.user,
-      actions: [undo.merge(action_uuid: "manager-later-undo", sequence: 3, reverses_action_uuid: later.action_uuid)]).first
+      actions: [undo.merge(action_uuid: "manager-later-undo", sequence: 4, reverses_action_uuid: later.action_uuid)]).first
     final_manifest = described_class.call(event: event, actor: staff)
     expect(final_manifest.payload.dig("tickets", 0)).to include("state" => "valid",
       "reversed_admission_action_uuids" => [admitted.action_uuid, later.action_uuid].sort)

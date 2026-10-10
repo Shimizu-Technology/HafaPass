@@ -29,8 +29,30 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
   })
   afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
 
-  it.each([['download', 'owner-b'], ['download', 'owner-a'], ['setup', 'owner-a']])(
-    'does not let a late %s callback invalidate the newer accepted guard for %s', async (phase, nextOwner) => {
+  it('keeps reversed admissions visible while offering Undo only for the later admission', async () => {
+    const eventId = 94401
+    const device = { id: 43, identifier: 'history-device', effective: true, last_sequence: 3,
+      authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 14, state: 'admitted', credential_hash: 'c'.repeat(64), attendee_name: 'Guest' }
+    const manifest = await signedManifest(eventId, [ticket])
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
+      ? { events: [{ id: eventId, title: 'History event' }] }
+      : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: { can_reverse: true }, recent_actions: [
+        { action_uuid: 'admission-a', ticket_id: 14, kind: 'admit', result: 'accepted', reversed: true, attendee: { attendee_name: 'Earlier Guest admission' } },
+        { action_uuid: 'admission-b', ticket_id: 14, kind: 'admit', result: 'accepted', reversed: false, attendee: { attendee_name: 'Later Guest admission' } },
+      ] } }))
+    apiClient.post.mockResolvedValue({ data: device })
+    render(<MemoryRouter initialEntries={[`/dashboard/scanner?event=${eventId}`]}><ScannerPage /></MemoryRouter>)
+    expect(await screen.findByText('Earlier Guest admission')).toBeInTheDocument()
+    expect(screen.getByText('Later Guest admission')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reversed' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeEnabled()
+  })
+
+  it.each([['download', 'owner-b', false], ['download', 'owner-a', false], ['setup', 'owner-a', false],
+    ['download', 'owner-b', true], ['download', 'owner-a', true], ['setup', 'owner-a', true],
+    ['download', 'owner-a', true, true]])(
+    'does not let a late %s callback invalidate the newer accepted guard for %s (bad signature: %s, same key: %s)', async (phase, nextOwner, badSignature, sameSigningKey) => {
       const eventId = 94401
       const device = { id: 43, identifier: 'original-device', effective: true, last_sequence: 1,
         authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
@@ -42,7 +64,8 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
       const initial = await signedManifest(eventId, [{ ...ticket, state: 'admitted' }], { version: 2 })
       await saveVerifiedManifest(initial)
       window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
-      let manifestResponse = initial
+      const corruptSignature = envelope => badSignature ? { ...envelope, signature: 'A'.repeat(envelope.signature.length) } : envelope
+      let manifestResponse = phase === 'setup' ? corruptSignature(initial) : initial
       apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
         ? { events: [{ id: eventId, title: 'Context event' }] }
         : url.endsWith('/manifest') ? manifestResponse
@@ -68,8 +91,8 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
       render(<MemoryRouter><ScannerPage /></MemoryRouter>)
       if (phase === 'download') {
         await screen.findByText(/Manifest v2/)
-        manifestResponse = await signedManifest(eventId,
-          [{ ...ticket, reversed_admission_action_uuids: [originalAction.action_uuid] }], { version: 3 })
+        manifestResponse = corruptSignature(await signedManifest(eventId,
+          [{ ...ticket, reversed_admission_action_uuids: [originalAction.action_uuid] }], { version: 3 }))
         pauseVerification()
         await userEvent.setup().click(screen.getByRole('button', { name: 'Sync now' }))
       }
@@ -83,15 +106,18 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
       await saveDevice(eventId, replacementDevice)
       const keys = await crypto.subtle.generateKey({ name: 'RSA-PSS', modulusLength: 2048,
         publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify'])
-      const current = await signWithKey({ ...initial.payload, version: 4, tickets: [ticket] }, keys)
+      const current = sameSigningKey ? await signedManifest(eventId, [ticket], { version: 4 })
+        : await signWithKey({ ...initial.payload, version: 4, tickets: [ticket] }, keys)
       await saveVerifiedManifest(current)
       const later = await queueAdmission({ ...input, deviceId: replacementDevice.id, manifestVersion: 4 })
       await applySyncResults(eventId, replacementDevice, [{ action_uuid: later.action_uuid,
         ticket_id: ticket.ticket_id, kind: 'admit', result: 'accepted' }])
-      const latest = await signWithKey({ ...current.payload, version: 5, tickets: [{ ...ticket, state: 'admitted' }] }, keys)
+      const latest = sameSigningKey ? await signedManifest(eventId, [{ ...ticket, state: 'admitted' }], { version: 5 })
+        : await signWithKey({ ...current.payload, version: 5, tickets: [{ ...ticket, state: 'admitted' }] }, keys)
       await saveVerifiedManifest(latest)
       await act(async () => finishVerification())
-      if (phase === 'setup' || nextOwner === 'owner-a') await screen.findByText(/Scanner signing key changed while verifying/)
+      if (sameSigningKey) await screen.findByText(/Scanner manifest changed while verifying/)
+      else if (phase === 'setup' || nextOwner === 'owner-a') await screen.findByText(/Scanner signing key changed while verifying/)
       else await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' }).querySelector('.animate-spin')).toBeNull())
       expect((await loadUsableManifest(eventId)).digest).toBe(latest.digest)
       expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(later.action_uuid)

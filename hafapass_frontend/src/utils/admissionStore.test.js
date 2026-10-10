@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto'
+import { openDB } from 'idb'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { signedManifest } from '../test/manifestFixture'
 import {
@@ -8,6 +9,14 @@ import {
 
 const toBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
 const toBase64Url = bytes => toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+async function omitLegacyReverseTarget(actionUuid) {
+  const db = await openDB('hafapass-admissions')
+  const action = await db.get('queue', actionUuid)
+  delete action.ticket_id
+  await db.put('queue', action)
+  db.close()
+}
 
 describe('admissionStore', () => {
   afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
@@ -96,6 +105,30 @@ describe('admissionStore', () => {
       expect(await queueAdmission(input)).toBeNull()
     })
 
+    it.each([
+      ['conflict', 'already_reversed', 14, false],
+      ['accepted', 'reversed', 14, false],
+      ['rejected', 'admission_not_found', null, false],
+      ['rejected', 'admission_not_found', null, true],
+    ])('preserves newer B when an old A Undo receives %s/%s (ticket: %s, legacy: %s)', async (result, reason_code, ticket_id, legacy) => {
+      const original = await prepareAccepted()
+      const firstUndo = await queueReversal({ eventId, deviceId: device.id, manifestVersion: 2,
+        ticketId: ticket.ticket_id, reversesActionUuid: original.action_uuid })
+      await applySyncResults(eventId, device, [{ action_uuid: firstUndo.action_uuid,
+        ticket_id: ticket.ticket_id, kind: 'reverse', result: 'accepted' }])
+      await saveVerifiedManifest(await reversed(original))
+      const later = await queueAdmission({ ...input, manifestVersion: 3 })
+      await accept(later)
+      const staleUndo = await queueReversal({ eventId, deviceId: device.id, manifestVersion: 3,
+        ticketId: ticket.ticket_id, reversesActionUuid: original.action_uuid })
+      if (legacy) await omitLegacyReverseTarget(staleUndo.action_uuid)
+      await applySyncResults(eventId, device, [{ action_uuid: staleUndo.action_uuid, ticket_id,
+        kind: 'reverse', result, reason_code }])
+      expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+      expect(await localScanState(eventId, ticket.ticket_id)).toMatchObject({ status: 'accepted', action_uuid: later.action_uuid })
+      expect(await queueAdmission(input)).toBeNull()
+    })
+
     it('does not release protection while the current signed ticket is admitted', async () => {
       const action = await prepareAccepted()
       await saveVerifiedManifest(await reversed(action, 3, 'admitted'))
@@ -146,6 +179,7 @@ describe('admissionStore', () => {
       const action = await prepareAccepted()
       const unknown = await queueReversal({ eventId, deviceId: device.id, manifestVersion: 2,
         ticketId: 15, reversesActionUuid: 'unknown-admission' })
+      await omitLegacyReverseTarget(unknown.action_uuid)
       await saveVerifiedManifest(await reversed(action))
       expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(action.action_uuid)
       expect((await queuedActions(eventId, device.id))[0].action_uuid).toBe(unknown.action_uuid)
