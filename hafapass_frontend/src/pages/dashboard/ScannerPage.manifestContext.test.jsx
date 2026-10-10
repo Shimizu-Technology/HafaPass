@@ -87,8 +87,7 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
           : { counts: {}, permissions: { can_reverse: false }, recent_actions: [] } }))
       apiClient.post.mockResolvedValue({ data: device })
 
-      let finishVerification, startedVerification
-      const started = new Promise(resolve => { startedVerification = resolve })
+      let finishVerification
       const verify = crypto.subtle.verify.bind(crypto.subtle)
       const pauseVerification = () => {
         let calls = 0
@@ -96,7 +95,6 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
           const valid = await verify(...args)
           // Setup first verifies its existing cache, then the incoming API envelope.
           if (++calls === (phase === 'setup' ? 2 : 1)) {
-            startedVerification()
             await new Promise(resolve => { finishVerification = resolve })
           }
           return valid
@@ -108,10 +106,14 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
         await screen.findByText(/Manifest v2/)
         manifestResponse = corruptSignature(await signedManifest(eventId,
           [{ ...ticket, reversed_admission_action_uuids: [originalAction.action_uuid] }], { version: 3 }))
+        const sync = screen.getByRole('button', { name: 'Sync now' })
+        // Cached manifest text can render before authorization/quiet startup sync finishes.
+        await waitFor(() => expect(sync).toBeEnabled())
         pauseVerification()
-        await userEvent.setup().click(screen.getByRole('button', { name: 'Sync now' }))
+        await userEvent.setup().click(sync)
       }
-      await started
+      // Fail at the startup boundary instead of hanging on an unresolved promise.
+      await waitFor(() => expect(finishVerification).toBeTypeOf('function'))
 
       if (nextOwner !== 'owner-a') {
         await clearAllAdmissionData()
