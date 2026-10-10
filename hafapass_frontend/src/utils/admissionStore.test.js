@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { signedManifest } from '../test/manifestFixture'
 import {
   applySyncResults, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission, queueReversal,
@@ -23,6 +23,182 @@ describe('admissionStore', () => {
 
   it('uses the same stable canonical representation regardless of key order', () => {
     expect(canonicalJson({ z: 2, a: { d: 4, b: 3 } })).toBe('{"a":{"b":3,"d":4},"z":2}')
+  })
+
+  describe('signed cross-device reversal reconciliation', () => {
+    let eventCounter = 91100
+    let eventId, device, ticket, input
+    beforeEach(async () => {
+      eventId = ++eventCounter
+      window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
+      device = { id: 43, effective: true, last_sequence: 0, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+      ticket = { ticket_id: 14, state: 'valid', credential_hash: 'c'.repeat(64), attendee_name: 'Guest' }
+      input = { eventId, deviceId: device.id, manifestVersion: 1, ticket, credentialHash: ticket.credential_hash, source: 'online' }
+      await saveDevice(eventId, device)
+      await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    })
+
+    const accept = async action => applySyncResults(eventId, device, [{ action_uuid: action.action_uuid,
+      ticket_id: ticket.ticket_id, kind: 'admit', result: 'accepted' }])
+    const prepareAccepted = async () => {
+      const action = await queueAdmission(input)
+      await accept(action)
+      await saveVerifiedManifest(await signedManifest(eventId, [{ ...ticket, state: 'admitted' }], { version: 2 }))
+      return action
+    }
+    const reversed = (action, version = 3, state = 'valid') => signedManifest(eventId,
+      [{ ...ticket, state, reversed_admission_action_uuids: [action.action_uuid] }], { version })
+
+    it('releases only the settled admission explicitly reversed by a manager and allows a fresh UUID', async () => {
+      const action = await prepareAccepted()
+      await saveVerifiedManifest(await reversed(action))
+      expect(await localScanState(eventId, ticket.ticket_id)).toBeUndefined()
+      expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+      const fresh = await queueAdmission({ ...input, manifestVersion: 3 })
+      expect(fresh.action_uuid).not.toBe(action.action_uuid)
+      expect(fresh.sequence).toBeGreaterThan(action.sequence)
+    })
+
+    it.each([undefined, [], ['unrelated-admission']])('retains a settled guard when a valid manifest has no exact reversal proof: %s', async proof => {
+      await prepareAccepted()
+      await saveVerifiedManifest(await signedManifest(eventId,
+        [{ ...ticket, ...(proof === undefined ? {} : { reversed_admission_action_uuids: proof }) }], { version: 3 }))
+      expect((await localScanState(eventId, ticket.ticket_id)).status).toBe('accepted')
+      expect(await queueAdmission(input)).toBeNull()
+    })
+
+    it('retains an unknown queued admission until its original acknowledgement and a verified refresh', async () => {
+      const action = await queueAdmission(input)
+      const envelope = await reversed(action)
+      await saveVerifiedManifest(envelope)
+      expect((await queuedActions(eventId, device.id))[0].action_uuid).toBe(action.action_uuid)
+      expect((await localScanState(eventId, ticket.ticket_id)).status).toBe('pending')
+      await accept(action)
+      await saveVerifiedManifest(envelope)
+      expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+      expect(await localScanState(eventId, ticket.ticket_id)).toBeUndefined()
+    })
+
+    it('retains pending Undo and a later accepted admission against an earlier reversal proof', async () => {
+      const action = await prepareAccepted()
+      const undo = await queueReversal({ eventId, deviceId: device.id, manifestVersion: 2,
+        ticketId: ticket.ticket_id, reversesActionUuid: action.action_uuid })
+      const envelope = await reversed(action)
+      await saveVerifiedManifest(envelope)
+      expect((await localScanState(eventId, ticket.ticket_id)).status).toBe('pending_reverse')
+      expect((await queuedActions(eventId, device.id))[0].action_uuid).toBe(undo.action_uuid)
+      await applySyncResults(eventId, device, [{ action_uuid: undo.action_uuid, ticket_id: ticket.ticket_id,
+        kind: 'reverse', result: 'accepted' }])
+      const later = await queueAdmission({ ...input, manifestVersion: 3 })
+      await accept(later)
+      await saveVerifiedManifest(envelope)
+      expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(later.action_uuid)
+      expect(await queueAdmission(input)).toBeNull()
+    })
+
+    it('does not release protection while the current signed ticket is admitted', async () => {
+      const action = await prepareAccepted()
+      await saveVerifiedManifest(await reversed(action, 3, 'admitted'))
+      expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(action.action_uuid)
+    })
+
+    it('returns the retained newer envelope without releasing guards for a stale network response', async () => {
+      const action = await prepareAccepted()
+      const current = await loadUsableManifest(eventId)
+      expect((await saveVerifiedManifest(await reversed(action, 1))).digest).toBe(current.digest)
+      expect((await loadUsableManifest(eventId)).digest).toBe(current.digest)
+      expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(action.action_uuid)
+    })
+
+    it('rejects signed same-version equivocation without changing cache or local protection', async () => {
+      const action = await prepareAccepted()
+      const current = await loadUsableManifest(eventId)
+      await expect(saveVerifiedManifest(await reversed(action, 2))).rejects.toThrow(/version/)
+      expect((await loadUsableManifest(eventId)).digest).toBe(current.digest)
+      expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(action.action_uuid)
+    })
+
+    it('fences an account change while asynchronous signature verification is pending', async () => {
+      const action = await prepareAccepted()
+      const envelope = await reversed(action)
+      let finishVerification, startedVerification
+      const started = new Promise(resolve => { startedVerification = resolve })
+      const original = crypto.subtle.verify.bind(crypto.subtle)
+      vi.spyOn(crypto.subtle, 'verify').mockImplementationOnce(async (...args) => {
+        const valid = await original(...args)
+        startedVerification()
+        await new Promise(resolve => { finishVerification = resolve })
+        return valid
+      })
+      const saving = saveVerifiedManifest(envelope)
+      const refused = expect(saving).rejects.toThrow(/account|owner/i)
+      await started
+      window.localStorage.setItem('hafapass_scanner_user_id', 'owner-b')
+      finishVerification()
+      await refused
+      expect(await loadUsableManifest(eventId)).toBeNull()
+      window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
+      expect((await loadUsableManifest(eventId)).payload.version).toBe(2)
+      expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(action.action_uuid)
+    })
+
+    it('retains settled protection when an unacknowledged Undo has no known ticket identity', async () => {
+      const action = await prepareAccepted()
+      const unknown = await queueReversal({ eventId, deviceId: device.id, manifestVersion: 2,
+        ticketId: 15, reversesActionUuid: 'unknown-admission' })
+      await saveVerifiedManifest(await reversed(action))
+      expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(action.action_uuid)
+      expect((await queuedActions(eventId, device.id))[0].action_uuid).toBe(unknown.action_uuid)
+    })
+
+    it('does not re-pin an older key after explicit trust reset during verification', async () => {
+      const action = await prepareAccepted()
+      const envelope = await reversed(action)
+      let finishVerification, startedVerification
+      const started = new Promise(resolve => { startedVerification = resolve })
+      const original = crypto.subtle.verify.bind(crypto.subtle)
+      vi.spyOn(crypto.subtle, 'verify').mockImplementationOnce(async (...args) => {
+        const valid = await original(...args)
+        startedVerification()
+        await new Promise(resolve => { finishVerification = resolve })
+        return valid
+      })
+      const saving = saveVerifiedManifest(envelope)
+      const refused = expect(saving).rejects.toThrow(/signing key changed/)
+      await started
+      await clearEventAdmissionData(eventId)
+      const payload = { ...envelope.payload, version: 4 }
+      const digest = await sha256Hex(canonicalJson(payload))
+      const signature = await crypto.subtle.sign({ name: 'RSA-PSS', saltLength: 32 }, signingKeys.privateKey, new TextEncoder().encode(digest))
+      const publicKey = await crypto.subtle.exportKey('spki', signingKeys.publicKey)
+      const replacement = { payload, digest, signature: toBase64Url(signature), algorithm: 'PS256',
+        key_id: await sha256Hex(publicKey), public_key_spki: toBase64(publicKey) }
+      await saveVerifiedManifest(replacement)
+      finishVerification()
+      await refused
+      expect((await loadUsableManifest(eventId)).key_id).toBe(replacement.key_id)
+    })
+
+    it('uses the verified snapshot rather than a caller-mutated reversal proof', async () => {
+      const action = await prepareAccepted()
+      const envelope = await signedManifest(eventId, [ticket], { version: 3 })
+      let finishVerification, startedVerification
+      const started = new Promise(resolve => { startedVerification = resolve })
+      const original = crypto.subtle.verify.bind(crypto.subtle)
+      vi.spyOn(crypto.subtle, 'verify').mockImplementationOnce(async (...args) => {
+        const valid = await original(...args)
+        startedVerification()
+        await new Promise(resolve => { finishVerification = resolve })
+        return valid
+      })
+      const saving = saveVerifiedManifest(envelope)
+      await started
+      envelope.payload.tickets[0].reversed_admission_action_uuids = [action.action_uuid]
+      finishVerification()
+      await saving
+      expect((await loadUsableManifest(eventId)).payload.tickets[0].reversed_admission_action_uuids).toBeUndefined()
+      expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(action.action_uuid)
+    })
   })
 
   it('verifies the real Ruby signer envelope for ordinary punctuation and Unicode and rejects tampering', async () => {

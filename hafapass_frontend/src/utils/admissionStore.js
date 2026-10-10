@@ -5,6 +5,8 @@ const DB_VERSION = 2
 
 export const currentScannerOwner = () => window.localStorage.getItem('hafapass_scanner_user_id') || (import.meta.env.PROD ? null : 'local-preview')
 
+const manifestContextError = message => Object.assign(new Error(message), { manifestContextChanged: true })
+
 const database = () => openDB(DB_NAME, DB_VERSION, {
   upgrade(db, oldVersion, _newVersion, transaction) {
     if (oldVersion < 2) db.createObjectStore('journal_devices', { keyPath: ['owner_user_id', 'event_id'] })
@@ -86,25 +88,76 @@ export async function verifyManifestEnvelope(envelope, trustedKey = null) {
 }
 
 export async function saveVerifiedManifest(envelope) {
-  const eventId = Number(envelope?.payload?.event?.id)
+  const owner = currentScannerOwner()
+  if (!owner) throw new Error('Sign in before preparing a scanner manifest')
+  // Use the exact payload that was verified, even across asynchronous crypto work.
+  const verifiedEnvelope = structuredClone(envelope)
+  const eventId = Number(verifiedEnvelope?.payload?.event?.id)
   if (!eventId) throw new Error('Scanner manifest event is invalid')
+  const version = verifiedEnvelope.payload.version
+  if (!Number.isInteger(version) || version < 1) throw new Error('Scanner manifest version is invalid')
   const db = await database()
   const trustedKey = await db.get('trusted_keys', eventId)
-  await verifyManifestEnvelope(envelope, trustedKey)
-  const transaction = db.transaction(['manifests', 'trusted_keys'], 'readwrite')
-  await transaction.objectStore('trusted_keys').put({
-    event_id: eventId,
-    key_id: envelope.key_id,
-    public_key_spki: envelope.public_key_spki,
-  })
-  await transaction.objectStore('manifests').put({
-    event_id: eventId,
-    envelope,
-    downloaded_at: new Date().toISOString(),
-    owner_user_id: currentScannerOwner(),
-  })
-  await transaction.done
-  return envelope
+  const preparedDevice = await db.get('devices', eventId)
+  await verifyManifestEnvelope(verifiedEnvelope, trustedKey)
+  const transaction = db.transaction(['manifests', 'trusted_keys', 'devices', 'queue', 'scan_states'], 'readwrite')
+  let retained = false
+  try {
+    const currentKey = await transaction.objectStore('trusted_keys').get(eventId)
+    const device = await transaction.objectStore('devices').get(eventId)
+    const saved = await transaction.objectStore('manifests').get(eventId)
+    const sameKey = (left, right) => left?.key_id === right?.key_id && left?.public_key_spki === right?.public_key_spki
+    if (owner !== currentScannerOwner() || (saved && saved.owner_user_id !== owner)
+      || (device && device.owner_user_id !== owner)) throw manifestContextError('Scanner account changed while verifying the manifest')
+    if ((trustedKey && !sameKey(trustedKey, currentKey)) || (currentKey && !sameKey(currentKey, verifiedEnvelope))) {
+      throw manifestContextError('Scanner signing key changed while verifying the manifest')
+    }
+    if (preparedDevice?.id !== device?.id || preparedDevice?.owner_user_id !== device?.owner_user_id) {
+      throw manifestContextError('Scanner access changed while verifying the manifest')
+    }
+    const savedVersion = saved?.envelope?.payload?.version
+    if (savedVersion === version && saved.envelope.digest !== verifiedEnvelope.digest) {
+      throw new Error('Scanner manifest version has conflicting signed contents')
+    }
+    retained = savedVersion > version
+    if (!retained) {
+      if (device?.effective && new Date(device.authorization_expires_at).getTime() > Date.now()) {
+        const range = IDBKeyRange.bound([eventId, 0], [eventId, Infinity])
+        const pending = (await transaction.objectStore('queue').index('event_device').getAll(range))
+          .filter(action => !action.owner_user_id || action.owner_user_id === owner)
+        const unknownPending = pending.some(action => !action.ticket_id)
+        const unsettledTickets = new Set(pending.map(action => Number(action.ticket_id)))
+        const tickets = new Map((verifiedEnvelope.payload.tickets || []).map(ticket => [Number(ticket.ticket_id), ticket]))
+        const states = await transaction.objectStore('scan_states').getAll(range)
+        for (const state of states) {
+          const ticket = tickets.get(Number(state.ticket_id))
+          // A newer "valid" snapshot alone cannot release an accepted admission.
+          // Exact signed reversal proof and a settled local journal are both required.
+          if (state.status === 'accepted' && ticket?.state === 'valid'
+            && Array.isArray(ticket.reversed_admission_action_uuids)
+            && ticket.reversed_admission_action_uuids.includes(state.action_uuid)
+            && !unknownPending && !unsettledTickets.has(Number(state.ticket_id))) {
+            await transaction.objectStore('scan_states').delete([eventId, Number(state.ticket_id)])
+          }
+        }
+      }
+      await transaction.objectStore('trusted_keys').put({ event_id: eventId,
+        key_id: verifiedEnvelope.key_id, public_key_spki: verifiedEnvelope.public_key_spki })
+      await transaction.objectStore('manifests').put({ event_id: eventId, envelope: verifiedEnvelope,
+        downloaded_at: new Date().toISOString(), owner_user_id: owner })
+    }
+    if (owner !== currentScannerOwner()) throw manifestContextError('Scanner account changed while saving the manifest')
+    await transaction.done
+  } catch (error) {
+    try { transaction.abort() } catch { /* The transaction may already have failed. */ }
+    await transaction.done.catch(() => {})
+    throw error
+  }
+  // A delayed older download cannot overwrite the cache or become the UI's ticket list.
+  const result = retained ? await loadUsableManifest(eventId) : verifiedEnvelope
+  if (owner !== currentScannerOwner()) throw manifestContextError('Scanner account changed while saving the manifest')
+  if (!result) throw new Error('The retained scanner manifest is no longer available')
+  return result
 }
 
 export async function loadUsableManifest(eventId) {

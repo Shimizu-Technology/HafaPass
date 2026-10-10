@@ -90,9 +90,23 @@ module Admissions
           attendee_name: ticket.attendee_name.presence || "Guest",
           ticket_type: [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
           seat: ticket.seat_label,
-          state: admission_state(ticket)
+          state: admission_state(ticket),
+          reversed_admission_action_uuids: reversed_admissions_by_ticket.fetch(ticket.id, [])
         }
       end
+    end
+
+    def reversed_admissions_by_ticket
+      @reversed_admissions_by_ticket ||= event.admission_actions.kind_reverse.result_accepted
+        .joins(<<~SQL.squish)
+          INNER JOIN admission_actions reversed_admissions
+          ON reversed_admissions.id = admission_actions.reverses_action_id
+          AND reversed_admissions.ticket_id = admission_actions.ticket_id
+        SQL
+        .where(reversed_admissions: { event_id: event.id, kind: AdmissionAction.kinds.fetch("admit"),
+          result: AdmissionAction.results.fetch("accepted") })
+        .pluck(:ticket_id, "reversed_admissions.action_uuid")
+        .group_by(&:first).transform_values { |entries| entries.map(&:last).uniq.sort }
     end
 
     def admission_state(ticket)

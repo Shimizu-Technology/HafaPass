@@ -118,16 +118,19 @@ export default function ScannerPage({ offlineOnly = false }) {
   const downloadManifest = useCallback(async (selectedEventId, selectedDevice) => {
     const response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`)
     if (selectedDevice.owner_user_id !== currentScannerOwner()) return null
+    let verified
     try {
       if (Number(response.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event.')
-      await saveVerifiedManifest(response.data)
+      verified = await saveVerifiedManifest(response.data)
     } catch (verificationError) {
-      await invalidateManifestAccess(selectedEventId)
+      // A stale callback must block its UI without erasing a newer context's access.
+      if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId)
       verificationError.manifestInvalid = true
       throw verificationError
     }
-    if (eventIdRef.current === String(selectedEventId)) setManifest(response.data)
-    return response.data
+    // The store may retain a newer signed manifest over a delayed network response.
+    if (eventIdRef.current === String(selectedEventId)) setManifest(verified)
+    return verified
   }, [])
 
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
@@ -266,7 +269,7 @@ export default function ScannerPage({ offlineOnly = false }) {
             if (Number(downloaded.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event. Ask a manager to check this device.')
             await saveVerifiedManifest(downloaded.data)
           } catch (verificationError) {
-            await invalidateManifestAccess(selectedEventId)
+            if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId)
             throw verificationError
           }
           cached = await loadAuthorizedScanner(selectedEventId)

@@ -44,4 +44,45 @@ RSpec.describe Admissions::ManifestBuilder do
     expect { original.update!(ticket_count: 99) }.to raise_error(ActiveRecord::ReadonlyAttributeError)
     expect(original.reload.ticket_count).to eq(1)
   end
+
+  it "signs exact accepted reversal proofs across independent staff and manager devices" do
+    staff = create(:user)
+    create(:organization_membership, organization: profile.organization, user: staff, role: :scanner)
+    create(:event_staff_assignment, organization: profile.organization, event: event, user: staff, role: :scanner)
+    staff_device = create(:scanner_device, organization: profile.organization, event: event, user: staff)
+    manager_device = create(:scanner_device, organization: profile.organization, event: event, user: profile.user)
+    prepared = described_class.call(event: event, actor: staff)
+    scan = { action_uuid: "staff-first", kind: "admit", source: "online", sequence: 1,
+      manifest_version: prepared.version, occurred_at: Time.current.iso8601(6), ticket_id: ticket.id,
+      credential_hash: Digest::SHA256.hexdigest(ticket.scan_credential) }
+    admitted = Admissions::Reconciler.call(device: staff_device, actor: staff, actions: [scan]).first.action
+    admitted_manifest = described_class.call(event: event, actor: staff)
+    expect(admitted_manifest.payload.dig("tickets", 0, "state")).to eq("admitted")
+    undo = { action_uuid: "manager-first-undo", kind: "reverse", source: "online", sequence: 1,
+      manifest_version: admitted_manifest.version, occurred_at: Time.current.iso8601(6), reverses_action_uuid: admitted.action_uuid }
+    reversed = Admissions::Reconciler.call(device: manager_device, actor: profile.user, actions: [undo]).first.action
+    repeated = Admissions::Reconciler.call(device: manager_device, actor: profile.user,
+      actions: [undo.merge(action_uuid: "manager-repeat-undo", sequence: 2)]).first.action
+    expect(reversed).to be_result_accepted
+    expect(repeated).to be_result_conflict
+    expect(ticket.reload).to be_issued
+    refreshed = described_class.call(event: event, actor: staff)
+    expect(refreshed.payload.dig("tickets", 0)).to include("state" => "valid",
+      "reversed_admission_action_uuids" => [admitted.action_uuid])
+    expect(Admissions::ManifestSigner.verify(digest: refreshed.digest, signature: refreshed.signature)).to be(true)
+
+    later = Admissions::Reconciler.call(device: staff_device, actor: staff,
+      actions: [scan.merge(action_uuid: "staff-later", sequence: 2, manifest_version: refreshed.version,
+        occurred_at: Time.current.iso8601(6))]).first.action
+    expect(later).to be_result_accepted
+    later_manifest = described_class.call(event: event, actor: staff)
+    expect(later_manifest.payload.dig("tickets", 0)).to include("state" => "admitted",
+      "reversed_admission_action_uuids" => [admitted.action_uuid])
+    Admissions::Reconciler.call(device: manager_device, actor: profile.user,
+      actions: [undo.merge(action_uuid: "manager-later-undo", sequence: 3, reverses_action_uuid: later.action_uuid)]).first
+    final_manifest = described_class.call(event: event, actor: staff)
+    expect(final_manifest.payload.dig("tickets", 0)).to include("state" => "valid",
+      "reversed_admission_action_uuids" => [admitted.action_uuid, later.action_uuid].sort)
+    expect(described_class.call(event: event, actor: staff)).to eq(final_manifest)
+  end
 end
