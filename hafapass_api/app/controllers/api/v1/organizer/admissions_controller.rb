@@ -41,7 +41,7 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
 
   def admission_dashboard
     ticket_counts = @event.tickets.group(:status).count
-    actions = @event.admission_actions.includes(:scanner_device, :actor_user).order(received_at: :desc).limit(50)
+    actions = @event.admission_actions.includes(:scanner_device, :actor_user, :reversal_action).order(received_at: :desc).limit(50)
     {
       event: {
         id: @event.id,
@@ -102,6 +102,7 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
       ticket_id: action.ticket_id,
       kind: action.kind,
       result: action.result,
+      reversed: action.kind_admit? && action.reversal_action.present?,
       reason_code: action.reason_code,
       occurred_at: action.occurred_at,
       received_at: action.received_at,

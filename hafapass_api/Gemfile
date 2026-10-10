@@ -39,6 +39,7 @@ group :development, :test do
   gem "bundler-audit", require: false
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
   gem "factory_bot_rails"
+  gem "pdf-reader", "~> 2.15", require: false
   gem "rspec_junit_formatter"
   gem "rspec-rails", "~> 7.0"
   gem "rubocop-rails-omakase", require: false

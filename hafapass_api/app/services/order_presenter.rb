@@ -157,15 +157,21 @@ class OrderPresenter
 
   def confirmation_delivery
     deliveries = order.message_deliveries
-    templates = %w[order_confirmation fulfillment_resend]
-    delivery = if deliveries.loaded?
-      deliveries.select { |item| templates.include?(item.template) }.max_by(&:id)
+    if deliveries.loaded?
+      relevant = deliveries.select(&:ticket_email?)
+      delivery = relevant.max_by(&:id)
+      unknown = relevant.any?(&:unconfirmed_provider_result?)
     else
-      deliveries.where(template: templates).order(id: :desc).first
+      relevant = deliveries.ticket_email
+      delivery = relevant.order(id: :desc).first
+      unknown = relevant.unconfirmed_provider_result.exists?
     end
     return unless delivery
 
-    { status: delivery.status, simulated: delivery.provider == "simulated", updated_at: delivery.updated_at }
+    # The status describes the latest email; reconciliation includes any older
+    # confirmation/fulfillment attempt whose provider outcome is still unknown.
+    { status: delivery.status, simulated: delivery.provider == "simulated", updated_at: delivery.updated_at,
+      reconciliation_required: unknown }
   end
 
   def ordered_order_items
