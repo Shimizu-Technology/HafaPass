@@ -11,7 +11,7 @@ vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ ticketTypes }) =
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
 
-const event = { id: 37, title: 'Published Workshop', venue_name: 'Venue', status: 'published', timezone: 'Pacific/Guam', category: 'other', age_restriction: 'all_ages', starts_at: '2026-10-16T09:00:42.123Z', ends_at: '2026-10-16T12:00:42.123Z', doors_open_at: '2026-10-16T08:30:42.123Z', ticket_types: [] }
+const event = { permissions: { edit_event_content: true, manage_events: true, manage_inventory: true, box_office: true, view_attendees: true, manage_staff: true, manage_attendees: true, view_finance: true }, id: 37, title: 'Published Workshop', venue_name: 'Venue', status: 'published', timezone: 'Pacific/Guam', category: 'other', age_restriction: 'all_ages', starts_at: '2026-10-16T09:00:42.123Z', ends_at: '2026-10-16T12:00:42.123Z', doors_open_at: '2026-10-16T08:30:42.123Z', ticket_types: [] }
 function mount() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/edit']}><Routes><Route path="/dashboard/events/:id/edit" element={<EditEventPage />} /></Routes></MemoryRouter>) }
 
 describe('published event content and schedule edits', () => {
@@ -19,6 +19,29 @@ describe('published event content and schedule edits', () => {
     vi.clearAllMocks()
     apiClient.get.mockResolvedValue({ data: event })
     apiClient.put.mockResolvedValue({ data: event })
+  })
+
+  it('shows assigned scanner recovery on direct editor access without editing controls', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...event, permissions: { scan: true, edit_event_content: false } } })
+    mount()
+    expect(await screen.findByRole('link', { name: 'Scan tickets for this event' })).toHaveAttribute('href', '/dashboard/scanner?event=37')
+    expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cancel Event/ })).not.toBeInTheDocument()
+    expect(apiClient.put).not.toHaveBeenCalled()
+  })
+
+  it('limits presentation editors to content fields and sends no discarded operation edits', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...event, permissions: { edit_event_content: true } } })
+    apiClient.put.mockResolvedValue({ data: { ...event, permissions: { edit_event_content: true } } })
+    const user = userEvent.setup()
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Choose verified cover' }))
+    expect(screen.queryByLabelText(/Start Date & Time/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clone' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Existing admission')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(Object.keys(apiClient.put.mock.calls[0][1]).sort()).toEqual(['category', 'cover_image_url', 'description', 'short_description', 'title'])
   })
 
   it('saves a cover without changing precise schedule times or requiring a reason', async () => {

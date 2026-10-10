@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -6,6 +6,8 @@ import apiClient from '../../api/client'
 import RefundsPage from './RefundsPage'
 
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+beforeEach(() => vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test'))
+afterEach(() => vi.unstubAllEnvs())
 function mountRefunds() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/refunds']}><Routes><Route path="/dashboard/events/:id/refunds" element={<RefundsPage />} /></Routes></MemoryRouter>) }
 
 describe('refund outcome and recovery', () => {
@@ -85,7 +87,7 @@ describe('refund outcome and recovery', () => {
     first.unmount()
     mountRefunds()
     await screen.findByText(notice)
-    expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', expect.stringContaining('mailto:contact@hafapass.com'))
+    expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=Refund%20review%20for%20order%20922')
     apiClient.post.mockResolvedValueOnce({ data: { status: 'failed' } })
     await user.click(screen.getByRole('button', { name: 'Check saved refund status' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))

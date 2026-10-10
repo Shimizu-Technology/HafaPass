@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
+import { supportMailto } from '../../utils/supportContact'
 
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
 const needsFinanceReview = (data, request) => data?.finance_review_required === true || (request?.financeReview && data?.finance_review_required !== false)
@@ -113,7 +114,7 @@ export default function RefundsPage() {
    {notice && !pendingRequest?.financeReview && <p role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{notice}</p>}
    {pendingRequest?.financeReview && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
     <p>The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.</p>
-    <a className="inline-flex min-h-11 items-center font-semibold underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${pendingRequest.orderId}`)}`}>Contact support</a>
+    <a className="inline-flex min-h-11 items-center font-semibold underline" href={supportMailto(`Refund review for order ${pendingRequest.orderId}`)}>Contact support</a>
    </div>}
    {pendingRequest && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
    {pendingRequest && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : 'Retry saved refund'}</button>}

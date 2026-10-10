@@ -22,6 +22,10 @@ class Api::V1::TicketsController < ApplicationController
               filename: filename,
               type: "application/pdf",
               disposition: "attachment"
+  rescue TicketPdfGenerator::UnsupportedCharacterError
+    render json: { error_code: "unsupported_pdf_text",
+      error: "This ticket contains text that cannot be printed in the PDF. Use your browser ticket or contact the organizer." },
+      status: :unprocessable_entity
   end
 
   def apple_wallet
