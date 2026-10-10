@@ -25,7 +25,7 @@ Configure the following groups without exposing their values in diagnostics. Run
 - persistent application signing: dedicated `SECRET_KEY_BASE`;
 - authentication: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`;
 - public routing: HTTPS `FRONTEND_URL`, HTTPS `PUBLIC_WEB_URL`, exact HTTPS `PUBLIC_API_URL`, and HTTPS-only `ALLOWED_ORIGINS` containing the frontend origin;
-- release correlation: `GIT_SHA` or an explicitly configured `COMMIT_REF` containing the full 40- or 64-hex commit digest—not a branch name;
+- release correlation: Render's authoritative `RENDER_GIT_COMMIT`, or `GIT_SHA`/`COMMIT_REF` on other platforms, containing the full 40- or 64-hex commit digest—not a branch name; a present invalid Render value blocks readiness instead of using a fallback;
 - monitoring: `SENTRY_DSN`;
 - mail: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `MAILER_FROM_EMAIL`;
 - provider evidence binding: non-secret `PROVIDER_CONFIGURATION_REVISION`, incremented for every provider-side configuration change;

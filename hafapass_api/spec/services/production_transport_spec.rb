@@ -49,4 +49,20 @@ RSpec.describe "Production transport and platform liveness" do
     expect(status.success?).to be(true), errors
     expect(output).to include("BOOT_ONLY=200")
   end
+
+  it "boots with the same authoritative Render revision for Sentry and runtime process metadata" do
+    environment = { "RAILS_ENV" => "production", "HAFAPASS_RUNTIME" => "embedded",
+      "PUBLIC_API_URL" => "https://api.hafapass.example", "ALLOWED_ORIGINS" => "https://hafapass.example",
+      "SECRET_KEY_BASE" => SecureRandom.hex(64), "DATABASE_URL" => "postgresql://localhost:54399/unreachable",
+      "SENTRY_DSN" => "", "RENDER_GIT_COMMIT" => "c" * 40, "GIT_SHA" => "a" * 40, "COMMIT_REF" => "b" * 40 }
+    script = <<~RUBY
+      process_class = Class.new { def metadata; {}; end }
+      process_class.prepend(Operations::SolidQueueProcessMetadata)
+      puts "RELEASE_IDENTITIES=" + [ApplicationRevision.current, Sentry.configuration.release,
+        process_class.new.metadata[:application_revision]].join(",")
+    RUBY
+    output, errors, status = Open3.capture3(environment, "bundle", "exec", "rails", "runner", script, chdir: Rails.root)
+    expect(status.success?).to be(true), errors
+    expect(output).to include("RELEASE_IDENTITIES=#{Array.new(3, 'c' * 40).join(',')}")
+  end
 end

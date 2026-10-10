@@ -45,7 +45,7 @@ Core runtime:
 - `SECRET_KEY_BASE` (persistent release-independent application secret)
 - `DATABASE_MIGRATION_URL` (direct release-only connection; never the pooled host)
 - `SENTRY_DSN`
-- `GIT_SHA` or an explicitly configured `COMMIT_REF` containing the full commit digest for release correlation
+- Render's authoritative `RENDER_GIT_COMMIT`, or `GIT_SHA`/`COMMIT_REF` on other platforms, containing the full commit digest for shared readiness, approval, job metadata and Sentry release correlation
 
 Provider-specific configuration remains documented in the root README. Put secrets in the deployment platform's encrypted environment store. Never put values in source, CI YAML, command output, screenshots, or support tickets. The exact Gate C contract and evidence procedure are in [Gate C Production Environment](GATE_C_PRODUCTION_ENVIRONMENT.md).
 

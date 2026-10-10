@@ -22,9 +22,9 @@ services:
   autoDeployTrigger: 'off'
   numInstances: 1
   maxShutdownDelaySeconds: 120
-  dockerCommand: sh -c 'export GIT_SHA="$RENDER_GIT_COMMIT"; exec bundle exec puma -C config/puma.rb'
+  dockerCommand: bundle exec puma -C config/puma.rb
   healthCheckPath: /up
-  preDeployCommand: sh -c 'export GIT_SHA="$RENDER_GIT_COMMIT"; exec bin/release-migrate'
+  preDeployCommand: bin/release-migrate
   envVars:
   - fromGroup: hafapass-production-runtime
   - key: REDIS_URL
@@ -86,7 +86,7 @@ services:
   autoDeployTrigger: 'off'
   numInstances: 1
   maxShutdownDelaySeconds: 120
-  dockerCommand: sh -c 'export GIT_SHA="$RENDER_GIT_COMMIT"; exec bundle exec sidekiq -C config/sidekiq.yml'
+  dockerCommand: bundle exec sidekiq -C config/sidekiq.yml
   plan: 0.5c-512mb
   envVars:
   - fromGroup: hafapass-production-runtime
@@ -207,7 +207,7 @@ services:
   autoDeployTrigger: 'off'
   numInstances: 1
   maxShutdownDelaySeconds: 120
-  dockerCommand: sh -c 'export GIT_SHA="$RENDER_GIT_COMMIT"; exec bundle exec rails runner script/commerce_clock.rb'
+  dockerCommand: bundle exec rails runner script/commerce_clock.rb
   plan: 0.5c-512mb
   envVars:
   - fromGroup: hafapass-production-runtime

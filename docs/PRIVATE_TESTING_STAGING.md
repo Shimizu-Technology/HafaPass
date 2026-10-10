@@ -29,7 +29,7 @@ Supply these variables from the deployment's secret/configuration store:
 | `ADMIN_EMAILS` | Approved testers' verified Clerk email addresses for initial administrator access |
 | `HAFAPASS_LAUNCH_SCOPE` | Omit or set `general_admission` |
 | `SECRET_KEY_BASE` | A separate random staging secret longer than 64 characters; retain it across restarts and deploys |
-| `GIT_SHA` | Exact deployed commit |
+| `RENDER_GIT_COMMIT` | Exact deployed commit supplied by Render; `GIT_SHA`/`COMMIT_REF` remain non-Render fallbacks |
 | `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` | A required RSA private staging signing key of at least 2048 bits; retain the same key across web/worker restarts and deploys |
 
 Database naming and explicit URL matching catch common accidental reuse. Operators must also verify that the selected hosts, database and any Redis credentials are separate from production. A name is not proof of isolation. A shared Redis database can mix queues and worker registration and invalidate readiness.
@@ -46,7 +46,7 @@ Attendee CSV downloads quote all fields and prepend a tab to formula-like values
 
 ## Build and run
 
-Select the reviewed commit in an isolated checkout and record that same SHA in `GIT_SHA`. Inject the staging configuration before these backend commands:
+Select the reviewed commit in an isolated checkout and record that same SHA in `GIT_SHA` for local execution. On Render, verify the automatically supplied `RENDER_GIT_COMMIT` matches the actual deployment; it takes precedence over manual fallback values. Inject the staging configuration before these backend commands:
 
 ```sh
 cd hafapass_api
