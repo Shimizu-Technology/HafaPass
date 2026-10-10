@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -70,7 +70,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
     t.index ["event_id", "result"], name: "index_admission_actions_on_event_id_and_result"
     t.index ["event_id"], name: "index_admission_actions_on_event_id"
     t.index ["organization_id"], name: "index_admission_actions_on_organization_id"
-    t.index ["reverses_action_id"], name: "idx_admission_single_reversal", unique: true, where: "(reverses_action_id IS NOT NULL)"
+    t.index ["reverses_action_id"], name: "idx_admission_single_reversal", unique: true, where: "((reverses_action_id IS NOT NULL) AND (result = 0))"
     t.index ["reverses_action_id"], name: "index_admission_actions_on_reverses_action_id"
     t.index ["scanner_device_id", "sequence"], name: "idx_admission_device_sequence", unique: true, where: "((scanner_device_id IS NOT NULL) AND (sequence IS NOT NULL))"
     t.index ["scanner_device_id"], name: "index_admission_actions_on_scanner_device_id"
@@ -1001,6 +1001,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
     t.string "send_lease_token"
     t.datetime "send_lease_expires_at"
     t.string "transport_context_digest"
+    t.text "outbound_wire_body"
+    t.string "wire_body_digest"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
@@ -1012,6 +1014,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
     t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
     t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
     t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "message_deliveries_subject_present"
+    t.check_constraint "outbound_wire_body IS NULL AND wire_body_digest IS NULL OR outbound_wire_body IS NOT NULL AND wire_body_digest IS NOT NULL AND wire_body_digest::text = encode(sha256(convert_to(outbound_wire_body, 'UTF8'::name)), 'hex'::text)", name: "message_deliveries_wire_digest_matches"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7, 8])", name: "message_deliveries_status_valid"
   end
 

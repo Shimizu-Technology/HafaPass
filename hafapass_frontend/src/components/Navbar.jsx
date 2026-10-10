@@ -1,17 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { UserButton, SignedIn, useUser } from '@clerk/clerk-react'
+import { UserButton, SignedIn, useAuth } from '@clerk/clerk-react'
 import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search, Compass, Heart } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import apiClient from '../api/client'
+import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import LanguageSwitcher from './LanguageSwitcher'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
-function NavContent({ isSignedIn, clerkEnabled }) {
+function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-  const [userRole, setUserRole] = useState(null)
+  const [roleState, setRoleState] = useState(null)
+  const [roleAttempt, setRoleAttempt] = useState(0)
+  const authContext = useSyncExternalStore(subscribeApiAuthContext, getApiAuthContext)
+  const accountReady = Boolean(isLoaded && isSignedIn && userId && sessionId && authContext?.ready
+    && authContext.userId === userId && authContext.sessionId === sessionId)
+  const currentRole = accountReady && roleState?.context === authContext ? roleState : null
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const location = useLocation()
@@ -26,10 +31,22 @@ function NavContent({ isSignedIn, clerkEnabled }) {
   }, [])
 
   useEffect(() => {
-    if (isSignedIn) {
-      apiClient.get('/me').then(res => setUserRole(res.data.role)).catch(() => {})
-    }
-  }, [isSignedIn])
+    if (!accountReady) return
+    let active = true
+    setRoleState({ context: authContext, status: 'loading', role: null })
+    apiClient.get('/me', { authContext }).then(res => {
+      if (!active || getApiAuthContext() !== authContext) return
+      if (res.data.clerk_id !== userId || typeof res.data.role !== 'string') {
+        throw new Error('Account access response does not match the signed-in user')
+      }
+      setRoleState({ context: authContext, status: 'loaded', role: res.data.role })
+    }).catch(() => {
+      if (active && getApiAuthContext() === authContext) {
+        setRoleState({ context: authContext, status: 'failed', role: null })
+      }
+    })
+    return () => { active = false }
+  }, [accountReady, authContext, userId, roleAttempt])
 
   useEffect(() => {
     setMobileMenuOpen(false)
@@ -43,7 +60,7 @@ function NavContent({ isSignedIn, clerkEnabled }) {
       { to: '/saved', label: 'Saved', icon: Heart },
       { to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine },
       { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
-      ...(userRole === 'admin' ? [
+      ...(currentRole?.role === 'admin' ? [
         { to: '/admin', label: t('nav.admin'), icon: Shield },
       ] : []),
     ] : []),
@@ -80,12 +97,12 @@ function NavContent({ isSignedIn, clerkEnabled }) {
           </Link>
 
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-1">
+          <nav aria-label="Primary navigation" className="hidden xl:flex items-center gap-1">
             {navLinks.map(link => (
               <Link
                 key={link.to}
                 to={link.to}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                   isActive(link.to)
                     ? isDarkMode
                       ? 'text-white bg-white/15'
@@ -101,7 +118,7 @@ function NavContent({ isSignedIn, clerkEnabled }) {
           </nav>
 
           {/* Search */}
-          <div className="hidden md:flex items-center">
+          <div className="hidden xl:flex items-center">
             {searchOpen ? (
               <form
                 onSubmit={(e) => {
@@ -147,7 +164,7 @@ function NavContent({ isSignedIn, clerkEnabled }) {
           </div>
 
           {/* Right side */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden xl:flex items-center gap-3">
             <LanguageSwitcher isDarkMode={isDarkMode} />
             {clerkEnabled && isSignedIn ? (
               <SignedIn>
@@ -170,21 +187,30 @@ function NavContent({ isSignedIn, clerkEnabled }) {
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className={`md:hidden w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+            className={`xl:hidden w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
               isDarkMode
                 ? 'text-neutral-300 hover:text-white hover:bg-white/10'
                 : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100/80'
             }`}
             aria-label="Toggle menu"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="primary-mobile-navigation"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
       </div>
 
+      {isSignedIn && currentRole?.status === 'failed' && (
+        <div role="alert" className={`flex flex-wrap items-center justify-end gap-2 px-4 py-2 text-sm ${isDarkMode ? 'text-white' : 'text-neutral-700'}`}>
+          <span>Account access couldn’t load.</span>
+          <button className="rounded px-2 py-1 font-semibold underline underline-offset-2" onClick={() => setRoleAttempt(attempt => attempt + 1)}>Retry account access</button>
+        </div>
+      )}
+
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <div className={`md:hidden border-t ${
+        <nav id="primary-mobile-navigation" aria-label="Mobile navigation" className={`xl:hidden border-t ${
           isDarkMode
             ? 'border-white/10 bg-neutral-950/95 backdrop-blur-2xl'
             : 'border-neutral-200/50 bg-white/90 backdrop-blur-2xl'
@@ -231,15 +257,15 @@ function NavContent({ isSignedIn, clerkEnabled }) {
               </SignedIn>
             )}
           </div>
-        </div>
+        </nav>
       )}
     </header>
   )
 }
 
 function ClerkNavContent() {
-  const { isSignedIn } = useUser()
-  return <NavContent isSignedIn={Boolean(isSignedIn)} clerkEnabled />
+  const { isSignedIn, isLoaded, userId, sessionId } = useAuth()
+  return <NavContent isSignedIn={Boolean(isSignedIn)} isLoaded={isLoaded} userId={userId} sessionId={sessionId} clerkEnabled />
 }
 
 export default function Navbar() {

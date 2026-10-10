@@ -52,8 +52,14 @@ class MessageDeliveryJob < ApplicationJob
       if real_provider && (delivery.transport_context_digest.present? || delivery.provider_attempted_at.present? || previously_unknown)
         EmailService.verify_transport_context!(delivery)
       end
+      if real_provider && delivery.outbound_payload.blank? &&
+          (delivery.provider_attempted_at.present? || (delivery.provider == "resend" && delivery.attempts.positive?))
+        raise MessageWirePayload::Unavailable, "The frozen legacy payload is unavailable; reconcile before rendering"
+      end
       payload = delivery.outbound_payload.presence || EmailService.prepare_delivery_payload(delivery)
+      wire = real_provider ? MessageWirePayload.prepare(delivery, payload) : {}
       delivery.update!(outbound_payload: payload, payload_digest: Digest::SHA256.hexdigest(JSON.generate(payload.sort.to_h)),
+        **wire,
         transport_context_digest: real_provider ? (delivery.transport_context_digest || EmailService.transport_context_digest) : nil,
         provider: real_provider ? "resend" : "simulated", attempts: delivery.attempts + 1, status: :queued, last_error: nil,
         provider_attempted_at: real_provider ? (delivery.provider_attempted_at || Time.current) : nil,
