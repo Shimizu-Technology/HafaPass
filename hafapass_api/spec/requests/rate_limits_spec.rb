@@ -1,6 +1,13 @@
 require "rails_helper"
 
 RSpec.describe "Request throttles", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
+  # Keep each burst in one fixed throttle window, even across a wall-clock minute.
+  around do |example|
+    freeze_time { example.run }
+  end
+
   let(:event) { create(:event, :published, starts_at: 5.days.from_now) }
   let(:ticket_type) { create(:ticket_type, :free, event: event) }
 

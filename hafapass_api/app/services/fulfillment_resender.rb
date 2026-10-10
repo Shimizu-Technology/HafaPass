@@ -6,6 +6,7 @@ class FulfillmentResender
   class ResendError < StandardError; end
   class NotAvailable < ResendError; end
   class Cooldown < ResendError; end
+  class Unconfirmed < ResendError; end
 
   def self.call(order:, requested_by: nil)
     unless order.completed? || order.partially_refunded?
@@ -13,11 +14,14 @@ class FulfillmentResender
     end
 
     order.with_lock do
-      recent = order.message_deliveries.where(template: "fulfillment_resend")
-        .where(status: [:queued, :sent])
+      if order.message_deliveries.ticket_email.unconfirmed_provider_result.exists?
+        raise Unconfirmed, "A previous ticket email has an unconfirmed outcome. Check its status or contact support before requesting another email"
+      end
+
+      recent = order.message_deliveries.where(channel: "email", template: "fulfillment_resend")
         .where(created_at: COOLDOWN.ago..)
         .exists?
-      raise Cooldown, "Tickets were just sent. Please wait before trying again" if recent
+      raise Cooldown, "A ticket email was requested recently. Please wait two minutes before requesting another" if recent
 
       EmailService.send_order_confirmation_async(order, requested_by: requested_by, template: "fulfillment_resend")
     end

@@ -1,6 +1,27 @@
 require "rails_helper"
 
 RSpec.describe EmailService do
+  it "rejects an unprepared direct delivery before networking" do
+    order = create(:order, user: nil)
+    delivery = create(:message_delivery, order: order)
+    original = order.attributes
+    allow(described_class).to receive(:configured?).and_return(true)
+    allow(Resend::Emails).to receive(:send)
+    expect { described_class.send_order_confirmation(delivery.order, delivery: delivery) }
+      .to raise_error(described_class::TransportContextChanged)
+    expect(Resend::Emails).not_to have_received(:send)
+    expect(delivery.reload).to have_attributes(attempts: 0, outbound_wire_body: nil, provider_id: nil)
+    expect(order.reload.attributes).to eq(original)
+  end
+
+  it "rejects real transport without a journal" do
+    allow(described_class).to receive(:configured?).and_return(true)
+    allow(Resend::Emails).to receive(:send)
+    expect { described_class.send_order_confirmation(create(:order)) }
+      .to raise_error(MessageWirePayload::Unavailable, /durable MessageDelivery/)
+    expect(Resend::Emails).not_to have_received(:send)
+  end
+
   it "freezes the configured reply mailbox with the original provider payload across a lost response" do
     delivery = create(:message_delivery)
     allow(ENV).to receive(:[]).and_call_original
@@ -72,12 +93,12 @@ RSpec.describe EmailService do
       { id: "provider-email" }
     end
 
-    described_class.send_order_confirmation(order, delivery: delivery)
+    MessageDeliveryJob.new.perform(delivery.id)
 
     params, options = captured
     expect(options).to eq(idempotency_key: delivery.idempotency_key)
-    expect(params[:html]).to include("&lt;script&gt;buyer()&lt;/script&gt;", "&lt;img src=x onerror=alert(1)&gt;",
+    expect(params["html"]).to include("&lt;script&gt;buyer()&lt;/script&gt;", "&lt;img src=x onerror=alert(1)&gt;",
       "&lt;b&gt;Venue&lt;/b&gt;", "&lt;svg onload=alert(2)&gt;", "&lt;em&gt;Attendee&lt;/em&gt;")
-    expect(params[:html]).not_to include("<script>buyer()", "<img src=x", "<svg onload")
+    expect(params["html"]).not_to include("<script>buyer()", "<img src=x", "<svg onload")
   end
 end

@@ -11,6 +11,8 @@ gem "lograge"
 gem "stripe"
 gem "aws-sdk-s3"
 gem "resend"
+# HTTParty 0.24's response parser passes quirks_mode, removed by JSON 3.
+gem "json", ">= 2.21.2", "< 3"
 gem "sentry-rails", "~> 5.0"
 gem "sentry-ruby", "~> 5.0"
 gem "tzinfo-data", platforms: %i[ windows jruby ]
@@ -37,6 +39,7 @@ group :development, :test do
   gem "bundler-audit", require: false
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
   gem "factory_bot_rails"
+  gem "pdf-reader", "~> 2.15", require: false
   gem "rspec_junit_formatter"
   gem "rspec-rails", "~> 7.0"
   gem "rubocop-rails-omakase", require: false

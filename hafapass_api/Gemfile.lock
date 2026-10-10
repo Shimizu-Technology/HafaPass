@@ -1,6 +1,7 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    Ascii85 (2.0.1)
     action_text-trix (2.1.19)
       railties
     actioncable (8.1.4)
@@ -75,6 +76,7 @@ GEM
       securerandom (>= 0.3)
       tzinfo (~> 2.0, >= 2.0.5)
       uri (>= 0.13.1)
+    afm (1.0.0)
     ast (2.4.3)
     aws-eventstream (1.4.0)
     aws-partitions (1.1216.0)
@@ -134,6 +136,7 @@ GEM
       raabro (~> 1.4)
     globalid (1.4.0)
       activesupport (>= 6.1)
+    hashery (2.1.2)
     httparty (0.24.2)
       csv
       mini_mime (>= 1.0.0)
@@ -147,7 +150,7 @@ GEM
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
     jmespath (1.6.2)
-    json (3.0.2)
+    json (2.21.2)
     jwt (3.2.0)
       base64
     language_server-protocol (3.17.0.6)
@@ -200,6 +203,12 @@ GEM
       ast (~> 2.4.1)
       racc
     pdf-core (0.10.0)
+    pdf-reader (2.15.1)
+      Ascii85 (>= 1.0, < 3.0, != 2.0.0)
+      afm (>= 0.2.1, < 2)
+      hashery (~> 2.0)
+      ruby-rc4
+      ttfunk
     pg (1.6.3-aarch64-linux)
     pg (1.6.3-arm64-darwin)
     pg (1.6.3-x86_64-darwin)
@@ -335,6 +344,7 @@ GEM
       rubocop-performance (>= 1.24)
       rubocop-rails (>= 2.30)
     ruby-progressbar (1.13.0)
+    ruby-rc4 (0.1.5)
     rubyzip (3.4.1)
     securerandom (0.4.1)
     sentry-rails (5.28.1)
@@ -391,9 +401,11 @@ DEPENDENCIES
   debug
   dotenv-rails
   factory_bot_rails
+  json (>= 2.21.2, < 3)
   jwt
   lograge
   pagy (~> 9.0)
+  pdf-reader (~> 2.15)
   pg (~> 1.1)
   prawn (~> 2.5)
   prawn-table (~> 0.2)

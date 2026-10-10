@@ -201,7 +201,9 @@ class Api::V1::OrdersController < ApplicationController
 
   def resend
     delivery = FulfillmentResender.call(order: @order, requested_by: @current_user)
-    render json: { message: "Tickets sent", delivery_id: delivery.id }, status: :accepted
+    render json: { message: "Ticket email request saved", delivery_id: delivery.id }, status: :accepted
+  rescue FulfillmentResender::Unconfirmed => e
+    render json: { error: e.message, reconciliation_required: true }, status: :conflict
   rescue FulfillmentResender::Cooldown => e
     render json: { error: e.message }, status: :too_many_requests
   rescue FulfillmentResender::NotAvailable => e

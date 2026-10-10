@@ -184,6 +184,8 @@ class EmailService
 
     # ── Order Confirmation ──────────────────────────────────────────
     def send_order_confirmation(order, delivery: nil)
+      return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
+
       event = order.event
       tickets = order.tickets.includes(:ticket_type)
       html = build_order_confirmation_html(order, event, tickets)
@@ -194,6 +196,8 @@ class EmailService
     end
 
     def send_order_recovery(order, delivery: nil)
+      return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
+
       html = build_order_recovery_html(order)
       deliver(
         to: order.buyer_email,
@@ -220,6 +224,8 @@ class EmailService
 
     # ── Individual Ticket Email ─────────────────────────────────────
     def send_ticket_email(ticket, delivery: nil)
+      return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
+
       event = ticket.event
       ticket_type = ticket.ticket_type
       html = build_ticket_email_html(ticket, event, ticket_type)
@@ -380,8 +386,18 @@ class EmailService
         return { simulated: true }
       end
 
-      options = delivery ? { idempotency_key: delivery.idempotency_key } : {}
+      raise MessageWirePayload::Unavailable, "Real email requires a durable MessageDelivery attempt" unless delivery
+
+      options = { idempotency_key: delivery.idempotency_key }
+      verify_transport_context!(delivery)
+      params = MessageWirePayload.for_delivery(delivery)
       Resend::Emails.send(params, options: options)
+    end
+
+    def send_prepared_direct(delivery)
+      raise MessageWirePayload::Unavailable, "Real email requires a durable MessageDelivery attempt" unless delivery
+
+      send_delivery_payload(delivery)
     end
 
     # ── HTML Builders ───────────────────────────────────────────────
