@@ -14,6 +14,9 @@ module Api
             .includes(:event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc)
           pagy, paginated_events = paginate(events)
 
+          @event_permission_maps = OrganizationAuthorization.permissions_for_events(
+            user: current_user, organization: current_organization, events: paginated_events.to_a
+          )
           render json: {
             events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
             meta: pagination_meta(pagy)
@@ -385,6 +388,10 @@ module Api
         def event_json(event, include_ticket_types: false)
           json = {
             id: event.id,
+            organization_id: event.organization_id,
+            permissions: @event_permission_maps&.fetch(event.id) || OrganizationAuthorization.permissions_for(
+              user: current_user, organization: current_organization, event: event
+            ),
             title: event.title,
             slug: event.slug,
             description: event.description,

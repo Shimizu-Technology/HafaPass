@@ -17,6 +17,19 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "keeps frozen email wire bytes and digest out of buyer order responses" do
+    payload = { "to" => "buyer@synthetic.invalid", "html" => "<a href='https://synthetic.invalid/?guest_token=private-fixture-link'>Order</a>" }
+    body = JSON.generate(payload)
+    digest = Digest::SHA256.hexdigest(body)
+    create(:message_delivery, order: order, recipient: payload.fetch("to"), outbound_payload: payload,
+      outbound_wire_body: body, wire_body_digest: digest)
+
+    get "/api/v1/orders/#{order.id}", headers: access_headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include("outbound_wire_body", "wire_body_digest", "private-fixture-link", digest)
+  end
+
   it "accepts a URL token only for read-only bootstrap access" do
     get "/api/v1/orders/#{order.id}", params: { guest_token: token }
     expect(response).to have_http_status(:ok)
@@ -33,6 +46,40 @@ RSpec.describe "Buyer order access", type: :request do
 
     expect(response).to have_http_status(:accepted)
     expect(FulfillmentResender).to have_received(:call).with(order: order, requested_by: nil)
+  end
+
+  it "reports unconfirmed ticket-email recovery without creating a fresh request or exposing provider data" do
+    payload = { "html" => "private-fixture-email-body", "to" => order.buyer_email }
+    body = JSON.generate(payload)
+    digest = Digest::SHA256.hexdigest(body)
+    delivery = create(:message_delivery, order: order, template: "order_confirmation", status: :failed,
+      provider_outcome_unknown: true, provider_id: "private-provider-id", outbound_payload: payload,
+      outbound_wire_body: body, wire_body_digest: digest, transport_context_digest: "private-context",
+      idempotency_key: "private-provider-key")
+    snapshot = delivery.reload.attributes
+    allow(EmailService).to receive(:send_order_confirmation_async)
+
+    expect { post "/api/v1/orders/#{order.id}/resend", headers: access_headers }.not_to change(MessageDelivery, :count)
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body).to include("reconciliation_required" => true)
+    expect(delivery.reload.attributes).to eq(snapshot)
+    expect(EmailService).not_to have_received(:send_order_confirmation_async)
+
+    get "/api/v1/orders/#{order.id}", headers: access_headers
+    expect(response.parsed_body.fetch("confirmation_delivery").keys).to contain_exactly(
+      "status", "simulated", "updated_at", "reconciliation_required"
+    )
+    expect(response.parsed_body.dig("confirmation_delivery", "reconciliation_required")).to be(true)
+    expect(response.body).not_to include("private-fixture-email-body", "private-provider-id", "private-context", "private-provider-key", digest,
+      "outbound_wire_body", "wire_body_digest", "transport_context", "idempotency_key")
+  end
+
+  it "keeps a quickly delivered resend inside the two-minute cooldown" do
+    create(:message_delivery, order: order, template: "fulfillment_resend", status: :delivered)
+    allow(EmailService).to receive(:send_order_confirmation_async)
+    expect { post "/api/v1/orders/#{order.id}/resend", headers: access_headers }.not_to change(MessageDelivery, :count)
+    expect(response).to have_http_status(:too_many_requests)
+    expect(EmailService).not_to have_received(:send_order_confirmation_async)
   end
 
   it "does not resend unusable tickets for a fully refunded order" do
