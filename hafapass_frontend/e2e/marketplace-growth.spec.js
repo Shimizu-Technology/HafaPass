@@ -46,3 +46,54 @@ test('partner link records anonymous attribution and opens the intended event', 
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('hafapass_attribution')))
   expect(stored).toMatchObject({ distribution_code: 'GUAM123', source: 'hotel', campaign: 'front-desk' })
 })
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test(`public event actions remain reachable before and after setting a reminder at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: {} }))
+    await page.route('**/api/v1/events/family-night-market**', route => json(route, { ...event,
+      title: 'Music & Food <show> 🎟️', description: 'A synthetic community event.', status: 'published',
+      venue_address: 'Hagåtña', attendee_count: 0, attendees_preview: [], favorited: false, reminder: null,
+      organizer: { id: 5, business_name: 'Island Events', slug: 'island-events', verified: true, followed: false },
+    }))
+    await page.route('**/api/v1/marketplace_funnel_events', route => json(route, {}, 201))
+    const reminderRequests = []
+    await page.route('**/api/v1/me/event_reminders**', route => {
+      reminderRequests.push({ method: route.request().method(), body: route.request().postDataJSON() })
+      return json(route, {}, route.request().method() === 'POST' ? 201 : 200)
+    })
+    await page.goto('/events/family-night-market')
+    await expect(page.getByRole('heading', { name: 'Music & Food <show> 🎟️' })).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+
+    const checkGeometry = async label => {
+      await expect(page.getByRole('link', { name: 'Add to Calendar' })).toBeVisible()
+      for (const name of ['Share', 'Save', label]) await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
+      const bounds = await page.getByRole('button', { name: label, exact: true }).locator('..').evaluate(row =>
+        Array.from(row.children, control => {
+          const box = control.getBoundingClientRect()
+          return { left: box.left, right: box.right, top: Math.round(box.top) }
+        }))
+      expect(bounds).toHaveLength(4)
+      for (const box of bounds) {
+        expect(box.left).toBeGreaterThanOrEqual(0)
+        expect(box.right).toBeLessThanOrEqual(viewport.width)
+      }
+      const rows = new Set(bounds.map(box => box.top))
+      expect(rows.size).toBe(viewport.width === 390 ? 2 : 1)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
+    }
+    await checkGeometry('Remind me')
+    const remind = page.getByRole('button', { name: 'Remind me', exact: true })
+    await remind.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: 'Reminder set', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    expect(reminderRequests).toEqual([{ method: 'POST', body: { event_id: event.id } }])
+    await checkGeometry('Reminder set')
+    await page.getByRole('button', { name: 'Reminder set', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Remind me', exact: true })).toHaveAttribute('aria-pressed', 'false')
+    expect(reminderRequests.at(-1).method).toBe('DELETE')
+    await checkGeometry('Remind me')
+  })
+}

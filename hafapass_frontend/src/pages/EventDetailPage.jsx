@@ -238,7 +238,7 @@ export default function EventDetailPage() {
               transition={{ duration: 0.5 }}
             >
               {/* Action buttons */}
-              <div className="flex items-center gap-2 mb-6">
+              <div className="flex flex-wrap items-center gap-2 mb-6">
                 {event.starts_at && (
                   <a
                     href={buildGoogleCalendarUrl(event)}
