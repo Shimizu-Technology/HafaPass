@@ -29,24 +29,39 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
   })
   afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
 
-  it('keeps reversed admissions visible while offering Undo only for the later admission', async () => {
+  it('distinguishes same-name tickets and sends Undo for the selected admission only', async () => {
     const eventId = 94401
     const device = { id: 43, identifier: 'history-device', effective: true, last_sequence: 3,
       authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
     const ticket = { ticket_id: 14, state: 'admitted', credential_hash: 'c'.repeat(64), attendee_name: 'Guest' }
-    const manifest = await signedManifest(eventId, [ticket])
+    const manifest = await signedManifest(eventId, [ticket, { ...ticket, ticket_id: 15 }])
+    const synced = []
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
       ? { events: [{ id: eventId, title: 'History event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: { can_reverse: true }, recent_actions: [
-        { action_uuid: 'admission-a', ticket_id: 14, kind: 'admit', result: 'accepted', reversed: true, attendee: { attendee_name: 'Earlier Guest admission' } },
-        { action_uuid: 'admission-b', ticket_id: 14, kind: 'admit', result: 'accepted', reversed: false, attendee: { attendee_name: 'Later Guest admission' } },
+        { action_uuid: 'admission-a', ticket_id: 14, kind: 'admit', result: 'accepted', reversed: true, attendee: { attendee_name: 'José & Ana', code: 'HP-T14' } },
+        { action_uuid: 'admission-b', ticket_id: 15, kind: 'admit', result: 'accepted', reversed: false, attendee: { attendee_name: 'José & Ana', code: 'HP-T15' } },
       ] } }))
-    apiClient.post.mockResolvedValue({ data: device })
+    apiClient.post.mockImplementation((url, payload) => {
+      if (!url.endsWith('/sync')) return Promise.resolve({ data: device })
+      synced.push(...payload.actions)
+      return Promise.resolve({ data: { device: { ...device, last_sequence: payload.actions.at(-1).sequence },
+        results: payload.actions.map(action => ({ ...action, result: 'accepted', reason_code: 'reversed' })), summary: {} } })
+    })
     render(<MemoryRouter initialEntries={[`/dashboard/scanner?event=${eventId}`]}><ScannerPage /></MemoryRouter>)
-    expect(await screen.findByText('Earlier Guest admission')).toBeInTheDocument()
-    expect(screen.getByText('Later Guest admission')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Reversed' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeEnabled()
+    expect(await screen.findByText('HP-T14')).toBeInTheDocument()
+    expect(screen.getByText('HP-T15')).toBeInTheDocument()
+    expect(screen.getAllByText('José & Ana')).toHaveLength(2)
+    const reversed = screen.getByRole('button', { name: 'Reversed admission for HP-T14' })
+    const undo = screen.getByRole('button', { name: 'Undo admission for HP-T15' })
+    expect(reversed).toBeDisabled()
+    expect(undo).toBeEnabled()
+    await screen.findByText(/Manifest v1/)
+    await userEvent.setup().click(reversed)
+    expect(synced).toHaveLength(0)
+    await userEvent.setup().click(undo)
+    await waitFor(() => expect(synced).toHaveLength(1))
+    expect(synced[0]).toMatchObject({ kind: 'reverse', reverses_action_uuid: 'admission-b', ticket_id: 15 })
   })
 
   it.each([['download', 'owner-b', false], ['download', 'owner-a', false], ['setup', 'owner-a', false],

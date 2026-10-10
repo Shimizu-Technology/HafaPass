@@ -660,12 +660,15 @@ export default function ScannerPage({ offlineOnly = false }) {
             <section className="rounded-2xl border border-neutral-200 bg-white p-5">
               <h2 className="mb-3 font-semibold">Recent admissions</h2>
               <div className="space-y-2">
-                {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => (
-                  <div key={action.action_uuid} className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 p-2 text-xs">
-                    <span>{action.attendee?.attendee_name || action.attendee?.code}</span>
-                    <button disabled={action.reversed} onClick={() => reverseAdmission(action)} className="flex items-center gap-1 font-semibold text-amber-700 disabled:cursor-default disabled:text-neutral-500"><RotateCcw className="h-3.5 w-3.5" /> {action.reversed ? 'Reversed' : 'Undo'}</button>
-                  </div>
-                ))}
+                {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => {
+                  const ticketCode = action.attendee?.code || `HP-T${action.ticket_id}`
+                  return (
+                    <div key={action.action_uuid} className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 p-2 text-xs">
+                      <span className="min-w-0 break-words"><span className="block">{action.attendee?.attendee_name || 'Attendee'}</span><span className="block font-semibold text-neutral-600">{ticketCode}</span></span>
+                      <button aria-label={`${action.reversed ? 'Reversed' : 'Undo'} admission for ${ticketCode}`} disabled={action.reversed} onClick={() => reverseAdmission(action)} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-lg px-3 font-semibold text-amber-700 disabled:cursor-default disabled:text-neutral-500"><RotateCcw className="h-3.5 w-3.5" /> {action.reversed ? 'Reversed' : 'Undo'}</button>
+                    </div>
+                  )
+                })}
               </div>
             </section>
           )}

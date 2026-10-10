@@ -341,14 +341,14 @@ export default function DashboardPage() {
  }
 
  if (!profile && organization) return <div className="mx-auto max-w-2xl px-4 py-8">
-  <h1 className="text-2xl font-bold">{organization.name}</h1>
+  <h1 className="break-words text-2xl font-bold">{organization.name}</h1>
   <p className="mt-3">{canManageProfile ? 'Organizer setup is unavailable for this organization. Select another organization or contact support.' : 'This organization has no organizer profile. Ask its owner to contact support.'}</p>
   {organizations.length > 1 && <label className="mt-4 block">Organization
    <select aria-label="Organization" value={selectedOrganizationId} onChange={event => {
     window.localStorage.setItem('hafapass_organization_id', event.target.value)
     setSelectedOrganizationId(event.target.value)
     fetchDashboard()
-   }} className="input mt-2">
+   }} className="input mt-2 min-h-[44px] min-w-0 max-w-full">
     {organizations.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
    </select>
   </label>}
@@ -364,29 +364,29 @@ export default function DashboardPage() {
 
  return (
   <div className="max-w-4xl mx-auto px-4 py-8">
-   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-   <div>
+   <div className="flex min-w-0 flex-col gap-4 mb-8 lg:flex-row lg:items-start lg:justify-between">
+   <div className="min-w-0 flex-1">
      <div className="flex items-center gap-2">
-      <h1 className="text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
-      {canManageProfile && <button onClick={() => setShowEditProfile(true)} className="p-1.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
+      <h1 className="min-w-0 flex-1 break-words text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
+      {canManageProfile && <button onClick={() => setShowEditProfile(true)} className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center p-2.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
        <Pencil className="w-4 h-4" />
       </button>}
      </div>
      <p className="text-neutral-600 mt-1">{canCreate ? 'Manage your events and track ticket sales' : 'Open your assigned event tasks'}</p>
      {organizations.length > 1 && (
-      <label className="mt-3 flex items-center gap-2 text-sm text-neutral-600">
+      <label className="mt-3 flex min-w-0 flex-col gap-2 text-sm text-neutral-600 sm:flex-row sm:items-center">
        Organization
        <select value={selectedOrganizationId} onChange={event => {
         window.localStorage.setItem('hafapass_organization_id', event.target.value)
         setSelectedOrganizationId(event.target.value)
         fetchDashboard()
-       }} className="input !w-auto !py-1.5 text-sm">
+       }} className="input min-h-[44px] min-w-0 max-w-full !w-full !py-2 text-sm sm:flex-1 sm:max-w-sm">
         {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {(organization.role || 'staff').replaceAll('_', ' ')}</option>)}
        </select>
       </label>
      )}
     </div>
-    <div className="flex items-center gap-3">
+    <div className="flex min-w-0 flex-wrap items-center gap-3 lg:justify-end">
      {canScan && <Link
       to="/dashboard/scanner"
       className="inline-flex items-center justify-center gap-2 bg-brand-500 text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-brand-600 transition-colors text-sm"
@@ -429,19 +429,19 @@ export default function DashboardPage() {
    {canManageProfile && <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="organizer-readiness-title">
     <div className="flex items-start gap-3">
      <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5 text-brand-600" /></div>
-     <div className="flex-1">
+     <div className="min-w-0 flex-1">
       <h2 id="organizer-readiness-title" className="font-semibold text-neutral-900">Organizer readiness</h2>
       <p className="text-sm text-neutral-500 mt-1">These platform checks protect attendees and are required before an event can be published.</p>
       <ul className="mt-4 space-y-3">
-       <li className="flex items-center justify-between gap-4">
-        <span className="flex items-center gap-2 text-sm text-neutral-700">{profile.policy_accepted ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} <Link className="underline" to="/policies/organizer-agreement" target="_blank">Organizer agreement</Link> {profile.policy_accepted ? 'accepted' : 'requires acceptance'}</span>
-        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => window.confirm(`I accept organizer agreement ${profile.current_policy_version} and agree to publish accurate event information and honor attendee purchases and refunds.`) && updateReadiness('accept_policy')} className="btn-secondary text-xs !py-2">Accept policy</button>}
+       <li className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-neutral-700">{profile.policy_accepted ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} <Link className="inline-flex min-h-[44px] items-center underline" to="/policies/organizer-agreement" target="_blank">Organizer agreement</Link> {profile.policy_accepted ? 'accepted' : 'requires acceptance'}</span>
+        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => window.confirm(`I accept organizer agreement ${profile.current_policy_version} and agree to publish accurate event information and honor attendee purchases and refunds.`) && updateReadiness('accept_policy')} className="btn-secondary min-h-[44px] text-xs !py-2">Accept policy</button>}
        </li>
-       <li className="flex items-center justify-between gap-4">
-        <span className="flex items-center gap-2 text-sm text-neutral-700">{profile.verification_status === 'verified' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Identity verification: <strong className="capitalize">{profile.verification_status}</strong></span>
-        {['unverified', 'rejected'].includes(profile.verification_status) && <button type="button" disabled={readinessLoading} onClick={() => updateReadiness('submit_verification')} className="btn-secondary text-xs !py-2">Submit for review</button>}
+       <li className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-neutral-700">{profile.verification_status === 'verified' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Identity verification: <strong className="capitalize">{profile.verification_status}</strong></span>
+        {['unverified', 'rejected'].includes(profile.verification_status) && <button type="button" disabled={readinessLoading} onClick={() => updateReadiness('submit_verification')} className="btn-secondary min-h-[44px] text-xs !py-2">Submit for review</button>}
        </li>
-       <li className="flex items-center justify-between gap-4 text-sm text-neutral-700"><span className="flex items-center gap-2">{profile.payout_ready ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Paid-event payouts {profile.payout_ready ? `ready via ${profile.connected_account?.provider}` : 'not ready'}</span>{!profile.payout_ready && <Link to="/dashboard/settings" className="font-semibold text-brand-600 hover:text-brand-700">Set up</Link>}</li>
+       <li className="flex flex-col items-start gap-3 text-sm text-neutral-700 sm:flex-row sm:items-center sm:justify-between"><span className="flex min-w-0 flex-wrap items-center gap-2">{profile.payout_ready ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Paid-event payouts {profile.payout_ready ? `ready via ${profile.connected_account?.provider}` : 'not ready'}</span>{!profile.payout_ready && <Link to="/dashboard/settings" className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center font-semibold text-brand-600 hover:text-brand-700">Set up</Link>}</li>
       </ul>
       {profile.verification_notes && <p className="mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3">Review note: {profile.verification_notes}</p>}
      </div>
