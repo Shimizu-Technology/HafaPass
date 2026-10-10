@@ -293,7 +293,9 @@ export async function queueReversal({ eventId, deviceId, manifestVersion, ticket
     event_id: Number(eventId),
     ticket_id: Number(ticketId),
     status: 'pending_reverse',
-    admission_status_before_reverse: state?.status || 'accepted',
+    admission_status_before_reverse: state?.status === 'pending_reverse'
+      ? state.admission_status_before_reverse || 'accepted'
+      : state?.status || 'accepted',
     reversal_action_uuid: action.action_uuid,
   })
   await transaction.done

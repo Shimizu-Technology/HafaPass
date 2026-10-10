@@ -66,11 +66,13 @@ module Admissions
     def self.canonical_json(value)
       case value
       when Hash
-        "{#{value.stringify_keys.sort.map { |key, item| "#{key.to_json}:#{canonical_json(item)}" }.join(",")}}"
+        "{#{value.stringify_keys.sort.map { |key, item| "#{JSON.generate(key)}:#{canonical_json(item)}" }.join(",")}}"
       when Array
         "[#{value.map { |item| canonical_json(item) }.join(",")}]"
       else
-        value.to_json
+        # Explicit protocol encoding matches browser JSON.stringify; Rails'
+        # HTML-safe escaping would change manifest digest/signature bytes.
+        JSON.generate(value)
       end
     end
 

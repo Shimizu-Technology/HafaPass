@@ -9,6 +9,15 @@ RSpec.describe Admissions::ManifestBuilder do
   let(:order) { create(:order, event: event, buyer_email: "door@example.com", buyer_name: "Door Guest") }
   let!(:ticket) { create(:ticket, event: event, order: order, ticket_type: ticket_type) }
 
+  it "matches browser JSON.stringify bytes for schema scalars, controls, and Unicode" do
+    value = { "z" => ["A\tB\nC\r\"\\", nil, true, false, 17],
+      "event" => { "title" => "Music & Food <show> 🎟️ José\u2028", "id" => 9 } }
+    # SHA-256 of the recursively sorted JSON.stringify representation, independently
+    # generated in Node. Rails HTML escaping must not alter signed protocol bytes.
+    expect(Digest::SHA256.hexdigest(described_class.canonical_json(value)))
+      .to eq("75f44dd8bb67cc39d30cd34741caa6a9867b0b01a28cc3e764922ad59d485d4a")
+  end
+
   it "builds a reusable signed manifest with only door-safe attendee data" do
     manifest = described_class.call(event: event, actor: profile.user)
 
