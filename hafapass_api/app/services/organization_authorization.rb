@@ -21,6 +21,22 @@ class OrganizationAuthorization
 
   ASSIGNMENT_REQUIRED_ROLES = %w[box_office scanner].freeze
 
+  def self.permissions_for(user:, organization:, event: nil)
+    new(user: user, organization: organization, event: event).permissions
+  end
+
+  def self.permissions_for_events(user:, organization:, events:)
+    at = Time.current
+    membership = organization.organization_memberships.find_by(user: user)
+    assignments = organization.event_staff_assignments.where(user: user, event_id: events.map(&:id)).effective(at)
+      .pluck(:event_id, :role).group_by(&:first)
+    events.to_h do |event|
+      roles = assignments.fetch(event.id, []).map(&:last)
+      [event.id, new(user: user, organization: organization, event: event, at: at,
+        membership: membership, assignment_roles: roles).permissions]
+    end
+  end
+
   def self.allowed?(**)
     new(**).allowed?
   end
@@ -36,33 +52,39 @@ class OrganizationAuthorization
     organization.events.where(id: assigned_ids)
   end
 
-  def initialize(user:, organization:, permission:, event: nil, at: Time.current)
+  def initialize(user:, organization:, permission: nil, event: nil, at: Time.current, membership: nil, assignment_roles: nil)
     @user = user
     @organization = organization
-    @permission = permission.to_sym
+    @permission = permission&.to_sym
     @event = event
     @at = at
+    @membership = membership
+    @assignment_roles = assignment_roles
   end
 
-  def allowed?
+  def permissions
+    PERMISSIONS.values.flatten.uniq.to_h { |permission| [permission, allowed?(permission)] }
+  end
+
+  def allowed?(permission = @permission)
     return true if user.admin?
 
-    membership = organization.organization_memberships.find_by(user: user)
+    membership = @membership ||= organization.organization_memberships.find_by(user: user)
     return false unless membership&.effective?(at: at)
     return false unless event.nil? || event.organization_id == organization.id
 
-    membership_allowed = role_allowed?(membership.role)
+    membership_allowed = role_allowed?(membership.role, permission)
     if event && ASSIGNMENT_REQUIRED_ROLES.include?(membership.role)
       membership_allowed &&= assignment_allowed?(membership.role)
     end
-    membership_allowed || assignment_roles.any? { |role| role_allowed?(role, assignment: true) }
+    membership_allowed || assignment_roles.any? { |role| role_allowed?(role, permission, assignment: true) }
   end
 
   private
 
   attr_reader :user, :organization, :permission, :event, :at
 
-  def role_allowed?(role, assignment: false)
+  def role_allowed?(role, permission, assignment: false)
     matrix = assignment ? EVENT_ASSIGNMENT_PERMISSIONS : PERMISSIONS
     matrix.fetch(role.to_sym, []).include?(permission)
   end

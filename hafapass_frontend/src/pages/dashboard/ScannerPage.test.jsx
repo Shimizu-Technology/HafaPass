@@ -1,11 +1,14 @@
 import 'fake-indexeddb/auto'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render as testingRender, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
 import { clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, localScanState, queuedActions, purgeExpiredAdmissionAccess, queueAdmission, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
+
+const render = element => testingRender(<MemoryRouter>{element}</MemoryRouter>)
 
 const camera = vi.hoisted(() => ({ callbacks: [], stops: [] }))
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
@@ -72,7 +75,7 @@ describe('scanner recovery and camera ownership', () => {
     })
     render(<ScannerPage />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Undo' }))
+    await user.click(await screen.findByRole('button', { name: 'Undo admission for HP-T501' }))
     expect(await screen.findByText('Admission already reversed')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
     await screen.findByText(/Manifest v2/)
