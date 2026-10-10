@@ -2,6 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart, Copy, RefreshCw, ClipboardList, PauseCircle, Archive } from 'lucide-react'
+import EventAccessNotice from '../../components/EventAccessNotice'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
@@ -55,6 +56,8 @@ export default function EditEventPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [event, setEvent] = useState(null)
+  const permissions = event?.permissions || {}
+  const canManage = permissions.manage_events === true
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [successMessage, setSuccessMessage] = useState(null)
@@ -156,6 +159,7 @@ export default function EditEventPage() {
   const validate = () => {
     const errors = {}
     if (!form.title.trim()) errors.title = 'Title is required'
+    if (!canManage) { setFormErrors(errors); return Object.keys(errors).length === 0 }
     if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
     if (!form.starts_at) errors.starts_at = 'Start date/time is required'
     if (form.ends_at && form.starts_at) {
@@ -183,7 +187,7 @@ export default function EditEventPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!validate()) return
+    if (!permissions.edit_event_content || !validate()) return
     setSubmitting(true)
     setSubmitError(null)
     setSuccessMessage(null)
@@ -205,7 +209,11 @@ export default function EditEventPage() {
         recurrence_end_date: form.recurrence_end_date || null,
         show_attendees: form.show_attendees
       }
-      if (scheduleChanged) payload.change_reason = changeReason.trim() || undefined
+      if (!canManage) {
+        const presentationFields = ['title', 'short_description', 'description', 'category', 'cover_image_url']
+        Object.keys(payload).forEach(key => { if (!presentationFields.includes(key)) delete payload[key] })
+      }
+      if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
       const res = await apiClient.put(`/organizer/events/${id}`, payload)
       setEvent(current => ({ ...current, ...res.data }))
       setChangeReason('')
@@ -293,6 +301,8 @@ export default function EditEventPage() {
     )
   }
 
+  if (!permissions.edit_event_content) return <EventAccessNotice event={event} />
+
   const statusBadge = STATUS_BADGES[event?.status] || STATUS_BADGES.draft
 
   return (
@@ -315,7 +325,7 @@ export default function EditEventPage() {
               <Eye className="w-4 h-4" /> Preview
             </a>
           )}
-          <button
+          {canManage && <button
             onClick={async () => {
               setCloning(true)
               try {
@@ -332,26 +342,26 @@ export default function EditEventPage() {
             className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1 disabled:opacity-50"
           >
             <Copy className="w-4 h-4" /> {cloning ? 'Cloning...' : 'Clone'}
-          </button>
-          <Link to={`/dashboard/events/${id}/box-office`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+          </button>}
+          {permissions.box_office && <Link to={`/dashboard/events/${id}/box-office`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ShoppingCart className="w-4 h-4" /> Box Office
-          </Link>
-          {capabilities.assigned_seating && <Link to={`/dashboard/events/${id}/seating`} className="text-brand-500 hover:text-brand-700 text-sm font-medium">
+          </Link>}
+          {permissions.manage_inventory && capabilities.assigned_seating && <Link to={`/dashboard/events/${id}/seating`} className="text-brand-500 hover:text-brand-700 text-sm font-medium">
             Assigned Seating
           </Link>}
-          <Link to={`/dashboard/events/${id}/attendees`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+          {permissions.view_attendees && <Link to={`/dashboard/events/${id}/attendees`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <Users className="w-4 h-4" /> Attendees
-          </Link>
-          <Link to={`/dashboard/events/${id}/team`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+          </Link>}
+          {permissions.manage_staff && <Link to={`/dashboard/events/${id}/team`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <Users className="w-4 h-4" /> Team
-          </Link>
-          <Link to={`/dashboard/events/${id}/waitlist`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+          </Link>}
+          {permissions.manage_attendees && <Link to={`/dashboard/events/${id}/waitlist`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ClipboardList className="w-4 h-4" /> Waitlist
-          </Link>
-          {capabilities.advanced_sales_tools && <Link to={`/dashboard/events/${id}/sales-tools`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
+          </Link>}
+          {permissions.manage_marketing && capabilities.advanced_sales_tools && <Link to={`/dashboard/events/${id}/sales-tools`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
             <ShoppingCart className="w-4 h-4" /> Sales tools
           </Link>}
-          {['published', 'completed', 'cancelled'].includes(event?.status) && (
+          {permissions.view_finance && ['published', 'completed', 'cancelled'].includes(event?.status) && (
             <Link to={`/dashboard/events/${id}/analytics`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
               View Analytics
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -370,7 +380,7 @@ export default function EditEventPage() {
       </div>
 
       {/* Publish Button for Draft Events */}
-      {event?.status === 'draft' && (
+      {canManage && event?.status === 'draft' && (
         <div className="mb-6 p-4 bg-brand-50 border border-brand-200 rounded-xl">
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <div>
@@ -501,16 +511,17 @@ export default function EditEventPage() {
                   {categories.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
                 </select>
               </div>
-              <div>
+              {canManage && <div>
                 <label htmlFor="age_restriction" className="block text-sm font-medium text-neutral-700 mb-1">Age Restriction</label>
                 <select id="age_restriction" value={form.age_restriction} onChange={(e) => updateField('age_restriction', e.target.value)} className="input" disabled={submitting}>
                   {AGE_RESTRICTIONS.map(ar => <option key={ar.value} value={ar.value}>{ar.label}</option>)}
                 </select>
-              </div>
+              </div>}
             </div>
           </div>
         </section>
 
+        {canManage && <>
         {/* Venue Section */}
         <section>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Venue</h2>
@@ -661,6 +672,8 @@ export default function EditEventPage() {
           </div>
         </section>
 
+        </>}
+
         {/* Submit */}
         <div className="pt-4 border-t border-neutral-200">
           <button type="submit" disabled={submitting} className="btn-primary w-full sm:w-auto">
@@ -670,10 +683,10 @@ export default function EditEventPage() {
       </form>
 
       {/* Ticket Types CRUD */}
-      <section id="ticket-types" className="scroll-mt-24"><TicketTypeCRUD remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} /></section>
+      {permissions.manage_inventory && <section id="ticket-types" className="scroll-mt-24"><TicketTypeCRUD remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} /></section>}
 
       {/* Danger Zone — HP-28 */}
-      {event && event.status !== 'archived' && (
+      {canManage && event && event.status !== 'archived' && (
         <div className="mt-8 border border-neutral-200 rounded-xl p-5 sm:p-6">
           <h2 className="text-lg font-semibold text-red-700 mb-1 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5" /> Event actions

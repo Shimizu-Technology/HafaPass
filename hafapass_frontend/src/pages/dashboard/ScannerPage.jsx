@@ -3,6 +3,7 @@ import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 import {
   applySyncResults, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
@@ -57,6 +58,8 @@ function ResultPanel({ result }) {
 }
 
 export default function ScannerPage({ offlineOnly = false }) {
+  const [searchParams] = useSearchParams()
+  const requestedEventId = searchParams.get('event')
   const [events, setEvents] = useState([])
   const [eventId, setEventId] = useState('')
   const [device, setDevice] = useState(null)
@@ -307,9 +310,11 @@ export default function ScannerPage({ offlineOnly = false }) {
   }, [offlineOnly])
 
   useEffect(() => {
+    let active = true
     const restoreSaved = async () => {
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
       const cached = saved ? await loadAuthorizedScanner(saved).catch(() => null) : null
+      if (!active) return
       if (cached) {
         setEvents([{ ...cached.manifest.payload.event, id: Number(saved) }])
         setEventId(saved)
@@ -318,16 +323,18 @@ export default function ScannerPage({ offlineOnly = false }) {
         setSetupBusy(false)
       }
     }
-    if (offlineOnly) { void restoreSaved(); return }
+    if (offlineOnly) { void restoreSaved(); return () => { active = false } }
     apiClient.get('/organizer/events').then(response => {
+      if (!active) return
       const accessible = response.data.events || []
       setEvents(accessible)
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
-      const initial = accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
+      const initial = accessible.find(event => String(event.id) === requestedEventId)?.id || accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
       if (initial) setEventId(String(initial))
       else setSetupBusy(false)
-    }).catch(restoreSaved)
-  }, [offlineOnly])
+    }).catch(() => { if (active) void restoreSaved() })
+    return () => { active = false }
+  }, [offlineOnly, requestedEventId])
 
   useEffect(() => {
     if (!eventId) return

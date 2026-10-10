@@ -1,11 +1,14 @@
 import 'fake-indexeddb/auto'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render as testingRender, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
 import { clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, localScanState, queuedActions, purgeExpiredAdmissionAccess, queueAdmission, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
+
+const render = element => testingRender(<MemoryRouter>{element}</MemoryRouter>)
 
 const camera = vi.hoisted(() => ({ callbacks: [], stops: [] }))
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))

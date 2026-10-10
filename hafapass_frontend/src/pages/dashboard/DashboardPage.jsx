@@ -106,13 +106,16 @@ function StatusBadge({ status }) {
 }
 
 function EventListCard({ event }) {
+ const permissions = event.permissions || {}
+ const destination = permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : `/dashboard/events/${event.id}/edit`
+ const actionLabel = permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : "View event"
  const ticketsSold = event.ticket_types
   ? event.ticket_types.reduce((sum, tt) => sum + (tt.quantity_sold || 0), 0)
   : 0
 
  return (
   <Link
-   to={`/dashboard/events/${event.id}/edit`}
+   to={destination}
    className="block bg-white rounded-xl shadow-sm border border-neutral-200 hover:shadow-md hover:border-brand-200 transition-all p-4"
   >
    <div className="flex items-start justify-between gap-3">
@@ -123,6 +126,7 @@ function EventListCard({ event }) {
      </p>
     </div>
     <StatusBadge status={event.status} />
+    <span className="text-sm font-semibold text-brand-600">{actionLabel}</span>
    </div>
    <div className="mt-3 flex items-center gap-4 text-sm text-neutral-600">
     <span className="flex items-center gap-1">
@@ -235,6 +239,13 @@ export default function DashboardPage() {
  const [readinessLoading, setReadinessLoading] = useState(false)
  const [organizations, setOrganizations] = useState([])
  const [selectedOrganizationId, setSelectedOrganizationId] = useState('')
+ const loadGeneration = useRef(0)
+ const organization = organizations.find(item => String(item.id) === selectedOrganizationId)
+ const permissions = organization?.permissions || {}
+ const canManageProfile = permissions.manage_organization === true
+ const canCreate = permissions.manage_events === true
+ const canScan = events.some(event => event.permissions?.scan)
+ const canManageSettings = permissions.manage_members || permissions.manage_payout_settings
 
  const updateReadiness = async (path) => {
   setReadinessLoading(true)
@@ -250,10 +261,13 @@ export default function DashboardPage() {
  }
 
  const fetchDashboard = async () => {
+  const generation = ++loadGeneration.current
+  const current = () => generation === loadGeneration.current
   setLoading(true)
   setError(null)
   try {
    const organizationsRes = await apiClient.get('/organizer/organizations')
+   if (!current()) return
    const availableOrganizations = Array.isArray(organizationsRes.data) ? organizationsRes.data : []
    setOrganizations(availableOrganizations)
    const storedOrganizationId = window.localStorage.getItem('hafapass_organization_id')
@@ -265,14 +279,25 @@ export default function DashboardPage() {
     window.localStorage.removeItem('hafapass_organization_id')
     setSelectedOrganizationId('')
    }
+   const expectedOrganization = selectedOrganization ? String(selectedOrganization.id) : null
+   const contextCurrent = () => current() && window.localStorage.getItem('hafapass_organization_id') === expectedOrganization
    const profileRes = await apiClient.get('/organizer_profile')
+   if (!contextCurrent()) {
+    if (current()) setError('Organization selection changed. Reload your dashboard to continue.')
+    return
+   }
    setProfile(profileRes.data)
 
    const eventsRes = await apiClient.get('/organizer/events')
+   if (!contextCurrent()) {
+    if (current()) setError('Organization selection changed. Reload your dashboard to continue.')
+    return
+   }
    // Handle both paginated { events: [...], meta: {...} } and legacy array response
    const eventsData = eventsRes.data.events || eventsRes.data
    setEvents(Array.isArray(eventsData) ? eventsData : [])
   } catch (err) {
+   if (!current()) return
    if (err.response?.status === 404) {
     // No organizer profile — show create form
     setProfile(null)
@@ -282,12 +307,13 @@ export default function DashboardPage() {
     setError('Failed to load dashboard. Please try again.')
    }
   } finally {
-   setLoading(false)
+   if (current()) setLoading(false)
   }
  }
 
  useEffect(() => {
   fetchDashboard()
+  return () => { loadGeneration.current += 1 }
  }, [])
 
  if (loading) {
@@ -314,6 +340,20 @@ export default function DashboardPage() {
   )
  }
 
+ if (!profile && organization) return <div className="mx-auto max-w-2xl px-4 py-8">
+  <h1 className="text-2xl font-bold">{organization.name}</h1>
+  <p className="mt-3">{canManageProfile ? 'Organizer setup is unavailable for this organization. Select another organization or contact support.' : 'This organization has no organizer profile. Ask its owner to contact support.'}</p>
+  {organizations.length > 1 && <label className="mt-4 block">Organization
+   <select aria-label="Organization" value={selectedOrganizationId} onChange={event => {
+    window.localStorage.setItem('hafapass_organization_id', event.target.value)
+    setSelectedOrganizationId(event.target.value)
+    fetchDashboard()
+   }} className="input mt-2">
+    {organizations.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+   </select>
+  </label>}
+ </div>
+
  if (!profile) {
   return (
    <div className="px-4 py-12">
@@ -328,11 +368,11 @@ export default function DashboardPage() {
    <div>
      <div className="flex items-center gap-2">
       <h1 className="text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
-      <button onClick={() => setShowEditProfile(true)} className="p-1.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
+      {canManageProfile && <button onClick={() => setShowEditProfile(true)} className="p-1.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
        <Pencil className="w-4 h-4" />
-      </button>
+      </button>}
      </div>
-     <p className="text-neutral-600 mt-1">Manage your events and track ticket sales</p>
+     <p className="text-neutral-600 mt-1">{canCreate ? 'Manage your events and track ticket sales' : 'Open your assigned event tasks'}</p>
      {organizations.length > 1 && (
       <label className="mt-3 flex items-center gap-2 text-sm text-neutral-600">
        Organization
@@ -341,13 +381,13 @@ export default function DashboardPage() {
         setSelectedOrganizationId(event.target.value)
         fetchDashboard()
        }} className="input !w-auto !py-1.5 text-sm">
-        {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {organization.role.replaceAll('_', ' ')}</option>)}
+        {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {(organization.role || 'staff').replaceAll('_', ' ')}</option>)}
        </select>
       </label>
      )}
     </div>
     <div className="flex items-center gap-3">
-     <Link
+     {canScan && <Link
       to="/dashboard/scanner"
       className="inline-flex items-center justify-center gap-2 bg-brand-500 text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-brand-600 transition-colors text-sm"
      >
@@ -355,8 +395,8 @@ export default function DashboardPage() {
        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
       </svg>
       Scan Tickets
-     </Link>
-     <Link
+     </Link>}
+     {canCreate && <Link
       to="/dashboard/events/new"
       className="inline-flex items-center justify-center gap-2 bg-accent-500 text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-accent-600 transition-colors text-sm"
      >
@@ -364,8 +404,8 @@ export default function DashboardPage() {
        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
       </svg>
       Create Event
-     </Link>
-     <Link
+     </Link>}
+     {canManageSettings && <Link
       to="/dashboard/settings"
       className="inline-flex items-center justify-center gap-2 bg-neutral-100 text-neutral-700 px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-neutral-200 transition-colors text-sm border border-neutral-300"
      >
@@ -374,11 +414,11 @@ export default function DashboardPage() {
        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
       </svg>
       Settings
-     </Link>
+     </Link>}
     </div>
    </div>
 
-   {showEditProfile && (
+   {canManageProfile && showEditProfile && (
     <EditProfileModal
      profile={profile}
      onClose={() => setShowEditProfile(false)}
@@ -386,7 +426,7 @@ export default function DashboardPage() {
     />
    )}
 
-   <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="organizer-readiness-title">
+   {canManageProfile && <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="organizer-readiness-title">
     <div className="flex items-start gap-3">
      <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5 text-brand-600" /></div>
      <div className="flex-1">
@@ -406,16 +446,16 @@ export default function DashboardPage() {
       {profile.verification_notes && <p className="mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3">Review note: {profile.verification_notes}</p>}
      </div>
     </div>
-   </section>
+   </section>}
 
    {events.length === 0 ? (
     <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-12 text-center">
      <svg className="mx-auto h-12 w-12 text-neutral-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
      </svg>
-     <h3 className="text-lg font-medium text-neutral-900 mb-1">No events yet</h3>
-     <p className="text-neutral-500 mb-4">Get started by creating your first event</p>
-     <Link
+     <h3 className="text-lg font-medium text-neutral-900 mb-1">{canCreate ? 'No events yet' : 'No assigned events'}</h3>
+     <p className="text-neutral-500 mb-4">{canCreate ? 'Get started by creating your first event' : 'Ask your event manager to assign an event to you.'}</p>
+     {canCreate && <Link
       to="/dashboard/events/new"
       className="btn-primary gap-2"
      >
@@ -423,7 +463,7 @@ export default function DashboardPage() {
        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
       </svg>
       Create Your First Event
-     </Link>
+     </Link>}
     </div>
    ) : (
     <div className="space-y-3">
