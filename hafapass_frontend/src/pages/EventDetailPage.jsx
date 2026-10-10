@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams, useMatch, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -27,7 +27,12 @@ function EventDetailContent() {
   const navigate = useNavigate()
   const match = useMatch('/events/:slug')
   const liveRoute = useRef(null)
+  const mounted = useRef(false)
   liveRoute.current = { slug: match?.params.slug }
+  useLayoutEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const [searchParams] = useSearchParams()
   const isPreview = searchParams.get('preview') === 'true'
   const isLiveMoneyProof = searchParams.get('live_money_proof') === 'true'
@@ -70,12 +75,12 @@ function EventDetailContent() {
   }, [waitlistOfferToken, slug])
 
   const handleCheckout = (lineItems) => {
-    if (liveRoute.current.slug !== slug || event?.slug !== slug) return
+    if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
     navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof } })
   }
 
   const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {
-    if (liveRoute.current.slug !== slug || event?.slug !== slug) return
+    if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
     navigate(`/checkout/${slug}`, {
       state: { event, lineItems, seatHoldToken, seatHoldExpiresAt, selectedSeats: seats },
     })

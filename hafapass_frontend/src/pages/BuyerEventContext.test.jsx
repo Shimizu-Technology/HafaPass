@@ -99,6 +99,30 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     expect(screen.getByRole('button', { name: /eventDetail.buyTickets/ })).toBeInTheDocument()
   })
 
+  it('does not navigate back to A when its earlier seat reservation finishes after leaving', async () => {
+    let finishHold
+    const seatedA = { ...a, assigned_seating: true }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/seating')
+      ? { sections: [{ id: 1, name: 'Main', rows: [{ id: 2, label: 'A', seats: [
+        { id: 301, label: '1', status: 'available', ticket_type_id: 111, ticket_type_name: 'A entry',
+          price_cents: 0, accessibility_kind: 'standard' },
+      ] }] }] }
+      : url === '/events/event-a' ? seatedA : b }))
+    apiClient.post.mockImplementation(url => url.endsWith('/seat_holds')
+      ? new Promise(resolve => { finishHold = () => resolve({ data: { token: 'original-hold', expires_at: new Date(Date.now() + 600000).toISOString() } }) })
+      : Promise.resolve({ data: {} }))
+    render(view())
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /Main, row A, seat 1/ }))
+    await user.click(screen.getByRole('button', { name: 'Reserve selected seats' }))
+    await waitFor(() => expect(finishHold).toBeDefined())
+    await user.click(screen.getByRole('link', { name: 'Open event B' }))
+    await screen.findByRole('heading', { name: b.title })
+    await act(async () => finishHold())
+    expect(screen.getByTestId('route')).toHaveTextContent('/events/event-b')
+    expect(apiClient.post.mock.calls.some(([url]) => url === '/orders')).toBe(false)
+  })
+
   it('refuses a mismatched navigation event snapshot before any new checkout post', async () => {
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? config : b }))
     render(view({ pathname: '/checkout/event-b', state: { event: a, lineItems: [{ ticket_type_id: 111, quantity: 1 }] } }))
