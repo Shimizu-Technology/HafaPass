@@ -293,6 +293,7 @@ export async function queueReversal({ eventId, deviceId, manifestVersion, ticket
     event_id: Number(eventId),
     ticket_id: Number(ticketId),
     status: 'pending_reverse',
+    admission_status_before_reverse: state?.status || 'accepted',
     reversal_action_uuid: action.action_uuid,
   })
   await transaction.done
@@ -338,8 +339,21 @@ export async function applySyncResults(eventId, device, results, owner = current
     if (!hasAccess || !result.ticket_id) continue
     const key = [Number(eventId), Number(result.ticket_id)]
     const state = await transaction.objectStore('scan_states').get(key)
-    if (result.kind === 'reverse' && result.result === 'accepted') {
+    // An older Undo acknowledgement cannot release a newer pending Undo or
+    // erase the protection from a later admission on the same ticket.
+    if (result.kind === 'reverse' && state?.reversal_action_uuid !== result.action_uuid) continue
+    if (result.kind === 'reverse' && (result.result === 'accepted' || ['already_reversed', 'ticket_not_admitted'].includes(result.reason_code))) {
       await transaction.objectStore('scan_states').delete(key)
+    } else if (result.kind === 'reverse') {
+      // A refused Undo does not cancel the original admission. Keep that local
+      // protection until a verified manifest establishes the current status.
+      await transaction.objectStore('scan_states').put({
+        ...state,
+        event_id: key[0],
+        ticket_id: key[1],
+        status: state?.admission_status_before_reverse || 'accepted',
+        reason_code: result.reason_code,
+      })
     } else {
       await transaction.objectStore('scan_states').put({
         ...state,

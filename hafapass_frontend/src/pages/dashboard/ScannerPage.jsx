@@ -165,9 +165,16 @@ export default function ScannerPage({ offlineOnly = false }) {
           throw new Error('Saved scans could not be acknowledged on this device. They remain saved; reconnect and retry synchronization.')
         }
         if (eventIdRef.current === String(selectedEventId)) setScanResult(current => {
-          if (!current?.ticket) return current
-          const result = results.find(item => item.kind === 'admit' && Number(item.ticket_id) === Number(current.ticket.ticket_id))
+          if (!current) return current
+          const result = current.actionUuid
+            ? results.find(item => item.action_uuid === current.actionUuid && item.kind === 'reverse')
+            : current.ticket && results.find(item => item.kind === 'admit' && Number(item.ticket_id) === Number(current.ticket.ticket_id))
           if (!result) return current
+          if (result.kind === 'reverse') {
+            if (result.result === 'accepted') return { ...current, type: 'success', message: 'Admission reversal confirmed', detail: 'The server confirmed the Undo. Current ticket status determines whether it can be admitted again.' }
+            if (result.reason_code === 'already_reversed') return { ...current, type: 'warning', message: 'Admission already reversed', detail: 'The original Undo was already confirmed. This saved request has been acknowledged.' }
+            return { ...current, type: 'error', message: 'Admission reversal refused', detail: 'The server did not confirm this Undo. Ask a door manager to check the ticket status.' }
+          }
           if (result.result === 'accepted') return { ...current, type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
           return { ...current, type: result.result === 'conflict' ? 'warning' : 'error', message: result.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
         })
@@ -494,10 +501,10 @@ export default function ScannerPage({ offlineOnly = false }) {
   const reverseAdmission = async action => {
     if (!device || !manifest) return
     try {
-      await queueReversal({ eventId, deviceId: device.id, manifestVersion: manifest.payload.version,
+      const reversal = await queueReversal({ eventId, deviceId: device.id, manifestVersion: manifest.payload.version,
         ticketId: action.ticket_id, reversesActionUuid: action.action_uuid, source: online ? 'online' : 'offline' })
       await refreshPending(eventId, device)
-      showResult({ type: 'success', message: 'Reversal queued', detail: 'The admission reversal will be reconciled append-only.' })
+      showResult({ type: 'success', message: 'Reversal queued', actionUuid: reversal.action_uuid, detail: 'The admission reversal will be reconciled append-only.' })
       if (online) syncQueue()
     } catch (reversalError) {
       setError(reversalError.message)

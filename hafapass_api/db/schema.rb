@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_113000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -70,7 +70,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
     t.index ["event_id", "result"], name: "index_admission_actions_on_event_id_and_result"
     t.index ["event_id"], name: "index_admission_actions_on_event_id"
     t.index ["organization_id"], name: "index_admission_actions_on_organization_id"
-    t.index ["reverses_action_id"], name: "idx_admission_single_reversal", unique: true, where: "(reverses_action_id IS NOT NULL)"
+    t.index ["reverses_action_id"], name: "idx_admission_single_reversal", unique: true, where: "((reverses_action_id IS NOT NULL) AND (result = 0))"
     t.index ["reverses_action_id"], name: "index_admission_actions_on_reverses_action_id"
     t.index ["scanner_device_id", "sequence"], name: "idx_admission_device_sequence", unique: true, where: "((scanner_device_id IS NOT NULL) AND (sequence IS NOT NULL))"
     t.index ["scanner_device_id"], name: "index_admission_actions_on_scanner_device_id"

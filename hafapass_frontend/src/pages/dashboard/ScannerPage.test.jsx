@@ -46,6 +46,43 @@ describe('scanner recovery and camera ownership', () => {
     expect(await queuedActions(eventId, device.id)).toHaveLength(1)
   })
 
+  it('acknowledges an already reversed Undo and permits a fresh admission from the updated manifest', async () => {
+    const eventId = 92001
+    const device = { id: 91, identifier: 'undo-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'admitted', attendee_name: 'Guest', ticket_type: 'General', credential_hash: await sha256Hex('undo-qr') }
+    const initial = await signedManifest(eventId, [ticket])
+    const renewed = await signedManifest(eventId, [{ ...ticket, state: 'valid' }], { version: 2 })
+    let manifestCalls = 0
+    apiClient.get.mockImplementation(url => {
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, title: 'Undo Event' }] } })
+      if (url.endsWith('/manifest')) return Promise.resolve({ data: ++manifestCalls === 1 ? initial : renewed })
+      return Promise.resolve({ data: { counts: { admitted: 0, remaining: 1, conflicts: 0, rejected: 0 }, permissions: { can_reverse: true },
+        recent_actions: [{ action_uuid: 'original-admission', ticket_id: 501, kind: 'admit', result: 'accepted', attendee: { attendee_name: 'Guest' } }] } })
+    })
+    const synced = []
+    apiClient.post.mockImplementation((url, payload) => {
+      if (!url.endsWith('/sync')) return Promise.resolve({ data: device })
+      const action = payload.actions[0]
+      synced.push(action.kind)
+      return Promise.resolve({ data: { device: { ...device, last_sequence: action.sequence }, summary: {}, results: [{
+        action_uuid: action.action_uuid, ticket_id: 501, kind: action.kind,
+        result: action.kind === 'reverse' ? 'conflict' : 'accepted',
+        reason_code: action.kind === 'reverse' ? 'already_reversed' : 'admitted',
+      }] } })
+    })
+    render(<ScannerPage />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Undo' }))
+    expect(await screen.findByText('Admission already reversed')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
+    await screen.findByText(/Manifest v2/)
+    await user.type(screen.getByLabelText('Ticket QR credential'), 'undo-qr')
+    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    expect(await screen.findByText('Admission confirmed')).toBeInTheDocument()
+    expect(synced).toEqual(['reverse', 'admit'])
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+  })
+
   it('refuses cached admission after the API definitively rejects renewed authorization', async () => {
     const eventId = 92001
     await saveDevice(eventId, { id: 91, identifier: 'revoked-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() })

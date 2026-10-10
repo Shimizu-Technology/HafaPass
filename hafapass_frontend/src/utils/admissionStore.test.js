@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { signedManifest } from '../test/manifestFixture'
 import {
-  applySyncResults, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission,
+  applySyncResults, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission, queueReversal,
   queuedActions, purgeExpiredAdmissionAccess, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex,
 } from './admissionStore'
 
@@ -79,6 +79,37 @@ describe('admissionStore', () => {
       occurred_at: first.occurred_at,
     }])
     expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([second.action_uuid])
+  })
+
+  it.each([
+    ['conflict', 'already_reversed', true],
+    ['rejected', 'reversal_not_authorized', false],
+  ])('acknowledges %s Undo without losing the correct original admission state', async (result, reason_code, canReadmit) => {
+    const eventId = result === 'conflict' ? 91011 : 91012
+    const device = { id: 43, effective: true, last_sequence: 0, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    const input = { eventId, deviceId: device.id, manifestVersion: 1, ticket: { ticket_id: 14 }, credentialHash: 'c'.repeat(64), source: 'online' }
+    const admitted = await queueAdmission(input)
+    await applySyncResults(eventId, device, [{ action_uuid: admitted.action_uuid, ticket_id: 14, kind: 'admit', result: 'accepted' }])
+    const reversal = await queueReversal({ eventId, deviceId: device.id, manifestVersion: 1, ticketId: 14, reversesActionUuid: admitted.action_uuid })
+    await applySyncResults(eventId, device, [{ action_uuid: reversal.action_uuid, ticket_id: 14, kind: 'reverse', result, reason_code }])
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+    expect(Boolean(await queueAdmission(input))).toBe(canReadmit)
+    if (!canReadmit) expect((await localScanState(eventId, 14)).status).toBe('accepted')
+  })
+
+  it('retains the newer Undo state when an older Undo acknowledgement arrives', async () => {
+    const eventId = 91013
+    const device = { id: 43, effective: true, last_sequence: 0, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    await saveDevice(eventId, device)
+    const first = await queueReversal({ eventId, deviceId: device.id, manifestVersion: 1, ticketId: 14, reversesActionUuid: 'original' })
+    const second = await queueReversal({ eventId, deviceId: device.id, manifestVersion: 1, ticketId: 14, reversesActionUuid: 'original' })
+    await applySyncResults(eventId, device, [{ action_uuid: first.action_uuid, ticket_id: 14, kind: 'reverse', result: 'accepted' }])
+    expect((await localScanState(eventId, 14)).reversal_action_uuid).toBe(second.action_uuid)
+    expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([second.action_uuid])
+    await applySyncResults(eventId, device, [{ action_uuid: second.action_uuid, ticket_id: 14, kind: 'reverse', result: 'conflict', reason_code: 'already_reversed' }])
+    expect(await localScanState(eventId, 14)).toBeUndefined()
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
   })
 
   it('atomically admits one ticket when camera and manual entry overlap', async () => {
