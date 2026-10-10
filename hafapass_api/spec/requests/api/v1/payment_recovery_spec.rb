@@ -1,6 +1,8 @@
 require "rails_helper"
 
 RSpec.describe "Buyer payment recovery", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:event) { create(:event, :published, starts_at: 5.days.from_now) }
   let(:ticket_type) { create(:ticket_type, event: event, price_cents: 1000, quantity_available: 10) }
   let(:key) { SecureRandom.hex(32) }
@@ -126,6 +128,37 @@ RSpec.describe "Buyer payment recovery", type: :request do
     expect(response.parsed_body).not_to have_key("client_secret")
   end
 
+  it "does not hold a row lock during provider retrieval and rejects a concurrently cancelled reservation" do
+    transactions_before = ActiveRecord::Base.connection.open_transactions
+    allow(intents).to receive(:retrieve) do
+      expect(ActiveRecord::Base.connection.open_transactions).to eq(transactions_before)
+      Commerce::OrderLifecycle.cancel!(Order.find(@order.id))
+      intent
+    end
+    allow(intents).to receive(:cancel) do
+      expect(ActiveRecord::Base.connection.open_transactions).to eq(transactions_before)
+      OpenStruct.new(status: "canceled")
+    end
+    resume
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("status" => "cancelled")
+    expect(response.parsed_body).not_to have_key("client_secret")
+  end
+
+  it "cancels expiry outside the recovery transaction and records an unknown cancellation" do
+    @order.update!(expires_at: 1.minute.ago)
+    transactions_before = ActiveRecord::Base.connection.open_transactions
+    allow(intents).to receive(:cancel) do
+      expect(ActiveRecord::Base.connection.open_transactions).to eq(transactions_before)
+      raise Timeout::Error, "Cancellation acknowledgement unavailable"
+    end
+    resume
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).not_to have_key("client_secret")
+    expect(@order.reload).to be_expired
+    expect(@order.reconciliation_exceptions).to exist(code: "provider_payment_cancel_failed")
+  end
+
   it "keeps a provider-processing payment on confirmation without allowing another confirmation" do
     intent.status = "processing"
     resume
@@ -151,5 +184,108 @@ RSpec.describe "Buyer payment recovery", type: :request do
     post "/api/v1/orders", params: params, as: :json
     expect(response).to have_http_status(:unprocessable_entity)
     expect(Order.count).to eq(1)
+  end
+
+  it "returns no confirmation secret when the original checkout was cancelled before replay" do
+    Commerce::OrderLifecycle.cancel!(@order)
+    expect { post "/api/v1/orders", params: params, as: :json }.not_to change(Order, :count)
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body).to include("id" => @order.id, "status" => "cancelled")
+    expect(response.parsed_body).not_to have_key("client_secret")
+    expect(StripeService).to have_received(:create_payment_intent).once
+    expect(intents).not_to have_received(:retrieve)
+  end
+
+  [Stripe::APIConnectionError, Stripe::IdempotencyError].each do |error_class|
+    it "recovers the same payment setup after #{error_class.name} without releasing its reservation" do
+      retry_params = params.merge(checkout_key: SecureRandom.hex(32), buyer_email: "setup-retry@example.invalid")
+      allow(StripeService).to receive(:create_payment_intent).and_raise(error_class.new("response unavailable"))
+      post "/api/v1/orders", params: retry_params, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body).to include("checkout_recovery_required" => true)
+      expect(response.parsed_body).not_to have_key("client_secret")
+      retained = Order.find_by!(buyer_email: "setup-retry@example.invalid")
+      payment = retained.payments.last
+      expect(retained).to be_pending
+      expect(payment).to have_attributes(status: "pending", provider_payment_id: nil,
+        failure_code: "payment_setup_result_unknown")
+      expect(retained.inventory_holds.current.sum(:quantity)).to eq(1)
+      original_identity = payment.attributes.slice("id", "idempotency_key", "provider_environment", "provider_platform_account_id")
+      expect(intents).not_to have_received(:cancel)
+
+      allow(StripeService).to receive(:create_payment_intent).and_return(OpenStruct.new(id: "pi_setup_recovered",
+        client_secret: "same_setup_secret", allowed_payment_method_types: ["card"], payment_method_types: ["card"]))
+      expect { post "/api/v1/orders", params: retry_params, as: :json }.not_to change { [Order.count, Payment.count, InventoryHold.count] }
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body).to include("id" => retained.id, "client_secret" => "same_setup_secret")
+      expect(payment.reload.attributes.slice(*original_identity.keys)).to eq(original_identity)
+      expect(payment).to have_attributes(provider_payment_id: "pi_setup_recovered", failure_code: nil)
+      expect(StripeService).to have_received(:create_payment_intent).with(retained,
+        idempotency_key: original_identity.fetch("idempotency_key"), payment: payment).twice
+    end
+  end
+
+  it "releases a definitively rejected setup and never returns a secret when its request is replayed" do
+    rejected_params = params.merge(checkout_key: SecureRandom.hex(32), buyer_email: "setup-rejected@example.invalid")
+    allow(StripeService).to receive(:create_payment_intent)
+      .and_raise(Stripe::InvalidRequestError.new("Rejected request", "amount"))
+    post "/api/v1/orders", params: rejected_params, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    rejected = Order.find_by!(buyer_email: "setup-rejected@example.invalid")
+    expect(rejected).to be_cancelled
+    expect(rejected.payments.last).to be_failed
+    expect(rejected.inventory_holds).to all(be_released)
+
+    expect { post "/api/v1/orders", params: rejected_params, as: :json }.not_to change { [Order.count, Payment.count] }
+    expect(response.parsed_body).to include("id" => rejected.id, "status" => "cancelled")
+    expect(response.parsed_body).not_to have_key("client_secret")
+    expect(StripeService).to have_received(:create_payment_intent).with(rejected,
+      idempotency_key: rejected.payments.last.idempotency_key, payment: rejected.payments.last).once
+  end
+
+  it "does not erase an earlier unknown creation when a later replay is rejected" do
+    unknown_params = params.merge(checkout_key: SecureRandom.hex(32), buyer_email: "setup-unknown@example.invalid")
+    allow(StripeService).to receive(:create_payment_intent).and_raise(Stripe::APIConnectionError.new("acknowledgement lost"))
+    post "/api/v1/orders", params: unknown_params, as: :json
+    original = Order.find_by!(buyer_email: "setup-unknown@example.invalid")
+    payment = original.payments.last
+    identity = payment.idempotency_key
+    allow(StripeService).to receive(:create_payment_intent).and_raise(Stripe::InvalidRequestError.new("Rejected replay", "amount"))
+    post "/api/v1/orders", params: unknown_params, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to include("result is unknown")
+    expect(response.parsed_body).not_to have_key("client_secret")
+    expect(original.reload).to be_pending
+    expect(payment.reload).to have_attributes(status: "pending", failure_code: "payment_setup_result_unknown", idempotency_key: identity)
+    expect(original.inventory_holds.current.sum(:quantity)).to eq(1)
+  end
+
+  it "recovers an interrupted setup after its committed lease expires using the original identity" do
+    interrupted_params = params.merge(checkout_key: SecureRandom.hex(32), buyer_email: "setup-interrupted@example.invalid")
+    crash = Class.new(Exception)
+    allow(StripeService).to receive(:create_payment_intent).and_raise(crash, "request process stopped")
+    expect { post "/api/v1/orders", params: interrupted_params, as: :json }.to raise_error(crash)
+    interrupted = Order.find_by!(buyer_email: "setup-interrupted@example.invalid")
+    payment = interrupted.payments.last
+    original = payment.attributes.slice("idempotency_key", "provider_environment", "provider_platform_account_id")
+    first_attempt = payment.provider_payload.fetch("setup_attempted_at")
+    expect(payment.provider_payload["setup_lease_token"]).to be_present
+    post "/api/v1/orders", params: interrupted_params, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to include("still in progress")
+
+    allow(StripeService).to receive(:create_payment_intent).and_return(OpenStruct.new(id: "pi_interrupted_setup",
+      client_secret: "recovered_secret", allowed_payment_method_types: ["card"], payment_method_types: ["card"]))
+    travel 65.seconds do
+      post "/api/v1/orders", params: interrupted_params, as: :json
+    end
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body).to include("id" => interrupted.id, "client_secret" => "recovered_secret")
+    expect(payment.reload.attributes.slice(*original.keys)).to eq(original)
+    expect(payment.provider_payload).to include("setup_attempted_at" => first_attempt)
+    expect(payment.provider_payload).not_to have_key("setup_lease_token")
+    expect(interrupted.inventory_holds.current.sum(:quantity)).to eq(1)
+    expect(StripeService).to have_received(:create_payment_intent).with(interrupted,
+      idempotency_key: original.fetch("idempotency_key"), payment: payment).twice
   end
 end

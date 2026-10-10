@@ -181,6 +181,25 @@ RSpec.describe Commerce::OrderCreator do
     expect(order.inventory_holds).to all(be_released)
   end
 
+  it "cancels an attached intent without exposing its secret if setup outlasts the reservation" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    intent = OpenStruct.new(id: "pi_expired_setup", client_secret: "expired_secret",
+      allowed_payment_method_types: ["card"], payment_method_types: ["card"])
+    allow(StripeService).to receive(:create_payment_intent) do |sale_order, **|
+      sale_order.update!(expires_at: 1.minute.ago)
+      intent
+    end
+    allow(StripeService).to receive(:cancel_payment_intent).and_return(OpenStruct.new(status: "canceled"))
+    result = described_class.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "expired@example.invalid", buyer_name: "Expired Buyer", payment_required: true)
+    expect(result.payment_intent).to be_nil
+    expect(result.order).to be_expired
+    expect(result.payment).to have_attributes(status: "cancelled", provider_payment_id: intent.id)
+    expect(result.order.inventory_holds).to all(be_expired)
+    expect(StripeService).to have_received(:cancel_payment_intent).with(intent.id,
+      idempotency_key: "cancel:payment:#{result.payment.id}", payment: result.payment)
+  end
+
   it "rejects a checkout that exceeds the active pricing tier allocation before payment setup" do
     create(
       :pricing_tier,

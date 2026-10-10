@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 module Commerce
   class OrderLifecycle
     class InvalidTransition < StandardError; end
@@ -281,12 +283,14 @@ module Commerce
         payments.each do |payment|
           next if payment.provider_payment_id.blank?
 
-          StripeService.cancel_payment_intent(
-            payment.provider_payment_id,
-            idempotency_key: "cancel:payment:#{payment.id}",
-            payment: payment
-          )
-        rescue Stripe::StripeError, StripeService::PaymentError => e
+          Timeout.timeout(30.seconds) do
+            StripeService.cancel_payment_intent(
+              payment.provider_payment_id,
+              idempotency_key: "cancel:payment:#{payment.id}",
+              payment: payment
+            )
+          end
+        rescue Stripe::StripeError, StripeService::PaymentError, IOError, Timeout::Error => e
           ReconciliationException.create!(
             order: order,
             payment: payment,

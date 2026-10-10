@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 module Commerce
   class OrderCreator
     HOLD_DURATION = 10.minutes
+    SETUP_LEASE_DURATION = 1.minute
+    PROVIDER_REQUEST_TIMEOUT = 30.seconds
 
     class CheckoutError < StandardError; end
 
@@ -718,38 +722,108 @@ module Commerce
     def create_provider_payment!(order, payment)
       return unless payment&.provider == "stripe" && payment.pending?
 
-      intent = StripeService.create_payment_intent(order, idempotency_key: payment.idempotency_key, payment: payment)
-      Payment.transaction do
+      intent = nil
+      policy_error = nil
+      previously_unknown = false
+      lease_token = SecureRandom.uuid
+      action = Order.transaction do
+        # Commit one setup owner before network activity. Same-key retries must
+        # not compete at Stripe, and cancellation/expiry must not wait on HTTP.
+        order.lock!
         payment.lock!
-        payment.update!(provider_payment_id: intent.id, provider_payload: { client_secret_present: intent.client_secret.present? })
+        next :done unless order.pending? && payment.pending?
+        next :expire if order.expires_at.present? && order.expires_at <= Time.current
+        next :recover if payment.provider_payment_id.present?
+
+        payload = payment.provider_payload.to_h
+        if payload["setup_lease_expires_at"].present? && Time.iso8601(payload["setup_lease_expires_at"]) > Time.current
+          raise CheckoutError, "Payment setup is still in progress; retry the original checkout request"
+        end
+        previously_unknown = payload["setup_attempted_at"].present? || payment.failure_code == "payment_setup_result_unknown"
+        payment.update!(provider_payload: payload.merge("setup_lease_token" => lease_token,
+          "setup_lease_expires_at" => SETUP_LEASE_DURATION.from_now.iso8601(6),
+          "setup_attempted_at" => payload["setup_attempted_at"] || Time.current.iso8601(6)))
+        :create
+      end
+      return PaymentRecovery.call(order: order).payment_intent if action == :recover
+      if action == :expire
+        OrderLifecycle.expire!(order)
+        return
+      end
+      return unless action == :create
+
+      intent = Timeout.timeout(PROVIDER_REQUEST_TIMEOUT) do
+        StripeService.create_payment_intent(order, idempotency_key: payment.idempotency_key, payment: payment)
+      end
+      disposition = Order.transaction do
+        order.lock!
+        payment.lock!
+        unless payment.provider_payload.to_h["setup_lease_token"] == lease_token
+          raise CheckoutError, "Payment setup ownership changed; retry the original checkout request"
+        end
+        payment.update!(provider_payment_id: intent.id,
+          provider_payload: payment.provider_payload.to_h.except("setup_lease_token", "setup_lease_expires_at")
+            .merge("client_secret_present" => intent.client_secret.present?),
+          failure_code: nil, failure_message: nil)
         order.update!(stripe_payment_intent_id: intent.id)
+        next :cancel unless order.pending? && payment.pending?
+        next :expire if order.expires_at.present? && order.expires_at <= Time.current
+
+        unless payment.provider_environment == "simulate" || StripeService.card_only_intent?(intent)
+          StripeService.record_card_policy_mismatch!(payment)
+          policy_error = "Payment method configuration needs support review; retry your saved checkout instead of creating another order"
+        end
+        :ready
       end
-      unless payment.provider_environment == "simulate" || StripeService.card_only_intent?(intent)
-        StripeService.record_card_policy_mismatch!(payment)
-        raise StripeService::CardPolicyError, "Payment method configuration needs support review; retry your saved checkout instead of creating another order"
+      if disposition == :cancel
+        cancel_unattached_provider_payment!(order, payment, intent, OrderLifecycle::InvalidTransition.new("Reservation released during setup"))
+        return
+      elsif disposition == :expire
+        OrderLifecycle.expire!(order)
+        return
       end
-      intent
-    rescue StripeService::CardPolicyError => e
-      # The operation already exists at Stripe. Preserve its attached identity,
-      # reservation, and reconciliation hold rather than treating it as a failed
-      # setup or blindly cancelling a potentially processing payment.
-      raise CheckoutError, e.message
+      raise CheckoutError, policy_error if policy_error
+
+      intent if order.reload.pending? && payment.reload.pending?
     rescue ActiveRecord::ActiveRecordError => e
+      raise CheckoutError, "Saved payment recovery is unavailable; retry the original checkout request" unless action == :create
+
       cancel_unattached_provider_payment!(order, payment, intent, e)
-      OrderLifecycle.fail!(order, payment: payment, failure_code: "payment_setup_failed", failure_message: e.message,
-        reason: "payment_setup_failed")
+      finish_failed_provider_setup!(order, payment, lease_token, e, rejected: true)
       raise CheckoutError, "Payment setup failed"
-    rescue Stripe::StripeError, StripeService::PaymentError => e
-      OrderLifecycle.fail!(order, payment: payment, failure_code: "payment_setup_failed", failure_message: e.message,
-        reason: "payment_setup_failed")
-      raise CheckoutError, "Payment setup failed"
+    rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError => e
+      finish_failed_provider_setup!(order, payment, lease_token, e, rejected: !previously_unknown)
+      message = previously_unknown ? "Payment setup result is unknown; retry the original checkout request" : "Payment setup failed"
+      raise CheckoutError, message
+    rescue Stripe::StripeError, IOError, Timeout::Error => e
+      finish_failed_provider_setup!(order, payment, lease_token, e, rejected: false)
+      raise CheckoutError, "Payment setup result is unknown; retry the original checkout request"
+    end
+
+    def finish_failed_provider_setup!(order, payment, lease_token, error, rejected:)
+      Order.transaction do
+        order.lock!
+        payment.lock!
+        payload = payment.provider_payload.to_h
+        next unless payment.provider_payment_id.blank? && payload["setup_lease_token"] == lease_token
+
+        payment.update!(provider_payload: payload.except("setup_lease_token", "setup_lease_expires_at"))
+        if rejected
+          OrderLifecycle.fail!(order, payment: payment, failure_code: "payment_setup_failed", failure_message: error.message,
+            reason: "payment_setup_failed")
+        elsif order.pending? && payment.pending?
+          payment.update!(failure_code: "payment_setup_result_unknown", failure_message: error.message)
+        end
+      end
     end
 
     def cancel_unattached_provider_payment!(order, payment, intent, attachment_error)
       return unless intent&.id
 
-      StripeService.cancel_payment_intent(intent.id, idempotency_key: "cancel:payment-setup:#{payment.id}", payment: payment)
-    rescue Stripe::StripeError, StripeService::PaymentError => e
+      Timeout.timeout(PROVIDER_REQUEST_TIMEOUT) do
+        StripeService.cancel_payment_intent(intent.id, idempotency_key: "cancel:payment-setup:#{payment.id}", payment: payment)
+      end
+    rescue Stripe::StripeError, StripeService::PaymentError, IOError, Timeout::Error => e
       ReconciliationException.create!(
         order: order,
         payment: payment,

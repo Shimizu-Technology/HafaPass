@@ -56,10 +56,104 @@ RSpec.describe "Commerce concurrency", :non_transactional do
         buyer_email: "samebuyer@example.invalid", buyer_name: "Same Buyer",
         checkout_key_digest: digest, checkout_request_digest: "b" * 64)
     end
-    expect(outcomes).to all(be_a(Commerce::OrderCreator::Result))
-    expect(outcomes.map { |result| result.order.id }.uniq.length).to eq(1)
+    recovered = outcomes.grep(Commerce::OrderCreator::Result)
+    expect(recovered).not_to be_empty
+    expect((outcomes - recovered).map(&:message)).to all(eq("Payment setup is still in progress; retry the original checkout request"))
+    expect(recovered.map { |result| result.order.id }.uniq.length).to eq(1)
     expect(Order.count).to eq(1)
     expect(InventoryHold.current.sum(:quantity)).to eq(1)
+  end
+
+  it "keeps an in-flight setup recoverable when a concurrent retry would conflict at the provider" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    allow(StripeService).to receive(:publishable_key).and_return("pk_test_recovery")
+    allow(StripeService).to receive(:retrieve_payment_intent) do |payment|
+      OpenStruct.new(id: payment.provider_payment_id, amount: payment.amount_cents, currency: payment.currency,
+        status: "requires_payment_method", livemode: false, client_secret: "original_secret",
+        allowed_payment_method_types: ["card"], payment_method_types: ["card"])
+    end
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    ticket_type = create(:ticket_type, event: event, quantity_available: 1)
+    arguments = { event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "samebuyer@example.invalid", buyer_name: "Same Buyer",
+      checkout_key_digest: "d" * 64, checkout_request_digest: "e" * 64 }
+    setup_started = Queue.new
+    provider_started = Queue.new
+    release_provider = Queue.new
+    results = Queue.new
+    allow_any_instance_of(Commerce::OrderCreator).to receive(:create_provider_payment!).and_wrap_original do |original, *args|
+      setup_started << true
+      original.call(*args)
+    end
+    calls = 0
+    allow(StripeService).to receive(:create_payment_intent) do |sale_order, **|
+      expect(ActiveRecord::Base.connection.transaction_open?).to be(false)
+      calls += 1
+      raise Stripe::APIConnectionError, "Concurrent provider request is unresolved" if calls > 1
+
+      provider_started << true
+      release_provider.pop
+      OpenStruct.new(id: "pi_in_flight", client_secret: "original_secret", amount: sale_order.total_cents,
+        allowed_payment_method_types: ["card"], payment_method_types: ["card"])
+    end
+    run_checkout = lambda do
+      ActiveRecord::Base.connection_pool.with_connection do
+        results << Commerce::OrderCreator.call(**arguments.merge(event: Event.find(event.id)))
+      rescue StandardError => error
+        results << error
+      end
+    end
+    first = Thread.new(&run_checkout)
+    Timeout.timeout(5) { provider_started.pop; setup_started.pop }
+    second = Thread.new(&run_checkout)
+    Timeout.timeout(5) { setup_started.pop }
+    # The committed owner lets the competing request return promptly without
+    # another POST or releasing inventory while the first request is in flight.
+    early_result = Timeout.timeout(5) { results.pop }
+    release_provider << true
+    Timeout.timeout(5) { [first, second].each(&:join) }
+    outcomes = Array(early_result) + results.size.times.map { results.pop }
+    expect(Order.count).to eq(1)
+    expect(Order.first.status).to eq("pending")
+    expect(Payment.first).to have_attributes(status: "pending", provider_payment_id: "pi_in_flight")
+    expect(InventoryHold.current.sum(:quantity)).to eq(1)
+    expect(early_result).to be_a(Commerce::OrderCreator::CheckoutError)
+    expect(early_result.message).to include("still in progress")
+    recovered = outcomes.grep(Commerce::OrderCreator::Result)
+    expect(recovered.length).to eq(1)
+    expect(calls).to eq(1)
+    expect(recovered.first.payment_intent.client_secret).to eq("original_secret")
+    retry_result = Commerce::OrderCreator.call(**arguments.merge(event: Event.find(event.id)))
+    expect(retry_result.order.id).to eq(recovered.first.order.id)
+    expect(retry_result.payment_intent.client_secret).to eq("original_secret")
+    expect(calls).to eq(1)
+  ensure
+    release_provider << true if release_provider&.empty?
+    [first, second].compact.each { |thread| thread.kill if thread.alive? }
+  end
+
+  it "allows cancellation during setup and cancels the eventual intent without exposing its secret" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    type = create(:ticket_type, event: event)
+    allow(StripeService).to receive(:cancel_payment_intent) do
+      expect(ActiveRecord::Base.connection.transaction_open?).to be(false)
+      OpenStruct.new(status: "canceled")
+    end
+    allow(StripeService).to receive(:create_payment_intent) do |sale_order, **|
+      expect(ActiveRecord::Base.connection.transaction_open?).to be(false)
+      Commerce::OrderLifecycle.cancel!(Order.find(sale_order.id))
+      OpenStruct.new(id: "pi_cancelled_setup", client_secret: "must_not_be_exposed",
+        allowed_payment_method_types: ["card"], payment_method_types: ["card"])
+    end
+    result = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: type.id, quantity: 1 }],
+      buyer_name: "Cancel Buyer", buyer_email: "cancel@example.invalid", payment_required: true)
+    expect(result.order).to be_cancelled
+    expect(result.payment_intent).to be_nil
+    expect(result.payment).to have_attributes(status: "cancelled", provider_payment_id: "pi_cancelled_setup")
+    expect(result.order.inventory_holds).to all(be_released)
+    expect(StripeService).to have_received(:cancel_payment_intent).with("pi_cancelled_setup",
+      idempotency_key: "cancel:payment-setup:#{result.payment.id}", payment: result.payment)
   end
 
   it "enforces shared event capacity across concurrent ticket types" do
