@@ -1,15 +1,63 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAuth } from '@clerk/clerk-react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import OrderConfirmationPage from './OrderConfirmationPage'
 import apiClient from '../api/client'
+import { getActiveCheckout, saveActiveCheckout } from '../utils/orderAccess'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('@clerk/clerk-react', () => ({ useAuth: vi.fn() }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
+afterEach(() => vi.unstubAllEnvs())
 
 describe('guest order recovery actions', () => {
-  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); window.localStorage.clear() })
+
+  it('does not fetch cached private order access before Clerk hydration and device binding settle', async () => {
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
+    useAuth.mockReturnValue({ isLoaded: false, userId: undefined })
+    window.localStorage.setItem('hafapass_scanner_user_id', 'previous-buyer')
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} }
+      : { id: 922, status: 'completed', order_items: [], tickets: [], event: { slug: 'free-event', title: 'Verified after binding' } } }))
+    const tree = () => <MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes><Route path='/orders/:id/confirmation' element={<OrderConfirmationPage />} /></Routes></MemoryRouter>
+    const view = render(tree())
+    expect(apiClient.get).not.toHaveBeenCalled()
+    useAuth.mockReturnValue({ isLoaded: true, userId: null })
+    view.rerender(tree())
+    expect(apiClient.get).not.toHaveBeenCalled()
+    window.localStorage.removeItem('hafapass_scanner_user_id')
+    view.rerender(tree())
+    expect(await screen.findByText('Verified after binding')).toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledWith('/orders/922', { headers: {} })
+  })
+
+  it('does not clear a newer active checkout after an earlier order becomes terminal', async () => {
+    let finish
+    apiClient.get.mockImplementation(url => url === '/config' ? Promise.resolve({ data: { launch_capabilities: {} } }) : new Promise(resolve => { finish = resolve }))
+    saveActiveCheckout('free-event', 922)
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes><Route path='/orders/:id/confirmation' element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+    await waitFor(() => expect(finish).toBeTypeOf('function'))
+    saveActiveCheckout('free-event', 923)
+    await act(async () => finish({ data: { id: 922, status: 'completed', order_items: [], tickets: [], event: { slug: 'free-event', title: 'Earlier Order Event' } } }))
+    expect(await screen.findByText('Earlier Order Event')).toBeInTheDocument()
+    expect(getActiveCheckout('free-event')).toBe('923')
+  })
+
+  it('discards a late order fetch after the authenticated buyer changes', async () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-a')
+    let finish
+    apiClient.get.mockImplementation(url => url === '/config' ? Promise.resolve({ data: { launch_capabilities: {} } }) : new Promise(resolve => { finish = resolve }))
+    saveActiveCheckout('free-event', 922)
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes><Route path='/orders/:id/confirmation' element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+    await waitFor(() => expect(finish).toBeTypeOf('function'))
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-b')
+    await act(async () => finish({ data: { id: 922, status: 'completed', buyer_email: 'private-buyer-a@example.invalid', order_items: [], tickets: [], event: { slug: 'free-event', title: 'Buyer A private event' } } }))
+    expect(screen.queryByText('Buyer A private event')).not.toBeInTheDocument()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-a')
+    expect(getActiveCheckout('free-event')).toBe('922')
+  })
 
   it('uses the guest token imported from the recovery link on initial fetch and every later action', async () => {
     const order = {

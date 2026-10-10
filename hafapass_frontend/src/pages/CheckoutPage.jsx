@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useAuth } from '@clerk/clerk-react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Tag, X, Loader2, Calendar, MapPin, Timer } from 'lucide-react'
@@ -8,13 +9,46 @@ import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { CheckoutAttemptConflict, checkoutDefinitelyRejected, clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout, saveOrderAccess } from '../utils/orderAccess'
+import { CheckoutAttemptConflict, checkoutBuyerIdentity, checkoutBuyerMatches, checkoutAttemptCurrent, activeCheckoutBuyerBound, recordCheckoutOutcome, checkoutDefinitelyRejected, clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout } from '../utils/orderAccess'
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function CheckoutPage() {
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout /> : <CheckoutContent buyerId={checkoutBuyerIdentity()} />
+}
+
+function AuthenticatedCheckout() {
+  const { isLoaded, userId } = useAuth()
+  // ClerkProviderWrapper binds local recovery state after this identity settles.
+  // Its public children can otherwise mount while Clerk is still hydrating.
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  return <CheckoutContent key={userId || 'guest'} buyerId={userId || null} />
+}
+
+function CheckoutContent({ buyerId }) {
   const { slug } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+
+  const lifecycle = useRef({ active: false, generation: 0 })
+  const currentRoute = useRef(null)
+  const paymentContext = useRef(null)
+  const rejectionContext = useRef(null)
+  currentRoute.current = { slug, pathname: location.pathname, search: location.search, buyerId }
+  useLayoutEffect(() => {
+    const state = lifecycle.current
+    state.active = true
+    state.generation += 1
+    state.buyerId = buyerId
+    return () => { state.active = false; state.generation += 1 }
+  }, [buyerId])
+  const captureContext = useCallback(() => ({
+    ...currentRoute.current, generation: lifecycle.current.generation,
+  }), [])
+  const contextCurrent = useCallback(context => lifecycle.current.active
+    && lifecycle.current.generation === context.generation && lifecycle.current.buyerId === context.buyerId
+    && checkoutBuyerIdentity() === context.buyerId
+    && currentRoute.current.slug === context.slug && currentRoute.current.pathname === context.pathname
+    && currentRoute.current.search === context.search, [])
 
   const { t } = useTranslation()
   const [event, setEvent] = useState(location.state?.event || null)
@@ -64,37 +98,72 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!location.pathname.startsWith('/checkout/')) return undefined
+    const context = captureContext()
+    if (!checkoutBuyerMatches(slug)) {
+      setError('Return to the account that started this saved checkout before recovering it.')
+      setLoading(false)
+      return undefined
+    }
     const resumeId = new URLSearchParams(location.search).get('resume')
-    const activeOrderId = /^\d+$/.test(resumeId || '') ? resumeId : getActiveCheckout(slug)
+    let expectedActiveId = getActiveCheckout(slug)
+    const activeOrderId = /^\d+$/.test(resumeId || '') ? resumeId : expectedActiveId
     const attempt = getCheckoutAttempt(slug)
     if (!activeOrderId && !attempt) return undefined
+    if (attempt && !checkoutAttemptCurrent(slug, attempt.payload.checkout_key, context.buyerId)) {
+      setError('Return to the account that started this saved checkout before recovering it.')
+      setLoading(false)
+      return undefined
+    }
+    if (expectedActiveId && activeOrderId !== expectedActiveId) {
+      setError('Another saved checkout is active. Recover it before opening a different order.')
+      setLoading(false)
+      return undefined
+    }
     let cancelled = false
+    let pendingAttemptKey = !activeOrderId ? attempt?.payload.checkout_key : null
+    const current = () => !cancelled && contextCurrent(context)
+      && getActiveCheckout(slug) === expectedActiveId
+      && (pendingAttemptKey ? checkoutAttemptCurrent(slug, pendingAttemptKey, context.buyerId) : !getCheckoutAttempt(slug))
     setRecovering(true)
     const recover = async () => {
+      if (!current()) return
       let id = activeOrderId
       if (!id) {
         let response
         try {
           response = await apiClient.post('/orders', attempt.payload)
         } catch (err) {
-          if (checkoutDefinitelyRejected(err)) {
-            clearCheckoutAttempt(slug)
-            if (!cancelled) setCanStartNewCheckout(true)
+          if (current() && checkoutDefinitelyRejected(err)
+            && clearCheckoutAttempt(slug, pendingAttemptKey, context.buyerId)) {
+            pendingAttemptKey = null
+            rejectionContext.current = context
+            setCanStartNewCheckout(true)
           }
           throw err
         }
+        if (!current()) return
         id = response.data.id
-        saveOrderAccess(id, response.data.guest_access_token)
-        saveActiveCheckout(slug, id)
-        clearCheckoutAttempt(slug)
+        if (!recordCheckoutOutcome(slug, pendingAttemptKey, context.buyerId, response.data)) {
+          if (current()) throw new Error('Checkout outcome is not confirmed')
+          return
+        }
+        expectedActiveId = String(id)
+        pendingAttemptKey = null
       }
-      const response = await apiClient.post(`/orders/${id}/payment_resume`, {}, { headers: orderAccessHeaders(id) })
-      if (cancelled) return
+      if (!current()) return
+      // A legacy cache entry is not proof that the signed-in buyer owns it.
+      // Automatic recovery must first pass the server's actual user check.
+      const headers = context.buyerId && !activeCheckoutBuyerBound(slug) && !resumeId ? {} : orderAccessHeaders(id)
+      const response = await apiClient.post(`/orders/${id}/payment_resume`, {}, { headers })
+      if (!current()) return
       const order = response.data
       if (!order.client_secret) {
         navigate(`/orders/${id}/confirmation`, { replace: true })
         return
       }
+      saveActiveCheckout(slug, id)
+      expectedActiveId = String(id)
+      paymentContext.current = { ...context, orderId: String(id) }
       setEvent(order.event)
       setOrderData(order)
       setOrderId(id)
@@ -105,19 +174,15 @@ export default function CheckoutPage() {
       setLoading(false)
     }
     recover().catch(err => {
-      if (!cancelled) {
+      if (current()) {
         setError(err.response?.data?.error || 'We could not restore your checkout. Retry this page before starting another order.')
         setLoading(false)
       }
-    }).finally(() => { if (!cancelled) setRecovering(false) })
+    }).finally(() => { if (!cancelled && contextCurrent(context)) setRecovering(false) })
     return () => { cancelled = true }
-  }, [navigate, slug, location.pathname, location.search, recoveryVersion])
+  }, [navigate, slug, location.pathname, location.search, recoveryVersion, captureContext, contextCurrent])
 
   const retrySavedCheckout = () => {
-    if (!getActiveCheckout(slug) && !getCheckoutAttempt(slug)) {
-      window.location.reload()
-      return
-    }
     setError(null)
     setSubmitError(null)
     setCheckoutNeedsRecovery(false)
@@ -126,8 +191,8 @@ export default function CheckoutPage() {
 
   const startNewCheckout = () => {
     // The action is available only after a definitive no-order response.
-    if (!canStartNewCheckout || getActiveCheckout(slug)) return
-    clearCheckoutAttempt(slug)
+    if (!canStartNewCheckout || !rejectionContext.current || !contextCurrent(rejectionContext.current)
+      || !checkoutBuyerMatches(slug) || getActiveCheckout(slug) || getCheckoutAttempt(slug)) return
     setCanStartNewCheckout(false)
     setError(null)
     setSubmitError(null)
@@ -148,7 +213,7 @@ export default function CheckoutPage() {
     if (!location.pathname.startsWith('/checkout/')) return
     if (!lineItems || lineItems.length === 0) {
       const activeOrderId = getActiveCheckout(slug)
-      if (!activeOrderId && !getCheckoutAttempt(slug) && !new URLSearchParams(location.search).has('resume')) navigate(`/events/${slug}`, { replace: true })
+      if (checkoutBuyerMatches(slug) && !activeOrderId && !getCheckoutAttempt(slug) && !new URLSearchParams(location.search).has('resume')) navigate(`/events/${slug}`, { replace: true })
       return
     }
     if (!event) {
@@ -157,7 +222,7 @@ export default function CheckoutPage() {
         .then(res => { setEvent(res.data); setLoading(false) })
         .catch(() => { setError('Unable to load event details.'); setLoading(false) })
     }
-  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname, location.search])
+  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname, location.search, recoveryVersion])
 
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
@@ -241,6 +306,9 @@ export default function CheckoutPage() {
       return
     }
 
+    const context = captureContext()
+    let attempt
+    const current = () => contextCurrent(context) && (!attempt || checkoutAttemptCurrent(slug, attempt.payload.checkout_key, context.buyerId))
     setSubmitting(true)
     try {
       trackFunnel(apiClient, event.id, 'checkout_started')
@@ -273,14 +341,18 @@ export default function CheckoutPage() {
         terms_version: config.buyer_terms_version,
         live_money_proof: liveMoneyProof,
       }
-      const attempt = prepareCheckoutAttempt(slug, payload)
+      attempt = prepareCheckoutAttempt(slug, payload)
+      if (!current()) return
       const response = await apiClient.post('/orders', attempt.payload)
+      if (!current()) return
       const order = response.data
-      saveOrderAccess(order.id, order.guest_access_token)
-      saveActiveCheckout(slug, order.id)
-      clearCheckoutAttempt(slug)
+      if (!recordCheckoutOutcome(slug, attempt.payload.checkout_key, context.buyerId, order)) {
+        if (current()) throw new Error('Checkout outcome is not confirmed')
+        return
+      }
 
       if (order.client_secret && order.stripe_publishable_key) {
+        paymentContext.current = { ...context, orderId: String(order.id) }
         setClientSecret(order.client_secret)
         setStripePublishableKey(order.stripe_publishable_key)
         setStripeAccount(order.stripe_account || null)
@@ -291,19 +363,23 @@ export default function CheckoutPage() {
         navigate(`/orders/${order.id}/confirmation`, { state: { order, event }, replace: true })
       }
     } catch (err) {
-      if (checkoutDefinitelyRejected(err)) {
-        clearCheckoutAttempt(slug)
+      if (!current()) return
+      if (attempt && checkoutDefinitelyRejected(err) && clearCheckoutAttempt(slug, attempt.payload.checkout_key, context.buyerId)) {
+        rejectionContext.current = context
         setCanStartNewCheckout(true)
       } else if (err instanceof CheckoutAttemptConflict || getCheckoutAttempt(slug)) {
         setCheckoutNeedsRecovery(true)
       }
       setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message : 'Something went wrong. Retry to recover the same checkout.'))
     } finally {
-      setSubmitting(false)
+      if (contextCurrent(context)) setSubmitting(false)
     }
   }
 
   const handlePaymentSuccess = (paymentIntent) => {
+    const context = paymentContext.current
+    if (!context || context.orderId !== String(orderId) || !contextCurrent(context)
+      || getActiveCheckout(slug) !== context.orderId || getCheckoutAttempt(slug)) return
     navigate(`/orders/${orderId}/confirmation`, { state: { order: orderData, event, paymentIntent }, replace: true })
   }
 
@@ -462,7 +538,7 @@ export default function CheckoutPage() {
             <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.serviceFee')}</span><span>{formatPrice(displayedFee)}</span></div>
             {displayedDiscount > 0 && (
               <div className="flex justify-between text-emerald-600">
-                <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {promoData.code}</span>
+                <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {orderData?.promo_code?.code || promoData?.code || 'Discount'}</span>
                 <span>-{formatPrice(displayedDiscount)}</span>
               </div>
             )}
@@ -626,19 +702,25 @@ export default function CheckoutPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-semibold text-neutral-900">Payment</h2>
               <button disabled={submitting} onClick={async () => {
+                const context = captureContext()
+                const cancellingOrderId = orderId
+                const current = () => contextCurrent(context) && getActiveCheckout(slug) === String(cancellingOrderId) && !getCheckoutAttempt(slug)
+                if (!current() || !paymentContext.current || !contextCurrent(paymentContext.current)
+                  || paymentContext.current.orderId !== String(cancellingOrderId)) return
                 setSubmitting(true)
                 setSubmitError(null)
                 try {
                   if (orderId) await apiClient.post(`/orders/${orderId}/cancel`, {}, { headers: orderAccessHeaders(orderId) })
-                  clearActiveCheckout(slug)
+                  if (!current() || !clearActiveCheckout(slug, cancellingOrderId)) return
+                  paymentContext.current = null
                   setStep('info')
                   setClientSecret(null)
                   setStripePublishableKey(null)
                   setOrderId(null)
                   setOrderData(null)
                 } catch (err) {
-                  setSubmitError(err.response?.data?.error || 'We could not confirm cancellation. Please refresh this order before starting another checkout.')
-                } finally { setSubmitting(false) }
+                  if (current()) setSubmitError(err.response?.data?.error || 'We could not confirm cancellation. Please refresh this order before starting another checkout.')
+                } finally { if (contextCurrent(context)) setSubmitting(false) }
               }}
                 className="text-sm text-brand-500 hover:text-brand-600 font-medium">{t('checkout.editInfo')}</button>
             </div>

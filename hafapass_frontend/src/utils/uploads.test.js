@@ -45,6 +45,25 @@ describe('verified uploads', () => {
     expect(window.sessionStorage.length).toBe(0)
   })
 
+  it('lets a remounted caller recover the original token after the old component withdraws its context', async () => {
+    let finish
+    let originalMounted = true
+    apiClient.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const first = uploadImage(file, 37, () => originalMounted)
+    const firstRejected = expect(first).rejects.toThrow('context changed')
+    await vi.waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
+    originalMounted = false
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/original.png' } })
+    const remounted = uploadImage(file, 37, () => true)
+    finish({ data: { public_url: 'https://images.invalid/original.png' } })
+    await firstRejected
+    expect(await remounted).toBe('https://images.invalid/original.png')
+    expect(apiClient.post.mock.calls.map(([path]) => path)).toEqual(['/uploads/presign', '/uploads/complete', '/uploads/complete'])
+    expect(apiClient.post.mock.calls[2][1]).toEqual({ upload_token: 'scoped-token' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(window.sessionStorage.length).toBe(0)
+  })
+
   it('does not reuse another account’s pending completion', async () => {
     apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
     await expect(uploadImage(file, 37)).rejects.toThrow()

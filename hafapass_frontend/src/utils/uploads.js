@@ -2,6 +2,7 @@ import apiClient from '../api/client'
 import { forgetUploadToken, uploadRecoveryPrefix, uploadScope, uploadScopeCurrent } from './uploadRecovery'
 
 const inFlight = new Map()
+class UploadContextChanged extends Error {}
 
 async function recoveryKey(file, scope) {
   const bytes = file.arrayBuffer ? await file.arrayBuffer() : await new Promise((resolve, reject) => {
@@ -15,8 +16,8 @@ async function recoveryKey(file, scope) {
 }
 
 function requireScope(scope) {
-  if (!uploadScopeCurrent(scope)) throw new Error('Your account or organization changed. Please select the image again.')
-  if (scope.isCurrent && !scope.isCurrent()) throw new Error('The image upload context changed. Please select the image again.')
+  if (!uploadScopeCurrent(scope)) throw new UploadContextChanged('Your account or organization changed. Please select the image again.')
+  if (scope.isCurrent && !scope.isCurrent()) throw new UploadContextChanged('The image upload context changed. Please select the image again.')
 }
 
 async function completeUpload(key, uploadToken, scope) {
@@ -83,8 +84,22 @@ export async function uploadImage(file, eventId, isCurrent) {
   const scope = { ...uploadScope(eventId), isCurrent }
   if (!scope.userId) throw new Error('Sign in before uploading an image.')
   const key = await recoveryKey(file, scope)
-  if (inFlight.has(key)) return inFlight.get(key)
+  while (inFlight.has(key)) {
+    const previous = inFlight.get(key)
+    try {
+      const result = await previous
+      requireScope(scope)
+      return result
+    } catch (error) {
+      requireScope(scope)
+      // A remounted caller may reconcile the original saved token after the
+      // old component withdraws its authority. Other failures stay explicit.
+      if (!(error instanceof UploadContextChanged)) throw error
+    }
+    if (inFlight.get(key) === previous) inFlight.delete(key)
+  }
+  requireScope(scope)
   const operation = upload(file, eventId, scope, key)
   inFlight.set(key, operation)
-  try { return await operation } finally { inFlight.delete(key) }
+  try { return await operation } finally { if (inFlight.get(key) === operation) inFlight.delete(key) }
 }

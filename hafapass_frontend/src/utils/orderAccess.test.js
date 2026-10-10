@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { CheckoutAttemptConflict, checkoutDefinitelyRejected, prepareCheckoutAttempt, getCheckoutAttempt, clearCheckoutAttempt, getBuyerRefundAttempt, prepareBuyerRefundAttempt, recordBuyerRefundOutcome } from './orderAccess'
+import { CheckoutAttemptConflict, checkoutDefinitelyRejected, prepareCheckoutAttempt, getCheckoutAttempt, clearCheckoutAttempt, recordCheckoutOutcome, saveActiveCheckout, getActiveCheckout, clearActiveCheckout, getOrderAccess, getBuyerRefundAttempt, prepareBuyerRefundAttempt, recordBuyerRefundOutcome } from './orderAccess'
 
 describe('buyer refund request persistence', () => {
-  beforeEach(() => window.sessionStorage.clear())
+  beforeEach(() => { window.sessionStorage.clear(); window.localStorage.clear() })
   it('preserves unknown and pending operation identities, including contradictory reconciliation metadata', () => {
     const initial = prepareBuyerRefundAttempt(12, 'ticket:34')
     recordBuyerRefundOutcome(12, 'ticket:34', null)
@@ -50,7 +50,7 @@ describe('buyer refund request persistence', () => {
     expect(first.payload.checkout_key).toMatch(/^[0-9a-f]{64}$/)
     expect(prepareCheckoutAttempt('event', { buyer_email: 'buyer@example.invalid' })).toEqual(first)
     expect(getCheckoutAttempt('event')).toEqual(first)
-    clearCheckoutAttempt('event')
+    clearCheckoutAttempt('event', first.payload.checkout_key)
     expect(getCheckoutAttempt('event')).toBeNull()
   })
 
@@ -62,10 +62,49 @@ describe('buyer refund request persistence', () => {
     expect(() => prepareCheckoutAttempt('event', { ...payload, line_items: [{ ticket_type_id: 7, quantity: 2 }] })).toThrow(CheckoutAttemptConflict)
     expect(() => prepareCheckoutAttempt('event', { ...payload, promo_code_id: 9 })).toThrow(CheckoutAttemptConflict)
     expect(getCheckoutAttempt('event')).toEqual(first)
-    clearCheckoutAttempt('event')
+    clearCheckoutAttempt('event', first.payload.checkout_key)
     const next = prepareCheckoutAttempt('event', { ...payload, buyer_email: 'edited@example.invalid' })
     expect(next.payload.buyer_email).toBe('edited@example.invalid')
     expect(next.payload.checkout_key).not.toBe(first.payload.checkout_key)
+  })
+
+  it('fences a late rejection or successful outcome against the exact newer attempt', () => {
+    const first = prepareCheckoutAttempt('event', { buyer_email: 'buyer@example.invalid' })
+    const newer = { buyerId: null, payload: { checkout_key: 'b'.repeat(64) }, expiresAt: Date.now() + 300000 }
+    window.sessionStorage.setItem('hafapass:checkout-attempt:event', JSON.stringify(newer))
+    expect(clearCheckoutAttempt('event', first.payload.checkout_key)).toBe(false)
+    expect(recordCheckoutOutcome('event', first.payload.checkout_key, null, { id: 9, guest_access_token: 'old-token' })).toBe(false)
+    expect(getCheckoutAttempt('event')).toEqual(newer)
+    expect(getActiveCheckout('event')).toBeNull()
+    expect(getOrderAccess(9)).toBeNull()
+    expect(recordCheckoutOutcome('event', newer.payload.checkout_key, null, { id: 10, guest_access_token: 'current-token' })).toBe(true)
+    expect(getCheckoutAttempt('event')).toBeNull()
+    expect(getActiveCheckout('event')).toBe('10')
+    expect(getOrderAccess(10)).toBe('current-token')
+  })
+
+  it('preserves recovery identities when the authenticated buyer changes', () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-a')
+    const attempt = prepareCheckoutAttempt('event', { buyer_email: 'buyer@example.invalid' })
+    saveActiveCheckout('another-event', 9)
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-b')
+    expect(clearCheckoutAttempt('event', attempt.payload.checkout_key, 'buyer-a')).toBe(false)
+    expect(() => prepareCheckoutAttempt('event', { buyer_email: 'buyer@example.invalid' })).toThrow(CheckoutAttemptConflict)
+    expect(recordCheckoutOutcome('event', attempt.payload.checkout_key, 'buyer-a', { id: 10, guest_access_token: 'old-token' })).toBe(false)
+    expect(getCheckoutAttempt('event')).toEqual(attempt)
+    expect(getActiveCheckout('another-event')).toBeNull()
+    expect(clearActiveCheckout('another-event', 9)).toBe(false)
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-a')
+    expect(getActiveCheckout('another-event')).toBe('9')
+  })
+
+  it('clears only the expected active order and leaves a newer active checkout intact', () => {
+    saveActiveCheckout('event', 9)
+    saveActiveCheckout('event', 10)
+    expect(clearActiveCheckout('event', 9)).toBe(false)
+    expect(getActiveCheckout('event')).toBe('10')
+    expect(clearActiveCheckout('event', 10)).toBe(true)
+    expect(getActiveCheckout('event')).toBeNull()
   })
 
   it.each([400, 401, 403, 404, 422])('recognizes a definitive no-order %s response', status => {

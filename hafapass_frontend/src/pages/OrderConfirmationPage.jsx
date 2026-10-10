@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useAuth } from '@clerk/clerk-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle, ChevronRight, Clock3, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
+import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 
 const finalStatuses = new Set(['completed', 'partially_refunded', 'refunded', 'cancelled', 'expired'])
 const refundNotice = attempt => ({
@@ -24,6 +25,16 @@ const refundButton = (attempt, initial = 'Refund') => ['failed', 'cancelled'].in
     : attempt?.status === 'rejected' ? 'Retry refund request' : initial
 
 export default function OrderConfirmationPage() {
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedOrderConfirmation /> : <OrderConfirmationContent />
+}
+
+function AuthenticatedOrderConfirmation() {
+  const { isLoaded, userId } = useAuth()
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  return <OrderConfirmationContent key={userId || 'guest'} />
+}
+
+function OrderConfirmationContent() {
   const { id } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -42,6 +53,17 @@ export default function OrderConfirmationPage() {
   const [exchangeAttested, setExchangeAttested] = useState(false)
   const [ticketActionError, setTicketActionError] = useState(null)
   const [, refreshRefundAttempts] = useState(0)
+  const lifecycle = useRef({ active: false, generation: 0 })
+  const currentRoute = useRef(null)
+  const latestFetch = useRef(0)
+  currentRoute.current = { id, pathname: location.pathname }
+  useLayoutEffect(() => {
+    const state = lifecycle.current
+    state.active = true
+    state.generation += 1
+    state.buyerId = checkoutBuyerIdentity()
+    return () => { state.active = false; state.generation += 1 }
+  }, [])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -54,17 +76,27 @@ export default function OrderConfirmationPage() {
   }, [id, location.pathname, location.search, navigate])
 
   const fetchOrder = useCallback(async () => {
+    const generation = lifecycle.current.generation
+    const buyerId = checkoutBuyerIdentity()
+    const request = ++latestFetch.current
+    const current = () => lifecycle.current.active && lifecycle.current.generation === generation
+      && lifecycle.current.buyerId === buyerId
+      && currentRoute.current.id === id && currentRoute.current.pathname === `/orders/${id}/confirmation`
+      && checkoutBuyerIdentity() === buyerId && latestFetch.current === request
+    if (!current()) return
     try {
       const response = await apiClient.get(`/orders/${id}`, { headers: orderAccessHeaders(id) })
+      if (!current()) return
       setOrder(response.data)
       setError(null)
-      if (response.data.event?.slug && finalStatuses.has(response.data.status)) clearActiveCheckout(response.data.event.slug)
+      if (response.data.event?.slug && finalStatuses.has(response.data.status)) clearActiveCheckout(response.data.event.slug, id)
     } catch (err) {
+      if (!current()) return
       setError(err.response?.status === 404
         ? 'We could not securely open this order. Use the recovery page with your order reference and email.'
         : 'Unable to refresh this order right now. Please try again.')
     } finally {
-      setLoading(false)
+      if (current()) setLoading(false)
     }
   }, [id])
 
