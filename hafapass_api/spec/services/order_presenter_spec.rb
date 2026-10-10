@@ -15,4 +15,25 @@ RSpec.describe OrderPresenter do
     expect(tickets.fetch(cancelled.id)[:refundable_cents]).to eq(0)
     expect(tickets.fetch(issued.id)[:refundable_cents]).to eq(1_100)
   end
+
+  [false, true].each do |preloaded|
+    it "shows only the safe latest confirmation or fulfillment status with deliveries preloaded=#{preloaded}" do
+      order = create(:order)
+      create(:message_delivery, order: order, template: "order_confirmation", status: :delivered)
+      resend = create(:message_delivery, order: order, template: "fulfillment_resend", status: :queued,
+        provider_id: "private-provider-id", idempotency_key: "private-provider-operation",
+        outbound_payload: { "html" => "private-token-content" })
+      create(:message_delivery, order: order, template: "communication_campaign", status: :failed)
+      order.message_deliveries.load if preloaded
+
+      expect(described_class.call(order)[:confirmation_delivery]).to eq(
+        status: "queued", simulated: false, updated_at: resend.updated_at
+      )
+      resend.update!(status: :delivered)
+      order.message_deliveries.reload if preloaded
+      expect(described_class.call(order)[:confirmation_delivery]).to eq(
+        status: "delivered", simulated: false, updated_at: resend.updated_at
+      )
+    end
+  end
 end

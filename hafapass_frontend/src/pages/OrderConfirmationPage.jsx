@@ -9,6 +9,10 @@ import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 
+const emailInFlightStatuses = new Set(['queued', 'sent'])
+const EMAIL_REFRESH_INTERVAL = 10_000
+const EMAIL_REFRESH_LIMIT = 6
+
 const finalStatuses = new Set(['completed', 'partially_refunded', 'refunded', 'cancelled', 'expired'])
 const refundNotice = attempt => ({
   pending: 'Refund pending — waiting for the payment provider. Check this saved request; a refund has not been confirmed.',
@@ -26,7 +30,8 @@ const refundButton = (attempt, initial = 'Refund') => ['failed', 'cancelled'].in
     : attempt?.status === 'rejected' ? 'Retry refund request' : initial
 
 export default function OrderConfirmationPage() {
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedOrderConfirmation /> : <OrderConfirmationContent />
+  const { id } = useParams()
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedOrderConfirmation key={id} /> : <OrderConfirmationContent key={id} />
 }
 
 function AuthenticatedOrderConfirmation() {
@@ -44,6 +49,13 @@ function OrderConfirmationContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [resendState, setResendState] = useState('idle')
+  const [deliveryRefreshing, setDeliveryRefreshing] = useState(false)
+  const [deliveryRefreshError, setDeliveryRefreshError] = useState(null)
+  const [emailUpdatesPaused, setEmailUpdatesPaused] = useState(false)
+  const [deliveryRefreshCycle, setDeliveryRefreshCycle] = useState(0)
+  const deliveryRefreshInFlight = useRef(null)
+  const deliveryRefreshBudget = useRef({ key: null, attempts: 0 })
+  const delivery = order?.confirmation_delivery
   const [decisionState, setDecisionState] = useState('idle')
   const [cancellingTicketId, setCancellingTicketId] = useState(null)
   const [rotatingTicketId, setRotatingTicketId] = useState(null)
@@ -76,28 +88,46 @@ function OrderConfirmationContent() {
     navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '' }, { replace: true })
   }, [id, location.pathname, location.search, navigate])
 
-  const fetchOrder = useCallback(async () => {
+  const fetchOrder = useCallback(async ({ preserveOrder = false } = {}) => {
     const generation = lifecycle.current.generation
     const buyerId = checkoutBuyerIdentity()
-    const request = ++latestFetch.current
-    const current = () => lifecycle.current.active && lifecycle.current.generation === generation
+    const contextCurrent = () => lifecycle.current.active && lifecycle.current.generation === generation
       && lifecycle.current.buyerId === buyerId
       && currentRoute.current.id === id && currentRoute.current.pathname === `/orders/${id}/confirmation`
-      && checkoutBuyerIdentity() === buyerId && latestFetch.current === request
-    if (!current()) return
+      && checkoutBuyerIdentity() === buyerId
+    if (!contextCurrent()) return
+    while (preserveOrder && deliveryRefreshInFlight.current) {
+      await deliveryRefreshInFlight.current
+      if (!contextCurrent()) return
+    }
+    if (preserveOrder && (navigator.onLine === false || document.visibilityState === 'hidden')) return
+    const request = ++latestFetch.current
+    const current = () => contextCurrent() && latestFetch.current === request
+    let finishRefresh
+    if (preserveOrder) {
+      deliveryRefreshInFlight.current = new Promise(resolve => { finishRefresh = resolve })
+      setDeliveryRefreshing(true)
+    }
     try {
-      const response = await apiClient.get(`/orders/${id}`, { headers: orderAccessHeaders(id) })
+      const response = await apiClient.get(`/orders/${id}`, { headers: orderAccessHeaders(id), ...(preserveOrder ? { timeout: 10_000 } : {}) })
       if (!current()) return
       setOrder(response.data)
       setError(null)
+      setDeliveryRefreshError(null)
       if (response.data.event?.slug && finalStatuses.has(response.data.status)) clearActiveCheckout(response.data.event.slug, id)
+      return response.data
     } catch (err) {
       if (!current()) return
+      if (preserveOrder && err.response?.status !== 404 && err.response?.status !== 401 && err.response?.status !== 403) {
+        setDeliveryRefreshError('Unable to refresh email status right now. Your saved order details are still shown. Try Refresh status when connected.')
+        return
+      }
       setError(err.response?.status === 404
         ? 'We could not securely open this order. Use the recovery page with your order reference and email.'
         : 'Unable to refresh this order right now. Please try again.')
     } finally {
-      if (current()) setLoading(false)
+      if (preserveOrder) { deliveryRefreshInFlight.current = null; finishRefresh() }
+      if (current()) { setLoading(false); setDeliveryRefreshing(false) }
     }
   }, [id])
 
@@ -111,13 +141,66 @@ function OrderConfirmationContent() {
     return () => window.clearInterval(interval)
   }, [fetchOrder, order])
 
+  useEffect(() => {
+    const budgetKey = `${id}:${deliveryRefreshCycle}`
+    if (deliveryRefreshBudget.current.key !== budgetKey) {
+      deliveryRefreshBudget.current = { key: budgetKey, attempts: 0 }
+      setEmailUpdatesPaused(false)
+    }
+    if (deliveryRefreshError || !order || String(order.id) !== id || !finalStatuses.has(order.status) || delivery?.simulated || !emailInFlightStatuses.has(delivery?.status)) return undefined
+    const budget = deliveryRefreshBudget.current
+    const buyerId = lifecycle.current.buyerId
+    let active = true
+    let timer
+    let busy = false
+    let stopped = false
+    const eligible = () => active && !stopped && lifecycle.current.active && checkoutBuyerIdentity() === buyerId
+      && currentRoute.current.id === id && document.visibilityState !== 'hidden' && navigator.onLine !== false
+    const exhausted = () => budget.attempts >= EMAIL_REFRESH_LIMIT
+    const schedule = () => {
+      window.clearTimeout(timer)
+      if (!eligible() || busy) return
+      if (exhausted()) { setEmailUpdatesPaused(true); return }
+      timer = window.setTimeout(async () => {
+        if (!eligible() || exhausted()) { if (active && exhausted()) setEmailUpdatesPaused(true); return }
+        busy = true
+        budget.attempts += 1
+        const refreshed = await fetchOrder({ preserveOrder: true })
+        busy = false
+        if (!active) return
+        if (!refreshed) { stopped = true; return }
+        if (refreshed.confirmation_delivery?.simulated || !emailInFlightStatuses.has(refreshed.confirmation_delivery?.status)) return
+        schedule()
+      }, EMAIL_REFRESH_INTERVAL)
+    }
+    const availabilityChanged = () => schedule()
+    document.addEventListener('visibilitychange', availabilityChanged)
+    window.addEventListener('online', availabilityChanged)
+    window.addEventListener('offline', availabilityChanged)
+    schedule()
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', availabilityChanged)
+      window.removeEventListener('online', availabilityChanged)
+      window.removeEventListener('offline', availabilityChanged)
+    }
+  }, [id, order, delivery?.status, delivery?.simulated, deliveryRefreshCycle, deliveryRefreshError, fetchOrder])
+
+  const refreshDeliveryStatus = () => {
+    if (navigator.onLine === false) {
+      setDeliveryRefreshError('Connect to the internet, then use Refresh status. Your saved order details are still shown.')
+      return
+    }
+    return fetchOrder({ preserveOrder: true })
+  }
+
   const formatPrice = (cents = 0) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
   const event = order?.event
   const awaitingPayment = order?.status === 'pending' && order?.payment_resumable === true
   const isProcessing = order && !finalStatuses.has(order.status)
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
   const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
-  const delivery = order?.confirmation_delivery
   const deliveryFailed = !delivery?.simulated && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
   const deliveryMessage = delivery?.simulated
     ? usableTickets ? 'Email is simulated in this test environment. Open or download your tickets below.' : 'Email is simulated in this test environment. Check your order and ticket statuses below.'
@@ -125,10 +208,14 @@ function OrderConfirmationContent() {
       ? 'Your ticket email was delivered.'
       : delivery?.status === 'sent'
         ? 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'
-        : ['queued', 'delayed'].includes(delivery?.status)
+        : delivery?.status === 'delayed'
+          ? 'Your ticket email is delayed. Delivery has not been confirmed. You can open or download your tickets below.'
+          : delivery?.status === 'queued'
           ? 'Your ticket email is queued for delivery. You can open or download your tickets below.'
-          : deliveryFailed
-            ? 'We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.'
+          : delivery?.status === 'cancelled'
+            ? 'This ticket email request was cancelled. Check your order and ticket statuses below.'
+            : deliveryFailed
+            ? 'Your ticket email delivery needs attention. Open or download your tickets below, or contact support.'
             : usableTickets
               ? 'Your tickets are ready below. You can request a confirmation email using Resend.'
               : 'You can view your order and ticket statuses here. Email delivery will appear when a confirmation is available.'
@@ -143,12 +230,18 @@ function OrderConfirmationContent() {
   const orderHeaders = () => orderAccessHeaders(id)
 
   async function resend() {
+    const generation = lifecycle.current.generation
+    const buyerId = checkoutBuyerIdentity()
+    const current = () => lifecycle.current.active && lifecycle.current.generation === generation && checkoutBuyerIdentity() === buyerId && currentRoute.current.id === id
     setResendState('sending')
     try {
       await apiClient.post(`/orders/${id}/resend`, {}, { headers: orderHeaders() })
-      await fetchOrder()
+      if (!current()) return
       setResendState('requested')
+      setDeliveryRefreshCycle(value => value + 1)
+      await refreshDeliveryStatus()
     } catch (err) {
+      if (!current()) return
       setResendState(err.response?.status === 429 ? 'cooldown' : 'error')
     }
   }
@@ -295,6 +388,9 @@ function OrderConfirmationContent() {
         <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">
           <h2 id="confirmation-delivery-title" className="font-semibold">Ticket email</h2>
           <p className="mt-1" role="status">{deliveryMessage}</p>
+          {!delivery?.simulated && <button onClick={refreshDeliveryStatus} disabled={deliveryRefreshing} className="mt-2 inline-flex min-h-11 items-center gap-1.5 font-semibold text-brand-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" />{deliveryRefreshing ? 'Refreshing status…' : 'Refresh status'}</button>}
+          {deliveryRefreshError && <p className="mt-1 text-amber-800" role="alert">{deliveryRefreshError}</p>}
+          {emailUpdatesPaused && emailInFlightStatuses.has(delivery?.status) && <p className="mt-1 text-neutral-600">Automatic email updates have paused. Use Refresh status to check again.</p>}
           {deliveryFailed && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
             {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
             <a href={supportMailto(`Ticket email for order ${order.reference}`)} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
