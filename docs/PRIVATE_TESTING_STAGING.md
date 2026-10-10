@@ -74,7 +74,7 @@ Use the repository's development lifecycle helper to claim each local server or 
 
 ## Acceptance and remaining proof
 
-Check `/api/v1/readiness`: staging requires its safe configuration, connected database, connected Redis, the selected simulation/test payment mode, the selected durable adapter and its real executor/scheduling progress. It intentionally does not convert unavailable production approvals into success. Production capability readiness remains visible and disabled. Liveness alone does not confirm a usable release.
+Check `/api/v1/readiness`: staging requires its safe configuration, connected database, connected Redis when using the Sidekiq profile, the selected simulation/test payment mode, the selected durable adapter and its real executor/scheduling progress. It intentionally does not convert unavailable production approvals into success. Production capability readiness remains visible and disabled. Liveness alone does not confirm a usable release.
 
 Complete the organizer → free/simulated checkout → confirmation → ticket download → admission journey with actual Clerk test accounts. Repeat it on desktop and mobile, and verify that users cannot read another organizer's records. Check missing storage, duplicate/canceled tickets, reload and outage recovery. Actual physical phones and venue connectivity remain separate proof.
 
@@ -82,7 +82,7 @@ Ordinary staging simulates email and its delivery history says so. An actual inb
 
 ## Controlled provider rehearsal
 
-Keep the dedicated staging data, queue, Clerk test instance, signing keys and HTTPS origins described above. Use separate staging services; the production defaults in `render.yaml` do not configure this runtime.
+Keep the dedicated staging data, queue, Clerk test instance, signing keys and HTTPS origins described above. Use an isolated staging deployment. The single-service `render.yaml` selects the embedded runtime; staging also requires the rehearsal settings in this document.
 
 Set `HAFAPASS_PROVIDER_REHEARSAL=true` and `PROVIDER_REHEARSAL_SERVICES` to `stripe`, `resend`, or `stripe,resend`. Supply every requirement for each selected provider; a partially configured selection fails boot validation. Production rejects the rehearsal flag.
 
