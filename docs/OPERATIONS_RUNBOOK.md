@@ -120,3 +120,5 @@ Signed offline admissions, device reconciliation, emergency door lists, door inv
 ## Pilot readiness
 
 Communications, support, provider outage, incident, weather, refund, rollback, backup/restore, alert, accessibility, and device/browser pilot procedures are in [Pilot Readiness and Incident Runbook](PILOT_READINESS_RUNBOOK.md). Draft legal artifacts and their required professional approvals are tracked in [Policy and Professional Review Register](POLICY_REVIEW_REGISTER.md). Pending external evidence is a hard release gate, not an engineering test failure to waive.
+
+Durable email attempts bind their payload and idempotency key to a nonsecret fingerprint of the effective Resend credential, endpoint, and provider configuration revision. Reconcile uncertain sends before changing those settings. Changed contexts and legacy attempted rows with no saved context fail closed; approving a new provider configuration does not authorize replaying old uncertain sends.

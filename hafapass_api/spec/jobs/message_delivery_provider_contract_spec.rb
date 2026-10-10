@@ -10,6 +10,37 @@ RSpec.describe MessageDeliveryJob do
     allow(Resend::Emails).to receive(:send).and_return({ id: "email_contract" })
   end
 
+  ["credential", "revision", "endpoint"].each do |change|
+    it "requires reconciliation after an uncertain send and a #{change} change" do
+      allow(Resend).to receive(:api_key).and_return("synthetic-original-key")
+      allow(Resend::Emails).to receive(:send) do
+        expect(MessageDelivery.find(delivery.id).transport_context_digest).to eq(EmailService.transport_context_digest)
+        raise IOError, "response lost after acceptance"
+      end
+      expect { described_class.new.perform(delivery.id) }.to raise_error(IOError)
+      previous = delivery.reload.attributes.slice("provider", "attempts", "outbound_payload", "idempotency_key",
+        "provider_attempted_at", "provider_outcome_unknown", "transport_context_digest")
+      case change
+      when "credential" then allow(Resend).to receive(:api_key).and_return("synthetic-different-account-key")
+      when "revision"
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("PROVIDER_CONFIGURATION_REVISION").and_return("changed")
+      when "endpoint" then stub_const("Resend::Request::BASE_URL", "https://different.example.test/")
+      end
+      expect { described_class.new.perform(delivery.id) }.to raise_error(EmailService::TransportContextChanged)
+      expect(Resend::Emails).to have_received(:send).once
+      expect(delivery.reload.attributes.slice(*previous.keys)).to eq(previous)
+      expect(delivery.provider_outcome_unknown?).to be(true)
+    end
+  end
+
+  it "blocks legacy attempted mail with no original transport context" do
+    delivery.update!(attempts: 1, status: :failed, provider_outcome_unknown: true, provider_attempted_at: 1.hour.ago)
+    expect { described_class.new.perform(delivery.id) }.to raise_error(EmailService::TransportContextChanged)
+    expect(Resend::Emails).not_to have_received(:send)
+    expect(delivery.reload).to have_attributes(attempts: 1, transport_context_digest: nil, provider_outcome_unknown: true)
+  end
+
   it "keeps lost Resend acceptance uncertain when staging transport is disabled" do
     allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("staging"))
     allow(ProviderRehearsal).to receive(:email_payload_allowed?).and_return(true)
@@ -182,6 +213,8 @@ RSpec.describe MessageDeliveryJob do
     expect(delivery.update(outbound_payload: delivery.outbound_payload.merge("html" => "Changed"))).to be(false)
     delivery.reload
     expect(delivery.update(idempotency_key: "new-key")).to be(false)
+    delivery.reload
+    expect(delivery.update(transport_context_digest: "different-context")).to be(false)
   end
 
   it "does not send a simulated prepared request when configuration later changes" do

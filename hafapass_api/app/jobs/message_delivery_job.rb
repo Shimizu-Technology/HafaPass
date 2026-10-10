@@ -46,8 +46,12 @@ class MessageDeliveryJob < ApplicationJob
       if (real_provider && !available) || (!real_provider && Rails.env.production?)
         raise EmailService::ProviderDisabled, "The original email transport is unavailable; reconcile before retrying"
       end
+      if real_provider && (delivery.transport_context_digest.present? || delivery.provider_attempted_at.present? || previously_unknown)
+        EmailService.verify_transport_context!(delivery)
+      end
       payload = delivery.outbound_payload.presence || EmailService.prepare_delivery_payload(delivery)
       delivery.update!(outbound_payload: payload, payload_digest: Digest::SHA256.hexdigest(JSON.generate(payload.sort.to_h)),
+        transport_context_digest: real_provider ? (delivery.transport_context_digest || EmailService.transport_context_digest) : nil,
         provider: real_provider ? "resend" : "simulated", attempts: delivery.attempts + 1, status: :queued, last_error: nil,
         provider_attempted_at: real_provider ? (delivery.provider_attempted_at || Time.current) : nil,
         provider_outcome_unknown: real_provider, send_lease_token: lease_token,

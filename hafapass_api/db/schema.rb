@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -986,6 +986,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.boolean "provider_outcome_unknown", default: false, null: false
     t.string "send_lease_token"
     t.datetime "send_lease_expires_at"
+    t.string "transport_context_digest"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true

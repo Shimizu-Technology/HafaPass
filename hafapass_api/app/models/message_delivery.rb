@@ -51,6 +51,9 @@ class MessageDelivery < ApplicationRecord
   private
 
   def immutable_provider_request
+    if transport_context_digest_in_database.present? && will_save_change_to_transport_context_digest?
+      errors.add(:transport_context_digest, "cannot change after the provider context is prepared")
+    end
     return if outbound_payload_in_database.blank?
 
     %w[outbound_payload recipient idempotency_key].each do |field|

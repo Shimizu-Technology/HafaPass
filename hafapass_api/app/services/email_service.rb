@@ -5,10 +5,27 @@ require "digest"
 class EmailService
   FROM_EMAIL = ENV.fetch("MAILER_FROM_EMAIL", "tickets@hafapass.com")
   class ProviderDisabled < StandardError; end
+  class TransportContextChanged < StandardError; end
 
   class << self
     def configured?
       ProviderRehearsal.email_enabled? || PlatformCapabilities.enabled?("resend_production")
+    end
+
+    def transport_context_digest
+      credential = Resend.api_key
+      credential = credential.call if credential.is_a?(Proc)
+      Digest::SHA256.hexdigest(JSON.generate([
+        "resend", Digest::SHA256.hexdigest(credential.to_s),
+        ENV["PROVIDER_CONFIGURATION_REVISION"].to_s, Resend::Request::BASE_URL
+      ]))
+    end
+
+    def verify_transport_context!(delivery)
+      return if delivery.transport_context_digest.present? &&
+        delivery.transport_context_digest == transport_context_digest
+
+      raise TransportContextChanged, "The original email transport context requires reconciliation before retrying"
     end
 
     # Capture the exact recipient/body once; retries never regenerate access links.
@@ -59,6 +76,7 @@ class EmailService
       unless delivery.provider == "resend" && configured?
         raise ProviderDisabled, "The prepared email provider is unavailable"
       end
+      verify_transport_context!(delivery)
 
       deliver_payload(delivery.outbound_payload, delivery: delivery)
     end
