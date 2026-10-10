@@ -1,0 +1,344 @@
+# FUTURE SIDEKIQ OPTION: not the initial $7 configuration. Requires a drained SQL queue before switching.
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+# Existing API: srv-d6bsuq0gjchc73fu35hg (Singapore, Docker, Starter).
+# Prepared contract only; inspect the sync preview before applying.
+# The web plan is omitted to preserve its existing $7 tier. Workers and Redis
+# are additional billed services. Supply values privately; no credentials here.
+# Deploy the SAME reviewed commit explicitly to web, worker and clock.
+# Optional Stripe keys belong on all three services after provider approval;
+# see docs/RENDER_DEPLOYMENT_CONTRACT.md for their separate configuration.
+previews:
+  generation: 'off'
+services:
+- type: web
+  name: hafapass-api
+  runtime: docker
+  repo: https://github.com/Shimizu-Technology/HafaPass
+  branch: main
+  region: singapore
+  rootDir: hafapass_api
+  dockerfilePath: ./Dockerfile
+  dockerContext: .
+  autoDeployTrigger: 'off'
+  numInstances: 1
+  maxShutdownDelaySeconds: 120
+  dockerCommand: sh -c 'export GIT_SHA="$RENDER_GIT_COMMIT"; exec bundle exec puma -C config/puma.rb'
+  healthCheckPath: /up
+  preDeployCommand: sh -c 'export GIT_SHA="$RENDER_GIT_COMMIT"; exec bin/release-migrate'
+  envVars:
+  - fromGroup: hafapass-production-runtime
+  - key: REDIS_URL
+    fromService:
+      type: keyvalue
+      name: hafapass-production-queue
+      property: connectionString
+  - key: DATABASE_URL
+    sync: false
+  - key: SECRET_KEY_BASE
+    sync: false
+  - key: CLERK_SECRET_KEY
+    sync: false
+  - key: CLERK_PUBLISHABLE_KEY
+    sync: false
+  - key: CLERK_ISSUER
+    sync: false
+  - key: CLERK_AUTHORIZED_PARTIES
+    sync: false
+  - key: ALLOWED_ORIGINS
+    sync: false
+  - key: FRONTEND_URL
+    sync: false
+  - key: PUBLIC_WEB_URL
+    sync: false
+  - key: SENTRY_DSN
+    sync: false
+  - key: AWS_ACCESS_KEY_ID
+    sync: false
+  - key: AWS_SECRET_ACCESS_KEY
+    sync: false
+  - key: AWS_BUCKET
+    sync: false
+  - key: AWS_REGION
+    sync: false
+  - key: RESEND_API_KEY
+    sync: false
+  - key: RESEND_WEBHOOK_SECRET
+    sync: false
+  - key: MAILER_FROM_EMAIL
+    sync: false
+  - key: PROVIDER_CONFIGURATION_REVISION
+    sync: false
+  - key: ADMISSION_MANIFEST_PRIVATE_KEY_PEM
+    sync: false
+  - key: ADMIN_EMAILS
+    sync: false
+  - key: DATABASE_MIGRATION_URL
+    sync: false
+- type: worker
+  name: hafapass-worker
+  runtime: docker
+  repo: https://github.com/Shimizu-Technology/HafaPass
+  branch: main
+  region: singapore
+  rootDir: hafapass_api
+  dockerfilePath: ./Dockerfile
+  dockerContext: .
+  autoDeployTrigger: 'off'
+  numInstances: 1
+  maxShutdownDelaySeconds: 120
+  dockerCommand: sh -c 'export GIT_SHA="$RENDER_GIT_COMMIT"; exec bundle exec sidekiq -C config/sidekiq.yml'
+  plan: 0.5c-512mb
+  envVars:
+  - fromGroup: hafapass-production-runtime
+  - key: REDIS_URL
+    fromService:
+      type: keyvalue
+      name: hafapass-production-queue
+      property: connectionString
+  - key: DATABASE_URL
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: DATABASE_URL
+  - key: SECRET_KEY_BASE
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: SECRET_KEY_BASE
+  - key: CLERK_SECRET_KEY
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: CLERK_SECRET_KEY
+  - key: CLERK_PUBLISHABLE_KEY
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: CLERK_PUBLISHABLE_KEY
+  - key: CLERK_ISSUER
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: CLERK_ISSUER
+  - key: CLERK_AUTHORIZED_PARTIES
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: CLERK_AUTHORIZED_PARTIES
+  - key: ALLOWED_ORIGINS
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: ALLOWED_ORIGINS
+  - key: FRONTEND_URL
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: FRONTEND_URL
+  - key: PUBLIC_WEB_URL
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: PUBLIC_WEB_URL
+  - key: SENTRY_DSN
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: SENTRY_DSN
+  - key: AWS_ACCESS_KEY_ID
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: AWS_ACCESS_KEY_ID
+  - key: AWS_SECRET_ACCESS_KEY
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: AWS_SECRET_ACCESS_KEY
+  - key: AWS_BUCKET
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: AWS_BUCKET
+  - key: AWS_REGION
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: AWS_REGION
+  - key: RESEND_API_KEY
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: RESEND_API_KEY
+  - key: RESEND_WEBHOOK_SECRET
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: RESEND_WEBHOOK_SECRET
+  - key: MAILER_FROM_EMAIL
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: MAILER_FROM_EMAIL
+  - key: PROVIDER_CONFIGURATION_REVISION
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: PROVIDER_CONFIGURATION_REVISION
+  - key: ADMISSION_MANIFEST_PRIVATE_KEY_PEM
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: ADMISSION_MANIFEST_PRIVATE_KEY_PEM
+  - key: ADMIN_EMAILS
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: ADMIN_EMAILS
+- type: worker
+  name: hafapass-commerce-clock
+  runtime: docker
+  repo: https://github.com/Shimizu-Technology/HafaPass
+  branch: main
+  region: singapore
+  rootDir: hafapass_api
+  dockerfilePath: ./Dockerfile
+  dockerContext: .
+  autoDeployTrigger: 'off'
+  numInstances: 1
+  maxShutdownDelaySeconds: 120
+  dockerCommand: sh -c 'export GIT_SHA="$RENDER_GIT_COMMIT"; exec bundle exec rails runner script/commerce_clock.rb'
+  plan: 0.5c-512mb
+  envVars:
+  - fromGroup: hafapass-production-runtime
+  - key: REDIS_URL
+    fromService:
+      type: keyvalue
+      name: hafapass-production-queue
+      property: connectionString
+  - key: DATABASE_URL
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: DATABASE_URL
+  - key: SECRET_KEY_BASE
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: SECRET_KEY_BASE
+  - key: CLERK_SECRET_KEY
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: CLERK_SECRET_KEY
+  - key: CLERK_PUBLISHABLE_KEY
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: CLERK_PUBLISHABLE_KEY
+  - key: CLERK_ISSUER
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: CLERK_ISSUER
+  - key: CLERK_AUTHORIZED_PARTIES
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: CLERK_AUTHORIZED_PARTIES
+  - key: ALLOWED_ORIGINS
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: ALLOWED_ORIGINS
+  - key: FRONTEND_URL
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: FRONTEND_URL
+  - key: PUBLIC_WEB_URL
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: PUBLIC_WEB_URL
+  - key: SENTRY_DSN
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: SENTRY_DSN
+  - key: AWS_ACCESS_KEY_ID
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: AWS_ACCESS_KEY_ID
+  - key: AWS_SECRET_ACCESS_KEY
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: AWS_SECRET_ACCESS_KEY
+  - key: AWS_BUCKET
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: AWS_BUCKET
+  - key: AWS_REGION
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: AWS_REGION
+  - key: RESEND_API_KEY
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: RESEND_API_KEY
+  - key: RESEND_WEBHOOK_SECRET
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: RESEND_WEBHOOK_SECRET
+  - key: MAILER_FROM_EMAIL
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: MAILER_FROM_EMAIL
+  - key: PROVIDER_CONFIGURATION_REVISION
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: PROVIDER_CONFIGURATION_REVISION
+  - key: ADMISSION_MANIFEST_PRIVATE_KEY_PEM
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: ADMISSION_MANIFEST_PRIVATE_KEY_PEM
+  - key: ADMIN_EMAILS
+    fromService:
+      type: web
+      name: hafapass-api
+      envVarKey: ADMIN_EMAILS
+- type: keyvalue
+  name: hafapass-production-queue
+  region: singapore
+  plan: 256mb
+  maxmemoryPolicy: noeviction
+  persistenceMode: journal-snapshot
+  ipAllowList: []
+envVarGroups:
+- name: hafapass-production-runtime
+  envVars:
+  - key: RAILS_ENV
+    value: production
+  - key: HAFAPASS_LAUNCH_SCOPE
+    value: general_admission
+  - key: HAFAPASS_PROVIDER_REHEARSAL
+    value: 'false'
+  - key: ENABLE_FIRST_USER_ADMIN_BOOTSTRAP
+    value: 'false'
+  - key: RAILS_MAX_THREADS
+    value: '3'
+  - key: SIDEKIQ_CONCURRENCY
+    value: '3'
+  - key: DB_POOL
+    value: '5'
+  - key: PUBLIC_API_URL
+    value: https://hafapass-api.onrender.com

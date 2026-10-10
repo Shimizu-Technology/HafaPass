@@ -14,7 +14,7 @@ class StageSafety
     def call(runtime: false)
       checks = {
         database: staging_database?,
-        redis: staging_redis?,
+        redis: RuntimeConfiguration.solid_queue? || staging_redis?,
         clerk_test_identity: clerk_test_identity?,
         public_urls: public_urls?,
         application_secret: application_secret?,
@@ -30,7 +30,7 @@ class StageSafety
         else
           checks[:simulated_payments] = simulated_payments?
         end
-        checks[:durable_jobs] = ActiveJob::Base.queue_adapter_name == "sidekiq"
+        checks[:durable_jobs] = ActiveJob::Base.queue_adapter_name == (RuntimeConfiguration.solid_queue? ? "solid_queue" : "sidekiq")
       end
       ready = checks.values.all?
       status = ProviderRehearsal.enabled? ? "provider_rehearsal" : "simulation_only"

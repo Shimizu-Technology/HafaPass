@@ -41,6 +41,10 @@ class SystemReadiness
       adapter = ActiveJob::Base.queue_adapter_name
       return { ready: true, status: "development_async", adapter: adapter } if adapter == "async"
       return { ready: true, status: "test", adapter: adapter } if adapter == "test"
+      if adapter == "solid_queue"
+        SolidQueue::Job.count
+        return { ready: true, status: "connected", adapter: adapter }
+      end
       return { ready: false, status: "redis_not_configured", adapter: adapter } if ENV["REDIS_URL"].blank?
 
       Sidekiq.redis { |connection| connection.call("PING") }
@@ -50,6 +54,7 @@ class SystemReadiness
     end
 
     def worker_check
+      return Operations::EmbeddedReadiness.worker if ActiveJob::Base.queue_adapter_name == "solid_queue"
       return { ready: true, status: "not_required", processes: 0 } unless ActiveJob::Base.queue_adapter_name == "sidekiq"
       return { ready: false, status: "redis_not_configured", processes: 0 } if ENV["REDIS_URL"].blank?
 
@@ -78,6 +83,7 @@ class SystemReadiness
 
     def commerce_clock_check
       return { ready: true, status: "not_required", lease_ttl_seconds: 0 } unless Rails.env.production? || Rails.env.staging?
+      return Operations::EmbeddedReadiness.scheduler if ActiveJob::Base.queue_adapter_name == "solid_queue"
       return { ready: false, status: "redis_not_configured", lease_ttl_seconds: 0 } if ENV["REDIS_URL"].blank?
 
       Operations::CommerceClockLease.status

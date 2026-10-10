@@ -8,7 +8,7 @@ require Rails.root.join("config/release_migration_configuration").to_s
 
 RSpec.describe RuntimeConfiguration do
   around do |example|
-    names = %w[RAILS_MAX_THREADS SIDEKIQ_CONCURRENCY DB_POOL PUBLIC_API_URL]
+    names = %w[RAILS_MAX_THREADS SIDEKIQ_CONCURRENCY DB_POOL PUBLIC_API_URL HAFAPASS_RUNTIME]
     original = names.index_with { |name| ENV[name] }
     names.each { |name| ENV.delete(name) }
     example.run
@@ -49,6 +49,23 @@ RSpec.describe RuntimeConfiguration do
       value.nil? ? ENV.delete("PUBLIC_API_URL") : ENV["PUBLIC_API_URL"] = value
       expect { described_class.public_api_host }.to raise_error(ArgumentError, /HTTPS origin/)
     end
+  end
+
+  it "covers larger web thread pools when the SQL worker is separate" do
+    ENV["HAFAPASS_RUNTIME"] = "solid_queue"
+    ENV["RAILS_MAX_THREADS"] = "12"
+    expect { described_class.database_pool }.to raise_error(ArgumentError, /DB_POOL must cover/)
+    ENV["DB_POOL"] = "12"
+    expect(described_class.database_pool).to eq(12)
+  end
+
+  it "opts into embedded capacity explicitly and budgets worker/dispatcher/heartbeat connections" do
+    ENV["HAFAPASS_RUNTIME"] = "embedded"
+    expect(described_class.database_pool).to eq(10)
+    ENV["DB_POOL"] = "5"
+    expect { described_class.database_pool }.to raise_error(ArgumentError)
+    ENV["HAFAPASS_RUNTIME"] = "unknown"
+    expect { described_class.database_pool }.to raise_error(ArgumentError, /HAFAPASS_RUNTIME/)
   end
 end
 

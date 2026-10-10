@@ -77,11 +77,8 @@ module Commerce
           mark_payment_succeeded!(payment)
           order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
           record_marketplace_purchase!(order)
-          completed_now = true
-        end
-
-        if completed_now
           EmailService.send_order_confirmation_async(order)
+          completed_now = true
         end
 
         completed_now ? :completed : :unchanged

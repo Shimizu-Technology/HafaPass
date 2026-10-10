@@ -36,8 +36,8 @@ module TicketTransfers
           )
           audit_seat!(ticket, "seat.transfer_started", initiated_by,
             recipient_email: normalized, ticket_transfer_id: transfer.id)
+          EmailService.send_ticket_transfer_async(transfer)
         end
-        EmailService.send_ticket_transfer_async(transfer)
         transfer
       rescue ActiveRecord::RecordNotUnique
         raise TransferError, "This ticket already has a pending transfer"

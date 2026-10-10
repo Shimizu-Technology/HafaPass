@@ -39,7 +39,7 @@ HafaPass validates the internal consistency of these claims. Humans remain respo
 
 The repository includes `load_tests/gate_f_onsale.js` for k6. It intentionally refuses ordinary or paid events.
 
-1. Deploy the exact candidate revision to an isolated production-like environment with production-sized web/worker/database/Redis configuration and monitoring.
+1. Deploy the exact candidate revision to an isolated production-like environment with the selected production-sized runtime and database configuration (including worker/Redis where that profile requires them) and monitoring.
 2. Create a published general-admission event whose title starts with `[LOAD TEST]`, with a free ticket, no required registration/waiver fields, and at least `expected buyers × iterations per buyer` inventory. Do not reuse the selected real pilot event. The finite iteration count prevents an accidental unbounded stream of test orders.
 3. If assigned seating will launch, create a separate `[LOAD TEST]` assigned-seating fixture with the representative layout, then pass its slug and one real `event_seat_id` as the contention target. The test intentionally sends simultaneous holds for that seat; one acceptance and safe `422` rejections are expected.
 4. Capture application latency/error telemetry, database connection peaks, worker/queue behavior, hold expiry/reconciliation, final inventory, and the generated k6 JSON.

@@ -1,10 +1,30 @@
 # frozen_string_literal: true
 
 require "uri"
+require "securerandom"
 
 # Shared by Puma, Sidekiq and Active Record so their capacity cannot drift.
 module RuntimeConfiguration
   module_function
+
+  def profile
+    value = ENV.fetch("HAFAPASS_RUNTIME", "sidekiq")
+    raise ArgumentError, "HAFAPASS_RUNTIME must be embedded, solid_queue, or sidekiq" unless %w[embedded solid_queue sidekiq].include?(value)
+
+    value
+  end
+
+  def embedded?
+    profile == "embedded"
+  end
+
+  def instance_id
+    @instance_id ||= SecureRandom.uuid
+  end
+
+  def solid_queue?
+    %w[embedded solid_queue].include?(profile)
+  end
 
   def web_threads
     positive_integer("RAILS_MAX_THREADS", 3)
@@ -15,9 +35,11 @@ module RuntimeConfiguration
   end
 
   def database_pool
-    pool = positive_integer("DB_POOL", 5)
-    if pool < [web_threads, worker_concurrency].max
-      raise ArgumentError, "DB_POOL must cover RAILS_MAX_THREADS and SIDEKIQ_CONCURRENCY"
+    pool = positive_integer("DB_POOL", solid_queue? ? 10 : 5)
+    minimum = embedded? ? web_threads + 6 : (solid_queue? ? [web_threads, 7].max : [web_threads, worker_concurrency].max)
+    if pool < minimum
+      raise ArgumentError, "DB_POOL must cover RAILS_MAX_THREADS and SIDEKIQ_CONCURRENCY" unless solid_queue?
+      raise ArgumentError, "DB_POOL must cover request/job threads and Solid Queue supervision"
     end
 
     pool

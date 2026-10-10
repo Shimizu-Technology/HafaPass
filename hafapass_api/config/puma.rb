@@ -38,8 +38,12 @@ port ENV.fetch("PORT", 3000)
 # Allow puma to be restarted by `bin/rails restart` command.
 plugin :tmp_restart
 
-# Sidekiq owns background work in a separate worker process. Do not start a
-# second queue supervisor in the web process (Solid Queue is not installed).
+if RuntimeConfiguration.embedded?
+  # Released Solid Queue 1.7.0 supervises its actors inside this Puma process.
+  # Async supervisor mode does not change queue persistence to an async adapter.
+  plugin :solid_queue
+  solid_queue_mode :async
+end
 
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.
 # In other environments, only set the PID file if requested.

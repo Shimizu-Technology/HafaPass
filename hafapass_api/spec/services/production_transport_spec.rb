@@ -32,4 +32,21 @@ RSpec.describe "Production transport and platform liveness" do
     expect(status.success?).to be(true), "Production probe process failed: #{errors}"
     expect(output).to include("PROBE_STATUSES=200,301,200,403")
   end
+
+  it "keeps embedded /up independent of its durable throttle database" do
+    environment = { "RAILS_ENV" => "production", "HAFAPASS_RUNTIME" => "embedded",
+      "PUBLIC_API_URL" => "https://api.hafapass.example", "ALLOWED_ORIGINS" => "https://hafapass.example",
+      "SECRET_KEY_BASE" => SecureRandom.hex(64), "DATABASE_URL" => "postgresql://localhost:54399/unreachable",
+      "SENTRY_DSN" => "" }
+    script = <<~RUBY
+      require "rack/mock"
+      class << RuntimeThrottleBucket
+        def connection; raise "liveness touched throttle database"; end
+      end
+      puts "BOOT_ONLY=" + Rack::MockRequest.new(Rails.application).get("/up", "HTTP_HOST" => "internal").status.to_s
+    RUBY
+    output, errors, status = Open3.capture3(environment, "bundle", "exec", "rails", "runner", script, chdir: Rails.root)
+    expect(status.success?).to be(true), errors
+    expect(output).to include("BOOT_ONLY=200")
+  end
 end

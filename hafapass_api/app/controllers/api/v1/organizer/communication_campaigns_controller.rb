@@ -72,7 +72,7 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
     return unless campaign.saved_change_to_scheduled_at?
 
     campaign.update!(status: :scheduled)
-    CommunicationCampaignJob.set(wait_until: campaign.scheduled_at).perform_later(campaign.id)
+    CommunicationCampaignJob.set(wait_until: campaign.scheduled_at).perform_later(campaign.id, campaign.scheduled_at.utc.iso8601)
   end
 
   def serialize(campaign)
