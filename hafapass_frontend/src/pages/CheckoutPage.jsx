@@ -13,7 +13,14 @@ import { CheckoutAttemptConflict, checkoutBuyerIdentity, checkoutBuyerMatches, c
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function CheckoutPage() {
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout /> : <CheckoutContent buyerId={checkoutBuyerIdentity()} />
+  const { slug } = useParams()
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />
+}
+
+function selectionMatchesEvent(event, lineItems, slug) {
+  return event?.slug === slug && Array.isArray(lineItems) && lineItems.length > 0
+    && lineItems.every(item => Number.isInteger(item.quantity) && item.quantity > 0
+      && event.ticket_types?.some(type => String(type.id) === String(item.ticket_type_id)))
 }
 
 function AuthenticatedCheckout() {
@@ -51,10 +58,11 @@ function CheckoutContent({ buyerId }) {
     && currentRoute.current.search === context.search, [])
 
   const { t } = useTranslation()
-  const [event, setEvent] = useState(location.state?.event || null)
-  const [loading, setLoading] = useState(!location.state?.event)
+  const navigationMatches = !location.state?.event || location.state.event.slug === slug
+  const [event, setEvent] = useState(navigationMatches ? location.state?.event || null : null)
+  const [loading, setLoading] = useState(!navigationMatches || !location.state?.event)
   // Keep this checkout selection stable while a lazy confirmation route is loading.
-  const [lineItems] = useState(() => location.state?.lineItems || null)
+  const [lineItems] = useState(() => navigationMatches ? location.state?.lineItems || null : null)
   const waitlistOfferToken = location.state?.waitlistOfferToken || null
   const seatHoldToken = location.state?.seatHoldToken || null
   const seatHoldExpiresAt = location.state?.seatHoldExpiresAt || null
@@ -211,18 +219,39 @@ function CheckoutContent({ buyerId }) {
 
   useEffect(() => {
     if (!location.pathname.startsWith('/checkout/')) return
+    // Recovery owns any earlier outcome, even a legacy attempt created with a
+    // mismatched navigation snapshot. Never replace its original payload/key.
+    if (getActiveCheckout(slug) || getCheckoutAttempt(slug) || new URLSearchParams(location.search).has('resume')
+      || canStartNewCheckout || checkoutNeedsRecovery) return
     if (!lineItems || lineItems.length === 0) {
       const activeOrderId = getActiveCheckout(slug)
       if (checkoutBuyerMatches(slug) && !activeOrderId && !getCheckoutAttempt(slug) && !new URLSearchParams(location.search).has('resume')) navigate(`/events/${slug}`, { replace: true })
       return
     }
+    if (event && !selectionMatchesEvent(event, lineItems, slug)) {
+      navigate(`/events/${slug}`, { replace: true })
+      return
+    }
     if (!event) {
+      let active = true
+      const context = captureContext()
+      const current = () => active && contextCurrent(context)
       setLoading(true)
       apiClient.get(`/events/${slug}`, { params: liveMoneyProof ? { live_money_proof: true } : {} })
-        .then(res => { setEvent(res.data); setLoading(false) })
-        .catch(() => { setError('Unable to load event details.'); setLoading(false) })
+        .then(res => {
+          if (!current()) return
+          if (!selectionMatchesEvent(res.data, lineItems, slug)) {
+            navigate(`/events/${slug}`, { replace: true })
+            return
+          }
+          setEvent(res.data)
+          setLoading(false)
+        })
+        .catch(() => { if (current()) { setError('Unable to load event details.'); setLoading(false) } })
+      return () => { active = false }
     }
-  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname, location.search, recoveryVersion])
+  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname, location.search, recoveryVersion,
+    canStartNewCheckout, checkoutNeedsRecovery, captureContext, contextCurrent])
 
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
@@ -296,6 +325,11 @@ function CheckoutContent({ buyerId }) {
 
   const handleInfoSubmit = async (e) => {
     e.preventDefault()
+    if (!selectionMatchesEvent(event, lineItems, slug)) {
+      if (getActiveCheckout(slug) || getCheckoutAttempt(slug)) retrySavedCheckout()
+      else navigate(`/events/${slug}`, { replace: true })
+      return
+    }
     setSubmitError(null)
     setCanStartNewCheckout(false)
     setCheckoutNeedsRecovery(false)
