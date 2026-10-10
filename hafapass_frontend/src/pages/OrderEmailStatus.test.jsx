@@ -13,7 +13,7 @@ const baseOrder = {
   tickets: [{ id: 1, status: 'issued', refundable_cents: 0, display_credential: 'display', ticket_type: { id: 1, name: 'Admission' } }],
   event: { slug: 'synthetic-event', status: 'published', title: 'Synthetic event', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam' },
 }
-const withDelivery = (status, simulated = false) => ({ ...baseOrder, confirmation_delivery: { status, simulated } })
+const withDelivery = (status, simulated = false, reconciliation_required = false) => ({ ...baseOrder, confirmation_delivery: { status, simulated, reconciliation_required } })
 const requests = () => apiClient.get.mock.calls.filter(([path]) => path.startsWith('/orders/'))
 async function mount(extra = null) {
   const view = render(<MemoryRouter initialEntries={['/orders/42/confirmation']}><Routes><Route path='/orders/:id/confirmation' element={<OrderConfirmationPage />} /></Routes>{extra}</MemoryRouter>)
@@ -201,6 +201,72 @@ describe('completed-order email status updates', () => {
     await advance(10_000)
     expect(screen.getByText('Your ticket email was delivered.')).toBeInTheDocument()
     expect(apiClient.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows an unconfirmed outcome instead of claiming failure, disables fresh resend and keeps tickets available', async () => {
+    apiClient.get.mockResolvedValue({ data: withDelivery('failed', false, true) })
+    await mount()
+    expect(screen.getByText(/ticket email request still has an unconfirmed outcome/)).toBeInTheDocument()
+    expect(screen.queryByText(/delivery needs attention/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resend', exact: true })).toBeDisabled()
+    expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', expect.stringContaining('mailto:'))
+    expect(screen.getByText('Tickets (1)')).toBeInTheDocument()
+    await advance(120_000)
+    expect(requests()).toHaveLength(1)
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+  it('preserves the latest delivered fact beside earlier uncertainty until a manual read confirms reconciliation', async () => {
+    apiClient.get.mockResolvedValueOnce({ data: withDelivery('delivered', false, true) }).mockResolvedValue({ data: withDelivery('delivered') })
+    await mount()
+    expect(screen.getByText('Your ticket email was delivered.')).toBeInTheDocument()
+    expect(screen.getByText(/previous ticket email request still has an unconfirmed outcome/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resend', exact: true })).toBeDisabled()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh status' })) })
+    expect(screen.queryByText(/previous ticket email request still has an unconfirmed outcome/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resend', exact: true })).toBeEnabled()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+  it('recognizes a server reconciliation conflict without attempting a fresh email and permits manual status recovery', async () => {
+    apiClient.get.mockResolvedValueOnce({ data: withDelivery('failed') }).mockResolvedValueOnce({ data: withDelivery('failed', false, true) }).mockResolvedValue({ data: withDelivery('delivered') })
+    apiClient.post.mockRejectedValue({ response: { status: 409, data: { reconciliation_required: true } } })
+    await mount()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resend', exact: true })) })
+    expect(screen.getByText('A previous ticket email is still unconfirmed. Use Refresh status or contact support before requesting another email.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resend', exact: true })).toBeDisabled()
+    await advance(120_000)
+    expect(apiClient.post).toHaveBeenCalledTimes(1)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh status' })) })
+    expect(screen.getByText('Your ticket email was delivered.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resend', exact: true })).toBeEnabled()
+  })
+  it('discards a manual status result after the bound buyer changes', async () => {
+    let finish
+    apiClient.get.mockResolvedValueOnce({ data: withDelivery('delayed') }).mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    await mount()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh status' })) })
+    window.localStorage.setItem('hafapass_scanner_user_id', 'another-buyer')
+    await act(async () => { finish({ data: withDelivery('delivered') }) })
+    expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+  it.each([401, 403, 404])('fails closed after a status read loses order access (%s)', async status => {
+    apiClient.get.mockResolvedValueOnce({ data: withDelivery('queued') }).mockRejectedValue({ response: { status } })
+    await mount()
+    await advance(10_000)
+    expect(screen.queryByText('Tickets (1)')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Recover my order' })).toBeInTheDocument()
+    await advance(120_000)
+    expect(requests()).toHaveLength(2)
+  })
+
+  it('reads a normally queued in-flight uncertain attempt to its acknowledged result without another send', async () => {
+    apiClient.get.mockResolvedValueOnce({ data: withDelivery('queued', false, true) }).mockResolvedValue({ data: withDelivery('delivered') })
+    await mount()
+    expect(screen.getByRole('button', { name: 'Resend', exact: true })).toBeDisabled()
+    await advance(10_000)
+    expect(screen.getByText('Your ticket email was delivered.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resend', exact: true })).toBeEnabled()
+    expect(apiClient.post).not.toHaveBeenCalled()
   })
 
 })

@@ -21,9 +21,26 @@ class MessageDelivery < ApplicationRecord
 
   attr_accessor :preparing_outbound_payload
 
+  TICKET_EMAIL_TEMPLATES = %w[order_confirmation fulfillment_resend].freeze
+  scope :ticket_email, -> { where(channel: "email", template: TICKET_EMAIL_TEMPLATES) }
+  scope :unconfirmed_provider_result, -> {
+    where(provider_outcome_unknown: true).or(
+      where(provider: "resend", provider_id: [nil, ""], provider_attempted_at: nil).where("attempts > 0")
+    )
+  }
+
   PROVIDER_REPLAY_WINDOW = 23.hours
 
   before_validation :assign_idempotency_key, on: :create
+
+  def ticket_email?
+    channel == "email" && TICKET_EMAIL_TEMPLATES.include?(template)
+  end
+
+  def unconfirmed_provider_result?
+    provider_outcome_unknown? || (provider == "resend" && provider_id.blank? &&
+      provider_attempted_at.nil? && attempts.positive?)
+  end
 
   def retryable?
     failed? && provider_id.blank? && !provider_replay_expired?

@@ -114,6 +114,7 @@ function OrderConfirmationContent() {
       setOrder(response.data)
       setError(null)
       setDeliveryRefreshError(null)
+      if (response.data.confirmation_delivery?.reconciliation_required === false) setResendState(state => state === 'uncertain' ? 'idle' : state)
       if (response.data.event?.slug && finalStatuses.has(response.data.status)) clearActiveCheckout(response.data.event.slug, id)
       return response.data
     } catch (err) {
@@ -185,7 +186,7 @@ function OrderConfirmationContent() {
       window.removeEventListener('online', availabilityChanged)
       window.removeEventListener('offline', availabilityChanged)
     }
-  }, [id, order, delivery?.status, delivery?.simulated, deliveryRefreshCycle, deliveryRefreshError, fetchOrder])
+  }, [id, order, delivery?.status, delivery?.simulated, delivery?.reconciliation_required, deliveryRefreshCycle, deliveryRefreshError, fetchOrder])
 
   const refreshDeliveryStatus = () => {
     if (navigator.onLine === false) {
@@ -201,11 +202,14 @@ function OrderConfirmationContent() {
   const isProcessing = order && !finalStatuses.has(order.status)
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
   const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
-  const deliveryFailed = !delivery?.simulated && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
+  const deliveryUnconfirmed = !delivery?.simulated && delivery?.reconciliation_required === true
+  const deliveryFailed = !delivery?.simulated && !deliveryUnconfirmed && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
   const deliveryMessage = delivery?.simulated
     ? usableTickets ? 'Email is simulated in this test environment. Open or download your tickets below.' : 'Email is simulated in this test environment. Check your order and ticket statuses below.'
     : delivery?.status === 'delivered'
       ? 'Your ticket email was delivered.'
+      : deliveryUnconfirmed
+        ? 'A ticket email request still has an unconfirmed outcome. Check your tickets below and use Refresh status or contact support before requesting another email.'
       : delivery?.status === 'sent'
         ? 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'
         : delivery?.status === 'delayed'
@@ -242,7 +246,12 @@ function OrderConfirmationContent() {
       await refreshDeliveryStatus()
     } catch (err) {
       if (!current()) return
-      setResendState(err.response?.status === 429 ? 'cooldown' : 'error')
+      if (err.response?.status === 409 && err.response?.data?.reconciliation_required === true) {
+        setResendState('uncertain')
+        await refreshDeliveryStatus()
+      } else {
+        setResendState(err.response?.status === 429 ? 'cooldown' : 'error')
+      }
     }
   }
 
@@ -385,13 +394,14 @@ function OrderConfirmationContent() {
           </div> : isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
         </div>
 
-        <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">
+        <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed || deliveryUnconfirmed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">
           <h2 id="confirmation-delivery-title" className="font-semibold">Ticket email</h2>
           <p className="mt-1" role="status">{deliveryMessage}</p>
+          {deliveryUnconfirmed && delivery?.status === 'delivered' && <p className="mt-2" role="status">A previous ticket email request still has an unconfirmed outcome. Use Refresh status or contact support before requesting another email.</p>}
           {!delivery?.simulated && <button onClick={refreshDeliveryStatus} disabled={deliveryRefreshing} className="mt-2 inline-flex min-h-11 items-center gap-1.5 font-semibold text-brand-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" />{deliveryRefreshing ? 'Refreshing status…' : 'Refresh status'}</button>}
           {deliveryRefreshError && <p className="mt-1 text-amber-800" role="alert">{deliveryRefreshError}</p>}
           {emailUpdatesPaused && emailInFlightStatuses.has(delivery?.status) && <p className="mt-1 text-neutral-600">Automatic email updates have paused. Use Refresh status to check again.</p>}
-          {deliveryFailed && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+          {(deliveryFailed || deliveryUnconfirmed) && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
             {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
             <a href={supportMailto(`Ticket email for order ${order.reference}`)} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
           </div>}
@@ -439,11 +449,12 @@ function OrderConfirmationContent() {
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold text-neutral-950">Tickets ({order.tickets.length})</h2>
               {['completed', 'partially_refunded'].includes(order.status) && (
-                <button onClick={resend} disabled={resendState === 'sending'} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600"><Mail className="h-4 w-4" /> Resend</button>
+                <button onClick={resend} disabled={resendState === 'sending' || resendState === 'uncertain' || deliveryUnconfirmed} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600"><Mail className="h-4 w-4" /> Resend</button>
               )}
             </div>
             {resendState === 'requested' && <p className="mb-3 text-sm text-neutral-700">Your email request was saved. Check the delivery status above.</p>}
             {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">An email request was made recently. Please wait two minutes.</p>}
+            {resendState === 'uncertain' && <p className="mb-3 text-sm text-amber-700">A previous ticket email is still unconfirmed. Use Refresh status or contact support before requesting another email.</p>}
             {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             <div className="divide-y divide-neutral-100">
