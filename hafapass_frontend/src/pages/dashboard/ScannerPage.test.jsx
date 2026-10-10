@@ -75,7 +75,7 @@ describe('scanner recovery and camera ownership', () => {
     })
     render(<ScannerPage />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Undo' }))
+    await user.click(await screen.findByRole('button', { name: 'Undo admission for HP-T501' }))
     expect(await screen.findByText('Admission already reversed')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
     await screen.findByText(/Manifest v2/)

@@ -234,7 +234,7 @@ describe('truthful ticket email status', () => {
 
   it.each([
     ['queued', 'Your ticket email is queued for delivery. You can open or download your tickets below.'],
-    ['delayed', 'Your ticket email is queued for delivery. You can open or download your tickets below.'],
+    ['delayed', 'Your ticket email is delayed. Delivery has not been confirmed. You can open or download your tickets below.'],
     ['sent', 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'],
     ['delivered', 'Your ticket email was delivered.'],
   ])('shows the provider’s %s state without claiming a later outcome', async (status, message) => {
@@ -247,7 +247,7 @@ describe('truthful ticket email status', () => {
   it.each(['failed', 'bounced', 'complained', 'suppressed'])('offers ticket access and support when delivery is %s', async status => {
     mockOrder(orderWithDelivery({ status, simulated: false }))
     mount()
-    await screen.findByText('We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.')
+    await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets below, or contact support.')
     expect(screen.getByRole('link', { name: 'Open or download tickets' })).toHaveAttribute('href', '#order-tickets')
     expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=Ticket%20email%20for%20order%20HP-924')
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
@@ -267,7 +267,7 @@ describe('truthful ticket email status', () => {
       return Promise.resolve({ data: { status: 'queued' } })
     })
     mount()
-    await screen.findByText('We couldn’t deliver your ticket email. Open or download your tickets below, or contact support.')
+    await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets below, or contact support.')
     await userEvent.click(screen.getByRole('button', { name: 'Resend', exact: true }))
     expect(await screen.findByText('Your ticket email is queued for delivery. You can open or download your tickets below.')).toBeInTheDocument()
     expect(await screen.findByText('Your email request was saved. Check the delivery status above.')).toBeInTheDocument()
