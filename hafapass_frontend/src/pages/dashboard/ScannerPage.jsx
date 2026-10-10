@@ -97,6 +97,7 @@ export default function ScannerPage({ offlineOnly = false }) {
   const setupGenerationRef = useRef(0)
   const mountedRef = useRef(false)
   const presentationRef = useRef(0)
+  const resultContextRef = useRef(null)
   const eventIdRef = useRef(eventId)
   eventIdRef.current = eventId
   const processCredentialRef = useRef(null)
@@ -148,6 +149,31 @@ export default function ScannerPage({ offlineOnly = false }) {
     return verified
   }, [])
 
+  const reconcileStoredResult = useCallback(async selectedEventId => {
+    const context = resultContextRef.current
+    const current = () => context && mountedRef.current && resultContextRef.current === context
+      && context.owner === currentScannerOwner() && context.eventId === String(selectedEventId)
+      && eventIdRef.current === context.eventId && context.generation === setupGenerationRef.current
+      && context.presentation === presentationRef.current
+    if (!current()) return
+    const activeDevice = await loadDevice(selectedEventId)
+    if (!current() || activeDevice?.id !== context.deviceId) return
+    if (context.kind === 'reverse') {
+      const pending = await queuedActions(selectedEventId, context.deviceId)
+      if (current() && !pending.some(item => item.action_uuid === context.uuid)) setScanResult(existing => current()
+        && existing?.actionUuid === context.uuid && existing.actionKind === 'reverse' && existing.type === 'pending'
+        ? { ...existing, message: 'Undo is no longer queued', detail: 'Refresh admissions to check its result.' } : existing)
+      return
+    }
+    if (context.kind !== 'admit' || !context.ticketId) return
+    // Queue deletion and the terminal admit receipt commit atomically. Re-read
+    // after observing empty, including an ACK from a different browser tab.
+    const receipt = await localScanState(selectedEventId, context.ticketId)
+    if (!current() || receipt?.action_uuid !== context.uuid || !['accepted', 'conflict', 'rejected'].includes(receipt.status)) return
+    setScanResult(existing => current() && existing?.actionUuid === context.uuid && existing.actionKind === context.kind
+      ? admissionAcknowledgement(existing, receipt) : existing)
+  }, [])
+
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
     if (!selectedEventId || !selectedDevice || selectedDevice.owner_user_id !== currentScannerOwner() || !online || syncingRef.current) return
     const owner = currentScannerOwner()
@@ -164,6 +190,8 @@ export default function ScannerPage({ offlineOnly = false }) {
       let remaining = await queuedActions(selectedEventId, selectedDevice.id)
       if (!remaining.length) {
         if (current()) setPendingCount(0)
+        await reconcileStoredResult(selectedEventId)
+        if (!current()) return
         if (!quiet) await Promise.all([downloadManifest(selectedEventId, selectedDevice), fetchDashboard(selectedEventId)])
         return
       }
@@ -235,10 +263,17 @@ export default function ScannerPage({ offlineOnly = false }) {
         setError(syncError.message)
       } else if (!quiet) setError(syncError.response?.data?.error || syncError.message || 'Queued scans could not be synchronized. They remain saved on this device; reconnect and retry.')
     } finally {
+      // A new scan can be acknowledged by a peer while this tab's older sync is
+      // busy. Resolve its own receipt even when the loop ends without another RPC.
+      try {
+        if (current()) await reconcileStoredResult(selectedEventId)
+      } catch {
+        if (current()) setError('Saved scanner data could not be read. Reload this device and retry; saved scans have not been removed.')
+      }
       syncingRef.current = false
       setSyncing(false)
     }
-  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending, online])
+  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending, online, reconcileStoredResult])
 
   const configureEvent = useCallback(async selectedEventId => {
     if (!selectedEventId) return
@@ -364,6 +399,10 @@ export default function ScannerPage({ offlineOnly = false }) {
   }, [device, eventId, online, syncQueue])
 
   const showResult = useCallback(result => {
+    // Record ownership synchronously; a peer ACK need not wait for React to render.
+    resultContextRef.current = result.actionUuid ? { uuid: result.actionUuid, kind: result.actionKind,
+      ticketId: result.ticket?.ticket_id, deviceId: result.deviceId, owner: currentScannerOwner(), eventId: eventIdRef.current,
+      generation: setupGenerationRef.current, presentation: presentationRef.current } : null
     setScanResult(result)
     if (result.type === 'success' || (result.type === 'pending' && result.actionKind === 'admit')) setSessionCount(count => count + 1)
     if (navigator.vibrate && result.type !== 'pending') navigator.vibrate(result.type === 'success' ? 80 : [100, 60, 100])
@@ -386,7 +425,7 @@ export default function ScannerPage({ offlineOnly = false }) {
     if (!current()) return
     if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket,
-        ...(localState.status === 'pending' ? { actionUuid: localState.action_uuid, actionKind: 'admit' } : {}),
+        ...(localState.status === 'pending' ? { actionUuid: localState.action_uuid, actionKind: 'admit', deviceId: device.id } : {}),
         latency: performance.now() - startedAt })
       return
     }
@@ -413,7 +452,7 @@ export default function ScannerPage({ offlineOnly = false }) {
     }
     // Own the result before count refresh yields to an already-running sync.
     showResult({ type: online ? 'pending' : 'success', message: online ? 'Waiting for server confirmation' : 'Admitted offline',
-      actionUuid: action.action_uuid, actionKind: 'admit',
+      actionUuid: action.action_uuid, actionKind: 'admit', deviceId: device.id,
       detail: online ? 'Saved on this device. Entry is not confirmed until the server responds.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
       ticket, latency: performance.now() - startedAt })
     await refreshPending(eventId, device)
@@ -556,15 +595,12 @@ export default function ScannerPage({ offlineOnly = false }) {
       const reversal = await queueReversal({ eventId, deviceId: device.id, manifestVersion: manifest.payload.version,
         ticketId: action.ticket_id, reversesActionUuid: action.action_uuid, source: online ? 'online' : 'offline' })
       if (!current()) return
-      showResult({ type: 'pending', message: 'Reversal queued', actionUuid: reversal.action_uuid, actionKind: 'reverse', detail: 'The admission reversal will be reconciled append-only.' })
+      showResult({ type: 'pending', message: 'Reversal queued', actionUuid: reversal.action_uuid, actionKind: 'reverse', deviceId: device.id, detail: 'The admission reversal will be reconciled append-only.' })
       await refreshPending(eventId, device)
       if (!current()) return
-      const pending = await queuedActions(eventId, device.id)
+      // Reversal deletion is not a success receipt; only offer a neutral refresh.
+      await reconcileStoredResult(eventId)
       if (!current()) return
-      // Reversal success deletes local state; absence is not a success receipt.
-      if (!pending.some(item => item.action_uuid === reversal.action_uuid)) setScanResult(existing => current()
-        && existing?.actionUuid === reversal.action_uuid && existing.type === 'pending'
-        ? { ...existing, message: 'Undo is no longer queued', detail: 'Refresh admissions to check its result.' } : existing)
       if (online && current()) syncQueue()
     } catch (reversalError) {
       if (current()) setError(reversalError.message)
