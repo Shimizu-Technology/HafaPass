@@ -31,7 +31,7 @@ export default function Footer() {
             <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">{t('footer.platform')}</h3>
             <ul className="space-y-2.5">
               <li><Link to="/events" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.browseEvents')}</Link></li>
-              <li><Link to="/sign-up" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.forOrganizers')}</Link></li>
+              <li><Link to="/dashboard" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.forOrganizers')}</Link></li>
               <li><Link to="/sign-in" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">{t('footer.signIn')}</Link></li>
             </ul>
           </div>
