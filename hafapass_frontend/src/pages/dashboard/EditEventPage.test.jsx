@@ -7,7 +7,7 @@ import EditEventPage from './EditEventPage'
 
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), put: vi.fn() } }))
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ onUploaded }) => <button type="button" onClick={() => onUploaded('https://images.invalid/verified.png')}>Choose verified cover</button> }))
-vi.mock('../../components/TicketTypeCRUD', () => ({ default: () => null }))
+vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ ticketTypes }) => <ul>{ticketTypes.map(type => <li key={type.id}>{type.name}</li>)}</ul> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
 
@@ -30,6 +30,17 @@ describe('published event content and schedule edits', () => {
     const payload = apiClient.put.mock.calls[0][1]
     expect(payload.cover_image_url).toBe('https://images.invalid/verified.png')
     for (const field of ['starts_at', 'ends_at', 'doors_open_at', 'change_reason']) expect(payload).not.toHaveProperty(field)
+  })
+
+  it('keeps the existing ticket collection visible after a partial event update response', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...event, ticket_types: [{ id: 1, name: 'Existing admission' }] } })
+    apiClient.put.mockResolvedValue({ data: { id: event.id, title: event.title, status: 'published' } })
+    const user = userEvent.setup()
+    mount()
+    await screen.findByText('Existing admission')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(screen.getByText('Existing admission')).toBeInTheDocument()
   })
 
   it('requires a reason for a genuine schedule change', async () => {

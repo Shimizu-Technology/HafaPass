@@ -207,7 +207,7 @@ export default function EditEventPage() {
       }
       if (scheduleChanged) payload.change_reason = changeReason.trim() || undefined
       const res = await apiClient.put(`/organizer/events/${id}`, payload)
-      setEvent(res.data)
+      setEvent(current => ({ ...current, ...res.data }))
       setChangeReason('')
       setSuccessMessage('Event updated successfully.')
     } catch (err) {
@@ -223,7 +223,7 @@ export default function EditEventPage() {
     setSubmitError(null)
     try {
       const res = await apiClient.post(`/organizer/events/${id}/publish`)
-      setEvent(res.data)
+      setEvent(current => ({ ...current, ...res.data }))
       setShowPublishConfirm(false)
       setSuccessMessage('Event published successfully!')
     } catch (err) {
@@ -240,7 +240,7 @@ export default function EditEventPage() {
     setDangerLoading(true)
     try {
       const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined })
-      setEvent(res.data)
+      setEvent(current => ({ ...current, ...res.data }))
       setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
