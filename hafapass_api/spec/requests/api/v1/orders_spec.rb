@@ -29,6 +29,59 @@ RSpec.describe "Api::V1::Orders", type: :request do
     end
 
     context "with valid params" do
+      it "fences a rejected keyed request before allowing a corrected checkout with a new key" do
+        key = SecureRandom.hex(32)
+        rejected_params = valid_params.merge(checkout_key: key, buyer_name: "")
+        expect { post_json "/api/v1/orders", params: rejected_params }.not_to change(Order, :count)
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["checkout_recovery_required"]).to be(false)
+        attempt = CheckoutAttempt.find_by!(checkout_key_digest: Digest::SHA256.hexdigest(key))
+        expect(attempt).to be_status_rejected
+        expect(attempt.attributes.values).not_to include(key, rejected_params[:buyer_email])
+        expect { attempt.update!(request_digest: "a" * 64) }.to raise_error(ActiveRecord::ReadonlyAttributeError)
+        expect do
+          attempt.update!(status: :processing, lease_token_digest: "b" * 64, lease_expires_at: 1.minute.from_now)
+        end.to raise_error(ActiveRecord::RecordInvalid, /Final checkout identity/)
+
+        # An original request arriving after rejection cannot revive this key,
+        # and edited buyer details cannot overwrite its binding.
+        post_json "/api/v1/orders", params: rejected_params
+        expect(response.parsed_body["checkout_recovery_required"]).to be(false)
+        post_json "/api/v1/orders", params: valid_params.merge(checkout_key: key)
+        expect(response.parsed_body["checkout_recovery_required"]).to be(true)
+        expect(event.orders).to be_empty
+        post_json "/api/v1/orders", params: valid_params.merge(checkout_key: SecureRandom.hex(32))
+        expect(response).to have_http_status(:created)
+        expect(event.orders.count).to eq(1)
+      end
+
+      it "finalizes a pre-reservation inventory validation rejection without creating a payment" do
+        allow(StripeService).to receive(:create_payment_intent)
+        post_json "/api/v1/orders", params: valid_params.merge(checkout_key: SecureRandom.hex(32), line_items: [])
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["checkout_recovery_required"]).to be(false)
+        expect(CheckoutAttempt.last).to be_status_rejected
+        expect(event.orders).to be_empty
+        expect(StripeService).not_to have_received(:create_payment_intent)
+      end
+
+      it "keeps an in-flight pre-reservation attempt recoverable rather than declaring there is no order" do
+        keyed = valid_params.merge(checkout_key: SecureRandom.hex(32))
+        allow(Commerce::OrderCreator).to receive(:call) do |**options|
+          # The original request owns the journal but has not reserved yet.
+          replay = ActionDispatch::Integration::Session.new(Rails.application)
+          replay.post "/api/v1/orders", params: keyed.to_json, headers: json_headers
+          expect(replay.response).to have_http_status(:unprocessable_entity)
+          expect(replay.response.parsed_body["checkout_recovery_required"]).to be(true)
+          expect(options[:checkout_attempt].reload).to be_status_processing
+          expect(event.orders).to be_empty
+          raise Commerce::OrderCreator::CheckoutError, "Fixture validation rejected"
+        end
+        post_json "/api/v1/orders", params: keyed
+        expect(response.parsed_body["checkout_recovery_required"]).to be(false)
+        expect(CheckoutAttempt.last).to be_status_rejected
+      end
+
       it "creates an order with correct totals" do
         post_json "/api/v1/orders", params: valid_params
 

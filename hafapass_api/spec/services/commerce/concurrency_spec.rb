@@ -56,10 +56,21 @@ RSpec.describe "Commerce concurrency", :non_transactional do
         buyer_email: "samebuyer@example.invalid", buyer_name: "Same Buyer",
         checkout_key_digest: digest, checkout_request_digest: "b" * 64)
     end
-    recovered = outcomes.grep(Commerce::OrderCreator::Result)
-    expect(recovered).not_to be_empty
-    expect((outcomes - recovered).map(&:message)).to all(eq("Payment setup is still in progress; retry the original checkout request"))
-    expect(recovered.map { |result| result.order.id }.uniq.length).to eq(1)
+    results = outcomes.grep(Commerce::OrderCreator::Result)
+    expect(results).not_to be_empty
+    (outcomes - results).each do |error|
+      if error.is_a?(CheckoutAttempt::Conflict)
+        expect(error.recovery_required).to be(true)
+      else
+        expect(error).to be_a(Commerce::OrderCreator::CheckoutError)
+        expect(error.message).to include("Payment setup is still in progress")
+      end
+    end
+    recovered = Commerce::OrderCreator.call(event: Event.find(event.id),
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "samebuyer@example.invalid", buyer_name: "Same Buyer",
+      checkout_key_digest: digest, checkout_request_digest: "b" * 64)
+    expect((results.map { |result| result.order.id } + [recovered.order.id]).uniq.length).to eq(1)
     expect(Order.count).to eq(1)
     expect(InventoryHold.current.sum(:quantity)).to eq(1)
   end
@@ -154,6 +165,56 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(result.order.inventory_holds).to all(be_released)
     expect(StripeService).to have_received(:cancel_payment_intent).with("pi_cancelled_setup",
       idempotency_key: "cancel:payment-setup:#{result.payment.id}", payment: result.payment)
+  end
+
+  it "fences a delayed owner before reservation after lease takeover and final rejection" do
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    type = create(:ticket_type, event: event, quantity_available: 1)
+    digest = Digest::SHA256.hexdigest(SecureRandom.hex(32))
+    first = CheckoutAttempt.claim!(key_digest: digest, request_digest: "d" * 64)
+    first.attempt.update!(lease_expires_at: 1.second.ago)
+    second = CheckoutAttempt.claim!(key_digest: digest, request_digest: "d" * 64)
+    expect(first.attempt.reject!(first.lease_token)).to be(false)
+    expect(second.attempt.reject!(second.lease_token)).to be(true)
+
+    expect do
+      Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: type.id, quantity: 1 }],
+        buyer_email: "late@example.invalid", buyer_name: "Late buyer", checkout_key_digest: digest,
+        checkout_request_digest: "d" * 64, checkout_attempt: first.attempt, checkout_lease_token: first.lease_token)
+    end.to raise_error(CheckoutAttempt::Conflict) { |error| expect(error.recovery_required).to be(false) }
+    expect(Order.count).to eq(0)
+    expect(InventoryHold.count).to eq(0)
+    expect(StripeService).not_to have_received(:create_payment_intent)
+  end
+
+  it "allows a replacement owner to reserve while preventing the expired owner from duplicating it" do
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    type = create(:ticket_type, event: event, quantity_available: 1)
+    digest = Digest::SHA256.hexdigest(SecureRandom.hex(32))
+    first = CheckoutAttempt.claim!(key_digest: digest, request_digest: "d" * 64)
+    first.attempt.update!(lease_expires_at: 1.second.ago)
+    second = CheckoutAttempt.claim!(key_digest: digest, request_digest: "d" * 64)
+    options = { event: event, line_items: [{ ticket_type_id: type.id, quantity: 1 }], buyer_email: "late@example.invalid",
+      buyer_name: "Late buyer", checkout_key_digest: digest, checkout_request_digest: "d" * 64 }
+    expect do
+      Commerce::OrderCreator.call(**options, checkout_attempt: first.attempt, checkout_lease_token: first.lease_token)
+    end.to raise_error(CheckoutAttempt::Conflict) { |error| expect(error.recovery_required).to be(true) }
+
+    allow(StripeService).to receive(:create_payment_intent) do |order, **|
+      # Journal/order/inventory have committed before the first provider RPC.
+      ActiveRecord::Base.connection_pool.with_connection do |connection|
+        expect(connection.transaction_open?).to be(false)
+      end
+      expect(second.attempt.reload.order_id).to eq(order.id)
+      raise StripeService::PaymentError, "Fixture response lost"
+    end
+    expect do
+      Commerce::OrderCreator.call(**options, checkout_attempt: second.attempt, checkout_lease_token: second.lease_token)
+    end.to raise_error(Commerce::OrderCreator::CheckoutError)
+    expect(Order.count).to eq(1)
+    expect(InventoryHold.count).to eq(1)
+    expect(second.attempt.reload).to be_status_reserved
+    expect(first.attempt.reject!(first.lease_token)).to be(false)
   end
 
   it "enforces shared event capacity across concurrent ticket types" do
@@ -389,7 +450,7 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     connection = ActiveRecord::Base.connection
     connection.execute("SET lock_timeout = '5s'")
     connection.execute(<<~SQL)
-      TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events
+      TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
       RESTART IDENTITY CASCADE
     SQL
   ensure

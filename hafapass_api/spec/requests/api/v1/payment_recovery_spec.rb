@@ -174,6 +174,36 @@ RSpec.describe "Buyer payment recovery", type: :request do
     expect(@order.reload.checkout_key_digest).to eq(Digest::SHA256.hexdigest(key))
     expect(@order.inventory_holds.count).to eq(1)
     expect(StripeService).to have_received(:create_payment_intent).once
+    expect(CheckoutAttempt.find_by!(checkout_key_digest: Digest::SHA256.hexdigest(key)).order_id).to eq(@order.id)
+  end
+
+  it "recovers the original reservation after buyer terms change without requiring another checkout" do
+    original_params = params.deep_dup
+    allow(PolicyRegistry).to receive(:buyer_terms).and_return(PolicyRegistry.buyer_terms.merge(version: "next-version"))
+    post "/api/v1/orders", params: original_params, as: :json
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body["id"]).to eq(@order.id)
+    expect(Order.count).to eq(1)
+    expect(StripeService).to have_received(:create_payment_intent).once
+  end
+
+  it "keeps a reserved original recoverable when an event gate prevents returning its secret" do
+    event.update!(sales_suspended_at: Time.current)
+    post "/api/v1/orders", params: params, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["checkout_recovery_required"]).to be(true)
+    expect(response.parsed_body).not_to have_key("client_secret")
+    expect(CheckoutAttempt.last).to be_status_reserved
+    expect(Order.count).to eq(1)
+  end
+
+  it "binds recovery to the original authenticated identity as well as the request body" do
+    user = create(:user)
+    post "/api/v1/orders", params: params, headers: auth_headers(user), as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["checkout_recovery_required"]).to be(true)
+    expect(response.parsed_body).not_to have_key("guest_access_token")
+    expect(Order.count).to eq(1)
   end
 
   it "rejects replay with changed buyer details and expired recovery capability" do

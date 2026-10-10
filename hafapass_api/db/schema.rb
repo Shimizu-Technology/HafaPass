@@ -267,6 +267,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
     t.check_constraint "price_cents >= 0 AND quantity_sold >= 0", name: "catalog_items_values_nonnegative"
   end
 
+  create_table "checkout_attempts", force: :cascade do |t|
+    t.string "checkout_key_digest", limit: 64, null: false
+    t.string "request_digest", limit: 64, null: false
+    t.integer "status", default: 0, null: false
+    t.string "lease_token_digest", limit: 64
+    t.datetime "lease_expires_at"
+    t.bigint "order_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["checkout_key_digest"], name: "index_checkout_attempts_on_checkout_key_digest", unique: true
+    t.index ["order_id"], name: "index_checkout_attempts_on_order_id", unique: true
+    t.check_constraint "status = 0 AND order_id IS NULL AND lease_token_digest IS NOT NULL AND lease_expires_at IS NOT NULL OR status = 1 AND order_id IS NULL AND lease_token_digest IS NULL AND lease_expires_at IS NULL OR status = 2 AND order_id IS NOT NULL AND lease_token_digest IS NULL AND lease_expires_at IS NULL", name: "checkout_attempt_state"
+  end
+
   create_table "communication_campaigns", force: :cascade do |t|
     t.text "body", null: false
     t.datetime "created_at", null: false
@@ -2146,6 +2160,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_080000) do
   add_foreign_key "catalog_item_holds", "order_items", on_delete: :restrict
   add_foreign_key "catalog_item_holds", "orders", on_delete: :restrict
   add_foreign_key "catalog_items", "events", on_delete: :restrict
+  add_foreign_key "checkout_attempts", "orders"
   add_foreign_key "communication_campaigns", "events", on_delete: :restrict
   add_foreign_key "communication_campaigns", "users", column: "created_by_user_id", on_delete: :restrict
   add_foreign_key "connected_accounts", "organizations", on_delete: :restrict

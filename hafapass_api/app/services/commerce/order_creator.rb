@@ -21,7 +21,8 @@ module Commerce
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
       attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
-      cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil)
+      cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
+      checkout_attempt: nil, checkout_lease_token: nil)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -48,24 +49,39 @@ module Commerce
       @live_money_proof_authorization = live_money_proof_authorization
       @checkout_key_digest = checkout_key_digest
       @checkout_request_digest = checkout_request_digest
+      @checkout_attempt = checkout_attempt
+      @checkout_lease_token = checkout_lease_token
       @cash_sale_key = cash_sale_key
       @cash_sale_request_digest = cash_sale_request_digest
     end
 
     def call
+      if @checkout_key_digest && !@checkout_attempt
+        claim = CheckoutAttempt.claim!(key_digest: @checkout_key_digest, request_digest: @checkout_request_digest)
+        @checkout_attempt = claim.attempt
+        @checkout_lease_token = claim.lease_token
+      end
       requires_payment = payment_required.nil? ? StripeService.payment_enabled? : payment_required
       order = nil
       payment = nil
 
       Order.transaction do
+        if @checkout_attempt
+          @checkout_attempt.lock!
+          unless @checkout_attempt.checkout_key_digest == @checkout_key_digest && @checkout_attempt.request_digest == @checkout_request_digest
+            raise CheckoutAttempt::Conflict, "Checkout recovery does not match this request"
+          end
+          @checkout_attempt.verify_owner!(@checkout_lease_token) unless @checkout_attempt.order_id
+        end
         event.lock!
-        if @checkout_key_digest && (previous = Order.find_by(checkout_key_digest: @checkout_key_digest))
-          unless previous.event_id == event.id && previous.checkout_request_digest == @checkout_request_digest &&
+        if @checkout_key_digest && (previous = @checkout_attempt&.order || Order.find_by(checkout_key_digest: @checkout_key_digest))
+          unless previous.checkout_key_digest == @checkout_key_digest && previous.event_id == event.id && previous.checkout_request_digest == @checkout_request_digest &&
               previous.checkout_recovery_expires_at&.future?
             raise CheckoutError, "Checkout recovery does not match this request or has expired"
           end
           order = previous
           payment = previous.payments.order(:id).last
+          @checkout_attempt&.reserve!(previous)
           next
         end
         validate_launch_scope!
@@ -192,6 +208,7 @@ module Commerce
         else
           OrderLifecycle.complete!(order)
         end
+        @checkout_attempt&.reserve!(order)
       end
 
       intent = if payment&.provider == "stripe" && payment.provider_payment_id.present? && order.pending?
