@@ -71,8 +71,8 @@ class SystemReadiness
         email_webhook: configured?("RESEND_WEBHOOK_SECRET"),
         error_monitoring: configured?("SENTRY_DSN"),
         object_storage: %w[AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET].all? { |key| ENV[key].present? },
-        stripe_test: %w[STRIPE_TEST_SECRET_KEY STRIPE_TEST_PUBLISHABLE_KEY].all? { |key| ENV[key].present? },
-        stripe_live: %w[STRIPE_LIVE_SECRET_KEY STRIPE_LIVE_PUBLISHABLE_KEY].all? { |key| ENV[key].present? }
+        stripe_test: ProductionConfiguration.stripe_mode_configured?("test"),
+        stripe_live: ProductionConfiguration.stripe_mode_configured?("live")
       }
     end
 

@@ -124,6 +124,13 @@ RSpec.describe MessageDeliveryJob do
     expect(delivery.provider_attempted_at).to be_present
   end
 
+  it "refuses a provider deadline that can outlive its send lease" do
+    stub_const("MessageDeliveryJob::PROVIDER_TIMEOUT", described_class::SEND_LEASE + 1.second)
+    expect { described_class.new.perform(delivery.id) }.to raise_error(ArgumentError, /shorter than the send lease/)
+    expect(Resend::Emails).not_to have_received(:send)
+    expect(delivery.reload.attempts).to eq(0)
+  end
+
   it "does not permanently suppress a mailbox after an explicitly transient bounce" do
     prior = create(:message_delivery, order: order, recipient: delivery.recipient,
       provider: "resend", provider_id: "soft_bounce", status: :sent)
@@ -133,6 +140,36 @@ RSpec.describe MessageDeliveryJob do
     })
     described_class.new.perform(delivery.id)
     expect(delivery.reload).to be_sent
+  end
+
+  it "keeps a hard bounce suppressing when a transient bounce has the same provider timestamp" do
+    prior = create(:message_delivery, order: order, recipient: delivery.recipient,
+      provider: "resend", provider_id: "mixed_bounce", status: :sent)
+    timestamp = Time.current.change(usec: 0).iso8601
+    %w[Transient Permanent].each_with_index do |type, index|
+      MessageProviderEventProcessor.call(provider_event_id: "mixed-bounce-#{index}", event: {
+        "type" => "email.bounced", "created_at" => timestamp,
+        "data" => { "email_id" => prior.provider_id, "bounce" => { "type" => type } }
+      })
+    end
+    described_class.new.perform(delivery.id)
+    expect(delivery.reload).to be_suppressed
+    expect(Resend::Emails).not_to have_received(:send)
+  end
+
+  it "does not let another recipient's transient bounce erase a hard bounce" do
+    timestamp = Time.current.change(usec: 0).iso8601
+    [[delivery.recipient, "Permanent"], ["another@example.invalid", "Transient"]].each_with_index do |(recipient, type), index|
+      prior = create(:message_delivery, order: order, recipient: recipient,
+        provider: "resend", provider_id: "recipient-bounce-#{index}", status: :sent)
+      MessageProviderEventProcessor.call(provider_event_id: "recipient-bounce-#{index}", event: {
+        "type" => "email.bounced", "created_at" => timestamp,
+        "data" => { "email_id" => prior.provider_id, "bounce" => { "type" => type } }
+      })
+    end
+    described_class.new.perform(delivery.id)
+    expect(delivery.reload).to be_suppressed
+    expect(Resend::Emails).not_to have_received(:send)
   end
 
   it "keeps genuine provider suppression effective" do

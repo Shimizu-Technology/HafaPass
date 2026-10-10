@@ -26,7 +26,7 @@ class StageSafety
       }
       if runtime
         if ProviderRehearsal.stripe_enabled?
-          checks[:test_provider_payments] = SiteSetting.instance.test_mode?
+          checks[:test_provider_payments] = test_provider_payments?
         else
           checks[:simulated_payments] = simulated_payments?
         end
@@ -64,6 +64,12 @@ class StageSafety
 
     def simulated_payments?
       SiteSetting.instance.simulate_mode?
+    rescue ActiveRecord::ActiveRecordError
+      false
+    end
+
+    def test_provider_payments?
+      SiteSetting.instance.test_mode?
     rescue ActiveRecord::ActiveRecordError
       false
     end

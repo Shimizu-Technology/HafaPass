@@ -48,3 +48,29 @@ Adding other methods requires a reviewed processing reservation, expiry, late ca
 Creation and resumption validate both the returned `allowed_payment_method_types` and compatible `payment_method_types` as exactly `card`. A legacy automatic intent is not assumed safe just because it currently displays cards. A conflicting create response retains the original provider identity and inventory reservation, opens a policy reconciliation item, and withholds its client secret. Retrying the saved checkout cannot create another reservation or provider operation.
 
 The resume route withholds confirmation secrets for unconfirmed bank or unknown method configurations. It does not rewrite or blindly cancel an operation already processing or succeeded. Legacy bank operations already in flight still require the existing expiry, capture, refund, and finance reconciliation process; this card policy is not an automated migration or resolution of those operations.
+
+
+## Legacy payment inventory and controlled repair
+
+Before deploying against an existing database, an authorized operator must inventory Stripe payments missing frozen context and legacy orders without a payment row. An empty staging database does not establish that production is clear. Never infer historical ownership or mode from current environment variables.
+
+Use the authorized environment's Rails console for this read-only inventory. Record its release and counts without exporting buyer data:
+
+```ruby
+legacy = Payment.where(provider: "stripe").where.not(provider_payment_id: nil)
+  .where("provider_payment_id NOT LIKE 'sim_%'")
+  .where("provider_environment IS NULL OR provider_platform_account_id IS NULL")
+legacy.group(:status).count
+Order.where.not(stripe_payment_intent_id: nil).left_joins(:payments)
+  .where(payments: { id: nil }).count
+```
+
+For each affected record:
+
+1. Retrieve the exact original PaymentIntent from its original Stripe account. Verify its provider ID, test/live mode, platform and connected-account scope, amount, currency and payment state. Historical webhook `livemode` alone does not prove platform ownership; unsigned development fixtures are not evidence.
+2. Record the controlled evidence reference and obtain authorization for those exact historical records. If facts cannot be verified, retain the financial hold and withhold production admission.
+3. Prepare and test a narrowly scoped maintenance transaction on isolated synthetic fixtures. Lock the payment and recheck unchanged identity/state before filling only its missing readonly context through the approved maintenance path. Preserve original order/payment/provider IDs, idempotency key, amounts and financial history. Append the operator, evidence reference and before/after context to the audit log in the same transaction. Normal application updates must not rewrite frozen context.
+4. Reconcile any unverified fee-evidence row created from missing context through an audited finance repair. Preserve verified evidence and original costs; map existing manual costs explicitly. Reconcile the capture through the normal fee service and close only the supported exception with its evidence reference.
+5. Repeat the inventory and verify fulfillment, admission and settlement eligibility. Report unresolved rows as deployment blockers.
+
+This required operator procedure is not an automatic migration or evidence that production was inspected or repaired. The legacy webhook path deliberately leaves unproved context unresolved. No callback, credential rotation or migration may manufacture historical ownership. Keep the existing API suspended until inventory and any authorized repair are complete.

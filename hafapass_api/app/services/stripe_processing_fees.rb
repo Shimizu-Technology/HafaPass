@@ -159,6 +159,10 @@ class StripeProcessingFees
 
     payment.order.with_lock do
       evidence.with_lock do
+        if evidence.status_verified? && (retryable || code == "provider_fee_context_unavailable")
+          evidence.update!(attempts: evidence.attempts + 1, last_error_code: code)
+          next
+        end
         evidence.update!(status: retryable ? :pending : :review_required,
           attempts: evidence.attempts + 1, last_error_code: code, next_attempt_at: retryable ? 5.minutes.from_now : nil)
         payment.reconciliation_exceptions.find_or_create_by!(order: payment.order,

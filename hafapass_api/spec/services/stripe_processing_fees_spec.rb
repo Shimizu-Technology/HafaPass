@@ -74,6 +74,34 @@ RSpec.describe StripeProcessingFees do
     expect(FeeComponent.where(kind: "processing")).to be_empty
   end
 
+  it "preserves verified cost and payout availability through a later transport outage" do
+    evidence = reconcile
+    available = OrganizationPayoutBalance.available_cents(event.organization)
+    allow(StripeService).to receive(:retrieve_fee_payment_intent).and_raise(Stripe::APIConnectionError, "lost")
+    expect { reconcile }.to raise_error(described_class::RetryableError)
+    expect(evidence.reload).to be_status_verified
+    expect(evidence.last_error_code).to eq("provider_fee_temporarily_unavailable")
+    expect(evidence.attempts).to eq(2)
+    expect(described_class.missing_count(event.orders.select(:id))).to eq(0)
+    expect(OrganizationPayoutBalance.available_cents(event.organization)).to eq(available)
+    expect(payment.reconciliation_exceptions.open).to be_empty
+    expect(evidence.fee_component.amount_cents).to eq(61)
+  end
+
+  it "preserves verified cost through unavailable credentials but holds contradictory payment evidence" do
+    evidence = reconcile
+    allow(StripeService).to receive(:retrieve_fee_payment_intent).and_raise(StripeService::PaymentError, "unavailable")
+    reconcile
+    expect(evidence.reload).to be_status_verified
+    expect(payment.reconciliation_exceptions.open).to be_empty
+    allow(StripeService).to receive(:retrieve_fee_payment_intent).and_return(intent)
+    intent["currency"] = "eur"
+    reconcile
+    expect(evidence.reload).to be_status_review_required
+    expect(payment.reconciliation_exceptions.open).to exist(code: described_class::REVIEW_CODE)
+    expect(evidence.fee_component.amount_cents).to eq(61)
+  end
+
   { "source" => "ch_foreign", "currency" => "eur", "amount" => 1081, "net" => 1020,
     "type" => "transfer" }.each do |field, incorrect|
     it "quarantines a foreign or contradictory balance #{field}" do

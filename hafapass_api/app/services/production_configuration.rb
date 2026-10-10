@@ -15,6 +15,7 @@ class ProductionConfiguration
         monitoring: configured?(*%w[SENTRY_DSN]),
         email: configured?(*%w[RESEND_API_KEY RESEND_WEBHOOK_SECRET MAILER_FROM_EMAIL]),
         provider_configuration_revision: configured?(*%w[PROVIDER_CONFIGURATION_REVISION]),
+        stripe_payment_context: stripe_payment_context?,
         object_storage: configured?(*%w[AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET AWS_REGION]),
         admission_signing: configured?(*%w[ADMISSION_MANIFEST_PRIVATE_KEY_PEM]),
         launch_scope: LaunchCapabilities.configured?,
@@ -29,6 +30,19 @@ class ProductionConfiguration
       }
     end
 
+    def stripe_mode_configured?(mode)
+      return false unless %w[test live].include?(mode)
+
+      secret = ENV["STRIPE_#{mode.upcase}_SECRET_KEY"].presence
+      public_key = ENV["STRIPE_#{mode.upcase}_PUBLISHABLE_KEY"].presence
+      if mode == "test"
+        secret ||= ENV["STRIPE_SECRET_KEY"]
+        public_key ||= ENV["STRIPE_PUBLISHABLE_KEY"]
+      end
+      secret.to_s.match?(/\A(?:sk|rk)_#{mode}_/) && public_key.to_s.start_with?("pk_#{mode}_") &&
+        ENV["STRIPE_#{mode.upcase}_PLATFORM_ACCOUNT_ID"].to_s.match?(/\Aacct_[a-zA-Z0-9]+\z/)
+    end
+
     private
 
     def configured?(*keys)
@@ -37,6 +51,13 @@ class ProductionConfiguration
 
     def release_identifier
       ApplicationRevision.current
+    end
+
+    def stripe_payment_context?
+      mode = SiteSetting.instance.payment_mode
+      mode == "simulate" || stripe_mode_configured?(mode)
+    rescue ActiveRecord::ActiveRecordError
+      false
     end
 
     def secure_public_urls?

@@ -14,6 +14,9 @@ class MessageDeliveryJob < ApplicationJob
   PROVIDER_TIMEOUT = 30.seconds
 
   def perform(delivery_id)
+    unless PROVIDER_TIMEOUT.positive? && PROVIDER_TIMEOUT < SEND_LEASE
+      raise ArgumentError, "Email provider deadline must be shorter than the send lease"
+    end
     delivery = MessageDelivery.find(delivery_id)
     lease_token = SecureRandom.uuid
     previously_unknown = nil

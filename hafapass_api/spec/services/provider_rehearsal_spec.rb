@@ -42,6 +42,12 @@ RSpec.describe ProviderRehearsal do
     expect(described_class.stripe_enabled?).to be false
   end
 
+  it "reports test payment readiness as unavailable when its database lookup fails" do
+    allow(SiteSetting).to receive(:instance).and_raise(ActiveRecord::StatementInvalid)
+    expect(StageSafety.call(runtime: true)).to include(ready: false)
+    expect(StageSafety.call(runtime: true)[:checks][:test_provider_payments]).to be(false)
+  end
+
   it "requires every frozen recipient including cc and bcc to be approved" do
     expect(described_class.email_payload_allowed?({ to: "OWNED@example.invalid" })).to be true
     expect(described_class.email_payload_allowed?({ to: "owned@example.invalid", cc: "other@example.invalid" })).to be false

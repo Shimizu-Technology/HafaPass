@@ -38,9 +38,18 @@ class MessageDelivery < ApplicationRecord
     history = self.class.where("LOWER(recipient) = ?", recipient.to_s.strip.downcase)
     # Local cancellation/propagated suppression is not provider evidence.
     transient_bounces = MessageProviderEvent.where(event_type: "email.bounced")
-      .where.not(message_delivery_id: nil)
+      .where("message_provider_events.message_delivery_id = message_deliveries.id")
       .where("occurred_at = message_deliveries.last_event_at")
       .where("payload #>> '{bounce,type}' = 'Transient'")
+      .where(<<~SQL.squish)
+        NOT EXISTS (
+          SELECT 1 FROM message_provider_events hard_bounce
+          WHERE hard_bounce.message_delivery_id = message_deliveries.id
+            AND hard_bounce.event_type = 'email.bounced'
+            AND hard_bounce.occurred_at = message_deliveries.last_event_at
+            AND COALESCE(hard_bounce.payload #>> '{bounce,type}', '') != 'Transient'
+        )
+      SQL
       .select(:message_delivery_id)
     hard_bounces = history.where(status: :bounced).where.not(id: transient_bounces)
     hard_bounces.or(history.where(status: :complained)).or(
