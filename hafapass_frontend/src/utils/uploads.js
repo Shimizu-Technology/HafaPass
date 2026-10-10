@@ -16,6 +16,7 @@ async function recoveryKey(file, scope) {
 
 function requireScope(scope) {
   if (!uploadScopeCurrent(scope)) throw new Error('Your account or organization changed. Please select the image again.')
+  if (scope.isCurrent && !scope.isCurrent()) throw new Error('The image upload context changed. Please select the image again.')
 }
 
 async function completeUpload(key, uploadToken, scope) {
@@ -36,7 +37,18 @@ async function completeUpload(key, uploadToken, scope) {
 async function upload(file, eventId, scope, key) {
   requireScope(scope)
   const savedToken = window.sessionStorage.getItem(key)
-  if (savedToken) return completeUpload(key, savedToken, scope)
+  if (savedToken) {
+    try {
+      return await completeUpload(key, savedToken, scope)
+    } catch (error) {
+      // Missing bytes/expired authorization can restart this image operation.
+      // Authentication and permission failures cannot authorize a fresh upload.
+      if (![404, 422].includes(error.response?.status)) throw error
+      requireScope(scope)
+      // Another operation may have replaced this token while completion ran.
+      if (window.sessionStorage.getItem(key)) throw error
+    }
+  }
   const response = await apiClient.post('/uploads/presign', {
     filename: file.name,
     content_type: file.type,
@@ -65,10 +77,10 @@ async function upload(file, eventId, scope, key) {
   return completeUpload(key, upload_token, scope)
 }
 
-export async function uploadImage(file, eventId) {
+export async function uploadImage(file, eventId, isCurrent) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file?.type)) throw new Error('Choose a JPG, PNG, or WebP image.')
   if (!file.size || file.size > 5 * 1024 * 1024) throw new Error('Image must be between 1 byte and 5 MB.')
-  const scope = uploadScope(eventId)
+  const scope = { ...uploadScope(eventId), isCurrent }
   if (!scope.userId) throw new Error('Sign in before uploading an image.')
   const key = await recoveryKey(file, scope)
   if (inFlight.has(key)) return inFlight.get(key)

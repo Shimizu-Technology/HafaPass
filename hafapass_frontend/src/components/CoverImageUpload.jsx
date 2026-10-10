@@ -54,7 +54,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
     setUploading(true)
 
     try {
-      const finalUrl = await uploadImage(file, eventId)
+      const finalUrl = await uploadImage(file, eventId, current)
       if (!current()) return
       onUploaded(finalUrl)
       setPreview(null)

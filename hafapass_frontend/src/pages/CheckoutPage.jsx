@@ -8,7 +8,7 @@ import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout, saveOrderAccess } from '../utils/orderAccess'
+import { CheckoutAttemptConflict, checkoutDefinitelyRejected, clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout, saveOrderAccess } from '../utils/orderAccess'
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function CheckoutPage() {
@@ -41,6 +41,9 @@ export default function CheckoutPage() {
   const [formErrors, setFormErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [canStartNewCheckout, setCanStartNewCheckout] = useState(false)
+  const [checkoutNeedsRecovery, setCheckoutNeedsRecovery] = useState(false)
+  const [recoveryVersion, setRecoveryVersion] = useState(0)
 
   // Promo code (HP-7)
   const [promoInput, setPromoInput] = useState('')
@@ -70,7 +73,16 @@ export default function CheckoutPage() {
     const recover = async () => {
       let id = activeOrderId
       if (!id) {
-        const response = await apiClient.post('/orders', attempt.payload)
+        let response
+        try {
+          response = await apiClient.post('/orders', attempt.payload)
+        } catch (err) {
+          if (checkoutDefinitelyRejected(err)) {
+            clearCheckoutAttempt(slug)
+            if (!cancelled) setCanStartNewCheckout(true)
+          }
+          throw err
+        }
         id = response.data.id
         saveOrderAccess(id, response.data.guest_access_token)
         saveActiveCheckout(slug, id)
@@ -99,7 +111,29 @@ export default function CheckoutPage() {
       }
     }).finally(() => { if (!cancelled) setRecovering(false) })
     return () => { cancelled = true }
-  }, [navigate, slug, location.pathname, location.search])
+  }, [navigate, slug, location.pathname, location.search, recoveryVersion])
+
+  const retrySavedCheckout = () => {
+    if (!getActiveCheckout(slug) && !getCheckoutAttempt(slug)) {
+      window.location.reload()
+      return
+    }
+    setError(null)
+    setSubmitError(null)
+    setCheckoutNeedsRecovery(false)
+    setRecoveryVersion(previous => previous + 1)
+  }
+
+  const startNewCheckout = () => {
+    // The action is available only after a definitive no-order response.
+    if (!canStartNewCheckout || getActiveCheckout(slug)) return
+    clearCheckoutAttempt(slug)
+    setCanStartNewCheckout(false)
+    setError(null)
+    setSubmitError(null)
+    // Re-select against current inventory and load fresh buyer terms/config.
+    navigate(`/events/${slug}`, { replace: true })
+  }
 
   useEffect(() => {
     apiClient.get('/config')
@@ -198,6 +232,8 @@ export default function CheckoutPage() {
   const handleInfoSubmit = async (e) => {
     e.preventDefault()
     setSubmitError(null)
+    setCanStartNewCheckout(false)
+    setCheckoutNeedsRecovery(false)
     const errors = validateForm()
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
@@ -255,8 +291,13 @@ export default function CheckoutPage() {
         navigate(`/orders/${order.id}/confirmation`, { state: { order, event }, replace: true })
       }
     } catch (err) {
-      if (err.response?.data?.checkout_recovery_required === false) clearCheckoutAttempt(slug)
-      setSubmitError(err.response?.data?.error || 'Something went wrong. Retry to recover the same checkout.')
+      if (checkoutDefinitelyRejected(err)) {
+        clearCheckoutAttempt(slug)
+        setCanStartNewCheckout(true)
+      } else if (err instanceof CheckoutAttemptConflict || getCheckoutAttempt(slug)) {
+        setCheckoutNeedsRecovery(true)
+      }
+      setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message : 'Something went wrong. Retry to recover the same checkout.'))
     } finally {
       setSubmitting(false)
     }
@@ -285,7 +326,9 @@ export default function CheckoutPage() {
     <div className="max-w-2xl mx-auto px-4 py-16">
       <div className="card p-8 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        <button type="button" onClick={() => window.location.reload()} className="btn-primary mb-3">Retry saved checkout</button>
+        {canStartNewCheckout
+          ? <button type="button" onClick={startNewCheckout} className="btn-primary mb-3">Start a new checkout</button>
+          : <button type="button" onClick={retrySavedCheckout} className="btn-primary mb-3">Retry saved checkout</button>}
         <Link to={`/events/${slug}`} className="block font-semibold underline">Back to Event</Link>
       </div>
     </div>
@@ -476,6 +519,8 @@ export default function CheckoutPage() {
             {submitError && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
                 <p className="text-red-700 text-sm">{submitError}</p>
+                {checkoutNeedsRecovery && <button type="button" onClick={retrySavedCheckout} className="mt-2 font-semibold underline">Recover earlier checkout</button>}
+                {canStartNewCheckout && <button type="button" onClick={startNewCheckout} className="mt-2 font-semibold underline">Start a new checkout</button>}
               </div>
             )}
             <form onSubmit={handleInfoSubmit} noValidate>

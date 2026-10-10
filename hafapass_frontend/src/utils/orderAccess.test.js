@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { prepareCheckoutAttempt, getCheckoutAttempt, clearCheckoutAttempt, getBuyerRefundAttempt, prepareBuyerRefundAttempt, recordBuyerRefundOutcome } from './orderAccess'
+import { CheckoutAttemptConflict, checkoutDefinitelyRejected, prepareCheckoutAttempt, getCheckoutAttempt, clearCheckoutAttempt, getBuyerRefundAttempt, prepareBuyerRefundAttempt, recordBuyerRefundOutcome } from './orderAccess'
 
 describe('buyer refund request persistence', () => {
   beforeEach(() => window.sessionStorage.clear())
@@ -48,9 +48,39 @@ describe('buyer refund request persistence', () => {
   it('persists a secret checkout capability before posting and reuses it for an uncertain response', () => {
     const first = prepareCheckoutAttempt('event', { buyer_email: 'buyer@example.invalid' })
     expect(first.payload.checkout_key).toMatch(/^[0-9a-f]{64}$/)
-    expect(prepareCheckoutAttempt('event', { buyer_email: 'changed@example.invalid' })).toEqual(first)
+    expect(prepareCheckoutAttempt('event', { buyer_email: 'buyer@example.invalid' })).toEqual(first)
     expect(getCheckoutAttempt('event')).toEqual(first)
     clearCheckoutAttempt('event')
     expect(getCheckoutAttempt('event')).toBeNull()
+  })
+
+  it('does not overwrite edits or allocate another order identity while the earlier result is unknown', () => {
+    const payload = { buyer_email: 'buyer@example.invalid', line_items: [{ quantity: 1, ticket_type_id: 7 }] }
+    const first = prepareCheckoutAttempt('event', payload)
+    expect(prepareCheckoutAttempt('event', { line_items: [{ ticket_type_id: 7, quantity: 1 }], buyer_email: 'buyer@example.invalid' })).toEqual(first)
+    expect(() => prepareCheckoutAttempt('event', { ...payload, buyer_email: 'edited@example.invalid' })).toThrow(CheckoutAttemptConflict)
+    expect(() => prepareCheckoutAttempt('event', { ...payload, line_items: [{ ticket_type_id: 7, quantity: 2 }] })).toThrow(CheckoutAttemptConflict)
+    expect(() => prepareCheckoutAttempt('event', { ...payload, promo_code_id: 9 })).toThrow(CheckoutAttemptConflict)
+    expect(getCheckoutAttempt('event')).toEqual(first)
+    clearCheckoutAttempt('event')
+    const next = prepareCheckoutAttempt('event', { ...payload, buyer_email: 'edited@example.invalid' })
+    expect(next.payload.buyer_email).toBe('edited@example.invalid')
+    expect(next.payload.checkout_key).not.toBe(first.payload.checkout_key)
+  })
+
+  it.each([400, 401, 403, 404, 422])('recognizes a definitive no-order %s response', status => {
+    expect(checkoutDefinitelyRejected({ response: { status, data: { checkout_recovery_required: false } } })).toBe(true)
+  })
+
+  it.each([
+    { status: 422, data: {} },
+    { status: 422, data: { checkout_recovery_required: true } },
+    { status: 422, data: { checkout_recovery_required: false, id: 123 } },
+    { status: 422, data: { checkout_recovery_required: false, order_id: 123 } },
+    { status: 408, data: { checkout_recovery_required: false } },
+    { status: 429, data: { checkout_recovery_required: false } },
+    { status: 503, data: {} },
+  ])('preserves uncertain or contradictory checkout outcome $status $data', response => {
+    expect(checkoutDefinitelyRejected({ response })).toBe(false)
   })
 })

@@ -69,6 +69,33 @@ export function recordBuyerRefundOutcome(orderId, operation, data = {}) {
 }
 
 const checkoutAttemptKey = slug => `hafapass:checkout-attempt:${slug}`
+export class CheckoutAttemptConflict extends Error {
+  constructor() {
+    super('An earlier checkout is still unconfirmed. Recover it before changing your order.')
+    this.name = 'CheckoutAttemptConflict'
+  }
+}
+
+function canonicalPayload(value) {
+  if (Array.isArray(value)) return value.map(canonicalPayload)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalPayload(value[key])]))
+  return value
+}
+
+function checkoutPayloadIdentity(payload) {
+  const request = { ...payload }
+  delete request.checkout_key
+  return JSON.stringify(canonicalPayload(request))
+}
+
+export function checkoutDefinitelyRejected(error) {
+  const data = error.response?.data
+  // A 4xx replay may reject changed terms before checking an existing order.
+  // Status alone cannot establish that the earlier request created no order.
+  return data?.checkout_recovery_required === false && !data.id && !data.order_id && !data.order?.id
+    && ![408, 429].includes(error.response?.status)
+}
+
 export function getCheckoutAttempt(slug) {
   try {
     const attempt = JSON.parse(window.sessionStorage.getItem(checkoutAttemptKey(slug)) || 'null')
@@ -81,7 +108,10 @@ export function getCheckoutAttempt(slug) {
 }
 export function prepareCheckoutAttempt(slug, payload) {
   const previous = getCheckoutAttempt(slug)
-  if (previous) return previous
+  if (previous) {
+    if (checkoutPayloadIdentity(previous.payload) !== checkoutPayloadIdentity(payload)) throw new CheckoutAttemptConflict()
+    return previous
+  }
   const bytes = crypto.getRandomValues(new Uint8Array(32))
   const key = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
   const attempt = { payload: { ...payload, checkout_key: key }, expiresAt: Date.now() + 30 * 60 * 1000 }
