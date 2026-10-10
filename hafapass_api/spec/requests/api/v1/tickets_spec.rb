@@ -47,6 +47,22 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response).to have_http_status(:not_found)
     end
 
+    it "withholds admission artifacts while a selected refund remains unknown" do
+      refund = create(:refund, order: order, status: :pending, provider_refund_id: nil,
+        succeeded_at: nil, failure_code: "provider_result_unknown")
+      refund.refund_tickets.create!(ticket: ticket, amount_cents: refund.amount_cents)
+      headers = { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+      get "/api/v1/tickets/#{ticket.display_credential}", headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("admission_allowed" => false, "scan_credential" => nil,
+        "admission_block_reason" => "Ticket access is paused while its refund is pending")
+
+      get "/api/v1/tickets/#{ticket.display_credential}/download", headers: headers
+      expect(response).to have_http_status(:not_found)
+      expect(ticket.reload).to be_issued
+      expect(refund.reload).to be_pending
+    end
+
     it "does not expose a scan credential after the ticket is cancelled" do
       ticket.update!(status: :cancelled, cancelled_at: Time.current)
 

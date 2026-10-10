@@ -63,7 +63,12 @@ class Api::V1::TicketsController < ApplicationController
   end
 
   def downloadable?(ticket)
-    ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked?
+    ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked? && !ticket.refund_pending?
+  end
+
+  def admission_block_reason(ticket)
+    return "Payment dispute under review" if ticket.order.ticket_access_blocked?
+    "Ticket access is paused while its refund is pending" if ticket.refund_pending?
   end
 
   def ticket_json(ticket)
@@ -77,7 +82,7 @@ class Api::V1::TicketsController < ApplicationController
         apple: Wallet::ApplePassGenerator.enabled?,
         google: Wallet::GoogleSaveLink.enabled?
       },
-      admission_block_reason: ticket.order.ticket_access_blocked? ? "Payment dispute under review" : nil,
+      admission_block_reason: admission_block_reason(ticket),
       event: {
         id: ticket.event.id,
         title: ticket.event.title,

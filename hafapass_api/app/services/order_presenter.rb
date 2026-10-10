@@ -184,7 +184,7 @@ class OrderPresenter
   def presented_tickets
     @presented_tickets ||= begin
       tickets = order.tickets
-      tickets = tickets.includes(:ticket_type, :order_item,
+      tickets = tickets.includes(:ticket_type, :order_item, :pending_refund_tickets,
         event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
       tickets.to_a.sort_by(&:id)
     end

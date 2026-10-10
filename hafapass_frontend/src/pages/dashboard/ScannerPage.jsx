@@ -182,6 +182,7 @@ export default function ScannerPage({ offlineOnly = false }) {
             return { ...current, type: 'error', message: 'Admission reversal refused', detail: 'The server did not confirm this Undo. Ask a door manager to check the ticket status.' }
           }
           if (result.result === 'accepted') return { ...current, type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
+          if (result.reason_code === 'refund_pending') return { ...current, type: 'error', message: 'Refund pending — do not admit', detail: 'Entry is paused while this ticket’s refund is unresolved. Ask a door manager to check its current status.' }
           return { ...current, type: result.result === 'conflict' ? 'warning' : 'error', message: result.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
         })
         currentDevice = { ...currentDevice, ...response.data.device }
@@ -371,7 +372,7 @@ export default function ScannerPage({ offlineOnly = false }) {
       return
     }
     if (ticket.state !== 'valid') {
-      const labels = { admitted: 'Already admitted', cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked' }
+      const labels = { admitted: 'Already admitted', cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
       showResult({ type: ticket.state === 'admitted' ? 'warning' : 'error', message: labels[ticket.state] || 'Ticket is not valid',
         detail: 'Use the latest manifest or ask a door manager for help.', ticket, latency: performance.now() - startedAt })
       return

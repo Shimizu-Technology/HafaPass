@@ -77,6 +77,21 @@ RSpec.describe Admissions::Reconciler do
     end.to raise_error(described_class::SyncError, /expired or was revoked/)
   end
 
+  %w[online offline].each do |source|
+    it "rejects #{source} reconciliation from an older valid manifest after a selected refund is reserved" do
+      prepared = manifest
+      refund = create(:refund, order: order, status: :pending, provider_refund_id: nil,
+        succeeded_at: nil, failure_code: "provider_result_unknown")
+      refund.refund_tickets.create!(ticket: ticket, amount_cents: refund.amount_cents)
+      input = scan_input(sequence: 1, uuid: "pending-refund-#{source}", scanner_manifest: prepared, source: source)
+      result = described_class.call(device: device, actor: actor, actions: [input]).first.action
+      expect(result).to have_attributes(result: "rejected", reason_code: "refund_pending")
+      expect(ticket.reload).to be_issued
+      expect(described_class.call(device: device.reload, actor: actor, actions: [input]).first.action).to eq(result)
+      expect(refund.reload).to be_pending
+    end
+  end
+
   it "returns the original result for an exact action retry" do
     input = scan_input(sequence: 1, uuid: "idempotent-door-scan")
     original = described_class.call(device: device, actor: actor, actions: [input]).first.action

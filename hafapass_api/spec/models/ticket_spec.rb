@@ -64,6 +64,19 @@ RSpec.describe Ticket, type: :model do
       expect(admission_ticket.reload).to be_issued
     end
 
+    it "rechecks a selected refund reservation after stale eligibility was loaded" do
+      stale = Ticket.find(admission_ticket.id)
+      stale.pending_refund_tickets.load
+      expect(stale).to be_admission_allowed
+      refund = create(:refund, order: admission_order, status: :pending, provider_refund_id: nil,
+        succeeded_at: nil, failure_code: "provider_result_unknown")
+      refund.refund_tickets.create!(ticket: admission_ticket, amount_cents: refund.amount_cents)
+
+      expect { stale.check_in! }.to raise_error(Ticket::AdmissionError, /selected refund is pending/)
+      expect(admission_ticket.reload).to be_issued
+      expect(admission_ticket).not_to be_admission_allowed
+    end
+
     it "checks the current event status" do
       admission_ticket.event
       admission_event.update!(status: :cancelled)

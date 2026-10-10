@@ -34,6 +34,28 @@ RSpec.describe Admissions::ManifestBuilder do
     expect(described_class.call(event: event, actor: profile.user)).to eq(manifest)
   end
 
+  it "signs a new refund-blocked version and restores eligibility only after a definitive failure" do
+    original = described_class.call(event: event, actor: profile.user)
+    refund = create(:refund, order: order, status: :pending, provider_refund_id: nil, succeeded_at: nil,
+      failure_code: "provider_result_unknown")
+    refund.refund_tickets.create!(ticket: ticket, amount_cents: refund.amount_cents)
+
+    blocked = described_class.call(event: event, actor: profile.user)
+    expect(blocked.version).to eq(original.version + 1)
+    expect(blocked.payload.dig("tickets", 0, "state")).to eq("refund_pending")
+    expect(Admissions::ManifestSigner.verify(digest: blocked.digest, signature: blocked.signature)).to be(true)
+    expect(original.reload.payload.dig("tickets", 0, "state")).to eq("valid")
+    expect(ticket.reload).not_to be_admission_allowed
+
+    Commerce::RefundCreator.reconcile_refund!(refund: refund,
+      provider_refund: OpenStruct.new(id: "re_synthetic_failed", status: "failed"))
+    renewed = described_class.call(event: event, actor: profile.user)
+    expect(renewed.version).to eq(blocked.version + 1)
+    expect(renewed.payload.dig("tickets", 0, "state")).to eq("valid")
+    expect(refund.reload).to be_failed
+    expect(ticket.reload).to be_admission_allowed
+  end
+
   it "creates a new immutable version when a ticket credential or state changes" do
     original = described_class.call(event: event, actor: profile.user)
     ticket.rotate_scan_credential!

@@ -27,6 +27,54 @@ describe('scanner recovery and camera ownership', () => {
   })
   afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
 
+  it('blocks a pending-refund ticket from a freshly verified manifest without queuing admission', async () => {
+    const eventId = 92001
+    const device = { id: 91, identifier: 'refund-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'refund_pending', attendee_name: 'Guest', ticket_type: 'General', credential_hash: await sha256Hex('refund-qr') }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    apiClient.get.mockRejectedValue(new Error('API unavailable'))
+    apiClient.post.mockRejectedValue(new Error('API unavailable'))
+    render(<ScannerPage />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Ticket QR credential'), 'refund-qr')
+    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    expect(await screen.findByText('Refund pending — do not admit')).toBeInTheDocument()
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+  })
+
+  it('shows the pending-refund refusal when a scan from an older valid manifest is reconciled online', async () => {
+    const eventId = 92001
+    const device = { id: 91, identifier: 'old-refund-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'valid', attendee_name: 'Guest', ticket_type: 'General', credential_hash: await sha256Hex('old-refund-qr') }
+    const original = await signedManifest(eventId, [ticket])
+    const updated = await signedManifest(eventId, [{ ...ticket, state: 'refund_pending' }], { version: 2 })
+    let currentManifest = original
+    apiClient.get.mockImplementation(url => {
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, title: 'Refund Event' }] } })
+      if (url.endsWith('/manifest')) return Promise.resolve({ data: currentManifest })
+      return Promise.resolve({ data: { counts: {}, permissions: {}, recent_actions: [] } })
+    })
+    apiClient.post.mockImplementation((url, payload) => {
+      if (!url.endsWith('/sync')) return Promise.resolve({ data: device })
+      currentManifest = updated
+      const action = payload.actions[0]
+      return Promise.resolve({ data: { device: { ...device, last_sequence: action.sequence }, summary: {}, results: [{
+        action_uuid: action.action_uuid, ticket_id: 501, kind: 'admit', result: 'rejected', reason_code: 'refund_pending',
+      }] } })
+    })
+    render(<ScannerPage />)
+    await screen.findByText(/Manifest v1/)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Ticket QR credential'), 'old-refund-qr')
+    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    expect(await screen.findByText('Refund pending — do not admit')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
+    expect(await localScanState(eventId, ticket.ticket_id)).toMatchObject({ status: 'rejected' })
+  })
+
   it('boots from verified local authorization when navigator is online but the API is down', async () => {
     const eventId = 92001
     const device = { id: 91, identifier: 'cached-scanner', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }

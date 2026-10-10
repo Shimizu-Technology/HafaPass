@@ -187,6 +187,23 @@ RSpec.describe Commerce::RefundCreator do
     expect(order.refunds).to be_empty
   end
 
+  it "keeps selected-ticket entry paused for an unknown refund without releasing inventory" do
+    selected = order.tickets.first
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError, "synthetic response lost")
+    expect { described_class.call(order: order, tickets: [selected], idempotency_key: "selected-unknown-entry") }
+      .to raise_error(described_class::RefundError, /unknown/)
+    refund = order.refunds.find_by!(idempotency_key: "selected-unknown-entry")
+    expect(refund).to have_attributes(status: "pending", failure_code: "provider_result_unknown")
+    expect(refund.refund_tickets.active.count).to eq(1)
+    expect(selected.reload).to be_issued
+    expect(selected).not_to be_admission_allowed
+    expect(order.tickets.where.not(id: selected.id).first).to be_admission_allowed
+    expect { selected.check_in! }.to raise_error(Ticket::AdmissionError, /selected refund is pending/)
+    expect(ticket_type.reload.quantity_sold).to eq(2)
+    expect(order.reload.refunded_cents).to eq(0)
+    expect(EmailService).not_to have_received(:send_refund_notification_async)
+  end
+
   it "keeps an uncertain submission reserved and retries the same operation identity" do
     allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError, "response lost")
     expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "uncertain") }.to raise_error(described_class::RefundError, /unknown/)

@@ -73,7 +73,9 @@ module Commerce
           end
           @checkout_attempt.verify_owner!(@checkout_lease_token) unless @checkout_attempt.order_id
         end
-        event.lock!
+        # Serialize capacity decisions while permitting FK key-share checks in
+        # an independent seat-release transaction waiting on this checkout.
+        event.lock!("FOR NO KEY UPDATE")
         if @checkout_key_digest && (previous = @checkout_attempt&.order || Order.find_by(checkout_key_digest: @checkout_key_digest))
           unless previous.checkout_key_digest == @checkout_key_digest && previous.event_id == event.id && previous.checkout_request_digest == @checkout_request_digest &&
               previous.checkout_recovery_expires_at&.future?
