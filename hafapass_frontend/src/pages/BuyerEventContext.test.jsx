@@ -163,6 +163,33 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 
+  it.each([[222, '222'], ['222', 222]])('prices the same selected ticket with event ID %s and selection ID %s', async (typeId, selectedId) => {
+    const pricedB = { ...b, buyer_fee_percent: 0,
+      ticket_types: [{ ...b.ticket_types[0], id: typeId, price_cents: 2500 }] }
+    apiClient.get.mockResolvedValue({ data: config })
+    apiClient.post.mockImplementation(url => url === '/promo_codes/validate'
+      ? Promise.resolve({ data: { valid: true, code: 'SAVE', discount_cents: 500 } })
+      : Promise.reject({ response: { status: 503, data: { checkout_recovery_required: true } } }))
+    render(view({ pathname: '/checkout/event-b', state: { event: pricedB, lineItems: [{ ticket_type_id: selectedId, quantity: 2 }] } }))
+    const user = userEvent.setup()
+    await screen.findByLabelText('checkout.fullName')
+    expect(screen.getByText('event-b admission')).toBeInTheDocument()
+    expect(screen.getAllByText('$50.00').length).toBeGreaterThan(0)
+    await user.click(screen.getByRole('button', { name: /checkout.havePromoCode/ }))
+    await user.type(screen.getByLabelText('Promo code'), 'SAVE')
+    await user.click(screen.getByRole('button', { name: 'checkout.apply' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/promo_codes/validate', {
+      event_id: 42, code: 'SAVE', subtotal_cents: 5000,
+    }))
+    await user.type(screen.getByLabelText('checkout.fullName'), 'Current B Buyer')
+    await user.type(screen.getByLabelText('checkout.emailAddress'), 'buyer@example.invalid')
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.objectContaining({
+      event_id: 42, line_items: [{ ticket_type_id: selectedId, quantity: 2 }],
+    })))
+  })
+
   it.each(['recover', 'unknown'])('preserves the original mismatched legacy attempt during %s recovery', async outcome => {
     const payload = { event_id: 41, checkout_key: 'c'.repeat(64), line_items: [{ ticket_type_id: 111, quantity: 1 }] }
     window.sessionStorage.setItem('hafapass:checkout-attempt:event-b', JSON.stringify({

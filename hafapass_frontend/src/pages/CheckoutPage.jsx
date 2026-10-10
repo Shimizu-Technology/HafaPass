@@ -17,10 +17,14 @@ export default function CheckoutPage() {
   return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />
 }
 
+function selectedTicketType(event, ticketTypeId) {
+  return event?.ticket_types?.find(type => String(type.id) === String(ticketTypeId))
+}
+
 function selectionMatchesEvent(event, lineItems, slug) {
   return event?.slug === slug && Array.isArray(lineItems) && lineItems.length > 0
     && lineItems.every(item => Number.isInteger(item.quantity) && item.quantity > 0
-      && event.ticket_types?.some(type => String(type.id) === String(item.ticket_type_id)))
+      && selectedTicketType(event, item.ticket_type_id))
 }
 
 function AuthenticatedCheckout() {
@@ -274,7 +278,7 @@ function CheckoutContent({ buyerId }) {
     if (!promoInput.trim()) return
 
     const orderLines = lineItems?.map(item => {
-      const tt = event?.ticket_types?.find(t => t.id === item.ticket_type_id)
+      const tt = selectedTicketType(event, item.ticket_type_id)
       return tt ? (tt.current_price_cents ?? tt.price_cents) * item.quantity : 0
     }) || []
     const currentSubtotal = orderLines.reduce((s, l) => s + l, 0)
@@ -458,7 +462,7 @@ function CheckoutContent({ buyerId }) {
   const orderLines = orderData ? (orderData.order_items || []).map(item => ({
     ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents,
   })) : lineItems.map(item => {
-    const tt = event.ticket_types.find(t => t.id === item.ticket_type_id)
+    const tt = selectedTicketType(event, item.ticket_type_id)
     if (!tt) return null
     const price = tt.current_price_cents ?? tt.price_cents
     return { ...item, name: tt.name, price_cents: price, lineTotal: price * item.quantity, active_tier: tt.active_tier }
