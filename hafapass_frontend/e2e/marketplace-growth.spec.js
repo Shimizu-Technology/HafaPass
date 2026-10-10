@@ -97,3 +97,42 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await checkGeometry('Remind me')
   })
 }
+
+test('reduced-motion event navigation retains B inventory through a late A response and checkout', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const a = { ...event, id: 41, slug: 'event-a', title: 'Event A', description: 'Synthetic context A', status: 'published',
+    attendees_preview: [], attendee_count: 0, ticket_types: [{ id: 111, name: 'A entry', price_cents: 0, current_price_cents: 0, quantity_remaining: 10, on_sale: true }] }
+  const b = { ...a, id: 42, slug: 'event-b', title: 'Event B', description: 'Synthetic context B',
+    ticket_types: [{ id: 222, name: 'B entry', price_cents: 0, current_price_cents: 0, quantity_remaining: 10, on_sale: true }] }
+  let oldRoute
+  let submitted
+  await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+  await page.route('**/api/v1/config', route => json(route, { payment_mode: 'simulate', buyer_terms_version: 'test-v1', service_fee_flat_cents: 0 }))
+  await page.route('**/api/v1/marketplace_funnel_events', route => json(route, {}, 201))
+  await page.route('**/api/v1/events/event-a', route => { oldRoute = route })
+  await page.route('**/api/v1/events/event-b', route => json(route, b))
+  await page.route('**/api/v1/orders', route => {
+    submitted = route.request().postDataJSON()
+    return json(route, { error: 'Regression transport stopped before allocation', checkout_recovery_required: true }, 503)
+  })
+  await page.goto('/events/event-a')
+  await expect.poll(() => Boolean(oldRoute)).toBe(true)
+  await page.evaluate(() => {
+    history.pushState({}, '', '/events/event-b')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await expect(page.getByRole('heading', { name: 'Event B', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Increase quantity' }).click()
+  await page.getByRole('button', { name: 'Increase quantity' }).click()
+  await json(oldRoute, a)
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await expect(page.getByRole('heading', { name: 'Event B', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /Buy Tickets/ }).click()
+  await expect(page).toHaveURL(/\/checkout\/event-b$/)
+  await page.getByLabel('Full Name').fill('Synthetic Route Buyer')
+  await page.getByLabel('Email Address').fill('buyer@example.invalid')
+  await page.locator('#termsAccepted').check()
+  await page.getByRole('button', { name: /Place Order/ }).click()
+  await expect.poll(() => submitted?.event_id).toBe(42)
+  expect(submitted.line_items).toEqual([{ ticket_type_id: 222, quantity: 2 }])
+})
