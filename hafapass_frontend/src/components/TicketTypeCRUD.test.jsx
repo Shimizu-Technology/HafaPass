@@ -28,6 +28,7 @@ describe('organizer ticket setup', () => {
 
   it('defaults to remaining event capacity and submits a free ticket with truthful blank optional limits', async () => {
     apiClient.get.mockResolvedValue({ data: {
+      permissions: { edit_event_content: true, manage_events: true, manage_inventory: true },
       id: 42, slug: 'community-night', status: 'draft', title: 'Community Night', timezone: 'Pacific/Guam', max_capacity: 30,
       ticket_types: [{ id: 7, name: 'Existing tickets', price_cents: 0, quantity_available: 12, quantity_sold: 2 }],
     } })

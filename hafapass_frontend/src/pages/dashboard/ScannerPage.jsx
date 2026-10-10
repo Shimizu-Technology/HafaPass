@@ -3,6 +3,7 @@ import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 import {
   applySyncResults, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
@@ -57,6 +58,8 @@ function ResultPanel({ result }) {
 }
 
 export default function ScannerPage({ offlineOnly = false }) {
+  const [searchParams] = useSearchParams()
+  const requestedEventId = searchParams.get('event')
   const [events, setEvents] = useState([])
   const [eventId, setEventId] = useState('')
   const [device, setDevice] = useState(null)
@@ -115,16 +118,19 @@ export default function ScannerPage({ offlineOnly = false }) {
   const downloadManifest = useCallback(async (selectedEventId, selectedDevice) => {
     const response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`)
     if (selectedDevice.owner_user_id !== currentScannerOwner()) return null
+    let verified
     try {
       if (Number(response.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event.')
-      await saveVerifiedManifest(response.data)
+      verified = await saveVerifiedManifest(response.data)
     } catch (verificationError) {
-      await invalidateManifestAccess(selectedEventId)
+      // A stale callback must block its UI without erasing a newer context's access.
+      if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId)
       verificationError.manifestInvalid = true
       throw verificationError
     }
-    if (eventIdRef.current === String(selectedEventId)) setManifest(response.data)
-    return response.data
+    // The store may retain a newer signed manifest over a delayed network response.
+    if (eventIdRef.current === String(selectedEventId)) setManifest(verified)
+    return verified
   }, [])
 
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
@@ -263,7 +269,7 @@ export default function ScannerPage({ offlineOnly = false }) {
             if (Number(downloaded.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event. Ask a manager to check this device.')
             await saveVerifiedManifest(downloaded.data)
           } catch (verificationError) {
-            await invalidateManifestAccess(selectedEventId)
+            if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId)
             throw verificationError
           }
           cached = await loadAuthorizedScanner(selectedEventId)
@@ -307,9 +313,11 @@ export default function ScannerPage({ offlineOnly = false }) {
   }, [offlineOnly])
 
   useEffect(() => {
+    let active = true
     const restoreSaved = async () => {
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
       const cached = saved ? await loadAuthorizedScanner(saved).catch(() => null) : null
+      if (!active) return
       if (cached) {
         setEvents([{ ...cached.manifest.payload.event, id: Number(saved) }])
         setEventId(saved)
@@ -318,16 +326,18 @@ export default function ScannerPage({ offlineOnly = false }) {
         setSetupBusy(false)
       }
     }
-    if (offlineOnly) { void restoreSaved(); return }
+    if (offlineOnly) { void restoreSaved(); return () => { active = false } }
     apiClient.get('/organizer/events').then(response => {
+      if (!active) return
       const accessible = response.data.events || []
       setEvents(accessible)
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
-      const initial = accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
+      const initial = accessible.find(event => String(event.id) === requestedEventId)?.id || accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
       if (initial) setEventId(String(initial))
       else setSetupBusy(false)
-    }).catch(restoreSaved)
-  }, [offlineOnly])
+    }).catch(() => { if (active) void restoreSaved() })
+    return () => { active = false }
+  }, [offlineOnly, requestedEventId])
 
   useEffect(() => {
     if (!eventId) return
@@ -650,12 +660,15 @@ export default function ScannerPage({ offlineOnly = false }) {
             <section className="rounded-2xl border border-neutral-200 bg-white p-5">
               <h2 className="mb-3 font-semibold">Recent admissions</h2>
               <div className="space-y-2">
-                {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => (
-                  <div key={action.action_uuid} className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 p-2 text-xs">
-                    <span>{action.attendee?.attendee_name || action.attendee?.code}</span>
-                    <button onClick={() => reverseAdmission(action)} className="flex items-center gap-1 font-semibold text-amber-700"><RotateCcw className="h-3.5 w-3.5" /> Undo</button>
-                  </div>
-                ))}
+                {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => {
+                  const ticketCode = action.attendee?.code || `HP-T${action.ticket_id}`
+                  return (
+                    <div key={action.action_uuid} className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 p-2 text-xs">
+                      <span className="min-w-0 break-words"><span className="block">{action.attendee?.attendee_name || 'Attendee'}</span><span className="block font-semibold text-neutral-600">{ticketCode}</span></span>
+                      <button aria-label={`${action.reversed ? 'Reversed' : 'Undo'} admission for ${ticketCode}`} disabled={action.reversed} onClick={() => reverseAdmission(action)} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-lg px-3 font-semibold text-amber-700 disabled:cursor-default disabled:text-neutral-500"><RotateCcw className="h-3.5 w-3.5" /> {action.reversed ? 'Reversed' : 'Undo'}</button>
+                    </div>
+                  )
+                })}
               </div>
             </section>
           )}

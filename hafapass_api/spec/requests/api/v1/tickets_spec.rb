@@ -1,4 +1,5 @@
 require "rails_helper"
+require "pdf/reader"
 
 RSpec.describe "Api::V1::Tickets", type: :request do
   let(:organizer_profile) { create(:organizer_profile) }
@@ -77,6 +78,29 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response.content_type).to include("application/pdf")
       expect(response.headers["Content-Disposition"]).to include("attachment")
       expect(response.headers["Content-Disposition"]).to include(".pdf")
+    end
+
+    it "downloads a multilingual PDF through the owning guest session" do
+      event.update!(title: "Music & Food <show> 🎟️ 日本語", venue_name: "Hågatña 日本会館")
+      get "/api/v1/tickets/#{ticket.display_credential}/download",
+        headers: { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to include("application/pdf")
+      reader = PDF::Reader.new(StringIO.new(response.body))
+      expect(reader.pages.map(&:text).join("\n")).to include(event.title.delete("\uFE0F"), event.venue_name)
+    end
+
+    it "reports unsupported PDF text only to the owning guest without an artifact" do
+      event.update!(title: "Unsupported \u{10FFFF}")
+      get "/api/v1/tickets/#{ticket.display_credential}/download",
+        headers: { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error_code"]).to eq("unsupported_pdf_text")
+      expect(response.content_type).to include("application/json")
+      expect(response.headers["Content-Disposition"]).to be_nil
+      expect(response.body).not_to include(ticket.scan_credential, ticket.attendee_name, event.title)
     end
 
     it "does not expose a PDF admission credential to a public display link" do
