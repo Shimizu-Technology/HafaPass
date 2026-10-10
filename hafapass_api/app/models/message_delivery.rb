@@ -25,7 +25,8 @@ class MessageDelivery < ApplicationRecord
   scope :ticket_email, -> { where(channel: "email", template: TICKET_EMAIL_TEMPLATES) }
   scope :unconfirmed_provider_result, -> {
     where(provider_outcome_unknown: true).or(
-      where(provider: "resend", provider_id: [nil, ""], provider_attempted_at: nil).where("attempts > 0")
+      where(provider: "resend", provider_attempted_at: nil)
+        .where("provider_id IS NULL OR provider_id ~ '^[[:space:]]*$'").where("attempts > 0")
     )
   }
 

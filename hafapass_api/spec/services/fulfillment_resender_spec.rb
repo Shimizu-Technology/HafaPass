@@ -61,4 +61,15 @@ RSpec.describe FulfillmentResender do
     expect { described_class.call(order: order) }.to raise_error(described_class::Unconfirmed)
     expect(EmailService).not_to have_received(:send_order_confirmation_async)
   end
+
+  [nil, "", " \t\n"].each do |blank_id|
+    it "keeps the legacy scope and predicate consistent for blank provider id #{blank_id.inspect}" do
+      delivery = create(:message_delivery, order: order, template: "order_confirmation", provider_id: blank_id,
+        attempts: 1, provider_attempted_at: nil, provider_outcome_unknown: false, created_at: 3.days.ago)
+      expect(delivery.unconfirmed_provider_result?).to be(true)
+      expect(order.message_deliveries.ticket_email.unconfirmed_provider_result).to include(delivery)
+      expect { described_class.call(order: order) }.to raise_error(described_class::Unconfirmed)
+      expect(EmailService).not_to have_received(:send_order_confirmation_async)
+    end
+  end
 end
