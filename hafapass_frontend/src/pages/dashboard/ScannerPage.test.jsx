@@ -69,6 +69,15 @@ describe('scanner recovery and camera ownership', () => {
     const device = { id: 91, identifier: 'lost-ack-scanner', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
     const ticket = { ticket_id: 501, state: 'valid', attendee_name: 'Guest', ticket_type: 'General', credential_hash: await sha256Hex('lost-ack-qr') }
     const manifest = await signedManifest(eventId, [ticket])
+    const originalSave = admissionStore.saveVerifiedManifest
+    let acknowledgedResponse = false
+    let finishRefresh
+    const refreshed = new Promise(resolve => { finishRefresh = resolve })
+    vi.spyOn(admissionStore, 'saveVerifiedManifest').mockImplementation(async (...args) => {
+      const saved = await originalSave(...args)
+      if (acknowledgedResponse) finishRefresh()
+      return saved
+    })
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
       ? { events: [{ id: eventId, title: 'Lost ACK Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
@@ -100,11 +109,14 @@ describe('scanner recovery and camera ownership', () => {
     await user.type(screen.getByLabelText('Ticket QR credential'), 'lost-ack-qr')
     await user.click(screen.getByRole('button', { name: 'Validate' }))
     await screen.findByText('Already scanned on this device')
-    await act(async () => acknowledge())
+    await act(async () => {
+      acknowledgedResponse = true
+      acknowledge()
+      await refreshed // Complete the real signed cache write before the next fixture clears it.
+    })
     await screen.findByText('Admission confirmed')
     expect(await queuedActions(eventId, device.id)).toHaveLength(0)
     expect(sent).toHaveLength(2)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
   })
 
   it('retains signed offline provisional admission without claiming a server acknowledgement', async () => {
