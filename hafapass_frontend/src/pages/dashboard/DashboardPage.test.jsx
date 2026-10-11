@@ -5,11 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import DashboardPage from './DashboardPage'
 
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }))
 const scanner = { id: 2, name: 'Door team', role: 'scanner', permissions: { manage_events: false, manage_organization: false } }
 const owner = { id: 1, name: 'Island events', role: 'owner', permissions: { manage_events: true, manage_organization: true, manage_members: true } }
 const event = { id: 42, title: 'Assigned night market', status: 'published', starts_at: '2026-10-16T09:00:00Z', timezone: 'Pacific/Guam', permissions: { scan: true } }
-function mount() { return render(<MemoryRouter><DashboardPage /></MemoryRouter>) }
+function mount() { return render(<MemoryRouter initialEntries={['/dashboard']}><DashboardPage /></MemoryRouter>) }
 function fixtures(organizations = [scanner], events = [event]) {
   apiClient.get.mockImplementation(path => {
     if (path === '/organizer/organizations') return Promise.resolve({ data: organizations })
@@ -81,6 +81,6 @@ describe('staff dashboard entry', () => {
     window.localStorage.setItem('hafapass_organization_id', '2')
     resolveProfile({ data: { business_name: 'Stale owner profile' } })
     await waitFor(() => expect(screen.queryByText('Welcome, Stale owner profile')).not.toBeInTheDocument())
-    expect(apiClient.get).not.toHaveBeenCalledWith('/organizer/events')
+    expect(apiClient.get.mock.calls.some(([path]) => path === '/organizer/events')).toBe(false)
   })
 })

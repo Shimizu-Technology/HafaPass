@@ -1,35 +1,44 @@
 import { uploadImage } from '../../utils/uploads'
 import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck } from 'lucide-react'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import apiClient from '../../api/client'
+import apiClient, { getApiAuthContext } from '../../api/client'
 import { formatEventDate } from '../../utils/eventTime'
+import { currentScannerOwner } from '../../utils/admissionStore'
+import { useOrganizerIdentity, useOrganizerPageVisit } from '../../hooks/useOrganizerContext'
 
-function OrganizerProfileForm({ onSuccess }) {
+function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  const [businessName, setBusinessName] = useState('')
  const [businessDescription, setBusinessDescription] = useState('')
  const [submitting, setSubmitting] = useState(false)
  const [error, setError] = useState(null)
+ const mounted = useRef(false)
+ useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
  const handleSubmit = async (e) => {
   e.preventDefault()
+  if (!mounted.current || !isCurrent()) return
   if (!businessName.trim()) {
    setError('Business name is required')
    return
   }
+  const request = beginRequest(context)
+  if (!request) return
   setSubmitting(true)
   setError(null)
   try {
    await apiClient.post('/organizer_profile', {
     business_name: businessName.trim(),
     business_description: businessDescription.trim()
-   })
-   onSuccess()
+   }, request.config)
+   if (mounted.current && request.current()) onSuccess()
   } catch (err) {
+   if (!mounted.current || !request.current()) return
    const msg = err.response?.data?.errors?.[0] || err.response?.data?.error || 'Failed to create profile'
    setError(msg)
   } finally {
-   setSubmitting(false)
+   request.release()
+   if (mounted.current && request.current()) setSubmitting(false)
   }
  }
 
@@ -143,7 +152,7 @@ function EventListCard({ event }) {
  )
 }
 
-function EditProfileModal({ profile, onClose, onSaved }) {
+function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, onSaved }) {
  const [businessName, setBusinessName] = useState(profile.business_name || '')
  const [description, setDescription] = useState(profile.business_description || '')
  const [logoUrl, setLogoUrl] = useState(profile.logo_url || '')
@@ -151,26 +160,33 @@ function EditProfileModal({ profile, onClose, onSaved }) {
  const [uploading, setUploading] = useState(false)
  const [error, setError] = useState(null)
  const fileRef = useRef(null)
+ const mounted = useRef(false)
+ const current = () => mounted.current && isCurrent()
+ useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
  const handleLogoUpload = async (file) => {
-  if (!file) return
+  if (!file || !current()) return
   const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
   if (!ACCEPTED.includes(file.type)) { setError('Please upload JPG, PNG, or WebP'); return }
   if (file.size > 5 * 1024 * 1024) { setError('Image must be under 5MB'); return }
   setUploading(true)
   setError(null)
   try {
-   setLogoUrl(await uploadImage(file))
+   const url = await uploadImage(file, undefined, current)
+   if (current()) setLogoUrl(url)
   } catch {
-   setError('Logo upload failed')
+   if (current()) setError('Logo upload failed')
   } finally {
-   setUploading(false)
+   if (current()) setUploading(false)
   }
  }
 
  const handleSubmit = async (e) => {
   e.preventDefault()
+  if (!current()) return
   if (!businessName.trim()) { setError('Business name is required'); return }
+  const request = beginRequest(context)
+  if (!request) return
   setSaving(true)
   setError(null)
   try {
@@ -178,12 +194,13 @@ function EditProfileModal({ profile, onClose, onSaved }) {
     business_name: businessName.trim(),
     business_description: description.trim(),
     logo_url: logoUrl || null
-   })
-   onSaved()
+   }, request.config)
+   if (current() && request.current()) onSaved()
   } catch (err) {
-   setError(err.response?.data?.errors?.[0] || err.response?.data?.error || 'Failed to update profile')
+   if (current() && request.current()) setError(err.response?.data?.errors?.[0] || err.response?.data?.error || 'Failed to update profile')
   } finally {
-   setSaving(false)
+   request.release()
+   if (current() && request.current()) setSaving(false)
   }
  }
 
@@ -192,7 +209,7 @@ function EditProfileModal({ profile, onClose, onSaved }) {
    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
     <div className="flex items-center justify-between mb-4">
      <h3 className="text-lg font-semibold text-neutral-900">Edit Profile</h3>
-     <button onClick={onClose} className="p-1 text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
+     <button onClick={onClose} aria-label="Close profile editor" className="p-1 text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
     </div>
     {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -213,8 +230,8 @@ function EditProfileModal({ profile, onClose, onSaved }) {
       </div>
      </div>
      <div>
-      <label className="block text-sm font-medium text-neutral-700 mb-1">Business Name <span className="text-red-500">*</span></label>
-      <input value={businessName} onChange={e => setBusinessName(e.target.value)} className="input" disabled={saving} />
+      <label htmlFor="edit-business-name" className="block text-sm font-medium text-neutral-700 mb-1">Business Name <span className="text-red-500">*</span></label>
+      <input id="edit-business-name" value={businessName} onChange={e => setBusinessName(e.target.value)} className="input" disabled={saving} />
      </div>
      <div>
       <label className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
@@ -230,16 +247,21 @@ function EditProfileModal({ profile, onClose, onSaved }) {
  )
 }
 
-export default function DashboardPage() {
+function DashboardSession({ authContext }) {
  const [profile, setProfile] = useState(null)
  const [events, setEvents] = useState([])
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
- const [showEditProfile, setShowEditProfile] = useState(false)
+ const [editor, setEditor] = useState(null)
+ const editorRef = useRef(null)
+ const editorGeneration = useRef(0)
+ const [profileContext, setProfileContext] = useState(null)
  const [readinessLoading, setReadinessLoading] = useState(false)
  const [organizations, setOrganizations] = useState([])
  const [selectedOrganizationId, setSelectedOrganizationId] = useState('')
  const loadGeneration = useRef(0)
+ const mounted = useRef(false)
+ const requests = useRef(new Set())
  const organization = organizations.find(item => String(item.id) === selectedOrganizationId)
  const permissions = organization?.permissions || {}
  const canManageProfile = permissions.manage_organization === true
@@ -247,26 +269,80 @@ export default function DashboardPage() {
  const canScan = events.some(event => event.permissions?.scan)
  const canManageSettings = permissions.manage_members || permissions.manage_payout_settings
 
+ const contextCurrent = context => Boolean(context && mounted.current && context.generation === loadGeneration.current
+  && context.authContext === getApiAuthContext() && context.owner === currentScannerOwner()
+  && (!context.authContext || context.authContext.userId === context.owner)
+  && context.organizationId === window.localStorage.getItem('hafapass_organization_id'))
+
+ const beginRequest = context => {
+  if (!contextCurrent(context)) return null
+  const controller = new AbortController()
+  requests.current.add(controller)
+  return {
+   controller,
+   config: { signal: controller.signal, organizationId: context.organizationId, ...(context.authContext ? { authContext: context.authContext } : {}) },
+   current: () => contextCurrent(context) && !controller.signal.aborted,
+   release: () => requests.current.delete(controller),
+  }
+ }
+
+ const closeEditor = expected => {
+  if (editorRef.current !== expected) return
+  expected?.requests.forEach(controller => controller.abort())
+  editorRef.current = null
+  setEditor(null)
+ }
+
+ const openEditor = () => {
+  if (!contextCurrent(profileContext)) return
+  const next = { context: profileContext, id: ++editorGeneration.current, requests: new Set() }
+  editorRef.current = next
+  setEditor(next)
+ }
+
+ const beginEditorRequest = context => {
+  const expected = editorRef.current
+  if (!expected || expected.context !== context) return null
+  const request = beginRequest(context)
+  if (!request) return null
+  // Closing an editor invalidates its request synchronously, before React unmounts it.
+  const controller = request.controller
+  expected.requests.add(controller)
+  return { ...request, release: () => { expected.requests.delete(controller); request.release() } }
+ }
+
  const updateReadiness = async (path) => {
+  if (readinessLoading) return
+  const request = beginRequest(profileContext)
+  if (!request) return
   setReadinessLoading(true)
   setError(null)
   try {
-   const response = await apiClient.post(`/organizer_profile/${path}`)
-   setProfile(response.data)
+   const response = await apiClient.post(`/organizer_profile/${path}`, {}, request.config)
+   if (request.current()) setProfile(response.data)
   } catch (err) {
-   setError(err.response?.data?.error || 'Could not update organizer readiness.')
+   if (request.current()) setError(err.response?.data?.error || 'Could not update organizer readiness.')
   } finally {
-   setReadinessLoading(false)
+   request.release()
+   if (request.current()) setReadinessLoading(false)
   }
  }
 
  const fetchDashboard = async () => {
+  if (!mounted.current) return
   const generation = ++loadGeneration.current
-  const current = () => generation === loadGeneration.current
+  requests.current.forEach(controller => controller.abort())
+  requests.current.clear()
+  closeEditor(editorRef.current)
+  setReadinessLoading(false)
+  let context = { generation, authContext, owner: currentScannerOwner(), organizationId: window.localStorage.getItem('hafapass_organization_id') }
+  const current = () => contextCurrent(context)
+  const request = beginRequest(context)
+  if (!request) return
   setLoading(true)
   setError(null)
   try {
-   const organizationsRes = await apiClient.get('/organizer/organizations')
+   const organizationsRes = await apiClient.get('/organizer/organizations', request.config)
    if (!current()) return
    const availableOrganizations = Array.isArray(organizationsRes.data) ? organizationsRes.data : []
    setOrganizations(availableOrganizations)
@@ -280,19 +356,15 @@ export default function DashboardPage() {
     setSelectedOrganizationId('')
    }
    const expectedOrganization = selectedOrganization ? String(selectedOrganization.id) : null
-   const contextCurrent = () => current() && window.localStorage.getItem('hafapass_organization_id') === expectedOrganization
-   const profileRes = await apiClient.get('/organizer_profile')
-   if (!contextCurrent()) {
-    if (current()) setError('Organization selection changed. Reload your dashboard to continue.')
-    return
-   }
+   context = { ...context, organizationId: expectedOrganization }
+   const selectedConfig = { ...request.config, organizationId: expectedOrganization }
+   const profileRes = await apiClient.get('/organizer_profile', selectedConfig)
+   if (!current()) return
    setProfile(profileRes.data)
+   setProfileContext(context)
 
-   const eventsRes = await apiClient.get('/organizer/events')
-   if (!contextCurrent()) {
-    if (current()) setError('Organization selection changed. Reload your dashboard to continue.')
-    return
-   }
+   const eventsRes = await apiClient.get('/organizer/events', selectedConfig)
+   if (!current()) return
    // Handle both paginated { events: [...], meta: {...} } and legacy array response
    const eventsData = eventsRes.data.events || eventsRes.data
    setEvents(Array.isArray(eventsData) ? eventsData : [])
@@ -301,19 +373,34 @@ export default function DashboardPage() {
    if (err.response?.status === 404) {
     // No organizer profile — show create form
     setProfile(null)
+    setProfileContext(context)
    } else if (err.response?.status === 401) {
     setError('Please sign in to access the dashboard.')
    } else {
     setError('Failed to load dashboard. Please try again.')
    }
   } finally {
+   request.release()
    if (current()) setLoading(false)
   }
  }
 
- useEffect(() => {
-  fetchDashboard()
-  return () => { loadGeneration.current += 1 }
+ const fetchDashboardRef = useRef(fetchDashboard)
+ fetchDashboardRef.current = fetchDashboard
+ useLayoutEffect(() => {
+  mounted.current = true
+  const owned = requests.current
+  fetchDashboardRef.current()
+  const changed = event => {
+   if (['hafapass_organization_id', 'hafapass_scanner_user_id', null].includes(event.key)) fetchDashboardRef.current()
+  }
+  window.addEventListener('storage', changed)
+  return () => {
+   mounted.current = false
+   loadGeneration.current += 1
+   owned.forEach(controller => controller.abort())
+   window.removeEventListener('storage', changed)
+  }
  }, [])
 
  if (loading) {
@@ -357,7 +444,7 @@ export default function DashboardPage() {
  if (!profile) {
   return (
    <div className="px-4 py-12">
-    <OrganizerProfileForm onSuccess={fetchDashboard} />
+    <OrganizerProfileForm context={profileContext} beginRequest={beginRequest} isCurrent={() => contextCurrent(profileContext)} onSuccess={fetchDashboard} />
    </div>
   )
  }
@@ -368,7 +455,7 @@ export default function DashboardPage() {
    <div className="min-w-0 flex-1">
      <div className="flex items-center gap-2">
       <h1 className="min-w-0 flex-1 break-words text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
-      {canManageProfile && <button onClick={() => setShowEditProfile(true)} className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center p-2.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
+      {canManageProfile && <button onClick={openEditor} className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center p-2.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
        <Pencil className="w-4 h-4" />
       </button>}
      </div>
@@ -418,11 +505,15 @@ export default function DashboardPage() {
     </div>
    </div>
 
-   {canManageProfile && showEditProfile && (
+   {canManageProfile && editor && (
     <EditProfileModal
+     key={editor.id}
      profile={profile}
-     onClose={() => setShowEditProfile(false)}
-     onSaved={() => { setShowEditProfile(false); fetchDashboard() }}
+     context={editor.context}
+     beginRequest={beginEditorRequest}
+     isCurrent={() => editorRef.current === editor && contextCurrent(editor.context)}
+     onClose={() => closeEditor(editor)}
+     onSaved={() => { if (editorRef.current === editor && contextCurrent(editor.context)) { closeEditor(editor); fetchDashboard() } }}
     />
    )}
 
@@ -474,4 +565,14 @@ export default function DashboardPage() {
    )}
   </div>
  )
+}
+
+export default function DashboardPage() {
+ const identity = useOrganizerIdentity()
+ const visit = useOrganizerPageVisit('/dashboard')
+ if (!visit.active) return null
+ if (!identity.ready) {
+  return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+ }
+ return <DashboardSession key={`${identity.accountKey}:${visit.generation}`} authContext={identity.authContext} />
 }

@@ -29,11 +29,18 @@ function assertCurrentAuth(expected) {
   }
 }
 
+function assertCurrentOrganization(config) {
+  if (Object.hasOwn(config, 'organizationId') && config.organizationId !== window.localStorage.getItem('hafapass_organization_id')) {
+    throw new axios.CanceledError('Organization selection changed')
+  }
+}
+
 // Request interceptor to attach auth token when available
 apiClient.interceptors.request.use(async (config) => {
   // Account-sensitive callers can bind a request to the installed Clerk session.
   // A token that resolves after a session change must never reach the transport.
   assertCurrentAuth(config.authContext)
+  assertCurrentOrganization(config)
   const organizationId = window.localStorage.getItem('hafapass_organization_id')
   if (organizationId) config.headers['X-Organization-Id'] = organizationId
 
@@ -41,12 +48,13 @@ apiClient.interceptors.request.use(async (config) => {
     try {
       const token = await apiClient._authTokenGetter()
       assertCurrentAuth(config.authContext)
+      assertCurrentOrganization(config)
       if (config.authContext && !token) throw new Error('Account authorization is not ready')
       if (token) {
         config.headers.Authorization = `Bearer ${token}`
       }
     } catch (error) {
-      if (config.authContext) throw error
+      if (config.authContext || Object.hasOwn(config, 'organizationId')) throw error
     }
   } else if (config.authContext) {
     throw new Error('Account authorization is not ready')

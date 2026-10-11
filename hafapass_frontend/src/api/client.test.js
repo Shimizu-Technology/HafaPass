@@ -73,4 +73,37 @@ describe('session-bound API requests', () => {
     expect((await apiClient.get('/events')).data.events).toEqual([])
     expect(adapter.mock.calls[0][0].headers.has('Authorization')).toBe(false)
   })
+
+  it('rejects a bound organization changed before the request interceptor starts', async () => {
+    const getToken = vi.fn().mockResolvedValue('synthetic-owner-token')
+    clearBinding = setAuthTokenGetter(getToken, { userId: 'owner-of-both', sessionId: 'owner-session', ready: true })
+    window.localStorage.setItem('hafapass_organization_id', '2')
+    const adapter = vi.fn(config => Promise.resolve({ config, status: 200, statusText: 'OK', headers: {}, data: {} }))
+    apiClient.defaults.adapter = adapter
+    await expect(apiClient.put('/organizer_profile', { business_name: 'Alpha' }, { organizationId: '1', authContext: getApiAuthContext() }))
+      .rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    expect(adapter).not.toHaveBeenCalled()
+    expect(getToken).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('rejects an organization change during token acquisition (auth-bound: %s)', async authBound => {
+    let finishToken, requestedToken
+    const requested = new Promise(resolve => { requestedToken = resolve })
+    window.localStorage.setItem('hafapass_organization_id', '1')
+    clearBinding = setAuthTokenGetter(() => {
+      requestedToken()
+      return new Promise(resolve => { finishToken = resolve })
+    }, { userId: 'owner', sessionId: 'session', ready: true })
+    const adapter = vi.fn(config => Promise.resolve({ config, status: 200, statusText: 'OK', headers: {}, data: {} }))
+    apiClient.defaults.adapter = adapter
+    const request = apiClient.put('/organizer_profile', { business_name: 'Alpha' }, {
+      organizationId: '1', ...(authBound ? { authContext: getApiAuthContext() } : {}),
+    })
+    const refused = expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    await requested
+    window.localStorage.setItem('hafapass_organization_id', '2')
+    finishToken('original-token')
+    await refused
+    expect(adapter).not.toHaveBeenCalled()
+  })
 })
