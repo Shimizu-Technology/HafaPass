@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Calendar, MapPin, ArrowRight, Clock, Search, Music, UtensilsCrossed, Trophy, Users, Moon, GraduationCap } from 'lucide-react'
@@ -16,9 +17,10 @@ const categories = [
   { name: 'Classes & Workshops', slug: 'workshop', icon: GraduationCap },
 ]
 
-function priceLabel(ticketTypes) {
-  const price = formatTicketPrice(lowestPurchasablePrice(ticketTypes))
-  return price === 'Free' ? price : price ? `From ${price}` : ''
+function priceLabel(ticketTypes, t) {
+  const cents = lowestPurchasablePrice(ticketTypes)
+  const price = formatTicketPrice(cents, t('events.free'))
+  return cents === 0 ? price : price ? `${t('events.from')} ${price}` : ''
 }
 
 function EventArtwork({ event, className, priority = false }) {
@@ -39,6 +41,7 @@ function EventArtwork({ event, className, priority = false }) {
 }
 
 export default function HomePage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [events, setEvents] = useState([])
   const [search, setSearch] = useState('')
@@ -118,7 +121,7 @@ export default function HomePage() {
                 <h2 className="break-words font-display text-2xl font-bold text-neutral-950">{featuredEvent.title}</h2>
                 <p className="mt-3 flex items-start gap-2 text-sm text-content-muted"><Calendar aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span>{formatEventDate(featuredEvent.starts_at, featuredEvent.timezone, { weekday: 'long' })} · {formatEventTime(featuredEvent.starts_at, featuredEvent.timezone)}</span></p>
                 {featuredEvent.venue_name && <p className="mt-2 flex items-start gap-2 text-sm text-content-muted"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="break-words">{featuredEvent.venue_name}{featuredEvent.venue_city ? `, ${featuredEvent.venue_city}` : ''}</span></p>}
-                {priceLabel(featuredEvent.ticket_types) && <p className="mt-3 text-sm font-semibold text-neutral-900">{priceLabel(featuredEvent.ticket_types)}</p>}
+                {priceLabel(featuredEvent.ticket_types, t) && <p className="mt-3 text-sm font-semibold text-neutral-900">{priceLabel(featuredEvent.ticket_types, t)}</p>}
                 <Link to={`/events/${featuredEvent.slug || featuredEvent.id}`} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Get Tickets <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
               </div>
             </article>
@@ -151,7 +154,7 @@ export default function HomePage() {
                           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-content-muted"><span className="inline-flex items-center gap-1.5"><Clock aria-hidden="true" className="h-4 w-4" />{formatEventTime(event.starts_at, event.timezone)}</span>{event.venue_name && <span className="inline-flex min-w-0 items-start gap-1.5"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 break-words">{event.venue_name}</span></span>}</p>
                           <h4 className="mt-2 break-words text-base font-semibold text-neutral-950 group-hover:text-brand-800 sm:text-xl">{event.title}</h4>
                           {event.short_description && <p className="mt-1 line-clamp-2 text-sm text-content-muted">{event.short_description}</p>}
-                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"><span className="font-semibold text-neutral-900">{priceLabel(event.ticket_types)}</span><span className="inline-flex min-h-8 items-center gap-1 font-medium text-brand-800">View event <ArrowRight aria-hidden="true" className="h-4 w-4" /></span></div>
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"><span className="font-semibold text-neutral-900">{priceLabel(event.ticket_types, t)}</span><span className="inline-flex min-h-8 items-center gap-1 font-medium text-brand-800">View event <ArrowRight aria-hidden="true" className="h-4 w-4" /></span></div>
                         </div>
                       </Link>
                     ))}

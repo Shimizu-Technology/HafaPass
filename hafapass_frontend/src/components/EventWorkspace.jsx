@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CalendarDays, MapPin, FilePenLine, Ticket, Users, ScanLine, Megaphone, UserRoundCog, WalletCards, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
 import apiClient from '../api/client'
 import Dialog from './Dialog'
+import useDraftProtection from '../hooks/useDraftProtection'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import { useOrganizerIdentity, useOrganizerRequests } from '../hooks/useOrganizerContext'
 import { formatEventDateTime } from '../utils/eventTime'
@@ -90,7 +91,7 @@ function MobileNavigation({ groups, location, onClose, onNavigate }) {
 function WorkspaceSession({ suppliedEvent, eventId, identity, children, location, hasUnsavedChanges }) {
   const navigate = useNavigate()
   const loadEvent = suppliedEvent === undefined
-  const { beginRequest } = useOrganizerRequests(identity, location.pathname)
+  const { current, beginRequest } = useOrganizerRequests(identity, location.pathname)
   const capabilities = useLaunchCapabilities()
   const [loadedEvent, setLoadedEvent] = useState(null)
   const [organization, setOrganization] = useState(null)
@@ -101,6 +102,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
   const [mobileOpen, setMobileOpen] = useState(false)
   const closeMobile = useCallback(() => setMobileOpen(false), [])
   const event = loadEvent ? loadedEvent : suppliedEvent
+  const centrallyProtected = useDraftProtection({ dirty: hasUnsavedChanges, scope: `${identity.accountKey}:${identity.organizationId}:${eventId}:${location.pathname}`, pathname: location.pathname, isCurrent: current })
 
   useEffect(() => {
     const request = beginRequest()
@@ -125,7 +127,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
   const navigateTo = (event, destination) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     closeMobile()
-    if (hasUnsavedChanges && new URL(destination, window.location.origin).pathname !== location.pathname) {
+    if (!centrallyProtected && hasUnsavedChanges && new URL(destination, window.location.origin).pathname !== location.pathname) {
       event.preventDefault()
       setPendingNavigation(destination)
     }
