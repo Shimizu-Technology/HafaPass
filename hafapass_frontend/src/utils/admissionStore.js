@@ -34,6 +34,97 @@ const database = () => openDB(DB_NAME, DB_VERSION, {
   },
 })
 
+const accessDeviceIdentity = device => device ? JSON.stringify([
+  device.id, device.owner_user_id, device.identifier, device.effective,
+  device.authorization_expires_at, device.status,
+]) : null
+const accessManifestIdentity = record => record ? JSON.stringify([
+  record.owner_user_id, record.envelope?.digest, record.envelope?.payload?.version, record.downloaded_at,
+]) : null
+const accessKeyIdentity = key => key ? JSON.stringify([key.key_id, key.public_key_spki]) : null
+
+// Capture access before starting network/crypto work. Sequence/queue changes are
+// deliberately excluded: a legitimate refusal must still remove current access
+// without discarding scans queued while that request was in flight.
+async function readAdmissionAccessSnapshot(eventId, { isCurrent = () => true } = {}) {
+  const owner = currentScannerOwner()
+  const db = await database()
+  const transaction = db.transaction(['devices', 'manifests', 'trusted_keys'], 'readonly')
+  const [device, manifest, trustedKey] = await Promise.all([
+    transaction.objectStore('devices').get(Number(eventId)),
+    transaction.objectStore('manifests').get(Number(eventId)),
+    transaction.objectStore('trusted_keys').get(Number(eventId)),
+  ])
+  await transaction.done
+  if (owner !== currentScannerOwner() || !isCurrent()) throw manifestContextError('Scanner access changed while capturing its context')
+  const context = Object.freeze({ eventId: Number(eventId), owner, isCurrent,
+    deviceId: device?.id, manifestDigest: manifest?.envelope?.digest,
+    device: accessDeviceIdentity(device), manifest: accessManifestIdentity(manifest), key: accessKeyIdentity(trustedKey) })
+  return { context, device, manifest, trustedKey }
+}
+
+export async function captureAdmissionAccessContext(eventId, options = {}) {
+  const snapshot = await readAdmissionAccessSnapshot(eventId, options)
+  if ((snapshot.device && snapshot.device.owner_user_id !== snapshot.context.owner)
+    || (snapshot.manifest && snapshot.manifest.owner_user_id !== snapshot.context.owner)) {
+    throw manifestContextError('Scanner cache belongs to another account')
+  }
+  if ((options.expectedDevice && accessDeviceIdentity(options.expectedDevice) !== snapshot.context.device)
+    || (options.expectedManifest && (options.expectedManifest.digest !== snapshot.context.manifestDigest
+      || options.expectedManifest.key_id !== snapshot.trustedKey?.key_id
+      || options.expectedManifest.public_key_spki !== snapshot.trustedKey?.public_key_spki))) {
+    throw manifestContextError('Scanner access was renewed before its old snapshot could be removed')
+  }
+  return snapshot.context
+}
+
+async function removeAdmissionAccess(eventId, { context, removeAuthorization }) {
+  context ||= await captureAdmissionAccessContext(eventId)
+  const current = () => context.eventId === Number(eventId) && context.owner === currentScannerOwner() && context.isCurrent()
+  if (!current()) return false
+  const db = await database()
+  const transaction = db.transaction(['devices', 'manifests', 'trusted_keys', 'scan_states'], 'readwrite')
+  try {
+    const [device, manifest, key] = await Promise.all([
+      transaction.objectStore('devices').get(Number(eventId)),
+      transaction.objectStore('manifests').get(Number(eventId)),
+      transaction.objectStore('trusted_keys').get(Number(eventId)),
+    ])
+    const assertCurrent = () => {
+      if (!current()) throw manifestContextError('Scanner access changed while removing its cache')
+    }
+    assertCurrent()
+    if (accessDeviceIdentity(device) !== context.device || accessManifestIdentity(manifest) !== context.manifest
+      || accessKeyIdentity(key) !== context.key) throw manifestContextError('Scanner cache was replaced before its removal')
+    if (!removeAuthorization && device?.owner_user_id !== context.owner) {
+      await transaction.done
+      return false
+    }
+    await transaction.objectStore('manifests').delete(Number(eventId))
+    assertCurrent()
+    if (removeAuthorization) {
+      await transaction.objectStore('devices').delete(Number(eventId))
+      assertCurrent()
+      await transaction.objectStore('trusted_keys').delete(Number(eventId))
+      assertCurrent()
+    }
+    const keys = await transaction.objectStore('scan_states').getAllKeys()
+    assertCurrent()
+    for (const key of keys.filter(key => key[0] === Number(eventId))) {
+      await transaction.objectStore('scan_states').delete(key)
+      assertCurrent()
+    }
+    assertCurrent()
+    await transaction.done
+    return true
+  } catch (error) {
+    try { transaction.abort() } catch { /* Already failed/aborted. */ }
+    await transaction.done.catch(() => {})
+    if (error.manifestContextChanged) return false
+    throw error
+  }
+}
+
 export function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
   if (value !== null && typeof value === 'object') {
@@ -178,53 +269,66 @@ export async function saveVerifiedManifest(envelope) {
 }
 
 export async function loadUsableManifest(eventId) {
-  const db = await database()
-  const record = await db.get('manifests', Number(eventId))
-  if (!record || record.owner_user_id !== currentScannerOwner()) return null
+  const { context, manifest: record, trustedKey } = await readAdmissionAccessSnapshot(eventId)
+  if (!record || record.owner_user_id !== context.owner) return null
   const expiry = new Date(record.envelope?.payload?.expires_at).getTime()
   if (!Number.isFinite(expiry) || expiry <= Date.now()) {
-    await purgeExpiredAdmissionAccess(eventId)
+    await purgeExpiredAdmissionAccess(eventId, { context })
     return null
   }
-  const trustedKey = await db.get('trusted_keys', Number(eventId))
   await verifyManifestEnvelope(record.envelope, trustedKey)
+  if (context.owner !== currentScannerOwner()) return null
+  const latest = await readAdmissionAccessSnapshot(eventId)
+  if (latest.context.owner !== context.owner || latest.context.manifest !== context.manifest
+    || latest.context.key !== context.key || latest.context.device !== context.device) return null
   return record.envelope
 }
 
-export async function saveDevice(eventId, device) {
-  const db = await database()
+export async function saveDevice(eventId, device, { isCurrent = () => true } = {}) {
+  // Capture the initiating actor before even opening storage. An old response
+  // must never acquire the new actor merely because the open completes later.
   const owner = currentScannerOwner()
   if (!owner) throw new Error('Sign in before authorizing this scanner.')
+  const assertCurrent = () => {
+    if (owner !== currentScannerOwner() || !isCurrent()) throw manifestContextError('Scanner account or setup changed while saving its device')
+  }
+  assertCurrent()
+  const db = await database()
+  assertCurrent()
   // Renewal and admission allocation share the same lock across every browser tab.
   const transaction = db.transaction(['devices', 'queue', 'journal_devices'], 'readwrite')
   const devices = transaction.objectStore('devices')
   const journal = transaction.objectStore('journal_devices')
-  const previous = await devices.get(Number(eventId))
-  const prior = previous?.owner_user_id === owner ? previous : null
-  const pending = await transaction.objectStore('queue').index('event_device').getAll([Number(eventId), Number(device.id)])
-  const legacy = device.user?.id ? await journal.get([`legacy:${device.user.id}`, Number(eventId)]) : null
-  if (owner !== currentScannerOwner()) {
-    transaction.abort()
+  try {
+    const previous = await devices.get(Number(eventId))
+    assertCurrent()
+    const prior = previous?.owner_user_id === owner ? previous : null
+    const pending = await transaction.objectStore('queue').index('event_device').getAll([Number(eventId), Number(device.id)])
+    assertCurrent()
+    const legacy = device.user?.id ? await journal.get([`legacy:${device.user.id}`, Number(eventId)]) : null
+    assertCurrent()
+    const ownedPending = pending.filter(action => action.owner_user_id === owner || (!action.owner_user_id && legacy?.device_id === device.id))
+    for (const action of ownedPending.filter(action => !action.owner_user_id)) {
+      await transaction.objectStore('queue').put({ ...action, owner_user_id: owner })
+      assertCurrent()
+    }
+    const serverSequence = Number(device.last_sequence || 0)
+    await devices.put({
+      ...prior,
+      ...device,
+      event_id: Number(eventId),
+      owner_user_id: owner,
+      next_sequence: Math.max(Number(prior?.next_sequence || 0), serverSequence, ...ownedPending.map(action => action.sequence)),
+    })
+    assertCurrent()
+    await journal.put({ owner_user_id: owner, event_id: Number(eventId), device_id: device.id, identifier: device.identifier })
+    assertCurrent()
+    await transaction.done
+  } catch (error) {
+    try { transaction.abort() } catch { /* Already failed/aborted. */ }
     await transaction.done.catch(() => {})
-    throw new Error('Scanner account changed. Reconnect with the original staff account.')
+    throw error
   }
-  const ownedPending = pending.filter(action => action.owner_user_id === owner || (!action.owner_user_id && legacy?.device_id === device.id))
-  for (const action of ownedPending.filter(action => !action.owner_user_id)) await transaction.objectStore('queue').put({ ...action, owner_user_id: owner })
-  const serverSequence = Number(device.last_sequence || 0)
-  await devices.put({
-    ...prior,
-    ...device,
-    event_id: Number(eventId),
-    owner_user_id: owner,
-    next_sequence: Math.max(Number(prior?.next_sequence || 0), serverSequence, ...ownedPending.map(action => action.sequence)),
-  })
-  await journal.put({ owner_user_id: owner, event_id: Number(eventId), device_id: device.id, identifier: device.identifier })
-  if (owner !== currentScannerOwner()) {
-    transaction.abort()
-    await transaction.done.catch(() => {})
-    throw new Error('Scanner account changed. Reconnect with the original staff account.')
-  }
-  await transaction.done
 }
 
 export async function loadPendingDeviceIdentity(eventId, verifiedBackendUserId = null) {
@@ -243,38 +347,27 @@ export async function loadDevice(eventId) {
 
 export async function loadAuthorizedScanner(eventId) {
   if (!eventId) return null
-  const device = await loadDevice(eventId)
+  const { context, device } = await readAdmissionAccessSnapshot(eventId)
+  if (device?.owner_user_id !== context.owner) return null
   const expiry = new Date(device?.authorization_expires_at).getTime()
   if (!device?.effective || !Number.isFinite(expiry) || expiry <= Date.now()) {
-    if (device) await purgeExpiredAdmissionAccess(eventId)
+    if (device) await purgeExpiredAdmissionAccess(eventId, { context })
     return null
   }
   const manifest = await loadUsableManifest(eventId)
+  if (context.owner !== currentScannerOwner() || accessDeviceIdentity(await loadDevice(eventId)) !== context.device) return null
   return manifest ? { device, manifest } : null
 }
 
 // A failed verification removes cached admission access and attendee details, while keeping
 // the pinned key and minimal journal so existing scans can sync before an explicit trust reset.
-export async function invalidateManifestAccess(eventId) {
-  const db = await database()
-  const transaction = db.transaction(['devices', 'manifests', 'scan_states'], 'readwrite')
-  const device = await transaction.objectStore('devices').get(Number(eventId))
-  if (device?.owner_user_id === currentScannerOwner()) {
-    await transaction.objectStore('manifests').delete(Number(eventId))
-    const keys = await transaction.objectStore('scan_states').getAllKeys()
-    for (const key of keys.filter(key => key[0] === Number(eventId))) await transaction.objectStore('scan_states').delete(key)
-  }
-  await transaction.done
+export async function invalidateManifestAccess(eventId, { context } = {}) {
+  return removeAdmissionAccess(eventId, { context, removeAuthorization: false })
 }
 
 // Expiry removes access and attendee data; unacknowledged actions are retained for renewal and sync.
-export async function purgeExpiredAdmissionAccess(eventId) {
-  const db = await database()
-  const transaction = db.transaction(['manifests', 'devices', 'trusted_keys', 'scan_states'], 'readwrite')
-  for (const name of ['manifests', 'devices', 'trusted_keys']) await transaction.objectStore(name).delete(Number(eventId))
-  const states = await transaction.objectStore('scan_states').getAllKeys()
-  for (const key of states.filter(key => key[0] === Number(eventId))) await transaction.objectStore('scan_states').delete(key)
-  await transaction.done
+export async function purgeExpiredAdmissionAccess(eventId, { context } = {}) {
+  return removeAdmissionAccess(eventId, { context, removeAuthorization: true })
 }
 
 // A shared door device must forget attendee data and authorization on account changes.

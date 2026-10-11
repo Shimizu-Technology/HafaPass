@@ -3,7 +3,7 @@ import { openDB } from 'idb'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { signedManifest } from '../test/manifestFixture'
 import {
-  applySyncResults, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission, queueReversal,
+  applySyncResults, captureAdmissionAccessContext, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission, queueReversal,
   queuedActions, purgeExpiredAdmissionAccess, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex,
 } from './admissionStore'
 
@@ -32,6 +32,137 @@ describe('admissionStore', () => {
 
   it('uses the same stable canonical representation regardless of key order', () => {
     expect(canonicalJson({ z: 2, a: { d: 4, b: 3 } })).toBe('{"a":{"b":3,"d":4},"z":2}')
+  })
+
+  describe('conditional access removal', () => {
+    const eventId = 95601
+    const device = { id: 71, identifier: 'purge-context', effective: true, last_sequence: 0,
+      authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 14, state: 'valid', credential_hash: 'c'.repeat(64) }
+    let admission, pending
+    beforeEach(async () => {
+      window.localStorage.setItem('hafapass_scanner_user_id', 'purge-owner')
+      await clearEventAdmissionData(eventId)
+      await saveDevice(eventId, device)
+      await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+      admission = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1,
+        ticket, credentialHash: ticket.credential_hash, source: 'online' })
+      await applySyncResults(eventId, device, [{ action_uuid: admission.action_uuid, ticket_id: 14, kind: 'admit', result: 'accepted' }])
+      pending = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1,
+        ticket: { ...ticket, ticket_id: 15 }, credentialHash: ticket.credential_hash, source: 'offline' })
+    })
+
+    it.each(['device', 'manifest', 'key'])('retains a replacement %s and settled protection against an old snapshot', async replacement => {
+      const context = await captureAdmissionAccessContext(eventId)
+      if (replacement === 'device') await saveDevice(eventId, { ...device, id: 72 })
+      if (replacement === 'manifest') await saveVerifiedManifest(await signedManifest(eventId, [ticket], { version: 2 }))
+      const db = await openDB('hafapass-admissions')
+      if (replacement === 'key') await db.put('trusted_keys', { event_id: eventId, key_id: 'replacement-key', public_key_spki: 'replacement-spki' })
+      const expected = await Promise.all(['devices', 'manifests', 'trusted_keys'].map(name => db.get(name, eventId)))
+      expect(await purgeExpiredAdmissionAccess(eventId, { context })).toBe(false)
+      expect(await Promise.all(['devices', 'manifests', 'trusted_keys'].map(name => db.get(name, eventId)))).toEqual(expected)
+      expect((await localScanState(eventId, 14)).action_uuid).toBe(admission.action_uuid)
+      expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+      db.close()
+    })
+
+    it.each(['owner', 'setup'])('aborts all cache deletions when the %s changes after the first actual IDB deletion', async boundary => {
+      let generation = 1
+      const context = await captureAdmissionAccessContext(eventId, { isCurrent: () => generation === 1 })
+      const originalDelete = IDBObjectStore.prototype.delete
+      let changed = false
+      vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (...args) {
+        const request = originalDelete.apply(this, args)
+        if (!changed && this.name === 'manifests') request.addEventListener('success', () => {
+          changed = true
+          if (boundary === 'owner') window.localStorage.setItem('hafapass_scanner_user_id', 'new-owner')
+          else generation += 1
+        })
+        return request
+      })
+      expect(await purgeExpiredAdmissionAccess(eventId, { context })).toBe(false)
+      expect(changed).toBe(true)
+      window.localStorage.setItem('hafapass_scanner_user_id', 'purge-owner')
+      expect((await loadUsableManifest(eventId)).payload.version).toBe(1)
+      expect((await localScanState(eventId, 14)).action_uuid).toBe(admission.action_uuid)
+      expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: device.id })
+    })
+
+    it.each(['manifest', 'device'])('retains peer renewal after the old %s is judged expired but before removal opens its transaction', async expired => {
+      const now = Date.now()
+      vi.spyOn(Date, 'now').mockReturnValue(now + 601_000)
+      let openings = 0
+      let renewed = false
+      const originalOpen = IDBFactory.prototype.open
+      vi.spyOn(IDBFactory.prototype, 'open').mockImplementation(function (...args) {
+        const request = originalOpen.apply(this, args)
+        // The first connection captures the original expired snapshot. Hold
+        // only the second connection's completion, before removal can lock.
+        if (++openings === 2) {
+          const originalAdd = request.addEventListener.bind(request)
+          request.addEventListener = (type, listener, ...rest) => originalAdd(type, type !== 'success' ? listener : async event => {
+            await saveDevice(eventId, { ...device, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() })
+            await saveVerifiedManifest(await signedManifest(eventId, [ticket], { version: 2 }))
+            renewed = true
+            listener.call(request, event)
+          }, ...rest)
+        }
+        return request
+      })
+      expect(await (expired === 'manifest' ? loadUsableManifest(eventId) : loadAuthorizedScanner(eventId))).toBeNull()
+      expect(renewed).toBe(true)
+      expect((await loadAuthorizedScanner(eventId)).manifest.payload.version).toBe(2)
+      expect((await localScanState(eventId, 14)).action_uuid).toBe(admission.action_uuid)
+      expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: device.id })
+    })
+
+    it('never binds an old registration to the new actor when storage opening completes later', async () => {
+      let opened = false
+      let replacement
+      const originalOpen = IDBFactory.prototype.open
+      vi.spyOn(IDBFactory.prototype, 'open').mockImplementation(function (...args) {
+        const request = originalOpen.apply(this, args)
+        if (!opened) {
+          opened = true
+          const originalAdd = request.addEventListener.bind(request)
+          request.addEventListener = (type, listener, ...rest) => originalAdd(type, type !== 'success' ? listener : async event => {
+            await clearAllAdmissionData()
+            window.localStorage.setItem('hafapass_scanner_user_id', 'new-owner')
+            replacement = { ...device, id: 72 }
+            await saveDevice(eventId, replacement)
+            await saveVerifiedManifest(await signedManifest(eventId, [ticket], { version: 2 }))
+            listener.call(request, event)
+          }, ...rest)
+        }
+        return request
+      })
+      await expect(saveDevice(eventId, device)).rejects.toThrow(/account or setup changed/)
+      expect((await loadAuthorizedScanner(eventId)).device).toMatchObject({ id: 72, owner_user_id: 'new-owner' })
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: 72 })
+      window.localStorage.setItem('hafapass_scanner_user_id', 'purge-owner')
+      expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: device.id })
+      await clearEventAdmissionData(eventId)
+      window.localStorage.setItem('hafapass_scanner_user_id', 'new-owner')
+      await clearEventAdmissionData(eventId)
+    })
+
+    it('rolls a device save back when its setup becomes stale during an actual write', async () => {
+      let current = true
+      const originalPut = IDBObjectStore.prototype.put
+      vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (...args) {
+        const request = originalPut.apply(this, args)
+        if (this.name === 'devices') request.addEventListener('success', () => { current = false })
+        return request
+      })
+      await expect(saveDevice(eventId, { ...device, id: 72 }, { isCurrent: () => current })).rejects.toThrow(/setup changed/)
+      expect(await loadDevice(eventId)).toMatchObject({ id: device.id })
+      expect((await localScanState(eventId, 14)).action_uuid).toBe(admission.action_uuid)
+      expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: device.id })
+    })
   })
 
   describe('signed cross-device reversal reconciliation', () => {
