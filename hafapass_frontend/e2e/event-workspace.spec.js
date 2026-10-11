@@ -71,6 +71,12 @@ for (const width of [320, 1440]) {
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect.poll(async () => (await section.boundingBox()).y).toBeLessThan(180)
     expect((await section.boundingBox()).y).toBeGreaterThanOrEqual(60)
+    await title.focus()
+    if (width < 1024) await page.getByRole('button', { name: 'Event navigation', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Event workspace', exact: true }).getByRole('link', { name: 'Ticket types', exact: true }).click()
+    await expect(section).toBeFocused()
+    await expect.poll(async () => (await section.boundingBox()).y).toBeLessThan(180)
+    await expect(title).toHaveValue('Preserved before ticket jump')
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   })
 }

@@ -131,7 +131,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
     // scroll. Run after the authorized editor has rendered its section.
     target?.scrollIntoView?.({ behavior: 'instant', block: 'start' })
     target?.focus({ preventScroll: true })
-  }, [location.hash, correctEvent, current])
+  }, [location.hash, location.key, correctEvent, current])
   const navigateTo = (event, destination) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     closeMobile()
