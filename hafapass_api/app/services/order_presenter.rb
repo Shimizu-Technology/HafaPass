@@ -37,7 +37,7 @@ class OrderPresenter
         latest_payment&.provider_payment_id.present? && latest_payment&.pending? &&
         order.expires_at&.future? && latest_payment&.provider_payload.to_h["status"] != "processing",
       confirmation_delivery: confirmation_delivery,
-      ticket_access_blocked: order.ticket_access_blocked?,
+      ticket_access_blocked: order.ticket_access_blocked? || order.full_refund_pending?,
       promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,
       event: event_json,
       latest_event_change: latest_event_change_json,
@@ -119,6 +119,9 @@ class OrderPresenter
       display_credential: transferred_away ? nil : ticket.display_credential,
       scan_credential: !transferred_away && ticket.admission_allowed? ? ticket.scan_credential : nil,
       status: transferred_away ? "transferred" : ticket.status,
+      admission_allowed: !transferred_away && ticket.admission_allowed?,
+      admission_block_reason: ticket.inventory_retained? ? "Refunded or disputed admission requires organizer review" :
+        (ticket.refund_pending? ? "Ticket access is paused while its refund is pending" : nil),
       attendee_name: transferred_away ? nil : ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
       refundable_cents: !transferred_away && ticket.issued? ? ticket_refundable_amounts.fetch(ticket.id, 0) : 0,
@@ -184,7 +187,7 @@ class OrderPresenter
   def presented_tickets
     @presented_tickets ||= begin
       tickets = order.tickets
-      tickets = tickets.includes(:ticket_type, :order_item, :pending_refund_tickets,
+      tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets,
         event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
       tickets.to_a.sort_by(&:id)
     end

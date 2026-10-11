@@ -73,6 +73,32 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response.parsed_body["admission_allowed"]).to be(false)
     end
 
+    it "withholds every owned admission artifact during a legacy unknown full-value refund" do
+      create(:refund, order: order, amount_cents: order.total_cents, status: :pending,
+        provider_refund_id: nil, succeeded_at: nil, failure_code: "provider_result_unknown")
+      headers = { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+      get "/api/v1/tickets/#{ticket.display_credential}", headers: headers
+      expect(response.parsed_body).to include("admission_allowed" => false, "scan_credential" => nil,
+        "admission_block_reason" => "Ticket access is paused while its refund is pending")
+      %w[download wallet/apple wallet/google].each do |suffix|
+        get "/api/v1/tickets/#{ticket.display_credential}/#{suffix}", headers: headers
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+
+    it "reports retained admission truthfully and denies artifacts after Undo and exception resolution" do
+      ticket.check_in!
+      retention = Commerce::FinancialReversalInventory.call(ticket: ticket, refund: create(:refund, order: order))
+      ticket.reverse_check_in!
+      retention.reconciliation_exception.resolve!
+      headers = { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+      get "/api/v1/tickets/#{ticket.display_credential}", headers: headers
+      expect(response.parsed_body).to include("status" => "issued", "admission_allowed" => false,
+        "scan_credential" => nil, "admission_block_reason" => "Refunded or disputed admission requires organizer review")
+      get "/api/v1/tickets/#{ticket.display_credential}/download", headers: headers
+      expect(response).to have_http_status(:not_found)
+    end
+
     it "keeps a cancelled ticket record viewable after its free order closes" do
       order.update!(status: :cancelled)
       ticket.update!(status: :cancelled, cancelled_at: Time.current)

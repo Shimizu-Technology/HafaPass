@@ -6,7 +6,7 @@ import {
 import { useSearchParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 import {
-  applySyncResults, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
+  applySyncResults, captureAdmissionAccessContext, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
   queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess,
 } from '../../utils/admissionStore'
 
@@ -132,20 +132,36 @@ export default function ScannerPage({ offlineOnly = false }) {
   }, [online])
 
   const downloadManifest = useCallback(async (selectedEventId, selectedDevice) => {
-    const response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`)
-    if (selectedDevice.owner_user_id !== currentScannerOwner()) return null
+    const owner = currentScannerOwner()
+    const generation = setupGenerationRef.current
+    const current = () => mountedRef.current && owner === currentScannerOwner()
+      && eventIdRef.current === String(selectedEventId) && generation === setupGenerationRef.current
+    const context = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
+    let response
+    try {
+      response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`)
+    } catch (manifestError) {
+      if ([401, 403, 404, 410, 422].includes(manifestError.response?.status)) {
+        const removed = await purgeExpiredAdmissionAccess(selectedEventId, { context })
+        manifestError.scannerAccessRefused = true
+        manifestError.scannerAccessPurged = removed && current()
+        if (manifestError.scannerAccessPurged) { setDevice(null); setManifest(null); setRecoveryDevice(null) }
+      }
+      throw manifestError
+    }
+    if (!current() || selectedDevice.owner_user_id !== currentScannerOwner()) return null
     let verified
     try {
       if (Number(response.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event.')
       verified = await saveVerifiedManifest(response.data)
     } catch (verificationError) {
       // A stale callback must block its UI without erasing a newer context's access.
-      if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId)
+      if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId, { context })
       verificationError.manifestInvalid = true
       throw verificationError
     }
     // The store may retain a newer signed manifest over a delayed network response.
-    if (eventIdRef.current === String(selectedEventId)) setManifest(verified)
+    if (current()) setManifest(verified)
     return verified
   }, [])
 
@@ -185,8 +201,10 @@ export default function ScannerPage({ offlineOnly = false }) {
     }
     syncingRef.current = true
     setSyncing(true)
+    let failureContext
     try {
       if (!await ownsJournal()) return
+      failureContext = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
       let remaining = await queuedActions(selectedEventId, selectedDevice.id)
       if (!remaining.length) {
         if (current()) setPendingCount(0)
@@ -199,6 +217,7 @@ export default function ScannerPage({ offlineOnly = false }) {
       while (remaining.length) {
         if (!await ownsJournal()) return
         const batch = remaining.slice(0, 500)
+        failureContext = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
         const response = await apiClient.post(
           `/organizer/events/${selectedEventId}/scanner_devices/${currentDevice.id}/sync`,
           { actions: batch.map(({ event_id: _eventId, device_id: _deviceId, owner_user_id: _ownerId, ...action }) => action) },
@@ -208,7 +227,7 @@ export default function ScannerPage({ offlineOnly = false }) {
         if (response.data?.device?.id !== currentDevice.id || !Array.isArray(results) || batch.some(action => !results.some(result => result.action_uuid === action.action_uuid && result.kind === action.kind && ['accepted', 'conflict', 'rejected'].includes(result.result)))) {
           throw new Error('The server did not confirm every saved scan. They remain on this device; please retry synchronization.')
         }
-        await applySyncResults(selectedEventId, response.data.device, response.data.results, owner)
+        await applySyncResults(selectedEventId, response.data.device, response.data.results, owner, { context: failureContext })
         if (!current()) return
         const pendingAfterSync = await queuedActions(selectedEventId, currentDevice.id)
         if (batch.some(action => pendingAfterSync.some(pending => pending.action_uuid === action.action_uuid))) {
@@ -226,7 +245,14 @@ export default function ScannerPage({ offlineOnly = false }) {
           }
           return admissionAcknowledgement(current, result)
         })
-        currentDevice = { ...currentDevice, ...response.data.device }
+        // Receipt reconciliation may retain a newer peer's authorization. Never
+        // reapply the old response's lease over the store's retained device.
+        const retainedDevice = await loadDevice(selectedEventId)
+        if (!current()) return
+        if (retainedDevice?.id === currentDevice.id) {
+          currentDevice = retainedDevice
+          setDevice(retainedDevice)
+        }
         if (eventIdRef.current === String(selectedEventId)) setDashboard(current => current ? { ...current, counts: response.data.summary } : current)
         remaining = pendingAfterSync
       }
@@ -253,8 +279,10 @@ export default function ScannerPage({ offlineOnly = false }) {
         if (current()) setError('Saved scanner data could not be read. Reload this device and retry; saved scans have not been removed.')
         return
       }
-      if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
-        await purgeExpiredAdmissionAccess(selectedEventId)
+      if (syncError.scannerAccessRefused) {
+        if (syncError.scannerAccessPurged) setError(syncError.response?.data?.error || 'Scanner authorization was refused. Saved scans remain available to the original staff account after access is restored.')
+      } else if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
+        if (!await purgeExpiredAdmissionAccess(selectedEventId, { context: failureContext }) || !current()) return
         if (eventIdRef.current === String(selectedEventId)) { setDevice(null); setManifest(null); setRecoveryDevice(null) }
         setError(syncError.response?.data?.error || 'Scanner authorization was refused. Saved scans remain available to the original staff account after access is restored.')
       } else if (syncError.manifestInvalid) {
@@ -294,6 +322,7 @@ export default function ScannerPage({ offlineOnly = false }) {
       let cached = await loadAuthorizedScanner(selectedEventId)
       if (online) {
         let networkPhase = true
+        let failureContext = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
         try {
           let previousIdentity = await loadPendingDeviceIdentity(selectedEventId)
           if (!previousIdentity) {
@@ -306,11 +335,13 @@ export default function ScannerPage({ offlineOnly = false }) {
           })
           networkPhase = false
           if (!current()) return
-          await saveDevice(selectedEventId, registration.data)
+          await saveDevice(selectedEventId, registration.data, { isCurrent: current, context: failureContext })
+          if (!current()) return
           const registeredDevice = await loadDevice(selectedEventId)
           if (current()) setRecoveryDevice(registeredDevice)
           await refreshPending(selectedEventId, registeredDevice)
           networkPhase = true
+          failureContext = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
           const downloaded = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${registration.data.id}/manifest`)
           networkPhase = false
           if (!current()) return
@@ -318,7 +349,7 @@ export default function ScannerPage({ offlineOnly = false }) {
             if (Number(downloaded.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event. Ask a manager to check this device.')
             await saveVerifiedManifest(downloaded.data)
           } catch (verificationError) {
-            if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId)
+            if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId, { context: failureContext })
             throw verificationError
           }
           cached = await loadAuthorizedScanner(selectedEventId)
@@ -326,7 +357,7 @@ export default function ScannerPage({ offlineOnly = false }) {
         } catch (connectionError) {
           // Explicit authorization failures invalidate local trust. Dependency outages do not.
           if (connectionError.response?.status >= 400 && connectionError.response.status < 500 && ![408, 429].includes(connectionError.response.status)) {
-            await purgeExpiredAdmissionAccess(selectedEventId)
+            if (!await purgeExpiredAdmissionAccess(selectedEventId, { context: failureContext }) || !current()) return
             if (current()) setRecoveryDevice(null)
             throw connectionError
           }
@@ -415,8 +446,15 @@ export default function ScannerPage({ offlineOnly = false }) {
     const current = () => mountedRef.current && owner === currentScannerOwner()
       && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
     if (!device.effective || new Date(device.authorization_expires_at).getTime() <= Date.now() || new Date(manifest.payload.expires_at).getTime() <= Date.now()) {
+      try {
+        const context = await captureAdmissionAccessContext(eventId, { isCurrent: current,
+          expectedDevice: device, expectedManifest: manifest })
+        if (!await purgeExpiredAdmissionAccess(eventId, { context }) || !current()) return
+      } catch (expiryError) {
+        if (expiryError.manifestContextChanged) return
+        throw expiryError
+      }
       showResult({ type: 'error', message: 'Scanner access expired', detail: 'Reconnect before admitting another ticket.' })
-      await purgeExpiredAdmissionAccess(eventId)
       setDevice(null)
       setManifest(null)
       return
@@ -557,15 +595,27 @@ export default function ScannerPage({ offlineOnly = false }) {
 
   useEffect(() => {
     if (!device || !manifest) return
+    const owner = currentScannerOwner()
+    const generation = setupGenerationRef.current
+    let active = true
+    const current = () => active && mountedRef.current && owner === currentScannerOwner()
+      && eventIdRef.current === eventId && generation === setupGenerationRef.current
+      && currentManifestRef.current?.digest === manifest.digest
     const expiresAt = Math.min(new Date(device.authorization_expires_at).getTime(), new Date(manifest.payload.expires_at).getTime())
-    const timer = window.setTimeout(() => {
-      stopCamera()
-      setDevice(null)
-      setManifest(null)
-      setError('Saved scanner access has expired. Reconnect with the original staff account to renew access and sync saved scans.')
-      void purgeExpiredAdmissionAccess(eventId)
+    const timer = window.setTimeout(async () => {
+      try {
+        const context = await captureAdmissionAccessContext(eventId, { isCurrent: current,
+          expectedDevice: device, expectedManifest: manifest })
+        if (!await purgeExpiredAdmissionAccess(eventId, { context }) || !current()) return
+        stopCamera()
+        setDevice(null)
+        setManifest(null)
+        setError('Saved scanner access has expired. Reconnect with the original staff account to renew access and sync saved scans.')
+      } catch (expiryError) {
+        if (current() && !expiryError.manifestContextChanged) setError('Saved scanner access could not be removed. Reload this device before admitting more guests.')
+      }
     }, Math.max(0, expiresAt - Date.now()))
-    return () => window.clearTimeout(timer)
+    return () => { active = false; window.clearTimeout(timer) }
   }, [device, eventId, manifest, stopCamera])
 
   const runSearch = async event => {
