@@ -9,7 +9,7 @@ import SeatSelector from '../components/SeatSelector'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { eventBrowseReturn } from '../utils/browseReturn'
 import { isTicketPurchasable, ticketPriceCents } from '../utils/ticketPricing'
@@ -255,7 +255,7 @@ function EventDetailContent() {
                   <Calendar className="w-4 h-4 text-brand-400" />
                   <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
                   <span className="text-neutral-500">·</span>
-                  <span>{formatEventTime(event.starts_at, event.timezone)}{event.ends_at && ` – ${formatEventTime(event.ends_at, event.timezone)}`}</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
                 </div>
               )}
               {event.venue_name && (
