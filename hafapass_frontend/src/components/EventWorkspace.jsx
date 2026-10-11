@@ -124,6 +124,14 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
   const correctEvent = event && String(event.id) === String(eventId)
     && (event.organization_id == null || identity.organizationId == null || String(event.organization_id) === String(identity.organizationId))
   const groups = correctEvent ? navigationFor(event, capabilities) : []
+  useEffect(() => {
+    if (location.hash !== '#ticket-types' || !correctEvent || !current()) return
+    const target = document.getElementById('ticket-types')
+    // Router links change the fragment without the browser's native anchor
+    // scroll. Run after the authorized editor has rendered its section.
+    target?.scrollIntoView?.({ behavior: 'instant', block: 'start' })
+    target?.focus({ preventScroll: true })
+  }, [location.hash, correctEvent, current])
   const navigateTo = (event, destination) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     closeMobile()

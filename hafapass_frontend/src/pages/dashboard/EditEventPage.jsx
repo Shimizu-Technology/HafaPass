@@ -728,7 +728,7 @@ function EditEventSession({ id, identity }) {
       </form>
 
       {/* Ticket Types CRUD */}
-      {permissions.manage_inventory && <section id="ticket-types" className="scroll-mt-24" aria-busy={inventoryRefreshing}>
+      {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="scroll-mt-24 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>
         {inventoryRefreshing && <p role="status" className="mt-6 text-sm text-neutral-600">Updating ticket list…</p>}
         {inventoryError && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p>{inventoryError}</p>
