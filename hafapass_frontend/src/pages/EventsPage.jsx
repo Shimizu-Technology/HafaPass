@@ -134,9 +134,9 @@ export default function EventsPage() {
       {/* Light content area */}
       <div className="bg-neutral-50 min-h-[50vh]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Category Filter Chips */}
+          {/* Responsive discovery filters */}
           <div className="flex flex-col gap-4 mb-8">
-           <div className="flex flex-wrap gap-2">
+           <div className="hidden sm:flex sm:flex-wrap gap-2">
             {[{ value: 'all', label: 'All Events' }, ...categories].map(({ value, label }) => {
               const Icon = value === 'all' ? Ticket : (CATEGORY_ICONS[value] || Sparkles)
               return (
@@ -144,7 +144,7 @@ export default function EventsPage() {
                 key={value}
                 onClick={() => changeCategory(value)}
                 aria-pressed={activeCategory === value}
-                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                className={`inline-flex min-h-11 items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                   activeCategory === value
                     ? 'bg-brand-600 text-white shadow-md shadow-brand-500/20'
                     : 'bg-white text-neutral-600 border border-neutral-200 hover:border-brand-300 hover:text-brand-600'
@@ -155,10 +155,17 @@ export default function EventsPage() {
               </button>
             )})}
            </div>
-           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]">
+           <div className="grid grid-cols-2 gap-3 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]">
+            <div className="col-span-2 min-w-0 sm:hidden">
+             <label htmlFor="event-category" className="mb-1 block text-sm font-medium text-neutral-600">Category</label>
+             <select id="event-category" value={activeCategory} onChange={event => changeCategory(event.target.value)} className="input min-h-11 !py-2 text-sm !px-3">
+              <option value="all">All Events</option>
+              {categories.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+             </select>
+            </div>
             <div className="min-w-0">
              <label htmlFor="event-date-range" className="mb-1 block text-sm font-medium text-neutral-600">When</label>
-             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2">
+             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-sm !px-2 sm:text-base sm:!px-4">
              <option value="upcoming">All upcoming</option>
              <option value="today">Today</option>
              <option value="tonight">Tonight</option>
@@ -168,9 +175,9 @@ export default function EventsPage() {
             </div>
             <div className="min-w-0">
              <label htmlFor="event-price" className="mb-1 block text-sm font-medium text-neutral-600">Price</label>
-             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="all">Any price</option><option value="free">Free</option><option value="under_25">Under $25</option><option value="under_50">Under $50</option></select>
+             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-sm !px-2 sm:text-base sm:!px-4"><option value="all">Any price</option><option value="free">Free</option><option value="under_25">Under $25</option><option value="under_50">Under $50</option></select>
             </div>
-            <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+            <div className="min-w-0 col-span-2 lg:col-span-1">
              <label htmlFor="event-village" className="mb-1 block text-sm font-medium text-neutral-600">Village</label>
              <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="">All villages</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
             </div>
@@ -238,7 +245,7 @@ export default function EventsPage() {
               {(search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village) && (
                 <button
                   onClick={clearFilters}
-                  className="text-brand-500 hover:text-brand-600 font-medium transition-colors"
+                  className="min-h-11 text-brand-700 hover:text-brand-800 font-medium transition-colors"
                 >
                   Clear filters
                 </button>
