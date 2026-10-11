@@ -154,9 +154,9 @@ function PromoCodesSession({ eventId, identity }) {
   </main>
   if (!canManage) return <EventWorkspace eventId={eventId} event={event}><p role="status" className="text-neutral-700">Your event access does not include this tool.</p></EventWorkspace>
  return (
-  <EventWorkspace eventId={eventId} event={event}><div className="max-w-4xl mx-auto">
+  <EventWorkspace eventId={eventId} event={event}><div className="min-w-0 w-full max-w-4xl mx-auto">
 
-   <div className="flex items-center justify-between mb-8">
+   <div className="flex flex-col items-start gap-4 mb-8 sm:flex-row sm:items-center sm:justify-between">
     <div>
      <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Promo Codes</h2>
      <p className="text-sm text-neutral-500 mt-1">Create discount codes for your event</p>
@@ -179,16 +179,16 @@ function PromoCodesSession({ eventId, identity }) {
    {notice && <p role="status" className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">{notice}</p>}
 
    {showForm && (
-    <form onSubmit={handleCreate} className="card p-6 mb-6"><fieldset disabled={mutationsLocked}>
+    <form onSubmit={handleCreate} className="card p-4 sm:p-6 mb-6"><fieldset className="min-w-0" disabled={mutationsLocked}>
      <h3 className="font-semibold text-neutral-900 mb-4">Create Promo Code</h3>
      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
        <label htmlFor="promo-code" className="block text-sm font-medium text-neutral-700 mb-1.5">Code</label>
-       <input id="promo-code" value={form.code} onChange={e => setForm({...form, code: e.target.value.toUpperCase()})} className="input uppercase" placeholder="SUMMER20" required />
+       <input id="promo-code" value={form.code} onChange={e => setForm({...form, code: e.target.value.toUpperCase()})} className="input min-w-0 max-w-full uppercase" placeholder="SUMMER20" required />
       </div>
       <div>
        <label htmlFor="promo-discount_type" className="block text-sm font-medium text-neutral-700 mb-1.5">Discount Type</label>
-       <select id="promo-discount_type" value={form.discount_type} onChange={e => setForm({...form, discount_type: e.target.value})} className="input">
+       <select id="promo-discount_type" value={form.discount_type} onChange={e => setForm({...form, discount_type: e.target.value})} className="input min-w-0 max-w-full">
         <option value="percentage">Percentage (%)</option>
         <option value="fixed">Fixed Amount (cents)</option>
        </select>
@@ -197,18 +197,18 @@ function PromoCodesSession({ eventId, identity }) {
        <label htmlFor="promo-discount_value" className="block text-sm font-medium text-neutral-700 mb-1.5">
         {form.discount_type === 'percentage' ? 'Discount (%)' : 'Discount (cents)'}
        </label>
-       <input type="number" id="promo-discount_value" value={form.discount_value} onChange={e => setForm({...form, discount_value: e.target.value})} className="input" placeholder={form.discount_type === 'percentage' ? '20' : '500'} required />
+       <input type="number" id="promo-discount_value" value={form.discount_value} onChange={e => setForm({...form, discount_value: e.target.value})} className="input min-w-0 max-w-full" placeholder={form.discount_type === 'percentage' ? '20' : '500'} required />
       </div>
       <div>
-       <label htmlFor="promo-max_uses" className="block text-sm font-medium text-neutral-700 mb-1.5">Max Uses <span className="text-neutral-400 font-normal">(optional)</span></label>
-       <input type="number" id="promo-max_uses" value={form.max_uses} onChange={e => setForm({...form, max_uses: e.target.value})} className="input" placeholder="Unlimited" />
+       <label htmlFor="promo-max_uses" className="block text-sm font-medium text-neutral-700 mb-1.5">Max Uses <span className="text-content-muted font-normal">(optional)</span></label>
+       <input type="number" id="promo-max_uses" value={form.max_uses} onChange={e => setForm({...form, max_uses: e.target.value})} className="input min-w-0 max-w-full" placeholder="Unlimited" />
       </div>
       <div className="sm:col-span-2">
-       <label htmlFor="promo-expires_at" className="block text-sm font-medium text-neutral-700 mb-1.5">Expires At <span className="text-neutral-400 font-normal">(optional)</span></label>
-       <input type="datetime-local" id="promo-expires_at" value={form.expires_at} onChange={e => setForm({...form, expires_at: e.target.value})} className="input" />
+       <label htmlFor="promo-expires_at" className="block text-sm font-medium text-neutral-700 mb-1.5">Expires At <span className="text-content-muted font-normal">(optional)</span></label>
+       <input type="datetime-local" id="promo-expires_at" value={form.expires_at} onChange={e => setForm({...form, expires_at: e.target.value})} className="input min-w-0 max-w-full" />
       </div>
      </div>
-     <div className="flex gap-3 mt-5">
+     <div className="flex flex-wrap gap-3 mt-5">
       <button type="submit" disabled={saving} className="btn-primary text-sm !py-2.5">{saving ? 'Creating...' : 'Create Code'}</button>
       <button type="button" onClick={() => setShowForm(false)} className="btn-secondary text-sm !py-2.5">Cancel</button>
      </div>
@@ -216,40 +216,40 @@ function PromoCodesSession({ eventId, identity }) {
    )}
 
    {codes.length === 0 ? (
-    <div className="card p-12 text-center">
+    <div className="card px-4 py-8 sm:p-12 text-center">
      <Tag className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
-     <p className="text-neutral-500">No promo codes yet</p>
-     <p className="text-sm text-neutral-400 mt-1">Create a code to offer discounts</p>
+     <p className="text-content-muted">No promo codes yet</p>
+     <p className="text-sm text-content-muted mt-1">Create a code to offer discounts</p>
     </div>
    ) : (
     <div className="space-y-3">
      {codes.map(pc => (
-      <div key={pc.id} className="card p-5 flex items-center justify-between">
-       <div className="flex items-center gap-4">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${pc.active ? 'bg-emerald-50' : 'bg-neutral-100'}`}>
-         <Tag className={`w-5 h-5 ${pc.active ? 'text-emerald-500' : 'text-neutral-400'}`} />
+      <div key={pc.id} className="card p-4 sm:p-5 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+       <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
+        <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center ${pc.active ? 'bg-emerald-50' : 'bg-neutral-100'}`}>
+         <Tag className={`w-5 h-5 ${pc.active ? 'text-emerald-700' : 'text-neutral-600'}`} />
         </div>
-        <div>
-         <p className="font-mono font-semibold text-neutral-900">{pc.code}</p>
-         <p className="text-sm text-neutral-500">
+        <div className="min-w-0 flex-1">
+         <p className="font-mono font-semibold text-neutral-900 [overflow-wrap:anywhere]">{pc.code}</p>
+         <p className="text-sm text-content-muted [overflow-wrap:anywhere]">
           {pc.discount_type === 'percentage' ? `${pc.discount_value}% off` : `$${(pc.discount_value / 100).toFixed(2)} off`}
           {' '}&middot; {pc.current_uses}{pc.max_uses ? `/${pc.max_uses}` : ''} used
           {pc.expires_at && ` · Expires ${formatEventDate(pc.expires_at)}`}
          </p>
         </div>
        </div>
-       <div className="flex items-center gap-2">
+       <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
         <button
          disabled={mutationsLocked} onClick={() => toggleActive(pc)}
-         className="p-2 rounded-xl hover:bg-neutral-100 transition-colors"
+         className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50 transition-colors"
          title={pc.active ? 'Deactivate' : 'Activate'}
          aria-label={pc.active ? `Deactivate promo code ${pc.code}` : `Activate promo code ${pc.code}`}
         >
-         {pc.active ? <ToggleRight className="w-5 h-5 text-emerald-500" /> : <ToggleLeft className="w-5 h-5 text-neutral-400" />}
+         {pc.active ? <ToggleRight className="w-5 h-5 text-emerald-700" /> : <ToggleLeft className="w-5 h-5 text-neutral-600" />}
         </button>
         <button
          disabled={mutationsLocked} onClick={() => deleteCode(pc)}
-         className="p-2 rounded-xl hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors"
+         className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50 transition-colors"
          aria-label={`Delete promo code ${pc.code}`}
         >
          <Trash2 className="w-4 h-4" />

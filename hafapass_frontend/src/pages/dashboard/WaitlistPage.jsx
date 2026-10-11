@@ -12,7 +12,7 @@ const STATUS_COLORS = {
   notified: 'bg-blue-50 text-blue-700',
   offered: 'bg-indigo-50 text-indigo-700',
   converted: 'bg-emerald-50 text-emerald-700',
-  expired: 'bg-neutral-100 text-neutral-500',
+  expired: 'bg-neutral-100 text-content-muted',
   cancelled: 'bg-red-50 text-red-600',
 }
 
@@ -48,7 +48,9 @@ function WaitlistSession({ eventId, identity }) {
   const [stats, setStats] = useState({})
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
-  const [notifyCount, setNotifyCount] = useState(1)
+  const [notifyCount, setNotifyCount] = useState('1')
+  const validNotifyCount = notifyCount !== '' && Number.isInteger(Number(notifyCount))
+    && Number(notifyCount) >= 1 && Number(notifyCount) <= 50
   const notifying = activeMutation === 'notify_next'
   const clearPrivateState = useCallback(() => {
     setConfirmation(null); setEvent(null); setEntries([]); setStats({}); setNotifyCount(1)
@@ -150,8 +152,10 @@ function WaitlistSession({ eventId, identity }) {
     askConfirmation('offer_tickets', `Reserve inventory and send a checkout offer to ${entry.name || entry.email}?`, 'Create ticket offer', config => apiClient.post(`/organizer/events/${eventId}/waitlist/${entry.id}/offer`, {}, config), () => setNotice('Ticket offer created. Delivery is handled separately.'))
   }
   const handleNotifyNext = () => {
-    const payload = { count: notifyCount }
-    askConfirmation('notify_next', `Notify the next ${notifyCount} people on the waitlist?`, 'Send next notifications', config => apiClient.post(`/organizer/events/${eventId}/waitlist/notify_next`, payload, config), data => setNotice(Number.isInteger(data.count) ? `Notification requests recorded for ${data.count} people. Delivery is handled separately.` : 'Notification request recorded. Delivery is handled separately.'))
+    if (!validNotifyCount) return
+    const count = Number(notifyCount)
+    const payload = { count }
+    askConfirmation('notify_next', `Notify the next ${count} people on the waitlist?`, 'Send next notifications', config => apiClient.post(`/organizer/events/${eventId}/waitlist/notify_next`, payload, config), data => setNotice(Number.isInteger(data.count) ? `Notification requests recorded for ${data.count} people. Delivery is handled separately.` : 'Notification request recorded. Delivery is handled separately.'))
   }
   const handleRemove = entry => {
     askConfirmation('remove_entry', `Remove ${entry.name || entry.email} from the waitlist?`, 'Remove entry', config => apiClient.delete(`/organizer/events/${eventId}/waitlist/${entry.id}`, config), () => setNotice('Waitlist entry removed.'))
@@ -166,32 +170,41 @@ function WaitlistSession({ eventId, identity }) {
   </main>
   if (!canManage) return <EventWorkspace eventId={eventId} event={event}><p role="status" className="text-neutral-700">Your event access does not include this tool.</p></EventWorkspace>
   return (
-    <EventWorkspace eventId={eventId} event={event}><div className="max-w-5xl mx-auto">
+    <EventWorkspace eventId={eventId} event={event}><div className="min-w-0 w-full max-w-5xl mx-auto">
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col items-start gap-4 mb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-neutral-900 flex items-center gap-2">
             <ClipboardList className="w-6 h-6 text-brand-500" /> Waitlist
           </h2>
-          <p className="text-sm text-neutral-500 mt-1">
+          <p className="text-sm text-content-muted mt-1">
             {stats.total_waiting || 0} waiting, {stats.total_notified || 0} notified, {stats.total_converted || 0} converted
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <input
-            aria-label="People to notify"
-            disabled={mutationsLocked}
-            type="number"
-            min={1}
-            max={50}
-            value={notifyCount}
-            onChange={(e) => setNotifyCount(Math.max(1, parseInt(e.target.value) || 1))}
-            className="input !w-16 text-center text-sm"
-          />
-          <button onClick={handleNotifyNext} disabled={mutationsLocked} className="btn-primary text-sm !py-2.5 gap-1.5">
-            {notifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Notify Next
-          </button>
+        <div className="w-full sm:w-auto">
+          <label htmlFor="waitlist-notify-count" className="mb-1.5 block text-sm font-medium text-neutral-700">People to notify</label>
+          <div className="flex items-center gap-2">
+            <input
+              id="waitlist-notify-count"
+              disabled={mutationsLocked}
+              type="number"
+              min={1}
+              max={50}
+              inputMode="numeric"
+              value={notifyCount}
+              onChange={(e) => setNotifyCount(e.target.value)}
+              aria-invalid={!validNotifyCount}
+              aria-describedby="waitlist-notify-count-help"
+              className="input !w-20 min-h-11 shrink-0 text-center text-base"
+            />
+            <button onClick={handleNotifyNext} disabled={mutationsLocked || !validNotifyCount} className="btn-primary min-w-0 flex-1 text-sm !px-3 !py-2.5 gap-1.5 sm:flex-none">
+              {notifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Notify Next
+            </button>
+          </div>
+          <p id="waitlist-notify-count-help" className={`mt-1.5 text-sm ${validNotifyCount ? 'text-content-muted' : 'text-red-700'}`}>
+            {validNotifyCount ? '1–50 people' : 'Enter a whole number from 1 to 50.'}
+          </p>
         </div>
       </div>
 
@@ -212,9 +225,10 @@ function WaitlistSession({ eventId, identity }) {
         {['', 'waiting', 'notified', 'expired', 'converted'].map(s => (
           <button
             key={s}
+            aria-pressed={filter === s}
             onClick={() => setFilter(s)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              filter === s ? 'bg-brand-500 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+            className={`min-h-11 min-w-11 px-3 py-2 rounded-lg text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 transition-colors ${
+              filter === s ? 'bg-brand-700 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
             }`}
           >
             {s || 'All'}
@@ -224,10 +238,10 @@ function WaitlistSession({ eventId, identity }) {
 
       {/* Table */}
       {entries.length === 0 ? (
-        <div className="text-center py-12 text-neutral-500">No waitlist entries found.</div>
+        <div className="text-center py-12 text-content-muted">No waitlist entries found.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="max-w-full overflow-x-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700" role="region" aria-label="Waitlist entries" tabIndex={0}>
+          <table className="w-full min-w-[48rem] text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-left text-neutral-500">
                 <th className="pb-3 font-medium">#</th>
@@ -244,25 +258,25 @@ function WaitlistSession({ eventId, identity }) {
               {entries.map(entry => (
                 <tr key={entry.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                   <td className="py-3 text-neutral-900 font-medium">{entry.position}</td>
-                  <td className="py-3 text-neutral-900">{entry.name || '—'}</td>
-                  <td className="py-3 text-neutral-600">{entry.email}</td>
-                  <td className="py-3 text-neutral-600">{entry.ticket_type?.name || 'Any'}</td>
+                  <td className="py-3 pr-4 max-w-48 text-neutral-900 [overflow-wrap:anywhere]">{entry.name || '—'}</td>
+                  <td className="py-3 pr-4 max-w-56 text-neutral-600 [overflow-wrap:anywhere]">{entry.email}</td>
+                  <td className="py-3 pr-4 max-w-48 text-neutral-600 [overflow-wrap:anywhere]">{entry.ticket_type?.name || 'Any'}</td>
                   <td className="py-3 text-neutral-600">{entry.quantity}</td>
                   <td className="py-3">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[entry.status] || ''}`}>
                       {entry.status}
                     </span>
                   </td>
-                  <td className="py-3 text-neutral-500 text-xs">{formatDate(entry.created_at)}</td>
+                  <td className="py-3 text-content-muted text-xs">{formatDate(entry.created_at)}</td>
                   <td className="py-3">
                     <div className="flex items-center gap-1">
                       {entry.status === 'waiting' && (
-                        <button disabled={mutationsLocked} onClick={() => handleOffer(entry)} className="rounded-lg px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50" title="Reserve tickets and send offer">Offer</button>
+                        <button disabled={mutationsLocked} onClick={() => handleOffer(entry)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50" title="Reserve tickets and send offer">Offer</button>
                       )}
                       {entry.status === 'waiting' && (
                         <button
                           disabled={mutationsLocked} aria-label={`Notify ${entry.name || entry.email}`} onClick={() => handleNotify(entry)}
-                          className="p-1.5 rounded-lg text-blue-500 hover:bg-blue-50 transition-colors"
+                          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50 transition-colors"
                           title="Notify"
                         >
                           <Bell className="w-4 h-4" />
@@ -270,7 +284,7 @@ function WaitlistSession({ eventId, identity }) {
                       )}
                       <button
                         disabled={mutationsLocked} aria-label={`Remove ${entry.name || entry.email}`} onClick={() => handleRemove(entry)}
-                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 transition-colors"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50 transition-colors"
                         title="Remove"
                       >
                         <Trash2 className="w-4 h-4" />

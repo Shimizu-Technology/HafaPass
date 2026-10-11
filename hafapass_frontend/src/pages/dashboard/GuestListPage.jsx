@@ -163,9 +163,9 @@ function GuestListSession({ eventId, identity }) {
  const redeemed = entries.filter(e => e.redeemed)
 
  return (
-  <EventWorkspace eventId={eventId} event={event}><div className="max-w-4xl mx-auto">
+  <EventWorkspace eventId={eventId} event={event}><div className="min-w-0 w-full max-w-4xl mx-auto">
 
-   <div className="flex items-center justify-between mb-8">
+   <div className="flex flex-col items-start gap-4 mb-8 sm:flex-row sm:items-center sm:justify-between">
     <div>
      <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Guest List</h2>
      <p className="text-sm text-neutral-500 mt-1">{unredeemed.length} pending, {redeemed.length} redeemed</p>
@@ -188,33 +188,33 @@ function GuestListSession({ eventId, identity }) {
    {notice && <p role="status" className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">{notice}</p>}
 
    {showForm && (
-    <form onSubmit={handleCreate} className="card p-6 mb-6"><fieldset disabled={mutationsLocked}>
+    <form onSubmit={handleCreate} className="card p-4 sm:p-6 mb-6"><fieldset className="min-w-0" disabled={mutationsLocked}>
      <h3 className="font-semibold text-neutral-900 mb-4">Add to Guest List</h3>
      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
        <label htmlFor="guest-guest_name" className="block text-sm font-medium text-neutral-700 mb-1.5">Name</label>
-       <input id="guest-guest_name" value={form.guest_name} onChange={e => setForm({...form, guest_name: e.target.value})} className="input" placeholder="Guest name" required />
+       <input id="guest-guest_name" value={form.guest_name} onChange={e => setForm({...form, guest_name: e.target.value})} className="input min-w-0 max-w-full" placeholder="Guest name" required />
       </div>
       <div>
-       <label htmlFor="guest-guest_email" className="block text-sm font-medium text-neutral-700 mb-1.5">Email <span className="text-neutral-400 font-normal">(optional)</span></label>
-       <input type="email" id="guest-guest_email" value={form.guest_email} onChange={e => setForm({...form, guest_email: e.target.value})} className="input" placeholder="guest@email.com" />
+       <label htmlFor="guest-guest_email" className="block text-sm font-medium text-neutral-700 mb-1.5">Email <span className="text-content-muted font-normal">(optional)</span></label>
+       <input type="email" id="guest-guest_email" value={form.guest_email} onChange={e => setForm({...form, guest_email: e.target.value})} className="input min-w-0 max-w-full" placeholder="guest@email.com" />
       </div>
       <div>
        <label htmlFor="guest-ticket_type_id" className="block text-sm font-medium text-neutral-700 mb-1.5">Ticket Type</label>
-       <select id="guest-ticket_type_id" value={form.ticket_type_id} onChange={e => setForm({...form, ticket_type_id: parseInt(e.target.value, 10) || ''})} className="input">
+       <select id="guest-ticket_type_id" value={form.ticket_type_id} onChange={e => setForm({...form, ticket_type_id: parseInt(e.target.value, 10) || ''})} className="input min-w-0 max-w-full">
         {ticketTypes.map(tt => <option key={tt.id} value={tt.id}>{tt.name}</option>)}
        </select>
       </div>
       <div>
        <label htmlFor="guest-quantity" className="block text-sm font-medium text-neutral-700 mb-1.5">Quantity</label>
-       <input type="number" min="1" max="10" id="guest-quantity" value={form.quantity} onChange={e => setForm({...form, quantity: parseInt(e.target.value, 10) || 1})} className="input" />
+       <input type="number" min="1" max="10" id="guest-quantity" value={form.quantity} onChange={e => setForm({...form, quantity: parseInt(e.target.value, 10) || 1})} className="input min-w-0 max-w-full" />
       </div>
       <div className="sm:col-span-2">
-       <label htmlFor="guest-notes" className="block text-sm font-medium text-neutral-700 mb-1.5">Notes <span className="text-neutral-400 font-normal">(optional)</span></label>
-       <input id="guest-notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="input" placeholder="VIP, photographer, etc." />
+       <label htmlFor="guest-notes" className="block text-sm font-medium text-neutral-700 mb-1.5">Notes <span className="text-content-muted font-normal">(optional)</span></label>
+       <input id="guest-notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="input min-w-0 max-w-full" placeholder="VIP, photographer, etc." />
       </div>
      </div>
-     <div className="flex gap-3 mt-5">
+     <div className="flex flex-wrap gap-3 mt-5">
       <button type="submit" disabled={saving} className="btn-primary text-sm !py-2.5">{saving ? 'Adding...' : 'Add Guest'}</button>
       <button type="button" onClick={() => setShowForm(false)} className="btn-secondary text-sm !py-2.5">Cancel</button>
      </div>
@@ -222,32 +222,32 @@ function GuestListSession({ eventId, identity }) {
    )}
 
    {entries.length === 0 ? (
-    <div className="card p-12 text-center">
+    <div className="card px-4 py-8 sm:p-12 text-center">
      <Users className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
-     <p className="text-neutral-500">No guests added yet</p>
+     <p className="text-content-muted">No guests added yet</p>
     </div>
    ) : (
     <div className="space-y-3">
      {unredeemed.map(entry => (
-      <div key={entry.id} className="card p-5 flex items-center justify-between">
-       <div className="flex items-center gap-4">
-        <div className="w-10 h-10 rounded-xl bg-accent-50 flex items-center justify-center">
-         <Users className="w-5 h-5 text-accent-500" />
+      <div key={entry.id} className="card p-4 sm:p-5 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+       <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
+        <div className="w-10 h-10 shrink-0 rounded-xl bg-accent-50 flex items-center justify-center">
+         <Users className="w-5 h-5 text-accent-700" />
         </div>
-        <div>
-         <p className="font-medium text-neutral-900">{entry.guest_name}</p>
-         <p className="text-sm text-neutral-500">
+        <div className="min-w-0 flex-1">
+         <p className="font-medium text-neutral-900 [overflow-wrap:anywhere]">{entry.guest_name}</p>
+         <p className="text-sm text-content-muted [overflow-wrap:anywhere]">
           {entry.ticket_type.name} &times; {entry.quantity}
           {entry.guest_email && ` · ${entry.guest_email}`}
           {entry.notes && ` · ${entry.notes}`}
          </p>
         </div>
        </div>
-       <div className="flex items-center gap-2">
-        <button disabled={mutationsLocked} onClick={() => handleRedeem(entry)} className="btn-primary text-xs !py-2 !px-3 gap-1">
+       <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
+        <button disabled={mutationsLocked} onClick={() => handleRedeem(entry)} className="btn-primary text-sm !px-3 gap-1.5">
          <Check className="w-3 h-3" /> Redeem
         </button>
-        <button disabled={mutationsLocked} aria-label={`Remove guest ${entry.guest_name}`} onClick={() => handleDelete(entry)} className="p-2 rounded-xl hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors">
+        <button disabled={mutationsLocked} aria-label={`Remove guest ${entry.guest_name}`} onClick={() => handleDelete(entry)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50 transition-colors">
          <Trash2 className="w-4 h-4" />
         </button>
        </div>
@@ -255,16 +255,16 @@ function GuestListSession({ eventId, identity }) {
      ))}
      {redeemed.length > 0 && (
       <>
-       <h3 className="text-sm font-medium text-neutral-500 pt-4">Redeemed</h3>
+       <h3 className="text-sm font-medium text-content-muted pt-4">Redeemed</h3>
        {redeemed.map(entry => (
-        <div key={entry.id} className="card p-5 flex items-center justify-between opacity-60">
-         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-           <Check className="w-5 h-5 text-emerald-500" />
+        <div key={entry.id} className="card p-4 sm:p-5 min-w-0 bg-neutral-50">
+         <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
+          <div className="w-10 h-10 shrink-0 rounded-xl bg-emerald-50 flex items-center justify-center">
+           <Check className="w-5 h-5 text-emerald-700" />
           </div>
-          <div>
-           <p className="font-medium text-neutral-900">{entry.guest_name}</p>
-           <p className="text-sm text-neutral-500">{entry.ticket_type.name} &times; {entry.quantity} &middot; Order #{entry.order_id}</p>
+          <div className="min-w-0 flex-1">
+           <p className="font-medium text-neutral-900 [overflow-wrap:anywhere]">{entry.guest_name}</p>
+           <p className="text-sm text-content-muted [overflow-wrap:anywhere]">{entry.ticket_type.name} &times; {entry.quantity} &middot; Order #{entry.order_id}</p>
           </div>
          </div>
         </div>
