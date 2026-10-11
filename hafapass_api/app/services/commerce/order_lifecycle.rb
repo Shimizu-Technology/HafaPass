@@ -38,6 +38,9 @@ module Commerce
 
           holds = order.inventory_holds.order(:id).lock.to_a
           catalog_holds = order.catalog_item_holds.order(:id).lock.to_a
+          # Checkout locks ticket types before the seat session. Match that
+          # order so a reused hold cannot deadlock a payment finalization.
+          holds.map(&:ticket_type).uniq(&:id).sort_by(&:id).each(&:lock!)
           seat_session = order.seat_hold_session
           seat_session&.lock!
           seat_hold_invalid = seat_session && (!seat_session.status_claimed? || seat_session.expires_at <= Time.current)

@@ -22,7 +22,9 @@ module Commerce
 
       # The receipt, capture, inventory and tickets commit together. A crash
       # cannot leave a completed sale without the identity needed to recover it.
-      event.with_lock do
+      # Keep the outer reservation lock compatible with seat-release audit
+      # FK checks; a nested weaker lock cannot downgrade FOR UPDATE.
+      event.with_lock("FOR NO KEY UPDATE") do
         existing = Order.find_by(cash_sale_key: key) if key
         next replay(existing) if existing
 

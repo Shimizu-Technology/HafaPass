@@ -260,6 +260,7 @@ module Admissions
       return "cancelled" if ticket.cancelled?
       return "transferred" if ticket.transferred?
       return "payment_blocked" if ticket.order.ticket_access_blocked?
+      return "refund_pending" if ticket.refund_pending?
       return "unfulfilled" unless ticket.order.ticket_fulfilled?
       return "event_unavailable" unless ticket.event.published?
 

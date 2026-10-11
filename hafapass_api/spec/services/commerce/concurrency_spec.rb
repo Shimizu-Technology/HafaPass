@@ -421,6 +421,296 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(event_seat.seat_holds.status_active.count).to eq(1)
   end
 
+  %i[online box_office].each do |channel|
+    it "serializes public seat release against a #{channel} checkout claiming the same session" do
+      event, ticket_type, seat = assigned_inventory
+      hold = Seating::HoldAllocator.call(event: event, event_seat_ids: [seat.id], accessibility_attested: false)
+      release_checked = Queue.new
+      continue_release = Queue.new
+      checkout_lock = Queue.new
+      release_results = Queue.new
+      checkout_results = Queue.new
+      allow_any_instance_of(SeatHold).to receive(:update!).and_wrap_original do |original, attributes|
+        if Thread.current[:inventory_role] == :release && attributes[:status] == :released
+          # Both the session guard and hold SELECT have completed. Pause before
+          # the first mutation, while checkout attempts the same real DB rows.
+          release_checked << true
+          continue_release.pop
+        end
+        original.call(attributes)
+      end
+      allow_any_instance_of(SeatHoldSession).to receive(:lock!).and_wrap_original do |original, *args|
+        if Thread.current[:inventory_role] == :checkout
+          checkout_lock << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()")
+        end
+        original.call(*args)
+      end
+      release_thread = inventory_worker(:release, release_results) do
+        request = ActionDispatch::Integration::Session.new(Rails.application)
+        request.delete "/api/v1/events/#{event.slug}/seat_holds", params: { token: hold.token }, as: :json
+        [request.response.status, request.response.parsed_body.slice("status", "error", "errors")]
+      end
+      Timeout.timeout(5) { release_checked.pop }
+      checkout_thread = inventory_worker(:checkout, checkout_results) do
+        if channel == :online
+          Commerce::OrderCreator.call(event: Event.find(event.id),
+            line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+            buyer_name: "Synthetic Seat Buyer", buyer_email: "seat@synthetic.invalid", seat_hold_token: hold.token)
+        else
+          Commerce::CashSaleCreator.call(event: Event.find(event.id), user: event.organizer_profile.user,
+            parameters: { line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+              buyer_name: "Synthetic Seat Buyer", buyer_email: "seat@synthetic.invalid",
+              payment_method: "door_cash", seat_hold_token: hold.token }, idempotency_key: "synthetic-release-cash")
+        end
+      end
+      pid = Timeout.timeout(5) { checkout_lock.pop }
+      wait_for_database_lock_or_result(pid, checkout_results)
+      continue_release << true
+      Timeout.timeout(10) { [release_thread, checkout_thread].each(&:join) }
+      release_result = release_results.pop
+      checkout_result = checkout_results.pop
+
+      expect(release_result.first).to eq(200),
+        "release=#{release_result.inspect}, checkout=#{checkout_result.class}, session=#{hold.session.reload.status}"
+      expect(checkout_result).to be_a(Commerce::OrderCreator::CheckoutError),
+        "checkout=#{checkout_result.class}, session=#{hold.session.reload.status}, orders=#{Order.count}"
+      expect(checkout_result.message).to include("invalid or expired")
+      expect(Order.count).to eq(0)
+      expect(hold.session.reload).to be_status_released
+      expect(hold.session.seat_holds).to all(be_status_released)
+      expect(seat.reload).to be_selectable
+    ensure
+      continue_release << true if continue_release&.empty?
+      [release_thread, checkout_thread].compact.each { |thread| thread.kill if thread.alive? }
+    end
+  end
+
+  it "finishes a claimed seat payment while a reused hold checkout waits without deadlocking" do
+    event, ticket_type, seat = assigned_inventory
+    hold = Seating::HoldAllocator.call(event: event, event_seat_ids: [seat.id], accessibility_attested: false)
+    original = Commerce::OrderCreator.call(event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }], buyer_name: "Original Buyer",
+      buyer_email: "original@synthetic.invalid", seat_hold_token: hold.token)
+    finalization_locked = Queue.new
+    continue_finalization = Queue.new
+    checkout_lock = Queue.new
+    finalization_results = Queue.new
+    checkout_results = Queue.new
+    pause_seat_finalization(finalization_locked, continue_finalization)
+    finalization_thread = inventory_worker(:finalize, finalization_results) do
+      Commerce::OrderLifecycle.complete!(Order.find(original.order.id), payment: Payment.find(original.payment.id),
+        provider_amount_cents: original.order.total_cents, provider_currency: original.order.currency)
+    end
+    Timeout.timeout(5) { finalization_locked.pop }
+    checkout_thread = inventory_worker(:checkout, checkout_results) do
+      checkout_lock << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()")
+      Commerce::OrderCreator.call(event: Event.find(event.id),
+        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }], buyer_name: "Competing Buyer",
+        buyer_email: "competing@synthetic.invalid", seat_hold_token: hold.token)
+    end
+    pid = Timeout.timeout(5) { checkout_lock.pop }
+    wait_for_database_lock_or_result(pid, checkout_results)
+    continue_finalization << true
+    Timeout.timeout(10) { [finalization_thread, checkout_thread].each(&:join) }
+
+    expect(finalization_results.pop).to eq(:completed)
+    expect(checkout_results.pop).to be_a(Commerce::OrderCreator::CheckoutError)
+    expect(Order.count).to eq(1)
+    expect(original.order.reload).to be_completed
+    expect(hold.session.reload).to be_status_consumed
+    expect(seat.tickets.count).to eq(1)
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+  ensure
+    continue_finalization << true if continue_finalization&.empty?
+    [finalization_thread, checkout_thread].compact.each { |thread| thread.kill if thread.alive? }
+  end
+
+  it "keeps a payment-finalized seat consumed when an independent public release waits" do
+    event, ticket_type, seat = assigned_inventory
+    hold = Seating::HoldAllocator.call(event: event, event_seat_ids: [seat.id], accessibility_attested: false)
+    original = Commerce::OrderCreator.call(event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }], buyer_name: "Final Buyer",
+      buyer_email: "final@synthetic.invalid", seat_hold_token: hold.token)
+    finalization_locked = Queue.new
+    continue_finalization = Queue.new
+    release_lock = Queue.new
+    finalization_results = Queue.new
+    release_results = Queue.new
+    allow_any_instance_of(SeatHoldSession).to receive(:lock!).and_wrap_original do |method, *args|
+      release_lock << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()") if Thread.current[:inventory_role] == :release
+      result = method.call(*args)
+      if Thread.current[:inventory_role] == :finalize && !Thread.current[:paused_finalization]
+        Thread.current[:paused_finalization] = true
+        finalization_locked << true
+        continue_finalization.pop
+      end
+      result
+    end
+    finalization_thread = inventory_worker(:finalize, finalization_results) do
+      Commerce::OrderLifecycle.complete!(Order.find(original.order.id), payment: Payment.find(original.payment.id),
+        provider_amount_cents: original.order.total_cents, provider_currency: original.order.currency)
+    end
+    Timeout.timeout(5) { finalization_locked.pop }
+    release_thread = inventory_worker(:release, release_results) do
+      request = ActionDispatch::Integration::Session.new(Rails.application)
+      request.delete "/api/v1/events/#{event.slug}/seat_holds", params: { token: hold.token }, as: :json
+      [request.response.status, request.response.parsed_body.slice("status", "error", "errors")]
+    end
+    pid = Timeout.timeout(5) { release_lock.pop }
+    wait_for_database_lock_or_result(pid, release_results)
+    continue_finalization << true
+    Timeout.timeout(10) { [finalization_thread, release_thread].each(&:join) }
+
+    expect(finalization_results.pop).to eq(:completed)
+    expect(release_results.pop).to eq([200, { "status" => "consumed" }])
+    expect(hold.session.reload).to be_status_consumed
+    expect(hold.session.seat_holds).to all(be_status_consumed)
+    expect(seat.tickets.count).to eq(1)
+    expect(seat.reload).not_to be_selectable
+  ensure
+    continue_finalization << true if continue_finalization&.empty?
+    [finalization_thread, release_thread].compact.each { |thread| thread.kill if thread.alive? }
+  end
+
+  def pause_seat_finalization(ready, resume)
+    allow_any_instance_of(SeatHoldSession).to receive(:lock!).and_wrap_original do |method, *args|
+      result = method.call(*args)
+      if Thread.current[:inventory_role] == :finalize && !Thread.current[:paused_finalization]
+        Thread.current[:paused_finalization] = true
+        ready << true
+        resume.pop
+      end
+      result
+    end
+  end
+
+  it "prevents online admission while a selected refund is in flight before releasing its seat" do
+    event, ticket_type, seat = assigned_inventory
+    ticket_type.update!(quantity_sold: 1)
+    order = create(:order, event: event, subtotal_cents: 2500, service_fee_cents: 0, total_cents: 2500)
+    item = create(:order_item, order: order, ticket_type: ticket_type, fee_cents: 0)
+    ticket = create(:ticket, event: event, ticket_type: ticket_type, event_seat: seat, order: order, order_item: item)
+    create(:payment, :succeeded, order: order, amount_cents: 2500, provider_payment_id: "sim_pi_selected_refund_race")
+    actor = event.organizer_profile.user
+    device = create(:scanner_device, organization: event.organization, event: event, user: actor)
+    manifest = Admissions::ManifestBuilder.call(event: event, actor: actor)
+    entry = manifest.payload.fetch("tickets").find { |candidate| candidate.fetch("ticket_id") == ticket.id }
+    provider_started = Queue.new
+    continue_provider = Queue.new
+    refund_results = Queue.new
+    allow(StripeService).to receive(:refund_payment) do |*args, **kwargs|
+      provider_started << true
+      continue_provider.pop
+      OpenStruct.new(id: "sim_re_selected_refund_race", status: "succeeded", amount: kwargs.fetch(:amount_cents), currency: "usd")
+    end
+    refund_thread = inventory_worker(:refund, refund_results) do
+      Commerce::RefundCreator.call(order: Order.find(order.id), tickets: [Ticket.find(ticket.id)],
+        idempotency_key: "synthetic-selected-refund-race")
+    end
+    Timeout.timeout(5) { provider_started.pop }
+    admission = Admissions::Reconciler.call(device: device, actor: actor, actions: [{
+      action_uuid: "synthetic-refund-overlap", kind: "admit", source: "online", sequence: 1,
+      manifest_version: manifest.version, occurred_at: Time.current.iso8601(6), ticket_id: ticket.id,
+      credential_hash: entry.fetch("credential_hash")
+    }]).first.action
+    admitted_before_refund = ticket.reload.checked_in?
+    continue_provider << true
+    Timeout.timeout(10) { refund_thread.join }
+    refund = refund_results.pop
+    replacement_hold = Seating::HoldAllocator.call(event: Event.find(event.id), event_seat_ids: [seat.id], accessibility_attested: false)
+
+    expect(refund).to be_a(Refund)
+    expect(admission).to be_result_rejected,
+      "admission=#{admission.result}, entered=#{admitted_before_refund}, ticket=#{ticket.reload.status}, replacement_hold=#{replacement_hold.session.status}"
+    expect(admission.reason_code).to eq("refund_pending")
+    expect(admitted_before_refund).to be(false)
+    expect(ticket.reload).to be_cancelled
+    expect(refund.reload).to be_succeeded
+    expect(ticket_type.reload.quantity_sold).to eq(0)
+    expect(replacement_hold.session).to be_status_active
+  ensure
+    continue_provider << true if continue_provider&.empty?
+    refund_thread&.kill if refund_thread&.alive?
+  end
+
+  it "refuses a selected refund if admission commits first without contacting the provider" do
+    event, ticket_type, seat = assigned_inventory
+    ticket_type.update!(quantity_sold: 1)
+    order = create(:order, event: event, subtotal_cents: 2500, service_fee_cents: 0, total_cents: 2500)
+    item = create(:order_item, order: order, ticket_type: ticket_type, fee_cents: 0)
+    ticket = create(:ticket, event: event, ticket_type: ticket_type, event_seat: seat, order: order, order_item: item)
+    create(:payment, :succeeded, order: order, amount_cents: 2500, provider_payment_id: "sim_pi_admission_first")
+    admission_checked = Queue.new
+    continue_admission = Queue.new
+    refund_started = Queue.new
+    admission_results = Queue.new
+    refund_results = Queue.new
+    allow(StripeService).to receive(:refund_payment)
+    allow_any_instance_of(Ticket).to receive(:update!).and_wrap_original do |method, attributes|
+      if Thread.current[:inventory_role] == :admit && attributes[:status] == :checked_in
+        admission_checked << true
+        continue_admission.pop
+      end
+      method.call(attributes)
+    end
+    admission_thread = inventory_worker(:admit, admission_results) { Ticket.find(ticket.id).check_in! }
+    Timeout.timeout(5) { admission_checked.pop }
+    refund_thread = inventory_worker(:refund, refund_results) do
+      refund_started << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()")
+      Commerce::RefundCreator.call(order: Order.find(order.id), tickets: [Ticket.find(ticket.id)],
+        idempotency_key: "synthetic-admission-first-refund")
+    end
+    pid = Timeout.timeout(5) { refund_started.pop }
+    wait_for_database_lock_or_result(pid, refund_results)
+    continue_admission << true
+    Timeout.timeout(10) { [admission_thread, refund_thread].each(&:join) }
+
+    expect(admission_results.pop).to be(true)
+    expect(refund_results.pop).to be_a(Commerce::RefundCreator::RefundError)
+    expect(ticket.reload).to be_checked_in
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(order.refunds.count).to eq(0)
+    expect(StripeService).not_to have_received(:refund_payment)
+    expect(seat.reload).not_to be_selectable
+  ensure
+    continue_admission << true if continue_admission&.empty?
+    [admission_thread, refund_thread].compact.each { |thread| thread.kill if thread.alive? }
+  end
+
+  def assigned_inventory
+    profile = create(:organizer_profile)
+    venue = create(:venue)
+    event = create(:event, :published, organizer_profile: profile, venue: venue,
+      starts_at: 5.days.from_now, max_capacity: 1)
+    ticket_type = create(:ticket_type, event: event, quantity_available: 1, price_cents: 2500)
+    layout = create(:venue_layout, organization: event.organization, venue: venue)
+    zone = create(:seating_price_zone, venue_layout: layout)
+    row = create(:seating_row, seating_section: create(:seating_section, venue_layout: layout))
+    create(:venue_seat, seating_row: row, seating_price_zone: zone)
+    configuration = Seating::ConfigurationActivator.call(event: event, venue_layout: layout,
+      zone_ticket_types: { zone.id => ticket_type.id }, actor: profile.user)
+    [event, ticket_type, configuration.event_seats.first]
+  end
+
+  def inventory_worker(role, results)
+    Thread.new do
+      Thread.current[:inventory_role] = role
+      ActiveRecord::Base.connection_pool.with_connection { results << yield }
+    rescue StandardError => error
+      results << error
+    end
+  end
+
+  def wait_for_database_lock_or_result(pid, results)
+    Timeout.timeout(5) do
+      loop do
+        break if !results.empty? || ActiveRecord::Base.connection.select_value("SELECT cardinality(pg_blocking_pids(#{Integer(pid)}))").positive?
+
+        sleep 0.01
+      end
+    end
+  end
+
   def run_concurrently(count)
     ready = Queue.new
     start = Queue.new

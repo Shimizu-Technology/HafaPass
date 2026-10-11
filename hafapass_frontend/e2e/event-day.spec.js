@@ -102,6 +102,41 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
   await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
 })
 
+test('online scanner waits neutrally before accepted and refused acknowledgements', async ({ page }) => {
+  const credentials = ['online-accepted-secret', 'online-refused-secret']
+  const manifest = signedManifest(credentials.map((credential, index) => ({ ticket_id: index + 1, code: `HP-T${index + 1}`,
+    credential_hash: crypto.createHash('sha256').update(credential).digest('hex'), attendee_name: 'Synthetic Guest',
+    ticket_type: 'General Admission', state: 'valid' })))
+  const device = { id: 8, identifier: 'online-wait-test', effective: true, status: 'active', last_sequence: 0,
+    authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+  const held = []
+  await page.route('**/api/v1/organizer/events', route => json(route, { events: [{ id: 42, title: 'Guam Night Market' }] }))
+  await page.route('**/api/v1/organizer/events/42/scanner_devices', route => json(route, device, 201))
+  await page.route('**/api/v1/organizer/events/42/scanner_devices/8/manifest', route => json(route, manifest))
+  await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, { counts: {}, permissions: {}, recent_actions: [] }))
+  await page.route('**/api/v1/organizer/events/42/scanner_devices/8/sync', route => { held.push(route) })
+  await page.goto('/dashboard/scanner?event=42')
+  await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
+  for (const [index, verdict] of ['accepted', 'rejected'].entries()) {
+    await page.getByLabel('Ticket QR credential').fill(credentials[index])
+    await page.getByRole('button', { name: 'Validate' }).click()
+    const waiting = page.getByRole('status').filter({ hasText: 'Waiting for server confirmation' })
+    await expect(waiting).toBeVisible()
+    await expect(waiting).toHaveClass(/bg-neutral-50/)
+    await expect(page.getByText('Admission confirmed', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('Admitted — syncing', { exact: true })).toHaveCount(0)
+    await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
+    await expect.poll(() => held.length).toBe(index + 1)
+    const actions = held[index].request().postDataJSON().actions
+    expect(actions).toHaveLength(1)
+    expect(actions[0]).toMatchObject({ ticket_id: index + 1, kind: 'admit', source: 'online' })
+    await json(held[index], { device: { ...device, last_sequence: actions[0].sequence }, summary: {},
+      results: actions.map(action => ({ ...action, result: verdict, reason_code: verdict === 'accepted' ? 'admitted' : 'refund_pending' })) })
+    await expect(page.getByText(verdict === 'accepted' ? 'Admission confirmed' : 'Refund pending — do not admit', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
+  }
+})
+
 for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
   test(`manager identifies same-name tickets and selects the correct Undo at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport)

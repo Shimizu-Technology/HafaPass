@@ -281,13 +281,15 @@ function TicketContent({ authContext }) {
   const formatTime = (dateStr) => formatEventTime(dateStr, event?.timezone)
 
   const statusConfig = {
+    access_paused: { label: 'Access paused', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500' },
     issued: { label: 'Valid', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
     checked_in: { label: 'Used', bg: 'bg-neutral-100', text: 'text-neutral-600', border: 'border-neutral-200', dot: 'bg-neutral-400' },
     cancelled: { label: 'Cancelled', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
     transferred: { label: 'Transferred', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500' },
   }
 
-  const status = statusConfig[ticket.status] || statusConfig.issued
+  const accessPaused = ticket.status === 'issued' && (ticket.admission_allowed === false || Boolean(ticket.admission_block_reason))
+  const status = accessPaused ? statusConfig.access_paused : statusConfig[ticket.status] || statusConfig.issued
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
 
   return (
@@ -325,7 +327,7 @@ function TicketContent({ authContext }) {
           {/* Status Badge */}
           <div className={`px-4 py-2.5 ${status.bg} ${status.border} border-b text-center`}>
             <span className={`inline-flex items-center gap-2 text-sm font-semibold ${status.text}`}>
-              <span className={`w-2 h-2 rounded-full ${status.dot} ${ticket.status === 'issued' ? 'animate-pulse' : ''}`} />
+              <span className={`w-2 h-2 rounded-full ${status.dot} ${ticket.status === 'issued' && !accessPaused ? 'animate-pulse' : ''}`} />
               {status.label}
             </span>
             {ticket.status === 'checked_in' && ticket.checked_in_at && (
