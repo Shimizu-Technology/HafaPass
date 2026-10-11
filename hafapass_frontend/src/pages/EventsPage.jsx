@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Loader2, Search, Music, UtensilsCrossed, Trophy, Users, Sparkles, Moon, CalendarPlus, Ticket } from 'lucide-react'
+import { Search, Music, UtensilsCrossed, Trophy, Users, Sparkles, Moon, CalendarPlus, Ticket } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
 import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
-import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
 import useEventCategories from '../hooks/useEventCategories'
 import { PUBLIC_WEB_URL } from '../utils/site'
@@ -96,43 +95,41 @@ export default function EventsPage() {
   const clearFilters = () => { setSearch(''); setActiveCategory('all'); setDateRange('upcoming'); setPrice('all'); setVillage(''); setPage(1) }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-stone-50">
       <SEO
         title="Browse Events"
         description="Discover what's happening on Guam. Browse concerts, nightlife, festivals, dining, sports, and more."
         url={`${PUBLIC_WEB_URL}/events`}
       />
-      {/* Dark Header Section */}
-      <div className="bg-neutral-950 pt-8 pb-12 sm:pb-16 relative">
-        <NoiseOverlay />
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-[2]">
-          <div className="text-center mb-8">
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">Events</h1>
-            <p className="text-neutral-400 text-lg">Discover what's happening on Guam</p>
-          </div>
+      {/* Event guide header */}
+      <div className="border-b border-neutral-200 bg-stone-50 py-8 sm:py-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div>
+            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950 mb-2">Events</h1>
+            <p className="text-content-muted text-base">Discover what's happening on Guam</p>
+          </div><Link to="/dashboard" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">For event organizers</Link></div>
 
           {/* Search bar */}
-          <div className="max-w-lg mx-auto">
+          <div className="max-w-2xl">
+            <label htmlFor="browse-event-search" className="mb-2 block text-sm font-medium text-neutral-800">Search events and venues</label>
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
+              <Search aria-hidden="true" className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
               <input
+                id="browse-event-search"
                 type="text"
                 aria-label="Search events and venues"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                 placeholder="Search events, venues..."
-                className="w-full pl-12 pr-4 py-3.5 text-sm rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500/40 transition-all"
+                className="input min-h-12 !pl-12"
               />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Gradient transition */}
-      <div className="h-px bg-gradient-to-r from-transparent via-brand-500/20 to-transparent" />
-
       {/* Light content area */}
-      <div className="bg-neutral-50 min-h-[50vh]">
+      <div className="bg-stone-50 min-h-[50vh]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Responsive discovery filters */}
           <div className="flex flex-col gap-4 mb-8">
@@ -144,13 +141,13 @@ export default function EventsPage() {
                 key={value}
                 onClick={() => changeCategory(value)}
                 aria-pressed={activeCategory === value}
-                className={`inline-flex min-h-11 items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                className={`inline-flex min-h-11 items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 ${
                   activeCategory === value
-                    ? 'bg-brand-600 text-white shadow-md shadow-brand-500/20'
+                    ? 'bg-brand-700 text-white'
                     : 'bg-white text-neutral-600 border border-neutral-200 hover:border-brand-300 hover:text-brand-600'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon aria-hidden="true" className="w-4 h-4" />
                 {label}
               </button>
             )})}
@@ -158,14 +155,14 @@ export default function EventsPage() {
            <div className="grid grid-cols-2 gap-3 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]">
             <div className="col-span-2 min-w-0 sm:hidden">
              <label htmlFor="event-category" className="mb-1 block text-sm font-medium text-neutral-600">Category</label>
-             <select id="event-category" value={activeCategory} onChange={event => changeCategory(event.target.value)} className="input min-h-11 !py-2 text-sm !px-3">
+             <select id="event-category" value={activeCategory} onChange={event => changeCategory(event.target.value)} className="input min-h-11 !py-2 text-base !px-3">
               <option value="all">All Events</option>
               {categories.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
              </select>
             </div>
             <div className="min-w-0">
              <label htmlFor="event-date-range" className="mb-1 block text-sm font-medium text-neutral-600">When</label>
-             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-sm !px-2 sm:text-base sm:!px-4">
+             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !px-2 sm:!px-4">
              <option value="upcoming">All upcoming</option>
              <option value="today">Today</option>
              <option value="tonight">Tonight</option>
@@ -175,20 +172,20 @@ export default function EventsPage() {
             </div>
             <div className="min-w-0">
              <label htmlFor="event-price" className="mb-1 block text-sm font-medium text-neutral-600">Price</label>
-             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-sm !px-2 sm:text-base sm:!px-4"><option value="all">Any price</option><option value="free">Free</option><option value="under_25">Under $25</option><option value="under_50">Under $50</option></select>
+             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !px-2 sm:!px-4"><option value="all">Any price</option><option value="free">Free</option><option value="under_25">Under $25</option><option value="under_50">Under $50</option></select>
             </div>
             <div className="min-w-0 col-span-2 lg:col-span-1">
              <label htmlFor="event-village" className="mb-1 block text-sm font-medium text-neutral-600">Village</label>
              <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="">All villages</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
             </div>
            </div>
-           {!loading && !loadError && <span className="text-sm text-neutral-500">{meta.total_count} event{meta.total_count === 1 ? '' : 's'}</span>}
+           {!loading && !loadError && <span role="status" className="text-sm text-content-muted">{meta.total_count} event{meta.total_count === 1 ? '' : 's'}</span>}
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div role="status" aria-label="Loading events"><p className="sr-only">Loading events…</p><div aria-hidden="true" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {Array.from({ length: 6 }).map((_, i) => <EventCardSkeleton key={i} />)}
-            </div>
+            </div></div>
           ) : loadError ? (
             <div role="alert" className="rounded-2xl border border-neutral-200 bg-white p-6 sm:p-10 text-center">
               <h2 className="text-xl font-bold text-neutral-900 mb-2">Couldn't load events</h2>
@@ -199,27 +196,16 @@ export default function EventsPage() {
             <motion.div
               initial={false}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-neutral-200 bg-white p-12 sm:p-16 text-center"
+              className="rounded-xl border border-neutral-200 bg-white px-5 py-8 sm:p-10 text-center"
             >
-              {/* Icon grid */}
-              <div className="flex items-center justify-center gap-3 mb-6">
-                {[Music, UtensilsCrossed, Trophy, Moon, Sparkles].map((Icon, i) => (
-                  <div
-                    key={i}
-                    className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center"
-                    style={{ animationDelay: `${i * 0.1}s` }}
-                  >
-                    <Icon className="w-5 h-5 text-brand-500" />
-                  </div>
-                ))}
-              </div>
+              <Ticket aria-hidden="true" className="mx-auto mb-4 h-8 w-8 text-brand-800" />
 
               <h2 className="text-xl font-bold text-neutral-900 mb-2">
                 {search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village ? 'No matching events' : 'No events yet'}
               </h2>
               <p className="text-neutral-600 max-w-md mx-auto mb-8">
                 {!search && activeCategory === 'all' && dateRange === 'upcoming' && price === 'all' && !village
-                  ? "Events on Guam will show up here. Be the first to create one and get the island buzzing!"
+                  ? "There are no upcoming events listed right now. Check back for new dates, or set up your own event."
                   : "Try adjusting your search or filters to find what you're looking for."
                 }
               </p>
@@ -227,17 +213,17 @@ export default function EventsPage() {
               {!search && activeCategory === 'all' && dateRange === 'upcoming' && price === 'all' && !village && (
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
-                    to="/sign-up"
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-brand-600 text-white rounded-xl font-semibold transition-all hover:bg-brand-700 hover:shadow-lg hover:shadow-brand-500/20"
+                    to="/dashboard"
+                    className="inline-flex min-h-11 items-center gap-2 px-5 py-3 bg-action text-white rounded-lg font-semibold hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
                   >
-                    <CalendarPlus className="w-4 h-4" />
+                    <CalendarPlus aria-hidden="true" className="w-4 h-4" />
                     Create an Event
                   </Link>
                   <Link
                     to="/"
-                    className="text-neutral-500 hover:text-neutral-900 font-medium transition-colors"
+                    className="inline-flex min-h-11 items-center rounded text-content-muted hover:text-brand-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
                   >
-                    Learn More
+                    Back to event guide
                   </Link>
                 </div>
               )}
@@ -245,7 +231,7 @@ export default function EventsPage() {
               {(search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village) && (
                 <button
                   onClick={clearFilters}
-                  className="min-h-11 text-brand-700 hover:text-brand-800 font-medium transition-colors"
+                  className="min-h-11 rounded px-3 text-brand-800 hover:bg-brand-50 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
                 >
                   Clear filters
                 </button>

@@ -1,29 +1,47 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link } from 'react-router-dom'
-import { Calendar, MapPin, ArrowRight, Clock, Sparkles } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Calendar, MapPin, ArrowRight, Clock, Search, Music, UtensilsCrossed, Trophy, Users, Moon, GraduationCap } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
-import { FadeUp } from '../components/ui/ScrollReveal'
-import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatTicketPrice, lowestPurchasablePrice } from '../utils/ticketPricing'
 
-const CATEGORY_IMAGES = [
-  { name: 'Nightlife', slug: 'nightlife', image: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=800' },
-  { name: 'Food & Drink', slug: 'dining', image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800' },
-  { name: 'Music & Concerts', slug: 'concert', image: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=800' },
-  { name: 'Sports', slug: 'sports', image: 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=800' },
-  { name: 'Festivals & Culture', slug: 'festival', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800' },
-  { name: 'Classes & Workshops', slug: 'workshop', image: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=800' },
+const categories = [
+  { name: 'Nightlife', slug: 'nightlife', icon: Moon },
+  { name: 'Food & Drink', slug: 'dining', icon: UtensilsCrossed },
+  { name: 'Music & Concerts', slug: 'concert', icon: Music },
+  { name: 'Sports', slug: 'sports', icon: Trophy },
+  { name: 'Festivals & Culture', slug: 'festival', icon: Users },
+  { name: 'Classes & Workshops', slug: 'workshop', icon: GraduationCap },
 ]
 
-function getLowestPrice(ticketTypes) {
-  return formatTicketPrice(lowestPurchasablePrice(ticketTypes))
+function priceLabel(ticketTypes) {
+  const price = formatTicketPrice(lowestPurchasablePrice(ticketTypes))
+  return price === 'Free' ? price : price ? `From ${price}` : ''
+}
+
+function EventArtwork({ event, className, priority = false }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <div className={`overflow-hidden rounded-lg bg-neutral-100 ${className}`}>
+      {event.cover_image_url && !failed ? (
+        <img src={event.cover_image_url} alt={`Artwork for ${event.title}`} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
+          onError={() => setFailed(true)} className="h-full w-full object-contain" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-brand-700">
+          <Calendar aria-hidden="true" className="h-7 w-7" />
+          <span className="sr-only">Event artwork unavailable</span>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function HomePage() {
+  const navigate = useNavigate()
   const [events, setEvents] = useState([])
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -43,251 +61,128 @@ export default function HomePage() {
     return () => { active = false }
   }, [loadAttempt])
 
-  const featuredEvent = useMemo(() => {
-    const featured = events
-      .filter(e => e.is_featured && new Date(e.starts_at) > new Date())
-      .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
-    return featured[0] || null
-  }, [events])
+  const featuredEvent = useMemo(() => events
+    .filter(event => event.is_featured && new Date(event.starts_at) > new Date())
+    .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))[0] || null, [events])
 
-  const { groupedEvents, sectionTitle } = useMemo(() => {
-    const upcoming = [...events]
-      .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
-    const filtered = upcoming.slice(0, 8)
-    const title = filtered.length ? 'Next Up on Guam' : ''
-
+  const groupedEvents = useMemo(() => {
     const grouped = {}
-    filtered.forEach(e => {
-      const key = formatEventDate(e.starts_at, e.timezone, { weekday: 'long' })
-      if (!grouped[key]) grouped[key] = []
-      grouped[key].push(e)
+    // Preserve the API's active-event eligibility and do not reorder its data in place.
+    ;[...events].sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at)).slice(0, 8).forEach(event => {
+      const day = formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })
+      if (!grouped[day]) grouped[day] = []
+      grouped[day].push(event)
     })
-
-    return { groupedEvents: grouped, sectionTitle: title }
+    return grouped
   }, [events])
-
-  const hasEvents = events.length > 0
-  const confirmedEmpty = !loading && !loadError && !hasEvents
   const dayKeys = Object.keys(groupedEvents)
+  const showFeatured = Boolean(featuredEvent) && !loading && !loadError
+
+  const browse = event => {
+    event.preventDefault()
+    const query = search.trim()
+    navigate(query ? `/events?${new URLSearchParams({ search: query })}` : '/events')
+  }
 
   return (
-    <div className="min-h-screen bg-neutral-950">
+    <div className="min-h-screen bg-stone-50 text-content">
       <SEO />
-      {/* ── Featured Event Hero ── */}
-      <section className={`relative overflow-hidden ${featuredEvent ? 'h-[85vh] min-h-[480px] sm:min-h-[560px] max-h-[800px]' : 'py-12 sm:py-20 lg:py-24'}`}>
-        <NoiseOverlay />
-        {featuredEvent ? (
-          <>
-            <div
-              className="absolute inset-0 bg-cover bg-center transition-transform duration-[8s] ease-out hover:scale-105"
-              style={{ backgroundImage: `url(${featuredEvent.cover_image_url})` }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/50 to-neutral-950/20" />
-            <div className="relative h-full flex items-end">
-              <div className="max-w-6xl mx-auto w-full px-6 lg:px-8 pb-16 lg:pb-20">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white/80 text-xs font-medium mb-6 border border-white/10">
-                  <Sparkles className="w-3.5 h-3.5 text-accent-400" />
-                  Featured Event
+      <section className="border-b border-neutral-200 py-8 sm:py-12 lg:py-16">
+        <div className={`mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 ${showFeatured ? 'grid items-center gap-8 lg:grid-cols-2 lg:gap-12' : ''}`}>
+          <div className="max-w-2xl">
+            <p className="mb-3 text-sm font-semibold text-brand-800">Your event guide on Guam</p>
+            <h1 className="font-display text-4xl font-bold leading-tight tracking-tight text-neutral-950 sm:text-5xl lg:text-[3.5rem]">Find your next event on Guam</h1>
+            <p className="mt-4 max-w-lg text-base leading-relaxed text-content-muted">Browse what's coming up, choose your tickets, and keep them ready for the door.</p>
+            <form role="search" onSubmit={browse} className="mt-6">
+              <label htmlFor="home-event-search" className="mb-2 block text-sm font-medium text-neutral-800">Event or venue</label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative min-w-0 flex-1">
+                  <Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-content-muted" />
+                  <input id="home-event-search" name="search" type="search" value={search} onChange={event => setSearch(event.target.value)}
+                    placeholder="Search events and venues" className="input min-h-12 !pl-10" />
                 </div>
-                <h1 className="font-display text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-4 max-w-3xl">
-                  {featuredEvent.title}
-                </h1>
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-white/70 text-base lg:text-lg mb-8">
-                  <span className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    {formatEventDate(featuredEvent.starts_at, featuredEvent.timezone, { weekday: 'long' })} · {formatEventTime(featuredEvent.starts_at, featuredEvent.timezone)}
-                  </span>
-                  {featuredEvent.venue_name && (
-                    <span className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4" />
-                      {featuredEvent.venue_name}{featuredEvent.venue_city ? `, ${featuredEvent.venue_city}` : ''}
-                    </span>
-                  )}
-                </div>
-                <Link
-                  to={`/events/${featuredEvent.slug || featuredEvent.id}`}
-                  className="btn-primary gap-2 !px-8 !py-4 text-lg"
-                >
-                  Get Tickets
-                  <ArrowRight className="w-5 h-5" />
-                </Link>
+                <button type="submit" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-action px-5 font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Search <ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
               </div>
+            </form>
+            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1">
+              <Link to="/events" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Browse Events <ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link>
+              <Link to="/dashboard" className="inline-flex min-h-11 items-center rounded text-sm font-medium text-content-muted hover:text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Start Hosting</Link>
             </div>
-          </>
-        ) : (
-          <>
-            <div className="absolute inset-0 bg-gradient-to-br from-brand-950 via-neutral-950 to-brand-900" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(13,158,150,0.15),transparent_60%)]" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(255,107,107,0.08),transparent_50%)]" />
-            <div className="relative h-full flex items-center justify-center text-center px-6">
-              <div>
-                <h1 className="font-display text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-6 max-w-3xl">
-                  {!confirmedEmpty ? (
-                    <>Discover Events on <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent">Guam</span></>
-                  ) : (
-                    <>Guam's Event Scene is About to <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent">Take Off</span></>
-                  )}
-                </h1>
-                <p className="text-lg lg:text-xl text-neutral-300 max-w-xl mx-auto mb-8">
-                  {!confirmedEmpty
-                    ? 'Your curated guide to everything happening on the island.'
-                    : 'The island\'s modern ticketing platform is here. Events are coming soon.'}
-                </p>
-                <Link
-                  to={confirmedEmpty ? '/dashboard' : '/events'}
-                  className="btn-primary gap-2 !px-8 !py-4 text-lg"
-                >
-                  {confirmedEmpty ? 'Start Hosting' : 'Browse Events'}
-                  <ArrowRight className="w-5 h-5" />
-                </Link>
-              </div>
-            </div>
-          </>
-        )}
-      </section>
+          </div>
 
-      {/* ── This Week on Guam ── */}
-      <section className="py-10 sm:py-16 lg:py-24 bg-neutral-950" aria-busy={loading}>
-        <div className="max-w-6xl mx-auto px-6 lg:px-8">
-          {dayKeys.length > 0 ? (
-            <>
-              <FadeUp>
-              <div className="flex items-end justify-between mb-12">
-                <h2 className="font-display text-3xl lg:text-4xl font-bold text-white tracking-tight">
-                  {sectionTitle}
-                </h2>
-                <Link to="/events" className="hidden sm:flex items-center gap-1.5 text-brand-400 hover:text-brand-300 font-medium transition-colors">
-                  View all <ArrowRight className="w-4 h-4" />
-                </Link>
+          {showFeatured && (
+            <article aria-label="Featured event" className="min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+              {featuredEvent.cover_image_url && <EventArtwork key={featuredEvent.cover_image_url} event={featuredEvent} priority className="aspect-[16/9] !rounded-none" />}
+              <div className="p-5 sm:p-6">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-800">Featured event</p>
+                <h2 className="break-words font-display text-2xl font-bold text-neutral-950">{featuredEvent.title}</h2>
+                <p className="mt-3 flex items-start gap-2 text-sm text-content-muted"><Calendar aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span>{formatEventDate(featuredEvent.starts_at, featuredEvent.timezone, { weekday: 'long' })} · {formatEventTime(featuredEvent.starts_at, featuredEvent.timezone)}</span></p>
+                {featuredEvent.venue_name && <p className="mt-2 flex items-start gap-2 text-sm text-content-muted"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="break-words">{featuredEvent.venue_name}{featuredEvent.venue_city ? `, ${featuredEvent.venue_city}` : ''}</span></p>}
+                {priceLabel(featuredEvent.ticket_types) && <p className="mt-3 text-sm font-semibold text-neutral-900">{priceLabel(featuredEvent.ticket_types)}</p>}
+                <Link to={`/events/${featuredEvent.slug || featuredEvent.id}`} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Get Tickets <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
               </div>
-              <div className="space-y-12">
-                {dayKeys.map(day => (
-                  <div key={day}>
-                    <h3 className="text-sm font-semibold uppercase tracking-widest text-brand-400 mb-5 pb-3 border-b border-white/10">
-                      {day}
-                    </h3>
-                    <div className="space-y-4">
-                      {groupedEvents[day].map(event => (
-                        <Link
-                          key={event.id}
-                          to={`/events/${event.slug || event.id}`}
-                          className="group flex flex-col sm:flex-row gap-4 sm:gap-6 p-3 -mx-3 rounded-xl hover:bg-white/5 transition-colors duration-200"
-                        >
-                          <div className="sm:w-48 lg:w-56 flex-shrink-0 aspect-[16/10] sm:aspect-[16/11] rounded-lg overflow-hidden bg-neutral-800">
-                            {event.cover_image_url ? (
-                              <img
-                                src={event.cover_image_url}
-                                alt={event.title}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-brand-800 to-brand-900 flex items-center justify-center">
-                                <Calendar className="w-8 h-8 text-brand-500/50" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex flex-col justify-center min-w-0 py-1">
-                            <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-300 mb-2">
-                              <span className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5" />
-                                {formatEventTime(event.starts_at, event.timezone)}
-                              </span>
-                              {event.venue_name && (
-                                <span className="flex items-center gap-1.5">
-                                  <MapPin className="w-3.5 h-3.5" />
-                                  {event.venue_name}
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="text-lg lg:text-xl font-semibold text-white group-hover:text-brand-400 transition-colors truncate">
-                              {event.title}
-                            </h4>
-                            {event.short_description && (
-                              <p className="text-sm text-neutral-300 mt-1 line-clamp-1">{event.short_description}</p>
-                            )}
-                            {getLowestPrice(event.ticket_types) && (
-                              <span className="mt-2 text-sm font-medium text-accent-400">
-                                {getLowestPrice(event.ticket_types) === 'Free' ? 'Free' : `From ${getLowestPrice(event.ticket_types)}`}
-                              </span>
-                            )}
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <Link to="/events" className="sm:hidden flex items-center justify-center gap-1.5 text-brand-400 hover:text-brand-300 font-medium mt-8 transition-colors">
-                View all events <ArrowRight className="w-4 h-4" />
-              </Link>
-              </FadeUp>
-            </>
-          ) : loading ? (
-            <p role="status" className="text-center text-neutral-300">Loading upcoming events…</p>
-          ) : loadError ? (
-            <div role="alert" className="text-center py-6">
-              <h2 className="text-xl font-semibold text-white mb-2">Events couldn’t load</h2>
-              <p className="text-neutral-300 mb-4">Please try again to see what’s coming up.</p>
-              <button onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">Retry events</button>
-            </div>
-          ) : (
-              <div className="text-center py-12">
-                <h2 className="font-display text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">This Week on Guam</h2>
-                <p className="text-neutral-300 text-lg">No events yet — check back soon!</p>
-              </div>
+            </article>
           )}
         </div>
       </section>
 
-      {/* ── Category Browsing ── */}
-      <section className="py-16 lg:py-24 bg-neutral-900/50">
-        <div className="max-w-6xl mx-auto px-6 lg:px-8">
-          <FadeUp>
-          <h2 className="font-display text-3xl lg:text-4xl font-bold text-white tracking-tight mb-12">
-            Explore by Category
-          </h2>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
-            {CATEGORY_IMAGES.map(cat => (
-              <Link
-                key={cat.slug}
-                to={`/events?category=${cat.slug}`}
-                className="group relative aspect-[4/3] rounded-xl overflow-hidden"
-              >
-                <img
-                  src={cat.image}
-                  alt={cat.name}
-                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent group-hover:from-black/80 transition-colors duration-300" />
-                <div className="absolute bottom-0 left-0 right-0 p-5">
-                  <h3 className="text-lg lg:text-xl font-bold text-white">{cat.name}</h3>
-                </div>
-              </Link>
-            ))}
+      <section aria-busy={loading} aria-labelledby="upcoming-heading" className="py-8 sm:py-12">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <h2 id="upcoming-heading" className="font-display text-2xl font-bold tracking-tight text-neutral-950 sm:text-3xl">Next Up on Guam</h2>
+            <Link to="/events" className="inline-flex min-h-11 items-center gap-2 rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">View all events <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
           </div>
-          </FadeUp>
+          {loading ? <p role="status" className="py-8 text-content-muted">Loading upcoming events…</p> : loadError ? (
+            <div role="alert" className="rounded-xl border border-neutral-200 bg-white p-6">
+              <h3 className="text-xl font-semibold text-neutral-900">Events couldn’t load</h3>
+              <p className="mt-2 text-content-muted">Please try again to see what's coming up.</p>
+              <button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary mt-4">Retry events</button>
+            </div>
+          ) : dayKeys.length ? (
+            <div className="space-y-8">
+              {dayKeys.map(day => (
+                <section key={day} aria-label={`Events on ${day}`}>
+                  <h3 className="border-b border-neutral-200 pb-3 text-sm font-semibold text-brand-800">{day}</h3>
+                  <div className="divide-y divide-neutral-200">
+                    {groupedEvents[day].map(event => (
+                      <Link key={event.id} to={`/events/${event.slug || event.id}`} className="group flex min-w-0 items-start gap-4 rounded-lg py-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
+                        <EventArtwork key={event.cover_image_url || event.id} event={event} className="h-20 w-20 shrink-0 sm:h-28 sm:w-40" />
+                        <div className="min-w-0 flex-1">
+                          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-content-muted"><span className="inline-flex items-center gap-1.5"><Clock aria-hidden="true" className="h-4 w-4" />{formatEventTime(event.starts_at, event.timezone)}</span>{event.venue_name && <span className="inline-flex min-w-0 items-start gap-1.5"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 break-words">{event.venue_name}</span></span>}</p>
+                          <h4 className="mt-2 break-words text-base font-semibold text-neutral-950 group-hover:text-brand-800 sm:text-xl">{event.title}</h4>
+                          {event.short_description && <p className="mt-1 line-clamp-2 text-sm text-content-muted">{event.short_description}</p>}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"><span className="font-semibold text-neutral-900">{priceLabel(event.ticket_types)}</span><span className="inline-flex min-h-8 items-center gap-1 font-medium text-brand-800">View event <ArrowRight aria-hidden="true" className="h-4 w-4" /></span></div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-neutral-200 bg-white p-6 sm:p-8">
+              <h3 className="text-xl font-semibold text-neutral-950">No upcoming events listed</h3>
+              <p className="mt-2 text-content-muted">Check back for new dates, or start setting up your own event.</p>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* ── Organizer CTA ── */}
-      <section className="py-20 lg:py-28 bg-neutral-950">
-        <div className="max-w-3xl mx-auto px-6 lg:px-8 text-center">
-          <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">
-            {confirmedEmpty ? 'Be the first to host an event on Guam' : 'Want to bring your event to Guam?'}
-          </h2>
-          <p className="text-neutral-300 text-lg mb-8">
-            Create your organizer profile and start selling tickets in minutes.
-          </p>
-          <Link
-            to="/dashboard"
-            className="btn-primary gap-2 !px-8 !py-4 text-lg"
-          >
-            Start Hosting
-            <ArrowRight className="w-5 h-5" />
-          </Link>
+      <section aria-labelledby="categories-heading" className="border-y border-neutral-200 bg-white py-8 sm:py-12">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <h2 id="categories-heading" className="mb-5 font-display text-2xl font-bold text-neutral-950">Explore by Category</h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {categories.map(({ name, slug, icon: Icon }) => <Link key={slug} to={`/events?category=${slug}`} className="flex min-h-14 items-center gap-3 rounded-lg border border-neutral-200 px-4 py-3 text-sm font-medium text-neutral-800 hover:border-brand-600 hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"><Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-brand-800" /><span>{name}</span><ArrowRight aria-hidden="true" className="ml-auto h-4 w-4 shrink-0" /></Link>)}
+          </div>
         </div>
       </section>
 
+      <section className="py-10 sm:py-12">
+        <div className="mx-auto flex max-w-6xl flex-col items-start gap-5 px-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <div><h2 className="font-display text-2xl font-bold text-neutral-950">Planning an event?</h2><p className="mt-2 max-w-xl text-content-muted">Set up your organizer profile, create an event, and prepare your tickets and team.</p></div>
+          <Link to="/dashboard" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg bg-action px-5 py-3 font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Start Hosting <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
+        </div>
+      </section>
       <Footer />
     </div>
   )
