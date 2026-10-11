@@ -70,11 +70,17 @@ function MobileNavigation({ groups, location, onClose, onNavigate }) {
   useEffect(() => {
     const dialog = ref.current
     const previous = document.activeElement
+    // StrictMode closes and reopens during effect verification. A native close
+    // event from that cleanup must not dismiss the newly reopened drawer.
     dialog.showModal()
     return () => { if (dialog.open) dialog.close(); if (previous?.isConnected) previous.focus() }
   }, [])
-  return <dialog ref={ref} aria-label="Event navigation" onCancel={onClose} onClose={onClose}
-    onClick={event => { if (event.target === ref.current) onClose() }}
+  return <dialog ref={ref} aria-label="Event navigation" onCancel={onClose}
+    onClick={event => {
+      if (event.target !== ref.current) return
+      const bounds = ref.current.getBoundingClientRect()
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose()
+    }}
     className="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-[min(88vw,20rem)] max-w-none overflow-y-auto border-0 bg-white p-4 backdrop:bg-black/40">
     <button type="button" onClick={onClose} className="mb-4 flex min-h-11 items-center gap-2 rounded-lg px-3 font-medium text-neutral-800"><X className="h-4 w-4" aria-hidden="true" />Close event navigation</button>
     <WorkspaceLinks groups={groups} location={location} onNavigate={onNavigate} />
