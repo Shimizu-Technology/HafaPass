@@ -124,4 +124,16 @@ describe('hosting entry navigation', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(apiClient.get).toHaveBeenCalledTimes(2)
   })
+  it('shows the available current tier with cents instead of the closed or sold-out cheap tickets', async () => {
+    apiClient.get.mockResolvedValue({ data: { events: [{ id: 1, slug: 'tiered', title: 'Tiered event',
+      starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [
+        { price_cents: 0, quantity_remaining: 0 },
+        { price_cents: 500, quantity_remaining: 10, on_sale: false },
+        { price_cents: 2000, current_price_cents: 1250, quantity_remaining: 10, on_sale: true },
+      ] }] } })
+    mount()
+    expect(await screen.findByText('From $12.50')).toBeInTheDocument()
+    expect(screen.queryByText('From $20')).not.toBeInTheDocument()
+  })
+
 })

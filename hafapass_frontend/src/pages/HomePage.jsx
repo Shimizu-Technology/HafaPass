@@ -7,6 +7,7 @@ import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatTicketPrice, lowestPurchasablePrice } from '../utils/ticketPricing'
 
 const CATEGORY_IMAGES = [
   { name: 'Nightlife', slug: 'nightlife', image: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=800' },
@@ -18,11 +19,7 @@ const CATEGORY_IMAGES = [
 ]
 
 function getLowestPrice(ticketTypes) {
-  if (!ticketTypes?.length) return null
-  const prices = ticketTypes.map(t => t.price_cents).filter(p => p != null)
-  if (!prices.length) return null
-  const min = Math.min(...prices)
-  return min === 0 ? 'Free' : `$${(min / 100).toFixed(0)}`
+  return formatTicketPrice(lowestPurchasablePrice(ticketTypes))
 }
 
 export default function HomePage() {

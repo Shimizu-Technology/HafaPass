@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams, useMatch, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
@@ -24,6 +24,7 @@ export default function EventDetailPage() {
 
 function EventDetailContent() {
   const { slug } = useParams()
+  const reducedMotion = useReducedMotion()
   const navigate = useNavigate()
   const match = useMatch('/events/:slug')
   const liveRoute = useRef(null)
@@ -39,6 +40,7 @@ function EventDetailContent() {
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [copied, setCopied] = useState(false)
   const [waitlistOffer, setWaitlistOffer] = useState(null)
   const waitlistOfferToken = searchParams.get('waitlist_offer')
@@ -61,9 +63,14 @@ function EventDetailContent() {
         trackFunnel(apiClient, res.data.id, 'event_view')
         setLoading(false)
       })
-      .catch(() => { if (current()) { setError('Event not found.'); setLoading(false) } })
+      .catch(error => { if (current()) {
+        setError(error.response?.status === 404
+          ? { message: 'Event not found.', retryable: false }
+          : { message: 'This event couldn’t load. Please try again.', retryable: true })
+        setLoading(false)
+      } })
     return () => { active = false }
-  }, [slug, isPreview, isLiveMoneyProof])
+  }, [slug, isPreview, isLiveMoneyProof, loadAttempt])
 
   useEffect(() => {
     if (!waitlistOfferToken) return undefined
@@ -151,7 +158,8 @@ function EventDetailContent() {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
   if (error) return (
     <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-      <p className="text-neutral-500 text-lg mb-4">{error}</p>
+      <p role="alert" className="text-neutral-700 text-lg mb-4">{error.message}</p>
+      {error.retryable && <button type="button" className="btn-primary mb-4" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry event</button>}
       <Link to="/events" className="btn-primary">Browse Events</Link>
     </div>
   )
@@ -208,7 +216,7 @@ function EventDetailContent() {
         noIndex={isLiveMoneyProof}
       />
       {/* Hero Section — full-width cover image with dark overlay */}
-      <div className="relative w-full h-[50vh] sm:h-[55vh] lg:h-[60vh] min-h-[340px] max-h-[600px] overflow-hidden bg-neutral-950">
+      <div className={`relative w-full overflow-hidden bg-neutral-950 ${event.cover_image_url ? 'min-h-[340px] sm:min-h-[400px]' : 'min-h-[260px]'}`}>
         {event.cover_image_url ? (
           <img
             src={event.cover_image_url}
@@ -222,10 +230,10 @@ function EventDetailContent() {
         <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/60 to-neutral-950/30" />
 
         {/* Content overlaid on hero */}
-        <div className="absolute inset-0 flex flex-col justify-end">
+        <div className="relative flex flex-col justify-end pt-16 sm:pt-24">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 sm:pb-10 w-full">
             {/* Back link */}
-            <Link to="/events" className="inline-flex items-center gap-1.5 text-neutral-400 hover:text-white mb-4 text-sm font-medium transition-colors">
+            <Link to="/events" className="inline-flex items-center gap-1.5 text-neutral-200 hover:text-white mb-4 text-sm font-medium transition-colors">
               <ArrowLeft className="w-4 h-4" /> All Events
             </Link>
 
@@ -234,12 +242,12 @@ function EventDetailContent() {
                 {event.category_label || event.category}
               </span>
             )}
-            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3">{event.title}</h1>
+            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3 break-words">{event.title}</h1>
 
             {/* Date & Venue on hero */}
-            <div className="flex flex-wrap items-center gap-4 text-neutral-300 text-sm">
+            <div className="flex flex-wrap items-center gap-4 text-neutral-200 text-sm">
               {event.starts_at && (
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Calendar className="w-4 h-4 text-brand-400" />
                   <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
                   <span className="text-neutral-500">·</span>
@@ -247,12 +255,13 @@ function EventDetailContent() {
                 </div>
               )}
               {event.venue_name && (
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <MapPin className="w-4 h-4 text-brand-400" />
                   <span>{event.venue_name}</span>
                 </div>
               )}
             </div>
+            <a href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">Choose tickets</a>
           </div>
         </div>
       </div>
@@ -266,10 +275,10 @@ function EventDetailContent() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Main content */}
             <motion.div
-              className="lg:col-span-2"
-              initial={{ opacity: 0, y: 20 }}
+              className="order-2 min-w-0 lg:order-1 lg:col-span-2"
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
+              transition={{ duration: reducedMotion ? 0 : 0.3 }}
             >
               {/* Action buttons */}
               <div className="flex flex-wrap items-center gap-2 mb-6">
@@ -292,7 +301,7 @@ function EventDetailContent() {
                   {copied ? 'Copied!' : 'Share'}
                 </button>
                 <button onClick={() => marketplaceAction('favorite')} aria-pressed={event.favorited} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
-                  <Heart className={`h-4 w-4 ${event.favorited ? 'fill-coral-500 text-coral-500' : ''}`} />{event.favorited ? 'Saved' : 'Save'}
+                  <Heart className={`h-4 w-4 ${event.favorited ? 'fill-accent-700 text-accent-700' : ''}`} />{event.favorited ? 'Saved' : 'Save'}
                 </button>
                 <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
                   <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-500' : ''}`} />{event.reminder ? 'Reminder set' : 'Remind me'}
@@ -357,10 +366,11 @@ function EventDetailContent() {
 
             {/* Sidebar - Tickets */}
             <motion.div
-              className="lg:col-span-1"
-              initial={{ opacity: 0, y: 20 }}
+              id="tickets"
+              className="order-1 min-w-0 scroll-mt-24 lg:order-2 lg:col-span-1"
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.15 }}
+              transition={{ duration: reducedMotion ? 0 : 0.3 }}
             >
               <div className="lg:sticky lg:top-24">
                 {waitlistOffer && !waitlistOffer.error && (
@@ -371,7 +381,7 @@ function EventDetailContent() {
                   </div>
                 )}
                 {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
-                <div className="card p-5">
+                <div className="card p-3 sm:p-5">
                   {event.assigned_seating ? (
                     <SeatSelector event={event} onReserved={handleSeatCheckout} />
                   ) : event.ticket_types && event.ticket_types.length > 0 ? (

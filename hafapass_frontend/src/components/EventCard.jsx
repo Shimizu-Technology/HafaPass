@@ -3,24 +3,15 @@ import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable } from '../utils/ticketPricing'
 
 export default function EventCard({ event }) {
   const { t } = useTranslation()
-  const lowestPrice = event.ticket_types?.reduce((min, tt) => {
-    const price = tt.current_price_cents ?? tt.price_cents
-    if (price === 0) return min === null ? 0 : Math.min(min, 0)
-    return min === null ? price : Math.min(min, price)
-  }, null)
-
-  const priceLabel = lowestPrice === null
-    ? ''
-    : lowestPrice === 0
-    ? t('events.free')
-    : `${t('events.from')} $${(lowestPrice / 100).toFixed(2)}`
-
-  // Check ticket availability
-  const totalAvailable = event.ticket_types?.reduce((sum, tt) => sum + (tt.quantity_remaining ?? 0), 0)
-  const hasAvailability = totalAvailable === undefined || totalAvailable > 0
+  const lowestPrice = lowestPurchasablePrice(event.ticket_types)
+  const priceLabel = lowestPrice === null ? ''
+    : lowestPrice === 0 ? t('events.free')
+    : `${t('events.from')} ${formatTicketPrice(lowestPrice)}`
+  const hasAvailability = !event.ticket_types || event.ticket_types.some(isTicketPurchasable)
 
   return (
     <Link
