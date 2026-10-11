@@ -1,6 +1,7 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 
 const STATUS_STYLES = {
@@ -72,15 +73,9 @@ export default function AttendeesPage() {
   const totalPages = meta?.total_pages || 1
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <Link to={`/dashboard/events/${id}/edit`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-          <ChevronLeft className="w-4 h-4" /> Back to Event
-        </Link>
-        <Link to={`/dashboard/events/${id}/analytics`} className="text-brand-500 hover:text-brand-700 text-sm font-medium">Analytics</Link>
-      </div>
+    <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
 
-      <h1 className="text-2xl font-bold text-neutral-900 mb-1">Attendees</h1>
+      <h2 className="text-2xl font-bold text-neutral-900 mb-1">Attendees</h2>
       {event && <p className="text-neutral-600 mb-6">{event.title}</p>}
 
       {error && (
@@ -184,6 +179,6 @@ export default function AttendeesPage() {
           )}
         </>
       )}
-    </div>
+    </div></EventWorkspace>
   )
 }

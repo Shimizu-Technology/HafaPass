@@ -33,7 +33,10 @@ beforeEach(() => {
 describe('ticket changes alongside an unsaved event draft', () => {
   it.each(['create', 'update', 'delete'])('preserves the draft and mounted editor during a pending %s refresh', async action => {
     const refresh = deferred()
-    apiClient.get.mockResolvedValueOnce({ data: event }).mockReturnValueOnce(refresh.promise)
+    let eventLoads = 0
+    apiClient.get.mockImplementation(path => path === '/organizer/organizations'
+      ? Promise.resolve({ data: [] })
+      : ++eventLoads === 1 ? Promise.resolve({ data: event }) : refresh.promise)
     const user = userEvent.setup()
     mount()
     const title = await screen.findByLabelText(/Event Title/)
@@ -71,8 +74,14 @@ describe('ticket changes alongside an unsaved event draft', () => {
   })
 
   it('retains the draft/list on refresh failure and retries without repeating the mutation', async () => {
-    apiClient.get.mockResolvedValueOnce({ data: event }).mockRejectedValueOnce(new Error('Synthetic outage'))
-      .mockResolvedValueOnce({ data: { ...event, ticket_types: [] } })
+    let eventLoads = 0
+    apiClient.get.mockImplementation(path => {
+      if (path === '/organizer/organizations') return Promise.resolve({ data: [] })
+      eventLoads += 1
+      if (eventLoads === 1) return Promise.resolve({ data: event })
+      if (eventLoads === 2) return Promise.reject(new Error('Synthetic outage'))
+      return Promise.resolve({ data: { ...event, ticket_types: [] } })
+    })
     const user = userEvent.setup()
     mount()
     await user.type(await screen.findByLabelText(/Event Title/), ' unsaved')
@@ -108,6 +117,23 @@ describe('event tool navigation follows server permissions', () => {
       else expect(screen.queryByRole('link', { name, exact: true })).not.toBeInTheDocument()
     }
   })
+  it('guards actual dirty editor navigation and clears the guard after a saved response', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? []
+      : { ...event, permissions: { ...event.permissions, manage_marketing: true } } }))
+    apiClient.put.mockImplementation((_path, payload) => Promise.resolve({ data: { ...event, ...payload,
+      permissions: { ...event.permissions, manage_marketing: true } } }))
+    mount()
+    await userEvent.type(await screen.findByLabelText(/Event Title/), ' unsaved')
+    await userEvent.click(screen.getByRole('link', { name: 'Promo codes', exact: true }))
+    expect(screen.getByRole('dialog', { name: 'Leave unsaved event changes?' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Stay and save' }))
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Saved title unsaved')
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    await userEvent.click(screen.getByRole('link', { name: 'Promo codes', exact: true }))
+    expect(screen.getByText('Tool destination')).toBeInTheDocument()
+  })
+
   it('opens a tool through its organizer link', async () => {
     apiClient.get.mockResolvedValue({ data: { ...event, permissions: { edit_event_content: true, manage_marketing: true } } })
     mount()

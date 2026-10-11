@@ -1,6 +1,7 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { Accessibility, AlertTriangle, ArrowLeft, Loader2, PauseCircle, PlayCircle } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { Accessibility, AlertTriangle, Loader2, PauseCircle, PlayCircle } from 'lucide-react'
 import apiClient from '../../api/client'
 
 const rowLabel = (index) => {
@@ -143,12 +144,9 @@ export default function SeatingManagementPage() {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <Link to={`/dashboard/events/${id}/edit`} className="mb-6 inline-flex items-center gap-1 text-sm font-medium text-brand-600">
-        <ArrowLeft className="h-4 w-4" /> Back to event
-      </Link>
+    <EventWorkspace eventId={id} event={event}><div className="mx-auto max-w-6xl">
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold text-neutral-950">Assigned seating</h1>
+        <h2 className="font-display text-3xl font-bold text-neutral-950">Assigned seating</h2>
         <p className="mt-1 text-neutral-600">{event?.title} · reusable layouts, accessible inventory, and live seat controls</p>
       </div>
       {error && <p className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">{error}</p>}
@@ -236,6 +234,6 @@ export default function SeatingManagementPage() {
         <p className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Accessibility and provider boundary</p>
         <p className="mt-1">Do not ask buyers for medical documentation. This native map remains the accessible purchasing path even when a visual chart provider is enabled.</p>
       </div>
-    </div>
+    </div></EventWorkspace>
   )
 }

@@ -1,3 +1,4 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { CheckCircle2, CircleAlert, Loader2, WalletCards } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
@@ -131,7 +132,7 @@ export default function EventAnalyticsPage() {
 
  if (error && !stats) {
   return (
-   <div className="max-w-4xl mx-auto px-4 py-8">
+   <div className="max-w-4xl mx-auto">
     <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
      {error}
     </div>
@@ -149,18 +150,10 @@ export default function EventAnalyticsPage() {
  const latestSettlement = finance?.settlements?.[0]
 
  return (
-  <div className="max-w-4xl mx-auto px-4 py-8">
+  <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
    {/* Header */}
-   <div className="mb-6 flex items-center justify-between">
-    <Link to={`/dashboard/events/${id}/edit`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-     </svg>
-     Back to Event
-    </Link>
-   </div>
 
-   <h1 className="text-2xl font-bold text-neutral-900 mb-1">Event Analytics</h1>
+   <h2 className="text-2xl font-bold text-neutral-900 mb-1">Event Analytics</h2>
    {event && (
     <p className="text-neutral-600 mb-6">{event.title}</p>
    )}
@@ -454,6 +447,6 @@ export default function EventAnalyticsPage() {
      </div>
     )}
    </div>
-  </div>
+  </div></EventWorkspace>
  )
 }

@@ -1,7 +1,8 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { currentScannerOwner } from '../../utils/admissionStore'
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
 import { supportMailto } from '../../utils/supportContact'
 
@@ -101,13 +102,10 @@ export default function RefundsPage() {
  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
 
  return (
-  <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-   <Link to={`/dashboard/events/${eventId}/analytics`} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
-    <ArrowLeft className="w-4 h-4" /> Back to Analytics
-   </Link>
+  <EventWorkspace eventId={eventId}><div className="max-w-4xl mx-auto">
 
    <div className="mb-8">
-    <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Refunds</h1>
+    <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Refunds</h2>
     <p className="text-sm text-neutral-500 mt-1">Process full or partial refunds for completed orders</p>
    </div>
 
@@ -191,6 +189,6 @@ export default function RefundsPage() {
      ))}
     </div>
    )}
-  </div>
+  </div></EventWorkspace>
  )
 }

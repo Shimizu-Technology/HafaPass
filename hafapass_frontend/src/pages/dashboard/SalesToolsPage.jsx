@@ -1,6 +1,7 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Download, Loader2, Plus, Send, Trash2 } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { Download, Loader2, Plus, Send, Trash2 } from 'lucide-react'
 import apiClient from '../../api/client'
 
 const emptyCatalog = { name: '', kind: 'add_on', price: '', inventory: '' }
@@ -85,9 +86,8 @@ export default function SalesToolsPage() {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
   if (!event) return <div className="mx-auto max-w-xl p-8 text-red-700">{error}</div>
 
-  return <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
-    <Link to={`/dashboard/events/${eventId}/edit`} className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500"><ArrowLeft className="h-4 w-4" /> Back to event</Link>
-    <div><h1 className="text-2xl font-bold text-neutral-900">Sales, registration and audience</h1><p className="mt-1 text-sm text-neutral-500">Configure revenue extras, policies, referrals and attendee communication for {event.title}.</p></div>
+  return <EventWorkspace eventId={eventId} event={event}><div className="mx-auto max-w-5xl space-y-6">
+    <div><h2 className="text-2xl font-bold text-neutral-900">Sales, registration and audience</h2><p className="mt-1 text-sm text-neutral-500">Configure revenue extras, policies, referrals and attendee communication for {event.title}.</p></div>
     {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
     <Section title="Ticket policy and languages" description="Choose who pays platform fees, whether tickets can transfer, and maintained public translations.">
@@ -124,5 +124,5 @@ export default function SalesToolsPage() {
       <div className="grid gap-2 sm:grid-cols-2"><input className="input" placeholder="Internal campaign name" value={campaignForm.name} onChange={e => setCampaignForm({ ...campaignForm, name: e.target.value })} /><input className="input" placeholder="Email subject" value={campaignForm.subject} onChange={e => setCampaignForm({ ...campaignForm, subject: e.target.value })} /><select className="input" value={campaignForm.segment} onChange={e => setCampaignForm({ ...campaignForm, segment: e.target.value })}><option value="all_attendees">All attendees</option><option value="checked_in">Checked in</option><option value="not_checked_in">Not checked in</option></select><input className="input" type="datetime-local" value={campaignForm.scheduled_at} onChange={e => setCampaignForm({ ...campaignForm, scheduled_at: e.target.value })} /><textarea className="input sm:col-span-2" rows="4" placeholder="Message" value={campaignForm.body} onChange={e => setCampaignForm({ ...campaignForm, body: e.target.value })} /><button className="btn-primary sm:col-span-2" onClick={() => create('communication_campaigns', { name: campaignForm.name, subject: campaignForm.subject, body: campaignForm.body, segment: { type: campaignForm.segment }, scheduled_at: campaignForm.scheduled_at || null }, () => setCampaignForm(emptyCampaign))}>Save campaign</button></div>
       <div className="mt-4 divide-y divide-neutral-100">{campaigns.map(item => <div key={item.id} className="flex items-center justify-between py-3 text-sm"><span><strong>{item.name}</strong> · {item.status} · {item.recipient_count} recipients</span>{['draft', 'scheduled'].includes(item.status) && <button className="inline-flex items-center gap-1 font-semibold text-brand-600" onClick={async () => { await apiClient.post(`/organizer/events/${eventId}/communication_campaigns/${item.id}/send_now`); await load() }}><Send className="h-4 w-4" /> Send now</button>}</div>)}</div>
     </Section>
-  </div>
+  </div></EventWorkspace>
 }

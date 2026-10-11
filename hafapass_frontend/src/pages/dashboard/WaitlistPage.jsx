@@ -1,6 +1,7 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Bell, Trash2, Loader2, ClipboardList, Send } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { Bell, Trash2, Loader2, ClipboardList, Send } from 'lucide-react'
 import apiClient from '../../api/client'
 
 const STATUS_COLORS = {
@@ -83,16 +84,13 @@ export default function WaitlistPage() {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-      <Link to={`/dashboard/events/${eventId}/edit`} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
-        <ArrowLeft className="w-4 h-4" /> Back to Event
-      </Link>
+    <EventWorkspace eventId={eventId}><div className="max-w-5xl mx-auto">
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 flex items-center gap-2">
+          <h2 className="text-2xl font-bold tracking-tight text-neutral-900 flex items-center gap-2">
             <ClipboardList className="w-6 h-6 text-brand-500" /> Waitlist
-          </h1>
+          </h2>
           <p className="text-sm text-neutral-500 mt-1">
             {stats.total_waiting || 0} waiting, {stats.total_notified || 0} notified, {stats.total_converted || 0} converted
           </p>
@@ -189,6 +187,6 @@ export default function WaitlistPage() {
           </table>
         </div>
       )}
-    </div>
+    </div></EventWorkspace>
   )
 }

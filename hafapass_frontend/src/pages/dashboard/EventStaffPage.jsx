@@ -1,6 +1,7 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2, Trash2, UserRoundCog } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 
 const ROLES = ['manager', 'box_office', 'scanner']
@@ -69,9 +70,8 @@ export default function EventStaffPage() {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <Link to={`/dashboard/events/${id}/edit`} className="text-sm font-medium text-brand-600 hover:text-brand-700">← Back to event</Link>
-      <div className="mt-5 flex items-start gap-3"><UserRoundCog className="mt-1 h-6 w-6 text-brand-600" /><div><h1 className="text-2xl font-bold text-neutral-950">Event team</h1><p className="mt-1 text-sm text-neutral-500">{event?.title} · assignments can expire or be revoked without changing organization membership.</p></div></div>
+    <EventWorkspace eventId={id} event={event}><main className="mx-auto max-w-3xl">
+      <div className="mt-5 flex items-start gap-3"><UserRoundCog className="mt-1 h-6 w-6 text-brand-600" /><div><h2 className="text-2xl font-bold text-neutral-950">Event team</h2><p className="mt-1 text-sm text-neutral-500">{event?.title} · assignments can expire or be revoked without changing organization membership.</p></div></div>
       {error && <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
       <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-5">
@@ -99,6 +99,6 @@ export default function EventStaffPage() {
           {assignments.length === 0 && <p className="px-5 py-8 text-center text-sm text-neutral-500">No event-specific assignments yet.</p>}
         </div>
       </section>
-    </main>
+    </main></EventWorkspace>
   )
 }

@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
 import BoxOfficePage from './BoxOfficePage'
 
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/SeatSelector', () => ({ default: () => null }))
 vi.mock('../../components/QRCode', () => ({ default: () => null }))
 

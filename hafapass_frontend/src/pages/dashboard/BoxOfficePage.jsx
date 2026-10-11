@@ -1,7 +1,8 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { currentScannerOwner } from '../../utils/admissionStore'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, CheckCircle2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import QRCode from '../../components/QRCode'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
@@ -151,18 +152,13 @@ export default function BoxOfficePage() {
   if (error) return <div className="max-w-2xl mx-auto px-4 py-8 text-center text-red-600">{error}</div>
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <Link to={`/dashboard/events/${id}/edit`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> Back to Event
-        </Link>
-      </div>
 
       <div className="flex items-center gap-3 mb-8">
         <ShoppingCart className="w-6 h-6 text-brand-600" />
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 font-display">Box Office</h1>
+          <h2 className="text-2xl font-bold text-neutral-900 font-display">Box Office</h2>
           <p className="text-sm text-neutral-500">{event.title}</p>
         </div>
       </div>
@@ -361,6 +357,6 @@ export default function BoxOfficePage() {
           )}
         </div>
       </div>
-    </div>
+    </div></EventWorkspace>
   )
 }

@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
 import RefundsPage from './RefundsPage'
 
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn() } }))
 beforeEach(() => vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test'))
 afterEach(() => vi.unstubAllEnvs())
 function mountRefunds() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/refunds']}><Routes><Route path="/dashboard/events/:id/refunds" element={<RefundsPage />} /></Routes></MemoryRouter>) }
