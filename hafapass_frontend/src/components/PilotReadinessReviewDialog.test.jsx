@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import PilotReadinessReviewDialog from './PilotReadinessReviewDialog'
 
-vi.mock('../api/client', () => ({
+vi.mock('../api/client', async original => ({ ...await original(),
   default: { get: vi.fn(), post: vi.fn() },
 }))
 
@@ -73,7 +73,7 @@ describe('PilotReadinessReviewDialog', () => {
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
       '/admin/events/42/pilot_readiness_reviews',
       expect.objectContaining({ evidence_digest: 'a'.repeat(64), controls, assignments }),
-    ))
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
   it('shows a pending immutable snapshot and uses POST for independent approval', async () => {
@@ -99,6 +99,8 @@ describe('PilotReadinessReviewDialog', () => {
     expect(await screen.findByText(/Admin #7 submitted this exact event snapshot/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Approve exact snapshot' }))
 
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/pilot_readiness_reviews/91/approve'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/pilot_readiness_reviews/91/approve',
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 })

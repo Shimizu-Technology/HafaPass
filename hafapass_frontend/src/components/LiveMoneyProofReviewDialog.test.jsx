@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import LiveMoneyProofReviewDialog from './LiveMoneyProofReviewDialog'
 import apiClient from '../api/client'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn() } }))
 
 const event = { id: 42, slug: 'live-proof', title: '[LIVE MONEY TEST] Proof', live_money_proof_candidate: true,
   live_money_proof: { approval_recorded: false } }
@@ -32,7 +32,9 @@ describe('LiveMoneyProofReviewDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Prepare Gate H live-money proof' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Approve one-time proof' }))
 
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_money_proof_authorizations/71/approve'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_money_proof_authorizations/71/approve',
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
   it('shows the private proof checkout only after approval', async () => {
