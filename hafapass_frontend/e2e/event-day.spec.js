@@ -184,7 +184,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
 test('box office exposes card sales only for a verified terminal and sends an idempotency key', async ({ page }) => {
   let receivedIdempotencyKey
   const event = {
-    id: 42,
+    id: 42, organization_id: 1, permissions: { box_office: true },
     title: 'Guam Night Market',
     ticket_types: [{ id: 2, name: 'General Admission', price_cents: 2500, quantity_available: 100, quantity_sold: 5, door_allocation: 20, door_sold_quantity: 2, door_available_quantity: 18 }],
   }
@@ -215,7 +215,7 @@ for (const scenario of [
 ]) {
   test(`box office keeps card sales disabled for ${scenario.name}`, async ({ page }) => {
     await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: { door_card: scenario.doorCard } }))
-    await page.route('**/api/v1/organizer/events/42', route => json(route, { id: 42, title: 'Door Event', ticket_types: [{ id: 2, name: 'General Admission', price_cents: 2500, quantity_available: 10, quantity_sold: 0 }] }))
+    await page.route('**/api/v1/organizer/events/42', route => json(route, { id: 42, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 2, name: 'General Admission', price_cents: 2500, quantity_available: 10, quantity_sold: 0 }] }))
     await page.route('**/api/v1/organizer/card_present_account', route => json(route, { payment_ready: scenario.paymentReady, status: scenario.paymentReady ? 'verified' : 'pending' }))
     await page.route('**/api/v1/organizer/events/42/box_office/summary', route => json(route, { total_orders: 0, total_tickets: 0, total_revenue_cents: 0, by_payment_method: {} }))
     await page.goto('/dashboard/events/42/box-office')
