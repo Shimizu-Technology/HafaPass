@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
 import SupportPage from './SupportPage'
 
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({ ...await importOriginal(), default: { get: vi.fn(), post: vi.fn() } }))
 
 describe('support record lookup', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -17,7 +17,7 @@ describe('support record lookup', () => {
       events: [{ id: 37, title: 'Published Event', organization_name: 'Organizer', status: 'published', slug: 'published-event' }],
     } : { deliveries: [] } }))
     apiClient.post.mockResolvedValue({ data: {} })
-    render(<MemoryRouter><SupportPage /></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Order, ticket, attendee, or event lookup'), 'Guest')
     await user.click(screen.getByRole('button', { name: 'Search' }))
@@ -25,6 +25,6 @@ describe('support record lookup', () => {
     expect(screen.getByText('Published Event')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open event page' })).toHaveAttribute('href', '/events/published-event')
     await user.click(screen.getByRole('button', { name: 'Resend order tickets' }))
-    expect(apiClient.post).toHaveBeenCalledWith('/support/message_deliveries/orders/923/fulfill')
+    expect(apiClient.post).toHaveBeenCalledWith('/support/message_deliveries/orders/923/fulfill', {}, expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 })

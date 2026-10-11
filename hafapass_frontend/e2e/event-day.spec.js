@@ -71,15 +71,15 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
   })
 
   await page.goto('/dashboard/scanner')
-  await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
+  await expectManifest(page, 'Manifest v1 · 2 tickets')
   await context.setOffline(true)
-  await page.getByPlaceholder('Ticket QR credential').fill(credentials[1])
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByLabel('Ticket QR code').fill(credentials[1])
+  await page.getByRole('button', { name: 'Check ticket' }).click()
   await expect(page.getByText('Admitted offline')).toBeVisible()
   await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
 
-  await page.getByPlaceholder('Ticket QR credential').fill(credentials[1])
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByLabel('Ticket QR code').fill(credentials[1])
+  await page.getByRole('button', { name: 'Check ticket' }).click()
   await expect(page.getByText('Already scanned on this device')).toBeVisible()
 
   await context.setOffline(false)
@@ -90,9 +90,9 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
   await page.route('**/api/v1/health', route => json(route, { status: 'unavailable' }, 503))
   await page.reload()
   await expect(page.getByText('Using this device’s saved event access.', { exact: false })).toBeVisible()
-  await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
-  await page.getByLabel('Ticket QR credential').fill(credentials[0])
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await expectManifest(page, 'Manifest v1 · 2 tickets')
+  await page.getByLabel('Ticket QR code').fill(credentials[0])
+  await page.getByRole('button', { name: 'Check ticket' }).click()
   await expect(page.getByText('Admitted offline')).toBeVisible()
   await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
 
@@ -116,10 +116,10 @@ test('online scanner waits neutrally before accepted and refused acknowledgement
   await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, { counts: {}, permissions: {}, recent_actions: [] }))
   await page.route('**/api/v1/organizer/events/42/scanner_devices/8/sync', route => { held.push(route) })
   await page.goto('/dashboard/scanner?event=42')
-  await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
+  await expectManifest(page, 'Manifest v1 · 2 tickets')
   for (const [index, verdict] of ['accepted', 'rejected'].entries()) {
-    await page.getByLabel('Ticket QR credential').fill(credentials[index])
-    await page.getByRole('button', { name: 'Validate' }).click()
+    await page.getByLabel('Ticket QR code').fill(credentials[index])
+    await page.getByRole('button', { name: 'Check ticket' }).click()
     const waiting = page.getByRole('status').filter({ hasText: 'Waiting for server confirmation' })
     await expect(waiting).toBeVisible()
     await expect(waiting).toHaveClass(/bg-neutral-50/)
@@ -161,7 +161,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
         results: actions.map(action => ({ ...action, result: 'accepted', reason_code: 'reversed' })), summary: {} })
     })
     await page.goto('/dashboard/scanner?event=42')
-    await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
+    await expectManifest(page, 'Manifest v1 · 2 tickets')
     await expect(page.getByText('José & Ana', { exact: true })).toHaveCount(2)
     for (const code of ['HP-T1', 'HP-T2']) await expect(page.getByText(code, { exact: true })).toBeVisible()
     const reversed = page.getByRole('button', { name: 'Reversed admission for HP-T1' })
@@ -184,7 +184,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
 test('box office exposes card sales only for a verified terminal and sends an idempotency key', async ({ page }) => {
   let receivedIdempotencyKey
   const event = {
-    id: 42,
+    id: 42, organization_id: 1, permissions: { box_office: true },
     title: 'Guam Night Market',
     ticket_types: [{ id: 2, name: 'General Admission', price_cents: 2500, quantity_available: 100, quantity_sold: 5, door_allocation: 20, door_sold_quantity: 2, door_available_quantity: 18 }],
   }
@@ -215,7 +215,7 @@ for (const scenario of [
 ]) {
   test(`box office keeps card sales disabled for ${scenario.name}`, async ({ page }) => {
     await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: { door_card: scenario.doorCard } }))
-    await page.route('**/api/v1/organizer/events/42', route => json(route, { id: 42, title: 'Door Event', ticket_types: [{ id: 2, name: 'General Admission', price_cents: 2500, quantity_available: 10, quantity_sold: 0 }] }))
+    await page.route('**/api/v1/organizer/events/42', route => json(route, { id: 42, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 2, name: 'General Admission', price_cents: 2500, quantity_available: 10, quantity_sold: 0 }] }))
     await page.route('**/api/v1/organizer/card_present_account', route => json(route, { payment_ready: scenario.paymentReady, status: scenario.paymentReady ? 'verified' : 'pending' }))
     await page.route('**/api/v1/organizer/events/42/box_office/summary', route => json(route, { total_orders: 0, total_tickets: 0, total_revenue_cents: 0, by_payment_method: {} }))
     await page.goto('/dashboard/events/42/box-office')
@@ -223,4 +223,10 @@ for (const scenario of [
     await expect(page.getByRole('button', { name: 'Card at Door' })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeEnabled()
   })
+}
+
+async function expectManifest(page, text) {
+  const summary = page.getByText('Device details', { exact: true })
+  if (await summary.locator('..').getAttribute('open') === null) await summary.click()
+  await expect(page.getByText(text)).toBeVisible()
 }

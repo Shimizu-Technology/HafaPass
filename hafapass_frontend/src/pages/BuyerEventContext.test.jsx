@@ -61,7 +61,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     render(view())
     const user = userEvent.setup()
     await screen.findByRole('heading', { name: a.title })
-    await user.click(screen.getByRole('button', { name: 'Increase quantity' }))
+    await user.click(screen.getByRole('button', { name: /Increase quantity for/ }))
     await user.click(screen.getByRole('link', { name: 'Open event B' }))
     await waitFor(() => expect(finishB).toBeDefined())
     const staleBuy = screen.queryByRole('button', { name: /eventDetail.buyTickets/ })
@@ -69,7 +69,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     else {
       await act(async () => finishB())
       await screen.findByRole('heading', { name: b.title })
-      await user.click(screen.getByRole('button', { name: 'Increase quantity' }))
+      await user.click(screen.getByRole('button', { name: /Increase quantity for/ }))
       await user.click(screen.getByRole('button', { name: /eventDetail.buyTickets/ }))
     }
     expect(screen.getByTestId('route')).toHaveTextContent('/checkout/event-b')
@@ -93,7 +93,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('link', { name: 'Open event B' }))
     await screen.findByRole('heading', { name: b.title })
-    await user.click(screen.getByRole('button', { name: 'Increase quantity' }))
+    await user.click(screen.getByRole('button', { name: /Increase quantity for/ }))
     await act(async () => finishA())
     expect(screen.getByRole('heading', { name: b.title })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /eventDetail.buyTickets/ })).toBeInTheDocument()
@@ -219,4 +219,20 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     expect(screen.getByTestId('route')).toHaveTextContent('/checkout/event-b')
     expect(apiClient.get.mock.calls.some(([url]) => url.startsWith('/events/'))).toBe(false)
   })
+  it('offers retry after an outage but treats a true 404 as missing', async () => {
+    apiClient.get.mockRejectedValueOnce({ response: { status: 503 } }).mockResolvedValueOnce({ data: a })
+    render(view())
+    expect(await screen.findByRole('alert')).toHaveTextContent('couldn’t load')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry event' }))
+    expect(await screen.findByRole('heading', { name: a.title })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not offer outage retry for a genuinely missing event', async () => {
+    apiClient.get.mockRejectedValue({ response: { status: 404 } })
+    render(view())
+    expect(await screen.findByRole('alert')).toHaveTextContent('Event not found.')
+    expect(screen.queryByRole('button', { name: 'Retry event' })).not.toBeInTheDocument()
+  })
+
 })

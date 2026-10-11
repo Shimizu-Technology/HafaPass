@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import SettingsPage from './SettingsPage'
 
-vi.mock('../../api/client', () => ({
-  default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+vi.mock('../../api/client', async importOriginal => ({
+  ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }))
 
 describe('SettingsPage', () => {
@@ -30,7 +30,7 @@ describe('SettingsPage', () => {
   })
 
   it('shows evidence-based payout choices and creates an email-bound team invitation', async () => {
-    render(<MemoryRouter><SettingsPage /></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/dashboard/settings']}><SettingsPage /></MemoryRouter>)
 
     await screen.findByText('Island Events')
     expect(screen.getByText('Payout setup incomplete')).toBeInTheDocument()
@@ -44,6 +44,6 @@ describe('SettingsPage', () => {
     expect(screen.getByLabelText('Invitation link').value).toContain('signed-invitation')
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/memberships', {
       email: 'finance@example.com', role: 'finance'
-    }))
+    }, expect.objectContaining({ organizationId: null, signal: expect.any(AbortSignal) })))
   })
 })

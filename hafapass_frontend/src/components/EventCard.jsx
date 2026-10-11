@@ -1,30 +1,24 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remainingTickets } from '../utils/ticketPricing'
 
 export default function EventCard({ event }) {
   const { t } = useTranslation()
-  const lowestPrice = event.ticket_types?.reduce((min, tt) => {
-    const price = tt.current_price_cents ?? tt.price_cents
-    if (price === 0) return min === null ? 0 : Math.min(min, 0)
-    return min === null ? price : Math.min(min, price)
-  }, null)
-
-  const priceLabel = lowestPrice === null
-    ? ''
-    : lowestPrice === 0
-    ? t('events.free')
-    : `${t('events.from')} $${(lowestPrice / 100).toFixed(2)}`
-
-  // Check ticket availability
-  const totalAvailable = event.ticket_types?.reduce((sum, tt) => sum + (tt.quantity_remaining ?? 0), 0)
-  const hasAvailability = totalAvailable === undefined || totalAvailable > 0
+  const location = useLocation()
+  const lowestPrice = lowestPurchasablePrice(event.ticket_types)
+  const priceLabel = lowestPrice === null ? ''
+    : lowestPrice === 0 ? t('events.free')
+    : `${t('events.from')} ${formatTicketPrice(lowestPrice)}`
+  const hasAvailability = !event.ticket_types || event.ticket_types.some(isTicketPurchasable)
+  const hasInventory = !event.ticket_types || event.ticket_types.some(ticket => remainingTickets(ticket) === null || remainingTickets(ticket) > 0)
 
   return (
     <Link
       to={`/events/${event.slug}`}
+      state={{ browseFrom: `${location.pathname}${location.search}` }}
       className="group flex flex-col card card-hover overflow-hidden h-full"
     >
       {/* Image */}
@@ -115,7 +109,8 @@ export default function EventCard({ event }) {
               <>
                 <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
                 <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-700' : 'text-neutral-600'}`}>
-                  {hasAvailability ? t('events.ticketsAvailable') : t('events.soldOut')}
+                  {hasAvailability ? t('events.ticketsAvailable') : hasInventory
+                    ? t('events.salesUnavailable', { defaultValue: 'Sales unavailable' }) : t('events.soldOut')}
                 </span>
               </>
             )}

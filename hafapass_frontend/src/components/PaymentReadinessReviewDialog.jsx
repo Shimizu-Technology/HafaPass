@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, FileCheck2, Loader2, ShieldAlert, ShieldCheck, X } from 'lucide-react'
-import apiClient from '../api/client'
+import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
 
 const controls = [
   ['guam_territory_confirmed', 'Guam territory is covered in writing'],
@@ -69,8 +69,13 @@ function ReferenceList({ review }) {
   )
 }
 
-export default function PaymentReadinessReviewDialog({ account, onComplete }) {
+function PaymentReadinessReviewDialogSession({ account, onComplete }) {
   const [open, setOpen] = useState(false)
+  const dialog = useCapturedPlatformDialog(open)
+  const { canClose } = dialog
+  const openCaptured = () => { if (dialog.capture()) { setBusy(false); setOpen(true) } }
+  const closeCaptured = useCallback(() => { if (canClose()) setOpen(false) }, [canClose])
+
   const [form, setForm] = useState(initialForm)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -89,9 +94,9 @@ export default function PaymentReadinessReviewDialog({ account, onComplete }) {
     const trigger = triggerRef.current
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const animationFrame = window.requestAnimationFrame(() => closeRef.current?.focus())
+    closeRef.current?.focus()
     const onKeyDown = event => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape') closeCaptured()
       if (event.key !== 'Tab' || !dialogRef.current) return
       const focusable = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
       if (!focusable.length) return
@@ -107,43 +112,44 @@ export default function PaymentReadinessReviewDialog({ account, onComplete }) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => {
-      window.cancelAnimationFrame(animationFrame)
       window.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = previousOverflow
       trigger?.focus()
     }
-  }, [open])
+  }, [open, closeCaptured])
 
   const request = async operation => {
+    const scope = dialog.begin('mutation')
+    if (!scope) return false
     setBusy(true)
     setError('')
     try {
-      await operation()
+      await operation(scope.api); if (!scope.current()) return false
       setOpen(false)
       setForm(initialForm())
       setReason('')
       onComplete()
-    } catch (requestError) {
+    } catch (requestError) { if (!scope.current()) return false;
       setError(requestError.response?.data?.error || 'The readiness decision could not be recorded.')
     } finally {
-      setBusy(false)
+      if (scope.current()) setBusy(false); scope.finish()
     }
   }
 
   const submit = event => {
     event.preventDefault()
-    request(() => apiClient.post(`/admin/connected_accounts/${account.id}/payment_readiness_reviews`, {
+    request(api => api.post(`/admin/connected_accounts/${account.id}/payment_readiness_reviews`, {
       ...form,
       effective_at: new Date(form.effective_at).toISOString(),
       expires_at: new Date(form.expires_at).toISOString(),
     }))
   }
 
-  const approve = () => request(() => apiClient.patch(`/admin/payment_readiness_reviews/${pending.id}/approve`))
-  const reject = () => request(() => apiClient.post(`/admin/payment_readiness_reviews/${pending.id}/reject`, { reason }))
+  const approve = () => request(api => api.patch(`/admin/payment_readiness_reviews/${pending.id}/approve`))
+  const reject = () => request(api => api.post(`/admin/payment_readiness_reviews/${pending.id}/reject`, { reason }))
   const revoke = event => {
     event.preventDefault()
-    request(() => apiClient.post(`/admin/payment_readiness_reviews/${approval.id}/revoke`, { reason }))
+    request(api => api.post(`/admin/payment_readiness_reviews/${approval.id}/revoke`, { reason }))
   }
 
   return (
@@ -151,7 +157,7 @@ export default function PaymentReadinessReviewDialog({ account, onComplete }) {
       <button
         type="button"
         ref={triggerRef}
-        onClick={() => { setError(''); setOpen(true) }}
+        onClick={() => { setError(''); openCaptured() }}
         className="inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 transition-colors duration-200 hover:border-brand-300 hover:bg-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
       >
         {approvalActive ? <ShieldCheck className="h-4 w-4" /> : <FileCheck2 className="h-4 w-4" />}
@@ -160,7 +166,7 @@ export default function PaymentReadinessReviewDialog({ account, onComplete }) {
 
       {open && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={event => {
-          if (event.target === event.currentTarget && !busy) setOpen(false)
+          if (event.target === event.currentTarget && !busy) closeCaptured()
         }}>
           <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="payment-readiness-title" className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-stone-50 shadow-2xl sm:max-w-3xl sm:rounded-3xl">
             <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-200 bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8">
@@ -173,7 +179,7 @@ export default function PaymentReadinessReviewDialog({ account, onComplete }) {
                   References and a digest belong here. Contracts, bank details, identity documents, and secrets do not.
                 </p>
               </div>
-              <button ref={closeRef} type="button" aria-label="Close payment readiness review" disabled={busy} onClick={() => setOpen(false)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-stone-200 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50">
+              <button ref={closeRef} type="button" aria-label="Close payment readiness review" disabled={busy} onClick={closeCaptured} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-stone-200 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50">
                 <X className="h-5 w-5" />
               </button>
             </header>
@@ -269,4 +275,10 @@ export default function PaymentReadinessReviewDialog({ account, onComplete }) {
       )}
     </>
   )
+}
+
+export default function PaymentReadinessReviewDialog(props) {
+  const identity = useCapturedDialogIdentity()
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <PaymentReadinessReviewDialogSession key={`${identity.key}:${props.account.id}`} {...props} />
 }

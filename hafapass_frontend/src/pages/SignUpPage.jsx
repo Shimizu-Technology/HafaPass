@@ -1,3 +1,4 @@
+import HafaPassMark from '../components/HafaPassMark'
 import { useLocation } from 'react-router-dom'
 import { safeReturnPath } from '../utils/authDestination'
 import { SignUp } from '@clerk/clerk-react'
@@ -19,10 +20,10 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-surface px-4 py-8">
       <div className="flex items-center gap-2 mb-6">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-md">
-          <span className="text-white font-bold text-sm">H</span>
+        <div className="w-9 h-9 rounded-xl bg-brand-700 flex items-center justify-center shadow-md">
+          <HafaPassMark className="h-5 w-5 text-white" />
         </div>
         <span className="text-xl font-bold text-neutral-800">HafaPass</span>
       </div>

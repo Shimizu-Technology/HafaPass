@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import LivePilotOperationsDialog from './LivePilotOperationsDialog'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn() } }))
 
 const event = {
   id: 42, title: 'Guam Community Night', status: 'published',
@@ -42,7 +42,9 @@ describe('LivePilotOperationsDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review Gate I pilot plan' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Approve exact Gate I plan' }))
 
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_pilot_reviews/81/approve'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_pilot_reviews/81/approve',
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
   it('starts an approved bounded pilot', async () => {
@@ -55,7 +57,9 @@ describe('LivePilotOperationsDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Operate Gate I bounded pilot' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Start bounded pilot' }))
 
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_pilot_reviews/82/start'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_pilot_reviews/82/start',
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
   it('records a complete monitoring checkpoint with numeric measurements', async () => {
@@ -75,7 +79,8 @@ describe('LivePilotOperationsDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Record checkpoint' }))
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_pilot_runs/91/checkpoint',
-      expect.objectContaining({ external_metrics: expect.objectContaining({ checkout_p95_ms: 450 }) })))
+      expect.objectContaining({ external_metrics: expect.objectContaining({ checkout_p95_ms: 450 }) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
   it('shows explicit abort metadata in the recovery workflow', async () => {

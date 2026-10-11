@@ -1,7 +1,8 @@
+import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart, Copy, RefreshCw, ClipboardList, PauseCircle, Archive } from 'lucide-react'
+import { AlertTriangle, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive } from 'lucide-react'
 import EventAccessNotice from '../../components/EventAccessNotice'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
@@ -19,14 +20,24 @@ const AGE_RESTRICTIONS = [
   { value: 'twenty_one_plus', label: '21+' }
 ]
 
-const STATUS_BADGES = {
-  draft: { label: 'Draft', className: 'bg-yellow-100 text-yellow-800' },
-  published: { label: 'Published', className: 'bg-green-100 text-green-800' },
-  cancelled: { label: 'Cancelled', className: 'bg-red-100 text-red-800' },
-  completed: { label: 'Completed', className: 'bg-neutral-100 text-neutral-800' },
-  postponed: { label: 'Postponed', className: 'bg-orange-100 text-orange-800' },
-  archived: { label: 'Archived', className: 'bg-neutral-200 text-neutral-700' }
-}
+const eventForm = e => ({
+  title: e.title || '',
+  short_description: e.short_description || '',
+  description: e.description || '',
+  category: e.category || 'other',
+  age_restriction: e.age_restriction || 'all_ages',
+  venue_name: e.venue_name || '',
+  venue_address: e.venue_address || '',
+  venue_city: e.venue_city || 'Guam',
+  starts_at: toEventLocalInput(e.starts_at, e.timezone),
+  ends_at: toEventLocalInput(e.ends_at, e.timezone),
+  doors_open_at: toEventLocalInput(e.doors_open_at, e.timezone),
+  max_capacity: e.max_capacity ? String(e.max_capacity) : '',
+  cover_image_url: e.cover_image_url || '',
+  recurrence_rule: e.recurrence_rule || '',
+  recurrence_end_date: e.recurrence_end_date || '',
+  show_attendees: e.show_attendees !== false
+})
 
 function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading, reason, onReasonChange, requireReason = false }) {
   return (
@@ -53,6 +64,11 @@ function EditEventSession({ id, identity }) {
   const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/edit`)
   const loadGeneration = useRef(0)
   const pendingLoad = useRef(null)
+  const inventoryGeneration = useRef(0)
+  const eventSaveGeneration = useRef(0)
+  const pendingInventoryLoad = useRef(null)
+  const [inventoryRefreshing, setInventoryRefreshing] = useState(false)
+  const [inventoryError, setInventoryError] = useState(null)
   const navigate = useNavigate()
   const categories = useEventCategories()
   const capabilities = useLaunchCapabilities()
@@ -114,24 +130,7 @@ function EditEventSession({ id, identity }) {
       if (!canApply()) return
       const e = res.data
       setEvent(e)
-      setForm({
-        title: e.title || '',
-        short_description: e.short_description || '',
-        description: e.description || '',
-        category: e.category || 'other',
-        age_restriction: e.age_restriction || 'all_ages',
-        venue_name: e.venue_name || '',
-        venue_address: e.venue_address || '',
-        venue_city: e.venue_city || 'Guam',
-        starts_at: toEventLocalInput(e.starts_at, e.timezone),
-        ends_at: toEventLocalInput(e.ends_at, e.timezone),
-        doors_open_at: toEventLocalInput(e.doors_open_at, e.timezone),
-        max_capacity: e.max_capacity ? String(e.max_capacity) : '',
-        cover_image_url: e.cover_image_url || '',
-        recurrence_rule: e.recurrence_rule || '',
-        recurrence_end_date: e.recurrence_end_date || '',
-        show_attendees: e.show_attendees !== false
-      })
+      setForm(eventForm(e))
     } catch (err) {
       if (!canApply()) return
       if (err.response?.status === 401) {
@@ -144,6 +143,36 @@ function EditEventSession({ id, identity }) {
     } finally {
       request.release()
       if (canApply()) setLoading(false)
+    }
+  }, [id, beginRequest])
+
+  // Ticket mutations refresh saved inventory, not the event draft or its
+  // schedule baseline. Keep the editor mounted while this request is pending.
+  const refreshInventory = useCallback(async () => {
+    const request = beginRequest()
+    if (!request) return
+    pendingInventoryLoad.current?.controller.abort()
+    pendingInventoryLoad.current = request
+    const generation = ++inventoryGeneration.current
+    const savedGeneration = eventSaveGeneration.current
+    const canApply = () => request.current() && generation === inventoryGeneration.current
+    setInventoryRefreshing(true)
+    setInventoryError(null)
+    try {
+      const res = await apiClient.get(`/organizer/events/${id}`, request.config)
+      if (!canApply()) return
+      setEvent(saved => ({ ...saved, ticket_types: res.data.ticket_types || [],
+        // A successful event save owns newer readiness and access metadata.
+        // Still apply ticket data without reviving its pre-save checklist.
+        ...(savedGeneration === eventSaveGeneration.current ? {
+          publish_checklist: res.data.publish_checklist || [],
+          permissions: res.data.permissions || saved.permissions,
+        } : {}) }))
+    } catch {
+      if (canApply()) setInventoryError('Ticket changes were saved, but the latest ticket list could not be loaded. Retry to update the list. Your event draft is still here.')
+    } finally {
+      if (canApply()) setInventoryRefreshing(false)
+      request.release()
     }
   }, [id, beginRequest])
 
@@ -231,6 +260,7 @@ function EditEventSession({ id, identity }) {
       if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
       const res = await apiClient.put(`/organizer/events/${id}`, payload, request.config)
       if (!request.current()) return
+      eventSaveGeneration.current += 1
       setEvent(current => ({ ...current, ...res.data }))
       setChangeReason('')
       setSuccessMessage('Event updated successfully.')
@@ -336,19 +366,18 @@ function EditEventSession({ id, identity }) {
     )
   }
 
-  if (!permissions.edit_event_content) return <EventAccessNotice event={event} />
+  if (!permissions.edit_event_content) return <EventWorkspace eventId={id} event={event}><EventAccessNotice event={{ ...event, title: 'Your event tools' }} /></EventWorkspace>
 
-  const statusBadge = STATUS_BADGES[event?.status] || STATUS_BADGES.draft
+  const savedForm = eventForm(event)
+  const hasUnsavedChanges = Object.keys(form).some(field => {
+    const value = typeof form[field] === 'string' ? form[field].trim() : form[field]
+    const savedValue = typeof savedForm[field] === 'string' ? savedForm[field].trim() : savedForm[field]
+    return value !== savedValue
+  })
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
+    <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges}><div className="mx-auto max-w-3xl">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <Link to="/dashboard" className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Dashboard
-        </Link>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
           {event?.slug && (
             <a
@@ -384,41 +413,10 @@ function EditEventSession({ id, identity }) {
           >
             <Copy className="w-4 h-4" /> {cloning ? 'Cloning...' : 'Clone'}
           </button>}
-          {permissions.box_office && <Link to={`/dashboard/events/${id}/box-office`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <ShoppingCart className="w-4 h-4" /> Box Office
-          </Link>}
-          {permissions.manage_inventory && capabilities.assigned_seating && <Link to={`/dashboard/events/${id}/seating`} className="text-brand-500 hover:text-brand-700 text-sm font-medium">
-            Assigned Seating
-          </Link>}
-          {permissions.view_attendees && <Link to={`/dashboard/events/${id}/attendees`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <Users className="w-4 h-4" /> Attendees
-          </Link>}
-          {permissions.manage_staff && <Link to={`/dashboard/events/${id}/team`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <Users className="w-4 h-4" /> Team
-          </Link>}
-          {permissions.manage_attendees && <Link to={`/dashboard/events/${id}/waitlist`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <ClipboardList className="w-4 h-4" /> Waitlist
-          </Link>}
-          {permissions.manage_marketing && capabilities.advanced_sales_tools && <Link to={`/dashboard/events/${id}/sales-tools`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <ShoppingCart className="w-4 h-4" /> Sales tools
-          </Link>}
-          {permissions.view_finance && ['published', 'completed', 'cancelled'].includes(event?.status) && (
-            <Link to={`/dashboard/events/${id}/analytics`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-              View Analytics
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-              </svg>
-            </Link>
-          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900">Edit Event</h1>
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadge.className}`}>
-          {statusBadge.label}
-        </span>
-      </div>
+      <h2 className="mb-6 text-xl font-semibold text-neutral-950">Event details</h2>
 
       {/* Publish Button for Draft Events */}
       {canManage && event?.status === 'draft' && (
@@ -730,7 +728,14 @@ function EditEventSession({ id, identity }) {
       </form>
 
       {/* Ticket Types CRUD */}
-      {permissions.manage_inventory && <section id="ticket-types" className="scroll-mt-24"><TicketTypeCRUD remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} /></section>}
+      {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="scroll-mt-24 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>
+        {inventoryRefreshing && <p role="status" className="mt-6 text-sm text-neutral-600">Updating ticket list…</p>}
+        {inventoryError && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p>{inventoryError}</p>
+          <button type="button" onClick={refreshInventory} className="mt-2 min-h-11 font-semibold underline underline-offset-2">Retry ticket list</button>
+        </div>}
+        <TicketTypeCRUD beginRequest={beginRequest} remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={refreshInventory} eventTimezone={event?.timezone} />
+      </section>}
 
       {/* Danger Zone — HP-28 */}
       {canManage && event && event.status !== 'archived' && (
@@ -807,7 +812,7 @@ function EditEventSession({ id, identity }) {
           </div>
         </div>
       )}
-    </div>
+    </div></EventWorkspace>
   )
 }
 

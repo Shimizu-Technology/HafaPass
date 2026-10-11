@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } fr
 import { useAuth } from '@clerk/clerk-react'
 import { useLocation, useParams, Link } from 'react-router-dom'
 import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
@@ -10,6 +10,7 @@ import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../ut
 
 function AddToHomeScreenInstructions() {
   const [expanded, setExpanded] = useState(false)
+  const reducedMotion = useReducedMotion()
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
   const isAndroid = /Android/.test(navigator.userAgent)
 
@@ -19,7 +20,8 @@ function AddToHomeScreenInstructions() {
     <div className="mt-4">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-700 transition-colors mx-auto"
+        aria-expanded={expanded}
+        className="min-h-11 flex items-center gap-2 rounded text-sm text-content-inverse-muted hover:text-white transition-colors mx-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
       >
         <Smartphone className="w-4 h-4" />
         <span>Add to Home Screen</span>
@@ -28,9 +30,10 @@ function AddToHomeScreenInstructions() {
       <AnimatePresence>
         {expanded && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
+            initial={reducedMotion ? false : { opacity: 1, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            exit={reducedMotion ? undefined : { opacity: 1, height: 0 }}
+            transition={{ duration: reducedMotion ? 0 : 0.2 }}
             className="overflow-hidden"
           >
             <div className="mt-3 p-3 bg-neutral-50 rounded-xl text-xs text-neutral-600 space-y-1.5">
@@ -113,6 +116,7 @@ function AuthenticatedTicket() {
 }
 
 function TicketContent({ authContext }) {
+  const reducedMotion = useReducedMotion()
   const { credential } = useParams()
   const location = useLocation()
   const orderId = new URLSearchParams(location.search).get('order')
@@ -296,9 +300,9 @@ function TicketContent({ authContext }) {
     <div className="min-h-screen bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center px-3 sm:px-4 py-8">
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 1, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0, 0, 0.2, 1] }}
       >
         {['postponed', 'cancelled'].includes(event.status) && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
@@ -327,7 +331,7 @@ function TicketContent({ authContext }) {
           {/* Status Badge */}
           <div className={`px-4 py-2.5 ${status.bg} ${status.border} border-b text-center`}>
             <span className={`inline-flex items-center gap-2 text-sm font-semibold ${status.text}`}>
-              <span className={`w-2 h-2 rounded-full ${status.dot} ${ticket.status === 'issued' && !accessPaused ? 'animate-pulse' : ''}`} />
+              <span className={`w-2 h-2 rounded-full ${status.dot} ${ticket.status === 'issued' && !accessPaused ? 'animate-pulse motion-reduce:animate-none' : ''}`} />
               {status.label}
             </span>
             {ticket.status === 'checked_in' && ticket.checked_in_at && (
@@ -340,14 +344,14 @@ function TicketContent({ authContext }) {
           {/* QR Code Section */}
           {showCredential ? <motion.div
             className="px-4 sm:px-6 pt-6 pb-4 flex flex-col items-center"
-            initial={{ scale: 0.9, opacity: 0 }}
+            initial={false}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
+            transition={{ duration: 0 }}
           >
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
               <QRCode value={ticket.scan_credential} size={220} />
             </div>
-            <p className="mt-2 text-[10px] sm:text-xs text-neutral-400 font-mono break-all text-center select-all">
+            <p className="mt-2 text-[10px] sm:text-xs text-content-muted font-mono break-all text-center select-all">
               Ticket HP-T{ticket.id}
             </p>
           </motion.div> : (
@@ -369,7 +373,7 @@ function TicketContent({ authContext }) {
           <div className="px-4 sm:px-6 py-5 space-y-3">
             <div>
               <h2 className="font-display text-lg font-bold text-neutral-900">{event.title}</h2>
-              <p className="text-sm text-accent-600 font-semibold font-sans">{ticket_type.name}</p>
+              <p className="text-sm text-action font-semibold font-sans">{ticket_type.name}</p>
               {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
               {ticket.seat?.obstructed_view && <p className="mt-1 text-xs text-amber-700">Obstructed view{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
             </div>
@@ -412,7 +416,7 @@ function TicketContent({ authContext }) {
             <button
               onClick={handleDownload}
               disabled={downloading || !showCredential}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-colors disabled:opacity-60"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl min-h-11 bg-action-teal hover:bg-action-teal-hover text-content-inverse text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
             >
               {downloading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -451,7 +455,7 @@ function TicketContent({ authContext }) {
 
           {/* Footer */}
           <div className="px-4 sm:px-6 py-3 bg-neutral-50 text-center border-t border-neutral-100">
-            <p className="text-xs text-neutral-400 font-sans">
+            <p className="text-xs text-content-muted font-sans">
               {showCredential ? 'Present this QR code at the door' : 'This ticket has no active entry code'}
             </p>
           </div>

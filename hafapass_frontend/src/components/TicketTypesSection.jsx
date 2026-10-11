@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Minus, Plus, ShoppingCart, Clock, Zap } from 'lucide-react'
+import { formatTicketPrice, ticketPriceCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
 
 export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
   const { t } = useTranslation()
@@ -9,13 +10,14 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
   const setQty = (id, qty) => setQuantities(prev => ({ ...prev, [id]: Math.max(0, qty) }))
   const getQty = (id) => quantities[id] || 0
 
-  const formatPrice = (cents) => cents === 0 ? t('events.free') : `$${(cents / 100).toFixed(2)}`
+  const formatPrice = (cents) => formatTicketPrice(cents, t('events.free'))
 
-  const getMaxQty = (tt) => Math.max(0, Math.min(tt.max_per_order || 10, tt.max_per_buyer || Infinity, tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)))
+  const getMaxQty = (tt) => !isTicketPurchasable(tt) || ticketPriceCents(tt) === null ? 0
+    : Math.max(0, Math.min(tt.max_per_order || 10, tt.max_per_buyer || Infinity, remainingTickets(tt) ?? 0))
   const getClampedQty = (tt) => Math.min(getQty(tt.id), getMaxQty(tt))
 
   // Use current_price_cents if available, fallback to price_cents
-  const getPrice = (tt) => tt.current_price_cents ?? tt.price_cents
+  const getPrice = ticketPriceCents
 
   const totalSelected = ticketTypes.reduce((sum, tt) => sum + getClampedQty(tt), 0)
   const totalCents = ticketTypes.reduce((sum, tt) => sum + (getClampedQty(tt) * getPrice(tt)), 0)
@@ -41,25 +43,24 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
       <h2 className="text-lg font-semibold text-neutral-900 mb-4">{t('eventDetail.buyTickets')}</h2>
       <div className="space-y-3">
         {ticketTypes.map(tt => {
-          const available = tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)
-          const soldOut = available <= 0 || tt.on_sale === false
-          const rawQty = getQty(tt.id)
-          const maxQty = Math.min(tt.max_per_order || 10, tt.max_per_buyer || Infinity, available)
-          const qty = Math.min(rawQty, maxQty)
+          const available = remainingTickets(tt) ?? 0
+          const soldOut = getMaxQty(tt) === 0
+          const maxQty = getMaxQty(tt)
+          const qty = getClampedQty(tt)
           const currentPrice = getPrice(tt)
           const hasDiscount = tt.active_tier && currentPrice < tt.price_cents
 
           return (
             <div key={tt.id} className={`card p-4 transition-all duration-200 ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-neutral-900">{tt.name}</h3>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 w-full sm:flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-medium text-neutral-900 break-words max-w-full">{tt.name}</h3>
                     {soldOut && (
                       <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : 'Sales unavailable'}</span>
                     )}
                   </div>
-                  {tt.description && <p className="text-sm text-neutral-500 mt-0.5">{tt.description}</p>}
+                  {tt.description && <p className="text-sm text-neutral-600 mt-0.5 break-words">{tt.description}</p>}
 
                   {/* Pricing with tier info */}
                   <div className="mt-1">
@@ -69,7 +70,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                           {tt.active_tier.name} — {formatPrice(currentPrice)}
                         </p>
                         {hasDiscount && (
-                          <p className="text-xs text-neutral-400 line-through">{formatPrice(tt.price_cents)}</p>
+                          <p className="text-xs text-neutral-600 line-through">{formatPrice(tt.price_cents)}</p>
                         )}
                       </div>
                     ) : (
@@ -97,18 +98,18 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
 
                   {/* Next tier info */}
                   {tt.next_tier && (
-                    <p className="text-xs text-neutral-400 mt-1">
+                    <p className="text-xs text-neutral-600 mt-1">
                       {t('pricing.regularPrice', { price: formatPrice(tt.next_tier.price_cents) })}
                     </p>
                   )}
                 </div>
 
                 {!soldOut && (
-                  <div className="flex items-center gap-2 ml-4">
+                  <div className="flex shrink-0 items-center gap-2 self-end sm:ml-4">
                     <button
                       onClick={() => setQty(tt.id, qty - 1)}
                       disabled={qty === 0}
-                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label="Decrease quantity"
+                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={`Decrease quantity for ${tt.name}`}
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
@@ -116,7 +117,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                     <button
                       onClick={() => setQty(tt.id, Math.min(qty + 1, maxQty))}
                       disabled={qty >= maxQty}
-                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label="Increase quantity"
+                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={`Increase quantity for ${tt.name}`}
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>

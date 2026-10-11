@@ -6,10 +6,13 @@ import TicketPage from './TicketPage'
 import api from '../api/client'
 
 vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
+const motionPreference = vi.hoisted(() => ({ reduced: false }))
+vi.mock('framer-motion', async original => ({ ...await original(), useReducedMotion: () => motionPreference.reduced }))
+
 vi.mock('../components/QRCode', () => ({ default: () => <div>Entry QR</div> }))
 
 describe('ticket download recovery', () => {
-  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
+  beforeEach(() => { vi.clearAllMocks(); motionPreference.reduced = false; window.sessionStorage.clear() })
 
   for (const reason of ['Ticket access is paused while its refund is pending', 'Payment dispute under review']) {
     it(`shows access paused rather than valid for an issued ticket: ${reason}`, async () => {
@@ -41,7 +44,10 @@ describe('ticket download recovery', () => {
     render(<MemoryRouter initialEntries={['/tickets/synthetic-display?order=2']}><Routes>
       <Route path="/tickets/:credential" element={<TicketPage />} />
     </Routes></MemoryRouter>)
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Download PDF' }))
+    const download = await screen.findByRole('button', { name: 'Download PDF' })
+    // Door credentials must be visible immediately rather than waiting for an animation.
+    expect(screen.getByText('Entry QR').parentElement.parentElement).toHaveStyle({ opacity: '1' })
+    await userEvent.setup().click(download)
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Use this browser ticket or contact the organizer')
     expect(alert).not.toHaveTextContent('Check your connection')
@@ -69,4 +75,23 @@ describe('ticket download recovery', () => {
     await user.click(download)
     expect(api.get.mock.calls.filter(([url]) => url.endsWith('/download'))).toHaveLength(2)
   })
+})
+
+it('keeps admission and expandable device instructions immediately usable with reduced motion', async () => {
+  motionPreference.reduced = true
+  const userAgent = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Synthetic Android device')
+  api.get.mockResolvedValue({ data: { id: 3, status: 'issued', admission_allowed: true, scan_credential: 'synthetic-scan', wallet: {}, event: { title: 'Reduced-motion rehearsal', status: 'published', starts_at: '2099-10-20T07:00:00Z', timezone: 'Pacific/Guam' }, ticket_type: { name: 'Admission' } } })
+  try {
+    render(<MemoryRouter initialEntries={['/tickets/synthetic-display?order=2']}><Routes><Route path="/tickets/:credential" element={<TicketPage />} /></Routes></MemoryRouter>)
+    expect(await screen.findByText('Entry QR')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeEnabled()
+    const instructions = screen.getByRole('button', { name: 'Add to Home Screen' })
+    await userEvent.click(instructions)
+    expect(screen.getByText('Android Instructions:')).toBeVisible()
+    expect(instructions).toHaveAttribute('aria-expanded', 'true')
+    expect(document.querySelector('.animate-pulse')).toHaveClass('motion-reduce:animate-none')
+    await userEvent.click(instructions)
+    expect(instructions).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('Entry QR')).toBeVisible()
+  } finally { userAgent.mockRestore(); motionPreference.reduced = false }
 })

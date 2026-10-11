@@ -10,7 +10,7 @@ vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 const baseOrder = {
   id: 42, reference: 'HP-42', status: 'completed', buyer_email: 'synthetic@example.invalid', total_cents: 0, order_items: [],
-  tickets: [{ id: 1, status: 'issued', refundable_cents: 0, display_credential: 'display', ticket_type: { id: 1, name: 'Admission' } }],
+  tickets: [{ id: 1, status: 'issued', admission_allowed: true, refundable_cents: 0, display_credential: 'display', ticket_type: { id: 1, name: 'Admission' } }],
   event: { slug: 'synthetic-event', status: 'published', title: 'Synthetic event', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam' },
 }
 const withDelivery = (status, simulated = false, reconciliation_required = false) => ({ ...baseOrder, confirmation_delivery: { status, simulated, reconciliation_required } })
@@ -121,7 +121,7 @@ describe('completed-order email status updates', () => {
     apiClient.post.mockResolvedValue({ data: {} })
     await mount()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resend', exact: true })) })
-    expect(screen.getByText('Your email request was saved. Check the delivery status above.')).toBeInTheDocument()
+    expect(screen.getByText('Your email request was saved. Check the delivery status below.')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Unable to refresh email status')
     expect(screen.getByText('Tickets (1)')).toBeInTheDocument()
     await advance(120_000)

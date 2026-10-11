@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Gauge, Loader2, MonitorCheck, ShieldAlert, ShieldCheck, X } from 'lucide-react'
-import apiClient from '../api/client'
+import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
 
 const devices = [
   ['ios_safari', 'iOS Safari', true, true],
@@ -111,8 +111,13 @@ function EvidenceSummary({ review }) {
   </div>
 }
 
-export default function PilotValidationReviewDialog({ event, onComplete }) {
+function PilotValidationReviewDialogSession({ event, onComplete }) {
   const [open, setOpen] = useState(false)
+  const dialog = useCapturedPlatformDialog(open)
+  const { canClose } = dialog
+  const openCaptured = () => { if (dialog.capture()) { setBusy(false); setOpen(true) } }
+  const closeCaptured = useCallback(() => { if (canClose()) setOpen(false) }, [canClose])
+
   const [details, setDetails] = useState(null)
   const [form, setForm] = useState(initialForm)
   const [reason, setReason] = useState('')
@@ -143,10 +148,12 @@ export default function PilotValidationReviewDialog({ event, onComplete }) {
   }, [form])
 
   const load = async () => {
+    const scope = dialog.begin()
+    if (!scope) return
     setLoading(true); setError('')
-    try { setDetails((await apiClient.get(`/admin/events/${event.id}/pilot_validation`)).data) }
-    catch (requestError) { setError(requestError.response?.data?.error || 'Gate F validation could not be loaded.') }
-    finally { setLoading(false) }
+    try { const response = await scope.api.get(`/admin/events/${event.id}/pilot_validation`); if (!scope.current()) return; setDetails(response.data) }
+    catch (requestError) { if (!scope.current()) return; setError(requestError.response?.data?.error || 'Gate F validation could not be loaded.') }
+    finally { if (scope.current()) setLoading(false) }
   }
 
   useEffect(() => {
@@ -155,9 +162,9 @@ export default function PilotValidationReviewDialog({ event, onComplete }) {
     const trigger = triggerRef.current
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const animationFrame = window.requestAnimationFrame(() => closeRef.current?.focus())
+    closeRef.current?.focus()
     const onKeyDown = keyboardEvent => {
-      if (keyboardEvent.key === 'Escape' && !busy) setOpen(false)
+      if (keyboardEvent.key === 'Escape' && !busy) closeCaptured()
       if (keyboardEvent.key !== 'Tab' || !dialogRef.current) return
       const focusable = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
       if (!focusable.length) return
@@ -166,15 +173,17 @@ export default function PilotValidationReviewDialog({ event, onComplete }) {
       else if (!keyboardEvent.shiftKey && document.activeElement === last) { keyboardEvent.preventDefault(); first.focus() }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => { window.cancelAnimationFrame(animationFrame); window.removeEventListener('keydown', onKeyDown); document.body.style.overflow = previousOverflow; trigger?.focus() }
+    return () => { window.removeEventListener('keydown', onKeyDown); document.body.style.overflow = previousOverflow; trigger?.focus() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, closeCaptured])
 
   const request = async operation => {
+    const scope = dialog.begin('mutation')
+    if (!scope) return false
     setBusy(true); setError('')
-    try { await operation(); await load(); setForm(initialForm()); setReason(''); onComplete?.() }
-    catch (requestError) { setError(requestError.response?.data?.error || 'The Gate F decision could not be recorded.') }
-    finally { setBusy(false) }
+    try { await operation(scope.api); if (!scope.current()) return false; await load(); if (!scope.current()) return false; setForm(initialForm()); setReason(''); onComplete?.() }
+    catch (requestError) { if (!scope.current()) return false; setError(requestError.response?.data?.error || 'The Gate F decision could not be recorded.') }
+    finally { if (scope.current()) setBusy(false); scope.finish() }
   }
   const submit = submitEvent => {
     submitEvent.preventDefault()
@@ -183,27 +192,27 @@ export default function PilotValidationReviewDialog({ event, onComplete }) {
       if (key.includes('rate_percent')) return [key, Number.parseFloat(value)]
       return [key, value]
     }))
-    request(() => apiClient.post(`/admin/events/${event.id}/pilot_validation_reviews`, {
+    request(api => api.post(`/admin/events/${event.id}/pilot_validation_reviews`, {
       ...form, load_results: loadResults, effective_at: new Date(form.effective_at).toISOString(),
       expires_at: new Date(form.expires_at).toISOString(),
     }))
   }
-  const approve = () => request(() => apiClient.post(`/admin/pilot_validation_reviews/${pending.id}/approve`))
-  const reject = () => request(() => apiClient.post(`/admin/pilot_validation_reviews/${pending.id}/reject`, { reason }))
-  const revoke = revokeEvent => { revokeEvent.preventDefault(); request(() => apiClient.post(`/admin/pilot_validation_reviews/${approval.id}/revoke`, { reason })) }
+  const approve = () => request(api => api.post(`/admin/pilot_validation_reviews/${pending.id}/approve`))
+  const reject = () => request(api => api.post(`/admin/pilot_validation_reviews/${pending.id}/reject`, { reason }))
+  const revoke = revokeEvent => { revokeEvent.preventDefault(); request(api => api.post(`/admin/pilot_validation_reviews/${approval.id}/revoke`, { reason })) }
   const setMatrixValue = (matrix, key, value) => setForm(current => ({ ...current, [matrix]: { ...current[matrix], [key]: value } }))
   const updateDevice = (key, field, value) => setForm(current => ({ ...current, device_matrix: { ...current.device_matrix, [key]: { ...current.device_matrix[key], [field]: value } } }))
   const updateAssistive = (key, field, value) => setForm(current => ({ ...current, accessibility_results: { ...current.accessibility_results, assistive_technology: { ...current.accessibility_results.assistive_technology, [key]: { ...current.accessibility_results.assistive_technology[key], [field]: value } } } }))
 
   return <>
-    <button ref={triggerRef} type="button" onClick={() => setOpen(true)} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-semibold text-cyan-900 transition-colors hover:bg-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2">
+    <button ref={triggerRef} type="button" onClick={openCaptured} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-semibold text-cyan-900 transition-colors hover:bg-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2">
       {validation.approved || validation.approval_recorded ? <ShieldCheck className="h-4 w-4" /> : <MonitorCheck className="h-4 w-4" />}
       {validation.approved || validation.approval_recorded ? 'Review QA approval' : validation.pending_submission ? 'Review QA evidence' : 'Prepare Gate F evidence'}
     </button>
 
-    {open && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) setOpen(false) }}>
+    {open && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) closeCaptured() }}>
       <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="pilot-validation-title" className="max-h-[96vh] w-full overflow-y-auto rounded-t-3xl bg-stone-50 shadow-2xl sm:max-w-5xl sm:rounded-3xl">
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-200 bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-800">Gate F · candidate validation</p><h2 id="pilot-validation-title" className="mt-1 text-2xl font-bold tracking-tight text-neutral-950">{event.title}</h2><p className="mt-1 max-w-3xl text-sm leading-relaxed text-neutral-600">Record actual devices, representative-user flows, assistive technology, qualified review, and measured expected-onsale load for the exact Gate E candidate.</p></div><button ref={closeRef} type="button" aria-label="Close Gate F validation review" disabled={busy} onClick={() => setOpen(false)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 disabled:opacity-50"><X className="h-5 w-5" /></button></header>
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-200 bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-800">Gate F · candidate validation</p><h2 id="pilot-validation-title" className="mt-1 text-2xl font-bold tracking-tight text-neutral-950">{event.title}</h2><p className="mt-1 max-w-3xl text-sm leading-relaxed text-neutral-600">Record actual devices, representative-user flows, assistive technology, qualified review, and measured expected-onsale load for the exact Gate E candidate.</p></div><button ref={closeRef} type="button" aria-label="Close Gate F validation review" disabled={busy} onClick={closeCaptured} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 disabled:opacity-50"><X className="h-5 w-5" /></button></header>
         <div className="px-6 py-6 sm:px-8 sm:py-8">
           {error && <div role="alert" className="mb-6 flex items-start gap-3 border-l-4 border-red-600 bg-red-50 p-4 text-sm text-red-900"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" /><p>{error}</p></div>}
           {loading && !details ? <div className="flex justify-center py-16"><Loader2 aria-label="Loading Gate F validation" className="h-8 w-8 animate-spin text-cyan-700" /></div> : <>
@@ -232,4 +241,10 @@ export default function PilotValidationReviewDialog({ event, onComplete }) {
       </section>
     </div>}
   </>
+}
+
+export default function PilotValidationReviewDialog(props) {
+  const identity = useCapturedDialogIdentity()
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <PilotValidationReviewDialogSession key={`${identity.key}:${props.event.id}`} {...props} />
 }
