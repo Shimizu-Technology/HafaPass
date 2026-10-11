@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -228,6 +228,56 @@ for (const tool of tools) describe(`${tool.title} context ownership`, () => {
 })
 
 describe('draft retention and current waitlist view', () => {
+  it('allows clear-and-type guest quantity and sends the valid numeric quantity with scoped ownership', async () => {
+    activeTool = tools[0]
+    mount(activeTool)
+    await screen.findByRole('heading', { name: 'Guest List', level: 2 })
+    await userEvent.click(screen.getByRole('button', { name: 'Add Guest' }))
+    const form = screen.getByRole('heading', { name: 'Add to Guest List' }).closest('form')
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Name' }), 'Synthetic guest')
+    const quantity = within(form).getByRole('spinbutton', { name: 'Quantity' })
+    await userEvent.clear(quantity)
+    expect(quantity).toHaveValue(null)
+    await userEvent.type(quantity, '3')
+    expect(quantity).toHaveValue(3)
+    expect(quantity).toHaveAttribute('aria-invalid', 'false')
+    await userEvent.click(within(form).getByRole('button', { name: 'Add Guest' }))
+    await screen.findByText('Guest added. Any notification is handled separately.')
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/guest_list', {
+      guest_name: 'Synthetic guest', guest_email: '', guest_phone: '', notes: '', quantity: 3, ticket_type_id: 8,
+    }, expect.objectContaining({ organizationId: '1', authContext: getApiAuthContext() }))
+    expect(apiClient.post).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['', '0', '11', '1.5'])('blocks invalid guest quantity %j at both the submit control and handler', async value => {
+    activeTool = tools[0]
+    mount(activeTool)
+    await screen.findByRole('heading', { name: 'Guest List', level: 2 })
+    await userEvent.click(screen.getByRole('button', { name: 'Add Guest' }))
+    const form = screen.getByRole('heading', { name: 'Add to Guest List' }).closest('form')
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Name' }), 'Retained guest draft')
+    const quantity = within(form).getByRole('spinbutton', { name: 'Quantity' })
+    expect(quantity).toBeRequired()
+    expect(quantity).toHaveAttribute('min', '1')
+    expect(quantity).toHaveAttribute('max', '10')
+    await userEvent.clear(quantity)
+    if (value) await userEvent.type(quantity, value)
+    expect(quantity).toHaveValue(value ? Number(value) : null)
+    expect(quantity).toHaveAttribute('aria-invalid', 'true')
+    expect(quantity).toHaveAccessibleDescription('Enter a whole number from 1 to 10.')
+    const addGuest = within(form).getByRole('button', { name: 'Add Guest' })
+    expect(addGuest).toBeDisabled()
+    await userEvent.click(addGuest)
+    fireEvent.submit(form)
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(within(form).getByRole('textbox', { name: 'Name' })).toHaveValue('Retained guest draft')
+    await userEvent.clear(quantity)
+    await userEvent.type(quantity, '10')
+    expect(quantity).toHaveValue(10)
+    expect(addGuest).toBeEnabled()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
   it.each(['guest-list', 'promo-codes'])('retains the %s draft through validation failure and a list retry', async path => {
     activeTool = tools.find(tool => tool.path === path)
     apiClient.post.mockRejectedValueOnce({ response: { status: 422, data: { errors: ['Synthetic validation rejected'] } } })

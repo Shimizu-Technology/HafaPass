@@ -38,11 +38,13 @@ function GuestListSession({ eventId, identity }) {
   const [ticketTypes, setTicketTypes] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ guest_name: '', guest_email: '', guest_phone: '', notes: '', quantity: 1, ticket_type_id: '' })
+  const [form, setForm] = useState({ guest_name: '', guest_email: '', guest_phone: '', notes: '', quantity: '1', ticket_type_id: '' })
+  const validQuantity = form.quantity !== '' && Number.isInteger(Number(form.quantity))
+    && Number(form.quantity) >= 1 && Number(form.quantity) <= 10
   const saving = activeMutation === 'add_guest'
   const clearPrivateState = useCallback(() => {
     setConfirmation(null); setEvent(null); setEntries([]); setTicketTypes([]); setShowForm(false)
-    setForm({ guest_name: '', guest_email: '', guest_phone: '', notes: '', quantity: 1, ticket_type_id: '' })
+    setForm({ guest_name: '', guest_email: '', guest_phone: '', notes: '', quantity: '1', ticket_type_id: '' })
   }, [])
 
   const fetchData = useCallback(async () => {
@@ -139,9 +141,10 @@ function GuestListSession({ eventId, identity }) {
 
   const handleCreate = submitEvent => {
     submitEvent.preventDefault()
-    const payload = { ...form }
+    if (!validQuantity) return
+    const payload = { ...form, quantity: Number(form.quantity) }
     performMutation('add_guest', config => apiClient.post(`/organizer/events/${eventId}/guest_list`, payload, config), () => {
-      setForm(draft => ({ guest_name: '', guest_email: '', guest_phone: '', notes: '', quantity: 1, ticket_type_id: draft.ticket_type_id }))
+      setForm(draft => ({ guest_name: '', guest_email: '', guest_phone: '', notes: '', quantity: '1', ticket_type_id: draft.ticket_type_id }))
       setShowForm(false); setNotice('Guest added. Any notification is handled separately.')
     })
   }
@@ -207,7 +210,10 @@ function GuestListSession({ eventId, identity }) {
       </div>
       <div>
        <label htmlFor="guest-quantity" className="block text-sm font-medium text-neutral-700 mb-1.5">Quantity</label>
-       <input type="number" min="1" max="10" id="guest-quantity" value={form.quantity} onChange={e => setForm({...form, quantity: parseInt(e.target.value, 10) || 1})} className="input min-w-0 max-w-full" />
+       <input type="number" min="1" max="10" step="1" required inputMode="numeric" id="guest-quantity" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} aria-invalid={!validQuantity} aria-describedby="guest-quantity-help" className="input min-w-0 max-w-full" />
+       <p id="guest-quantity-help" className={`mt-1.5 text-sm ${validQuantity ? 'text-content-muted' : 'text-red-700'}`}>
+        {validQuantity ? '1–10 tickets' : 'Enter a whole number from 1 to 10.'}
+       </p>
       </div>
       <div className="sm:col-span-2">
        <label htmlFor="guest-notes" className="block text-sm font-medium text-neutral-700 mb-1.5">Notes <span className="text-content-muted font-normal">(optional)</span></label>
@@ -215,7 +221,7 @@ function GuestListSession({ eventId, identity }) {
       </div>
      </div>
      <div className="flex flex-wrap gap-3 mt-5">
-      <button type="submit" disabled={saving} className="btn-primary text-sm !py-2.5">{saving ? 'Adding...' : 'Add Guest'}</button>
+      <button type="submit" disabled={saving || !validQuantity} className="btn-primary text-sm !py-2.5">{saving ? 'Adding...' : 'Add Guest'}</button>
       <button type="button" onClick={() => setShowForm(false)} className="btn-secondary text-sm !py-2.5">Cancel</button>
      </div>
     </fieldset></form>
