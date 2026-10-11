@@ -166,7 +166,10 @@
     "privacy": "プライバシーポリシー",
     "connect": "つながる",
     "copyright": "Shimizu Technology. All rights reserved.",
-    "madeWith": "グアムでアロハを込めて作りました"
+    "madeWith": "グアムでアロハを込めて作りました",
+    "help": "ヘルプ",
+    "findTickets": "チケットを探す",
+    "contactSupport": "サポートに連絡"
   },
   "categories": {
     "all": "すべてのイベント",

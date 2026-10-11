@@ -47,10 +47,10 @@ export default function Footer() {
 
           {/* Help links lead to actual recovery and support, rather than generic social sites. */}
           <div>
-            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">Get help</h3>
+            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">{t('footer.help')}</h3>
             <ul className="space-y-1">
-              <li><Link to="/orders/recover" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Find your tickets</Link></li>
-              <li><a href={supportMailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Contact support</a></li>
+              <li><Link to="/orders/recover" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.findTickets')}</Link></li>
+              <li><a href={supportMailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.contactSupport')}</a></li>
             </ul>
           </div>
         </div>
