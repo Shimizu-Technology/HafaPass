@@ -105,6 +105,7 @@ function CheckoutContent({ buyerId }) {
   const [recovering, setRecovering] = useState(false)
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
+  const [checkoutRecovered, setCheckoutRecovered] = useState(false)
   const [step, setStep] = useState('info')
   const [secondsRemaining, setSecondsRemaining] = useState(null)
 
@@ -178,6 +179,7 @@ function CheckoutContent({ buyerId }) {
       paymentContext.current = { ...context, orderId: String(id) }
       setEvent(order.event)
       setOrderData(order)
+      setCheckoutRecovered(true)
       setOrderId(id)
       setClientSecret(order.client_secret)
       setStripePublishableKey(order.stripe_publishable_key)
@@ -766,9 +768,16 @@ function CheckoutContent({ buyerId }) {
                 setSubmitting(true)
                 setSubmitError(null)
                 try {
-                  if (orderId) await apiClient.post(`/orders/${orderId}/cancel`, {}, { headers: orderAccessHeaders(orderId) })
+                  const response = await apiClient.post(`/orders/${cancellingOrderId}/cancel`, {}, { headers: orderAccessHeaders(cancellingOrderId) })
+                  if (response.data?.status !== 'cancelled') throw new Error('Cancellation outcome is not confirmed')
                   if (!current() || !clearActiveCheckout(slug, cancellingOrderId)) return
                   paymentContext.current = null
+                  if (checkoutRecovered) {
+                    // Recovery has the server order, not the original editable
+                    // selection and buyer form. Re-select against fresh inventory.
+                    navigate(`/events/${slug}`, { replace: true, state: { browseFrom: location.state?.browseFrom } })
+                    return
+                  }
                   setStep('info')
                   setClientSecret(null)
                   setStripePublishableKey(null)
