@@ -25,7 +25,11 @@
 # Any libraries that use a connection pool or another resource pool should
 # be configured to provide at least as many connections as the number of
 # threads. This includes Active Record's `pool` parameter in `database.yml`.
-threads_count = ENV.fetch("RAILS_MAX_THREADS", 3)
+require_relative "runtime_configuration"
+# Keep the initial 512 MB service in one process; increase process count only
+# after measuring memory and request latency on a larger service.
+workers 0
+threads_count = RuntimeConfiguration.web_threads
 threads threads_count, threads_count
 
 # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
@@ -34,8 +38,12 @@ port ENV.fetch("PORT", 3000)
 # Allow puma to be restarted by `bin/rails restart` command.
 plugin :tmp_restart
 
-# Sidekiq owns background work in a separate worker process. Do not start a
-# second queue supervisor in the web process (Solid Queue is not installed).
+if RuntimeConfiguration.embedded?
+  # Released Solid Queue 1.7.0 supervises its actors inside this Puma process.
+  # Async supervisor mode does not change queue persistence to an async adapter.
+  plugin :solid_queue
+  solid_queue_mode :async
+end
 
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.
 # In other environments, only set the PID file if requested.

@@ -1,0 +1,17 @@
+default: &default
+  dispatchers:
+    - polling_interval: 5
+      batch_size: 50
+  workers:
+    - queues: [default, emails, low]
+      threads: 1
+      polling_interval: 5
+
+production:
+  <<: *default
+staging:
+  <<: *default
+development:
+  <<: *default
+test:
+  <<: *default

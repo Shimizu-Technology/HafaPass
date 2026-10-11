@@ -3,6 +3,7 @@ import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 import {
   applySyncResults, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
@@ -29,9 +30,17 @@ const credentialValue = raw => {
   }
 }
 
+function admissionAcknowledgement(current, receipt) {
+  const result = receipt.result || receipt.status
+  if (result === 'accepted') return { ...current, type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
+  if (receipt.reason_code === 'refund_pending') return { ...current, type: 'error', message: 'Refund pending — do not admit', detail: 'Entry is paused while this ticket’s refund is unresolved. Ask a door manager to check its current status.' }
+  return { ...current, type: result === 'conflict' ? 'warning' : 'error', message: receipt.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
+}
+
 function ResultPanel({ result }) {
   if (!result) return null
   const styles = {
+    pending: ['bg-neutral-50 border-neutral-300 text-neutral-900', Loader2],
     success: ['bg-emerald-50 border-emerald-300 text-emerald-900', CheckCircle2],
     warning: ['bg-amber-50 border-amber-300 text-amber-900', AlertTriangle],
     error: ['bg-red-50 border-red-300 text-red-900', XCircle],
@@ -57,6 +66,8 @@ function ResultPanel({ result }) {
 }
 
 export default function ScannerPage({ offlineOnly = false }) {
+  const [searchParams] = useSearchParams()
+  const requestedEventId = searchParams.get('event')
   const [events, setEvents] = useState([])
   const [eventId, setEventId] = useState('')
   const [device, setDevice] = useState(null)
@@ -84,12 +95,20 @@ export default function ScannerPage({ offlineOnly = false }) {
   const scanCooldownRef = useRef(false)
   const syncingRef = useRef(false)
   const setupGenerationRef = useRef(0)
+  const mountedRef = useRef(false)
+  const presentationRef = useRef(0)
+  const resultContextRef = useRef(null)
   const eventIdRef = useRef(eventId)
   eventIdRef.current = eventId
   const processCredentialRef = useRef(null)
   const cameraGenerationRef = useRef(0)
   const currentManifestRef = useRef(manifest)
   currentManifestRef.current = manifest
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false; setupGenerationRef.current += 1 }
+  }, [])
 
   const ticketsByHash = useMemo(
     () => new Map((manifest?.payload?.tickets || []).map(ticket => [ticket.credential_hash, ticket])),
@@ -115,16 +134,44 @@ export default function ScannerPage({ offlineOnly = false }) {
   const downloadManifest = useCallback(async (selectedEventId, selectedDevice) => {
     const response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`)
     if (selectedDevice.owner_user_id !== currentScannerOwner()) return null
+    let verified
     try {
       if (Number(response.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event.')
-      await saveVerifiedManifest(response.data)
+      verified = await saveVerifiedManifest(response.data)
     } catch (verificationError) {
-      await invalidateManifestAccess(selectedEventId)
+      // A stale callback must block its UI without erasing a newer context's access.
+      if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId)
       verificationError.manifestInvalid = true
       throw verificationError
     }
-    if (eventIdRef.current === String(selectedEventId)) setManifest(response.data)
-    return response.data
+    // The store may retain a newer signed manifest over a delayed network response.
+    if (eventIdRef.current === String(selectedEventId)) setManifest(verified)
+    return verified
+  }, [])
+
+  const reconcileStoredResult = useCallback(async selectedEventId => {
+    const context = resultContextRef.current
+    const current = () => context && mountedRef.current && resultContextRef.current === context
+      && context.owner === currentScannerOwner() && context.eventId === String(selectedEventId)
+      && eventIdRef.current === context.eventId && context.generation === setupGenerationRef.current
+      && context.presentation === presentationRef.current
+    if (!current()) return
+    const activeDevice = await loadDevice(selectedEventId)
+    if (!current() || activeDevice?.id !== context.deviceId) return
+    if (context.kind === 'reverse') {
+      const pending = await queuedActions(selectedEventId, context.deviceId)
+      if (current() && !pending.some(item => item.action_uuid === context.uuid)) setScanResult(existing => current()
+        && existing?.actionUuid === context.uuid && existing.actionKind === 'reverse' && existing.type === 'pending'
+        ? { ...existing, message: 'Undo is no longer queued', detail: 'Refresh admissions to check its result.' } : existing)
+      return
+    }
+    if (context.kind !== 'admit' || !context.ticketId) return
+    // Queue deletion and the terminal admit receipt commit atomically. Re-read
+    // after observing empty, including an ACK from a different browser tab.
+    const receipt = await localScanState(selectedEventId, context.ticketId)
+    if (!current() || receipt?.action_uuid !== context.uuid || !['accepted', 'conflict', 'rejected'].includes(receipt.status)) return
+    setScanResult(existing => current() && existing?.actionUuid === context.uuid && existing.actionKind === context.kind
+      ? admissionAcknowledgement(existing, receipt) : existing)
   }, [])
 
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
@@ -142,6 +189,9 @@ export default function ScannerPage({ offlineOnly = false }) {
       if (!await ownsJournal()) return
       let remaining = await queuedActions(selectedEventId, selectedDevice.id)
       if (!remaining.length) {
+        if (current()) setPendingCount(0)
+        await reconcileStoredResult(selectedEventId)
+        if (!current()) return
         if (!quiet) await Promise.all([downloadManifest(selectedEventId, selectedDevice), fetchDashboard(selectedEventId)])
         return
       }
@@ -165,11 +215,16 @@ export default function ScannerPage({ offlineOnly = false }) {
           throw new Error('Saved scans could not be acknowledged on this device. They remain saved; reconnect and retry synchronization.')
         }
         if (eventIdRef.current === String(selectedEventId)) setScanResult(current => {
-          if (!current?.ticket) return current
-          const result = results.find(item => item.kind === 'admit' && Number(item.ticket_id) === Number(current.ticket.ticket_id))
+          if (!current) return current
+          const result = current.actionUuid && results.find(item => item.action_uuid === current.actionUuid
+            && item.kind === current.actionKind)
           if (!result) return current
-          if (result.result === 'accepted') return { ...current, type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
-          return { ...current, type: result.result === 'conflict' ? 'warning' : 'error', message: result.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
+          if (result.kind === 'reverse') {
+            if (result.result === 'accepted') return { ...current, type: 'success', message: 'Admission reversal confirmed', detail: 'The server confirmed the Undo. Current ticket status determines whether it can be admitted again.' }
+            if (result.reason_code === 'already_reversed') return { ...current, type: 'warning', message: 'Admission already reversed', detail: 'The original Undo was already confirmed. This saved request has been acknowledged.' }
+            return { ...current, type: 'error', message: 'Admission reversal refused', detail: 'The server did not confirm this Undo. Ask a door manager to check the ticket status.' }
+          }
+          return admissionAcknowledgement(current, result)
         })
         currentDevice = { ...currentDevice, ...response.data.device }
         if (eventIdRef.current === String(selectedEventId)) setDashboard(current => current ? { ...current, counts: response.data.summary } : current)
@@ -208,10 +263,17 @@ export default function ScannerPage({ offlineOnly = false }) {
         setError(syncError.message)
       } else if (!quiet) setError(syncError.response?.data?.error || syncError.message || 'Queued scans could not be synchronized. They remain saved on this device; reconnect and retry.')
     } finally {
+      // A new scan can be acknowledged by a peer while this tab's older sync is
+      // busy. Resolve its own receipt even when the loop ends without another RPC.
+      try {
+        if (current()) await reconcileStoredResult(selectedEventId)
+      } catch {
+        if (current()) setError('Saved scanner data could not be read. Reload this device and retry; saved scans have not been removed.')
+      }
       syncingRef.current = false
       setSyncing(false)
     }
-  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending, online])
+  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending, online, reconcileStoredResult])
 
   const configureEvent = useCallback(async selectedEventId => {
     if (!selectedEventId) return
@@ -256,7 +318,7 @@ export default function ScannerPage({ offlineOnly = false }) {
             if (Number(downloaded.data?.payload?.event?.id) !== Number(selectedEventId)) throw new Error('The downloaded ticket list belongs to a different event. Ask a manager to check this device.')
             await saveVerifiedManifest(downloaded.data)
           } catch (verificationError) {
-            await invalidateManifestAccess(selectedEventId)
+            if (!verificationError.manifestContextChanged) await invalidateManifestAccess(selectedEventId)
             throw verificationError
           }
           cached = await loadAuthorizedScanner(selectedEventId)
@@ -300,9 +362,11 @@ export default function ScannerPage({ offlineOnly = false }) {
   }, [offlineOnly])
 
   useEffect(() => {
+    let active = true
     const restoreSaved = async () => {
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
       const cached = saved ? await loadAuthorizedScanner(saved).catch(() => null) : null
+      if (!active) return
       if (cached) {
         setEvents([{ ...cached.manifest.payload.event, id: Number(saved) }])
         setEventId(saved)
@@ -311,16 +375,18 @@ export default function ScannerPage({ offlineOnly = false }) {
         setSetupBusy(false)
       }
     }
-    if (offlineOnly) { void restoreSaved(); return }
+    if (offlineOnly) { void restoreSaved(); return () => { active = false } }
     apiClient.get('/organizer/events').then(response => {
+      if (!active) return
       const accessible = response.data.events || []
       setEvents(accessible)
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
-      const initial = accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
+      const initial = accessible.find(event => String(event.id) === requestedEventId)?.id || accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
       if (initial) setEventId(String(initial))
       else setSetupBusy(false)
-    }).catch(restoreSaved)
-  }, [offlineOnly])
+    }).catch(() => { if (active) void restoreSaved() })
+    return () => { active = false }
+  }, [offlineOnly, requestedEventId])
 
   useEffect(() => {
     if (!eventId) return
@@ -333,13 +399,21 @@ export default function ScannerPage({ offlineOnly = false }) {
   }, [device, eventId, online, syncQueue])
 
   const showResult = useCallback(result => {
+    // Record ownership synchronously; a peer ACK need not wait for React to render.
+    resultContextRef.current = result.actionUuid ? { uuid: result.actionUuid, kind: result.actionKind,
+      ticketId: result.ticket?.ticket_id, deviceId: result.deviceId, owner: currentScannerOwner(), eventId: eventIdRef.current,
+      generation: setupGenerationRef.current, presentation: presentationRef.current } : null
     setScanResult(result)
-    if (result.type === 'success') setSessionCount(count => count + 1)
-    if (navigator.vibrate) navigator.vibrate(result.type === 'success' ? 80 : [100, 60, 100])
+    if (result.type === 'success' || (result.type === 'pending' && result.actionKind === 'admit')) setSessionCount(count => count + 1)
+    if (navigator.vibrate && result.type !== 'pending') navigator.vibrate(result.type === 'success' ? 80 : [100, 60, 100])
   }, [])
 
-  const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted') => {
+  const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted', presentation = ++presentationRef.current) => {
     if (!device || !manifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== manifest.digest) return
+    const owner = currentScannerOwner()
+    const generation = setupGenerationRef.current
+    const current = () => mountedRef.current && owner === currentScannerOwner()
+      && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
     if (!device.effective || new Date(device.authorization_expires_at).getTime() <= Date.now() || new Date(manifest.payload.expires_at).getTime() <= Date.now()) {
       showResult({ type: 'error', message: 'Scanner access expired', detail: 'Reconnect before admitting another ticket.' })
       await purgeExpiredAdmissionAccess(eventId)
@@ -348,13 +422,15 @@ export default function ScannerPage({ offlineOnly = false }) {
       return
     }
     const localState = await localScanState(eventId, ticket.ticket_id)
+    if (!current()) return
     if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket,
+        ...(localState.status === 'pending' ? { actionUuid: localState.action_uuid, actionKind: 'admit', deviceId: device.id } : {}),
         latency: performance.now() - startedAt })
       return
     }
     if (ticket.state !== 'valid') {
-      const labels = { admitted: 'Already admitted', cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked' }
+      const labels = { admitted: 'Already admitted', cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
       showResult({ type: ticket.state === 'admitted' ? 'warning' : 'error', message: labels[ticket.state] || 'Ticket is not valid',
         detail: 'Use the latest manifest or ask a door manager for help.', ticket, latency: performance.now() - startedAt })
       return
@@ -369,19 +445,36 @@ export default function ScannerPage({ offlineOnly = false }) {
       source: online ? 'online' : 'offline',
       clientStatus,
     })
+    if (!current()) return
     if (!action) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket })
       return
     }
-    await refreshPending(eventId, device)
-    showResult({ type: 'success', message: online ? 'Admitted — syncing' : 'Admitted offline',
-      detail: online ? 'Saved on this device. Server confirmation follows a successful sync.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
+    // Own the result before count refresh yields to an already-running sync.
+    showResult({ type: online ? 'pending' : 'success', message: online ? 'Waiting for server confirmation' : 'Admitted offline',
+      actionUuid: action.action_uuid, actionKind: 'admit', deviceId: device.id,
+      detail: online ? 'Saved on this device. Entry is not confirmed until the server responds.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
       ticket, latency: performance.now() - startedAt })
-    if (online) syncQueue({ quiet: true })
+    await refreshPending(eventId, device)
+    if (!current()) return
+    // Another tab can acknowledge the transaction before queueAdmission returns.
+    // Only this command's durable terminal receipt can resolve its presentation.
+    const receipt = await localScanState(eventId, ticket.ticket_id)
+    if (!current()) return
+    if (receipt?.action_uuid === action.action_uuid && ['accepted', 'conflict', 'rejected'].includes(receipt.status)) {
+      setScanResult(existing => current() && existing?.actionUuid === action.action_uuid && existing.actionKind === 'admit'
+        ? admissionAcknowledgement(existing, receipt) : existing)
+    }
+    if (online && current()) syncQueue({ quiet: true })
   }, [device, eventId, manifest, refreshPending, showResult, syncQueue, online])
 
   const processCredential = useCallback(async raw => {
     const startedAt = performance.now()
+    const presentation = ++presentationRef.current
+    const owner = currentScannerOwner()
+    const generation = setupGenerationRef.current
+    const current = () => mountedRef.current && owner === currentScannerOwner()
+      && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
     try {
       if (!device?.effective || new Date(device.authorization_expires_at).getTime() <= Date.now()) {
         throw new Error('This scanner authorization expired. Reconnect before scanning.')
@@ -390,16 +483,16 @@ export default function ScannerPage({ offlineOnly = false }) {
         throw new Error('The offline manifest is missing or expired. Reconnect before scanning.')
       }
       const hash = await sha256Hex(credentialValue(raw))
-      if (eventIdRef.current !== eventId || currentManifestRef.current?.digest !== manifest.digest) return
+      if (!current() || currentManifestRef.current?.digest !== manifest.digest) return
       const ticket = ticketsByHash.get(hash)
       if (!ticket) {
         showResult({ type: 'error', message: 'Invalid ticket', detail: 'This credential is not in the signed event manifest.',
           latency: performance.now() - startedAt })
         return
       }
-      await admitEntry(ticket, hash, startedAt)
+      await admitEntry(ticket, hash, startedAt, 'locally_accepted', presentation)
     } catch (scanError) {
-      showResult({ type: 'error', message: 'Scanner unavailable', detail: scanError.message, latency: performance.now() - startedAt })
+      if (current()) showResult({ type: 'error', message: 'Scanner unavailable', detail: scanError.message, latency: performance.now() - startedAt })
     }
   }, [admitEntry, device, eventId, manifest, showResult, ticketsByHash])
 
@@ -493,14 +586,24 @@ export default function ScannerPage({ offlineOnly = false }) {
 
   const reverseAdmission = async action => {
     if (!device || !manifest) return
+    const owner = currentScannerOwner()
+    const generation = setupGenerationRef.current
+    const presentation = ++presentationRef.current
+    const current = () => mountedRef.current && owner === currentScannerOwner()
+      && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
     try {
-      await queueReversal({ eventId, deviceId: device.id, manifestVersion: manifest.payload.version,
+      const reversal = await queueReversal({ eventId, deviceId: device.id, manifestVersion: manifest.payload.version,
         ticketId: action.ticket_id, reversesActionUuid: action.action_uuid, source: online ? 'online' : 'offline' })
+      if (!current()) return
+      showResult({ type: 'pending', message: 'Reversal queued', actionUuid: reversal.action_uuid, actionKind: 'reverse', deviceId: device.id, detail: 'The admission reversal will be reconciled append-only.' })
       await refreshPending(eventId, device)
-      showResult({ type: 'success', message: 'Reversal queued', detail: 'The admission reversal will be reconciled append-only.' })
-      if (online) syncQueue()
+      if (!current()) return
+      // Reversal deletion is not a success receipt; only offer a neutral refresh.
+      await reconcileStoredResult(eventId)
+      if (!current()) return
+      if (online && current()) syncQueue()
     } catch (reversalError) {
-      setError(reversalError.message)
+      if (current()) setError(reversalError.message)
     }
   }
 
@@ -643,12 +746,15 @@ export default function ScannerPage({ offlineOnly = false }) {
             <section className="rounded-2xl border border-neutral-200 bg-white p-5">
               <h2 className="mb-3 font-semibold">Recent admissions</h2>
               <div className="space-y-2">
-                {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => (
-                  <div key={action.action_uuid} className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 p-2 text-xs">
-                    <span>{action.attendee?.attendee_name || action.attendee?.code}</span>
-                    <button onClick={() => reverseAdmission(action)} className="flex items-center gap-1 font-semibold text-amber-700"><RotateCcw className="h-3.5 w-3.5" /> Undo</button>
-                  </div>
-                ))}
+                {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => {
+                  const ticketCode = action.attendee?.code || `HP-T${action.ticket_id}`
+                  return (
+                    <div key={action.action_uuid} className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 p-2 text-xs">
+                      <span className="min-w-0 break-words"><span className="block">{action.attendee?.attendee_name || 'Attendee'}</span><span className="block font-semibold text-neutral-600">{ticketCode}</span></span>
+                      <button aria-label={`${action.reversed ? 'Reversed' : 'Undo'} admission for ${ticketCode}`} disabled={action.reversed} onClick={() => reverseAdmission(action)} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-lg px-3 font-semibold text-amber-700 disabled:cursor-default disabled:text-neutral-500"><RotateCcw className="h-3.5 w-3.5" /> {action.reversed ? 'Reversed' : 'Undo'}</button>
+                    </div>
+                  )
+                })}
               </div>
             </section>
           )}

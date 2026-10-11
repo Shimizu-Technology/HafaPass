@@ -8,7 +8,7 @@ Use synthetic information in an isolated environment. The first release supports
 
 Assigned seating, recurring-event generation, catalog/registration/waiver sales tools, ticket transfers, and door card payments are disabled in this scope. Pricing and ticket quantities remain available. Historical read and recovery operations remain available where needed. API guards enforce the same scope as the interface.
 
-For a shared testing site, follow [Private testing staging](PRIVATE_TESTING_STAGING.md). It requires a separate database and Redis queue, Clerk test accounts, HTTPS origins, a durable Sidekiq worker, and persistent application and manifest signing secrets. Verify those resources belong to staging before injecting credentials. Staging runs production loading while keeping money, provider delivery and payouts disabled. Do not copy production attendee information or approval records.
+For a shared testing site, follow [Private testing staging](PRIVATE_TESTING_STAGING.md). It requires an isolated database, Clerk test accounts, HTTPS origins, a selected durable runtime and persistent application and manifest signing secrets. The initial embedded SQL profile needs no Redis or separate worker/clock. Verify those resources belong to staging before injecting credentials. Staging runs production loading with simulation by default; controlled provider rehearsal requires the explicit test-mode configuration and allowlists in that guide. Production money and payouts remain disabled. Do not copy production attendee information or approval records.
 
 ## Rehearsal sequence
 

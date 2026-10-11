@@ -25,7 +25,8 @@ RSpec.describe "Stripe webhooks", type: :request do
   def create_pending_checkout(intent_id: "pi_checkout", quantity: 1)
     allow(StripeService).to receive(:payment_enabled?).and_return(true)
     allow(StripeService).to receive(:create_payment_intent).and_return(
-      OpenStruct.new(id: intent_id, client_secret: "#{intent_id}_secret")
+      OpenStruct.new(id: intent_id, client_secret: "#{intent_id}_secret",
+        allowed_payment_method_types: ["card"], payment_method_types: ["card"])
     )
     Commerce::OrderCreator.call(
       event: event,
@@ -389,7 +390,7 @@ RSpec.describe "Stripe webhooks", type: :request do
       expect(checkout.order.reload.refunded_cents).to eq(1250)
       expect(checkout.order.refunds.succeeded.sum(:amount_cents)).to eq(1250)
       expect(checkout.order.refunds.joins(:refund_items).sum("refund_items.amount_cents")).to eq(1250)
-      expect(checkout.order.reconciliation_exceptions).to be_empty
+      expect(checkout.order.reconciliation_exceptions.pluck(:code).uniq).to eq(["stripe_fee_adjustment_review_required"])
     end
   end
 
@@ -472,5 +473,45 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(checkout.order.reload.refunded_cents).to eq(1000)
     expect(checkout.order.reconciliation_exceptions).to exist(code: "refund_operation_mismatch")
     expect(checkout.order.reconciliation_exceptions).to exist(code: "provider_refund_total_decreased")
+  end
+  it "keeps a declined intent and its holds retryable and fulfills its later success exactly once" do
+    checkout = create_pending_checkout(intent_id: "pi_retry_decline")
+    holds = checkout.order.inventory_holds.pluck(:id)
+    post_stripe_event("payment_intent.payment_failed", { id: "pi_retry_decline", status: "requires_payment_method",
+      last_payment_error: { code: "card_declined" } })
+    expect(checkout.order.reload).to be_pending
+    expect(checkout.payment.reload).to be_pending
+    expect(checkout.order.inventory_holds.active.pluck(:id)).to eq(holds)
+    post_stripe_event("payment_intent.succeeded", { id: "pi_retry_decline", amount_received: checkout.payment.amount_cents,
+      currency: "usd", status: "succeeded" })
+    expect(checkout.order.reload).to be_completed
+    expect(checkout.order.tickets.count).to eq(1)
+    post_stripe_event("payment_intent.payment_failed", { id: "pi_retry_decline", status: "requires_payment_method" })
+    expect(checkout.order.reload).to be_completed
+    expect(checkout.payment.reload).to be_succeeded
+  end
+
+  it "quarantines mismatched signed environment or connected account before fulfillment" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    checkout = create_pending_checkout(intent_id: "pi_context")
+    post "/webhooks/stripe", params: { id: "evt_wrong_context", type: "payment_intent.succeeded", livemode: true,
+      account: "acct_wrong", data: { object: { id: "pi_context", amount_received: checkout.payment.amount_cents,
+        currency: "usd" } } }.to_json, headers: { "Content-Type" => "application/json" }
+    expect(response).to have_http_status(:ok)
+    expect(checkout.order.reload).to be_pending
+    expect(checkout.order.tickets).to be_empty
+    expect(checkout.order.reconciliation_exceptions).to exist(code: "payment_context_mismatch")
+  end
+  it "labels provider processing and ignores an older decline snapshot" do
+    checkout = create_pending_checkout(intent_id: "pi_processing")
+    { "evt_processing" => ["payment_intent.processing", "processing", 200],
+      "evt_stale_decline" => ["payment_intent.payment_failed", "requires_payment_method", 100] }.each do |id, (type, state, created)|
+      post "/webhooks/stripe", params: { id: id, type: type, created: created,
+        data: { object: { id: "pi_processing", status: state } } }.to_json,
+        headers: { "Content-Type" => "application/json" }
+    end
+    expect(checkout.payment.reload.provider_payload["status"]).to eq("processing")
+    expect(checkout.order.reload).to be_pending
+    expect(OrderPresenter.call(checkout.order)).to include(payment_resumable: false)
   end
 end

@@ -3,7 +3,7 @@
 # Sidekiq configuration for background job processing
 # https://github.com/sidekiq/sidekiq
 
-if defined?(Sidekiq)
+if defined?(Sidekiq) && !RuntimeConfiguration.solid_queue?
   redis_url = if Rails.env.production?
     ENV.fetch("REDIS_URL")
   else

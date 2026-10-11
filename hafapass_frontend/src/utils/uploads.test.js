@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { webcrypto } from 'node:crypto'
 import apiClient from '../api/client'
 import { uploadImage } from './uploads'
 
@@ -8,6 +9,11 @@ describe('verified uploads', () => {
   const file = new File(['image bytes'], 'cover.png', { type: 'image/png' })
   beforeEach(() => {
     vi.clearAllMocks()
+    apiClient.post.mockReset()
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'original-user')
+    vi.stubGlobal('crypto', webcrypto)
     apiClient.post.mockResolvedValueOnce({ data: { url: 'https://storage.invalid/cover', fields: { key: 'owned-key' }, upload_token: 'scoped-token' } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
   })
@@ -24,5 +30,163 @@ describe('verified uploads', () => {
     fetch.mockResolvedValue({ ok: false, status: 403 })
     await expect(uploadImage(file, 37)).rejects.toThrow('could not accept')
     expect(apiClient.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers a lost completion response after module reload without another storage upload', async () => {
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    await expect(uploadImage(file, 37)).rejects.toThrow('Response lost')
+    vi.resetModules()
+    const reloaded = await import('./uploads')
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/original.png' } })
+    expect(await reloaded.uploadImage(file, 37)).toBe('https://images.invalid/original.png')
+    expect(apiClient.post.mock.calls.map(([path]) => path)).toEqual(['/uploads/presign', '/uploads/complete', '/uploads/complete'])
+    expect(apiClient.post.mock.calls[2][1]).toEqual({ upload_token: 'scoped-token' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(window.sessionStorage.length).toBe(0)
+  })
+
+  it('lets a remounted caller recover the original token after the old component withdraws its context', async () => {
+    let finish
+    let originalMounted = true
+    apiClient.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const first = uploadImage(file, 37, () => originalMounted)
+    const firstRejected = expect(first).rejects.toThrow('context changed')
+    await vi.waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
+    originalMounted = false
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/original.png' } })
+    const remounted = uploadImage(file, 37, () => true)
+    finish({ data: { public_url: 'https://images.invalid/original.png' } })
+    await firstRejected
+    expect(await remounted).toBe('https://images.invalid/original.png')
+    expect(apiClient.post.mock.calls.map(([path]) => path)).toEqual(['/uploads/presign', '/uploads/complete', '/uploads/complete'])
+    expect(apiClient.post.mock.calls[2][1]).toEqual({ upload_token: 'scoped-token' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(window.sessionStorage.length).toBe(0)
+  })
+
+  it('does not reuse another account’s pending completion', async () => {
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    await expect(uploadImage(file, 37)).rejects.toThrow()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'other-user')
+    apiClient.post.mockResolvedValueOnce({ data: { url: 'https://storage.invalid/new', fields: {}, upload_token: 'other-token' } })
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/other.png' } })
+    await uploadImage(file, 37)
+    expect(apiClient.post.mock.calls[2][0]).toBe('/uploads/presign')
+    expect(apiClient.post.mock.calls[3][1]).toEqual({ upload_token: 'other-token' })
+  })
+
+  it('does not reuse another organization’s pending logo completion', async () => {
+    window.localStorage.setItem('hafapass_organization_id', 'org-a')
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    await expect(uploadImage(file)).rejects.toThrow()
+    window.localStorage.setItem('hafapass_organization_id', 'org-b')
+    apiClient.post.mockResolvedValueOnce({ data: { url: 'https://storage.invalid/org-b', fields: {}, upload_token: 'org-b-token' } })
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/org-b.png' } })
+    await uploadImage(file)
+    expect(apiClient.post.mock.calls[2][0]).toBe('/uploads/presign')
+    expect(apiClient.post.mock.calls[3][1]).toEqual({ upload_token: 'org-b-token' })
+  })
+
+  it('rejects a completion result after organization changes and preserves a replacement token', async () => {
+    let finish
+    apiClient.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = uploadImage(file, 37)
+    await vi.waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
+    const key = window.sessionStorage.key(0)
+    window.sessionStorage.setItem(key, 'replacement-token')
+    window.localStorage.setItem('hafapass_organization_id', 'new-org')
+    finish({ data: { public_url: 'https://images.invalid/old.png' } })
+    await expect(pending).rejects.toThrow('organization changed')
+    expect(window.sessionStorage.getItem(key)).toBe('replacement-token')
+  })
+
+  it('requires a fresh authorization after a definitively rejected completion', async () => {
+    apiClient.post.mockRejectedValueOnce({ response: { status: 403 } })
+    await expect(uploadImage(file, 37)).rejects.toEqual({ response: { status: 403 } })
+    expect(window.sessionStorage.length).toBe(0)
+    apiClient.post.mockResolvedValueOnce({ data: { url: 'https://storage.invalid/new', fields: {}, upload_token: 'fresh-token' } })
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/fresh.png' } })
+    await uploadImage(file, 37)
+    expect(apiClient.post.mock.calls[2][0]).toBe('/uploads/presign')
+    expect(apiClient.post.mock.calls[3][1]).toEqual({ upload_token: 'fresh-token' })
+  })
+
+  it.each([404, 422])('restarts a saved completion rejected with %s in the same call', async status => {
+    fetch.mockRejectedValueOnce(new Error('Storage response lost'))
+    await expect(uploadImage(file, 37)).rejects.toThrow('Storage response lost')
+    apiClient.post.mockRejectedValueOnce({ response: { status } })
+    apiClient.post.mockResolvedValueOnce({ data: { url: 'https://storage.invalid/fresh', fields: {}, upload_token: 'fresh-token' } })
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/fresh.png' } })
+    expect(await uploadImage(file, 37)).toBe('https://images.invalid/fresh.png')
+    expect(apiClient.post.mock.calls.map(([path]) => path)).toEqual(['/uploads/presign', '/uploads/complete', '/uploads/presign', '/uploads/complete'])
+    expect(apiClient.post.mock.calls[3][1]).toEqual({ upload_token: 'fresh-token' })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([401, 403, 429, 503])('does not allocate a fresh upload after saved completion status %s', async status => {
+    fetch.mockRejectedValueOnce(new Error('Storage response lost'))
+    await expect(uploadImage(file, 37)).rejects.toThrow()
+    const failure = { response: { status } }
+    apiClient.post.mockRejectedValueOnce(failure)
+    await expect(uploadImage(file, 37)).rejects.toEqual(failure)
+    expect(apiClient.post.mock.calls.map(([path]) => path)).toEqual(['/uploads/presign', '/uploads/complete'])
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not restart a rejected saved completion after its account or organization changes', async () => {
+    fetch.mockRejectedValueOnce(new Error('Storage response lost'))
+    await expect(uploadImage(file, 37)).rejects.toThrow()
+    apiClient.post.mockImplementationOnce(async () => {
+      window.localStorage.setItem('hafapass_organization_id', 'different-org')
+      throw { response: { status: 422 } }
+    })
+    await expect(uploadImage(file, 37)).rejects.toThrow('organization changed')
+    expect(apiClient.post.mock.calls.map(([path]) => path)).toEqual(['/uploads/presign', '/uploads/complete'])
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not restart rejected saved completion after the caller changes its event or unmounts', async () => {
+    fetch.mockRejectedValueOnce(new Error('Storage response lost'))
+    await expect(uploadImage(file, 37)).rejects.toThrow()
+    let currentEvent = 37
+    apiClient.post.mockImplementationOnce(async () => {
+      currentEvent = 38
+      throw { response: { status: 422 } }
+    })
+    await expect(uploadImage(file, 37, () => currentEvent === 37)).rejects.toThrow('context changed')
+    expect(apiClient.post.mock.calls.map(([path]) => path)).toEqual(['/uploads/presign', '/uploads/complete'])
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves a replacement identity rather than starting another upload after terminal rejection', async () => {
+    fetch.mockRejectedValueOnce(new Error('Storage response lost'))
+    await expect(uploadImage(file, 37)).rejects.toThrow()
+    const key = window.sessionStorage.key(0)
+    apiClient.post.mockImplementationOnce(async () => {
+      window.sessionStorage.setItem(key, 'replacement-token')
+      throw { response: { status: 422 } }
+    })
+    await expect(uploadImage(file, 37)).rejects.toEqual({ response: { status: 422 } })
+    expect(window.sessionStorage.getItem(key)).toBe('replacement-token')
+    expect(apiClient.post).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects oversized files before reading them or starting an upload', async () => {
+    const oversized = { size: 6 * 1024 * 1024, type: 'image/png', arrayBuffer: vi.fn() }
+    await expect(uploadImage(oversized, 37)).rejects.toThrow('5 MB')
+    expect(oversized.arrayBuffer).not.toHaveBeenCalled()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
+  it('keeps replacement recovery identity when an older storage upload is rejected', async () => {
+    let finish
+    fetch.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = uploadImage(file, 37)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    const key = window.sessionStorage.key(0)
+    window.sessionStorage.setItem(key, 'replacement-token')
+    finish({ ok: false, status: 403 })
+    await expect(pending).rejects.toThrow('could not accept')
+    expect(window.sessionStorage.getItem(key)).toBe('replacement-token')
   })
 })

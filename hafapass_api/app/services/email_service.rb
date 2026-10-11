@@ -5,10 +5,80 @@ require "digest"
 class EmailService
   FROM_EMAIL = ENV.fetch("MAILER_FROM_EMAIL", "tickets@hafapass.com")
   class ProviderDisabled < StandardError; end
+  class TransportContextChanged < StandardError; end
 
   class << self
     def configured?
-      PlatformCapabilities.enabled?("resend_production")
+      ProviderRehearsal.email_enabled? || PlatformCapabilities.enabled?("resend_production")
+    end
+
+    def transport_context_digest
+      credential = Resend.api_key
+      credential = credential.call if credential.is_a?(Proc)
+      Digest::SHA256.hexdigest(JSON.generate([
+        "resend", Digest::SHA256.hexdigest(credential.to_s),
+        ENV["PROVIDER_CONFIGURATION_REVISION"].to_s, Resend::Request::BASE_URL
+      ]))
+    end
+
+    def verify_transport_context!(delivery)
+      return if delivery.transport_context_digest.present? &&
+        delivery.transport_context_digest == transport_context_digest
+
+      raise TransportContextChanged, "The original email transport context requires reconciliation before retrying"
+    end
+
+    # Capture the exact recipient/body once; retries never regenerate access links.
+    def prepare_delivery_payload(delivery)
+      delivery.preparing_outbound_payload = true
+      case delivery.template
+      when "order_confirmation", "fulfillment_resend"
+        send_order_confirmation(delivery.order, delivery: delivery)
+      when "ticket_delivery"
+        send_ticket_email(delivery.ticket, delivery: delivery)
+      when "order_recovery"
+        send_order_recovery(delivery.order, delivery: delivery)
+      when "event_change"
+        change = EventChange.find(delivery.metadata.fetch("event_change_id"))
+        send_event_change_notification(change, delivery.order, delivery: delivery)
+      when "refund_notification"
+        send_refund_notification(delivery.order, delivery: delivery)
+      when "guest_list"
+        entry = GuestListEntry.find(delivery.metadata.fetch("guest_list_entry_id"))
+        send_guest_list_notification(entry, delivery: delivery)
+      when "waitlist_notification"
+        entry = WaitlistEntry.find(delivery.metadata.fetch("waitlist_entry_id"))
+        send_waitlist_notification(entry, delivery: delivery)
+      when "ticket_transfer"
+        transfer = TicketTransfer.find(delivery.metadata.fetch("ticket_transfer_id"))
+        send_ticket_transfer(transfer, delivery: delivery)
+      when "waitlist_offer"
+        offer = WaitlistOffer.find(delivery.metadata.fetch("waitlist_offer_id"))
+        send_waitlist_offer(offer, delivery: delivery)
+      when "communication_campaign"
+        send_communication_campaign(delivery)
+      when "event_reminder"
+        reminder = EventReminder.find(delivery.metadata.fetch("event_reminder_id"))
+        send_event_reminder(reminder, delivery: delivery)
+      else
+        raise ArgumentError, "Unsupported message template"
+      end
+    ensure
+      delivery.preparing_outbound_payload = false
+    end
+
+    def send_delivery_payload(delivery)
+      if delivery.provider == "simulated"
+        raise ProviderDisabled, "Production email cannot simulate a delivery" if Rails.env.production?
+
+        return { simulated: true }
+      end
+      unless delivery.provider == "resend" && configured?
+        raise ProviderDisabled, "The prepared email provider is unavailable"
+      end
+      verify_transport_context!(delivery)
+
+      deliver_payload(delivery.outbound_payload, delivery: delivery)
     end
 
     # ── Async Methods (use these from controllers) ──────────────────
@@ -16,7 +86,7 @@ class EmailService
 
     def send_order_confirmation_async(order, requested_by: nil, template: "order_confirmation")
       delivery = create_delivery(order: order, event: order.event, requested_by: requested_by, template: template,
-        recipient: order.buyer_email)
+        recipient: order.buyer_email, idempotency_key: template == "order_confirmation" ? "order-confirmation/#{order.id}" : nil)
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     rescue StandardError => e
@@ -47,9 +117,11 @@ class EmailService
       change.event.orders.where(status: [:completed, :partially_refunded]).find_each do |order|
         delivery = nil
         delivery = create_delivery(order: order, event: change.event, template: "event_change",
-          recipient: order.buyer_email, metadata: { event_change_id: change.id })
+          recipient: order.buyer_email, metadata: { event_change_id: change.id }, idempotency_key: "event-change/#{change.id}/#{order.id}")
         MessageDeliveryJob.perform_later(delivery.id)
       rescue StandardError => e
+        raise unless delivery
+
         record_enqueue_failure(delivery, e)
         Rails.logger.error(
           "[EventChangeNotification] Unable to queue change=#{change.id} order=#{order.id}: #{e.class}"
@@ -57,9 +129,9 @@ class EmailService
       end
     end
 
-    def send_refund_notification_async(order)
+    def send_refund_notification_async(order, refund: nil)
       delivery = create_delivery(order: order, event: order.event, template: "refund_notification",
-        recipient: order.buyer_email)
+        recipient: order.buyer_email, idempotency_key: refund ? "refund-notification/#{refund.id}" : nil)
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end
@@ -68,7 +140,7 @@ class EmailService
       return unless guest_entry.guest_email.present?
 
       delivery = create_delivery(event: guest_entry.event, template: "guest_list", recipient: guest_entry.guest_email,
-        metadata: { guest_list_entry_id: guest_entry.id })
+        metadata: { guest_list_entry_id: guest_entry.id }, idempotency_key: "guest-list/#{guest_entry.id}")
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end
@@ -77,7 +149,8 @@ class EmailService
       return unless waitlist_entry.email.present?
 
       delivery = create_delivery(event: waitlist_entry.event, template: "waitlist_notification",
-        recipient: waitlist_entry.email, metadata: { waitlist_entry_id: waitlist_entry.id })
+        recipient: waitlist_entry.email, metadata: { waitlist_entry_id: waitlist_entry.id },
+        idempotency_key: "waitlist-notification/#{waitlist_entry.id}/#{waitlist_entry.notified_at&.iso8601(6)}")
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end
@@ -85,14 +158,14 @@ class EmailService
     def send_ticket_transfer_async(transfer)
       delivery = create_delivery(ticket: transfer.ticket, order: transfer.ticket.order, event: transfer.ticket.event,
         template: "ticket_transfer", recipient: transfer.recipient_email,
-        metadata: { ticket_transfer_id: transfer.id })
+        metadata: { ticket_transfer_id: transfer.id }, idempotency_key: "ticket-transfer/#{transfer.id}")
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end
 
     def send_waitlist_offer_async(offer)
       delivery = create_delivery(event: offer.event, template: "waitlist_offer",
-        recipient: offer.waitlist_entry.email, metadata: { waitlist_offer_id: offer.id })
+        recipient: offer.waitlist_entry.email, metadata: { waitlist_offer_id: offer.id }, idempotency_key: "waitlist-offer/#{offer.id}")
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end
@@ -111,6 +184,8 @@ class EmailService
 
     # ── Order Confirmation ──────────────────────────────────────────
     def send_order_confirmation(order, delivery: nil)
+      return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
+
       event = order.event
       tickets = order.tickets.includes(:ticket_type)
       html = build_order_confirmation_html(order, event, tickets)
@@ -121,6 +196,8 @@ class EmailService
     end
 
     def send_order_recovery(order, delivery: nil)
+      return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
+
       html = build_order_recovery_html(order)
       deliver(
         to: order.buyer_email,
@@ -147,6 +224,8 @@ class EmailService
 
     # ── Individual Ticket Email ─────────────────────────────────────
     def send_ticket_email(ticket, delivery: nil)
+      return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
+
       event = ticket.event
       ticket_type = ticket.ticket_type
       html = build_ticket_email_html(ticket, event, ticket_type)
@@ -285,27 +364,40 @@ class EmailService
 
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, **log_meta)
+      params = { from: FROM_EMAIL, to: delivery ? delivery.recipient : to, subject: subject, html: html }
+      reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
+      params[:reply_to] = reply_to if reply_to
+      params[:subject] = "[HafaPass TEST] #{subject}" if ProviderRehearsal.enabled?
+      params[:tags] = [{ name: "category", value: tag }] if tag.present?
+      return params.deep_stringify_keys if delivery&.preparing_outbound_payload
+
+      deliver_payload(params, delivery: delivery)
+    end
+
+    def deliver_payload(params, delivery: nil)
+      if Rails.env.staging? && configured? && !ProviderRehearsal.email_payload_allowed?(params)
+        raise ProviderDisabled, "Staging email is restricted to approved rehearsal recipients"
+      end
       unless configured?
-        if Rails.env.production?
+        if Rails.env.production? || (delivery&.provider == "resend" && delivery.outbound_payload.present?)
           raise ProviderDisabled, "Production email is disabled until current Resend evidence is independently approved"
         end
-        meta_str = log_meta.map { |k, v| "#{k}=#{v}" }.join(", ")
-        Rails.logger.info(
-          "[EmailService SIMULATE] Would send to=#{to} subject=\"#{subject}\" tag=#{tag} #{meta_str}"
-        )
-        return { simulated: true, to: to, subject: subject }
+        Rails.logger.info("[EmailService SIMULATE] delivery=#{delivery&.id} template=#{delivery&.template}")
+        return { simulated: true }
       end
 
-      params = {
-        from: FROM_EMAIL,
-        to: to,
-        subject: subject,
-        html: html
-      }
-      params[:tags] = [{ name: "category", value: tag }] if tag.present?
+      raise MessageWirePayload::Unavailable, "Real email requires a durable MessageDelivery attempt" unless delivery
 
-      options = delivery ? { idempotency_key: delivery.idempotency_key } : {}
+      options = { idempotency_key: delivery.idempotency_key }
+      verify_transport_context!(delivery)
+      params = MessageWirePayload.for_delivery(delivery)
       Resend::Emails.send(params, options: options)
+    end
+
+    def send_prepared_direct(delivery)
+      raise MessageWirePayload::Unavailable, "Real email requires a durable MessageDelivery attempt" unless delivery
+
+      send_delivery_payload(delivery)
     end
 
     # ── HTML Builders ───────────────────────────────────────────────
@@ -388,7 +480,7 @@ class EmailService
 
           <p style="color: #6b7280; margin: 28px 0 0; font-size: 14px;">
             Present your QR code at the door for entry. You can access your tickets anytime at
-            <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">hafapass.com/my-tickets</a>.
+            <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">My Tickets</a>.
           </p>
         HTML
       end

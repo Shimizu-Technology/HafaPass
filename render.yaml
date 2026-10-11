@@ -1,0 +1,87 @@
+# Initial $7 existing API, isolated staging; one process with a durable PostgreSQL queue.
+previews:
+  generation: 'off'
+services:
+- type: web
+  name: hafapass-api
+  runtime: docker
+  repo: https://github.com/Shimizu-Technology/HafaPass
+  branch: main
+  region: singapore
+  rootDir: hafapass_api
+  dockerfilePath: ./Dockerfile
+  dockerContext: .
+  autoDeployTrigger: 'off'
+  numInstances: 1
+  maxShutdownDelaySeconds: 120
+  dockerCommand: bundle exec puma -C config/puma.rb
+  healthCheckPath: /up
+  preDeployCommand: bin/release-migrate
+  envVars:
+  - fromGroup: hafapass-staging-runtime
+  - key: DATABASE_URL
+    sync: false
+  - key: SECRET_KEY_BASE
+    sync: false
+  - key: CLERK_SECRET_KEY
+    sync: false
+  - key: CLERK_PUBLISHABLE_KEY
+    sync: false
+  - key: CLERK_ISSUER
+    sync: false
+  - key: CLERK_AUTHORIZED_PARTIES
+    sync: false
+  - key: ALLOWED_ORIGINS
+    sync: false
+  - key: FRONTEND_URL
+    sync: false
+  - key: PUBLIC_WEB_URL
+    sync: false
+  - key: SENTRY_DSN
+    sync: false
+  - key: AWS_ACCESS_KEY_ID
+    sync: false
+  - key: AWS_SECRET_ACCESS_KEY
+    sync: false
+  - key: AWS_BUCKET
+    sync: false
+  - key: AWS_REGION
+    sync: false
+  - key: RESEND_API_KEY
+    sync: false
+  - key: RESEND_WEBHOOK_SECRET
+    sync: false
+  - key: MAILER_FROM_EMAIL
+    sync: false
+  - key: PROVIDER_CONFIGURATION_REVISION
+    sync: false
+  - key: ADMISSION_MANIFEST_PRIVATE_KEY_PEM
+    sync: false
+  - key: ADMIN_EMAILS
+    sync: false
+  - key: DATABASE_MIGRATION_URL
+    sync: false
+  - key: STAGING_DATABASE_URL
+    sync: false
+  plan: 0.5c-512mb
+envVarGroups:
+- name: hafapass-staging-runtime
+  envVars:
+  - key: RAILS_ENV
+    value: staging
+  - key: HAFAPASS_LAUNCH_SCOPE
+    value: general_admission
+  - key: HAFAPASS_PROVIDER_REHEARSAL
+    value: 'false'
+  - key: ENABLE_FIRST_USER_ADMIN_BOOTSTRAP
+    value: 'false'
+  - key: RAILS_MAX_THREADS
+    value: '3'
+  - key: SIDEKIQ_CONCURRENCY
+    value: '3'
+  - key: DB_POOL
+    value: '10'
+  - key: PUBLIC_API_URL
+    value: https://hafapass-api.onrender.com
+  - key: HAFAPASS_RUNTIME
+    value: embedded

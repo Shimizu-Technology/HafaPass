@@ -26,11 +26,13 @@ module Admissions
     def call
       validate_batch!
       results = normalized_actions.sort_by { |action| action.fetch(:sequence) }.map { |action| reconcile(action) }
-      device.update!(
-        last_sequence: [device.last_sequence, results.filter_map { |result| result.action.sequence }.max.to_i].max,
-        last_synced_at: Time.current,
-        last_seen_at: Time.current
-      )
+      device.with_lock do
+        device.update!(
+          last_sequence: [device.last_sequence, results.filter_map { |result| result.action.sequence }.max.to_i].max,
+          last_synced_at: Time.current,
+          last_seen_at: Time.current
+        )
+      end
       results
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
       raise SyncError, e.message
@@ -43,6 +45,10 @@ module Admissions
     def validate_batch!
       raise SyncError, "actions must be a non-empty array" unless actions.is_a?(Array) && actions.any?
       raise SyncError, "A sync batch cannot exceed #{MAX_BATCH_SIZE} actions" if actions.size > MAX_BATCH_SIZE
+      validate_authorization!
+    end
+
+    def validate_authorization!
       raise SyncError, "Scanner device does not belong to this user" unless device.user_id == actor.id
       raise SyncError, "Scanner device authorization has expired or was revoked" unless device.effective?
       unless OrganizationAuthorization.allowed?(
@@ -82,8 +88,8 @@ module Admissions
           unless action[:credential_hash].to_s.match?(/\A[0-9a-f]{64}\z/)
             raise SyncError, "Each admission requires a SHA-256 credential hash"
           end
-        elsif action[:reverses_action_uuid].blank?
-          raise SyncError, "Each reversal requires reverses_action_uuid"
+        elsif action[:reverses_action_uuid].blank? || action[:reverses_action_uuid].to_s.length > 128
+          raise SyncError, "Each reversal requires a valid reverses_action_uuid"
         end
 
         action.merge(kind: kind, source: source, sequence: sequence, manifest_version: manifest_version,
@@ -97,14 +103,14 @@ module Admissions
     end
 
     def reconcile(input)
-      existing = AdmissionAction.find_by(action_uuid: input.fetch(:action_uuid))
-      return validate_replay!(existing, input) if existing
-      if input.fetch(:sequence) <= device.last_sequence
-        raise SyncError, "Device sequence has already been synchronized"
-      end
-
       AdmissionAction.transaction do
         device.lock!
+        # Serialize role/membership/assignment revocation with the admission.
+        # NO KEY UPDATE still permits foreign-key audit references to the actor.
+        actor.lock!("FOR NO KEY UPDATE")
+        device.organization.organization_memberships.where(user_id: actor.id).order(:id).lock.load
+        device.event.event_staff_assignments.where(user_id: actor.id).order(:id).lock.load
+        validate_authorization!
         existing = AdmissionAction.find_by(action_uuid: input.fetch(:action_uuid))
         return validate_replay!(existing, input) if existing
         if input.fetch(:sequence) <= device.last_sequence
@@ -121,6 +127,8 @@ module Admissions
 
       ticket.order.lock!
       ticket.lock!
+      # Authorization may expire while the ticket/order lock is contended.
+      validate_authorization!
       unless secure_equal?(Digest::SHA256.hexdigest(ticket.scan_credential), input[:credential_hash])
         return record_action(input, ticket: ticket, result: :rejected, reason_code: "credential_revoked")
       end
@@ -136,22 +144,25 @@ module Admissions
     end
 
     def reconcile_reversal(input)
+      original = AdmissionAction.find_by(action_uuid: input[:reverses_action_uuid])
+      original = nil unless original&.event_id == device.event_id && original.kind_admit? && original.result_accepted?
       unless OrganizationAuthorization.allowed?(
         user: actor,
         organization: device.organization,
         permission: :manage_attendees,
         event: device.event
       )
-        return record_action(input, result: :rejected, reason_code: "reversal_not_authorized", kind: :reverse)
+        return record_action(input, ticket: original&.ticket, result: :rejected,
+          reason_code: "reversal_not_authorized", kind: :reverse, reverses_action: original)
       end
 
-      original = AdmissionAction.find_by(action_uuid: input[:reverses_action_uuid])
-      unless original&.event_id == device.event_id && original.kind_admit? && original.result_accepted?
+      unless original
         return record_action(input, result: :rejected, reason_code: "admission_not_found", kind: :reverse)
       end
       ticket = original.ticket
       ticket.order.lock!
       ticket.lock!
+      validate_authorization!
       if original.reversal_action.present?
         return record_action(input, ticket: ticket, result: :conflict, reason_code: "already_reversed",
           kind: :reverse, reverses_action: original)
@@ -221,7 +232,8 @@ module Admissions
         occurred_at: input.fetch(:occurred_at),
         received_at: Time.current,
         attendee_snapshot: attendee_snapshot(ticket, entry),
-        metadata: { client_status: input[:client_status] }.compact
+        metadata: { client_status: input[:client_status],
+          reverses_action_uuid: kind == :reverse ? input[:reverses_action_uuid] : nil }.compact
       )
       AuditLogger.record!(
         action: kind == :reverse ? "ticket.check_in_reversed" : "ticket.admission_reconciled",
@@ -248,6 +260,7 @@ module Admissions
       return "cancelled" if ticket.cancelled?
       return "transferred" if ticket.transferred?
       return "payment_blocked" if ticket.order.ticket_access_blocked?
+      return "refund_pending" if ticket.refund_pending?
       return "unfulfilled" unless ticket.order.ticket_fulfilled?
       return "event_unavailable" unless ticket.event.published?
 
@@ -258,7 +271,7 @@ module Admissions
       unless existing.scanner_device_id == device.id && existing.event_id == device.event_id &&
           existing.sequence == input.fetch(:sequence) && existing.kind == input.fetch(:kind) &&
           existing.source == input.fetch(:source) && existing.credential_hash == input[:credential_hash] &&
-          existing.reverses_action&.action_uuid == input[:reverses_action_uuid]
+          (existing.reverses_action&.action_uuid || existing.metadata["reverses_action_uuid"]) == input[:reverses_action_uuid]
         raise SyncError, "action_uuid was already used for a different admission action"
       end
 

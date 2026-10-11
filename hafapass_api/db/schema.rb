@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -70,7 +70,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.index ["event_id", "result"], name: "index_admission_actions_on_event_id_and_result"
     t.index ["event_id"], name: "index_admission_actions_on_event_id"
     t.index ["organization_id"], name: "index_admission_actions_on_organization_id"
-    t.index ["reverses_action_id"], name: "idx_admission_single_reversal", unique: true, where: "(reverses_action_id IS NOT NULL)"
+    t.index ["reverses_action_id"], name: "idx_admission_single_reversal", unique: true, where: "((reverses_action_id IS NOT NULL) AND (result = 0))"
     t.index ["reverses_action_id"], name: "index_admission_actions_on_reverses_action_id"
     t.index ["scanner_device_id", "sequence"], name: "idx_admission_device_sequence", unique: true, where: "((scanner_device_id IS NOT NULL) AND (sequence IS NOT NULL))"
     t.index ["scanner_device_id"], name: "index_admission_actions_on_scanner_device_id"
@@ -267,6 +267,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.check_constraint "price_cents >= 0 AND quantity_sold >= 0", name: "catalog_items_values_nonnegative"
   end
 
+  create_table "checkout_attempts", force: :cascade do |t|
+    t.string "checkout_key_digest", limit: 64, null: false
+    t.string "request_digest", limit: 64, null: false
+    t.integer "status", default: 0, null: false
+    t.string "lease_token_digest", limit: 64
+    t.datetime "lease_expires_at"
+    t.bigint "order_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["checkout_key_digest"], name: "index_checkout_attempts_on_checkout_key_digest", unique: true
+    t.index ["order_id"], name: "index_checkout_attempts_on_order_id", unique: true
+    t.check_constraint "status = 0 AND order_id IS NULL AND lease_token_digest IS NOT NULL AND lease_expires_at IS NOT NULL OR status = 1 AND order_id IS NULL AND lease_token_digest IS NULL AND lease_expires_at IS NULL OR status = 2 AND order_id IS NOT NULL AND lease_token_digest IS NULL AND lease_expires_at IS NULL", name: "checkout_attempt_state"
+  end
+
   create_table "communication_campaigns", force: :cascade do |t|
     t.text "body", null: false
     t.datetime "created_at", null: false
@@ -307,7 +321,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.index ["organization_id"], name: "index_connected_accounts_on_organization_id"
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
-    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying]::text[])", name: "connected_accounts_provider_valid"
+    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying::text, 'manual'::character varying::text, 'stripe'::character varying::text, 'legacy_manual'::character varying::text])", name: "connected_accounts_provider_valid"
     t.check_constraint "readiness_revision > 0", name: "connected_accounts_readiness_revision_positive"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
   end
@@ -981,6 +995,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.string "template", null: false
     t.bigint "ticket_id"
     t.datetime "updated_at", null: false
+    t.jsonb "outbound_payload", default: {}, null: false
+    t.datetime "provider_attempted_at"
+    t.boolean "provider_outcome_unknown", default: false, null: false
+    t.string "send_lease_token"
+    t.datetime "send_lease_expires_at"
+    t.string "transport_context_digest"
+    t.text "outbound_wire_body"
+    t.string "wire_body_digest"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
@@ -992,7 +1014,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
     t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
     t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "message_deliveries_subject_present"
-    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7])", name: "message_deliveries_status_valid"
+    t.check_constraint "outbound_wire_body IS NULL AND wire_body_digest IS NULL OR outbound_wire_body IS NOT NULL AND wire_body_digest IS NOT NULL AND wire_body_digest::text = encode(sha256(convert_to(outbound_wire_body, 'UTF8'::name)), 'hex'::text)", name: "message_deliveries_wire_digest_matches"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7, 8])", name: "message_deliveries_status_valid"
   end
 
   create_table "message_provider_events", force: :cascade do |t|
@@ -1089,8 +1112,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.string "wallet_type"
     t.string "cash_sale_key"
     t.string "cash_sale_request_digest"
+    t.string "checkout_key_digest"
+    t.string "checkout_request_digest"
+    t.datetime "checkout_recovery_expires_at"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
+    t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
     t.index ["event_id"], name: "index_orders_on_event_id"
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
@@ -1231,7 +1258,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "payment_readiness_reviews_decision_valid"
     t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text", name: "payment_readiness_reviews_digest_valid"
     t.check_constraint "expires_at > effective_at", name: "payment_readiness_reviews_window_valid"
-    t.check_constraint "merchant_of_record::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying, 'provider_managed'::character varying]::text[])", name: "payment_readiness_reviews_merchant_valid"
+    t.check_constraint "merchant_of_record::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text, 'provider_managed'::character varying::text])", name: "payment_readiness_reviews_merchant_valid"
     t.check_constraint "provider_state_digest::text ~ '^[0-9a-f]{64}$'::text", name: "payment_readiness_reviews_provider_state_digest_valid"
   end
 
@@ -1250,6 +1277,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.integer "status", default: 0, null: false
     t.datetime "succeeded_at"
     t.datetime "updated_at", null: false
+    t.string "provider_environment"
+    t.string "provider_account_id"
+    t.string "provider_platform_account_id"
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
@@ -1405,7 +1435,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.index ["parent_review_id"], name: "idx_platform_capability_reviews_one_rejection", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 3))"
     t.index ["parent_review_id"], name: "idx_platform_capability_reviews_one_revocation", unique: true, where: "((parent_review_id IS NOT NULL) AND (decision = 2))"
     t.index ["parent_review_id"], name: "index_platform_capability_reviews_on_parent_review_id"
-    t.check_constraint "capability::text = ANY (ARRAY['stripe_live'::character varying, 'resend_production'::character varying, 'apple_wallet'::character varying, 'google_wallet'::character varying, 'clover_card_present'::character varying, 'policy_register'::character varying]::text[])", name: "platform_capability_reviews_capability_valid"
+    t.check_constraint "capability::text = ANY (ARRAY['stripe_live'::character varying::text, 'resend_production'::character varying::text, 'apple_wallet'::character varying::text, 'google_wallet'::character varying::text, 'clover_card_present'::character varying::text, 'policy_register'::character varying::text])", name: "platform_capability_reviews_capability_valid"
     t.check_constraint "decision = 0 AND parent_review_id IS NULL OR (decision = ANY (ARRAY[1, 2, 3])) AND parent_review_id IS NOT NULL", name: "platform_capability_reviews_parent_valid"
     t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "platform_capability_reviews_decision_valid"
     t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND configuration_digest::text ~ '^[0-9a-f]{64}$'::text", name: "platform_capability_reviews_digests_valid"
@@ -1627,6 +1657,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.index ["registration_question_id"], name: "index_registration_responses_on_registration_question_id"
   end
 
+  create_table "runtime_executions", id: false, force: :cascade do |t|
+    t.string "task_key", null: false
+    t.string "application_revision", null: false
+    t.datetime "last_succeeded_at", null: false
+    t.index ["task_key", "application_revision"], name: "index_runtime_executions_on_task_key_and_application_revision", unique: true
+  end
+
+  create_table "runtime_throttle_buckets", id: false, force: :cascade do |t|
+    t.string "key_hash", limit: 64, null: false
+    t.bigint "value", default: 0, null: false
+    t.datetime "expires_at", null: false
+    t.index ["expires_at"], name: "index_runtime_throttle_buckets_on_expires_at"
+    t.index ["key_hash"], name: "index_runtime_throttle_buckets_on_key_hash", unique: true
+  end
+
   create_table "scanner_devices", force: :cascade do |t|
     t.datetime "authorization_expires_at", null: false
     t.datetime "created_at", null: false
@@ -1822,6 +1867,182 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
     t.integer "singleton_guard", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
+  end
+
+  create_table "solid_queue_batch_executions", force: :cascade do |t|
+    t.bigint "job_id", null: false
+    t.bigint "batch_id", null: false
+    t.datetime "created_at", null: false
+    t.index ["batch_id"], name: "index_solid_queue_batch_executions_on_batch_id"
+    t.index ["job_id"], name: "index_solid_queue_batch_executions_on_job_id", unique: true
+  end
+
+  create_table "solid_queue_batches", force: :cascade do |t|
+    t.string "active_job_batch_id"
+    t.string "description"
+    t.text "on_finish"
+    t.text "on_success"
+    t.text "on_failure"
+    t.text "metadata"
+    t.integer "total_jobs", default: 0, null: false
+    t.integer "completed_jobs", default: 0, null: false
+    t.integer "failed_jobs", default: 0, null: false
+    t.datetime "enqueued_at"
+    t.datetime "finished_at"
+    t.datetime "failed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["active_job_batch_id"], name: "index_solid_queue_batches_on_active_job_batch_id", unique: true
+    t.index ["finished_at"], name: "index_solid_queue_batches_on_finished_at"
+  end
+
+  create_table "solid_queue_blocked_executions", force: :cascade do |t|
+    t.bigint "job_id", null: false
+    t.string "queue_name", null: false
+    t.integer "priority", default: 0, null: false
+    t.string "concurrency_key", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "created_at", null: false
+    t.index ["concurrency_key", "priority", "job_id"], name: "index_solid_queue_blocked_executions_for_release"
+    t.index ["expires_at", "concurrency_key"], name: "index_solid_queue_blocked_executions_for_maintenance"
+    t.index ["job_id"], name: "index_solid_queue_blocked_executions_on_job_id", unique: true
+  end
+
+  create_table "solid_queue_claimed_executions", force: :cascade do |t|
+    t.bigint "job_id", null: false
+    t.bigint "process_id"
+    t.datetime "created_at", null: false
+    t.index ["job_id"], name: "index_solid_queue_claimed_executions_on_job_id", unique: true
+    t.index ["process_id", "job_id"], name: "index_solid_queue_claimed_executions_on_process_id_and_job_id"
+  end
+
+  create_table "solid_queue_failed_executions", force: :cascade do |t|
+    t.bigint "job_id", null: false
+    t.text "error"
+    t.datetime "created_at", null: false
+    t.index ["job_id"], name: "index_solid_queue_failed_executions_on_job_id", unique: true
+  end
+
+  create_table "solid_queue_jobs", force: :cascade do |t|
+    t.string "queue_name", null: false
+    t.string "class_name", null: false
+    t.text "arguments"
+    t.integer "priority", default: 0, null: false
+    t.string "active_job_id"
+    t.datetime "scheduled_at"
+    t.datetime "finished_at"
+    t.string "concurrency_key"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "batch_id"
+    t.index ["active_job_id"], name: "index_solid_queue_jobs_on_active_job_id"
+    t.index ["batch_id"], name: "index_solid_queue_jobs_on_batch_id"
+    t.index ["class_name"], name: "index_solid_queue_jobs_on_class_name"
+    t.index ["finished_at"], name: "index_solid_queue_jobs_on_finished_at"
+    t.index ["queue_name", "finished_at"], name: "index_solid_queue_jobs_for_filtering"
+    t.index ["scheduled_at", "finished_at"], name: "index_solid_queue_jobs_for_alerting"
+  end
+
+  create_table "solid_queue_pauses", force: :cascade do |t|
+    t.string "queue_name", null: false
+    t.datetime "created_at", null: false
+    t.index ["queue_name"], name: "index_solid_queue_pauses_on_queue_name", unique: true
+  end
+
+  create_table "solid_queue_processes", force: :cascade do |t|
+    t.string "kind", null: false
+    t.datetime "last_heartbeat_at", null: false
+    t.bigint "supervisor_id"
+    t.integer "pid", null: false
+    t.string "hostname"
+    t.text "metadata"
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.index ["last_heartbeat_at"], name: "index_solid_queue_processes_on_last_heartbeat_at"
+    t.index ["name", "supervisor_id"], name: "index_solid_queue_processes_on_name_and_supervisor_id", unique: true
+    t.index ["supervisor_id"], name: "index_solid_queue_processes_on_supervisor_id"
+  end
+
+  create_table "solid_queue_ready_executions", force: :cascade do |t|
+    t.bigint "job_id", null: false
+    t.string "queue_name", null: false
+    t.integer "priority", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.index ["job_id"], name: "index_solid_queue_ready_executions_on_job_id", unique: true
+    t.index ["priority", "job_id"], name: "index_solid_queue_poll_all"
+    t.index ["queue_name", "priority", "job_id"], name: "index_solid_queue_poll_by_queue"
+  end
+
+  create_table "solid_queue_recurring_executions", force: :cascade do |t|
+    t.bigint "job_id", null: false
+    t.string "task_key", null: false
+    t.datetime "run_at", null: false
+    t.datetime "created_at", null: false
+    t.index ["job_id"], name: "index_solid_queue_recurring_executions_on_job_id", unique: true
+    t.index ["task_key", "run_at"], name: "index_solid_queue_recurring_executions_on_task_key_and_run_at", unique: true
+  end
+
+  create_table "solid_queue_recurring_tasks", force: :cascade do |t|
+    t.string "key", null: false
+    t.string "schedule", null: false
+    t.string "command", limit: 2048
+    t.string "class_name"
+    t.text "arguments"
+    t.string "queue_name"
+    t.integer "priority", default: 0
+    t.boolean "static", default: true, null: false
+    t.text "description"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["key"], name: "index_solid_queue_recurring_tasks_on_key", unique: true
+    t.index ["static"], name: "index_solid_queue_recurring_tasks_on_static"
+  end
+
+  create_table "solid_queue_scheduled_executions", force: :cascade do |t|
+    t.bigint "job_id", null: false
+    t.string "queue_name", null: false
+    t.integer "priority", default: 0, null: false
+    t.datetime "scheduled_at", null: false
+    t.datetime "created_at", null: false
+    t.index ["job_id"], name: "index_solid_queue_scheduled_executions_on_job_id", unique: true
+    t.index ["scheduled_at", "priority", "job_id"], name: "index_solid_queue_dispatch_all"
+  end
+
+  create_table "solid_queue_semaphores", force: :cascade do |t|
+    t.string "key", null: false
+    t.integer "value", default: 1, null: false
+    t.datetime "expires_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["expires_at"], name: "index_solid_queue_semaphores_on_expires_at"
+    t.index ["key", "value"], name: "index_solid_queue_semaphores_on_key_and_value"
+    t.index ["key"], name: "index_solid_queue_semaphores_on_key", unique: true
+  end
+
+  create_table "stripe_fee_evidences", force: :cascade do |t|
+    t.bigint "payment_id", null: false
+    t.bigint "fee_component_id"
+    t.string "status", default: "pending", null: false
+    t.string "context_digest", null: false
+    t.string "provider_charge_id"
+    t.string "provider_balance_transaction_id"
+    t.string "evidence_digest"
+    t.integer "amount_cents"
+    t.integer "fee_cents"
+    t.integer "net_cents"
+    t.string "currency"
+    t.string "balance_status"
+    t.jsonb "fee_details", default: [], null: false
+    t.integer "attempts", default: 0, null: false
+    t.string "last_error_code"
+    t.datetime "next_attempt_at"
+    t.datetime "verified_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["context_digest", "provider_balance_transaction_id"], name: "idx_stripe_fee_provider_identity", unique: true, where: "(provider_balance_transaction_id IS NOT NULL)"
+    t.index ["fee_component_id"], name: "index_stripe_fee_evidences_on_fee_component_id", unique: true
+    t.index ["payment_id"], name: "index_stripe_fee_evidences_on_payment_id", unique: true
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'verified'::character varying::text, 'review_required'::character varying::text])", name: "stripe_fee_evidence_status"
   end
 
   create_table "support_notes", force: :cascade do |t|
@@ -2107,6 +2328,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
   add_foreign_key "catalog_item_holds", "order_items", on_delete: :restrict
   add_foreign_key "catalog_item_holds", "orders", on_delete: :restrict
   add_foreign_key "catalog_items", "events", on_delete: :restrict
+  add_foreign_key "checkout_attempts", "orders"
   add_foreign_key "communication_campaigns", "events", on_delete: :restrict
   add_foreign_key "communication_campaigns", "users", column: "created_by_user_id", on_delete: :restrict
   add_foreign_key "connected_accounts", "organizations", on_delete: :restrict
@@ -2294,6 +2516,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_050000) do
   add_foreign_key "settlement_items", "settlements", on_delete: :restrict
   add_foreign_key "settlements", "events", on_delete: :restrict
   add_foreign_key "settlements", "organizations", on_delete: :restrict
+  add_foreign_key "solid_queue_batch_executions", "solid_queue_batches", column: "batch_id", on_delete: :cascade
+  add_foreign_key "solid_queue_batch_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "solid_queue_failed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "solid_queue_ready_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "stripe_fee_evidences", "fee_components"
+  add_foreign_key "stripe_fee_evidences", "payments"
   add_foreign_key "support_notes", "events", on_delete: :restrict
   add_foreign_key "support_notes", "orders", on_delete: :restrict
   add_foreign_key "support_notes", "tickets", on_delete: :restrict

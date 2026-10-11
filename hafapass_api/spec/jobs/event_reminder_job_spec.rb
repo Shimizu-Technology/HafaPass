@@ -22,7 +22,7 @@ RSpec.describe EventReminderJob, type: :job do
 
     MessageDeliveryJob.perform_now(delivery.id)
 
-    expect(delivery.reload).to be_suppressed
+    expect(delivery.reload).to be_cancelled
     expect(reminder.reload).to be_pending
   end
 end

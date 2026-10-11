@@ -14,8 +14,10 @@ RSpec.describe Settlements::Finalizer do
     item = create(:order_item, order: order, unit_price_cents: subtotal_cents, subtotal_cents: subtotal_cents,
       fee_cents: service_fee_cents, organizer_proceeds_cents: subtotal_cents)
     create(:fee_component, order: order, kind: "platform", amount_cents: service_fee_cents, estimated: true)
-    create(:fee_component, order: order, order_item: item, kind: "processing", amount_cents: processing_fee_cents,
-      estimated: false)
+    component = create(:fee_component, order: order, order_item: item, kind: "processing", amount_cents: processing_fee_cents,
+      estimated: false, provider_reference: "txn_fixture_#{SecureRandom.hex(8)}")
+    capture = create(:payment, :succeeded, order: order)
+    create(:stripe_fee_evidence, :verified, payment: capture, fee_component: component, provider_balance_transaction_id: component.provider_reference)
     [order, item]
   end
 
@@ -55,7 +57,7 @@ RSpec.describe Settlements::Finalizer do
 
   it "blocks finalization while refunds or disputes are unresolved" do
     order, = record_sale!(event)
-    payment = create(:payment, :succeeded, order: order)
+    payment = order.payments.first
     refund = create(:refund, order: order, payment: payment, status: :pending, succeeded_at: nil)
 
     expect { described_class.call(event: event, actor: actor) }
@@ -92,7 +94,7 @@ RSpec.describe Settlements::Finalizer do
       PayoutCreator.call(settlement: post_payout, actor: actor, idempotency_key: "double-payout")
     end.to raise_error(PayoutCreator::PayoutError, /positive/)
 
-    payment = create(:payment, :succeeded, order: order)
+    payment = order.payments.first
     refund = create(:refund, order: order, payment: payment, amount_cents: 1000)
     create(:refund_item, refund: refund, order_item: item, amount_cents: 1000,
       organizer_proceeds_cents: 900, fee_cents: 100)
@@ -178,7 +180,7 @@ RSpec.describe Settlements::Finalizer do
 
   it "requires delivery reconciliation at closeout even though it does not prevent buyer refund attempts" do
     order, = record_sale!(event)
-    payment = create(:payment, :succeeded, order: order)
+    payment = order.payments.first
     settlement = described_class.call(event: event, actor: actor)
     exception = ReconciliationException.create!(order: nil, payment: payment, code: "ticket_email_delivery_failure")
 
@@ -195,7 +197,7 @@ RSpec.describe Settlements::Finalizer do
   it "reserves pending refunds and open disputes from current organization funds" do
     order, = record_sale!(event)
     described_class.call(event: event, actor: actor)
-    create(:refund, order: order, status: :pending, amount_cents: 1000)
+    create(:refund, order: order, payment: order.payments.first, status: :pending, amount_cents: 1000)
     Dispute.create!(order: order, provider: "stripe", provider_dispute_id: "dp-reserve", amount_cents: 500,
       currency: "usd", status: :open, opened_at: Time.current)
     expect(OrganizationPayoutBalance.available_cents(organization)).to eq(3317)
@@ -208,7 +210,7 @@ RSpec.describe Settlements::Finalizer do
     later_event = create(:event, :completed, organizer_profile: profile)
     record_sale!(later_event)
     described_class.call(event: later_event, actor: actor)
-    refund = create(:refund, order: order, amount_cents: 1000)
+    refund = create(:refund, order: order, payment: order.payments.first, amount_cents: 1000)
     create(:refund_item, refund: refund, order_item: item, amount_cents: 1000, organizer_proceeds_cents: 900, fee_cents: 100)
     order.update!(status: :partially_refunded, refund_amount_cents: 1000)
     expect(event.settlements.count).to eq(1)

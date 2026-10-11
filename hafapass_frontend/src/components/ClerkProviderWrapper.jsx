@@ -3,6 +3,7 @@ import { Sentry } from '../monitoring'
 import { useEffect, useState } from 'react'
 import { setAuthTokenGetter } from '../api/client'
 import { clearAllAdmissionData } from '../utils/admissionStore'
+import { clearUploadRecovery } from '../utils/uploadRecovery'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -11,13 +12,16 @@ function AuthTokenSync({ children, loadingFallback }) {
   const [bindingReady, setBindingReady] = useState(false)
   const [bindingFailed, setBindingFailed] = useState(false)
   const [bindingAttempt, setBindingAttempt] = useState(0)
-  const { getToken } = useAuth()
+  const { getToken, isLoaded: authLoaded, sessionId, userId } = useAuth()
   const { isLoaded, isSignedIn, user } = useUser()
   const currentUserId = isSignedIn && user ? user.id : null
 
   useEffect(() => {
-    setAuthTokenGetter(() => getToken())
-  }, [getToken])
+    return setAuthTokenGetter(() => getToken(), {
+      userId: currentUserId, sessionId,
+      ready: Boolean(authLoaded && isLoaded && currentUserId && userId === currentUserId),
+    })
+  }, [getToken, authLoaded, isLoaded, currentUserId, userId, sessionId])
 
   useEffect(() => {
     if (!isLoaded) return
@@ -30,7 +34,10 @@ function AuthTokenSync({ children, loadingFallback }) {
       try {
         const previous = window.localStorage.getItem(key)
         const changed = previous && previous !== currentUserId
-        if (changed) await clearAllAdmissionData()
+        if (changed) {
+          await clearAllAdmissionData()
+          clearUploadRecovery(previous)
+        }
         if (!active) return
         if (changed) window.localStorage.removeItem('hafapass_organization_id')
         if (currentUserId) window.localStorage.setItem(key, currentUserId)

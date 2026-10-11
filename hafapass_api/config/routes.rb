@@ -34,6 +34,7 @@ Rails.application.routes.draw do
       # Orders (public create for guest checkout)
       resources :orders, only: [:create, :show] do
         member do
+          post :payment_resume
           post :cancel
           post :resend
           post :event_change_response

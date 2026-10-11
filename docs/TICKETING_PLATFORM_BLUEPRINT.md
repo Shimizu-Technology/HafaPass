@@ -633,7 +633,7 @@ The program is complete only when every requirement allocated through Phase 10 h
 2. Automated tests at the appropriate unit, request, integration, or end-to-end layer.
 3. Runtime/browser evidence for user-visible behavior.
 4. Passing CI and local gate evidence.
-5. A completed current-head CodeRabbit review, green required checks, resolved required conversations, and no unresolved material finding.
+5. Completed current-head review provenance (GitHub CodeRabbit or the explicitly authorized [independent evidence contract](INDEPENDENT_REVIEW_EVIDENCE.md)), green required checks, resolved required conversations, and no unresolved material finding. A skipped bot status alone is not review evidence.
 6. Updated documentation and operational runbooks.
 7. No contradictory current-state evidence in the completion audit.
 

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { useParams, useNavigate, useSearchParams, useMatch, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus } from 'lucide-react'
 import { motion } from 'framer-motion'
 import apiClient from '../api/client'
@@ -15,7 +15,24 @@ import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttrib
 
 export default function EventDetailPage() {
   const { slug } = useParams()
+  const [params] = useSearchParams()
+  // Public pages can reuse their outlet when reduced motion is enabled.
+  // Event inventory and offer selections belong to this specific route/context.
+  return <EventDetailContent key={JSON.stringify([slug, params.get('preview') === 'true',
+    params.get('live_money_proof') === 'true', params.get('waitlist_offer')])} />
+}
+
+function EventDetailContent() {
+  const { slug } = useParams()
   const navigate = useNavigate()
+  const match = useMatch('/events/:slug')
+  const liveRoute = useRef(null)
+  const mounted = useRef(false)
+  liveRoute.current = { slug: match?.params.slug }
+  useLayoutEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const [searchParams] = useSearchParams()
   const isPreview = searchParams.get('preview') === 'true'
   const isLiveMoneyProof = searchParams.get('live_money_proof') === 'true'
@@ -27,26 +44,43 @@ export default function EventDetailPage() {
   const waitlistOfferToken = searchParams.get('waitlist_offer')
 
   useEffect(() => {
+    let active = true
+    const current = () => active && liveRoute.current.slug === slug
+    if (!current()) return undefined
+    setLoading(true)
+    setEvent(null)
+    setError(null)
     captureQueryAttribution(window.location.search)
     const url = isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
       (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
     apiClient.get(url)
-      .then(res => { setEvent(res.data); trackFunnel(apiClient, res.data.id, 'event_view'); setLoading(false) })
-      .catch(() => { setError('Event not found.'); setLoading(false) })
+      .then(res => {
+        if (!current()) return
+        if (res.data.slug !== slug) throw new Error('Event response does not match its route')
+        setEvent(res.data)
+        trackFunnel(apiClient, res.data.id, 'event_view')
+        setLoading(false)
+      })
+      .catch(() => { if (current()) { setError('Event not found.'); setLoading(false) } })
+    return () => { active = false }
   }, [slug, isPreview, isLiveMoneyProof])
 
   useEffect(() => {
-    if (!waitlistOfferToken) return
+    if (!waitlistOfferToken) return undefined
+    let active = true
     apiClient.get(`/waitlist_offers/${encodeURIComponent(waitlistOfferToken)}`)
-      .then(res => setWaitlistOffer(res.data))
-      .catch(() => setWaitlistOffer({ error: 'This waitlist offer is no longer available.' }))
-  }, [waitlistOfferToken])
+      .then(res => { if (active && liveRoute.current.slug === slug) setWaitlistOffer(res.data) })
+      .catch(() => { if (active && liveRoute.current.slug === slug) setWaitlistOffer({ error: 'This waitlist offer is no longer available.' }) })
+    return () => { active = false }
+  }, [waitlistOfferToken, slug])
 
   const handleCheckout = (lineItems) => {
+    if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
     navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof } })
   }
 
   const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {
+    if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
     navigate(`/checkout/${slug}`, {
       state: { event, lineItems, seatHoldToken, seatHoldExpiresAt, selectedSeats: seats },
     })
@@ -238,7 +272,7 @@ export default function EventDetailPage() {
               transition={{ duration: 0.5 }}
             >
               {/* Action buttons */}
-              <div className="flex items-center gap-2 mb-6">
+              <div className="flex flex-wrap items-center gap-2 mb-6">
                 {event.starts_at && (
                   <a
                     href={buildGoogleCalendarUrl(event)}

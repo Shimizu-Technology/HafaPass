@@ -1,17 +1,13 @@
 # Sidekiq configuration
 # https://github.com/sidekiq/sidekiq/wiki/Advanced-Options
 
-:concurrency: 5
+<% require_relative "runtime_configuration" %>
+:concurrency: <%= RuntimeConfiguration.worker_concurrency %>
 
 :queues:
   - [emails, 3]      # Higher priority for emails
   - [default, 2]     # Standard priority
   - [low, 1]         # Lower priority background tasks
 
-# Production settings
-production:
-  :concurrency: 10
-
-# Development settings  
-development:
-  :concurrency: 2
+# Capacity is explicitly configured per deployed service. The default fits a
+# small initial worker and the default five-connection Active Record pool.

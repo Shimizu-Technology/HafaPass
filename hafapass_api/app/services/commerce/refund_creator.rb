@@ -206,7 +206,8 @@ module Commerce
         payment.provider_payment_id,
         amount_cents: refund.amount_cents,
         reason: refund.reason,
-        idempotency_key: refund.idempotency_key
+        idempotency_key: refund.idempotency_key,
+        payment: payment
       )
     rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError
       raise
@@ -217,7 +218,7 @@ module Commerce
     end
 
     def recover_provider_refund(refund)
-      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key)
+      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key, payment: refund.payment)
       return response if response
       return if refund.created_at > PROVIDER_REPLAY_WINDOW.ago
 
@@ -314,16 +315,17 @@ module Commerce
           stripe_refund_id: provider_refund.id
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+        StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
         if refund.refund_tickets.any?
           release_refunded_tickets!(refund)
         elsif full_refund
           release_fully_refunded_inventory!(refund.order)
         end
+        EmailService.send_refund_notification_async(refund.order, refund: refund)
       end
 
       raise RefundError, validation_error if validation_error
 
-      EmailService.send_refund_notification_async(refund.order)
       refund.order.event.notify_waitlist_if_available if full_refund || refund.refund_tickets.any?
       refund.reload
     end

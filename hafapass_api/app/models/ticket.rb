@@ -8,6 +8,9 @@ class Ticket < ApplicationRecord
   belongs_to :holder_user, class_name: "User", optional: true
   belongs_to :event_seat, optional: true
   has_many :refund_tickets, dependent: :restrict_with_error
+  has_many :pending_refund_tickets, -> {
+    active.joins(:refund).where(refunds: { status: Refund.statuses[:pending] })
+  }, class_name: "RefundTicket"
   has_many :refunds, through: :refund_tickets
   has_many :message_deliveries, dependent: :restrict_with_error
   has_many :support_notes, dependent: :restrict_with_error
@@ -49,7 +52,11 @@ class Ticket < ApplicationRecord
   end
 
   def admission_allowed?
-    issued? && order.ticket_fulfilled? && !order.ticket_access_blocked? && event.published?
+    issued? && order.ticket_fulfilled? && !order.ticket_access_blocked? && !refund_pending? && event.published?
+  end
+
+  def refund_pending?
+    pending_refund_tickets.any?
   end
 
   def held_by?(user)
@@ -72,6 +79,7 @@ class Ticket < ApplicationRecord
         if order.ticket_access_blocked?
           raise AdmissionError, "Ticket access is suspended while a payment dispute is reviewed"
         end
+        raise AdmissionError, "Ticket access is paused while its selected refund is pending" if refund_pending?
         raise AdmissionError, "Event is #{event.status}; check-in is unavailable" unless event.reload.published?
         if credential && !TicketCredential.valid_scan_for?(self, credential)
           raise AdmissionError, "Ticket credential has been replaced"

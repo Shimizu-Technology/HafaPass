@@ -187,6 +187,14 @@ class LiveMoneyProofReview < ApplicationRecord
     errors.add(:order, "must be a completed live charge of $5 or less") unless
       order.total_cents.between?(1, LiveMoneyProofAuthorization::MAX_AMOUNT_CENTS) && order.refunded?
     errors.add(:payment, "must be a fully refunded Stripe payment") unless payment.provider == "stripe" && payment.refunded?
+    unless payment.provider_environment == "live" && payment.provider_platform_account_id.present? &&
+        payment.provider_payload.to_h["simulated"] != true
+      errors.add(:payment, "must have a verified live platform context")
+    end
+    fee_evidence = payment.stripe_fee_evidence
+    unless fee_evidence&.status_verified? && fee_evidence.context_digest == StripeProcessingFees.context_digest(payment)
+      errors.add(:payment, "must have verified actual provider processing fee evidence")
+    end
     if simulated_reference?(payment.provider_payment_id)
       errors.add(:payment, "must use a real provider payment reference")
     end

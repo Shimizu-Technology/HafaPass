@@ -48,6 +48,22 @@ RSpec.describe "Api::V1::Support", type: :request do
     expect(AuditLog.where(actor_user: support_user, action: "message_delivery.replayed", auditable: delivery)).to exist
   end
 
+  [:support, :admin].each do |role|
+    it "keeps frozen email wire bytes and digest out of #{role} delivery responses" do
+      payload = { "to" => "buyer@synthetic.invalid", "html" => "<a href='https://synthetic.invalid/?guest_token=private-fixture-link'>Order</a>" }
+      body = JSON.generate(payload)
+      digest = Digest::SHA256.hexdigest(body)
+      delivery = create(:message_delivery, order: order, recipient: payload.fetch("to"), outbound_payload: payload,
+        outbound_wire_body: body, wire_body_digest: digest)
+
+      get "/api/v1/support/message_deliveries", headers: auth_headers(create(:user, role: role))
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("deliveries").map { |item| item.fetch("id") }).to include(delivery.id)
+      expect(response.body).not_to include("outbound_wire_body", "wire_body_digest", "private-fixture-link", digest)
+    end
+  end
+
   it "creates append-only support notes" do
     post "/api/v1/support/notes", params: { order_id: order.id, body: "Buyer confirmed the corrected address." },
       headers: auth_headers(support_user)
