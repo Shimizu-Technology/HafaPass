@@ -119,7 +119,7 @@ export default function EventsPage() {
                 type="text"
                 aria-label="Search events and venues"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                 placeholder="Search events, venues..."
                 className="w-full pl-12 pr-4 py-3.5 text-sm rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500/40 transition-all"
               />
@@ -197,7 +197,7 @@ export default function EventsPage() {
             </div>
           ) : events.length === 0 ? (
             <motion.div
-              initial={reducedMotion ? false : { opacity: 0, y: 20 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               className="rounded-2xl border border-neutral-200 bg-white p-12 sm:p-16 text-center"
             >
@@ -217,7 +217,7 @@ export default function EventsPage() {
               <h2 className="text-xl font-bold text-neutral-900 mb-2">
                 {search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village ? 'No matching events' : 'No events yet'}
               </h2>
-              <p className="text-neutral-500 max-w-md mx-auto mb-8">
+              <p className="text-neutral-600 max-w-md mx-auto mb-8">
                 {!search && activeCategory === 'all' && dateRange === 'upcoming' && price === 'all' && !village
                   ? "Events on Guam will show up here. Be the first to create one and get the island buzzing!"
                   : "Try adjusting your search or filters to find what you're looking for."

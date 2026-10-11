@@ -1,8 +1,8 @@
 import { motion, useReducedMotion } from 'framer-motion'
 
 const AVATAR_COLORS = [
-  'bg-teal-500', 'bg-accent-700', 'bg-amber-500', 'bg-indigo-500',
-  'bg-rose-500', 'bg-emerald-500', 'bg-sky-500', 'bg-purple-500'
+  'bg-teal-700', 'bg-accent-700', 'bg-amber-700', 'bg-indigo-700',
+  'bg-rose-700', 'bg-emerald-700', 'bg-sky-700', 'bg-purple-700'
 ]
 
 function hashName(name) {

@@ -342,7 +342,7 @@ function EventDetailContent() {
                   <Heart className={`h-4 w-4 ${event.favorited ? 'fill-accent-700 text-accent-700' : ''}`} />{event.favorited ? 'Saved' : 'Save'}
                 </button>
                 <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
-                  <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-500' : ''}`} />{event.reminder ? 'Reminder set' : 'Remind me'}
+                  <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-700' : ''}`} />{event.reminder ? 'Reminder set' : 'Remind me'}
                 </button>
               </div>
 
@@ -377,7 +377,7 @@ function EventDetailContent() {
                 </div></FadeUp>
               )}
 
-              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Organizer</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-600">Verified</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? 'Following' : 'Follow'}</button></div></div></FadeUp>}
+              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Organizer</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">Verified</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? 'Following' : 'Follow'}</button></div></div></FadeUp>}
 
               {/* Venue Location Section */}
               {event.venue_address && (
@@ -391,10 +391,10 @@ function EventDetailContent() {
                   >
                     <div className="aspect-[3/1] bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center">
                       <div className="text-center">
-                        <MapPin className="w-8 h-8 text-brand-400 mx-auto mb-2" />
+                        <MapPin className="w-8 h-8 text-brand-700 mx-auto mb-2" />
                         <p className="text-sm font-medium text-brand-700">{event.venue_name}</p>
-                        <p className="text-xs text-brand-500 mt-0.5">{event.venue_address}</p>
-                        <p className="text-xs text-brand-400 mt-2 group-hover:underline">{event.venue?.slug ? 'View venue details' : 'Open in Google Maps'}</p>
+                        <p className="text-xs text-brand-700 mt-0.5">{event.venue_address}</p>
+                        <p className="text-xs text-brand-700 mt-2 group-hover:underline">{event.venue?.slug ? 'View venue details' : 'Open in Google Maps'}</p>
                       </div>
                     </div>
                   </Link>

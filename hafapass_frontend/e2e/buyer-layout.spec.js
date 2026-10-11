@@ -22,7 +22,7 @@ async function prepare(page) {
 }
 
 for (const width of [320, 390, 1440]) {
-  test(`buyer can select the current ticket and keep its quote on checkout at ${width}px`, async ({ page }) => {
+  test(`buyer can select the current ticket and keep its displayed estimate on checkout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await prepare(page)
@@ -48,13 +48,17 @@ for (const width of [320, 390, 1440]) {
 test('an event outage retries in place instead of pretending the event is missing', async ({ page }) => {
   await prepare(page)
   let requests = 0
+  let restored = false
   await page.route('**/api/v1/events/guam-community-night', route => {
     requests += 1
-    return requests === 1 ? json(route, { error: 'Synthetic outage' }, 503) : json(route, event)
+    return !restored ? json(route, { error: 'Synthetic outage' }, 503) : json(route, event)
   })
   await page.goto('/events/guam-community-night')
   await expect(page.getByRole('alert')).toContainText('couldn’t load')
+  const failedRequests = requests
+  restored = true
   await page.getByRole('button', { name: 'Retry event', exact: true }).click()
   await expect(page.getByRole('heading', { name: event.title })).toBeVisible()
-  expect(requests).toBe(2)
+  expect(requests).toBeGreaterThan(failedRequests)
+  await expect(page).toHaveURL(/\/events\/guam-community-night$/)
 })
