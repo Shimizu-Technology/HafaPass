@@ -66,8 +66,8 @@ export default {
         focus: '#087e7a',
       },
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
-        display: ['"Space Grotesk"', '"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans Variable"', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['"Space Grotesk Variable"', '"Plus Jakarta Sans Variable"', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         'soft': '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',

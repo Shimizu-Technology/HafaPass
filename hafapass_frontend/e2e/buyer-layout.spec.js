@@ -26,8 +26,12 @@ for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await prepare(page)
+    await page.route('https://fonts.googleapis.com/**', route => route.abort())
+    await page.route('https://fonts.gstatic.com/**', route => route.abort())
     await page.goto('/events/guam-community-night')
     await expect(page.getByRole('heading', { name: event.title })).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    expect(await page.evaluate(() => [...document.fonts].some(font => font.family.includes('Plus Jakarta Sans Variable') && font.status === 'loaded'))).toBe(true)
     const layout = await page.evaluate(() => ({
       width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth,
       ticketsTop: document.querySelector('#tickets').getBoundingClientRect().top,

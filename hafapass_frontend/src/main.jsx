@@ -1,3 +1,6 @@
+import '@fontsource-variable/plus-jakarta-sans'
+import '@fontsource-variable/plus-jakarta-sans/wght-italic.css'
+import '@fontsource-variable/space-grotesk'
 import './i18n'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
