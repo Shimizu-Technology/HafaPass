@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, CircleAlert, Clock3, Loader2, ShieldCheck } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
+import AdminAccessRecovery from '../../components/AdminAccessRecovery'
+import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 
 const localDateTimeValue = date => {
   const pad = value => String(value).padStart(2, '0')
@@ -24,27 +26,42 @@ function StatusBadge({ item }) {
   return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${styles}`}>{humanize(item.status)}</span>
 }
 
-function CapabilityCard({ item, refresh }) {
+function CapabilityCard({ item, refresh, identity }) {
+  const { beginRequest } = usePlatformRequests(identity, '/admin/provider-readiness')
+  const mutationBusy = useRef(false)
   const [form, setForm] = useState(initialForm)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
 
-  const run = async request => {
+  const run = async operation => {
+    if (mutationBusy.current) return
+    const request = beginRequest()
+    if (!request) return
+    mutationBusy.current = true
     setBusy(true); setMessage(null)
-    try { await request(); setForm(initialForm()); setReason(''); await refresh() }
-    catch (error) { setMessage(error.response?.data?.error || 'The evidence action failed.') }
-    finally { setBusy(false) }
+    try {
+      await operation(request.config)
+      if (!request.current()) return
+      setForm(initialForm()); setReason('')
+      await refresh()
+    } catch (error) {
+      if (request.handleError(error)) return
+      if (request.current()) setMessage(error.response?.data?.error || 'The evidence action failed.')
+    } finally {
+      request.release(); mutationBusy.current = false
+      if (request.current()) setBusy(false)
+    }
   }
 
   const submit = event => {
     event.preventDefault()
-    run(() => apiClient.post(`/admin/platform_capabilities/${item.capability}/reviews`, {
+    run(config => apiClient.post(`/admin/platform_capabilities/${item.capability}/reviews`, {
       ...form,
       effective_at: new Date(form.effective_at).toISOString(),
       expires_at: new Date(form.expires_at).toISOString(),
       controls: form.controls,
-    }))
+    }, config))
   }
   const pending = item.pending_submission
   const approval = item.latest_approval
@@ -69,8 +86,8 @@ function CapabilityCard({ item, refresh }) {
             <input className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} />
           </label>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-primary" disabled={busy} onClick={() => run(() => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/approve`))}>Approve exact snapshot</button>
-            <button type="button" className="rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50" disabled={busy || !reason.trim()} onClick={() => run(() => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/reject`, { reason }))}>Reject</button>
+            <button type="button" className="btn-primary" disabled={busy} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/approve`, undefined, config))}>Approve exact snapshot</button>
+            <button type="button" className="rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50" disabled={busy || !reason.trim()} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/reject`, { reason }, config))}>Reject</button>
           </div>
         </div>
       ) : approval?.active ? (
@@ -79,7 +96,7 @@ function CapabilityCard({ item, refresh }) {
           <label className="block text-sm font-medium text-emerald-950">Revocation reason
             <input className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} />
           </label>
-          <button type="button" className="rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50" disabled={busy || !reason.trim()} onClick={() => run(() => apiClient.post(`/admin/platform_capability_reviews/${approval.id}/revoke`, { reason }))}>Revoke approval</button>
+          <button type="button" className="rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50" disabled={busy || !reason.trim()} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${approval.id}/revoke`, { reason }, config))}>Revoke approval</button>
         </div>
       ) : (
         <form className="mt-5 space-y-4" onSubmit={submit}>
@@ -106,14 +123,39 @@ function CapabilityCard({ item, refresh }) {
   )
 }
 
-export default function ProviderReadinessPage() {
+function ProviderReadinessSession({ identity }) {
+  const { beginRequest } = usePlatformRequests(identity, '/admin/provider-readiness')
+  const generation = useRef(0)
+  const pendingRead = useRef(null)
   const [items, setItems] = useState(null)
   const [error, setError] = useState(null)
   const refresh = useCallback(async () => {
-    try { const response = await apiClient.get('/admin/platform_capabilities'); setItems(response.data.capabilities); setError(null) }
-    catch { setError('Unable to load provider readiness.') }
-  }, [])
-  useEffect(() => { refresh() }, [refresh])
+    const request = beginRequest()
+    if (!request) return
+    pendingRead.current?.abort()
+    pendingRead.current = request
+    const read = ++generation.current
+    const current = () => request.current() && generation.current === read
+    try {
+      const response = await apiClient.get('/admin/platform_capabilities', request.config)
+      if (!current()) return
+      setItems(response.data.capabilities); setError(null)
+    } catch (failure) {
+      if (!current() || request.handleError(failure)) return
+      setError('Unable to load provider readiness. Your current evidence drafts have been kept.')
+    } finally { request.release() }
+  }, [beginRequest])
+  useEffect(() => { refresh(); return () => pendingRead.current?.abort() }, [refresh])
 
-  return <AdminLayout><div className="mb-6 flex items-start gap-3"><ShieldCheck className="mt-1 h-7 w-7 text-brand-600" /><div><h2 className="text-2xl font-bold text-neutral-900">Provider and policy readiness</h2><p className="mt-1 max-w-3xl text-neutral-600">Credentials show that an integration can connect. Independent, current evidence determines whether HafaPass may use it in production.</p></div></div>{error && <p className="rounded-xl bg-red-50 p-4 text-red-800" role="alert">{error}</p>}{!items && !error ? <Loader2 className="mx-auto mt-16 h-8 w-8 animate-spin text-brand-500" /> : <div className="space-y-5">{items?.map(item => <CapabilityCard key={item.capability} item={item} refresh={refresh} />)}</div>}</AdminLayout>
+  return <AdminLayout><div className="mb-6 flex items-start gap-3"><ShieldCheck className="mt-1 h-7 w-7 text-brand-600" /><div><h2 className="text-2xl font-bold text-neutral-900">Provider and policy readiness</h2><p className="mt-1 max-w-3xl text-neutral-600">Credentials show that an integration can connect. Independent, current evidence determines whether HafaPass may use it in production.</p></div></div>{error && <p className="rounded-xl bg-red-50 p-4 text-red-800" role="alert">{error} <button type="button" onClick={refresh} className="min-h-11 px-2 font-semibold underline">Retry provider readiness</button></p>}{!items && !error ? <Loader2 className="mx-auto mt-16 h-8 w-8 animate-spin text-brand-500" /> : <div className="space-y-5">{items?.map(item => <CapabilityCard key={item.capability} item={item} refresh={refresh} identity={identity} />)}</div>}</AdminLayout>
+}
+
+
+export default function ProviderReadinessPage() {
+  const identity = usePlatformIdentity('admin')
+  const visit = usePlatformVisit('/admin/provider-readiness')
+  if (!visit.active) return null
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.accountKey} identity={identity} />
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <ProviderReadinessSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} />
 }
