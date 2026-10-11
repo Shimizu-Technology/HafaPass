@@ -220,3 +220,26 @@ it('shows an unconfirmed campaign submission without blindly sending it again', 
   expect(apiClient.post.mock.calls[0][0]).toBe('/organizer/events/11/communication_campaigns/99/send_now')
   expect(apiClient.post.mock.calls[0][1]).toBeUndefined()
 })
+
+it.each(tools)('keeps $name writes paused for a present invalid journal shape', async tool => {
+  const name = tool.name === 'Staff' ? 'team' : tool.name === 'Sales' ? 'sales-tools' : 'seating'
+  window.sessionStorage.setItem(`hafapass:${name}-outcome:owner-a:1:11`, 'false')
+  mount(tool); await tool.ready()
+  expect(tool.save()).toBeDisabled()
+  expect(apiClient.post).not.toHaveBeenCalled()
+  expect(window.sessionStorage.getItem(`hafapass:${name}-outcome:owner-a:1:11`)).toBe('false')
+})
+it('pauses staff changes while a previous saved-list refresh is unresolved', async () => {
+  mount(tools[0]); await tools[0].ready()
+  const delayed = deferred()
+  apiClient.get.mockImplementation((path, config) => path.endsWith('/staff_assignments') ? delayed.promise : getDefault(path, config))
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh saved staff' }))
+  expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled()
+  await userEvent.click(screen.getByRole('button', { name: 'Assign' }))
+  expect(apiClient.post).not.toHaveBeenCalled()
+  await act(async () => delayed.resolve({ data: { assignments: [], candidates: [{ user_id: 7, name: 'Synthetic member', organization_role: 'scanner' }] } }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Assign' })).toBeEnabled())
+  await userEvent.click(screen.getByRole('button', { name: 'Assign' }))
+  expect(await screen.findByText('assigned@example.test')).toBeInTheDocument()
+  expect(apiClient.post).toHaveBeenCalledTimes(1)
+})

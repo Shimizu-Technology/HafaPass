@@ -13,9 +13,10 @@ function EventStaffSession({ id, identity }) {
   const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/team`)
   const loadState = useRef({ generation: 0, request: null })
   const loaded = useRef(false)
+  const refreshingRef = useRef(false)
   const busyRef = useRef(false)
   const storageKey = `hafapass:team-outcome:${identity.owner}:${identity.organizationId}:${id}`
-  const [pending, setPending] = useState(() => { try { return JSON.parse(window.sessionStorage.getItem(storageKey) || 'null') } catch { return { label: 'A previous staff change' } } })
+  const [pending, setPending] = useState(() => { try { const raw = window.sessionStorage.getItem(storageKey); if (raw === null) return null; const value = JSON.parse(raw); return value && typeof value.label === 'string' ? value : { label: 'A previous staff change' } } catch { return { label: 'A previous staff change' } } })
   const pendingRef = useRef(pending)
   const [reviewed, setReviewed] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -40,6 +41,7 @@ function EventStaffSession({ id, identity }) {
     loadState.current.request = request
     const canApply = () => request.current() && generation === loadState.current.generation
     if (!loaded.current) setLoading(true)
+    refreshingRef.current = true
     setRefreshing(true)
     setError(null)
     if (pendingRef.current) setReviewed(false)
@@ -66,7 +68,7 @@ function EventStaffSession({ id, identity }) {
       if ([401, 403, 404].includes(requestError.response?.status)) { setEvent(null); loaded.current = false }
       setError(requestError.response?.data?.error || 'Could not load event staff. Your assignment choices are retained.')
     } finally {
-      if (canApply()) { setLoading(false); setRefreshing(false) }
+      if (canApply()) { setLoading(false); setRefreshing(false); refreshingRef.current = false }
       request.release()
     }
   }, [id, beginRequest, identity.organizationId])
@@ -74,7 +76,7 @@ function EventStaffSession({ id, identity }) {
   useEffect(() => { load() }, [load])
 
   const mutate = async (labelText, send, apply) => {
-    if (busyRef.current || pendingRef.current || !current() || event?.permissions?.manage_staff !== true) return
+    if (refreshingRef.current || busyRef.current || pendingRef.current || !current() || event?.permissions?.manage_staff !== true) return
     const request = beginRequest()
     if (!request) return
     const record = { label: labelText, started_at: new Date().toISOString() }
@@ -119,7 +121,7 @@ function EventStaffSession({ id, identity }) {
 
   if (!event) return <div className="mx-auto max-w-3xl p-6"><p role="alert" className="text-red-700">{error || 'Event staff could not be loaded.'}</p><button disabled={refreshing} onClick={load} className="btn-secondary mt-4">Retry staff list</button></div>
   if (event.permissions?.manage_staff !== true) return <EventAccessNotice event={event} message="Your event access does not include managing staff." />
-  const locked = busy || Boolean(pending)
+  const locked = refreshing || busy || Boolean(pending)
   return (
     <EventWorkspace eventId={id} event={event}><main className="mx-auto max-w-3xl">
       <div className="mt-5 flex items-start gap-3"><UserRoundCog className="mt-1 h-6 w-6 text-brand-600" /><div><h2 className="text-2xl font-bold text-neutral-950">Event team</h2><p className="mt-1 text-sm text-neutral-500">{event?.title} · assignments can expire or be revoked without changing organization membership.</p></div></div>

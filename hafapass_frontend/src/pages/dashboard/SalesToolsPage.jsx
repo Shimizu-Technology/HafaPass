@@ -24,7 +24,7 @@ function SalesToolsSession({ eventId, identity }) {
   const initialized = useRef(false)
   const busyRef = useRef(false)
   const storageKey = `hafapass:sales-tools-outcome:${identity.owner}:${identity.organizationId}:${eventId}`
-  const [pending, setPending] = useState(() => { try { return JSON.parse(window.sessionStorage.getItem(storageKey) || 'null') } catch { return { label: 'A previous sales change' } } })
+  const [pending, setPending] = useState(() => { try { const raw = window.sessionStorage.getItem(storageKey); if (raw === null) return null; const value = JSON.parse(raw); return value && typeof value.label === 'string' ? value : { label: 'A previous sales change' } } catch { return { label: 'A previous sales change' } } })
   const pendingRef = useRef(pending)
   const [reviewed, setReviewed] = useState(false)
   const [busy, setBusy] = useState(false)

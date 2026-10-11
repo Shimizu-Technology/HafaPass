@@ -9,9 +9,11 @@ import { supportMailto } from '../../utils/supportContact'
 
 const readPendingOperation = key => {
   try {
-    const value = JSON.parse(window.sessionStorage.getItem(key) || 'null')
-    return value && typeof value.operation === 'string' ? value : null
-  } catch { return null }
+    const raw = window.sessionStorage.getItem(key)
+    if (raw === null) return null
+    const value = JSON.parse(raw)
+    return value && typeof value.operation === 'string' ? value : { operation: 'unconfirmed_change' }
+  } catch { return { operation: 'unconfirmed_change' } }
 }
 const uncertainResponse = error => !error.response || error.response.status >= 500
   || [408, 409, 429].includes(error.response.status) || error.response.data?.reconciliation_required === true

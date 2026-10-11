@@ -55,6 +55,16 @@ afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.restoreAllMocks
 
 for (const tool of tools) describe(`${tool.title} context ownership`, () => {
   beforeEach(() => { activeTool = tool })
+  it('keeps mutations paused when a stored recovery record cannot be parsed', async () => {
+    const key = `hafapass:pending-${tool.path === 'guest-list' ? 'guest-list' : tool.path === 'promo-codes' ? 'promo-codes' : 'waitlist'}:actor-a:1:11`
+    window.sessionStorage.setItem(key, '{broken')
+    mount(tool)
+    await screen.findByText(tool.row('actor-a').guest_name || tool.row('actor-a').code || tool.row('actor-a').name)
+    expect(screen.getByRole('button', { name: tool.button })).toBeDisabled()
+    expect(window.sessionStorage.getItem(key)).toBe('{broken')
+    expect(apiClient[tool.method]).not.toHaveBeenCalled()
+  })
+
   it.each(['success', 'error'])('does not revive an old load %s after changing event', async outcome => {
     const old = deferred()
     apiClient.get.mockImplementation((path, config) => path === `/organizer/events/11/${tool.endpoint}` ? old.promise : load(path, config))

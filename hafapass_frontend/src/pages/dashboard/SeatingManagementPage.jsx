@@ -26,7 +26,7 @@ function SeatingSession({ id, identity }) {
   const initialized = useRef(false)
   const busyRef = useRef(false)
   const storageKey = `hafapass:seating-outcome:${identity.owner}:${identity.organizationId}:${id}`
-  const [pending, setPending] = useState(() => { try { return JSON.parse(window.sessionStorage.getItem(storageKey) || 'null') } catch { return { label: 'A previous seating change' } } })
+  const [pending, setPending] = useState(() => { try { const raw = window.sessionStorage.getItem(storageKey); if (raw === null) return null; const value = JSON.parse(raw); return value && typeof value.label === 'string' ? value : { label: 'A previous seating change' } } catch { return { label: 'A previous seating change' } } })
   const pendingRef = useRef(pending)
   const [reviewed, setReviewed] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
