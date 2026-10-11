@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, CheckCircle, ChevronRight, Clock3, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Clock3, Ticket, RotateCcw, XCircle, Loader2, Mail, RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
 import { supportMailto } from '../utils/supportContact'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
@@ -200,6 +200,9 @@ function OrderConfirmationContent() {
   const event = order?.event
   const awaitingPayment = order?.status === 'pending' && order?.payment_resumable === true
   const isProcessing = order && !finalStatuses.has(order.status)
+  const isClosed = ['cancelled', 'expired'].includes(order?.status)
+  const isRefunded = order?.status === 'refunded'
+  const isPartiallyRefunded = order?.status === 'partially_refunded'
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
   const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
   const deliveryUnconfirmed = !delivery?.simulated && delivery?.reconciliation_required === true
@@ -381,31 +384,18 @@ function OrderConfirmationContent() {
       <SEO title={`Order ${order.reference}`} />
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         <div className="mb-7 text-center">
-          <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing ? 'bg-amber-100' : 'bg-emerald-100'}`}>
-            {isProcessing ? <Clock3 className="h-8 w-8 text-amber-700" /> : <CheckCircle className="h-8 w-8 text-emerald-700" />}
+          <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing || isPartiallyRefunded ? 'bg-amber-100' : isClosed || isRefunded ? 'bg-neutral-100' : 'bg-emerald-100'}`}>
+            {isProcessing ? <Clock3 aria-label="Payment pending" className="h-8 w-8 text-amber-700" /> : isClosed ? <XCircle aria-label="Order closed" className="h-8 w-8 text-neutral-600" /> : isRefunded ? <RotateCcw aria-label="Order refunded" className="h-8 w-8 text-neutral-600" /> : isPartiallyRefunded ? <AlertTriangle aria-label="Order partially refunded" className="h-8 w-8 text-amber-700" /> : <CheckCircle aria-label="Order confirmed" className="h-8 w-8 text-emerald-700" />}
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-neutral-950">
-            {awaitingPayment ? 'Your payment is not complete' : isProcessing ? 'Payment is processing' : order.status === 'refunded' ? 'Your order was refunded' : order.status === 'partially_refunded' ? 'Your order was partially refunded' : order.status === 'cancelled' || order.status === 'expired' ? 'Order closed' : 'Your order is confirmed'}
+            {awaitingPayment ? 'Your payment is not complete' : isProcessing ? 'Payment is processing' : order.status === 'refunded' ? 'Your order was refunded' : order.status === 'partially_refunded' ? 'Your order was partially refunded' : order.status === 'cancelled' ? 'Order cancelled' : order.status === 'expired' ? 'Reservation expired' : 'Your order is confirmed'}
           </h1>
-          <p className="mt-2 text-neutral-500">Order {order.reference} · {order.buyer_email}</p>
+          <p className="mt-2 break-words text-neutral-600">Order {order.reference} · {order.buyer_email}</p>
           {awaitingPayment ? <div className="mt-3">
             <p className="mb-3 text-sm text-amber-700">Your tickets are held until {new Date(order.expires_at).toLocaleTimeString()}. Resume the original checkout to pay.</p>
             <Link to={`/checkout/${event.slug}?resume=${order.id}`} className="btn-primary">Resume payment</Link>
           </div> : isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
         </div>
-
-        <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed || deliveryUnconfirmed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">
-          <h2 id="confirmation-delivery-title" className="font-semibold">Ticket email</h2>
-          <p className="mt-1" role="status">{deliveryMessage}</p>
-          {deliveryUnconfirmed && delivery?.status === 'delivered' && <p className="mt-2" role="status">A previous ticket email request still has an unconfirmed outcome. Use Refresh status or contact support before requesting another email.</p>}
-          {!delivery?.simulated && <button onClick={refreshDeliveryStatus} disabled={deliveryRefreshing} className="mt-2 inline-flex min-h-11 items-center gap-1.5 font-semibold text-brand-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" />{deliveryRefreshing ? 'Refreshing status…' : 'Refresh status'}</button>}
-          {deliveryRefreshError && <p className="mt-1 text-amber-800" role="alert">{deliveryRefreshError}</p>}
-          {emailUpdatesPaused && emailInFlightStatuses.has(delivery?.status) && <p className="mt-1 text-neutral-600">Automatic email updates have paused. Use Refresh status to check again.</p>}
-          {(deliveryFailed || deliveryUnconfirmed) && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
-            {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
-            <a href={supportMailto(`Ticket email for order ${order.reference}`)} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
-          </div>}
-        </section>
 
         {change && (
           <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
@@ -426,33 +416,15 @@ function OrderConfirmationContent() {
           </section>
         )}
 
-        <section className="card mb-6 overflow-hidden">
-          <div className="border-b border-neutral-100 p-5 sm:p-6">
-            <p className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wider text-brand-600">{event.status}</p>
-            <h2 className="mt-1 text-xl font-bold text-neutral-950">{event.title}</h2>
-            <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
-            <p className="text-sm text-neutral-500">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
-          </div>
-          <div className="space-y-2 p-5 text-sm sm:p-6">
-            {order.order_items.map(item => (
-              <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
-            ))}
-            <div className="flex justify-between border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee</span><span>{formatPrice(order.service_fee_cents)}</span></div>
-            {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
-            <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>Total</span><span>{formatPrice(order.total_cents)}</span></div>
-            {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>Refunded</span><span>−{formatPrice(order.refunded_cents)}</span></div>}
-          </div>
-        </section>
-
         {ticketsAvailable && (
           <section id="order-tickets" className="card mb-6 scroll-mt-24 p-5 sm:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold text-neutral-950">Tickets ({order.tickets.length})</h2>
               {['completed', 'partially_refunded'].includes(order.status) && (
-                <button onClick={resend} disabled={resendState === 'sending' || resendState === 'uncertain' || deliveryUnconfirmed} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600"><Mail className="h-4 w-4" /> Resend</button>
+                <button onClick={resend} disabled={resendState === 'sending' || resendState === 'uncertain' || deliveryUnconfirmed} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700"><Mail className="h-4 w-4" /> Resend</button>
               )}
             </div>
-            {resendState === 'requested' && <p className="mb-3 text-sm text-neutral-700">Your email request was saved. Check the delivery status above.</p>}
+            {resendState === 'requested' && <p className="mb-3 text-sm text-neutral-700">Your email request was saved. Check the delivery status below.</p>}
             {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">An email request was made recently. Please wait two minutes.</p>}
             {resendState === 'uncertain' && <p className="mb-3 text-sm text-amber-700">A previous ticket email is still unconfirmed. Use Refresh status or contact support before requesting another email.</p>}
             {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
@@ -468,11 +440,16 @@ function OrderConfirmationContent() {
                 return <div key={ticket.id} className="py-3">
                 <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-neutral-900">{ticket.ticket_type.name}</p>
+                    <p className="break-words font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                     {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
-                    <p className="text-xs capitalize text-neutral-500">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
+                    <p className="text-xs capitalize text-neutral-600">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`}
+                      className={ticket.status === 'issued' && usableTickets ? 'btn-primary min-h-11 gap-2' : 'btn-secondary min-h-11 gap-2'}
+                      aria-label={ticket.status === 'issued' && usableTickets ? `Open ticket: ${ticket.ticket_type.name}` : 'View ticket'}>
+                      <Ticket aria-hidden="true" className="h-4 w-4" />{ticket.status === 'issued' && usableTickets ? 'Open ticket' : 'View ticket status'}
+                    </Link>}
                     {ticket.status === 'issued' && (
                       <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
                     )}
@@ -480,15 +457,12 @@ function OrderConfirmationContent() {
                       <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Checking…' : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : 'Cancel'}</button>
                     )}
                     {ticket.status === 'issued' && capabilities.ticket_transfers && event.transfers_enabled !== false && (
-                      <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-brand-600">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
+                      <button onClick={() => transferTicket(ticket)} disabled={transferringTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-brand-700">{transferringTicketId === ticket.id ? 'Sending…' : 'Transfer'}</button>
                     )}
                     {ticket.status === 'issued' && ticket.seat && (
-                      <button onClick={() => openSeatExchange(ticket)} className="min-h-11 px-2 text-xs font-semibold text-brand-600">Change seat</button>
+                      <button onClick={() => openSeatExchange(ticket)} className="min-h-11 px-2 text-xs font-semibold text-brand-700">Change seat</button>
                     )}
-                    {ticket.status === 'issued' && !order.ticket_access_blocked && (
-                      <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="inline-flex min-h-11 min-w-11 items-center justify-center" aria-label="Download ticket"><Download className="h-4 w-4 text-neutral-500" /></Link>
-                    )}
-                    {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`} className="inline-flex min-h-11 min-w-11 items-center justify-center" aria-label="View ticket"><ChevronRight className="h-5 w-5 text-neutral-400" /></Link>}
+
                   </div>
                 </div>
                 {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
@@ -516,10 +490,43 @@ function OrderConfirmationContent() {
           </section>
         )}
 
+        <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed || deliveryUnconfirmed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">
+          <h2 id="confirmation-delivery-title" className="font-semibold">Ticket email</h2>
+          <p className="mt-1" role="status">{deliveryMessage}</p>
+          {deliveryUnconfirmed && delivery?.status === 'delivered' && <p className="mt-2" role="status">A previous ticket email request still has an unconfirmed outcome. Use Refresh status or contact support before requesting another email.</p>}
+          {!delivery?.simulated && <button onClick={refreshDeliveryStatus} disabled={deliveryRefreshing} className="mt-2 inline-flex min-h-11 items-center gap-1.5 font-semibold text-brand-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" />{deliveryRefreshing ? 'Refreshing status…' : 'Refresh status'}</button>}
+          {deliveryRefreshError && <p className="mt-1 text-amber-800" role="alert">{deliveryRefreshError}</p>}
+          {emailUpdatesPaused && emailInFlightStatuses.has(delivery?.status) && <p className="mt-1 text-neutral-600">Automatic email updates have paused. Use Refresh status to check again.</p>}
+          {(deliveryFailed || deliveryUnconfirmed) && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+            {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
+            <a href={supportMailto(`Ticket email for order ${order.reference}`)} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
+          </div>}
+        </section>
+
+
+        <section className="card mb-6 overflow-hidden">
+          <div className="border-b border-neutral-100 p-5 sm:p-6">
+            <p className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wider text-brand-700">{event.status}</p>
+            <h2 className="mt-1 text-xl font-bold text-neutral-950">{event.title}</h2>
+            <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
+            <p className="text-sm text-neutral-600">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
+          </div>
+          <div className="space-y-2 p-5 text-sm sm:p-6">
+            {order.order_items.map(item => (
+              <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
+            ))}
+            <div className="flex justify-between border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee</span><span>{formatPrice(order.service_fee_cents)}</span></div>
+            {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
+            <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>Total</span><span>{formatPrice(order.total_cents)}</span></div>
+            {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>Refunded</span><span>−{formatPrice(order.refunded_cents)}</span></div>}
+          </div>
+        </section>
+
+
         <div className="flex items-center justify-center gap-5 text-sm font-medium">
           <button onClick={fetchOrder} className="inline-flex items-center gap-1.5 text-neutral-600"><RefreshCw className="h-4 w-4" /> Refresh</button>
-          <Link to="/events" className="text-brand-600">Browse events</Link>
-          {!getOrderAccess(id) && <Link to="/my-tickets" className="text-brand-600">My tickets</Link>}
+          <Link to="/events" className="text-brand-700">Browse events</Link>
+          {!getOrderAccess(id) && <Link to="/my-tickets" className="text-brand-700">My tickets</Link>}
         </div>
       </div>
     </div>

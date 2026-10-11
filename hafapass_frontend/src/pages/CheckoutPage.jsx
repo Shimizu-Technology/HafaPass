@@ -319,7 +319,7 @@ function CheckoutContent({ buyerId }) {
     if (!termsAccepted) errors.terms = 'You must accept the buyer terms to continue'
     event?.registration_questions?.forEach(question => {
       const answer = registrationAnswers[question.id]
-      if (question.required && (answer === undefined || answer === null || answer === '')) errors[`question_${question.id}`] = 'This answer is required'
+      if (question.required && (answer === undefined || answer === null || (typeof answer === 'string' && !answer.trim()))) errors[`question_${question.id}`] = 'This answer is required'
     })
     event?.waivers?.forEach(waiver => {
       if (waiver.required && !acceptedWaivers[waiver.id]) errors[`waiver_${waiver.id}`] = 'You must accept this waiver'
@@ -340,7 +340,10 @@ function CheckoutContent({ buyerId }) {
     const errors = validateForm()
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
-      requestAnimationFrame(() => document.getElementById(Object.keys(errors)[0] === 'name' ? 'buyerName' : Object.keys(errors)[0] === 'email' ? 'buyerEmail' : 'termsAccepted')?.focus())
+      const firstError = Object.keys(errors)[0]
+      const target = { name: 'buyerName', email: 'buyerEmail', terms: 'termsAccepted' }[firstError]
+        || firstError.replace('question_', 'question-').replace('waiver_', 'waiver-')
+      requestAnimationFrame(() => document.getElementById(target)?.focus())
       return
     }
 
@@ -622,7 +625,7 @@ function CheckoutContent({ buyerId }) {
                 </button>
               </div>
             )}
-            {promoError && <p className="text-red-500 text-xs mt-1.5">{promoError}</p>}
+            {promoError && <p className="text-red-700 text-xs mt-1.5">{promoError}</p>}
           </div>
         )}
 
@@ -638,6 +641,19 @@ function CheckoutContent({ buyerId }) {
               </div>
             )}
             <form onSubmit={handleInfoSubmit} noValidate>
+              {Object.values(formErrors).some(Boolean) && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-semibold">Check your information before continuing.</p>
+                <ul className="mt-2 space-y-1">
+                  {Object.entries(formErrors).filter(([, message]) => message).map(([field, message]) => {
+                    const target = { name: 'buyerName', email: 'buyerEmail', terms: 'termsAccepted' }[field]
+                      || field.replace('question_', 'question-').replace('waiver_', 'waiver-')
+                    const label = field.startsWith('question_') ? event.registration_questions.find(question => String(question.id) === field.slice(9))?.prompt
+                      : field.startsWith('waiver_') ? event.waivers.find(waiver => String(waiver.id) === field.slice(7))?.title
+                        : { name: t('checkout.fullName'), email: t('checkout.emailAddress'), terms: 'Buyer terms' }[field]
+                    return <li key={field}><a href={`#${target}`} className="underline underline-offset-2" onClick={() => document.getElementById(target)?.focus()}>{label}: {message}</a></li>
+                  })}
+                </ul>
+              </div>}
               <div className="space-y-4">
                 <div>
                   <label htmlFor="buyerName" className="block text-sm font-medium text-neutral-700 mb-1.5">{t('checkout.fullName')}</label>
@@ -645,7 +661,7 @@ function CheckoutContent({ buyerId }) {
                     onChange={(e) => { setBuyerName(e.target.value); setFormErrors(p => ({ ...p, name: null })) }}
                     className={`input ${formErrors.name ? 'input-error' : ''}`}
                     placeholder="Enter your full name" disabled={submitting} />
-                  {formErrors.name && <p id="buyer-name-error" role="alert" className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
+                  {formErrors.name && <p id="buyer-name-error" role="alert" className="text-red-700 text-xs mt-1">{formErrors.name}</p>}
                 </div>
                 <div>
                   <label htmlFor="buyerEmail" className="block text-sm font-medium text-neutral-700 mb-1.5">{t('checkout.emailAddress')}</label>
@@ -653,11 +669,11 @@ function CheckoutContent({ buyerId }) {
                     onChange={(e) => { setBuyerEmail(e.target.value); setFormErrors(p => ({ ...p, email: null })) }}
                     className={`input ${formErrors.email ? 'input-error' : ''}`}
                     placeholder="you@example.com" disabled={submitting} />
-                  {formErrors.email && <p id="buyer-email-error" role="alert" className="text-red-500 text-xs mt-1">{formErrors.email}</p>}
+                  {formErrors.email && <p id="buyer-email-error" role="alert" className="text-red-700 text-xs mt-1">{formErrors.email}</p>}
                 </div>
                 <div>
                   <label htmlFor="buyerPhone" className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    {t('checkout.phone')} <span className="text-neutral-400 font-normal">({t('checkout.optional')})</span>
+                    {t('checkout.phone')} <span className="text-neutral-600 font-normal">({t('checkout.optional')})</span>
                   </label>
                   <input id="buyerPhone" type="tel" value={buyerPhone}
                     onChange={(e) => setBuyerPhone(e.target.value)}
@@ -669,8 +685,8 @@ function CheckoutContent({ buyerId }) {
                     <div className="space-y-3">
                       {event.catalog_items.map(item => {
                         const selection = catalogSelections[item.id] || { quantity: 0, amount_cents: item.minimum_price_cents || item.price_cents }
-                        return <div key={item.id} className="flex items-center justify-between gap-3">
-                          <div><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-xs text-neutral-500">{item.description || (item.kind === 'donation' ? 'Support this event' : formatPrice(item.price_cents))}</p></div>
+                        return <div key={item.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0 break-words"><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-xs text-neutral-500">{item.description || (item.kind === 'donation' ? 'Support this event' : formatPrice(item.price_cents))}</p></div>
                           <div className="flex items-center gap-2">
                             {item.kind === 'donation' && selection.quantity > 0 && <label className="text-xs text-neutral-500">$<input aria-label={`${item.name} amount`} type="number" min={(item.minimum_price_cents || item.price_cents) / 100} max={item.maximum_price_cents ? item.maximum_price_cents / 100 : undefined} step="1" value={(selection.amount_cents || 0) / 100} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, amount_cents: Math.round(Number(e.target.value) * 100) } }))} className="ml-1 w-20 rounded-lg border border-neutral-300 px-2 py-1" /></label>}
                             <input aria-label={`${item.name} quantity`} type="number" min="0" max={item.quantity_remaining || 10} value={selection.quantity} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, quantity: Math.max(0, Number(e.target.value) || 0) } }))} className="w-16 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm" />
@@ -686,11 +702,11 @@ function CheckoutContent({ buyerId }) {
                     <div className="space-y-4">
                       {event.registration_questions.map(question => <div key={question.id}>
                         <label className="mb-1 block text-sm font-medium text-neutral-700" htmlFor={`question-${question.id}`}>{question.prompt}{question.required && ' *'}</label>
-                        {question.kind === 'selection' ? <select id={`question-${question.id}`} className="input" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))}><option value="">Select one</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
-                          : question.kind === 'checkbox' ? <input id={`question-${question.id}`} type="checkbox" checked={Boolean(registrationAnswers[question.id])} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.checked }))} />
-                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))} />
-                              : <input id={`question-${question.id}`} className="input" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))} />}
-                        {formErrors[`question_${question.id}`] && <p className="mt-1 text-xs text-red-500">{formErrors[`question_${question.id}`]}</p>}
+                        {question.kind === 'selection' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">Select one</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
+                          : question.kind === 'checkbox' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] == null ? '' : String(registrationAnswers[question.id])} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value === '' ? undefined : e.target.value === 'true' })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">Choose an answer</option><option value="true">Yes</option><option value="false">No</option></select>
+                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />
+                              : <input id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />}
+                        {formErrors[`question_${question.id}`] && <p id={`question-${question.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`question_${question.id}`]}</p>}
                       </div>)}
                     </div>
                   </fieldset>
@@ -699,14 +715,16 @@ function CheckoutContent({ buyerId }) {
                   <div key={waiver.id} className="rounded-xl border border-neutral-200 p-4">
                     <p className="text-sm font-semibold text-neutral-900">{waiver.title}</p>
                     <div className="my-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-600">{waiver.body}</div>
-                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input type="checkbox" checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked }))} className="mt-0.5" />I accept version {waiver.version}{waiver.required && ' *'}</label>
-                    {formErrors[`waiver_${waiver.id}`] && <p className="mt-1 text-xs text-red-500">{formErrors[`waiver_${waiver.id}`]}</p>}
+                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input id={`waiver-${waiver.id}`} type="checkbox" required={waiver.required} aria-invalid={Boolean(formErrors[`waiver_${waiver.id}`])} aria-describedby={formErrors[`waiver_${waiver.id}`] ? `waiver-${waiver.id}-error` : undefined} disabled={submitting} checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => { setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked })); setFormErrors(previous => ({ ...previous, [`waiver_${waiver.id}`]: null })) }} className="mt-0.5" />I accept version {waiver.version}{waiver.required && ' *'}</label>
+                    {formErrors[`waiver_${waiver.id}`] && <p id={`waiver-${waiver.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`waiver_${waiver.id}`]}</p>}
                   </div>
                 ))}
                 <div>
                   <label className="flex items-start gap-3 text-sm text-neutral-600" htmlFor="termsAccepted">
                     <input
                       id="termsAccepted"
+                      aria-invalid={Boolean(formErrors.terms)}
+                      aria-describedby={formErrors.terms ? 'buyer-terms-error' : undefined}
                       type="checkbox"
                       checked={termsAccepted}
                       onChange={(event) => {
@@ -717,15 +735,15 @@ function CheckoutContent({ buyerId }) {
                       disabled={submitting}
                     />
                     <span>
-                      I agree to the <Link className="text-brand-600 underline" to="/policies/buyer-terms" target="_blank">Buyer Terms</Link>,{' '}
-                      <Link className="text-brand-600 underline" to="/policies/refunds" target="_blank">refund and cancellation policy</Link>, and{' '}
-                      <Link className="text-brand-600 underline" to="/policies/privacy" target="_blank">Privacy Policy</Link>.
+                      I agree to the <Link className="text-brand-700 underline" to="/policies/buyer-terms" target="_blank">Buyer Terms</Link>,{' '}
+                      <Link className="text-brand-700 underline" to="/policies/refunds" target="_blank">refund and cancellation policy</Link>, and{' '}
+                      <Link className="text-brand-700 underline" to="/policies/privacy" target="_blank">Privacy Policy</Link>.
                     </span>
                   </label>
-                  {formErrors.terms && <p className="text-red-500 text-xs mt-1" role="alert">{formErrors.terms}</p>}
+                  {formErrors.terms && <p id="buyer-terms-error" className="text-red-700 text-xs mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
               </div>
-              <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0 transition-all duration-200">
+              <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
                 {submitting
                   ? (isSimulate ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
                   : (isSimulate ? `${t('checkout.placeOrder')} \u2014 ${formatPrice(displayedTotal)}` : `${t('checkout.continueToPayment')} \u2014 ${formatPrice(displayedTotal)}`)}

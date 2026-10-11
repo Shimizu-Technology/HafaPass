@@ -341,3 +341,42 @@ describe('checkout navigation', () => {
     expect(apiClient.post).toHaveBeenCalledTimes(3)
   })
 })
+
+
+describe('registration error recovery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks(); apiClient.get.mockReset(); apiClient.post.mockReset(); window.sessionStorage.clear(); window.localStorage.clear()
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
+    vi.stubGlobal('requestAnimationFrame', callback => callback())
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'qa-v1', service_fee_flat_cents: 0 } })
+    apiClient.post.mockRejectedValue({ response: { status: 503, data: { checkout_recovery_required: true, error: 'Synthetic outcome unknown' } } })
+  })
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+  const event = { id: 37, slug: 'registration', title: 'Registration', ticket_types: [{ id: 7, name: 'Entry', price_cents: 0 }],
+    registration_questions: [{ id: 17, prompt: 'Meal preference', required: true, kind: 'short_text' },
+      { id: 18, prompt: 'Will you attend dinner?', required: true, kind: 'checkbox' }],
+    waivers: [{ id: 19, title: 'Synthetic participation rules', body: 'Test fixture only.', required: true, version: 'qa-v1' }] }
+  function mount() { render(<MemoryRouter initialEntries={[{ pathname: '/checkout/registration', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes><Route path='/checkout/:slug' element={<CheckoutPage />} /></Routes></MemoryRouter>) }
+  it('focuses the missing dynamic answer and links its error, then moves to the missing waiver without losing answers', async () => {
+    mount(); const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('checkout.fullName'), 'Synthetic Buyer')
+    await user.type(screen.getByLabelText('checkout.emailAddress'), 'buyer@example.invalid')
+    await user.click(document.getElementById('termsAccepted'))
+    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    const meal = screen.getByLabelText('Meal preference *')
+    expect(meal).toHaveFocus()
+    expect(meal).toHaveAttribute('aria-invalid', 'true')
+    expect(meal).toHaveAttribute('aria-describedby', 'question-17-error')
+    expect(screen.getByRole('link', { name: 'Meal preference: This answer is required' })).toHaveAttribute('href', '#question-17')
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await user.type(meal, 'Vegetarian')
+    await user.selectOptions(screen.getByLabelText('Will you attend dinner? *'), 'false')
+    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    expect(document.getElementById('waiver-19')).toHaveFocus()
+    expect(document.getElementById('waiver-19')).toHaveAttribute('aria-describedby', 'waiver-19-error')
+    expect(meal).toHaveValue('Vegetarian')
+    await user.click(document.getElementById('waiver-19'))
+    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.objectContaining({ registration_answers: { 17: 'Vegetarian', 18: false }, waiver_acceptances: [{ event_waiver_id: 19, version: 'qa-v1' }] })))
+  })
+})

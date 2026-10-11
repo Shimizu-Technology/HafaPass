@@ -229,7 +229,7 @@ describe('truthful ticket email status', () => {
     mount()
     expect(await screen.findByText('Email is simulated in this test environment. Open or download your tickets below.')).toBeInTheDocument()
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'View ticket' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open ticket: Free admission' })).toBeInTheDocument()
   })
 
   it.each([
@@ -270,7 +270,7 @@ describe('truthful ticket email status', () => {
     await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets below, or contact support.')
     await userEvent.click(screen.getByRole('button', { name: 'Resend', exact: true }))
     expect(await screen.findByText('Your ticket email is queued for delivery. You can open or download your tickets below.')).toBeInTheDocument()
-    expect(await screen.findByText('Your email request was saved. Check the delivery status above.')).toBeInTheDocument()
+    expect(await screen.findByText('Your email request was saved. Check the delivery status below.')).toBeInTheDocument()
     expect(apiClient.post).toHaveBeenCalledWith('/orders/924/resend', {}, { headers: { 'X-Guest-Order-Token': 'guest-token' } })
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
   })
@@ -297,5 +297,34 @@ describe('pending payment status and private redirect data', () => {
     expect(window.sessionStorage.getItem('hafapass:active-checkout:pending-event')).toBe('950')
     expect(screen.getByTestId('query')).toHaveTextContent('clean-query')
     expect(screen.queryByText('This page refreshes automatically. Do not submit another payment.')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('confirmation ticket hierarchy and outcome', () => {
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); window.localStorage.clear(); vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '') })
+  const order = { id: 924, reference: 'HP-924', status: 'completed', buyer_email: 'guest@example.invalid', total_cents: 0, order_items: [],
+    tickets: [{ id: 1, status: 'issued', refundable_cents: 0, display_credential: 'display', ticket_type: { id: 7, name: 'Entry' } }],
+    event: { id: 37, slug: 'event', title: 'Event', status: 'published', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false } }
+  const mount = value => { apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : value })); render(<MemoryRouter initialEntries={['/orders/924/confirmation?guest_token=guest-token']}><Routes><Route path='/orders/:id/confirmation' element={<OrderConfirmationPage />} /></Routes></MemoryRouter>) }
+  it('leads with one clearly named ticket action before delivery and receipt', async () => {
+    mount(order)
+    const open = await screen.findByRole('link', { name: 'Open ticket: Entry' })
+    expect(open).toHaveAttribute('href', '/tickets/display?order=924')
+    expect(screen.queryByRole('link', { name: 'Download ticket' })).not.toBeInTheDocument()
+    const tickets = document.getElementById('order-tickets')
+    const email = screen.getByRole('heading', { name: 'Ticket email' })
+    expect(tickets.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+  it.each([['cancelled', 'Order cancelled'], ['expired', 'Reservation expired'], ['refunded', 'Your order was refunded']])('does not display a confirmed outcome for %s', async (status, title) => {
+    mount({ ...order, status, tickets: [] })
+    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Order confirmed')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Open ticket:/ })).not.toBeInTheDocument()
+  })
+  it('shows status access without a misleading admission action when tickets are blocked', async () => {
+    mount({ ...order, ticket_access_blocked: true })
+    expect(await screen.findByRole('link', { name: 'View ticket' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Open ticket:/ })).not.toBeInTheDocument()
   })
 })
