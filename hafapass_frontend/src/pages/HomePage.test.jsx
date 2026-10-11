@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import HomePage from './HomePage'
@@ -46,13 +46,17 @@ function mount() {
   </Routes></MemoryRouter>)
 }
 
-const entryLink = entry => entry === 'footer'
-  ? screen.getByRole('link', { name: 'footer.forOrganizers' })
-  : screen.getAllByRole('link', { name: 'Start Hosting' })[entry === 'hero' ? 0 : 1]
+const entryLink = async entry => {
+  await screen.findByRole('heading', { name: /Guam's Event Scene is About to/ })
+  return entry === 'footer'
+    ? screen.getByRole('link', { name: 'footer.forOrganizers' })
+    : screen.getAllByRole('link', { name: 'Start Hosting' })[entry === 'hero' ? 0 : 1]
+}
 
 describe('hosting entry navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    apiClient.get.mockReset()
     auth.isSignedIn = false
     apiClient.get.mockResolvedValue({ data: { events: [] } })
   })
@@ -60,7 +64,7 @@ describe('hosting entry navigation', () => {
   it.each(['hero', 'bottom', 'footer'])('takes an already signed-in %s visitor directly into organizer setup', async entry => {
     auth.isSignedIn = true
     mount()
-    await userEvent.setup().click(entryLink(entry))
+    await userEvent.setup().click(await entryLink(entry))
     expect(await screen.findByRole('heading', { name: 'Create your organizer profile' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Create an account' })).not.toBeInTheDocument()
   })
@@ -68,7 +72,7 @@ describe('hosting entry navigation', () => {
   it.each(['hero', 'bottom', 'footer'])('retains %s hosting intent through guest sign-in and signup', async entry => {
     mount()
     const user = userEvent.setup()
-    await user.click(entryLink(entry))
+    await user.click(await entryLink(entry))
     expect(await screen.findByRole('heading', { name: 'Sign in to continue' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/sign-up?returnTo=%2Fdashboard')
     await user.click(screen.getByRole('link', { name: 'Create an account' }))
@@ -81,7 +85,7 @@ describe('hosting entry navigation', () => {
   it('returns an existing guest account to organizer setup after sign in', async () => {
     mount()
     const user = userEvent.setup()
-    await user.click(entryLink('footer'))
+    await user.click(await entryLink('footer'))
     await user.click(await screen.findByRole('button', { name: 'Complete sign in' }))
     expect(await screen.findByRole('heading', { name: 'Create your organizer profile' })).toBeInTheDocument()
   })
@@ -92,5 +96,32 @@ describe('hosting entry navigation', () => {
     expect(await screen.findByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
     expect(screen.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/dashboard')
     expect(screen.getByRole('link', { name: 'footer.signIn' })).toHaveAttribute('href', '/sign-in')
+  })
+
+  it('keeps browsing available during a slow load without declaring the event list empty', async () => {
+    let finish
+    apiClient.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    mount()
+    expect(screen.getByRole('status')).toHaveTextContent('Loading upcoming events')
+    expect(screen.getByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
+    expect(screen.queryByText('No events yet — check back soon!')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Guam's Event Scene is About to/ })).not.toBeInTheDocument()
+    await act(async () => finish({ data: { events: [] } }))
+    expect(await screen.findByText('No events yet — check back soon!')).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('recovers a failed listing without presenting an outage as an empty event calendar', async () => {
+    apiClient.get.mockRejectedValueOnce(new Error('Network unavailable'))
+      .mockResolvedValueOnce({ data: { events: [{ id: 38, slug: 'recovered-event', title: 'Recovered event', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
+    mount()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Events couldn’t load')
+    expect(screen.queryByText('No events yet — check back soon!')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Guam's Event Scene is About to/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry events' }))
+    expect(await screen.findByRole('link', { name: /Recovered event/ })).toHaveAttribute('href', '/events/recovered-event')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledTimes(2)
   })
 })

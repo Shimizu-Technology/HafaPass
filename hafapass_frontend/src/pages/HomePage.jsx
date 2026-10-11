@@ -28,16 +28,23 @@ function getLowestPrice(ticketTypes) {
 export default function HomePage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
 
   useEffect(() => {
+    let active = true
+    setLoading(true)
+    setLoadError(false)
     apiClient.get('/events')
       .then(res => {
+        if (!active) return
         const data = res.data.events || res.data
         setEvents(Array.isArray(data) ? data : [])
       })
-      .catch(() => setEvents([]))
-      .finally(() => setLoading(false))
-  }, [])
+      .catch(() => { if (active) setLoadError(true) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [loadAttempt])
 
   const featuredEvent = useMemo(() => {
     const featured = events
@@ -47,7 +54,7 @@ export default function HomePage() {
   }, [events])
 
   const { groupedEvents, sectionTitle } = useMemo(() => {
-    const upcoming = events
+    const upcoming = [...events]
       .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
     const filtered = upcoming.slice(0, 8)
     const title = filtered.length ? 'Next Up on Guam' : ''
@@ -63,13 +70,14 @@ export default function HomePage() {
   }, [events])
 
   const hasEvents = events.length > 0
+  const confirmedEmpty = !loading && !loadError && !hasEvents
   const dayKeys = Object.keys(groupedEvents)
 
   return (
     <div className="min-h-screen bg-neutral-950">
       <SEO />
       {/* ── Featured Event Hero ── */}
-      <section className="relative h-[85vh] min-h-[480px] sm:min-h-[560px] max-h-[800px] overflow-hidden">
+      <section className={`relative overflow-hidden ${featuredEvent ? 'h-[85vh] min-h-[480px] sm:min-h-[560px] max-h-[800px]' : 'py-12 sm:py-20 lg:py-24'}`}>
         <NoiseOverlay />
         {featuredEvent ? (
           <>
@@ -101,7 +109,7 @@ export default function HomePage() {
                 </div>
                 <Link
                   to={`/events/${featuredEvent.slug || featuredEvent.id}`}
-                  className="inline-flex items-center gap-2 px-8 py-4 bg-accent-500 hover:bg-accent-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:-translate-y-0.5 hover:shadow-lg hover:shadow-accent-500/25 active:translate-y-0"
+                  className="btn-primary gap-2 !px-8 !py-4 text-lg"
                 >
                   Get Tickets
                   <ArrowRight className="w-5 h-5" />
@@ -117,22 +125,22 @@ export default function HomePage() {
             <div className="relative h-full flex items-center justify-center text-center px-6">
               <div>
                 <h1 className="font-display text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-6 max-w-3xl">
-                  {hasEvents ? (
+                  {!confirmedEmpty ? (
                     <>Discover Events on <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent">Guam</span></>
                   ) : (
                     <>Guam's Event Scene is About to <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent">Take Off</span></>
                   )}
                 </h1>
-                <p className="text-lg lg:text-xl text-white/50 max-w-xl mx-auto mb-10">
-                  {hasEvents
+                <p className="text-lg lg:text-xl text-neutral-300 max-w-xl mx-auto mb-8">
+                  {!confirmedEmpty
                     ? 'Your curated guide to everything happening on the island.'
                     : 'The island\'s modern ticketing platform is here. Events are coming soon.'}
                 </p>
                 <Link
-                  to={hasEvents ? '/events' : '/dashboard'}
-                  className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0"
+                  to={confirmedEmpty ? '/dashboard' : '/events'}
+                  className="btn-primary gap-2 !px-8 !py-4 text-lg"
                 >
-                  {hasEvents ? 'Browse Events' : 'Start Hosting'}
+                  {confirmedEmpty ? 'Start Hosting' : 'Browse Events'}
                   <ArrowRight className="w-5 h-5" />
                 </Link>
               </div>
@@ -142,7 +150,7 @@ export default function HomePage() {
       </section>
 
       {/* ── This Week on Guam ── */}
-      <section className="py-16 lg:py-24 bg-neutral-950">
+      <section className="py-10 sm:py-16 lg:py-24 bg-neutral-950" aria-busy={loading}>
         <div className="max-w-6xl mx-auto px-6 lg:px-8">
           {dayKeys.length > 0 ? (
             <>
@@ -182,7 +190,7 @@ export default function HomePage() {
                             )}
                           </div>
                           <div className="flex flex-col justify-center min-w-0 py-1">
-                            <div className="flex items-center gap-3 text-sm text-white/40 mb-2">
+                            <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-300 mb-2">
                               <span className="flex items-center gap-1.5">
                                 <Clock className="w-3.5 h-3.5" />
                                 {formatEventTime(event.starts_at, event.timezone)}
@@ -198,7 +206,7 @@ export default function HomePage() {
                               {event.title}
                             </h4>
                             {event.short_description && (
-                              <p className="text-sm text-white/40 mt-1 line-clamp-1">{event.short_description}</p>
+                              <p className="text-sm text-neutral-300 mt-1 line-clamp-1">{event.short_description}</p>
                             )}
                             {getLowestPrice(event.ticket_types) && (
                               <span className="mt-2 text-sm font-medium text-accent-400">
@@ -217,13 +225,19 @@ export default function HomePage() {
               </Link>
               </FadeUp>
             </>
+          ) : loading ? (
+            <p role="status" className="text-center text-neutral-300">Loading upcoming events…</p>
+          ) : loadError ? (
+            <div role="alert" className="text-center py-6">
+              <h2 className="text-xl font-semibold text-white mb-2">Events couldn’t load</h2>
+              <p className="text-neutral-300 mb-4">Please try again to see what’s coming up.</p>
+              <button onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">Retry events</button>
+            </div>
           ) : (
-            !loading && (
               <div className="text-center py-12">
                 <h2 className="font-display text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">This Week on Guam</h2>
-                <p className="text-white/40 text-lg">No events yet — check back soon!</p>
+                <p className="text-neutral-300 text-lg">No events yet — check back soon!</p>
               </div>
-            )
           )}
         </div>
       </section>
@@ -262,14 +276,14 @@ export default function HomePage() {
       <section className="py-20 lg:py-28 bg-neutral-950">
         <div className="max-w-3xl mx-auto px-6 lg:px-8 text-center">
           <h2 className="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">
-            {hasEvents ? 'Want to bring your event to Guam?' : 'Be the first to host an event on Guam'}
+            {confirmedEmpty ? 'Be the first to host an event on Guam' : 'Want to bring your event to Guam?'}
           </h2>
-          <p className="text-white/40 text-lg mb-8">
+          <p className="text-neutral-300 text-lg mb-8">
             Create your organizer profile and start selling tickets in minutes.
           </p>
           <Link
             to="/dashboard"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-all duration-200 text-lg hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0"
+            className="btn-primary gap-2 !px-8 !py-4 text-lg"
           >
             Start Hosting
             <ArrowRight className="w-5 h-5" />

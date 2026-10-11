@@ -75,7 +75,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
     <header
       className={`sticky top-0 z-50 transition-all duration-500 ${
         isDarkMode
-          ? 'bg-transparent border-b border-transparent'
+          ? 'bg-neutral-950 border-b border-white/10'
           : scrolled
             ? 'bg-white/80 backdrop-blur-2xl border-b border-neutral-200/50 shadow-soft'
             : 'bg-white/50 backdrop-blur-xl border-b border-transparent'
@@ -187,7 +187,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className={`xl:hidden w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+            className={`xl:hidden w-11 h-11 flex items-center justify-center rounded-xl transition-colors ${
               isDarkMode
                 ? 'text-neutral-300 hover:text-white hover:bg-white/10'
                 : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100/80'
