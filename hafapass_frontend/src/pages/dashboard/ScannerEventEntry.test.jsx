@@ -6,7 +6,7 @@ import apiClient from '../../api/client'
 import { clearAllAdmissionData, queueAdmission, queuedActions, saveDevice, saveVerifiedManifest } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() }, getApiAuthContext: () => null, subscribeApiAuthContext: () => () => {} }))
 vi.mock('@zxing/browser', () => ({ BrowserQRCodeReader: class {} }))
 beforeEach(async () => { vi.clearAllMocks(); window.localStorage.clear(); await clearAllAdmissionData() })
 afterEach(async () => { await clearAllAdmissionData(); window.localStorage.clear() })

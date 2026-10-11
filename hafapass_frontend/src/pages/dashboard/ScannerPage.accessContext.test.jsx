@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -35,6 +35,27 @@ function view() {
   return <MemoryRouter><Wrapper><Scanner /></Wrapper></MemoryRouter>
 }
 
+function VisitControl() {
+  const navigate = useNavigate()
+  return <><button onClick={() => navigate('/another-page')}>Leave scanner visit</button><Scanner /></>
+}
+
+async function preparePrivateReads(extraAdapter, { manifestVersion = 1 } = {}) {
+  const manifest = await signedManifest(eventId, [ticket], { version: manifestVersion })
+  const otherManifest = await signedManifest(eventId + 1, [])
+  api.defaults.adapter = vi.fn(config => {
+    const custom = extraAdapter?.(config)
+    if (custom) return custom
+    return Promise.resolve(response(config, config.url === '/organizer/events'
+      ? { events: [{ id: eventId, title: 'Context event' }, { id: eventId + 1, title: 'Other event' }] }
+      : config.url === '/me' ? { id: 1, clerk_id: auth.userId }
+        : config.url.endsWith('/scanner_devices') ? device(91)
+          : config.url.endsWith('/manifest') ? (config.url.includes(`/${eventId + 1}/`)
+            ? otherManifest : manifest)
+            : { counts: {}, permissions: {}, recent_actions: [] }))
+  })
+}
+
 beforeEach(async () => {
   vi.resetModules()
   vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_scanner_context')
@@ -60,6 +81,224 @@ afterEach(async () => {
 })
 
 describe('scanner setup refusal with the real Clerk wrapper and Axios interceptor', () => {
+  it.each([401, 403])('does not enable offline cache after setup downloads a manifest then door totals returns %s', async status => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    await store.saveDevice(eventId, device(91))
+    await store.saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    await preparePrivateReads(config => config.url === `/organizer/events/${eventId}/admissions`
+      ? Promise.reject(new AxiosError('Door access withdrawn', undefined, config, null,
+        { config, status, data: { error: 'Door access withdrawn' }, headers: {} })) : null, { manifestVersion: 2 })
+    const mounted = render(view())
+    await screen.findByText('Door access withdrawn')
+    expect(api.defaults.adapter.mock.calls.some(([config]) => config.url.endsWith('/manifest'))).toBe(true)
+    expect(screen.queryByText('Authorizing device and verifying manifest…')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(await store.loadAuthorizedScanner(eventId)).toBeNull()
+    await act(async () => window.dispatchEvent(new Event('offline')))
+    await screen.findByText('Scanner access was refused. Reconnect to verify access before admitting more guests.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    mounted.unmount()
+  })
+
+  it('retains verified scanner access when door totals is temporarily unavailable during setup', async () => {
+    await preparePrivateReads(config => config.url === `/organizer/events/${eventId}/admissions`
+      ? Promise.reject(new AxiosError('Temporary outage', undefined, config, null,
+        { config, status: 503, data: {}, headers: {} })) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    expect(await store.loadAuthorizedScanner(eventId)).not.toBeNull()
+    mounted.unmount()
+  })
+
+  it('does not erase a peer renewal after an older setup door-totals refusal', async () => {
+    const held = deferred()
+    let dashboardConfig
+    await preparePrivateReads(config => {
+      if (config.url === `/organizer/events/${eventId}/admissions`) { dashboardConfig = config; return held.promise }
+    })
+    const mounted = render(view())
+    await waitFor(() => expect(dashboardConfig).toBeDefined())
+    const renewed = { ...device(91), authorization_expires_at: new Date(Date.now() + 7_200_000).toISOString() }
+    await store.saveDevice(eventId, renewed, { context: await store.captureAdmissionAccessContext(eventId) })
+    await store.saveVerifiedManifest(await signedManifest(eventId, [ticket], { version: 2, expires_at: renewed.authorization_expires_at }))
+    await act(async () => held.reject(new AxiosError('Old door totals refused', undefined, dashboardConfig, null,
+      { config: dashboardConfig, status: 403, data: { error: 'Old door totals refused' }, headers: {} })))
+    await screen.findByText('Ticket list ready · 1 ticket')
+    expect(screen.queryByText('Old door totals refused')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    expect((await store.loadAuthorizedScanner(eventId)).manifest.payload.version).toBe(2)
+    mounted.unmount()
+  })
+
+  it.each([401, 403])('withdraws current search %s access and attendee data while retaining unknown admissions', async status => {
+    let searches = 0
+    await preparePrivateReads(config => config.url.endsWith('/search') ? (++searches === 1
+      ? Promise.resolve(response(config, [{ id: 501, code: ticket.code, attendee_name: 'Lookup-only private guest', status: 'issued', admission_allowed: true }]))
+      : Promise.reject(new AxiosError('Search access withdrawn', undefined, config, null,
+        { config, status, data: { error: 'Search access withdrawn' }, headers: {} }))) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await screen.findByText('Lookup-only private guest · HP-T501')
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await screen.findByText('Search access withdrawn')
+    expect(screen.queryByText('Lookup-only private guest · HP-T501')).not.toBeInTheDocument()
+    expect(screen.queryByText('Door totals')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(await store.loadAuthorizedScanner(eventId)).toBeNull()
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    expect(await store.loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: 91 })
+    mounted.unmount()
+  })
+
+  it('does not remove a peer-renewed grant after an old search refusal', async () => {
+    const held = deferred()
+    let searchConfig
+    await preparePrivateReads(config => {
+      if (config.url.endsWith('/search')) { searchConfig = config; return held.promise }
+    })
+    const mounted = render(view())
+    await findManifest(1)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await waitFor(() => expect(searchConfig).toBeDefined())
+    const renewed = { ...device(91), authorization_expires_at: new Date(Date.now() + 7_200_000).toISOString() }
+    await store.saveDevice(eventId, renewed, { context: await store.captureAdmissionAccessContext(eventId) })
+    await store.saveVerifiedManifest(await signedManifest(eventId, [ticket], { version: 2, expires_at: renewed.authorization_expires_at }))
+    await act(async () => held.reject(new AxiosError('Old search refused', undefined, searchConfig, null,
+      { config: searchConfig, status: 403, data: { error: 'Old search refused' }, headers: {} })))
+    expect((await store.loadAuthorizedScanner(eventId)).manifest.payload.version).toBe(2)
+    expect(screen.queryByText('Old search refused')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    mounted.unmount()
+  })
+
+  it.each(['success', 'refusal'])('ignores an old lookup %s after switching to a different event', async outcome => {
+    const held = deferred()
+    let searchConfig
+    await preparePrivateReads(config => {
+      if (config.url.endsWith('/search')) { searchConfig = config; return held.promise }
+    })
+    const mounted = render(view())
+    await findManifest(1)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await waitFor(() => expect(searchConfig).toBeDefined())
+    await user.selectOptions(screen.getByLabelText('Event to scan'), String(eventId + 1))
+    await screen.findByText('Ticket list ready · 0 tickets')
+    expect(searchConfig.signal.aborted).toBe(true)
+    await act(async () => outcome === 'success'
+      ? held.resolve(response(searchConfig, [{ id: 501, code: ticket.code, attendee_name: 'Old event private guest' }]))
+      : held.reject(new AxiosError('Old event lookup refused', undefined, searchConfig, null,
+        { config: searchConfig, status: 403, data: { error: 'Old event lookup refused' }, headers: {} })))
+    expect(screen.queryByText('Old event private guest · HP-T501')).not.toBeInTheDocument()
+    expect(screen.queryByText('Old event lookup refused')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    expect(await store.loadAuthorizedScanner(eventId + 1)).not.toBeNull()
+    mounted.unmount()
+  })
+
+  it('withdraws a refused private PDF request without deleting queued admissions', async () => {
+    await preparePrivateReads(config => config.url.endsWith('/door_list')
+      ? Promise.reject(new AxiosError('Door list forbidden', undefined, config, null,
+        { config, status: 403, data: new Blob(['private permission error']), headers: {} })) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    await userEvent.click(screen.getByRole('button', { name: 'Download emergency door list' }))
+    await screen.findByText('Scanner access was refused. Reload while connected to verify access. Saved scans remain on this device.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(screen.queryByText('Door totals')).not.toBeInTheDocument()
+    expect(await store.loadAuthorizedScanner(eventId)).toBeNull()
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    mounted.unmount()
+  })
+
+  it('keeps known-refused access paused offline if removing its persisted cache fails', async () => {
+    await preparePrivateReads(config => config.url.endsWith('/search')
+      ? Promise.reject(new AxiosError('Access withdrawn', undefined, config, null,
+        { config, status: 403, data: { error: 'Access withdrawn' }, headers: {} })) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    vi.spyOn(store, 'purgeExpiredAdmissionAccess').mockRejectedValueOnce(new Error('Synthetic storage write failure'))
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await screen.findByText('Scanner access could not be removed. Reload this device before admitting more guests. Saved scans remain on this device.')
+    await act(async () => window.dispatchEvent(new Event('offline')))
+    await screen.findByText('Scanner access was refused. Reconnect to verify access before admitting more guests.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    mounted.unmount()
+  })
+
+  it.each(['event', 'account', 'visit', 'unmount'])('does not download an old private blob after %s changes', async change => {
+    const held = deferred()
+    let downloadConfig
+    await preparePrivateReads(config => {
+      if (config.url.endsWith('/door_list')) { downloadConfig = config; return held.promise }
+    })
+    const create = vi.fn(() => 'blob:synthetic-door-list')
+    const revoke = vi.fn()
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = create; static revokeObjectURL = revoke })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const tree = <MemoryRouter><Wrapper><VisitControl /></Wrapper></MemoryRouter>
+    const mounted = render(tree)
+    await findManifest(1)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Download emergency door list' }))
+    await waitFor(() => expect(downloadConfig).toBeDefined())
+    expect(downloadConfig.headers.Authorization).toBe('Bearer synthetic-token-a')
+    if (change === 'event') await user.selectOptions(screen.getByLabelText('Event to scan'), String(eventId + 1))
+    if (change === 'account') {
+      Object.assign(auth, { userId: 'staff-b', sessionId: 'session-b', getToken: vi.fn().mockResolvedValue('synthetic-token-b') })
+      mounted.rerender(tree)
+      // Ensure a changed identity renders through the wrapper, not the same element instance.
+      mounted.rerender(<MemoryRouter><Wrapper><VisitControl /></Wrapper></MemoryRouter>)
+    }
+    if (change === 'visit') await user.click(screen.getByRole('button', { name: 'Leave scanner visit' }))
+    if (change === 'unmount') mounted.unmount()
+    await waitFor(() => expect(downloadConfig.signal.aborted).toBe(true))
+    await act(async () => held.resolve(response(downloadConfig, new Blob(['private old attendee list']))))
+    expect(create).not.toHaveBeenCalled()
+    expect(click).not.toHaveBeenCalled()
+    if (change !== 'unmount') mounted.unmount()
+    vi.unstubAllGlobals()
+  })
+
+  it('reports a failed door-list request and allows a current retry without losing scanner access', async () => {
+    let downloads = 0
+    await preparePrivateReads(config => config.url.endsWith('/door_list') ? (++downloads === 1
+      ? Promise.reject(new AxiosError('Door list unavailable', undefined, config, null, { config, status: 503, data: {}, headers: {} }))
+      : Promise.resolve(response(config, new Blob(['synthetic-current-list'])))) : null)
+    const create = vi.fn(() => 'blob:current-door-list')
+    const revoke = vi.fn()
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = create; static revokeObjectURL = revoke })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const mounted = render(view())
+    await findManifest(1)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Download emergency door list' }))
+    await screen.findByText('Door list download failed. Please retry while connected.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Download emergency door list' }))
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(revoke).toHaveBeenCalledWith('blob:current-door-list')
+    mounted.unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('disables offline entry for a known terminal revoked ACK despite a peer lease and another unknown scan', async () => {
     const oldDevice = { ...device(91), status: 'active', authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
     const renewedDevice = { ...oldDevice, authorization_expires_at: new Date(Date.now() + 3_600_000).toISOString() }

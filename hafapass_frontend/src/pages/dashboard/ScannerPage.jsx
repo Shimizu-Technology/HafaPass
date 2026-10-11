@@ -3,8 +3,8 @@ import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
 } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
-import apiClient from '../../api/client'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../../api/client'
 import { formatEventDateTime } from '../../utils/eventTime'
 import {
   applySyncResults, captureAdmissionAccessContext, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
@@ -76,6 +76,7 @@ function ResultPanel({ result }) {
 
 export default function ScannerPage({ offlineOnly = false }) {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const requestedEventId = searchParams.get('event')
   const [events, setEvents] = useState([])
   const [eventId, setEventId] = useState('')
@@ -93,6 +94,7 @@ export default function ScannerPage({ offlineOnly = false }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [cameraError, setCameraError] = useState(null)
   const [sessionCount, setSessionCount] = useState(0)
@@ -113,6 +115,27 @@ export default function ScannerPage({ offlineOnly = false }) {
   const cameraGenerationRef = useRef(0)
   const currentManifestRef = useRef(manifest)
   currentManifestRef.current = manifest
+  const visitRef = useRef(location.key)
+  visitRef.current = location.key
+  const searchRequestRef = useRef(null)
+  const downloadRequestRef = useRef(null)
+  const dashboardRequestRef = useRef(null)
+  const privateReadGenerationRef = useRef(0)
+  const refusedAccessRef = useRef(new Set())
+
+  useEffect(() => {
+    const abortReads = () => {
+      ++privateReadGenerationRef.current
+      searchRequestRef.current?.abort()
+      downloadRequestRef.current?.abort()
+      dashboardRequestRef.current?.abort()
+      setSearching(false)
+      setDownloading(false)
+    }
+    abortReads()
+    const unsubscribe = subscribeApiAuthContext(abortReads)
+    return () => { unsubscribe(); abortReads() }
+  }, [eventId, location.key])
 
   useEffect(() => {
     mountedRef.current = true
@@ -134,11 +157,77 @@ export default function ScannerPage({ offlineOnly = false }) {
     if (eventIdRef.current === String(selectedEventId)) setPendingCount(count)
   }, [])
 
+  const stopCamera = useCallback(() => {
+    cameraGenerationRef.current += 1
+    if (detectorTimerRef.current) clearInterval(detectorTimerRef.current)
+    detectorTimerRef.current = null
+    zxingControlsRef.current?.stop()
+    zxingControlsRef.current = null
+    streamRef.current?.getTracks().forEach(track => track.stop())
+    streamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
+    setScanning(false)
+  }, [])
+
+  const beginPrivateRead = useCallback((requestRef, selectedEventId) => {
+    requestRef.current?.abort()
+    const controller = new AbortController()
+    requestRef.current = controller
+    const owner = currentScannerOwner()
+    const generation = setupGenerationRef.current
+    const visit = visitRef.current
+    const readGeneration = privateReadGenerationRef.current
+    const authContext = getApiAuthContext()
+    const organizationId = window.localStorage.getItem('hafapass_organization_id')
+    const current = () => mountedRef.current && !controller.signal.aborted && requestRef.current === controller
+      && owner === currentScannerOwner() && selectedEventId === eventIdRef.current
+      && generation === setupGenerationRef.current && visit === visitRef.current
+      && readGeneration === privateReadGenerationRef.current && authContext === getApiAuthContext()
+      && organizationId === window.localStorage.getItem('hafapass_organization_id')
+    return { selectedEventId, current, config: { signal: controller.signal, authContext, organizationId } }
+  }, [])
+
+  const handlePrivateReadError = useCallback(async (readError, request, context, fallback) => {
+    if (!request.current() || readError.manifestContextChanged) return
+    if ([401, 403].includes(readError.response?.status) && context) {
+      let removed
+      let message = readError.response?.data?.error || 'Scanner access was refused. Reload while connected to verify access. Saved scans remain on this device.'
+      try { removed = await purgeExpiredAdmissionAccess(request.selectedEventId, { context }) }
+      catch { removed = true; message = 'Scanner access could not be removed. Reload this device before admitting more guests. Saved scans remain on this device.' }
+      // A peer renewal or a later visit owns its own access. An old refusal must
+      // never erase that newer grant or its attendee records.
+      if (!removed || !request.current()) return
+      refusedAccessRef.current.add(JSON.stringify([currentScannerOwner(), String(request.selectedEventId)]))
+      ++setupGenerationRef.current
+      ++presentationRef.current
+      currentManifestRef.current = null
+      stopCamera()
+      searchRequestRef.current?.abort()
+      downloadRequestRef.current?.abort()
+      dashboardRequestRef.current?.abort()
+      setDevice(null); setManifest(null); setRecoveryDevice(null); setDashboard(null)
+      setSearchResults([]); setSearchQuery(''); setManualCode(''); setScanResult(null)
+      setSearching(false); setDownloading(false); setSetupBusy(false)
+      setError(message)
+      return
+    }
+    setError(readError.response?.data?.error || fallback)
+  }, [stopCamera])
+
   const fetchDashboard = useCallback(async selectedEventId => {
     if (!selectedEventId || !online) return
-    const response = await apiClient.get(`/organizer/events/${selectedEventId}/admissions`)
-    if (eventIdRef.current === String(selectedEventId)) setDashboard(response.data)
-  }, [online])
+    const request = beginPrivateRead(dashboardRequestRef, String(selectedEventId))
+    let context
+    try {
+      context = await captureAdmissionAccessContext(request.selectedEventId, { isCurrent: request.current })
+      if (!request.current()) return
+      const response = await apiClient.get(`/organizer/events/${request.selectedEventId}/admissions`, request.config)
+      if (request.current()) setDashboard(response.data)
+    } catch (dashboardError) {
+      await handlePrivateReadError(dashboardError, request, context, 'Door totals could not be loaded. Please retry while connected.')
+      throw dashboardError
+    }
+  }, [online, beginPrivateRead, handlePrivateReadError])
 
   const downloadManifest = useCallback(async (selectedEventId, selectedDevice) => {
     const owner = currentScannerOwner()
@@ -333,6 +422,8 @@ export default function ScannerPage({ offlineOnly = false }) {
     const generation = ++setupGenerationRef.current
     const owner = currentScannerOwner()
     const current = () => generation === setupGenerationRef.current && eventIdRef.current === String(selectedEventId) && owner === currentScannerOwner()
+    const refusedKey = JSON.stringify([owner, String(selectedEventId)])
+    const accessRefused = refusedAccessRef.current.has(refusedKey)
     setSetupBusy(true)
     setError(null)
     setScanResult(null)
@@ -342,6 +433,7 @@ export default function ScannerPage({ offlineOnly = false }) {
     setDashboard(null)
     setSearchResults([])
     try {
+      if (!online && accessRefused) throw new Error('Scanner access was refused. Reconnect to verify access before admitting more guests.')
       const pendingIdentity = await loadPendingDeviceIdentity(selectedEventId)
       await refreshPending(selectedEventId, pendingIdentity ? { id: pendingIdentity.device_id } : null)
       let cached = await loadAuthorizedScanner(selectedEventId)
@@ -386,7 +478,7 @@ export default function ScannerPage({ offlineOnly = false }) {
             if (current()) setRecoveryDevice(null)
             throw connectionError
           }
-          if (!cached || !networkPhase) throw connectionError
+          if (!cached || !networkPhase || accessRefused) throw connectionError
           if (current()) setError('Connection unavailable. Using saved access; scans remain on this device until sync succeeds.')
         }
       }
@@ -397,6 +489,7 @@ export default function ScannerPage({ offlineOnly = false }) {
         throw new Error('Connect once to authorize this scanner and download the event list. Expired saved access is removed from this device.')
       }
       if (!current()) return
+      if (accessRefused) refusedAccessRef.current.delete(refusedKey)
       setDevice(cached.device)
       setManifest(cached.manifest)
       await refreshPending(selectedEventId, cached.device)
@@ -564,18 +657,6 @@ export default function ScannerPage({ offlineOnly = false }) {
     }
   }, [admitEntry, device, eventId, manifest, showResult, ticketsByHash])
 
-  const stopCamera = useCallback(() => {
-    cameraGenerationRef.current += 1
-    if (detectorTimerRef.current) clearInterval(detectorTimerRef.current)
-    detectorTimerRef.current = null
-    zxingControlsRef.current?.stop()
-    zxingControlsRef.current = null
-    streamRef.current?.getTracks().forEach(track => track.stop())
-    streamRef.current = null
-    if (videoRef.current) videoRef.current.srcObject = null
-    setScanning(false)
-  }, [])
-
   processCredentialRef.current = processCredential
 
   const handleDecoded = useCallback(code => {
@@ -650,17 +731,20 @@ export default function ScannerPage({ offlineOnly = false }) {
 
   const runSearch = async event => {
     event.preventDefault()
-    if (!online || searchQuery.trim().length < 2) return
+    if (!eventId || !online || searchQuery.trim().length < 2) return
+    const request = beginPrivateRead(searchRequestRef, eventId)
     setSearching(true)
-    const selectedEventId = eventId
-    const generation = setupGenerationRef.current
+    setError(null)
+    let context
     try {
-      const response = await apiClient.get(`/organizer/events/${eventId}/admissions/search`, { params: { q: searchQuery.trim() } })
-      if (eventIdRef.current === selectedEventId && setupGenerationRef.current === generation) setSearchResults(response.data)
+      context = await captureAdmissionAccessContext(request.selectedEventId, { isCurrent: request.current })
+      if (!request.current()) return
+      const response = await apiClient.get(`/organizer/events/${request.selectedEventId}/admissions/search`, { ...request.config, params: { q: searchQuery.trim() } })
+      if (request.current()) setSearchResults(response.data)
     } catch (searchError) {
-      setError(searchError.response?.data?.error || 'Attendee search failed.')
+      await handlePrivateReadError(searchError, request, context, 'Attendee search failed. Please retry.')
     } finally {
-      setSearching(false)
+      if (request.current()) setSearching(false)
     }
   }
 
@@ -688,13 +772,26 @@ export default function ScannerPage({ offlineOnly = false }) {
   }
 
   const downloadDoorList = async () => {
-    const response = await apiClient.get(`/organizer/events/${eventId}/admissions/door_list`, { responseType: 'blob' })
-    const url = URL.createObjectURL(response.data)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `hafapass-door-list-${eventId}.pdf`
-    link.click()
-    URL.revokeObjectURL(url)
+    if (!eventId || !online || downloading) return
+    const request = beginPrivateRead(downloadRequestRef, eventId)
+    setDownloading(true)
+    setError(null)
+    let context
+    try {
+      context = await captureAdmissionAccessContext(request.selectedEventId, { isCurrent: request.current })
+      if (!request.current()) return
+      const response = await apiClient.get(`/organizer/events/${request.selectedEventId}/admissions/door_list`, { ...request.config, responseType: 'blob' })
+      if (!request.current()) return
+      const url = URL.createObjectURL(response.data)
+      try {
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `hafapass-door-list-${request.selectedEventId}.pdf`
+        if (request.current()) link.click()
+      } finally { URL.revokeObjectURL(url) }
+    } catch (downloadError) {
+      await handlePrivateReadError(downloadError, request, context, 'Door list download failed. Please retry while connected.')
+    } finally { if (request.current()) setDownloading(false) }
   }
 
   const resetScanner = async () => {
@@ -842,7 +939,7 @@ export default function ScannerPage({ offlineOnly = false }) {
 
           {dashboard && (
             <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800" aria-label="Download emergency door list" title="Download emergency door list"><Download className="h-5 w-5" /></button></div>
+              <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} disabled={!online || downloading} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800 disabled:opacity-50" aria-label="Download emergency door list" title="Download emergency door list">{downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}</button></div>
               <div className="grid grid-cols-2 gap-3">
                 {[['Admitted', dashboard.counts.admitted], ['Remaining', dashboard.counts.remaining], ['Conflicts', dashboard.counts.conflicts], ['Rejected', dashboard.counts.rejected]].map(([label, value]) => (
                   <div key={label} className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">{label}</p><p className="text-2xl font-bold">{value}</p></div>
