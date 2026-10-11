@@ -50,6 +50,20 @@ export default {
           raised: '#ffffff',
           overlay: 'rgba(255, 255, 255, 0.8)',
         },
+        // Roles keep readable UI colors independent from decorative brand shades.
+        content: {
+          DEFAULT: '#0f172a',
+          muted: '#475569',
+          inverse: '#ffffff',
+          'inverse-muted': '#cbd5e1',
+        },
+        action: {
+          DEFAULT: '#c9362e',
+          hover: '#ad2b24',
+          teal: '#0b6563',
+          'teal-hover': '#0e504f',
+        },
+        focus: '#087e7a',
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],

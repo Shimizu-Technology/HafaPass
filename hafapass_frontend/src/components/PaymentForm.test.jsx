@@ -40,4 +40,30 @@ describe('PaymentForm', () => {
     }))
     expect(onSuccess).toHaveBeenCalledWith(paymentIntent)
   })
+
+  it('announces a declined payment and retains the payment action for recovery', async () => {
+    const onSuccess = vi.fn()
+    const onError = vi.fn()
+    const setSubmitting = vi.fn()
+    const error = { type: 'card_error', message: 'Your card was declined.' }
+    confirmPayment.mockResolvedValue({ error })
+    render(<PaymentForm totalCents={1250} returnUrl="https://example.test/confirmation"
+      onSuccess={onSuccess} onError={onError} submitting={false} setSubmitting={setSubmitting} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Pay $12.50' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(error.message)
+    expect(screen.getByRole('button', { name: 'Pay $12.50' })).toBeEnabled()
+    expect(onSuccess).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith(error)
+    expect(setSubmitting).toHaveBeenLastCalledWith(false)
+  })
+
+  it('announces an unknown payment response without inventing a success', async () => {
+    const onSuccess = vi.fn()
+    confirmPayment.mockResolvedValue({})
+    render(<PaymentForm totalCents={1250} returnUrl="https://example.test/confirmation"
+      onSuccess={onSuccess} submitting={false} setSubmitting={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Pay $12.50' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Please refresh before trying again')
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
 })

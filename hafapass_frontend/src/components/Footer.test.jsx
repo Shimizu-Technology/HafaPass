@@ -11,3 +11,12 @@ it('routes the footer contact to the configured receiving mailbox', () => {
   render(<MemoryRouter><Footer /></MemoryRouter>)
   expect(screen.getByRole('link', { name: 'footer.contact' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=HafaPass%20Support')
 })
+
+it('offers ticket recovery and support instead of unrelated social homepages', () => {
+  render(<MemoryRouter><Footer /></MemoryRouter>)
+  expect(screen.getByRole('link', { name: 'Find your tickets' })).toHaveAttribute('href', '/orders/recover')
+  expect(screen.getByRole('link', { name: 'Contact support' }).getAttribute('href')).toMatch(/^mailto:/)
+  for (const name of ['Instagram', 'Facebook', 'X']) {
+    expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+  }
+})

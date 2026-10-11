@@ -41,7 +41,10 @@ describe('ticket download recovery', () => {
     render(<MemoryRouter initialEntries={['/tickets/synthetic-display?order=2']}><Routes>
       <Route path="/tickets/:credential" element={<TicketPage />} />
     </Routes></MemoryRouter>)
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Download PDF' }))
+    const download = await screen.findByRole('button', { name: 'Download PDF' })
+    // Door credentials must be visible immediately rather than waiting for an animation.
+    expect(screen.getByText('Entry QR').parentElement.parentElement).toHaveStyle({ opacity: '1' })
+    await userEvent.setup().click(download)
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Use this browser ticket or contact the organizer')
     expect(alert).not.toHaveTextContent('Check your connection')
