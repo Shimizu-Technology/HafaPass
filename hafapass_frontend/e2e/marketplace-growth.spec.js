@@ -29,6 +29,22 @@ test('buyer discovers a governed collection and filters Guam inventory', async (
   await expect(page).toHaveURL(/village=Hag/)
 })
 
+test('free event discovery has accessible labels and readable selected controls', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+  await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: {} }))
+  await page.route('**/api/v1/event_categories', route => json(route, { categories: [] }))
+  await page.route('**/api/v1/events**', route => json(route, { events: [{ ...event, ticket_types: [{ ...event.ticket_types[0], price_cents: 0, current_price_cents: 0 }] }], meta: { current_page: 1, total_pages: 1, total_count: 1 } }))
+  await page.goto('/events')
+  await expect(page.getByLabel('Search events and venues', { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await page.getByRole('link', { name: /Family Night Market/ }).scrollIntoViewIfNeeded()
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations.filter(item => ['serious', 'critical'].includes(item.impact))).toEqual([])
+})
+
 for (const width of [320, 390, 768, 1440]) {
   test(`discovery filters remain readable and retain selection after reload at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })

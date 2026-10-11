@@ -114,6 +114,7 @@ export default function EventsPage() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
               <input
                 type="text"
+                aria-label="Search events and venues"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search events, venues..."
@@ -142,7 +143,7 @@ export default function EventsPage() {
                 aria-pressed={activeCategory === value}
                 className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                   activeCategory === value
-                    ? 'bg-brand-500 text-white shadow-md shadow-brand-500/20'
+                    ? 'bg-brand-600 text-white shadow-md shadow-brand-500/20'
                     : 'bg-white text-neutral-600 border border-neutral-200 hover:border-brand-300 hover:text-brand-600'
                 }`}
               >
@@ -217,7 +218,7 @@ export default function EventsPage() {
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
                     to="/sign-up"
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-brand-500 text-white rounded-xl font-semibold transition-all hover:bg-brand-600 hover:shadow-lg hover:shadow-brand-500/20"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-brand-600 text-white rounded-xl font-semibold transition-all hover:bg-brand-700 hover:shadow-lg hover:shadow-brand-500/20"
                   >
                     <CalendarPlus className="w-4 h-4" />
                     Create an Event
