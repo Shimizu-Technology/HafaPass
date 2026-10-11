@@ -185,3 +185,15 @@ describe('connected event workspace', () => {
   })
 
 })
+
+it('moves focus to the authorized ticket section without discarding the current dirty input', async () => {
+  render(<MemoryRouter initialEntries={['/dashboard/events/37/edit']}><Location /><EventWorkspace eventId={37} event={dto()} hasUnsavedChanges><input aria-label="Working draft" defaultValue="Unsaved local text" /><section id="ticket-types" tabIndex={-1}><h2>Ticket editor section</h2></section></EventWorkspace></MemoryRouter>)
+  const target = document.getElementById('ticket-types')
+  target.scrollIntoView = vi.fn()
+  await userEvent.click(screen.getByRole('link', { name: 'Ticket types', exact: true }))
+  expect(target).toHaveFocus()
+  expect(target.scrollIntoView).toHaveBeenCalledTimes(1)
+  expect(screen.getByLabelText('Working draft')).toHaveValue('Unsaved local text')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByTestId('workspace-location')).toHaveTextContent('/dashboard/events/37/edit#ticket-types')
+})

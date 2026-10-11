@@ -55,3 +55,22 @@ test('phone event navigation supports Escape and restores focus without exposing
   await expect(drawer).toHaveCount(0)
   await expect(trigger).toBeFocused()
 })
+
+for (const width of [320, 1440]) {
+  test(`ticket navigation scrolls and focuses the editor section without losing a draft at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 }); await prepare(page)
+    await page.goto('/dashboard/events/601/edit')
+    const title = page.getByLabel(/Event Title/)
+    await expect(title).toHaveValue(event.title)
+    await title.fill('Preserved before ticket jump')
+    if (width < 1024) await page.getByRole('button', { name: 'Event navigation', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Event workspace', exact: true }).getByRole('link', { name: 'Ticket types', exact: true }).click()
+    const section = page.getByRole('region', { name: 'Ticket types', exact: true })
+    await expect(section).toBeFocused()
+    await expect(title).toHaveValue('Preserved before ticket jump')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect.poll(async () => (await section.boundingBox()).y).toBeLessThan(180)
+    expect((await section.boundingBox()).y).toBeGreaterThanOrEqual(60)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  })
+}
