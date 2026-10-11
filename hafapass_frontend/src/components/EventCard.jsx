@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
@@ -7,6 +7,7 @@ import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remaini
 
 export default function EventCard({ event }) {
   const { t } = useTranslation()
+  const location = useLocation()
   const lowestPrice = lowestPurchasablePrice(event.ticket_types)
   const priceLabel = lowestPrice === null ? ''
     : lowestPrice === 0 ? t('events.free')
@@ -17,6 +18,7 @@ export default function EventCard({ event }) {
   return (
     <Link
       to={`/events/${event.slug}`}
+      state={{ browseFrom: `${location.pathname}${location.search}` }}
       className="group flex flex-col card card-hover overflow-hidden h-full"
     >
       {/* Image */}

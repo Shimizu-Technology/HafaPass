@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
-import { useParams, useNavigate, useSearchParams, useMatch, Link } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, useMatch, useLocation, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
@@ -11,6 +11,7 @@ import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
+import { eventBrowseReturn } from '../utils/browseReturn'
 import { isTicketPurchasable, ticketPriceCents } from '../utils/ticketPricing'
 import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
@@ -27,6 +28,8 @@ function EventDetailContent() {
   const { slug } = useParams()
   const reducedMotion = useReducedMotion()
   const navigate = useNavigate()
+  const location = useLocation()
+  const browseFrom = eventBrowseReturn(location.state?.browseFrom)
   const match = useMatch('/events/:slug')
   const liveRoute = useRef(null)
   const mounted = useRef(false)
@@ -84,13 +87,13 @@ function EventDetailContent() {
 
   const handleCheckout = (lineItems) => {
     if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
-    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof } })
+    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof, browseFrom } })
   }
 
   const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {
     if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
     navigate(`/checkout/${slug}`, {
-      state: { event, lineItems, seatHoldToken, seatHoldExpiresAt, selectedSeats: seats },
+      state: { event, lineItems, seatHoldToken, seatHoldExpiresAt, selectedSeats: seats, browseFrom },
     })
   }
 
@@ -161,7 +164,7 @@ function EventDetailContent() {
     <div className="max-w-2xl mx-auto px-4 py-16 text-center">
       <p role="alert" className="text-neutral-700 text-lg mb-4">{error.message}</p>
       {error.retryable && <button type="button" className="btn-primary mb-4" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry event</button>}
-      <Link to="/events" className="btn-primary">Browse Events</Link>
+      <Link to={browseFrom} className="btn-primary">Browse Events</Link>
     </div>
   )
   if (!event) return null
@@ -234,7 +237,7 @@ function EventDetailContent() {
         <div className="relative flex min-h-[inherit] flex-col justify-end pt-16 sm:pt-24">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 sm:pb-10 w-full">
             {/* Back link */}
-            <Link to="/events" className="inline-flex items-center gap-1.5 text-neutral-200 hover:text-white mb-4 text-sm font-medium transition-colors">
+            <Link to={browseFrom} className="inline-flex items-center gap-1.5 text-neutral-200 hover:text-white mb-4 text-sm font-medium transition-colors">
               <ArrowLeft className="w-4 h-4" /> All Events
             </Link>
 

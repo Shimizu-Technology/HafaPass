@@ -446,7 +446,7 @@ function CheckoutContent({ buyerId }) {
         {canStartNewCheckout
           ? <button type="button" onClick={startNewCheckout} className="btn-primary mb-3">Start a new checkout</button>
           : <button type="button" onClick={retrySavedCheckout} className="btn-primary mb-3">Retry saved checkout</button>}
-        <Link to={`/events/${slug}`} className="block font-semibold underline">Back to Event</Link>
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">Back to Event</Link>
       </div>
     </div>
   )
@@ -499,7 +499,7 @@ function CheckoutContent({ buyerId }) {
       <SEO title={event ? `Checkout — ${event.title}` : 'Checkout'} noIndex={liveMoneyProof} />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
-        <Link to={`/events/${slug}`} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
           <ArrowLeft className="w-4 h-4" />
           {t('checkout.backToEvent')}
         </Link>
@@ -517,7 +517,7 @@ function CheckoutContent({ buyerId }) {
             {t('checkout.yourInfo')}
           </div>
           <div className="w-8 h-px bg-neutral-200" />
-          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'payment' ? 'text-brand-500' : 'text-neutral-400'}`}>
+          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'payment' ? 'text-brand-500' : 'text-neutral-600'}`}>
             <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${step === 'payment' ? 'bg-brand-500 text-white' : 'bg-neutral-200 text-neutral-500'}`}>2</span>
             {t('checkout.payment')}
           </div>
@@ -553,7 +553,7 @@ function CheckoutContent({ buyerId }) {
               <div key={line.ticket_type_id} className="flex justify-between items-center">
                 <div>
                   <span className="text-neutral-800 font-medium text-sm">{line.name}</span>
-                  <span className="text-neutral-400 ml-2 text-sm">&times; {line.quantity}</span>
+                  <span className="text-neutral-600 ml-2 text-sm">&times; {line.quantity}</span>
                 </div>
                 <span className="text-neutral-900 font-medium text-sm">{formatPrice(line.lineTotal)}</span>
               </div>
@@ -620,7 +620,7 @@ function CheckoutContent({ buyerId }) {
                   className="btn-secondary !py-2.5 text-sm disabled:opacity-50">
                   {promoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('checkout.apply')}
                 </button>
-                <button aria-label="Close promo code entry" onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-400 hover:text-neutral-600">
+                <button aria-label="Close promo code entry" onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-600 hover:text-neutral-600">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -807,7 +807,7 @@ function CheckoutContent({ buyerId }) {
           </div>
         )}
 
-        <p className="text-xs text-neutral-400 text-center">
+        <p className="text-xs text-neutral-600 text-center">
           {t('checkout.termsNotice')}
         </p>
       </div>
