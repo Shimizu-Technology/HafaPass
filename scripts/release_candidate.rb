@@ -27,6 +27,8 @@ module HafaPass
 
     class Error < StandardError; end
 
+    require_relative "review_provenance"
+
     class Shell
       def capture!(*command, chdir: nil)
         stdout, stderr, status = Open3.capture3(*command, **spawn_options(chdir))
@@ -138,7 +140,7 @@ module HafaPass
         @shell = shell
       end
 
-      def collect(repository:, sha:, source_pr_number:)
+      def collect(repository:, sha:, source_pr_number:, independent_review: nil, accept_independent_review: false, root: Pathname(__dir__).parent)
         main_entries = main_check_entries(repository, sha)
         main_checks = CheckEvidence.summarize(main_entries, MAIN_CHECKS)
         CheckEvidence.assert_passed!(main_checks, "Candidate commit")
@@ -153,7 +155,8 @@ module HafaPass
         end
         pr_checks = CheckEvidence.summarize(pr_entries, PR_CHECKS)
         CheckEvidence.assert_passed!(pr_checks, "Source pull request")
-        code_review = code_review_evidence(repository, source_pr_number, pr.fetch("headRefOid"))
+        code_review = code_review_evidence(repository, source_pr_number, pr.fetch("headRefOid"),
+          independent_review: independent_review, acknowledged: accept_independent_review, root: root)
 
         unresolved_threads = unresolved_review_threads(repository, source_pr_number)
         raise Error, "Source pull request has #{unresolved_threads} unresolved review thread(s)." if unresolved_threads.positive?
@@ -215,14 +218,25 @@ module HafaPass
           )
         end
 
-        def code_review_evidence(repository, number, sha)
+        def code_review_evidence(repository, number, sha, independent_review: nil, acknowledged: false, root: Pathname(__dir__).parent)
           statuses = json!(
             "gh", "api", "--paginate", "--slurp", "repos/#{repository}/commits/#{sha}/statuses?per_page=100"
           ).flatten
           reviews = json!(
             "gh", "api", "--paginate", "--slurp", "repos/#{repository}/pulls/#{number}/reviews?per_page=100"
           ).flatten
-          CodeRabbitEvidence.verify!(statuses: statuses, reviews: reviews, sha: sha)
+          if independent_review
+            files = json!("gh", "api", "--paginate", "--slurp", "repos/#{repository}/pulls/#{number}/files?per_page=100").flatten
+              .map { |file| file.fetch("filename") }
+            evidence = IndependentReviewEvidence.new(root: root, shell: @shell).verify!(
+              path: independent_review, acknowledged: acknowledged, repository: repository, number: number, sha: sha, changed_files: files
+            )
+            evidence.merge("observed_github_review" => { "statuses" => statuses, "reviews" => reviews })
+          else
+            raise Error, "--accept-independent-review requires --independent-review-evidence." if acknowledged
+
+            CodeRabbitEvidence.verify!(statuses: statuses, reviews: reviews, sha: sha)
+          end
         end
 
         def unresolved_review_threads(repository, number)
@@ -318,6 +332,16 @@ module HafaPass
             "Choose a new candidate ID or archive them first."
         end
 
+        manifest = Marshal.load(Marshal.dump(manifest))
+        reports = manifest.dig("github", "source_pull_request", "code_review", "reports") || []
+        reports.each do |report|
+          bytes = report.delete("report_bytes")
+          raise Error, "Verified report bytes are required." unless bytes && Digest::SHA256.hexdigest(bytes) == report["report_sha256"]
+
+          report_path = @output_dir.join(report.fetch("report_path"))
+          FileUtils.mkdir_p(report_path.dirname, mode: 0o700)
+          write_private!(report_path, bytes)
+        end
         write_private!(json_path, JSON.pretty_generate(manifest) + "\n")
         write_private!(register_path, register(manifest))
         [json_path, register_path]
@@ -375,7 +399,7 @@ module HafaPass
         @clock = clock
       end
 
-      def call(candidate_id:, output_base: ".release-evidence")
+      def call(candidate_id:, output_base: ".release-evidence", independent_review: nil, accept_independent_review: false)
         CandidateId.validate!(candidate_id)
         assert_candidate_worktree!
 
@@ -388,7 +412,8 @@ module HafaPass
 
         @shell.stream!(@root.join("scripts/gate.sh").to_s, chdir: @root.to_s)
         gate_completed_at = @clock.call.iso8601
-        github = @github.collect(repository: repository, sha: sha, source_pr_number: source_pr_number)
+        github = @github.collect(repository: repository, sha: sha, source_pr_number: source_pr_number,
+          independent_review: independent_review, accept_independent_review: accept_independent_review, root: @root)
 
         manifest = build_manifest(candidate_id, repository, sha, github, gate_completed_at)
         output_dir = @root.join(output_base, candidate_id)
@@ -473,6 +498,8 @@ module HafaPass
           opts.banner = "Usage: scripts/release_candidate.rb --candidate ID [--output-base PATH]"
           opts.on("--candidate ID", "Stable candidate ID, for example pilot-rc-2026-07-21.1") { |value| options[:candidate_id] = value }
           opts.on("--output-base PATH", "Private output base (default: .release-evidence)") { |value| options[:output_base] = value }
+          opts.on("--independent-review-evidence PATH", "Private completed independent/CLI review bundle") { |value| options[:independent_review] = value }
+          opts.on("--accept-independent-review", "Attest the user's explicit independent-review authorization") { options[:accept_independent_review] = true }
           opts.on("-h", "--help", "Show this help") { puts opts; return 0 }
         end
         parser.parse!(argv)
