@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Loader2, Search, Music, UtensilsCrossed, Trophy, Users, Sparkles, Moon, CalendarPlus, Ticket } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
 import SEO from '../components/SEO'
@@ -36,6 +36,9 @@ export default function EventsPage() {
   const [village, setVillage] = useState(searchParams.get('village') || '')
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
   const categories = useEventCategories()
+  const reducedMotion = useReducedMotion()
+  const ResultsContainer = reducedMotion ? 'div' : StaggerContainer
+  const ResultItem = reducedMotion ? 'div' : StaggerItem
 
   useEffect(() => {
     let active = true
@@ -187,7 +190,7 @@ export default function EventsPage() {
             </div>
           ) : events.length === 0 ? (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={reducedMotion ? false : { opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="rounded-2xl border border-neutral-200 bg-white p-12 sm:p-16 text-center"
             >
@@ -242,9 +245,9 @@ export default function EventsPage() {
               )}
             </motion.div>
           ) : (
-            <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {events.map(event => <StaggerItem key={event.id}><EventCard event={event} /></StaggerItem>)}
-            </StaggerContainer>
+            <ResultsContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {events.map(event => <ResultItem key={event.id}><EventCard event={event} /></ResultItem>)}
+            </ResultsContainer>
           )}
           {!loading && !loadError && meta.total_pages > 1 && (
             <nav className="mt-10 flex items-center justify-center gap-3" aria-label="Event results pages">
