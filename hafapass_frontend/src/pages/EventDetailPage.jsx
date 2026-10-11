@@ -230,7 +230,7 @@ function EventDetailContent() {
         <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/60 to-neutral-950/30" />
 
         {/* Content overlaid on hero */}
-        <div className="relative flex flex-col justify-end pt-16 sm:pt-24">
+        <div className="relative flex min-h-[inherit] flex-col justify-end pt-16 sm:pt-24">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 sm:pb-10 w-full">
             {/* Back link */}
             <Link to="/events" className="inline-flex items-center gap-1.5 text-neutral-200 hover:text-white mb-4 text-sm font-medium transition-colors">
@@ -273,6 +273,43 @@ function EventDetailContent() {
       <div className="bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Sidebar - Tickets */}
+            <motion.div
+              id="tickets"
+              className="order-1 min-w-0 scroll-mt-24 lg:order-2 lg:col-span-1"
+              initial={false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: reducedMotion ? 0 : 0.3 }}
+            >
+              <div className="lg:sticky lg:top-24">
+                {waitlistOffer && !waitlistOffer.error && (
+                  <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                    <p className="text-sm font-semibold text-emerald-900">Your tickets are reserved</p>
+                    <p className="mt-1 text-sm text-emerald-800">{waitlistOffer.quantity} × {waitlistOffer.ticket_type_name} until {new Date(waitlistOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>
+                    <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>Claim waitlist offer</button>
+                  </div>
+                )}
+                {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
+                <div className="card p-3 sm:p-5">
+                  {event.assigned_seating ? (
+                    <SeatSelector event={event} onReserved={handleSeatCheckout} />
+                  ) : event.ticket_types && event.ticket_types.length > 0 ? (
+                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />
+                  ) : (
+                    <p className="text-neutral-500 text-center py-4">No tickets available</p>
+                  )}
+                </div>
+                {/* Waitlist form when all ticket types are sold out */}
+                {event.ticket_types?.length > 0 &&
+                  event.status === 'published' &&
+                  event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
+                  <div className="mt-4">
+                    <WaitlistForm event={event} ticketTypes={event.ticket_types} />
+                  </div>
+                )}
+              </div>
+            </motion.div>
+
             {/* Main content */}
             <motion.div
               className="order-2 min-w-0 lg:order-1 lg:col-span-2"
@@ -364,42 +401,7 @@ function EventDetailContent() {
               )}
             </motion.div>
 
-            {/* Sidebar - Tickets */}
-            <motion.div
-              id="tickets"
-              className="order-1 min-w-0 scroll-mt-24 lg:order-2 lg:col-span-1"
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: reducedMotion ? 0 : 0.3 }}
-            >
-              <div className="lg:sticky lg:top-24">
-                {waitlistOffer && !waitlistOffer.error && (
-                  <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                    <p className="text-sm font-semibold text-emerald-900">Your tickets are reserved</p>
-                    <p className="mt-1 text-sm text-emerald-800">{waitlistOffer.quantity} × {waitlistOffer.ticket_type_name} until {new Date(waitlistOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>
-                    <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>Claim waitlist offer</button>
-                  </div>
-                )}
-                {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
-                <div className="card p-3 sm:p-5">
-                  {event.assigned_seating ? (
-                    <SeatSelector event={event} onReserved={handleSeatCheckout} />
-                  ) : event.ticket_types && event.ticket_types.length > 0 ? (
-                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />
-                  ) : (
-                    <p className="text-neutral-500 text-center py-4">No tickets available</p>
-                  )}
-                </div>
-                {/* Waitlist form when all ticket types are sold out */}
-                {event.ticket_types?.length > 0 &&
-                  event.status === 'published' &&
-                  event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
-                  <div className="mt-4">
-                    <WaitlistForm event={event} ticketTypes={event.ticket_types} />
-                  </div>
-                )}
-              </div>
-            </motion.div>
+
           </div>
         </div>
       </div>
