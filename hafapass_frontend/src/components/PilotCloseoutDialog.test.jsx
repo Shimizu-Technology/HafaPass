@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import PilotCloseoutDialog from './PilotCloseoutDialog'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn() } }))
 
 const event = { id: 42, title: 'Guam Community Night', status: 'completed', pilot_closeout: {} }
 const localMetrics = {
@@ -91,7 +91,8 @@ describe('PilotCloseoutDialog', () => {
       expect.objectContaining({
         expansion_decision: 'hold', outcome_metrics: expect.objectContaining({ entry_latency_p95_ms: 275 }),
         expansion_scope: expect.objectContaining({ event_limit: 0, new_regions: false }),
-      })))
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
   it('lets a second administrator approve the exact pending closeout', async () => {
@@ -107,6 +108,8 @@ describe('PilotCloseoutDialog', () => {
     expect(screen.getAllByText(/Confirmed/)).toHaveLength(19)
     fireEvent.click(screen.getByRole('button', { name: 'Approve exact Gate J decision' }))
 
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/pilot_closeout_reviews/91/approve'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/pilot_closeout_reviews/91/approve',
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 })

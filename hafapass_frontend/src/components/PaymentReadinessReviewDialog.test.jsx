@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import PaymentReadinessReviewDialog from './PaymentReadinessReviewDialog'
 
-vi.mock('../api/client', () => ({
+vi.mock('../api/client', async original => ({ ...await original(),
   default: { post: vi.fn(), patch: vi.fn() },
 }))
 
@@ -52,7 +52,7 @@ describe('PaymentReadinessReviewDialog', () => {
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
       '/admin/connected_accounts/42/payment_readiness_reviews',
       expect.objectContaining({ evidence_digest: 'a'.repeat(64), controls }),
-    ))
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
     expect(onComplete).toHaveBeenCalled()
   })
 
@@ -82,7 +82,9 @@ describe('PaymentReadinessReviewDialog', () => {
     expect(screen.getByText('paypal-live-approval-42')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Approve exact evidence' }))
 
-    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/payment_readiness_reviews/91/approve'))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/payment_readiness_reviews/91/approve',
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
     expect(onComplete).toHaveBeenCalled()
   })
 
@@ -119,7 +121,7 @@ describe('PaymentReadinessReviewDialog', () => {
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
       '/admin/payment_readiness_reviews/91/reject',
       { reason: 'Payout authority is missing' },
-    ))
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
     expect(onComplete).toHaveBeenCalled()
   })
 

@@ -1,9 +1,11 @@
+import { MemoryRouter } from 'react-router-dom'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import AdminOrdersPage from './AdminOrdersPage'
 
-vi.mock('../../api/client', () => ({
+vi.mock('../../api/client', async importOriginal => ({
+  ...await importOriginal(),
   default: { get: vi.fn() },
 }))
 
@@ -49,16 +51,16 @@ describe('AdminOrdersPage', () => {
   })
 
   it('shows the operational ledger when an order is expanded', async () => {
-    render(<AdminOrdersPage />)
+    render(<MemoryRouter initialEntries={['/admin/orders']}><AdminOrdersPage /></MemoryRouter>)
     await screen.findByText('Ledger Buyer')
 
-    fireEvent.click(screen.getByText('Ledger Buyer'))
+    fireEvent.click(screen.getByRole('button', { name: 'Order 42 details' }))
 
     expect(screen.getByText('Financial ledger')).toBeInTheDocument()
     expect(screen.getByText('Immutable order items')).toBeInTheDocument()
     expect(screen.getByText(/General Admission/)).toBeInTheDocument()
     expect(screen.getByText(/pi_test/)).toBeInTheDocument()
     expect(screen.getByText(/payment amount mismatch/)).toBeInTheDocument()
-    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/admin/orders', { params: { page: 1, per_page: 20 } }))
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/admin/orders', expect.objectContaining({ params: { page: 1, per_page: 20 } })))
   })
 })

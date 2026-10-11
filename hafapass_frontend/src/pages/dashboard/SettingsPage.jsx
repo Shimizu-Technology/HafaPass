@@ -1,5 +1,6 @@
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import { CheckCircle2, CircleAlert, Copy, Loader2, ShieldCheck, Trash2, UserPlus, Users, WalletCards } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 
@@ -19,6 +20,26 @@ function StatusPill({ ready, children }) {
 }
 
 export default function SettingsPage() {
+ const identity = useOrganizerIdentity()
+ const visit = useOrganizerPageVisit('/dashboard/settings')
+ if (!visit.active) return null
+ if (!identity.ready) return <p role="status" className="p-6">Preparing your account…</p>
+ return <SettingsPageSession key={`${identity.accountKey}:${identity.organizationId}:${visit.generation}`} identity={identity} />
+}
+
+function SettingsPageSession({ identity }) {
+ const { current, beginRequest } = useOrganizerRequests(identity, '/dashboard/settings')
+ const requestApi = useCallback(async (method, url, payload, options = {}) => {
+  const request = beginRequest()
+  if (!request) throw new DOMException('Page context changed', 'AbortError')
+  try {
+   const response = method === 'get' || method === 'delete'
+    ? await apiClient[method](url, { ...payload, ...request.config })
+    : await apiClient[method](url, payload, { ...options, ...request.config })
+   if (!request.current()) throw new DOMException('Page context changed', 'AbortError')
+   return response
+  } finally { request.release() }
+ }, [beginRequest])
   const [organization, setOrganization] = useState(null)
   const [memberships, setMemberships] = useState([])
   const [accounts, setAccounts] = useState([])
@@ -29,90 +50,109 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
+  const loadGeneration = useRef(0)
 
   const canManage = organization?.role === 'owner'
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current
+    const canApply = () => current() && generation === loadGeneration.current
+    if (!current()) return
     setLoading(true)
     setError(null)
     try {
-      const organizationResponse = await apiClient.get('/organizer/organization')
+      const organizationResponse = await requestApi('get', '/organizer/organization')
+      if (!canApply()) return
       setOrganization(organizationResponse.data)
       if (organizationResponse.data.role === 'owner') {
         const [membersResponse, accountsResponse] = await Promise.all([
-          apiClient.get('/organizer/memberships'),
-          apiClient.get('/organizer/connected_accounts')
+          requestApi('get', '/organizer/memberships'),
+          requestApi('get', '/organizer/connected_accounts')
         ])
+        if (!canApply()) return
         setMemberships(membersResponse.data)
         setAccounts(accountsResponse.data)
       }
     } catch (requestError) {
+      if (!canApply()) return
       setError(requestError.response?.data?.error || 'Could not load organization settings.')
     } finally {
-      setLoading(false)
+      if (canApply()) setLoading(false)
     }
-  }, [])
+  }, [requestApi, current])
 
   useEffect(() => { load() }, [load])
 
   const invite = async event => {
     event.preventDefault()
+    if (!current() || !canManage || busy) return
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
-      const response = await apiClient.post('/organizer/memberships', { email, role })
+      const response = await requestApi('post', '/organizer/memberships', { email, role })
+      if (!current()) return
       const url = `${window.location.origin}/organization-invitations/accept?token=${encodeURIComponent(response.data.invitation_token)}`
       setInvitationUrl(url)
       setEmail('')
       setMemberships(current => [...current, response.data])
       setNotice('Invitation created. Copy the secure link and send it to the invited email address.')
     } catch (requestError) {
+      if (!current()) return
       setError(requestError.response?.data?.error || requestError.response?.data?.errors?.[0] || 'Could not create invitation.')
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
   const changeRole = async (membership, nextRole) => {
+    if (!current() || !canManage || busy) return
     setBusy(true)
     setError(null)
     try {
-      const response = await apiClient.patch(`/organizer/memberships/${membership.id}`, { role: nextRole })
+      const response = await requestApi('patch', `/organizer/memberships/${membership.id}`, { role: nextRole })
+      if (!current()) return
       setMemberships(current => current.map(item => item.id === membership.id ? response.data : item))
     } catch (requestError) {
+      if (!current()) return
       setError(requestError.response?.data?.error || requestError.response?.data?.errors?.[0] || 'Could not update role.')
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
   const revoke = async membership => {
+    if (!current() || !canManage || busy) return
     if (!window.confirm(`Revoke ${membership.email}'s access?`)) return
     setBusy(true)
     setError(null)
     try {
-      await apiClient.delete(`/organizer/memberships/${membership.id}`)
+      await requestApi('delete', `/organizer/memberships/${membership.id}`)
+      if (!current()) return
       setMemberships(current => current.map(item => item.id === membership.id ? { ...item, status: 'revoked' } : item))
     } catch (requestError) {
+      if (!current()) return
       setError(requestError.response?.data?.error || 'Could not revoke access.')
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
   const startOnboarding = async provider => {
+    if (!current() || !canManage || busy) return
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
-      const response = await apiClient.post('/organizer/connected_accounts', { provider })
+      const response = await requestApi('post', '/organizer/connected_accounts', { provider })
+      if (!current()) return
       setAccounts(current => [...current.filter(account => account.provider !== provider), response.data])
       setNotice(response.data.next_action)
     } catch (requestError) {
+      if (!current()) return
       setError(requestError.response?.data?.error || 'Could not start payout onboarding.')
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
@@ -130,7 +170,7 @@ export default function SettingsPage() {
         <StatusPill ready={organization?.payout_ready}>{organization?.payout_ready ? 'Paid events ready' : 'Payout setup incomplete'}</StatusPill>
       </div>
 
-      {error && <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+      {error && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p>{error}</p><button type="button" onClick={load} className="min-h-11 font-semibold underline">Retry organization settings</button></div>}
       {notice && <div className="mt-6 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-800">{notice}</div>}
 
       {!canManage ? (

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import PilotValidationReviewDialog from './PilotValidationReviewDialog'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn() } }))
 
 const event = { id: 42, title: 'Guam Community Night', pilot_validation: { approval_recorded: false } }
 
@@ -47,6 +47,8 @@ describe('PilotValidationReviewDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review QA evidence' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Approve exact candidate' }))
 
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/pilot_validation_reviews/81/approve'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/pilot_validation_reviews/81/approve',
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 })

@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
+import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 import PaymentReadinessReviewDialog from '../../components/PaymentReadinessReviewDialog'
 
 const roles = ['', 'attendee', 'organizer', 'support', 'admin']
@@ -39,7 +40,13 @@ function OrganizerReadiness({ user, reviewOrganizer, syncConnectedAccount, fetch
   )
 }
 
-export default function AdminUsersPage() {
+function AdminUsersPageSession({ identity, resourcePath }) {
+  const { beginRequest } = usePlatformRequests(identity, resourcePath)
+  const loadGeneration = useRef(0)
+  const pendingLoad = useRef(null)
+  const mutationBusy = useRef(false)
+  const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [users, setUsers] = useState([])
   const [meta, setMeta] = useState({})
   const [loading, setLoading] = useState(true)
@@ -48,33 +55,56 @@ export default function AdminUsersPage() {
   const [page, setPage] = useState(1)
 
   const fetchUsers = useCallback(() => {
+    const request = beginRequest()
+    if (!request) return
+    pendingLoad.current?.abort()
+    pendingLoad.current = request
+    const generation = ++loadGeneration.current
+    const active = () => request.current() && generation === loadGeneration.current
     setLoading(true)
+    setLoadError('')
     const params = { page, per_page: 20 }
     if (search) params.search = search
     if (roleFilter) params.role = roleFilter
-    apiClient.get('/admin/users', { params })
-      .then(res => { setUsers(res.data.users); setMeta(res.data.meta) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [page, search, roleFilter])
+    apiClient.get('/admin/users', { ...request.config, params })
+      .then(res => { if (active()) { setUsers(res.data.users); setMeta(res.data.meta); } })
+      .catch(() => { if (active()) setLoadError('Could not load users. Your filters have been kept.') })
+      .finally(() => { request.release(); if (active()) setLoading(false) })
+  }, [page, search, roleFilter, beginRequest])
 
-  useEffect(() => { fetchUsers() }, [fetchUsers])
+  useEffect(() => { fetchUsers(); return () => pendingLoad.current?.abort() }, [fetchUsers])
 
   const changeRole = async (user, newRole) => {
     if (newRole === 'admin' && !window.confirm(`Promote ${user.email} to admin? This grants full platform access.`)) return
+    if (mutationBusy.current) return
+    const request = beginRequest()
+    if (!request) return
+    mutationBusy.current = true
+    setActionError('')
     try {
-      const res = await apiClient.patch(`/admin/users/${user.id}`, { role: newRole })
+      const res = await apiClient.patch(`/admin/users/${user.id}`, { role: newRole }, request.config)
+      if (!request.current()) return
       setUsers(prev => prev.map(u => u.id === user.id ? res.data : u))
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
+    } finally { request.release(); mutationBusy.current = false }
   }
 
   const updateOrganizer = async (user, updates) => {
     const profile = user.organizer_profile
     if (!profile) return
+    if (mutationBusy.current) return
+    const request = beginRequest()
+    if (!request) return
+    mutationBusy.current = true
+    setActionError('')
     try {
-      const response = await apiClient.patch(`/admin/organizer_profiles/${profile.id}`, updates)
+      const response = await apiClient.patch(`/admin/organizer_profiles/${profile.id}`, updates, request.config)
+      if (!request.current()) return
       setUsers(current => current.map(item => item.id === user.id ? { ...item, organizer_profile: { ...profile, ...response.data } } : item))
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
+    } finally { request.release(); mutationBusy.current = false }
   }
 
   const reviewOrganizer = (user, verificationStatus) => {
@@ -90,8 +120,14 @@ export default function AdminUsersPage() {
   const syncConnectedAccount = async (user, updates) => {
     const account = user.organizer_profile?.connected_account
     if (!account) return
+    if (mutationBusy.current) return
+    const request = beginRequest()
+    if (!request) return
+    mutationBusy.current = true
+    setActionError('')
     try {
-      const response = await apiClient.patch(`/admin/connected_accounts/${account.id}`, updates)
+      const response = await apiClient.patch(`/admin/connected_accounts/${account.id}`, updates, request.config)
+      if (!request.current()) return
       setUsers(current => current.map(item => item.id === user.id ? {
         ...item,
         organizer_profile: {
@@ -100,7 +136,9 @@ export default function AdminUsersPage() {
           connected_account: response.data
         }
       } : item))
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
+    } finally { request.release(); mutationBusy.current = false }
   }
 
   const roleBadge = (role) => {
@@ -133,9 +171,12 @@ export default function AdminUsersPage() {
         </select>
       </div>
 
+      {actionError && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{actionError}</p>}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         {loading ? (
           <div role="status" aria-label="Loading users" className="flex justify-center py-12"><Loader2 aria-hidden="true" className="w-6 h-6 text-brand-700 animate-spin motion-reduce:animate-none" /></div>
+        ) : loadError ? (
+          <div role="alert" className="p-5 text-red-700">{loadError} <button onClick={fetchUsers} className="min-h-11 rounded px-3 font-semibold underline focus-visible:ring-2 focus-visible:ring-focus">Try again</button></div>
         ) : (
           <div>
             <div className="overflow-x-auto hidden lg:block">
@@ -215,4 +256,12 @@ export default function AdminUsersPage() {
       )}
     </AdminLayout>
   )
+}
+
+export default function AdminUsersPage() {
+  const identity = usePlatformIdentity()
+  const visit = usePlatformVisit('/admin/users')
+  if (!visit.active) return null
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <AdminUsersPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/admin/users" />
 }

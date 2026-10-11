@@ -4,7 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminUsersPage from './AdminUsersPage'
 import apiClient from '../../api/client'
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({
+  ...await importOriginal(), default: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }))
 const organizer = {
   id: 7, first_name: 'Test', last_name: 'Organizer', email: 'organizer@example.test', role: 'organizer', orders_count: 12, created_at: '2026-10-01T00:00:00Z',
   organizer_profile: { id: 9, business_name: 'Guam Test Events', verification_status: 'pending', verification_notes: '', payout_ready: false,
@@ -34,7 +35,7 @@ describe('mobile administrator user controls', () => {
     apiClient.patch.mockResolvedValue({ data: { verification_status: 'verified', verification_notes: '' } })
     show(); const mobile = await card()
     await userEvent.selectOptions(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' }), 'verified')
-    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'verified', verification_notes: '' })
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'verified', verification_notes: '' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await waitFor(() => expect(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })).toHaveValue('verified'))
   })
   it('keeps capability sync confirmation separate from independent approval', async () => {
@@ -46,7 +47,7 @@ describe('mobile administrator user controls', () => {
     confirm.mockReturnValue(true)
     apiClient.patch.mockResolvedValue({ data: { ...organizer.organizer_profile.connected_account, charges_enabled: true, payouts_enabled: true, details_submitted: true, payout_ready: false, requirements_due: ['independent_readiness_approval'] } })
     await userEvent.click(mobile.getByRole('button', { name: 'Record provider status' }))
-    expect(apiClient.patch).toHaveBeenCalledWith('/admin/connected_accounts/11', { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] })
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/connected_accounts/11', { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await waitFor(() => expect(mobile.getByRole('button', { name: 'Submit Gate B evidence' })).toBeEnabled())
     expect(apiClient.post).not.toHaveBeenCalled()
   })

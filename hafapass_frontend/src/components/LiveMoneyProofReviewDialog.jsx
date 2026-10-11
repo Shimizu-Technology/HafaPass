@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, Check, ExternalLink, Loader2, ShieldAlert, ShieldCheck, X } from 'lucide-react'
-import apiClient from '../api/client'
+import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
 
 const entityFields = [
   ['legal_entity_reference', 'Approved legal-entity reference'], ['organizer_reference', 'Actual organizer reference'],
@@ -83,8 +83,13 @@ function Summary({ review }) {
   </dl>
 }
 
-export default function LiveMoneyProofReviewDialog({ event, onComplete }) {
+function LiveMoneyProofReviewDialogSession({ event, onComplete }) {
   const [open, setOpen] = useState(false)
+  const dialog = useCapturedPlatformDialog(open)
+  const { canClose } = dialog
+  const openCaptured = () => { if (dialog.capture()) { setBusy(false); setOpen(true) } }
+  const closeCaptured = useCallback(() => { if (canClose()) setOpen(false) }, [canClose])
+
   const [details, setDetails] = useState(null)
   const [authorizationForm, setAuthorizationForm] = useState({ buyer_email: '', max_amount_cents: '500', expires_at: localDateTime(new Date(Date.now() + 60 * 60 * 1000)) })
   const [form, setForm] = useState(initialEvidence)
@@ -101,23 +106,26 @@ export default function LiveMoneyProofReviewDialog({ event, onComplete }) {
   const allControls = useMemo(() => controlFields.every(([key]) => form.controls[key]), [form.controls])
 
   const load = async () => {
+    const scope = dialog.begin()
+    if (!scope) return
     setLoading(true); setError('')
     try {
-      const response = await apiClient.get(`/admin/events/${event.id}/live_money_proof`)
+      const response = await scope.api.get(`/admin/events/${event.id}/live_money_proof`)
+      if (!scope.current()) return
       setDetails(response.data)
       if (response.data.authorization) setForm(current => ({ ...current,
         authorization_id: String(response.data.authorization.id), order_id: String(response.data.authorization.order_id || ''),
         event_day_rehearsal_review_id: String(response.data.authorization.event_day_rehearsal_review_id || ''),
       }))
-    } catch (requestError) { setError(requestError.response?.data?.error || 'Gate H proof could not be loaded.') }
-    finally { setLoading(false) }
+    } catch (requestError) { if (!scope.current()) return; setError(requestError.response?.data?.error || 'Gate H proof could not be loaded.') }
+    finally { if (scope.current()) setLoading(false) }
   }
   useEffect(() => {
     if (!open) return undefined
     load(); const trigger = triggerRef.current; const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'; const frame = window.requestAnimationFrame(() => closeRef.current?.focus())
+    document.body.style.overflow = 'hidden'; closeRef.current?.focus()
     const onKeyDown = keyboardEvent => {
-      if (keyboardEvent.key === 'Escape' && !busy) setOpen(false)
+      if (keyboardEvent.key === 'Escape' && !busy) closeCaptured()
       if (keyboardEvent.key !== 'Tab' || !dialogRef.current) return
       const focusable = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
       if (!focusable.length) return
@@ -126,19 +134,21 @@ export default function LiveMoneyProofReviewDialog({ event, onComplete }) {
       else if (!keyboardEvent.shiftKey && document.activeElement === last) { keyboardEvent.preventDefault(); first.focus() }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', onKeyDown); document.body.style.overflow = overflow; trigger?.focus() }
+    return () => { window.removeEventListener('keydown', onKeyDown); document.body.style.overflow = overflow; trigger?.focus() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, closeCaptured])
 
   const request = async operation => {
+    const scope = dialog.begin('mutation')
+    if (!scope) return false
     setBusy(true); setError('')
-    try { await operation(); await load(); setReason(''); onComplete?.() }
-    catch (requestError) { setError(requestError.response?.data?.error || 'The Gate H action could not be recorded.') }
-    finally { setBusy(false) }
+    try { await operation(scope.api); if (!scope.current()) return false; await load(); if (!scope.current()) return false; setReason(''); onComplete?.() }
+    catch (requestError) { if (!scope.current()) return false; setError(requestError.response?.data?.error || 'The Gate H action could not be recorded.') }
+    finally { if (scope.current()) setBusy(false); scope.finish() }
   }
   const requestAuthorization = submitEvent => {
     submitEvent.preventDefault()
-    request(() => apiClient.post(`/admin/events/${event.id}/live_money_proof_authorizations`, {
+    request(api => api.post(`/admin/events/${event.id}/live_money_proof_authorizations`, {
       ...authorizationForm, max_amount_cents: Number.parseInt(authorizationForm.max_amount_cents, 10),
       expires_at: new Date(authorizationForm.expires_at).toISOString(),
     }))
@@ -153,7 +163,7 @@ export default function LiveMoneyProofReviewDialog({ event, onComplete }) {
     payload.reconciliation_results = Object.fromEntries(Object.entries(payload.reconciliation_results).map(([key, value]) =>
       [key, Number.parseInt(value, 10)]))
     payload.effective_at = new Date(payload.effective_at).toISOString(); payload.expires_at = new Date(payload.expires_at).toISOString()
-    request(() => apiClient.post(`/admin/events/${event.id}/live_money_proof_reviews`, payload))
+    request(api => api.post(`/admin/events/${event.id}/live_money_proof_reviews`, payload))
   }
   const setNested = (section, key, value) => setForm(current => ({ ...current, [section]: { ...current[section], [key]: value } }))
   const setCommunication = (key, value) => setForm(current => ({ ...current,
@@ -161,26 +171,32 @@ export default function LiveMoneyProofReviewDialog({ event, onComplete }) {
   }))
 
   return <>
-    <button ref={triggerRef} type="button" onClick={() => setOpen(true)} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-950 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">
+    <button ref={triggerRef} type="button" onClick={openCaptured} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-950 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">
       {proof.approval_recorded ? <ShieldCheck className="h-4 w-4" /> : <Banknote className="h-4 w-4" />}
       {proof.approval_recorded ? 'Review Gate H approval' : proof.pending_submission ? 'Review Gate H evidence' : 'Prepare Gate H live-money proof'}
     </button>
-    {open && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) setOpen(false) }}>
+    {open && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) closeCaptured() }}>
       <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="live-money-title" className="max-h-[96vh] w-full overflow-y-auto rounded-t-3xl bg-stone-50 shadow-2xl sm:max-w-6xl sm:rounded-3xl">
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-800">Gate H · low-value live-money loop</p><h2 id="live-money-title" className="mt-1 text-2xl font-bold">{event.title}</h2><p className="mt-1 max-w-4xl text-sm text-neutral-600">Authorize one hidden charge, then reconcile partial and full refunds, settlement, payout, bank receipt, and the post-payout negative balance.</p></div><button ref={closeRef} type="button" aria-label="Close Gate H live-money proof" disabled={busy} onClick={() => setOpen(false)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-stone-200 focus-visible:ring-2 focus-visible:ring-emerald-700"><X className="h-5 w-5" /></button></header>
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-800">Gate H · low-value live-money loop</p><h2 id="live-money-title" className="mt-1 text-2xl font-bold">{event.title}</h2><p className="mt-1 max-w-4xl text-sm text-neutral-600">Authorize one hidden charge, then reconcile partial and full refunds, settlement, payout, bank receipt, and the post-payout negative balance.</p></div><button ref={closeRef} type="button" aria-label="Close Gate H live-money proof" disabled={busy} onClick={closeCaptured} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-stone-200 focus-visible:ring-2 focus-visible:ring-emerald-700"><X className="h-5 w-5" /></button></header>
         <div className="px-6 py-6 sm:px-8 sm:py-8">
           {error && <div role="alert" className="mb-6 flex gap-3 border-l-4 border-red-600 bg-red-50 p-4 text-sm text-red-900"><ShieldAlert className="h-5 w-5 shrink-0" />{error}</div>}
           {loading && !details ? <div className="flex justify-center py-16"><Loader2 aria-label="Loading Gate H proof" className="h-8 w-8 animate-spin text-emerald-700" /></div> : <>
             {mode === 'not-candidate' && <div className="border-l-4 border-amber-500 bg-amber-50 p-5 text-sm text-amber-950">Mark and configure a dedicated draft <strong>[LIVE MONEY TEST]</strong> event before Gates E–G. Normal events cannot be used to bypass Gate H.</div>}
             {mode === 'authorize' && <form onSubmit={requestAuthorization} className="space-y-6"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-4 text-sm text-emerald-950">The authorization is private, expires within two hours, is locked to one administrator email, and must be approved by a different administrator.</div><div className="grid gap-4 sm:grid-cols-3"><label className="text-sm font-semibold">Proof buyer email<input required type="email" value={authorizationForm.buyer_email} onChange={change => setAuthorizationForm(current => ({ ...current, buyer_email: change.target.value }))} className={inputClass} /></label><label className="text-sm font-semibold">Maximum total cents<input required min="1" max="500" type="number" value={authorizationForm.max_amount_cents} onChange={change => setAuthorizationForm(current => ({ ...current, max_amount_cents: change.target.value }))} className={inputClass} /></label><label className="text-sm font-semibold">Expires<input required type="datetime-local" value={authorizationForm.expires_at} onChange={change => setAuthorizationForm(current => ({ ...current, expires_at: change.target.value }))} className={inputClass} /></label></div><div className="flex justify-end"><button disabled={busy} className="btn-primary min-h-11">Request proof authorization</button></div></form>}
-            {mode === 'approve-authorization' && <div className="space-y-6"><div className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950">Authorization #{authorization.id} was requested by admin #{authorization.requested_by_user_id}, capped at {authorization.max_amount_cents} cents, and expires {formatDate(authorization.expires_at)}. A different administrator must approve it.</div><div className="flex justify-end"><button disabled={busy} onClick={() => request(() => apiClient.post(`/admin/live_money_proof_authorizations/${authorization.id}/approve`))} className="btn-primary min-h-11"><Check className="h-4 w-4" /> Approve one-time proof</button></div></div>}
+            {mode === 'approve-authorization' && <div className="space-y-6"><div className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950">Authorization #{authorization.id} was requested by admin #{authorization.requested_by_user_id}, capped at {authorization.max_amount_cents} cents, and expires {formatDate(authorization.expires_at)}. A different administrator must approve it.</div><div className="flex justify-end"><button disabled={busy} onClick={() => request(api => api.post(`/admin/live_money_proof_authorizations/${authorization.id}/approve`))} className="btn-primary min-h-11"><Check className="h-4 w-4" /> Approve one-time proof</button></div></div>}
             {mode === 'run' && <div className="space-y-6"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-4 text-sm text-emerald-950">Authorization #{authorization.id} is approved. Sign in as the authorized admin, buy exactly one ticket, and never share this private URL.</div><a href={`/events/${event.slug}?live_money_proof=true`} className="btn-primary inline-flex min-h-11 items-center gap-2"><ExternalLink className="h-4 w-4" /> Open private proof checkout</a></div>}
             {mode === 'submit' && <form onSubmit={submitEvidence} className="space-y-9"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-4 text-sm text-emerald-950">Authorization #{authorization.id} was consumed by order #{authorization.order_id}. Complete the finance sequence, then enter the exact local IDs and restricted external evidence references.</div><fieldset><legend className="text-base font-bold">Local immutable records</legend><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{recordFields.map(([key, label]) => <label key={key} className="text-xs font-semibold">{label}<input required type="number" min="1" value={form[key]} onChange={change => setForm(current => ({ ...current, [key]: change.target.value }))} className={inputClass} /></label>)}<label className="text-xs font-semibold">Authorization ID<input required readOnly type="number" value={form.authorization_id} className={inputClass} /></label><label className="text-xs font-semibold">Order ID<input required readOnly type="number" value={form.order_id} className={inputClass} /></label></div></fieldset><fieldset><legend className="text-base font-bold">Restricted evidence bundle</legend><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-xs font-semibold">Evidence reference<input required value={form.evidence_reference} onChange={change => setForm(current => ({ ...current, evidence_reference: change.target.value }))} className={inputClass} /></label><label className="text-xs font-semibold">Evidence SHA-256<input required pattern="[0-9a-f]{64}" value={form.evidence_digest} onChange={change => setForm(current => ({ ...current, evidence_digest: change.target.value.trim().toLowerCase() }))} className={inputClass} /></label><label className="text-xs font-semibold">Effective<input required type="datetime-local" value={form.effective_at} onChange={change => setForm(current => ({ ...current, effective_at: change.target.value }))} className={inputClass} /></label><label className="text-xs font-semibold">Review by<input required type="datetime-local" value={form.expires_at} onChange={change => setForm(current => ({ ...current, expires_at: change.target.value }))} className={inputClass} /></label></div></fieldset><fieldset><legend className="text-base font-bold">Actual entity, organizer, bank, and providers</legend><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{entityFields.map(([key, label]) => <label key={key} className="text-xs font-semibold">{label}<input required value={form.entity_results[key]} onChange={change => setNested('entity_results', key, change.target.value)} className={inputClass} /></label>)}</div><label className="mt-4 flex items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={form.entity_production_environment} onChange={change => setForm(current => ({ ...current, entity_production_environment: change.target.checked }))} className="h-5 w-5" /> Confirm every transaction used the approved production environment</label></fieldset><fieldset><legend className="text-base font-bold">Provider and bank facts</legend><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{providerFields.map(([key, label, type]) => <label key={key} className="text-xs font-semibold">{label}<input required type={type} min={type === 'number' ? 0 : undefined} pattern={key.includes('digest') ? '[0-9a-f]{64}' : undefined} value={form.provider_results[key]} onChange={change => setNested('provider_results', key, change.target.value)} className={inputClass} /></label>)}</div></fieldset><fieldset><legend className="text-base font-bold">Cent-exact reconciliation</legend><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{reconciliationFields.map(([key, label]) => <label key={key} className="text-xs font-semibold">{label} (cents/count)<input required type="number" value={form.reconciliation_results[key]} onChange={change => setNested('reconciliation_results', key, change.target.value)} className={inputClass} /></label>)}</div></fieldset><fieldset><legend className="text-base font-bold">Buyer, organizer, and support visibility</legend><div className="mt-4 grid gap-4 sm:grid-cols-2">{communicationKeys.map(([key, label]) => <label key={key} className="text-xs font-semibold">{label} evidence reference<input required value={form.communication_results[key].evidence_reference} onChange={change => setCommunication(key, change.target.value)} className={inputClass} /></label>)}</div></fieldset><fieldset><legend className="text-base font-bold">Finance release controls</legend><div className="mt-4 grid gap-3 sm:grid-cols-2">{controlFields.map(([key, label]) => <label key={key} className="flex items-start gap-3 bg-white p-3 text-sm"><input type="checkbox" checked={form.controls[key]} onChange={change => setNested('controls', key, change.target.checked)} className="mt-0.5 h-5 w-5" />{label}</label>)}</div></fieldset><div className="flex justify-end border-t pt-6"><button disabled={busy || !allControls} className="btn-primary min-h-11">Submit immutable Gate H evidence</button></div></form>}
-            {mode === 'pending' && <div className="space-y-7"><div className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950">Submitted by admin #{pending.actor_user_id}. A different administrator must inspect the restricted provider and bank bundle.</div><Summary review={pending} /><label className="block text-sm font-semibold">Rejection reason<input value={reason} onChange={change => setReason(change.target.value)} className={inputClass} /></label><div className="flex flex-wrap justify-end gap-3"><button disabled={busy || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/live_money_proof_reviews/${pending.id}/reject`, { reason }))} className="min-h-11 rounded-full border border-red-300 px-5 font-semibold text-red-800">Reject</button><button disabled={busy} onClick={() => request(() => apiClient.post(`/admin/live_money_proof_reviews/${pending.id}/approve`))} className="btn-primary min-h-11"><Check className="h-4 w-4" /> Approve Gate H</button></div></div>}
-            {mode === 'approved' && <form onSubmit={submitEvent => { submitEvent.preventDefault(); request(() => apiClient.post(`/admin/live_money_proof_reviews/${approval.id}/revoke`, { reason })) }} className="space-y-7"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-4 text-sm text-emerald-950"><strong>Current Gate H approval.</strong> Normal paid pilot events using this exact account/provider/revision may proceed through their event-specific gates.</div><Summary review={approval} /><label className="block text-sm font-semibold">Revocation reason<input required value={reason} onChange={change => setReason(change.target.value)} className={inputClass} /></label><div className="flex justify-end"><button disabled={busy || !reason.trim()} className="min-h-11 rounded-full bg-red-700 px-5 font-semibold text-white">Revoke Gate H approval</button></div></form>}
+            {mode === 'pending' && <div className="space-y-7"><div className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950">Submitted by admin #{pending.actor_user_id}. A different administrator must inspect the restricted provider and bank bundle.</div><Summary review={pending} /><label className="block text-sm font-semibold">Rejection reason<input value={reason} onChange={change => setReason(change.target.value)} className={inputClass} /></label><div className="flex flex-wrap justify-end gap-3"><button disabled={busy || !reason.trim()} onClick={() => request(api => api.post(`/admin/live_money_proof_reviews/${pending.id}/reject`, { reason }))} className="min-h-11 rounded-full border border-red-300 px-5 font-semibold text-red-800">Reject</button><button disabled={busy} onClick={() => request(api => api.post(`/admin/live_money_proof_reviews/${pending.id}/approve`))} className="btn-primary min-h-11"><Check className="h-4 w-4" /> Approve Gate H</button></div></div>}
+            {mode === 'approved' && <form onSubmit={submitEvent => { submitEvent.preventDefault(); request(api => api.post(`/admin/live_money_proof_reviews/${approval.id}/revoke`, { reason })) }} className="space-y-7"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-4 text-sm text-emerald-950"><strong>Current Gate H approval.</strong> Normal paid pilot events using this exact account/provider/revision may proceed through their event-specific gates.</div><Summary review={approval} /><label className="block text-sm font-semibold">Revocation reason<input required value={reason} onChange={change => setReason(change.target.value)} className={inputClass} /></label><div className="flex justify-end"><button disabled={busy || !reason.trim()} className="min-h-11 rounded-full bg-red-700 px-5 font-semibold text-white">Revoke Gate H approval</button></div></form>}
           </>}
         </div>
       </section>
     </div>}
   </>
+}
+
+export default function LiveMoneyProofReviewDialog(props) {
+  const identity = useCapturedDialogIdentity()
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <LiveMoneyProofReviewDialogSession key={`${identity.key}:${props.event.id}`} {...props} />
 }
