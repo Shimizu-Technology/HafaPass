@@ -1,6 +1,7 @@
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 
@@ -16,13 +17,36 @@ function formatDate(iso) {
 }
 
 export default function AttendeesPage() {
-  const { id } = useParams()
+ const { id } = useParams()
+ const identity = useOrganizerIdentity()
+ const visit = useOrganizerPageVisit(`/dashboard/events/${id}/attendees`)
+ if (!visit.active) return null
+ if (!identity.ready) return <p role="status" className="p-6">Preparing your account…</p>
+ return <AttendeesPageSession key={`${identity.accountKey}:${identity.organizationId}:${id}:${visit.generation}`} id={id} identity={identity} />
+}
+
+function AttendeesPageSession({ id, identity }) {
+ const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/attendees`)
+ const requestApi = useCallback(async (method, url, payload, options = {}) => {
+  const request = beginRequest()
+  if (!request) throw new DOMException('Page context changed', 'AbortError')
+  try {
+   const response = method === 'get' || method === 'delete'
+    ? await apiClient[method](url, { ...payload, ...request.config })
+    : await apiClient[method](url, payload, { ...options, ...request.config })
+   if (!request.current()) throw new DOMException('Page context changed', 'AbortError')
+   return response
+  } finally { request.release() }
+ }, [beginRequest])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [detailError, setDetailError] = useState(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [attendees, setAttendees] = useState([])
   const [meta, setMeta] = useState(null)
   const [event, setEvent] = useState(null)
   const [page, setPage] = useState(1)
+  const listGeneration = useRef(0)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [ticketTypeFilter, setTicketTypeFilter] = useState('')
@@ -30,21 +54,24 @@ export default function AttendeesPage() {
   useEffect(() => {
     let active = true
 
-    apiClient.get(`/organizer/events/${id}`)
+    requestApi('get', `/organizer/events/${id}`)
       .then((response) => {
-        if (active) setEvent(response.data)
+        if (active && current()) { setEvent(response.data); setDetailError(null) }
       })
       .catch((err) => {
-        if (!active) return
-        if (err.response?.status === 401) setError('Please sign in.')
-        else if (err.response?.status === 404) setError('Event not found.')
-        else setError('Failed to load event details.')
+        if (!active || !current()) return
+        if (err.response?.status === 401) setDetailError('Please sign in.')
+        else if (err.response?.status === 404) setDetailError('Event not found.')
+        else setDetailError('Failed to load event details.')
       })
 
     return () => { active = false }
-  }, [id])
+  }, [id, requestApi, current, loadAttempt])
 
   const fetchAttendees = useCallback(async () => {
+    const generation = ++listGeneration.current
+    const canApply = () => current() && generation === listGeneration.current
+    if (!current()) return
     setLoading(true)
     setError(null)
     try {
@@ -53,22 +80,25 @@ export default function AttendeesPage() {
       if (statusFilter) params.set('status', statusFilter)
       if (ticketTypeFilter) params.set('ticket_type', ticketTypeFilter)
 
-      const attRes = await apiClient.get(`/organizer/events/${id}/attendees?${params}`)
+      const attRes = await requestApi('get', `/organizer/events/${id}/attendees?${params}`)
+      if (!canApply()) return
 
       const data = attRes.data.attendees || attRes.data
       setAttendees(Array.isArray(data) ? data : [])
       setMeta(attRes.data.meta || null)
     } catch (err) {
+      if (!canApply()) return
       if (err.response?.status === 401) setError('Please sign in.')
       else if (err.response?.status === 404) setError('Event not found.')
       else setError('Failed to load attendees.')
     } finally {
-      setLoading(false)
+      if (canApply()) setLoading(false)
     }
-  }, [id, page, search, statusFilter, ticketTypeFilter])
+  }, [id, page, search, statusFilter, ticketTypeFilter, requestApi, current])
 
-  useEffect(() => { fetchAttendees() }, [fetchAttendees])
+  useEffect(() => { fetchAttendees() }, [fetchAttendees, loadAttempt])
 
+  const visibleError = detailError || error
   const ticketTypes = event?.ticket_types || []
   const totalPages = meta?.total_pages || 1
 
@@ -78,8 +108,8 @@ export default function AttendeesPage() {
       <h2 className="text-2xl font-bold text-neutral-900 mb-1">Attendees</h2>
       {event && <p className="text-neutral-600 mb-6">{event.title}</p>}
 
-      {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>
+      {visibleError && (
+        <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"><p>{visibleError}</p><button type="button" className="min-h-11 font-semibold underline" onClick={() => setLoadAttempt(value => value + 1)}>Retry attendee list</button></div>
       )}
 
       {/* Filters */}
@@ -110,7 +140,7 @@ export default function AttendeesPage() {
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
-      ) : attendees.length === 0 ? (
+      ) : visibleError && attendees.length === 0 ? null : attendees.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-12 text-center">
           <p className="text-neutral-500">No attendees found.</p>
         </div>
