@@ -37,7 +37,7 @@ Core runtime:
 
 - `DATABASE_URL`
 - `HAFAPASS_RUNTIME`, `RAILS_MAX_THREADS`, `DB_POOL`; `REDIS_URL` only for Sidekiq
-- `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, and explicit production `CLERK_AUTHORIZED_PARTIES` matching the trusted HTTPS frontend origins (independent of CORS)
 - `ALLOWED_ORIGINS`
 - `FRONTEND_URL`
 - `PUBLIC_WEB_URL`

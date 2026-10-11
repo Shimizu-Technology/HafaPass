@@ -23,7 +23,7 @@ Configure the following groups without exposing their values in diagnostics. Run
 - release migrations: direct `DATABASE_MIGRATION_URL`, run once through `bin/release-migrate` from the web release/pre-deploy hook;
 - capacity: embedded uses one Puma process, `RAILS_MAX_THREADS=3`, one job thread and `DB_POOL=10`; account for dispatcher, polling and heartbeat threads as well as requests/jobs. Separate SQL and Sidekiq profiles must meet their own enforced pool budgets;
 - persistent application signing: dedicated `SECRET_KEY_BASE`;
-- authentication: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`;
+- authentication: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, explicit production `CLERK_AUTHORIZED_PARTIES` containing the exact trusted HTTPS frontend origins; the issuer/JWKS must match the selected Clerk instance;
 - public routing: HTTPS `FRONTEND_URL`, HTTPS `PUBLIC_WEB_URL`, exact HTTPS `PUBLIC_API_URL`, and HTTPS-only `ALLOWED_ORIGINS` containing the frontend origin;
 - release correlation: Render's authoritative `RENDER_GIT_COMMIT`, or `GIT_SHA`/`COMMIT_REF` on other platforms, containing the full 40- or 64-hex commit digest—not a branch name; a present invalid Render value blocks readiness instead of using a fallback;
 - monitoring: `SENTRY_DSN`;
@@ -41,7 +41,7 @@ Payment, wallet, and card-present credentials remain feature-specific gates. Do 
 
 For the exact candidate commit:
 
-1. confirm protected-main CI and the source PR, including a completed current-head CodeRabbit review, are green;
+1. confirm protected-main CI and the source PR, including completed current-head review provenance under [the release review contract](INDEPENDENT_REVIEW_EVIDENCE.md), are green;
 2. confirm the selected runtime topology, a single scheduling authority and the exact same release across its services;
 3. confirm `/up` succeeds without querying dependencies and capture redacted `/api/v1/health` and `/api/v1/readiness` responses;
 4. confirm readiness reports database connected, queue connected, worker active, commerce clock active, and configuration configured;
