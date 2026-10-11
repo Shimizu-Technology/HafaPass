@@ -31,8 +31,8 @@ const device = id => ({ id, identifier: `context-${id}`, effective: true, last_s
   authorization_expires_at: new Date(Date.now() + 600_000).toISOString() })
 const ticket = { ticket_id: 501, code: 'HP-T501', state: 'valid', attendee_name: 'Synthetic Guest',
   ticket_type: 'Admission', credential_hash: 'c'.repeat(64) }
-function view(offlineOnly = false) {
-  return <MemoryRouter><Wrapper><Scanner offlineOnly={offlineOnly} /></Wrapper></MemoryRouter>
+function view(offlineOnly = false, initialEntries = ['/']) {
+  return <MemoryRouter initialEntries={initialEntries}><Wrapper><Scanner offlineOnly={offlineOnly} /></Wrapper></MemoryRouter>
 }
 
 function VisitControl() {
@@ -383,6 +383,77 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
     expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
     remounted.unmount()
+  })
+
+  it('blocks explicit-event offline remount after both refusal stores and cache purge fail', async () => {
+    await preparePrivateReads(config => config.url.endsWith('/search')
+      ? Promise.reject(new AxiosError('Access withdrawn', undefined, config, null,
+        { config, status: 403, data: { error: 'Access withdrawn' }, headers: {} })) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    const setItem = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (key.startsWith('hafapass:scanner-refusal:')) throw new Error('Synthetic read-only safety storage')
+      return setItem.call(this, key, value)
+    })
+    vi.spyOn(store, 'purgeExpiredAdmissionAccess').mockRejectedValueOnce(new Error('Synthetic cache removal failure'))
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await screen.findByText('Saved scanner access could not be removed or locked. Stay online and ask the door manager for help. Do not reload this device offline.')
+    expect(window.localStorage.getItem('hafapass_scanner_event_id')).toBeNull()
+    expect(await store.loadAuthorizedScanner(eventId)).not.toBeNull()
+    mounted.unmount()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    const remounted = render(view(false, [`/dashboard/scanner?event=${eventId}`]))
+    await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue(String(eventId)))
+    await waitFor(() => expect(screen.queryByText('Authorizing device and verifying manifest…')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    await screen.findByText('This browser cannot save scanner safety checks. Stay connected and ask the door manager for help before admitting guests.')
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    remounted.unmount()
+  })
+
+  it('does not fall back to offline trust after an online outage when safety storage is read-only', async () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    await store.saveDevice(eventId, device(91))
+    await store.saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    await preparePrivateReads(config => config.url.endsWith('/scanner_devices')
+      ? Promise.reject(new AxiosError('Registration temporarily unavailable', undefined, config, null,
+        { config, status: 503, data: { error: 'Registration temporarily unavailable' }, headers: {} })) : null)
+    const setItem = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (key.startsWith('hafapass:scanner-refusal:')) throw new Error('Synthetic safety storage quota')
+      return setItem.call(this, key, value)
+    })
+    const mounted = render(view(false, [`/dashboard/scanner?event=${eventId}`]))
+    await screen.findByText('Registration temporarily unavailable')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    // An outage has not been misclassified as permission revocation.
+    expect(await store.loadAuthorizedScanner(eventId)).not.toBeNull()
+    mounted.unmount()
+  })
+
+  it('keeps a peer refusal recorded during an offline persistence probe', async () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    await store.saveDevice(eventId, device(91))
+    await store.saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    const peerKey = `hafapass:scanner-refusal:v1:staff-a:${eventId}`
+    const setItem = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      setItem.call(this, key, value)
+      if (key.includes(':probe:')) setItem.call(window.localStorage, peerKey, 'peer-refusal-during-probe')
+    })
+    const mounted = render(view(true))
+    await screen.findByText('Scanner access was refused. Reconnect to verify access before admitting more guests.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(window.localStorage.getItem(peerKey)).toBe('peer-refusal-during-probe')
+    expect([...Array(window.localStorage.length)].map((_, index) => window.localStorage.key(index)).filter(key => key.includes(':probe:'))).toEqual([])
+    expect([...Array(window.sessionStorage.length)].map((_, index) => window.sessionStorage.key(index)).filter(key => key.includes(':probe:'))).toEqual([])
+    mounted.unmount()
   })
 
   it.each(['event', 'account', 'visit', 'unmount'])('does not download an old private blob after %s changes', async change => {

@@ -78,6 +78,25 @@ function clearStoredRefusal(owner, eventId, tokens) {
   }
   return !hasStoredRefusal(owner, eventId)
 }
+function canPersistRefusal(owner, eventId) {
+  // A readable but unwritable store cannot remember a later denial. Probe an
+  // exclusively owned key; never replace or clear the actual refusal key.
+  const token = crypto.randomUUID()
+  const key = `${refusalStorageKey(owner, eventId)}:probe:${token}`
+  let available = false
+  for (const storage of refusalStores()) {
+    let verified = false
+    try {
+      const target = storage()
+      target.setItem(key, token)
+      verified = target.getItem(key) === token
+      if (target.getItem(key) === token) target.removeItem(key)
+      verified = verified && target.getItem(key) === null
+    } catch { verified = false /* Try the other store; unreadable stores remain quarantined. */ }
+    available ||= verified
+  }
+  return available
+}
 
 function admissionAcknowledgement(current, receipt) {
   const result = receipt.result || receipt.status
@@ -492,6 +511,7 @@ export default function ScannerPage({ offlineOnly = false }) {
     const refusedKey = JSON.stringify([owner, String(selectedEventId)])
     const priorRefusalTokens = storedRefusalTokens(owner, selectedEventId)
     const accessRefused = refusedAccessRef.current.has(refusedKey) || hasStoredRefusal(owner, selectedEventId)
+    const safetyStorageReady = canPersistRefusal(owner, selectedEventId)
     setSetupBusy(true)
     setError(null)
     setScanResult(null)
@@ -503,7 +523,8 @@ export default function ScannerPage({ offlineOnly = false }) {
     try {
       const pendingIdentity = await loadPendingDeviceIdentity(selectedEventId)
       await refreshPending(selectedEventId, pendingIdentity ? { id: pendingIdentity.device_id } : null)
-      if (!online && accessRefused) throw new Error('Scanner access was refused. Reconnect to verify access before admitting more guests.')
+      if (!online && !safetyStorageReady) throw new Error('This browser cannot save scanner safety checks. Stay connected and ask the door manager for help before admitting guests.')
+      if (!online && (accessRefused || hasStoredRefusal(owner, selectedEventId))) throw new Error('Scanner access was refused. Reconnect to verify access before admitting more guests.')
       let cached = await loadAuthorizedScanner(selectedEventId)
       if (online) {
         let networkPhase = true
@@ -546,7 +567,7 @@ export default function ScannerPage({ offlineOnly = false }) {
             if (current()) setRecoveryDevice(null)
             throw connectionError
           }
-          if (!cached || !networkPhase || accessRefused) throw connectionError
+          if (!cached || !networkPhase || accessRefused || !safetyStorageReady) throw connectionError
           if (current()) setError('Connection unavailable. Using saved access; scans remain on this device until sync succeeds.')
         }
       }
