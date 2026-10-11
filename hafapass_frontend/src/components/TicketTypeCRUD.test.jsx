@@ -6,7 +6,10 @@ import apiClient from '../api/client'
 import TicketTypeCRUD from './TicketTypeCRUD'
 import EditEventPage from '../pages/dashboard/EditEventPage'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }))
+vi.mock('../api/client', async importOriginal => ({
+  ...await importOriginal(),
+  default: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+}))
 vi.mock('./PricingTiersCRUD', () => ({ default: () => null }))
 vi.mock('./CoverImageUpload', () => ({ default: () => null }))
 vi.mock('../hooks/useEventCategories', () => ({ default: () => [] }))

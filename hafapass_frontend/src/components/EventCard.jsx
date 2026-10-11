@@ -59,7 +59,7 @@ export default function EventCard({ event }) {
           <div className="absolute top-3 right-3">
             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-lg backdrop-blur-md ${
               lowestPrice === 0
-                ? 'bg-emerald-500/90 text-white'
+                ? 'bg-emerald-700 text-white'
                 : 'bg-white/90 text-neutral-900'
             }`}>
               {priceLabel}

@@ -53,6 +53,14 @@ class Order < ApplicationRecord
     disputes.where(status: [:open, :lost]).exists?
   end
 
+  def full_refund_pending?
+    return false unless total_cents.positive?
+
+    reserved = refunds.loaded? ? refunds.select { |refund| refund.pending? || refund.succeeded? } :
+      refunds.where(status: [:pending, :succeeded]).to_a
+    reserved.any?(&:pending?) && reserved.sum(&:amount_cents) >= total_cents
+  end
+
   def ticket_fulfilled?
     return false unless completed? || partially_refunded?
     return true unless Rails.env.production? && total_cents.positive?

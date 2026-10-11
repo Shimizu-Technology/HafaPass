@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Loader2, Search, Music, UtensilsCrossed, Trophy, Users, Sparkles, Moon, CalendarPlus, Ticket } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
 import SEO from '../components/SEO'
@@ -25,6 +25,8 @@ function guamDate(offsetDays = 0) {
 export default function EventsPage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [retry, setRetry] = useState(0)
   const [meta, setMeta] = useState({ current_page: 1, total_pages: 1, total_count: 0 })
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('search') || '')
@@ -34,10 +36,15 @@ export default function EventsPage() {
   const [village, setVillage] = useState(searchParams.get('village') || '')
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
   const categories = useEventCategories()
+  const reducedMotion = useReducedMotion()
+  const ResultsContainer = reducedMotion ? 'div' : StaggerContainer
+  const ResultItem = reducedMotion ? 'div' : StaggerItem
 
   useEffect(() => {
+    let active = true
+    setLoading(true)
+    setLoadError(false)
     const timer = setTimeout(() => {
-      setLoading(true)
       const params = { page, per_page: 12 }
       if (search.trim()) params.q = search.trim()
       if (activeCategory !== 'all') params.category = activeCategory
@@ -55,25 +62,35 @@ export default function EventsPage() {
 
       apiClient.get('/events', { params })
       .then(res => {
+        if (!active) return
         const data = res.data.events || res.data
         setEvents(Array.isArray(data) ? data : [])
         setMeta(res.data.meta || { current_page: 1, total_pages: 1, total_count: data.length })
       })
-      .catch(() => { setEvents([]); setMeta({ current_page: 1, total_pages: 1, total_count: 0 }) })
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (!active) return
+        setEvents([])
+        setLoadError(true)
+      })
+      .finally(() => { if (active) setLoading(false) })
 
-      const nextParams = {}
-      if (search.trim()) nextParams.search = search.trim()
-      if (activeCategory !== 'all') nextParams.category = activeCategory
-      if (dateRange !== 'upcoming') nextParams.date = dateRange
-      if (price !== 'all') nextParams.price = price
-      if (village) nextParams.village = village
-      if (page > 1) nextParams.page = String(page)
-      setSearchParams(nextParams, { replace: true })
     }, 250)
 
-    return () => clearTimeout(timer)
-  }, [search, activeCategory, dateRange, price, village, page, setSearchParams])
+    return () => { active = false; clearTimeout(timer) }
+  }, [search, activeCategory, dateRange, price, village, page, retry])
+
+  useEffect(() => {
+    const nextParams = {}
+    if (search.trim()) nextParams.search = search.trim()
+    if (activeCategory !== 'all') nextParams.category = activeCategory
+    if (dateRange !== 'upcoming') nextParams.date = dateRange
+    if (price !== 'all') nextParams.price = price
+    if (village) nextParams.village = village
+    if (page > 1) nextParams.page = String(page)
+    if (searchParams.toString() !== new URLSearchParams(nextParams).toString()) {
+      setSearchParams(nextParams, { replace: true })
+    }
+  }, [search, activeCategory, dateRange, price, village, page, searchParams, setSearchParams])
 
   const changeCategory = (value) => { setActiveCategory(value); setPage(1) }
   const clearFilters = () => { setSearch(''); setActiveCategory('all'); setDateRange('upcoming'); setPrice('all'); setVillage(''); setPage(1) }
@@ -100,6 +117,7 @@ export default function EventsPage() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
               <input
                 type="text"
+                aria-label="Search events and venues"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search events, venues..."
@@ -128,7 +146,7 @@ export default function EventsPage() {
                 aria-pressed={activeCategory === value}
                 className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                   activeCategory === value
-                    ? 'bg-brand-500 text-white shadow-md shadow-brand-500/20'
+                    ? 'bg-brand-600 text-white shadow-md shadow-brand-500/20'
                     : 'bg-white text-neutral-600 border border-neutral-200 hover:border-brand-300 hover:text-brand-600'
                 }`}
               >
@@ -137,30 +155,42 @@ export default function EventsPage() {
               </button>
             )})}
            </div>
-           <div className="flex items-center gap-3">
-            <label htmlFor="event-date-range" className="text-sm font-medium text-neutral-600">When</label>
-            <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input max-w-[12rem] !py-2">
+           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]">
+            <div className="min-w-0">
+             <label htmlFor="event-date-range" className="mb-1 block text-sm font-medium text-neutral-600">When</label>
+             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2">
              <option value="upcoming">All upcoming</option>
              <option value="today">Today</option>
              <option value="tonight">Tonight</option>
              <option value="weekend">This weekend</option>
              <option value="week">Next 7 days</option>
-            </select>
-            <label htmlFor="event-price" className="sr-only">Price</label>
-            <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input max-w-[10rem] !py-2"><option value="all">Any price</option><option value="free">Free</option><option value="under_25">Under $25</option><option value="under_50">Under $50</option></select>
-            <label htmlFor="event-village" className="sr-only">Village</label>
-            <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input max-w-[13rem] !py-2"><option value="">All villages</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
-            {!loading && <span className="text-sm text-neutral-500">{meta.total_count} event{meta.total_count === 1 ? '' : 's'}</span>}
+             </select>
+            </div>
+            <div className="min-w-0">
+             <label htmlFor="event-price" className="mb-1 block text-sm font-medium text-neutral-600">Price</label>
+             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="all">Any price</option><option value="free">Free</option><option value="under_25">Under $25</option><option value="under_50">Under $50</option></select>
+            </div>
+            <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+             <label htmlFor="event-village" className="mb-1 block text-sm font-medium text-neutral-600">Village</label>
+             <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="">All villages</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
+            </div>
            </div>
+           {!loading && !loadError && <span className="text-sm text-neutral-500">{meta.total_count} event{meta.total_count === 1 ? '' : 's'}</span>}
           </div>
 
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {Array.from({ length: 6 }).map((_, i) => <EventCardSkeleton key={i} />)}
             </div>
+          ) : loadError ? (
+            <div role="alert" className="rounded-2xl border border-neutral-200 bg-white p-6 sm:p-10 text-center">
+              <h2 className="text-xl font-bold text-neutral-900 mb-2">Couldn't load events</h2>
+              <p className="text-neutral-600 mb-6">Your filters are saved. Try again to see the matching events.</p>
+              <button type="button" onClick={() => setRetry(value => value + 1)} className="btn-primary">Try again</button>
+            </div>
           ) : events.length === 0 ? (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={reducedMotion ? false : { opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="rounded-2xl border border-neutral-200 bg-white p-12 sm:p-16 text-center"
             >
@@ -191,7 +221,7 @@ export default function EventsPage() {
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
                     to="/sign-up"
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-brand-500 text-white rounded-xl font-semibold transition-all hover:bg-brand-600 hover:shadow-lg hover:shadow-brand-500/20"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-brand-600 text-white rounded-xl font-semibold transition-all hover:bg-brand-700 hover:shadow-lg hover:shadow-brand-500/20"
                   >
                     <CalendarPlus className="w-4 h-4" />
                     Create an Event
@@ -215,11 +245,11 @@ export default function EventsPage() {
               )}
             </motion.div>
           ) : (
-            <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {events.map(event => <StaggerItem key={event.id}><EventCard event={event} /></StaggerItem>)}
-            </StaggerContainer>
+            <ResultsContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {events.map(event => <ResultItem key={event.id}><EventCard event={event} /></ResultItem>)}
+            </ResultsContainer>
           )}
-          {!loading && meta.total_pages > 1 && (
+          {!loading && !loadError && meta.total_pages > 1 && (
             <nav className="mt-10 flex items-center justify-center gap-3" aria-label="Event results pages">
               <button type="button" className="btn-secondary" disabled={!meta.prev_page} onClick={() => setPage(meta.prev_page)}>Previous</button>
               <span className="text-sm text-neutral-600">Page {meta.current_page} of {meta.total_pages}</span>

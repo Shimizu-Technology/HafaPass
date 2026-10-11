@@ -78,6 +78,41 @@ RSpec.describe Admissions::Reconciler do
   end
 
   %w[online offline].each do |source|
+    it "rejects #{source} admission from an older manifest during a legacy cumulative full refund" do
+      prepared = manifest
+      create(:refund, order: order, amount_cents: 1000)
+      pending = create(:refund, order: order, amount_cents: order.total_cents - 1000, status: :pending,
+        provider_refund_id: nil, succeeded_at: nil, failure_code: "provider_result_unknown")
+      input = scan_input(sequence: 1, uuid: "legacy-full-refund-#{source}", scanner_manifest: prepared, source: source)
+      result = described_class.call(device: device, actor: actor, actions: [input]).first.action
+
+      expect(result).to have_attributes(result: "rejected", reason_code: "refund_pending")
+      expect(ticket.reload).to be_issued
+      expect(pending.refund_tickets).to be_empty
+      pending.update!(status: :failed, failed_at: Time.current)
+      # The original refusal remains immutable; a new command can retry after a definitive failure.
+      repeated = described_class.call(device: device, actor: actor, actions: [input]).first.action
+      expect(repeated.id).to eq(result.id)
+      accepted = described_class.call(device: device, actor: actor,
+        actions: [input.merge(action_uuid: "legacy-full-refund-retry-#{source}", sequence: 2)]).first.action
+      expect(accepted).to be_result_accepted
+      expect(ticket.reload).to be_checked_in
+    end
+
+    it "rejects #{source} re-entry after retained inventory Undo even with an older valid manifest" do
+      prepared = manifest
+      ticket.check_in!
+      retention = Commerce::FinancialReversalInventory.call(ticket: ticket, refund: create(:refund, order: order))
+      ticket.reverse_check_in!
+      retention.reconciliation_exception.resolve!
+      result = described_class.call(device: device, actor: actor,
+        actions: [scan_input(sequence: 1, uuid: "retained-entry-#{source}", scanner_manifest: prepared, source: source)]).first.action
+
+      expect(result).to have_attributes(result: "rejected", reason_code: "inventory_retained")
+      expect(ticket.reload).to be_issued
+      expect(ticket.inventory_retention.id).to eq(retention.id)
+    end
+
     it "rejects #{source} reconciliation from an older valid manifest after a selected refund is reserved" do
       prepared = manifest
       refund = create(:refund, order: order, status: :pending, provider_refund_id: nil,

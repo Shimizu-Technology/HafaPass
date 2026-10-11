@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2063,6 +2063,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_130000) do
     t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "support_notes_subject_present"
   end
 
+  create_table "ticket_inventory_retentions", force: :cascade do |t|
+    t.bigint "ticket_id", null: false
+    t.bigint "refund_id"
+    t.bigint "dispute_id"
+    t.bigint "reconciliation_exception_id", null: false
+    t.datetime "retained_at", null: false
+    t.index ["dispute_id"], name: "index_ticket_inventory_retentions_on_dispute_id"
+    t.index ["reconciliation_exception_id"], name: "index_ticket_retentions_on_reconciliation"
+    t.index ["refund_id"], name: "index_ticket_inventory_retentions_on_refund_id"
+    t.index ["ticket_id"], name: "index_ticket_inventory_retentions_on_ticket_id", unique: true
+    t.check_constraint "refund_id IS NOT NULL AND dispute_id IS NULL OR refund_id IS NULL AND dispute_id IS NOT NULL", name: "ticket_inventory_retentions_one_origin"
+  end
+
   create_table "ticket_transfers", force: :cascade do |t|
     t.datetime "accepted_at"
     t.bigint "accepted_by_user_id"
@@ -2129,6 +2142,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_130000) do
     t.integer "status", default: 0, null: false
     t.bigint "ticket_type_id", null: false
     t.datetime "updated_at", null: false
+    t.datetime "first_admitted_at"
     t.index "lower((holder_email)::text)", name: "index_tickets_on_lower_holder_email"
     t.index ["event_id"], name: "index_tickets_on_event_id"
     t.index ["event_seat_id"], name: "index_tickets_on_event_seat_id"
@@ -2530,6 +2544,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_130000) do
   add_foreign_key "support_notes", "orders", on_delete: :restrict
   add_foreign_key "support_notes", "tickets", on_delete: :restrict
   add_foreign_key "support_notes", "users", column: "author_user_id", on_delete: :restrict
+  add_foreign_key "ticket_inventory_retentions", "disputes"
+  add_foreign_key "ticket_inventory_retentions", "reconciliation_exceptions"
+  add_foreign_key "ticket_inventory_retentions", "refunds"
+  add_foreign_key "ticket_inventory_retentions", "tickets"
   add_foreign_key "ticket_transfers", "tickets", on_delete: :restrict
   add_foreign_key "ticket_transfers", "users", column: "accepted_by_user_id", on_delete: :restrict
   add_foreign_key "ticket_transfers", "users", column: "initiated_by_user_id", on_delete: :restrict

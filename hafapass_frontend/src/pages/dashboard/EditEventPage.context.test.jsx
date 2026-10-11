@@ -1,0 +1,165 @@
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import apiClient, { getApiAuthContext, setAuthTokenGetter } from '../../api/client'
+import EditEventPage from './EditEventPage'
+
+const uploads = vi.hoisted(() => new Map())
+vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
+vi.mock('../../components/CoverImageUpload', () => ({ default: ({ eventId, onUploaded }) => { uploads.set(String(eventId), onUploaded); return <p>Cover image control</p> } }))
+vi.mock('../../components/TicketTypeCRUD', () => ({ default: () => null }))
+vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+
+const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
+const dto = id => ({ id, title: id === 11 ? 'Alpha event' : 'Beta event', status: 'draft', venue_name: 'Synthetic venue',
+  starts_at: '2026-11-20T07:00:00Z', timezone: 'Pacific/Guam', category: 'other', age_restriction: 'all_ages', ticket_types: [],
+  permissions: { edit_event_content: true, manage_events: true }, publish_checklist: [] })
+const Location = () => <p data-testid="editor-location">{useLocation().pathname}</p>
+const mount = () => render(<MemoryRouter initialEntries={['/dashboard/events/11/edit']}>
+  <Link to="/dashboard/events/11/edit">Open Alpha</Link><Link to="/dashboard/events/22/edit">Open Beta</Link><Location />
+  <Routes><Route path="/dashboard/events/:id/edit" element={<EditEventPage />} /><Route path="/dashboard" element={<p>Dashboard destination</p>} /></Routes>
+</MemoryRouter>)
+let rows, clearAuth
+const bind = (userId, sessionId, getter = () => Promise.resolve('synthetic-token')) => {
+  window.localStorage.setItem('hafapass_scanner_user_id', userId)
+  clearAuth = setAuthTokenGetter(getter, { userId, sessionId, ready: true })
+}
+const beta = async () => { await userEvent.click(screen.getByRole('link', { name: 'Open Beta' })); await screen.findByDisplayValue(rows[22].title) }
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  for (const method of ['get', 'put', 'post', 'delete']) apiClient[method].mockReset()
+  window.localStorage.clear(); uploads.clear()
+  window.localStorage.setItem('hafapass_organization_id', '1')
+  rows = { 11: dto(11), 22: dto(22) }
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: { ...rows[path.split('/').at(-1)] } }))
+  apiClient.put.mockImplementation((path, payload) => Promise.resolve({ data: { id: Number(path.split('/').at(-1)), ...payload } }))
+})
+afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null })
+
+describe('event editor context ownership with the real router', () => {
+  it.each(['success', 'error'])('keeps Beta form fields when Alpha’s delayed load finishes with %s', async outcome => {
+    const old = deferred()
+    apiClient.get.mockImplementation(path => path.endsWith('/11') ? old.promise : Promise.resolve({ data: rows[22] }))
+    mount()
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+    await beta()
+    await userEvent.clear(screen.getByLabelText(/Event Title/)); await userEvent.type(screen.getByLabelText(/Event Title/), 'Beta draft')
+    await act(async () => outcome === 'success' ? old.resolve({ data: rows[11] }) : old.reject({ response: { status: 404 } }))
+    if (outcome === 'error') expect(screen.getByLabelText(/Event Title/)).toHaveValue('Beta draft')
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][0]).toBe('/organizer/events/22')
+    expect(apiClient.put.mock.calls[0][1].title).toBe('Beta draft')
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Beta draft')
+    expect(apiClient.put.mock.calls[0][2].organizationId).toBe('1')
+  })
+
+  it('does not clear Beta’s loading state when an old Alpha load completes', async () => {
+    const old = deferred(), pendingBeta = deferred()
+    apiClient.get.mockImplementation(path => path.endsWith('/11') ? old.promise : pendingBeta.promise)
+    mount()
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+    await userEvent.click(screen.getByRole('link', { name: 'Open Beta' }))
+    await waitFor(() => expect(apiClient.get.mock.calls).toHaveLength(2))
+    await act(async () => old.resolve({ data: rows[11] }))
+    expect(screen.queryByLabelText(/Event Title/)).not.toBeInTheDocument()
+    await act(async () => pendingBeta.resolve({ data: rows[22] }))
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Beta event')
+  })
+
+  it('does not revive a prior Alpha load after visiting Beta and returning', async () => {
+    const old = deferred()
+    apiClient.get.mockReturnValueOnce(old.promise).mockImplementation(path => Promise.resolve({ data: rows[path.split('/').at(-1)] }))
+    mount()
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+    await beta()
+    rows[11] = { ...rows[11], title: 'Fresh Alpha visit' }
+    await userEvent.click(screen.getByRole('link', { name: 'Open Alpha' }))
+    await screen.findByDisplayValue('Fresh Alpha visit')
+    await act(async () => old.resolve({ data: { ...dto(11), title: 'Stale Alpha visit' } }))
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Fresh Alpha visit')
+  })
+
+  it.each(['success', 'error'])('ignores Alpha save %s and finally while Beta is saving its own immutable body', async outcome => {
+    const old = deferred(), current = deferred()
+    apiClient.put.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
+    mount()
+    await screen.findByDisplayValue('Alpha event')
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await beta()
+    await userEvent.clear(screen.getByLabelText(/Event Title/)); await userEvent.type(screen.getByLabelText(/Event Title/), 'Beta saved draft')
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await act(async () => outcome === 'success' ? old.resolve({ data: rows[11] }) : old.reject(new Error('Old Alpha save error')))
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Beta saved draft')
+    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled()
+    expect(screen.queryByText('Event updated successfully.')).not.toBeInTheDocument()
+    expect(apiClient.put.mock.calls[0][0]).toBe('/organizer/events/11')
+    expect(apiClient.put.mock.calls[0][1].title).toBe('Alpha event')
+    expect(apiClient.put.mock.calls[1][0]).toBe('/organizer/events/22')
+    expect(apiClient.put.mock.calls[1][1].title).toBe('Beta saved draft')
+    await act(async () => current.resolve({ data: { ...rows[22], title: 'Beta saved draft' } }))
+    expect(screen.getByText('Event updated successfully.')).toBeInTheDocument()
+  })
+
+  it('rejects a cover callback belonging to the previous event editor', async () => {
+    mount()
+    await screen.findByDisplayValue('Alpha event')
+    const oldUpload = uploads.get('11')
+    await beta()
+    await act(async () => oldUpload('https://synthetic.invalid/alpha-cover.png'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1].cover_image_url).toBeNull()
+  })
+
+  it('does not navigate Beta away when an old Alpha clone completes', async () => {
+    const old = deferred()
+    apiClient.post.mockReturnValueOnce(old.promise)
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Clone', exact: true }))
+    await beta()
+    await act(async () => old.resolve({ data: { id: 99 } }))
+    expect(screen.getByTestId('editor-location')).toHaveTextContent('/dashboard/events/22/edit')
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Beta event')
+  })
+
+  it.each(['session', 'account', 'organization', 'remount'])('ignores old editor loads across a %s replacement', async kind => {
+    bind('actor-a', 'session-a')
+    const old = deferred()
+    apiClient.get.mockReturnValueOnce(old.promise).mockImplementation(path => Promise.resolve({ data: rows[path.split('/').at(-1)] }))
+    const first = mount()
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+    rows[11] = { ...rows[11], title: 'Fresh editor context' }
+    if (kind === 'remount') { first.unmount(); mount() }
+    else if (kind === 'organization') await act(async () => {
+      window.localStorage.setItem('hafapass_organization_id', '2')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_organization_id' }))
+    })
+    else await act(async () => bind(kind === 'account' ? 'actor-b' : 'actor-a', 'session-b'))
+    await screen.findByDisplayValue('Fresh editor context')
+    await act(async () => old.resolve({ data: { ...dto(11), title: 'Stale editor context' } }))
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Fresh editor context')
+  })
+
+  it('pins the save body and identity before delayed token acquisition and suppresses transport after navigation', async () => {
+    const actual = await vi.importActual('../../api/client')
+    const token = deferred(), adapter = vi.fn()
+    const previousAdapter = actual.default.defaults.adapter
+    actual.default.defaults.adapter = adapter
+    bind('actor-a', 'session-a', () => token.promise)
+    apiClient.put.mockImplementation((...args) => actual.default.put(...args))
+    try {
+      mount()
+      await screen.findByDisplayValue('Alpha event')
+      await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+      expect(apiClient.put.mock.calls[0][2].authContext).toBe(getApiAuthContext())
+      await beta()
+      await act(async () => token.resolve('original-token'))
+      expect(adapter).not.toHaveBeenCalled()
+      expect(screen.getByLabelText(/Event Title/)).toHaveValue('Beta event')
+    } finally { actual.default.defaults.adapter = previousAdapter }
+  })
+})

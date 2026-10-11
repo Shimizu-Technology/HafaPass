@@ -1,5 +1,6 @@
 require "rails_helper"
 require "timeout"
+require Rails.root.join("db/migrate/20261011150000_retain_admitted_inventory_after_financial_reversal")
 
 RSpec.describe "Commerce concurrency", :non_transactional do
   self.use_transactional_tests = false
@@ -675,6 +676,242 @@ RSpec.describe "Commerce concurrency", :non_transactional do
   ensure
     continue_admission << true if continue_admission&.empty?
     [admission_thread, refund_thread].compact.each { |thread| thread.kill if thread.alive? }
+  end
+
+  it "blocks admission after an amount-only whole-order refund reservation commits" do
+    event, ticket_type, seat = assigned_inventory
+    ticket_type.update!(quantity_sold: 1)
+    order = create(:order, event: event, subtotal_cents: 2500, service_fee_cents: 0, total_cents: 2500)
+    item = create(:order_item, order: order, ticket_type: ticket_type, fee_cents: 0)
+    ticket = create(:ticket, event: event, ticket_type: ticket_type, event_seat: seat, order: order, order_item: item)
+    create(:payment, :succeeded, order: order, amount_cents: 2500, provider_payment_id: "sim_pi_amount_refund_race")
+    actor = event.organizer_profile.user
+    device = create(:scanner_device, organization: event.organization, event: event, user: actor)
+    manifest = Admissions::ManifestBuilder.call(event: event, actor: actor)
+    entry = manifest.payload.fetch("tickets").find { |candidate| candidate.fetch("ticket_id") == ticket.id }
+    provider_started = Queue.new
+    continue_provider = Queue.new
+    refund_results = Queue.new
+    allow(StripeService).to receive(:refund_payment) do |*args, **kwargs|
+      provider_started << true
+      continue_provider.pop
+      OpenStruct.new(id: "sim_re_amount_refund_race", status: "succeeded", amount: kwargs.fetch(:amount_cents), currency: "usd")
+    end
+    refund_thread = inventory_worker(:refund, refund_results) do
+      Commerce::RefundCreator.call(order: Order.find(order.id), amount_cents: 2500,
+        idempotency_key: "synthetic-amount-refund-race")
+    end
+    Timeout.timeout(5) { provider_started.pop }
+    reserved = order.refunds.pending.exists?(amount_cents: 2500)
+    admission = Admissions::Reconciler.call(device: device, actor: actor, actions: [{
+      action_uuid: "synthetic-amount-refund-overlap", kind: "admit", source: "online", sequence: 1,
+      manifest_version: manifest.version, occurred_at: Time.current.iso8601(6), ticket_id: ticket.id,
+      credential_hash: entry.fetch("credential_hash")
+    }]).first.action
+    entered = ticket.reload.checked_in?
+    continue_provider << true
+    Timeout.timeout(10) { refund_thread.join }
+    refund = refund_results.pop
+
+    expect(reserved).to be(true)
+    expect(refund).to be_a(Refund)
+    expect(admission).to be_result_rejected,
+      "reservation_committed=#{reserved}, admission=#{admission.result}, entered=#{entered}, final_ticket=#{ticket.reload.status}, sold=#{ticket_type.reload.quantity_sold}, seat_selectable=#{seat.reload.selectable?}"
+    expect(admission.reason_code).to eq("refund_pending")
+    expect(entered).to be(false)
+    expect(ticket.reload).to be_cancelled
+    expect(ticket_type.reload.quantity_sold).to eq(0)
+    expect(refund.reload).to be_succeeded
+  ensure
+    continue_provider << true if continue_provider&.empty?
+    refund_thread&.kill if refund_thread&.alive?
+  end
+
+  it "retains occupied inventory when admission commits before a whole-order refund" do
+    event, ticket_type, seat = assigned_inventory
+    ticket_type.update!(quantity_sold: 1)
+    order = create(:order, event: event, subtotal_cents: 2500, service_fee_cents: 0, total_cents: 2500)
+    item = create(:order_item, order: order, ticket_type: ticket_type, fee_cents: 0)
+    ticket = create(:ticket, event: event, ticket_type: ticket_type, event_seat: seat, order: order, order_item: item)
+    create(:payment, :succeeded, order: order, amount_cents: 2500, provider_payment_id: "sim_pi_amount_admit_first")
+    admission_checked = Queue.new
+    continue_admission = Queue.new
+    refund_started = Queue.new
+    admission_results = Queue.new
+    refund_results = Queue.new
+    allow(StripeService).to receive(:refund_payment) do |*args, **kwargs|
+      OpenStruct.new(id: "sim_re_amount_admit_first", status: "succeeded", amount: kwargs.fetch(:amount_cents), currency: "usd")
+    end
+    allow_any_instance_of(Ticket).to receive(:update!).and_wrap_original do |method, attributes|
+      if Thread.current[:inventory_role] == :admit && attributes[:status] == :checked_in
+        admission_checked << true
+        continue_admission.pop
+      end
+      method.call(attributes)
+    end
+    admission_thread = inventory_worker(:admit, admission_results) { Ticket.find(ticket.id).check_in! }
+    Timeout.timeout(5) { admission_checked.pop }
+    refund_thread = inventory_worker(:refund, refund_results) do
+      refund_started << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()")
+      Commerce::RefundCreator.call(order: Order.find(order.id), amount_cents: 2500,
+        idempotency_key: "synthetic-amount-admit-first")
+    end
+    pid = Timeout.timeout(5) { refund_started.pop }
+    wait_for_database_lock_or_result(pid, refund_results)
+    continue_admission << true
+    Timeout.timeout(10) { [admission_thread, refund_thread].each(&:join) }
+    admission_result = admission_results.pop
+    refund = refund_results.pop
+
+    expect(admission_result).to be(true)
+    expect(refund).to be_a(Refund)
+    expect(refund.reload).to be_succeeded
+    expect(order.reload).to be_refunded
+    expect(ticket.reload).to be_checked_in,
+      "admission_committed=#{admission_result}, refund=#{refund.status}, final_ticket=#{ticket.status}, sold=#{ticket_type.reload.quantity_sold}, seat_selectable=#{seat.reload.selectable?}"
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(seat.reload).not_to be_selectable
+  ensure
+    continue_admission << true if continue_admission&.empty?
+    [admission_thread, refund_thread].compact.each { |thread| thread.kill if thread.alive? }
+  end
+
+  %i[admission retention].each do |evidence|
+    it "rechecks committed #{evidence} evidence after rollback waits on the actual ticket writer" do
+      event = create(:event, :published)
+      type = create(:ticket_type, event: event, quantity_sold: 1)
+      order = create(:order, event: event)
+      ticket = create(:ticket, event: event, order: order, ticket_type: type,
+        status: evidence == :retention ? :checked_in : :issued, checked_in_at: nil)
+      refund = create(:refund, order: order) if evidence == :retention
+      writer_ready = Queue.new
+      resume_writer = Queue.new
+      writer_results = Queue.new
+      rollback_results = Queue.new
+      rollback_started = Queue.new
+      if evidence == :admission
+        allow_any_instance_of(Ticket).to receive(:update!).and_wrap_original do |method, attributes|
+          if Thread.current[:inventory_role] == :evidence_writer && attributes[:status] == :checked_in
+            writer_ready << true
+            resume_writer.pop
+          end
+          method.call(attributes)
+        end
+      else
+        allow_any_instance_of(Ticket).to receive(:create_inventory_retention!).and_wrap_original do |method, **attributes|
+          if Thread.current[:inventory_role] == :evidence_writer
+            writer_ready << true
+            resume_writer.pop
+          end
+          method.call(**attributes)
+        end
+      end
+      writer = inventory_worker(:evidence_writer, writer_results) do
+        if evidence == :admission
+          Ticket.transaction do
+            current = Ticket.find(ticket.id)
+            current.check_in!
+            current.reverse_check_in!
+          end
+        else
+          Commerce::FinancialReversalInventory.call(ticket: Ticket.find(ticket.id), refund: refund)
+        end
+      end
+      Timeout.timeout(5) { writer_ready.pop }
+      rollback = inventory_worker(:rollback, rollback_results) do
+        rollback_started << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()")
+        RetainAdmittedInventoryAfterFinancialReversal.new.down
+      end
+      pid = Timeout.timeout(5) { rollback_started.pop }
+      wait_for_database_lock_or_result(pid, rollback_results)
+      waiting_on_tickets = ActiveRecord::Base.connection.select_value(<<~SQL)
+        SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid = #{Integer(pid)}
+          AND relation = 'tickets'::regclass AND mode = 'AccessExclusiveLock' AND NOT granted)
+      SQL
+      resume_writer << true
+      Timeout.timeout(10) { [writer, rollback].each(&:join) }
+      writer_result = writer_results.pop
+      rollback_result = rollback_results.pop
+      restore_retention_schema_for_test
+
+      expect(writer_result).not_to be_a(StandardError)
+      expect(waiting_on_tickets).to be(true), "rollback_result=#{rollback_result.class}; rollback must wait before evidence checks"
+      expect(rollback_result).to be_a(ActiveRecord::IrreversibleMigration)
+      if evidence == :admission
+        expect(ticket.reload.first_admitted_at).to be_present
+        expect(ticket.checked_in_at).to be_nil
+      else
+        expect(ticket.reload.inventory_retention.refund_id).to eq(refund.id)
+      end
+    ensure
+      resume_writer << true if resume_writer&.empty?
+      [writer, rollback].compact.each { |thread| thread.kill if thread.alive? }
+      restore_retention_schema_for_test
+    end
+  end
+
+  it "blocks a first admission until the zero-evidence rollback transaction and schema restoration finish" do
+    event = create(:event, :published)
+    type = create(:ticket_type, event: event, quantity_sold: 1)
+    order = create(:order, event: event)
+    ticket = create(:ticket, event: event, order: order, ticket_type: type)
+    checks_finished = Queue.new
+    resume_rollback = Queue.new
+    rollback_results = Queue.new
+    admission_started = Queue.new
+    admission_results = Queue.new
+    migration = RetainAdmittedInventoryAfterFinancialReversal.new
+    migration.define_singleton_method(:drop_table) do |name|
+      # Pause after the real evidence queries, immediately before the real DDL.
+      checks_finished << true
+      resume_rollback.pop
+      connection.drop_table(name)
+    end
+    rollback = inventory_worker(:rollback, rollback_results) do
+      # Keep the test database schema usable for the waiting writer. Both DDL
+      # directions stay inside this same transaction; no write may enter the gap.
+      ActiveRecord::Base.transaction do
+        migration.down
+        dropped = !ActiveRecord::Base.connection.column_exists?(:tickets, :first_admitted_at)
+        migration.up
+        dropped
+      end
+    end
+    Timeout.timeout(5) { checks_finished.pop }
+    admission = inventory_worker(:admit, admission_results) do
+      admission_started << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()")
+      Ticket.transaction do
+        current = Ticket.find(ticket.id)
+        current.check_in!
+        current.reverse_check_in!
+      end
+    end
+    pid = Timeout.timeout(5) { admission_started.pop }
+    wait_for_database_lock_or_result(pid, admission_results)
+    waiting = ActiveRecord::Base.connection.select_value("SELECT cardinality(pg_blocking_pids(#{Integer(pid)}))").positive?
+    resume_rollback << true
+    Timeout.timeout(10) { [rollback, admission].each(&:join) }
+    rollback_result = rollback_results.pop
+    admission_result = admission_results.pop
+    restore_retention_schema_for_test
+
+    expect(waiting).to be(true), "admission_result=#{admission_result.class}; writer must not commit between zero checks and DROP"
+    expect(rollback_result).to be(true)
+    expect(admission_result).not_to be_a(StandardError)
+    expect(ticket.reload.first_admitted_at).to be_present
+    expect(ticket.checked_in_at).to be_nil
+  ensure
+    resume_rollback << true if resume_rollback&.empty?
+    [rollback, admission].compact.each { |thread| thread.kill if thread.alive? }
+    restore_retention_schema_for_test
+  end
+
+  def restore_retention_schema_for_test
+    connection = ActiveRecord::Base.connection
+    RetainAdmittedInventoryAfterFinancialReversal.new.up unless connection.column_exists?(:tickets, :first_admitted_at)
+    connection.schema_cache.clear!
+    Ticket.reset_column_information
+    TicketInventoryRetention.reset_column_information
   end
 
   def assigned_inventory

@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart, Copy, RefreshCw, ClipboardList, PauseCircle, Archive } from 'lucide-react'
 import EventAccessNotice from '../../components/EventAccessNotice'
@@ -11,6 +11,7 @@ import Dialog from '../../components/Dialog'
 import { organizerChecklist } from '../../utils/organizerChecklist'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 
 const AGE_RESTRICTIONS = [
   { value: 'all_ages', label: 'All Ages' },
@@ -48,8 +49,10 @@ function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, o
   )
 }
 
-export default function EditEventPage() {
-  const { id } = useParams()
+function EditEventSession({ id, identity }) {
+  const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/edit`)
+  const loadGeneration = useRef(0)
+  const pendingLoad = useRef(null)
   const navigate = useNavigate()
   const categories = useEventCategories()
   const capabilities = useLaunchCapabilities()
@@ -98,10 +101,17 @@ export default function EditEventPage() {
   })
 
   const fetchEvent = useCallback(async () => {
+    const request = beginRequest()
+    if (!request) return
+    pendingLoad.current?.controller.abort()
+    pendingLoad.current = request
+    const generation = ++loadGeneration.current
+    const canApply = () => request.current() && generation === loadGeneration.current
     setLoading(true)
     setError(null)
     try {
-      const res = await apiClient.get(`/organizer/events/${id}`)
+      const res = await apiClient.get(`/organizer/events/${id}`, request.config)
+      if (!canApply()) return
       const e = res.data
       setEvent(e)
       setForm({
@@ -123,6 +133,7 @@ export default function EditEventPage() {
         show_attendees: e.show_attendees !== false
       })
     } catch (err) {
+      if (!canApply()) return
       if (err.response?.status === 401) {
         setError('Please sign in to access this page.')
       } else if (err.response?.status === 404) {
@@ -131,15 +142,17 @@ export default function EditEventPage() {
         setError('Failed to load event.')
       }
     } finally {
-      setLoading(false)
+      request.release()
+      if (canApply()) setLoading(false)
     }
-  }, [id])
+  }, [id, beginRequest])
 
   useEffect(() => {
     fetchEvent()
   }, [fetchEvent])
 
   const updateField = (field, value) => {
+    if (!current()) return
     setForm(prev => ({ ...prev, [field]: value }))
     if (formErrors[field]) {
       setFormErrors(prev => ({ ...prev, [field]: null }))
@@ -187,7 +200,9 @@ export default function EditEventPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!permissions.edit_event_content || !validate()) return
+    if (!current() || submitting || !permissions.edit_event_content || !validate()) return
+    const request = beginRequest()
+    if (!request) return
     setSubmitting(true)
     setSubmitError(null)
     setSuccessMessage(null)
@@ -214,40 +229,53 @@ export default function EditEventPage() {
         Object.keys(payload).forEach(key => { if (!presentationFields.includes(key)) delete payload[key] })
       }
       if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
-      const res = await apiClient.put(`/organizer/events/${id}`, payload)
+      const res = await apiClient.put(`/organizer/events/${id}`, payload, request.config)
+      if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
       setChangeReason('')
       setSuccessMessage('Event updated successfully.')
     } catch (err) {
+      if (!request.current()) return
       const msg = err.response?.data?.errors?.join(', ') || err.response?.data?.error || 'Failed to update event'
       setSubmitError(msg)
     } finally {
-      setSubmitting(false)
+      request.release()
+      if (request.current()) setSubmitting(false)
     }
   }
 
   const handlePublish = async () => {
+    if (publishing) return
+    const request = beginRequest()
+    if (!request) return
     setPublishing(true)
     setSubmitError(null)
     try {
-      const res = await apiClient.post(`/organizer/events/${id}/publish`)
+      const res = await apiClient.post(`/organizer/events/${id}/publish`, {}, request.config)
+      if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
       setShowPublishConfirm(false)
       setSuccessMessage('Event published successfully!')
     } catch (err) {
+      if (!request.current()) return
       const msg = err.response?.data?.error || 'Failed to publish event'
       setSubmitError(msg)
       setShowPublishConfirm(false)
     } finally {
-      setPublishing(false)
+      request.release()
+      if (request.current()) setPublishing(false)
     }
   }
 
   // Danger zone actions
   const handleLifecycle = async (action, success) => {
+    if (dangerLoading) return
+    const request = beginRequest()
+    if (!request) return
     setDangerLoading(true)
     try {
-      const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined })
+      const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined }, request.config)
+      if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
       setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
@@ -255,25 +283,32 @@ export default function EditEventPage() {
       setLifecycleReason('')
       setSuccessMessage(success)
     } catch (err) {
+      if (!request.current()) return
       setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
       setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
     } finally {
-      setDangerLoading(false)
+      request.release()
+      if (request.current()) setDangerLoading(false)
     }
   }
 
   const handleDeleteEvent = async () => {
+    if (dangerLoading) return
+    const request = beginRequest()
+    if (!request) return
     setDangerLoading(true)
     try {
-      await apiClient.delete(`/organizer/events/${id}`)
-      navigate('/dashboard')
+      await apiClient.delete(`/organizer/events/${id}`, request.config)
+      if (request.current()) navigate('/dashboard')
     } catch (err) {
+      if (!request.current()) return
       setSubmitError(err.response?.data?.error || 'Failed to delete event')
       setShowDeleteConfirm(false)
     } finally {
-      setDangerLoading(false)
+      request.release()
+      if (request.current()) setDangerLoading(false)
     }
   }
 
@@ -327,15 +362,21 @@ export default function EditEventPage() {
           )}
           {canManage && <button
             onClick={async () => {
+              if (cloning) return
+              const request = beginRequest()
+              if (!request) return
               setCloning(true)
               try {
-                const res = await apiClient.post(`/organizer/events/${id}/clone`)
+                const res = await apiClient.post(`/organizer/events/${id}/clone`, {}, request.config)
+                if (!request.current()) return
                 setSuccessMessage('Event cloned! Update the details and publish when ready.')
                 navigate(`/dashboard/events/${res.data.id}/edit`)
               } catch (err) {
+                if (!request.current()) return
                 setSubmitError(err.response?.data?.errors?.join(', ') || 'Failed to clone event')
               } finally {
-                setCloning(false)
+                request.release()
+                if (request.current()) setCloning(false)
               }
             }}
             disabled={cloning}
@@ -628,16 +669,22 @@ export default function EditEventPage() {
                 <button
                   type="button"
                   onClick={async () => {
+                    if (generatingRecurrences) return
+                    const request = beginRequest()
+                    if (!request) return
                     setGeneratingRecurrences(true)
                     setSubmitError(null)
                     try {
-                      const res = await apiClient.post(`/organizer/events/${id}/generate_recurrences`, { count: recurrenceCount })
+                      const res = await apiClient.post(`/organizer/events/${id}/generate_recurrences`, { count: recurrenceCount }, request.config)
+                      if (!request.current()) return
                       setSuccessMessage(`Generated ${res.data.generated_count} recurring event(s).`)
                       setRecurrenceChildren(res.data.events || [])
                     } catch (err) {
+                      if (!request.current()) return
                       setSubmitError(err.response?.data?.error || 'Failed to generate recurring events')
                     } finally {
-                      setGeneratingRecurrences(false)
+                      request.release()
+                      if (request.current()) setGeneratingRecurrences(false)
                     }
                   }}
                   disabled={generatingRecurrences || !form.starts_at}
@@ -762,4 +809,13 @@ export default function EditEventPage() {
       )}
     </div>
   )
+}
+
+export default function EditEventPage() {
+  const { id } = useParams()
+  const identity = useOrganizerIdentity()
+  const visit = useOrganizerPageVisit(`/dashboard/events/${id}/edit`)
+  if (!visit.active) return null
+  if (!identity.ready) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  return <EditEventSession key={`${identity.accountKey}:${identity.organizationId}:${id}:${visit.generation}`} id={id} identity={identity} />
 }

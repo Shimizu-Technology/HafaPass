@@ -63,10 +63,12 @@ class Api::V1::TicketsController < ApplicationController
   end
 
   def downloadable?(ticket)
-    ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked? && !ticket.refund_pending?
+    ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked? &&
+      !ticket.refund_pending? && !ticket.inventory_retained?
   end
 
   def admission_block_reason(ticket)
+    return "Refunded or disputed admission requires organizer review" if ticket.inventory_retained?
     return "Payment dispute under review" if ticket.order.ticket_access_blocked?
     "Ticket access is paused while its refund is pending" if ticket.refund_pending?
   end
