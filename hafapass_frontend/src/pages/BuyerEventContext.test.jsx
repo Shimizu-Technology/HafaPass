@@ -53,6 +53,22 @@ describe('buyer event selection across the real reduced-motion layout', () => {
   })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
+  it('shows an overnight event end date without changing its calendar instants or ticket selection', async () => {
+    const overnight = { ...a, starts_at: '2026-10-11T13:14:00Z', ends_at: '2026-10-11T17:14:00Z' }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? config : overnight }))
+    render(view())
+    await screen.findByRole('heading', { name: a.title })
+    expect(screen.getByText('Sunday, October 11, 2026')).toBeInTheDocument()
+    expect(screen.getByText('11:14 PM – Oct 12, 2026, 3:14 AM')).toBeInTheDocument()
+    const calendar = screen.getByRole('link', { name: /Add to Calendar/ })
+    expect(new URL(calendar.href).searchParams.get('dates')).toBe('20261011T131400Z/20261011T171400Z')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /Increase quantity for/ }))
+    await user.click(screen.getByRole('button', { name: /eventDetail.buyTickets/ }))
+    expect(screen.getByTestId('route')).toHaveTextContent('/checkout/event-a')
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
   it('never submits A inventory from checkout B while the B response is delayed', async () => {
     let finishB
     apiClient.get.mockImplementation(url => url === '/config' ? Promise.resolve({ data: config })
