@@ -47,21 +47,27 @@ test('an earlier setup refusal cannot erase the current scanner or its accepted 
   await page.goto('/dashboard/scanner?event=42')
   await expect.poll(() => Boolean(oldRegistration)).toBe(true)
   await page.getByLabel('Event to scan').selectOption('43')
-  await expect(page.getByText('Manifest v2 · 1 tickets')).toBeVisible()
+  await expectManifest(page, 'Manifest v2 · 1 ticket')
   await page.getByLabel('Event to scan').selectOption('42')
   await expect(page.getByRole('button', { name: 'Sync now' })).toBeEnabled()
-  await page.getByLabel('Ticket QR credential').fill(credential)
-  await page.getByRole('button', { name: 'Validate', exact: true }).click()
+  await page.getByLabel('Ticket QR code').fill(credential)
+  await page.getByRole('button', { name: 'Check ticket', exact: true }).click()
   await expect(page.getByText('Admission confirmed', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sync now' })).toBeEnabled()
   await json(oldRegistration, { error: 'Earlier setup refused' }, 403)
   // Observe the completed network callback and a browser turn before checking
   // its storage outcome through a fresh UI operation.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-  await page.getByLabel('Ticket QR credential').fill(credential)
-  await page.getByRole('button', { name: 'Validate', exact: true }).click()
+  await page.getByLabel('Ticket QR code').fill(credential)
+  await page.getByRole('button', { name: 'Check ticket', exact: true }).click()
   await expect(page.getByText('Already scanned on this device', { exact: true })).toBeVisible()
   await expect(page.getByText('Earlier setup refused', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('Manifest v2 · 1 tickets')).toBeVisible()
+  await expectManifest(page, 'Manifest v2 · 1 ticket')
   expect(sent).toHaveLength(1)
 })
+
+async function expectManifest(page, text) {
+  const summary = page.getByText('Device details', { exact: true })
+  if (await summary.locator('..').getAttribute('open') === null) await summary.click()
+  await expect(page.getByText(text)).toBeVisible()
+}

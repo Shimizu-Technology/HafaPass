@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
+import { formatEventDateTime } from '../../utils/eventTime'
 import * as admissionStore from '../../utils/admissionStore'
 import { applySyncResults, clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, localScanState, queuedActions, purgeExpiredAdmissionAccess, queueAdmission, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
@@ -13,6 +14,12 @@ import ScannerPage from './ScannerPage'
 const render = element => testingRender(<MemoryRouter>{element}</MemoryRouter>)
 
 const camera = vi.hoisted(() => ({ callbacks: [], stops: [] }))
+async function findManifest(version) {
+  const summary = await screen.findByText('Device details', { exact: true })
+  if (!summary.closest('details').open) await userEvent.click(summary)
+  return screen.findByText(new RegExp(`Manifest v${version}`))
+}
+
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('@zxing/browser', () => ({ BrowserQRCodeReader: class {
   decodeFromVideoDevice(_device, _video, callback) { camera.callbacks.push(callback); const stop = vi.fn(); camera.stops.push(stop); return Promise.resolve({ stop }) }
@@ -28,6 +35,70 @@ describe('scanner recovery and camera ownership', () => {
     for (const id of [92001, 92002, 92003]) await clearEventAdmissionData(id)
   })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); window.localStorage.clear() })
+
+  it('keeps access expiry visible and uses the earlier device authorization window', async () => {
+    const eventId = 92001
+    const deviceExpiry = new Date(Date.now() + 300_000).toISOString()
+    const device = { id: 91, identifier: 'readable-door-device', effective: true, authorization_expires_at: deviceExpiry }
+    const manifest = await signedManifest(eventId, [], { expires_at: new Date(Date.now() + 600_000).toISOString() })
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
+      ? { events: [{ id: eventId, title: 'Synthetic Guam check-in', timezone: 'Pacific/Guam' }] }
+      : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
+    apiClient.post.mockResolvedValue({ data: device })
+    render(<ScannerPage />)
+    await screen.findByText('Ticket list ready · 0 tickets')
+    expect(screen.getByRole('heading', { name: 'Check-in' })).toBeInTheDocument()
+    expect(screen.getByText(`Access expires ${formatEventDateTime(deviceExpiry, 'Pacific/Guam')} · Pacific/Guam`)).toBeInTheDocument()
+    expect(screen.getByLabelText('Ticket QR code')).toHaveAttribute('aria-describedby', 'manual-ticket-help')
+    expect(screen.getByRole('link', { name: 'Enter QR code' })).toHaveAttribute('href', '#manual-ticket-entry')
+    const details = screen.getByText('Device details', { exact: true }).closest('details')
+    expect(details.open).toBe(false)
+    await userEvent.click(screen.getByText('Device details', { exact: true }))
+    expect(details.open).toBe(true)
+    expect(screen.getByText(/Manifest v1/)).toBeInTheDocument()
+  })
+
+  it('makes offline sync limits and recovery methods explicit without hiding the unsent queue', async () => {
+    const eventId = 92001
+    const device = { id: 91, identifier: 'offline-door-ui', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const ticket = { ticket_id: 501, state: 'valid', credential_hash: await sha256Hex('offline-door-ui') }
+    await saveDevice(eventId, device)
+    await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1, ticket, credentialHash: ticket.credential_hash, source: 'offline' })
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    render(<ScannerPage offlineOnly />)
+    await screen.findByText('Ticket list ready · 1 ticket')
+    expect(screen.getByText('Waiting to sync')).toBeInTheDocument()
+    expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('1')
+    expect(screen.getByText(/Other gates may have newer admissions/)).toBeInTheDocument()
+    expect(screen.getByText('Sync saved scans before switching accounts or signing out. Unconfirmed scans need the original staff account to recover online.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sync now' })).toBeDisabled()
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    expect(screen.getByLabelText('Attendee name or ticket number')).toBeDisabled()
+    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+  })
+
+  it('keeps the admission verdict prominent while scan timing is secondary', async () => {
+    const eventId = 92001
+    const device = { id: 91, identifier: 'result-details-ui', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    const manifest = await signedManifest(eventId, [])
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
+      ? { events: [{ id: eventId, title: 'Result detail event' }] }
+      : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
+    apiClient.post.mockResolvedValue({ data: device })
+    render(<ScannerPage />)
+    await screen.findByText('Ticket list ready · 0 tickets')
+    await userEvent.type(screen.getByLabelText('Ticket QR code'), 'unrecognized-synthetic-code')
+    await userEvent.click(screen.getByRole('button', { name: 'Check ticket' }))
+    const verdict = await screen.findByText('Invalid ticket')
+    expect(verdict.closest('[role="status"]')).toHaveAttribute('aria-atomic', 'true')
+    const summary = screen.getByText('Scan details', { exact: true })
+    expect(summary.closest('details').open).toBe(false)
+    await userEvent.click(summary)
+    expect(summary.closest('details').open).toBe(true)
+    expect(screen.getByText(/Local response:/)).toBeInTheDocument()
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+  })
 
   it.each(['accepted', 'rejected'])('waits neutrally for the exact online %s acknowledgement', async verdict => {
     const eventId = 92001
@@ -48,10 +119,10 @@ describe('scanner recovery and camera ownership', () => {
           { ...submitted[0], result: verdict, reason_code: verdict === 'accepted' ? 'admitted' : 'refund_pending' }],
       } }) }))
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'waiting-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'waiting-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     const pending = await screen.findByText('Waiting for server confirmation')
     expect(pending.closest('[role="status"]')).toHaveClass('bg-neutral-50')
     expect(screen.queryByText('Admission confirmed')).not.toBeInTheDocument()
@@ -93,10 +164,10 @@ describe('scanner recovery and camera ownership', () => {
           results: [{ ...sent[1][0], result: 'accepted', reason_code: 'admitted' }], summary: {} } }) })
     })
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'lost-ack-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'lost-ack-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await screen.findByText('Waiting for server confirmation')
     await waitFor(() => expect(loseResponse).toBeDefined())
     await act(async () => loseResponse())
@@ -107,8 +178,8 @@ describe('scanner recovery and camera ownership', () => {
     await waitFor(() => expect(sent).toHaveLength(2))
     expect(sent[1]).toEqual(sent[0])
     // A duplicate while waiting may change the message, but retains this command's receipt identity.
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'lost-ack-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'lost-ack-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await screen.findByText('Already scanned on this device')
     await act(async () => {
       acknowledgedResponse = true
@@ -128,10 +199,10 @@ describe('scanner recovery and camera ownership', () => {
     await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
     window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
     render(<ScannerPage offlineOnly />)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'offline-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'offline-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     expect(await screen.findByText('Admitted offline')).toBeInTheDocument()
     expect(screen.getByText(/Other offline scanners cannot see this admission until they sync/)).toBeInTheDocument()
     expect(screen.queryByText('Admission confirmed')).not.toBeInTheDocument()
@@ -159,10 +230,10 @@ describe('scanner recovery and camera ownership', () => {
         : Promise.resolve(response(payload.actions, verdict))
     })
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'in-flight-501')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'in-flight-501')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await waitFor(() => expect(acknowledgeFirst).toBeDefined())
     const originalQueued = admissionStore.queuedActions
     let releaseCount
@@ -175,8 +246,8 @@ describe('scanner recovery and camera ownership', () => {
       }
       return actions
     })
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'in-flight-502')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'in-flight-502')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await waitFor(() => expect(releaseCount).toBeDefined())
     await act(async () => acknowledgeFirst())
     await waitFor(async () => expect(await originalQueued(eventId, device.id)).toHaveLength(0))
@@ -208,10 +279,10 @@ describe('scanner recovery and camera ownership', () => {
       return action
     })
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'peer-ack-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'peer-ack-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await waitFor(() => expect(acknowledged).toBe(1))
     expect(await screen.findByText(verdict === 'accepted' ? 'Admission confirmed' : 'Refund pending — do not admit')).toBeInTheDocument()
     expect(screen.queryByText('Waiting for server confirmation')).not.toBeInTheDocument()
@@ -240,11 +311,11 @@ describe('scanner recovery and camera ownership', () => {
       return receipt
     })
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'between-reads-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'between-reads-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await waitFor(() => expect(acknowledged).toBe(1))
     expect(await screen.findByText(verdict === 'accepted' ? 'Admission confirmed' : 'Refund pending — do not admit')).toBeInTheDocument()
     expect(screen.queryByText('Waiting for server confirmation')).not.toBeInTheDocument()
@@ -271,10 +342,10 @@ describe('scanner recovery and camera ownership', () => {
         results: payload.actions.map(action => ({ ...action, result: 'accepted', reason_code: 'admitted' })) } }) })
     })
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'busy-sync-501')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'busy-sync-501')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await waitFor(() => expect(finishOlder).toBeDefined())
     const originalState = admissionStore.localScanState
     let acknowledged
@@ -286,8 +357,8 @@ describe('scanner recovery and camera ownership', () => {
       }
       return receipt
     })
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'busy-sync-502')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'busy-sync-502')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await waitFor(() => expect(acknowledged).toBe(1))
     expect(screen.getByText('Waiting for server confirmation')).toBeInTheDocument()
     await act(async () => finishOlder())
@@ -320,11 +391,11 @@ describe('scanner recovery and camera ownership', () => {
       return action
     })
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     const user = userEvent.setup()
     for (let index = 0; index < 2; index += 1) {
-      await user.type(screen.getByLabelText('Ticket QR credential'), 'later-command-qr')
-      await user.click(screen.getByRole('button', { name: 'Validate' }))
+      await user.type(screen.getByLabelText('Ticket QR code'), 'later-command-qr')
+      await user.click(screen.getByRole('button', { name: 'Check ticket' }))
       if (index === 0) await waitFor(() => expect(releaseFirst).toBeDefined())
     }
     await screen.findByText('Admission confirmed')
@@ -356,13 +427,13 @@ describe('scanner recovery and camera ownership', () => {
       return action
     })
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'unknown-501')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'unknown-501')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await waitFor(() => expect(releaseFirst).toBeDefined())
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'unknown-502')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'unknown-502')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await screen.findByText('Admission confirmed')
     await act(async () => releaseFirst())
     expect(screen.getByText('Admission confirmed')).toBeInTheDocument()
@@ -383,10 +454,10 @@ describe('scanner recovery and camera ownership', () => {
     apiClient.get.mockRejectedValue(new Error('API unavailable'))
     apiClient.post.mockRejectedValue(new Error('API unavailable'))
     render(<ScannerPage />)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'refund-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'refund-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     expect(await screen.findByText('Refund pending — do not admit')).toBeInTheDocument()
     expect(await queuedActions(eventId, device.id)).toHaveLength(0)
   })
@@ -412,10 +483,10 @@ describe('scanner recovery and camera ownership', () => {
       }] } })
     })
     render(<ScannerPage />)
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'old-refund-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'old-refund-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     expect(await screen.findByText('Refund pending — do not admit')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
     expect(await localScanState(eventId, ticket.ticket_id)).toMatchObject({ status: 'rejected' })
@@ -432,13 +503,13 @@ describe('scanner recovery and camera ownership', () => {
     apiClient.post.mockRejectedValue(new Error('API unavailable'))
     render(<ScannerPage />)
     const user = userEvent.setup()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'cached-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
+    await user.type(screen.getByLabelText('Ticket QR code'), 'cached-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     await screen.findByText('Waiting for server confirmation')
     expect(await queuedActions(eventId, device.id)).toHaveLength(1)
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'cached-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await user.type(screen.getByLabelText('Ticket QR code'), 'cached-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     expect(await screen.findByText('Already scanned on this device')).toBeInTheDocument()
     expect(await queuedActions(eventId, device.id)).toHaveLength(1)
   })
@@ -472,9 +543,9 @@ describe('scanner recovery and camera ownership', () => {
     await user.click(await screen.findByRole('button', { name: 'Undo admission for HP-T501' }))
     expect(await screen.findByText('Admission already reversed')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
-    await screen.findByText(/Manifest v2/)
-    await user.type(screen.getByLabelText('Ticket QR credential'), 'undo-qr')
-    await user.click(screen.getByRole('button', { name: 'Validate' }))
+    await findManifest(2)
+    await user.type(screen.getByLabelText('Ticket QR code'), 'undo-qr')
+    await user.click(screen.getByRole('button', { name: 'Check ticket' }))
     expect(await screen.findByText('Admission confirmed')).toBeInTheDocument()
     expect(synced).toEqual(['reverse', 'admit'])
     expect(await queuedActions(eventId, device.id)).toHaveLength(0)
@@ -489,8 +560,8 @@ describe('scanner recovery and camera ownership', () => {
     apiClient.post.mockRejectedValue({ response: { status: 422, data: { error: 'You are not assigned to scan this event' } } })
     render(<ScannerPage />)
     await screen.findByText('You are not assigned to scan this event')
-    expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeDisabled()
-    expect(screen.getByLabelText('Ticket QR credential')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Start camera' })).toBeDisabled()
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
   })
 
   it('keeps the camera running across a verified refresh and rejects a newly cancelled credential using the current manifest', async () => {
@@ -507,11 +578,11 @@ describe('scanner recovery and camera ownership', () => {
     apiClient.post.mockResolvedValue({ data: { id: 91, identifier: 'refresh-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() } })
     render(<ScannerPage />)
     const user = userEvent.setup()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
-    await user.click(screen.getByRole('button', { name: 'Start QR scanner' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Start camera' }))
     await waitFor(() => expect(camera.callbacks).toHaveLength(1))
     await user.click(screen.getByRole('button', { name: 'Sync now' }))
-    await screen.findByText(/Manifest v2/)
+    await findManifest(2)
     expect(camera.stops[0]).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Stop camera' })).toBeInTheDocument()
     await act(async () => camera.callbacks[0]({ getText: () => 'refresh-qr' }))
@@ -530,15 +601,15 @@ describe('scanner recovery and camera ownership', () => {
     apiClient.post.mockImplementation(url => url.endsWith('/sync') ? Promise.reject(new Error('sync paused')) : Promise.resolve({ data: { id: url.includes('/92001/') ? 91 : 92, identifier: 'camera-scanner', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() } }))
     render(<ScannerPage />)
     const user = userEvent.setup()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
-    await user.click(screen.getByRole('button', { name: 'Start QR scanner' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Start camera' }))
     await waitFor(() => expect(camera.callbacks).toHaveLength(1))
     await user.selectOptions(screen.getByLabelText('Event to scan'), '92002')
     await waitFor(() => expect(camera.stops[0]).toHaveBeenCalled())
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
     await act(async () => camera.callbacks[0]({ getText: () => 'qr-92001' }))
     expect(await queuedActions(92001, 91)).toHaveLength(0)
-    await user.click(screen.getByRole('button', { name: 'Start QR scanner' }))
+    await user.click(screen.getByRole('button', { name: 'Start camera' }))
     await waitFor(() => expect(camera.callbacks).toHaveLength(2))
     await act(async () => camera.callbacks[1]({ getText: () => 'qr-92002' }))
     await screen.findByText('Waiting for server confirmation')
@@ -576,7 +647,8 @@ describe('scanner recovery and camera ownership', () => {
     expect(await loadAuthorizedScanner(eventId)).toBeNull()
     expect(await localScanState(eventId, ticket.ticket_id)).toBeUndefined()
     expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('1')
-    expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Start camera' })).toBeDisabled()
+    if (!screen.getByText('Device details', { exact: true }).closest('details').open) await user.click(screen.getByText('Device details', { exact: true }))
     await user.click(screen.getByRole('button', { name: 'Reset trusted device' }))
     expect(await screen.findByText('Sync every queued action before resetting this scanner.')).toBeInTheDocument()
     expect(await queuedActions(eventId, device.id)).toHaveLength(1)
@@ -584,8 +656,9 @@ describe('scanner recovery and camera ownership', () => {
     await waitFor(() => expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('0'))
     expect(await queuedActions(eventId, device.id)).toHaveLength(0)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reset trusted device' })).toBeEnabled())
+    if (!screen.getByText('Device details', { exact: true }).closest('details').open) await user.click(screen.getByText('Device details', { exact: true }))
     await user.click(screen.getByRole('button', { name: 'Reset trusted device' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
     expect(await queuedActions(eventId, device.id)).toHaveLength(0)
   })
   it.each(['empty', 'unknown'])('retains queued scans and stops after a %s synchronization response', async kind => {
@@ -637,8 +710,8 @@ describe('scanner recovery and camera ownership', () => {
     expect(await queuedActions(eventId, 91)).toHaveLength(0)
     expect(await loadAuthorizedScanner(eventId)).toBeNull()
     expect(await localScanState(eventId, ticket.ticket_id)).toBeNull()
-    expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeDisabled()
-    expect(screen.getByLabelText('Ticket QR credential')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Start camera' })).toBeDisabled()
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
     expect(await screen.findByText(/Saved scans synchronized/)).toBeInTheDocument()
   })
 
@@ -702,7 +775,7 @@ describe('scanner recovery and camera ownership', () => {
     expect(await Promise.all(['devices', 'manifests', 'trusted_keys'].map(name => db.get(name, eventId)))).toEqual(before)
     fault.mockRestore()
     expect((await loadAuthorizedScanner(eventId))?.device.id).toBe(device.id)
-    expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled()
     db.close()
   })
 

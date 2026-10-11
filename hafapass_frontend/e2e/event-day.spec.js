@@ -71,15 +71,15 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
   })
 
   await page.goto('/dashboard/scanner')
-  await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
+  await expectManifest(page, 'Manifest v1 · 2 tickets')
   await context.setOffline(true)
-  await page.getByPlaceholder('Ticket QR credential').fill(credentials[1])
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByLabel('Ticket QR code').fill(credentials[1])
+  await page.getByRole('button', { name: 'Check ticket' }).click()
   await expect(page.getByText('Admitted offline')).toBeVisible()
   await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
 
-  await page.getByPlaceholder('Ticket QR credential').fill(credentials[1])
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByLabel('Ticket QR code').fill(credentials[1])
+  await page.getByRole('button', { name: 'Check ticket' }).click()
   await expect(page.getByText('Already scanned on this device')).toBeVisible()
 
   await context.setOffline(false)
@@ -90,9 +90,9 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
   await page.route('**/api/v1/health', route => json(route, { status: 'unavailable' }, 503))
   await page.reload()
   await expect(page.getByText('Using this device’s saved event access.', { exact: false })).toBeVisible()
-  await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
-  await page.getByLabel('Ticket QR credential').fill(credentials[0])
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await expectManifest(page, 'Manifest v1 · 2 tickets')
+  await page.getByLabel('Ticket QR code').fill(credentials[0])
+  await page.getByRole('button', { name: 'Check ticket' }).click()
   await expect(page.getByText('Admitted offline')).toBeVisible()
   await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
 
@@ -116,10 +116,10 @@ test('online scanner waits neutrally before accepted and refused acknowledgement
   await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, { counts: {}, permissions: {}, recent_actions: [] }))
   await page.route('**/api/v1/organizer/events/42/scanner_devices/8/sync', route => { held.push(route) })
   await page.goto('/dashboard/scanner?event=42')
-  await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
+  await expectManifest(page, 'Manifest v1 · 2 tickets')
   for (const [index, verdict] of ['accepted', 'rejected'].entries()) {
-    await page.getByLabel('Ticket QR credential').fill(credentials[index])
-    await page.getByRole('button', { name: 'Validate' }).click()
+    await page.getByLabel('Ticket QR code').fill(credentials[index])
+    await page.getByRole('button', { name: 'Check ticket' }).click()
     const waiting = page.getByRole('status').filter({ hasText: 'Waiting for server confirmation' })
     await expect(waiting).toBeVisible()
     await expect(waiting).toHaveClass(/bg-neutral-50/)
@@ -161,7 +161,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
         results: actions.map(action => ({ ...action, result: 'accepted', reason_code: 'reversed' })), summary: {} })
     })
     await page.goto('/dashboard/scanner?event=42')
-    await expect(page.getByText('Manifest v1 · 2 tickets')).toBeVisible()
+    await expectManifest(page, 'Manifest v1 · 2 tickets')
     await expect(page.getByText('José & Ana', { exact: true })).toHaveCount(2)
     for (const code of ['HP-T1', 'HP-T2']) await expect(page.getByText(code, { exact: true })).toBeVisible()
     const reversed = page.getByRole('button', { name: 'Reversed admission for HP-T1' })
@@ -223,4 +223,10 @@ for (const scenario of [
     await expect(page.getByRole('button', { name: 'Card at Door' })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeEnabled()
   })
+}
+
+async function expectManifest(page, text) {
+  const summary = page.getByText('Device details', { exact: true })
+  if (await summary.locator('..').getAttribute('open') === null) await summary.click()
+  await expect(page.getByText(text)).toBeVisible()
 }

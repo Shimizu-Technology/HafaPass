@@ -10,6 +10,12 @@ import { applySyncResults, canonicalJson, clearAllAdmissionData, clearEventAdmis
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
 
+async function findManifest(version) {
+  const summary = await screen.findByText('Device details', { exact: true })
+  if (!summary.closest('details').open) await userEvent.click(summary)
+  return screen.findByText(new RegExp(`Manifest v${version}`))
+}
+
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 
 async function signWithKey(payload, keys) {
@@ -70,7 +76,7 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
     const undo = screen.getByRole('button', { name: 'Undo admission for HP-T15' })
     expect(reversed).toBeDisabled()
     expect(undo).toBeEnabled()
-    await screen.findByText(/Manifest v1/)
+    await findManifest(1)
     await userEvent.setup().click(reversed)
     expect(synced).toHaveLength(0)
     await userEvent.setup().click(undo)
@@ -131,7 +137,7 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
       if (phase === 'setup') pauseVerification()
       render(<MemoryRouter><ScannerPage /></MemoryRouter>)
       if (phase === 'download') {
-        await screen.findByText(/Manifest v2/)
+        await findManifest(2)
         manifestResponse = corruptSignature(await signedManifest(eventId,
           [{ ...ticket, reversed_admission_action_uuids: [originalAction.action_uuid] }], { version: 3 }))
         const sync = screen.getByRole('button', { name: 'Sync now' })
