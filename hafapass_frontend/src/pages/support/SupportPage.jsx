@@ -22,6 +22,7 @@ function SupportSession({ identity, resourcePath }) {
   const pendingSearch = useRef(null)
   const pendingDelivery = useRef(null)
   const actionBusy = useRef(false)
+  const accessDenied = useRef(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState({ orders: [], tickets: [], events: [] })
   const [deliveries, setDeliveries] = useState([])
@@ -32,6 +33,16 @@ function SupportSession({ identity, resourcePath }) {
   const [deliveryError, setDeliveryError] = useState('')
   const [busyAction, setBusyAction] = useState(null)
 
+  const withdrawAccess = useCallback(() => {
+    accessDenied.current = true
+    pendingSearch.current?.abort()
+    pendingDelivery.current?.abort()
+    ++searchGeneration.current; ++deliveryGeneration.current
+    setResults({ orders: [], tickets: [], events: [] }); setDeliveries([])
+    setSearched(false); setLoading(false); setDeliveryLoading(false)
+    setDeliveryError('Support access could not be verified. Retry delivery access before another lookup or send.')
+  }, [])
+
   const loadDeliveries = useCallback(() => {
     const request = beginRequest()
     if (!request) return
@@ -41,16 +52,16 @@ function SupportSession({ identity, resourcePath }) {
     const active = () => request.current() && generation === deliveryGeneration.current
     setDeliveryLoading(true)
     setDeliveryError('')
-    return apiClient.get('/support/message_deliveries', request.config).then(response => { if (active()) setDeliveries(response.data.deliveries || []) })
-      .catch(() => { if (active()) setDeliveryError('Recent deliveries could not be loaded.') })
+    return apiClient.get('/support/message_deliveries', request.config).then(response => { if (active()) { accessDenied.current = false; setDeliveries(response.data.deliveries || []) } })
+      .catch(error => { if (active()) { if ([401,403].includes(error.response?.status)) withdrawAccess(); else setDeliveryError('Recent deliveries could not be loaded.') } })
       .finally(() => { request.release(); if (active()) setDeliveryLoading(false) })
-  }, [beginRequest])
+  }, [beginRequest, withdrawAccess])
 
   useEffect(() => { loadDeliveries(); return () => { pendingDelivery.current?.abort(); pendingSearch.current?.abort() } }, [loadDeliveries])
 
   const search = async (event) => {
     event.preventDefault()
-    if (query.trim().length < 3) return
+    if (query.trim().length < 3 || accessDenied.current) return
     const request = beginRequest()
     if (!request) return
     pendingSearch.current?.abort()
@@ -67,7 +78,10 @@ function SupportSession({ identity, resourcePath }) {
       setResults({ orders: response.data.orders || [], tickets: response.data.tickets || [], events: response.data.events || [] })
       setSearched(true)
     } catch (error) {
-      if (active()) setMessage(error.response?.data?.error || 'Lookup failed. Your search has been kept; try Search again.')
+      if (active()) {
+        if ([401,403].includes(error.response?.status)) withdrawAccess()
+        setMessage(error.response?.data?.error || 'Lookup failed. Your search has been kept; try Search again.')
+      }
     } finally {
       request.release()
       if (active()) setLoading(false)
@@ -75,7 +89,7 @@ function SupportSession({ identity, resourcePath }) {
   }
 
   const replay = async (delivery) => {
-    if (actionBusy.current) return
+    if (actionBusy.current || accessDenied.current) return
     const request = beginRequest()
     if (!request) return
     actionBusy.current = true
@@ -83,11 +97,11 @@ function SupportSession({ identity, resourcePath }) {
     setMessage('')
     try {
       await apiClient.post(`/support/message_deliveries/${delivery.id}/resend`, {}, request.config)
-      if (!request.current()) return
+      if (!request.current() || accessDenied.current) return
       setMessage(`Delivery #${delivery.id} queued with its original idempotency key.`)
       loadDeliveries()
     } catch (error) {
-      if (request.current()) setMessage(error.response?.data?.error || 'Replay failed')
+      if (request.current()) { if ([401,403].includes(error.response?.status)) withdrawAccess(); setMessage(error.response?.data?.error || 'Replay failed') }
     } finally {
       request.release()
       actionBusy.current = false
@@ -96,7 +110,7 @@ function SupportSession({ identity, resourcePath }) {
   }
 
   const fulfill = async (order) => {
-    if (actionBusy.current) return
+    if (actionBusy.current || accessDenied.current) return
     const request = beginRequest()
     if (!request) return
     actionBusy.current = true
@@ -104,11 +118,11 @@ function SupportSession({ identity, resourcePath }) {
     setMessage('')
     try {
       await apiClient.post(`/support/message_deliveries/orders/${order.id}/fulfill`, {}, request.config)
-      if (!request.current()) return
+      if (!request.current() || accessDenied.current) return
       setMessage(`A consolidated fulfillment message was queued for ${order.reference}.`)
       loadDeliveries()
     } catch (error) {
-      if (request.current()) setMessage(error.response?.data?.error || 'Fulfillment resend failed')
+      if (request.current()) { if ([401,403].includes(error.response?.status)) withdrawAccess(); setMessage(error.response?.data?.error || 'Fulfillment resend failed') }
     } finally {
       request.release()
       actionBusy.current = false

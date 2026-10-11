@@ -110,6 +110,18 @@ describe('platform list isolation and recovery', () => {
     expect(screen.queryByText(/No matching records/)).not.toBeInTheDocument()
     expect(input).toHaveValue('second')
   })
+  it('withdraws private delivery rows after a current explicit support access denial', async () => {
+    const delivery = { id: 4, template: 'fulfillment', recipient: 'private@example.invalid', status: 'failed', attempts: 1 }
+    apiClient.get.mockResolvedValueOnce({ data: { deliveries: [delivery] } }).mockRejectedValue({ response: { status: 403, data: { error: 'Forbidden' } } })
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    await screen.findByText('private@example.invalid')
+    fireEvent.change(screen.getByLabelText('Order, ticket, attendee, or event lookup'), { target: { value: 'Denied' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+    await screen.findByText(/Support access could not be verified/)
+    expect(screen.queryByText('private@example.invalid')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Replay safely' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/No matching records/)).not.toBeInTheDocument()
+  })
   it('support replacement clears the previous account query and ignores its response', async () => {
     clearAuth = setAuthTokenGetter(() => Promise.resolve('a'), { userId: 'a', sessionId: 'a', ready: true })
     const old = deferred()
