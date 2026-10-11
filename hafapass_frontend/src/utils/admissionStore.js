@@ -42,6 +42,9 @@ const accessManifestIdentity = record => record ? JSON.stringify([
   record.owner_user_id, record.envelope?.digest, record.envelope?.payload?.version, record.downloaded_at,
 ]) : null
 const accessKeyIdentity = key => key ? JSON.stringify([key.key_id, key.public_key_spki]) : null
+const accessJournalIdentity = journal => journal ? JSON.stringify([
+  journal.owner_user_id, journal.event_id, journal.device_id, journal.identifier,
+]) : null
 
 // Capture access before starting network/crypto work. Sequence/queue changes are
 // deliberately excluded: a legitimate refusal must still remove current access
@@ -49,17 +52,19 @@ const accessKeyIdentity = key => key ? JSON.stringify([key.key_id, key.public_ke
 async function readAdmissionAccessSnapshot(eventId, { isCurrent = () => true } = {}) {
   const owner = currentScannerOwner()
   const db = await database()
-  const transaction = db.transaction(['devices', 'manifests', 'trusted_keys'], 'readonly')
-  const [device, manifest, trustedKey] = await Promise.all([
+  const transaction = db.transaction(['devices', 'manifests', 'trusted_keys', 'journal_devices'], 'readonly')
+  const [device, manifest, trustedKey, journal] = await Promise.all([
     transaction.objectStore('devices').get(Number(eventId)),
     transaction.objectStore('manifests').get(Number(eventId)),
     transaction.objectStore('trusted_keys').get(Number(eventId)),
+    owner ? transaction.objectStore('journal_devices').get([owner, Number(eventId)]) : undefined,
   ])
   await transaction.done
   if (owner !== currentScannerOwner() || !isCurrent()) throw manifestContextError('Scanner access changed while capturing its context')
   const context = Object.freeze({ eventId: Number(eventId), owner, isCurrent,
     deviceId: device?.id, manifestDigest: manifest?.envelope?.digest,
-    device: accessDeviceIdentity(device), manifest: accessManifestIdentity(manifest), key: accessKeyIdentity(trustedKey) })
+    device: accessDeviceIdentity(device), manifest: accessManifestIdentity(manifest), key: accessKeyIdentity(trustedKey),
+    journal: accessJournalIdentity(journal) })
   return { context, device, manifest, trustedKey }
 }
 
@@ -83,19 +88,22 @@ async function removeAdmissionAccess(eventId, { context, removeAuthorization }) 
   const current = () => context.eventId === Number(eventId) && context.owner === currentScannerOwner() && context.isCurrent()
   if (!current()) return false
   const db = await database()
-  const transaction = db.transaction(['devices', 'manifests', 'trusted_keys', 'scan_states'], 'readwrite')
+  const transaction = db.transaction(['devices', 'manifests', 'trusted_keys', 'scan_states', 'journal_devices'], 'readwrite')
   try {
-    const [device, manifest, key] = await Promise.all([
+    const [device, manifest, key, journal] = await Promise.all([
       transaction.objectStore('devices').get(Number(eventId)),
       transaction.objectStore('manifests').get(Number(eventId)),
       transaction.objectStore('trusted_keys').get(Number(eventId)),
+      context.owner ? transaction.objectStore('journal_devices').get([context.owner, Number(eventId)]) : undefined,
     ])
     const assertCurrent = () => {
       if (!current()) throw manifestContextError('Scanner access changed while removing its cache')
     }
     assertCurrent()
     if (accessDeviceIdentity(device) !== context.device || accessManifestIdentity(manifest) !== context.manifest
-      || accessKeyIdentity(key) !== context.key) throw manifestContextError('Scanner cache was replaced before its removal')
+      || accessKeyIdentity(key) !== context.key || accessJournalIdentity(journal) !== context.journal) {
+      throw manifestContextError('Scanner cache was replaced before its removal')
+    }
     if (!removeAuthorization && device?.owner_user_id !== context.owner) {
       await transaction.done
       return false
@@ -284,24 +292,41 @@ export async function loadUsableManifest(eventId) {
   return record.envelope
 }
 
-export async function saveDevice(eventId, device, { isCurrent = () => true } = {}) {
+export async function saveDevice(eventId, device, { isCurrent = () => true, context } = {}) {
   // Capture the initiating actor before even opening storage. An old response
   // must never acquire the new actor merely because the open completes later.
   const owner = currentScannerOwner()
   if (!owner) throw new Error('Sign in before authorizing this scanner.')
   const assertCurrent = () => {
-    if (owner !== currentScannerOwner() || !isCurrent()) throw manifestContextError('Scanner account or setup changed while saving its device')
+    if (owner !== currentScannerOwner() || !isCurrent() || (context && (context.owner !== owner
+      || context.eventId !== Number(eventId) || !context.isCurrent()))) {
+      throw manifestContextError('Scanner account or setup changed while saving its device')
+    }
   }
+  assertCurrent()
+  // Registration callers supply the snapshot captured before the network
+  // request. A newer peer tab must not become an older response's save target.
+  context ||= await captureAdmissionAccessContext(eventId, { isCurrent })
   assertCurrent()
   const db = await database()
   assertCurrent()
   // Renewal and admission allocation share the same lock across every browser tab.
-  const transaction = db.transaction(['devices', 'queue', 'journal_devices'], 'readwrite')
+  const transaction = db.transaction(['devices', 'queue', 'journal_devices', 'manifests', 'trusted_keys'], 'readwrite')
   const devices = transaction.objectStore('devices')
   const journal = transaction.objectStore('journal_devices')
   try {
     const previous = await devices.get(Number(eventId))
     assertCurrent()
+    const [manifest, key, identity] = await Promise.all([
+      transaction.objectStore('manifests').get(Number(eventId)),
+      transaction.objectStore('trusted_keys').get(Number(eventId)),
+      journal.get([owner, Number(eventId)]),
+    ])
+    assertCurrent()
+    if (accessDeviceIdentity(previous) !== context.device || accessManifestIdentity(manifest) !== context.manifest
+      || accessKeyIdentity(key) !== context.key || accessJournalIdentity(identity) !== context.journal) {
+      throw manifestContextError('Scanner cache was replaced before its registration could be saved')
+    }
     const prior = previous?.owner_user_id === owner ? previous : null
     const pending = await transaction.objectStore('queue').index('event_device').getAll([Number(eventId), Number(device.id)])
     assertCurrent()

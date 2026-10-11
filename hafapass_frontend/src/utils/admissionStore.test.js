@@ -149,6 +149,72 @@ describe('admissionStore', () => {
       await clearEventAdmissionData(eventId)
     })
 
+    it.each(['device', 'lease', 'manifest', 'journal'])('refuses the original registration snapshot after a same-owner peer changes its %s', async boundary => {
+      // Two tabs can start registration with no browser identifier or cache yet.
+      // Only the original pre-network snapshot is authority to install its result.
+      const firstRegistration = ['device', 'journal'].includes(boundary)
+      if (firstRegistration) await clearEventAdmissionData(eventId)
+      const context = await captureAdmissionAccessContext(eventId)
+      const peerDevice = firstRegistration ? { ...device, id: 72, identifier: 'peer-first-registration' }
+        : boundary === 'lease' ? { ...device, authorization_expires_at: new Date(Date.now() + 900_000).toISOString() }
+          : device
+      await saveDevice(eventId, peerDevice)
+      if (boundary !== 'lease') await saveVerifiedManifest(await signedManifest(eventId, [ticket], { version: 2 }))
+      const peerPending = firstRegistration ? await queueAdmission({ eventId, deviceId: peerDevice.id, manifestVersion: 2,
+        ticket: { ...ticket, ticket_id: 15 }, credentialHash: 'd'.repeat(64), source: 'offline' }) : pending
+      if (boundary === 'journal') await purgeExpiredAdmissionAccess(eventId)
+      const expected = await loadAuthorizedScanner(eventId)
+      const journal = await loadPendingDeviceIdentity(eventId)
+      const beforeSequence = (await loadDevice(eventId))?.next_sequence
+
+      await expect(saveDevice(eventId, device, { context })).rejects.toThrow(/cache|context|replaced|renewed/)
+
+      expect(await loadAuthorizedScanner(eventId)).toEqual(expected)
+      expect(await loadPendingDeviceIdentity(eventId)).toEqual(journal)
+      expect((await queuedActions(eventId, peerDevice.id)).map(action => action.action_uuid)).toEqual([peerPending.action_uuid])
+      expect((await loadDevice(eventId))?.next_sequence).toBe(beforeSequence)
+      if (!firstRegistration) expect((await localScanState(eventId, 14)).action_uuid).toBe(admission.action_uuid)
+    })
+
+    it('saves the current same-device registration with its original context without losing sequence-only pending changes', async () => {
+      const context = await captureAdmissionAccessContext(eventId)
+      const queued = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1,
+        ticket: { ...ticket, ticket_id: 16 }, credentialHash: 'e'.repeat(64), source: 'offline' })
+      await saveDevice(eventId, { ...device, last_sequence: 0 }, { context })
+      expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([pending.action_uuid, queued.action_uuid])
+      expect((await loadDevice(eventId)).next_sequence).toBe(queued.sequence)
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: device.id })
+    })
+
+    it('preserves a same-owner peer device and its pending journal committed while the old save waits for storage to open', async () => {
+      await clearEventAdmissionData(eventId)
+      const context = await captureAdmissionAccessContext(eventId)
+      const peer = { ...device, id: 72, identifier: 'peer-storage-open' }
+      let held = false
+      let peerAction
+      const originalOpen = IDBFactory.prototype.open
+      vi.spyOn(IDBFactory.prototype, 'open').mockImplementation(function (...args) {
+        const request = originalOpen.apply(this, args)
+        if (!held) {
+          held = true
+          const originalAdd = request.addEventListener.bind(request)
+          request.addEventListener = (type, listener, ...rest) => originalAdd(type, type !== 'success' ? listener : async event => {
+            await saveDevice(eventId, peer)
+            await saveVerifiedManifest(await signedManifest(eventId, [ticket], { version: 2 }))
+            peerAction = await queueAdmission({ eventId, deviceId: peer.id, manifestVersion: 2,
+              ticket, credentialHash: ticket.credential_hash, source: 'offline' })
+            listener.call(request, event)
+          }, ...rest)
+        }
+        return request
+      })
+      await expect(saveDevice(eventId, device, { context })).rejects.toThrow(/cache was replaced/)
+      expect((await loadAuthorizedScanner(eventId)).device).toMatchObject({ id: peer.id })
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: peer.id, identifier: peer.identifier })
+      expect((await queuedActions(eventId, peer.id)).map(action => action.action_uuid)).toEqual([peerAction.action_uuid])
+      expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(peerAction.action_uuid)
+    })
+
     it('rolls a device save back when its setup becomes stale during an actual write', async () => {
       let current = true
       const originalPut = IDBObjectStore.prototype.put

@@ -315,7 +315,7 @@ export default function ScannerPage({ offlineOnly = false }) {
           })
           networkPhase = false
           if (!current()) return
-          await saveDevice(selectedEventId, registration.data, { isCurrent: current })
+          await saveDevice(selectedEventId, registration.data, { isCurrent: current, context: failureContext })
           if (!current()) return
           const registeredDevice = await loadDevice(selectedEventId)
           if (current()) setRecoveryDevice(registeredDevice)
