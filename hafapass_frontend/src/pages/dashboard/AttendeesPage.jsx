@@ -145,17 +145,18 @@ function AttendeesPageSession({ id, identity }) {
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             placeholder="Search by name or email..."
+            aria-label="Search attendees by name or email"
             className="input pl-9"
           />
         </div>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="input w-auto">
+        <select aria-label="Filter attendees by status" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="input w-auto">
           <option value="">All Statuses</option>
           <option value="issued">Valid</option>
           <option value="checked_in">Checked In</option>
           <option value="cancelled">Cancelled</option>
         </select>
         {ticketTypes.length > 0 && (
-          <select value={ticketTypeFilter} onChange={(e) => { setTicketTypeFilter(e.target.value); setPage(1) }} className="input w-auto">
+          <select aria-label="Filter attendees by ticket type" value={ticketTypeFilter} onChange={(e) => { setTicketTypeFilter(e.target.value); setPage(1) }} className="input w-auto">
             <option value="">All Ticket Types</option>
             {ticketTypes.map(tt => <option key={tt.id} value={tt.name}>{tt.name}</option>)}
           </select>

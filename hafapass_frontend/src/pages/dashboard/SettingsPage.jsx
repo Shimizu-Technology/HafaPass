@@ -194,9 +194,19 @@ function SettingsPageSession({ identity }) {
   }
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+  if (!organization && error) return (
+    <section className="mx-auto max-w-2xl px-4 py-8 sm:px-6" aria-labelledby="organization-recovery-heading">
+      <Link to="/dashboard" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-700">← Back to dashboard</Link>
+      <h1 id="organization-recovery-heading" className="mt-4 text-2xl font-bold text-neutral-950">Verify organization access</h1>
+      <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <p>{error}</p>
+        <button type="button" onClick={load} className="mt-3 min-h-11 font-semibold underline">Retry organization settings</button>
+      </div>
+    </section>
+  )
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6" aria-label="Organization settings">
       <Link to="/dashboard" className="text-sm font-medium text-brand-600 hover:text-brand-700">← Back to dashboard</Link>
       <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -249,10 +259,10 @@ function SettingsPageSession({ identity }) {
                   </div>
                   {membership.role === 'owner' ? <StatusPill ready>Owner</StatusPill> : (
                     <div className="flex items-center gap-2">
-                      <select disabled={busy || membership.status === 'revoked'} value={membership.role} onChange={event => changeRole(membership, event.target.value)} className="input !w-auto !py-2 text-sm">
+                      <select aria-label={`Role for ${membership.email}`} disabled={busy || membership.status === 'revoked'} value={membership.role} onChange={event => changeRole(membership, event.target.value)} className="input min-h-11 !w-auto !py-2 text-sm">
                         {TEAM_ROLES.map(item => <option key={item} value={item}>{label(item)}</option>)}
                       </select>
-                      <button disabled={busy || membership.status === 'revoked'} onClick={() => revoke(membership)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Revoke ${membership.email}`}><Trash2 className="h-4 w-4" /></button>
+                      <button disabled={busy || membership.status === 'revoked'} onClick={() => revoke(membership)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Revoke ${membership.email}`}><Trash2 className="h-4 w-4" /></button>
                     </div>
                   )}
                 </div>
@@ -276,7 +286,7 @@ function SettingsPageSession({ identity }) {
                       {provider === 'stripe' && 'Blocked unless Stripe confirms Guam entity and bank eligibility in writing.'}
                     </p>
                     {account?.requirements_due?.length > 0 && <p className="mt-3 text-xs text-amber-700">Due: {account.requirements_due.map(label).join(', ')}</p>}
-                    {!account && <button disabled={busy} onClick={() => startOnboarding(provider)} className="mt-4 w-full rounded-lg border border-brand-200 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">Start review</button>}
+                    {!account && <button disabled={busy} onClick={() => startOnboarding(provider)} className="mt-4 min-h-11 w-full rounded-lg border border-brand-200 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">Start review</button>}
                   </article>
                 )
               })}
@@ -284,6 +294,6 @@ function SettingsPageSession({ identity }) {
           </section>
         </>
       )}
-    </main>
+    </section>
   )
 }
