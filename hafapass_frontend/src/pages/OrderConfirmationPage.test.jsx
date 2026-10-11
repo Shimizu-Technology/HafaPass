@@ -64,7 +64,7 @@ describe('guest order recovery actions', () => {
     const order = {
       id: 922, reference: 'HP-922', status: 'completed', buyer_name: 'Guest', buyer_email: 'guest@example.invalid', total_cents: 0,
       order_items: [{ id: 2, item_name: 'Free admission', quantity: 1, subtotal_cents: 0 }],
-      tickets: [{ id: 1, status: 'issued', refundable_cents: 0, display_credential: 'signed-display', ticket_type: { id: 7, name: 'Free admission' } }],
+      tickets: [{ id: 1, status: 'issued', admission_allowed: true, refundable_cents: 0, display_credential: 'signed-display', ticket_type: { id: 7, name: 'Free admission' } }],
       event: { id: 37, slug: 'free-event', title: 'Free Event', status: 'published', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', venue_name: 'Venue', transfers_enabled: false },
     }
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
@@ -217,7 +217,7 @@ describe('truthful ticket email status', () => {
 
   const orderWithDelivery = confirmation_delivery => ({
     id: 924, reference: 'HP-924', status: 'completed', buyer_email: 'guest@example.invalid', total_cents: 0, order_items: [],
-    tickets: [{ id: 1, status: 'issued', refundable_cents: 0, display_credential: 'signed-display', ticket_type: { id: 7, name: 'Free admission' } }],
+    tickets: [{ id: 1, status: 'issued', admission_allowed: true, refundable_cents: 0, display_credential: 'signed-display', ticket_type: { id: 7, name: 'Free admission' } }],
     event: { id: 37, slug: 'email-event', title: 'Email Event', status: 'published', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
     confirmation_delivery,
   })
@@ -227,14 +227,14 @@ describe('truthful ticket email status', () => {
   it('identifies simulated delivery even when its recorded state is delivered', async () => {
     mockOrder(orderWithDelivery({ status: 'delivered', simulated: true, updated_at: '2026-10-09T05:00:00Z' }))
     mount()
-    expect(await screen.findByText('Email is simulated in this test environment. Open or download your tickets below.')).toBeInTheDocument()
+    expect(await screen.findByText('Email is simulated in this test environment. Open or download your tickets on this page.')).toBeInTheDocument()
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open ticket: Free admission' })).toBeInTheDocument()
   })
 
   it.each([
-    ['queued', 'Your ticket email is queued for delivery. You can open or download your tickets below.'],
-    ['delayed', 'Your ticket email is delayed. Delivery has not been confirmed. You can open or download your tickets below.'],
+    ['queued', 'Your ticket email is queued for delivery. You can open or download your tickets on this page.'],
+    ['delayed', 'Your ticket email is delayed. Delivery has not been confirmed. You can open or download your tickets on this page.'],
     ['sent', 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'],
     ['delivered', 'Your ticket email was delivered.'],
   ])('shows the provider’s %s state without claiming a later outcome', async (status, message) => {
@@ -247,7 +247,7 @@ describe('truthful ticket email status', () => {
   it.each(['failed', 'bounced', 'complained', 'suppressed'])('offers ticket access and support when delivery is %s', async status => {
     mockOrder(orderWithDelivery({ status, simulated: false }))
     mount()
-    await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets below, or contact support.')
+    await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets on this page, or contact support.')
     expect(screen.getByRole('link', { name: 'Open or download tickets' })).toHaveAttribute('href', '#order-tickets')
     expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=Ticket%20email%20for%20order%20HP-924')
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
@@ -256,7 +256,7 @@ describe('truthful ticket email status', () => {
   it('keeps completed orders neutral about email when delivery evidence is absent', async () => {
     mockOrder(orderWithDelivery(null))
     mount()
-    expect(await screen.findByText('Your tickets are ready below. You can request a confirmation email using Resend.')).toBeInTheDocument()
+    expect(await screen.findByText('Your tickets are ready. You can request a confirmation email using Resend.')).toBeInTheDocument()
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
   })
 
@@ -267,9 +267,9 @@ describe('truthful ticket email status', () => {
       return Promise.resolve({ data: { status: 'queued' } })
     })
     mount()
-    await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets below, or contact support.')
+    await screen.findByText('Your ticket email delivery needs attention. Open or download your tickets on this page, or contact support.')
     await userEvent.click(screen.getByRole('button', { name: 'Resend', exact: true }))
-    expect(await screen.findByText('Your ticket email is queued for delivery. You can open or download your tickets below.')).toBeInTheDocument()
+    expect(await screen.findByText('Your ticket email is queued for delivery. You can open or download your tickets on this page.')).toBeInTheDocument()
     expect(await screen.findByText('Your email request was saved. Check the delivery status below.')).toBeInTheDocument()
     expect(apiClient.post).toHaveBeenCalledWith('/orders/924/resend', {}, { headers: { 'X-Guest-Order-Token': 'guest-token' } })
     expect(screen.queryByText('Your ticket email was delivered.')).not.toBeInTheDocument()
@@ -304,7 +304,7 @@ describe('pending payment status and private redirect data', () => {
 describe('confirmation ticket hierarchy and outcome', () => {
   beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); window.localStorage.clear(); vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '') })
   const order = { id: 924, reference: 'HP-924', status: 'completed', buyer_email: 'guest@example.invalid', total_cents: 0, order_items: [],
-    tickets: [{ id: 1, status: 'issued', refundable_cents: 0, display_credential: 'display', ticket_type: { id: 7, name: 'Entry' } }],
+    tickets: [{ id: 1, status: 'issued', admission_allowed: true, refundable_cents: 0, display_credential: 'display', ticket_type: { id: 7, name: 'Entry' } }],
     event: { id: 37, slug: 'event', title: 'Event', status: 'published', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false } }
   const mount = value => { apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : value })); render(<MemoryRouter initialEntries={['/orders/924/confirmation?guest_token=guest-token']}><Routes><Route path='/orders/:id/confirmation' element={<OrderConfirmationPage />} /></Routes></MemoryRouter>) }
   it('leads with one clearly named ticket action before delivery and receipt', async () => {
@@ -327,4 +327,12 @@ describe('confirmation ticket hierarchy and outcome', () => {
     expect(await screen.findByRole('link', { name: 'View ticket' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Open ticket:/ })).not.toBeInTheDocument()
   })
+  it('distinguishes a paused ticket from an admitted sibling in the same unblocked order', async () => {
+    mount({ ...order, tickets: [order.tickets[0], { ...order.tickets[0], id: 2, display_credential: 'paused-display', admission_allowed: false, admission_block_reason: 'Ticket access is paused while its refund is pending', ticket_type: { id: 8, name: 'Refund-paused entry' } }] })
+    expect(await screen.findByRole('link', { name: 'Open ticket: Entry' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View ticket' })).toHaveAttribute('href', '/tickets/paused-display?order=924')
+    expect(screen.getByText('Ticket access is paused while its refund is pending')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Open ticket: Refund-paused entry' })).not.toBeInTheDocument()
+  })
+
 })

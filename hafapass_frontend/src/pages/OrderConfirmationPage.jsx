@@ -204,27 +204,27 @@ function OrderConfirmationContent() {
   const isRefunded = order?.status === 'refunded'
   const isPartiallyRefunded = order?.status === 'partially_refunded'
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
-  const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued') && !order?.ticket_access_blocked)
+  const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued' && ticket.admission_allowed === true && !ticket.admission_block_reason) && !order?.ticket_access_blocked)
   const deliveryUnconfirmed = !delivery?.simulated && delivery?.reconciliation_required === true
   const deliveryFailed = !delivery?.simulated && !deliveryUnconfirmed && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
   const deliveryMessage = delivery?.simulated
-    ? usableTickets ? 'Email is simulated in this test environment. Open or download your tickets below.' : 'Email is simulated in this test environment. Check your order and ticket statuses below.'
+    ? usableTickets ? 'Email is simulated in this test environment. Open or download your tickets on this page.' : 'Email is simulated in this test environment. Check your order and ticket statuses on this page.'
     : delivery?.status === 'delivered'
       ? 'Your ticket email was delivered.'
       : deliveryUnconfirmed
-        ? 'A ticket email request still has an unconfirmed outcome. Check your tickets below and use Refresh status or contact support before requesting another email.'
+        ? 'A ticket email request still has an unconfirmed outcome. Check your tickets and use Refresh status or contact support before requesting another email.'
       : delivery?.status === 'sent'
         ? 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'
         : delivery?.status === 'delayed'
-          ? 'Your ticket email is delayed. Delivery has not been confirmed. You can open or download your tickets below.'
+          ? 'Your ticket email is delayed. Delivery has not been confirmed. You can open or download your tickets on this page.'
           : delivery?.status === 'queued'
-          ? 'Your ticket email is queued for delivery. You can open or download your tickets below.'
+          ? 'Your ticket email is queued for delivery. You can open or download your tickets on this page.'
           : delivery?.status === 'cancelled'
-            ? 'This ticket email request was cancelled. Check your order and ticket statuses below.'
+            ? 'This ticket email request was cancelled. Check your order and ticket statuses on this page.'
             : deliveryFailed
-            ? 'Your ticket email delivery needs attention. Open or download your tickets below, or contact support.'
+            ? 'Your ticket email delivery needs attention. Open or download your tickets on this page, or contact support.'
             : usableTickets
-              ? 'Your tickets are ready below. You can request a confirmation email using Resend.'
+              ? 'Your tickets are ready. You can request a confirmation email using Resend.'
               : 'You can view your order and ticket statuses here. Email delivery will appear when a confirmation is available.'
   const change = order?.latest_event_change
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
@@ -431,6 +431,7 @@ function OrderConfirmationContent() {
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             <div className="divide-y divide-neutral-100">
               {order.tickets.map(ticket => {
+                const canOpenTicket = ticket.status === 'issued' && usableTickets && ticket.admission_allowed === true && !ticket.admission_block_reason
                 const ticketRefundAttempt = getBuyerRefundAttempt(id, `ticket:${ticket.id}`)
                 const exchangeOptions = exchangeMap?.sections.flatMap(section => section.rows.flatMap(row =>
                   row.seats.filter(seat => seat.status === 'available' && seat.ticket_type_id === ticket.ticket_type.id &&
@@ -443,12 +444,13 @@ function OrderConfirmationContent() {
                     <p className="break-words font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                     {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
                     <p className="text-xs capitalize text-neutral-600">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
+                    {ticket.admission_block_reason && <p className="mt-1 text-sm text-amber-800">{ticket.admission_block_reason}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`}
-                      className={ticket.status === 'issued' && usableTickets ? 'btn-primary min-h-11 gap-2' : 'btn-secondary min-h-11 gap-2'}
-                      aria-label={ticket.status === 'issued' && usableTickets ? `Open ticket: ${ticket.ticket_type.name}` : 'View ticket'}>
-                      <Ticket aria-hidden="true" className="h-4 w-4" />{ticket.status === 'issued' && usableTickets ? 'Open ticket' : 'View ticket status'}
+                      className={canOpenTicket ? 'btn-primary min-h-11 gap-2' : 'btn-secondary min-h-11 gap-2'}
+                      aria-label={canOpenTicket ? `Open ticket: ${ticket.ticket_type.name}` : 'View ticket'}>
+                      <Ticket aria-hidden="true" className="h-4 w-4" />{canOpenTicket ? 'Open ticket' : 'View ticket status'}
                     </Link>}
                     {ticket.status === 'issued' && (
                       <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
