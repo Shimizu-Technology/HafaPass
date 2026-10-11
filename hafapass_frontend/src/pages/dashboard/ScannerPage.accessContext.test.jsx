@@ -54,6 +54,62 @@ afterEach(async () => {
 })
 
 describe('scanner setup refusal with the real Clerk wrapper and Axios interceptor', () => {
+  it('disables offline entry for a known terminal revoked ACK despite a peer lease and another unknown scan', async () => {
+    const oldDevice = { ...device(91), status: 'active', authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    const renewedDevice = { ...oldDevice, authorization_expires_at: new Date(Date.now() + 3_600_000).toISOString() }
+    const tickets = await Promise.all([501, 503].map(async ticket_id => ({ ...ticket, ticket_id,
+      credential_hash: await store.sha256Hex(`terminal-qr-${ticket_id}`) })))
+    let currentManifest = await signedManifest(eventId, tickets)
+    const held = deferred()
+    let action, ackConfig
+    let syncCalls = 0
+    api.defaults.adapter = vi.fn(config => {
+      if (config.url.endsWith('/sync')) {
+        if (++syncCalls === 1) { action = JSON.parse(config.data).actions[0]; ackConfig = config; return held.promise }
+        return Promise.reject(new AxiosError('Remaining scan outcome unknown', undefined, config, null,
+          { config, status: 503, data: {}, headers: {} }))
+      }
+      return Promise.resolve(response(config, config.url === '/organizer/events'
+        ? { events: [{ id: eventId, title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
+          : config.url.endsWith('/scanner_devices') ? oldDevice : config.url.endsWith('/manifest') ? currentManifest
+            : { counts: {}, permissions: {}, recent_actions: [] }))
+    })
+    const mounted = render(view())
+    await screen.findByText(/Manifest v1/)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Ticket QR credential'), 'terminal-qr-501')
+    await user.click(screen.getByRole('button', { name: 'Validate', exact: true }))
+    await waitFor(() => expect(action).toBeDefined())
+    await store.saveDevice(eventId, renewedDevice, { context: await store.captureAdmissionAccessContext(eventId) })
+    currentManifest = await signedManifest(eventId, [{ ...tickets[0], state: 'admitted' }, tickets[1]],
+      { version: 2, expires_at: renewedDevice.authorization_expires_at })
+    await store.saveVerifiedManifest(currentManifest)
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 2,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    // Revocation commits after the accepted action and peer renewal, before the
+    // controller reloads its device DTO. The remaining request loses its ACK.
+    await act(async () => held.resolve(response(ackConfig, { device: { ...renewedDevice, status: 'revoked', effective: false,
+      last_sequence: action.sequence }, results: [{ ...action, result: 'accepted', reason_code: 'admitted' }], summary: {} })))
+    await screen.findByText('Admission confirmed')
+    await waitFor(() => expect(syncCalls).toBe(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' }).querySelector('.animate-spin')).toBeNull())
+    await act(async () => window.dispatchEvent(new Event('offline')))
+    await waitFor(() => expect(screen.queryByText('Authorizing device and verifying manifest…')).not.toBeInTheDocument())
+    const entry = screen.getByLabelText('Ticket QR credential')
+    if (!entry.disabled) {
+      await user.type(entry, 'terminal-qr-503')
+      await user.click(screen.getByRole('button', { name: 'Validate', exact: true }))
+      await screen.findByText('Admitted offline')
+    }
+    expect(entry).toBeDisabled()
+    expect(screen.queryByText('Admitted offline')).not.toBeInTheDocument()
+    expect((await store.loadDevice(eventId)).status).toBe('revoked')
+    expect(await store.loadAuthorizedScanner(eventId)).toBeNull()
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    expect(await store.loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: 91 })
+    mounted.unmount()
+  })
+
   it.each([false, true])('uses the manifest GET context for a refusal after an older ACK (peer refresh during GET: %s)', async refreshedAgain => {
     const oldDevice = { ...device(91), authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
     const renewedDevice = { ...oldDevice, authorization_expires_at: new Date(Date.now() + 3_600_000).toISOString() }

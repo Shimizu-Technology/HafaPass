@@ -113,7 +113,14 @@ async function removeAdmissionAccess(eventId, { context, removeAuthorization }) 
     await transaction.objectStore('manifests').delete(Number(eventId))
     assertCurrent()
     if (removeAuthorization) {
-      await transaction.objectStore('devices').delete(Number(eventId))
+      if (device?.status === 'revoked') {
+        // Retain only the terminal device identity. No later active ACK may
+        // recreate authorization after attendee data and trust are removed.
+        await transaction.objectStore('devices').put({ id: device.id, identifier: device.identifier,
+          event_id: Number(eventId), owner_user_id: context.owner, status: 'revoked', effective: false,
+          authorization_expires_at: device.authorization_expires_at,
+          last_sequence: Number(device.last_sequence || 0), next_sequence: Number(device.next_sequence || 0) })
+      } else await transaction.objectStore('devices').delete(Number(eventId))
       assertCurrent()
       await transaction.objectStore('trusted_keys').delete(Number(eventId))
       assertCurrent()
@@ -319,6 +326,9 @@ export async function saveDevice(eventId, device, { isCurrent = () => true, cont
   try {
     const previous = await devices.get(Number(eventId))
     assertCurrent()
+    if (previous?.owner_user_id === owner && previous.id === device.id && previous.status === 'revoked') {
+      throw manifestContextError('This scanner device was revoked and cannot be renewed')
+    }
     const [manifest, key, identity] = await Promise.all([
       transaction.objectStore('manifests').get(Number(eventId)),
       transaction.objectStore('trusted_keys').get(Number(eventId)),
@@ -584,10 +594,14 @@ export async function applySyncResults(eventId, device, results, owner = current
   if (hasAccess) {
     // A valid receipt is authority for its journal action, not for replacing a
     // newer peer's lease. Sequence progress remains monotonic in either case.
+    // Server revocation is terminal for this exact device ID. A peer lease can
+    // supersede expiry, but the registrar cannot renew a revoked device.
+    const revoked = storedDevice.status === 'revoked' || device.status === 'revoked'
     const progress = { ...storedDevice, event_id: Number(eventId), owner_user_id: owner,
+      ...(revoked ? { status: 'revoked', effective: false } : {}),
       last_sequence: Math.max(Number(storedDevice.last_sequence || 0), Number(device.last_sequence || 0)),
       next_sequence: Math.max(Number(storedDevice.next_sequence || 0), Number(device.last_sequence || 0)) }
-    const updateMetadata = metadataCurrent()
+    const updateMetadata = !revoked && metadataCurrent()
     await devices.put(updateMetadata ? { ...storedDevice, ...device,
       event_id: progress.event_id, owner_user_id: owner,
       last_sequence: progress.last_sequence, next_sequence: progress.next_sequence } : progress)
