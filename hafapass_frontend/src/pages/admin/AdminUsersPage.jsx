@@ -260,7 +260,8 @@ function AdminUsersPageSession({ identity, resourcePath }) {
 
 export default function AdminUsersPage() {
   const identity = usePlatformIdentity()
-  const visit = usePlatformVisit()
+  const visit = usePlatformVisit('/admin/users')
+  if (!visit.active) return null
   if (!identity.ready) return <p role="status">Checking account access…</p>
-  return <AdminUsersPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath={visit.pathname} />
+  return <AdminUsersPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/admin/users" />
 }

@@ -40,7 +40,7 @@ describe('AdminEventsPage', () => {
 
   it('shows the server rejection when the proof-candidate flag cannot change', async () => {
     apiClient.patch.mockRejectedValue({ response: { data: { errors: ['Candidate cannot change after orders exist.'] } } })
-    render(<MemoryRouter><AdminEventsPage /></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Mark as hidden proof candidate' }))
 

@@ -187,7 +187,8 @@ function AdminEventsPageSession({ identity, resourcePath }) {
 
 export default function AdminEventsPage() {
   const identity = usePlatformIdentity()
-  const visit = usePlatformVisit()
+  const visit = usePlatformVisit('/admin/events')
+  if (!visit.active) return null
   if (!identity.ready) return <p role="status">Checking account access…</p>
-  return <AdminEventsPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath={visit.pathname} />
+  return <AdminEventsPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/admin/events" />
 }

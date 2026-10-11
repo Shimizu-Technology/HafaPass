@@ -17,7 +17,7 @@ describe('support record lookup', () => {
       events: [{ id: 37, title: 'Published Event', organization_name: 'Organizer', status: 'published', slug: 'published-event' }],
     } : { deliveries: [] } }))
     apiClient.post.mockResolvedValue({ data: {} })
-    render(<MemoryRouter><SupportPage /></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Order, ticket, attendee, or event lookup'), 'Guest')
     await user.click(screen.getByRole('button', { name: 'Search' }))

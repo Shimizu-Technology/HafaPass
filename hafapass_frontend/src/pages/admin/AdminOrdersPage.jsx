@@ -231,7 +231,8 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
 
 export default function AdminOrdersPage() {
   const identity = usePlatformIdentity()
-  const visit = usePlatformVisit()
+  const visit = usePlatformVisit('/admin/orders')
+  if (!visit.active) return null
   if (!identity.ready) return <p role="status">Checking account access…</p>
-  return <AdminOrdersPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath={visit.pathname} />
+  return <AdminOrdersPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/admin/orders" />
 }

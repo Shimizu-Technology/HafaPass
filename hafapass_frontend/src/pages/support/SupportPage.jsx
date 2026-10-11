@@ -188,7 +188,8 @@ function SupportSession({ identity, resourcePath }) {
 
 export default function SupportPage() {
   const identity = usePlatformIdentity()
-  const visit = usePlatformVisit()
+  const visit = usePlatformVisit('/support')
+  if (!visit.active) return null
   if (!identity.ready) return <p role="status">Checking account access…</p>
-  return <SupportSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath={visit.pathname} />
+  return <SupportSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/support" />
 }

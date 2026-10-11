@@ -11,11 +11,11 @@ export function usePlatformIdentity() {
   }
 }
 
-export function usePlatformVisit() {
+export function usePlatformVisit(resourcePath) {
   const { pathname } = useLocation()
   const visit = useRef({ pathname, generation: 0 })
   if (visit.current.pathname !== pathname) visit.current = { pathname, generation: visit.current.generation + 1 }
-  return visit.current
+  return { ...visit.current, active: pathname.replace(/\/$/, '') === resourcePath }
 }
 
 // Platform roles have account/session authority, independently of the selected
@@ -23,7 +23,7 @@ export function usePlatformVisit() {
 export function usePlatformRequests({ authContext }, resourcePath) {
   const { pathname } = useLocation()
   const routeActive = useRef(true)
-  if (pathname !== resourcePath) routeActive.current = false
+  if (pathname.replace(/\/$/, '') !== resourcePath) routeActive.current = false
   const mounted = useRef(false)
   const requests = useRef(new Set())
   const current = useCallback(() => mounted.current && routeActive.current && getApiAuthContext() === authContext, [authContext])

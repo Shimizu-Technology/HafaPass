@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { setAuthTokenGetter } from '../../api/client'
 import AdminUsersPage from './AdminUsersPage'
@@ -64,6 +64,31 @@ describe('platform list isolation and recovery', () => {
       expect(apiClient.get.mock.calls[0][1].signal.aborted).toBe(true)
     })
   }
+  it('withdraws an exiting platform page instead of starting reads for the next route', async () => {
+    apiClient.get.mockResolvedValue({ data: cases[0][3]('Visible') })
+    render(<MemoryRouter initialEntries={['/admin/users']}><Routes><Route path="*" element={<><Link to="/admin/orders">Leave users</Link><Link to="/admin/users">Return users</Link><AdminUsersPage /></>} /></Routes></MemoryRouter>)
+    await screen.findAllByText('Visible')
+    const before = apiClient.get.mock.calls.length
+    fireEvent.click(screen.getByRole('link', { name: 'Leave users' }))
+    expect(screen.queryByRole('textbox', { name: 'Search users by name or email' })).not.toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledTimes(before)
+    fireEvent.click(screen.getByRole('link', { name: 'Return users' }))
+    await screen.findAllByText('Visible')
+    expect(apiClient.get).toHaveBeenCalledTimes(before + 1)
+  })
+  it('does not apply a received role update to a replacement admin session', async () => {
+    clearAuth = setAuthTokenGetter(() => Promise.resolve('a'), { userId: 'same-user', sessionId: 'a', ready: true })
+    apiClient.get.mockResolvedValue({ data: cases[0][3]('Visible') })
+    const update = deferred(); apiClient.patch.mockReturnValue(update.promise)
+    render(<MemoryRouter initialEntries={['/admin/users']}><AdminUsersPage /></MemoryRouter>)
+    await screen.findAllByText('Visible')
+    fireEvent.change(screen.getAllByRole('combobox', { name: 'Role for Visible@example.invalid' })[0], { target: { value: 'organizer' } })
+    expect(apiClient.patch.mock.calls[0][2].authContext.sessionId).toBe('a')
+    await act(async () => { clearAuth = setAuthTokenGetter(() => Promise.resolve('b'), { userId: 'same-user', sessionId: 'b', ready: true }) })
+    await screen.findAllByText('Visible')
+    await act(async () => update.resolve({ data: { ...cases[0][3]('Visible').users[0], role: 'organizer' } }))
+    for (const control of screen.getAllByRole('combobox', { name: 'Role for Visible@example.invalid' })) expect(control).toHaveValue('attendee')
+  })
   it('order disclosure works with a named focusable button', async () => {
     apiClient.get.mockResolvedValue({ data: { orders: [{ ...cases[1][3]('Buyer').orders[0], order_items: [], payments: [], refunds: [], reconciliation_exceptions: [] }], meta: {} } })
     render(<MemoryRouter initialEntries={['/admin/orders']}><AdminOrdersPage /></MemoryRouter>)
