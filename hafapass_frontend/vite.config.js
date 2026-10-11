@@ -94,6 +94,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Bound jsdom/crypto contention on machines running parallel project sessions.
+    maxWorkers: 2,
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.test.{js,jsx}'],
