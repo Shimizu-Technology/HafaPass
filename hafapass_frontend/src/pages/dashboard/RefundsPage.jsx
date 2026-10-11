@@ -9,6 +9,20 @@ import { supportMailto } from '../../utils/supportContact'
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
 const needsFinanceReview = (data, request) => data?.finance_review_required === true || (request?.financeReview && data?.finance_review_required !== false)
 
+const readSavedRefund = key => {
+ try {
+  const raw = window.sessionStorage.getItem(key)
+  if (raw === null) return null
+  const request = JSON.parse(raw)
+  const payload = request?.payload
+  const valid = typeof request?.key === 'string' && request.key.trim() && Number.isSafeInteger(request.orderId) && request.orderId > 0
+   && payload && typeof payload === 'object' && !Array.isArray(payload)
+   && (payload.reason == null || typeof payload.reason === 'string')
+   && (!Object.hasOwn(payload, 'amount_cents') || payload.amount_cents == null || (Number.isSafeInteger(payload.amount_cents) && payload.amount_cents > 0))
+  return valid ? request : { recoveryRequired: true }
+ } catch { return { recoveryRequired: true } }
+}
+
 export default function RefundsPage() {
  const { id: eventId } = useParams()
  const identity = useOrganizerIdentity()
@@ -37,16 +51,14 @@ function RefundsPageSession({ eventId, identity }) {
  const [accessRefreshing, setAccessRefreshing] = useState(false)
  const importedLegacyKey = useRef(null)
  const [contextError, setContextError] = useState('')
- const [pendingRequest, setPendingRequest] = useState(() => {
-  try { return JSON.parse(window.sessionStorage.getItem(storageKey) || 'null') } catch { return null }
- })
+ const [pendingRequest, setPendingRequest] = useState(() => readSavedRefund(storageKey))
  const [notice, setNotice] = useState('')
  const [loadError, setLoadError] = useState('')
  const [orders, setOrders] = useState([])
  const [loading, setLoading] = useState(true)
  const loadGeneration = useRef(0)
  const [refundingId, setRefundingId] = useState(pendingRequest?.orderId || null)
- const [refundForm, setRefundForm] = useState(pendingRequest ? { amount: pendingRequest.payload.amount_cents ? String(pendingRequest.payload.amount_cents / 100) : '', reason: pendingRequest.payload.reason || '', type: pendingRequest.payload.amount_cents ? 'partial' : 'full' } : { amount: '', reason: '', type: 'full' })
+ const [refundForm, setRefundForm] = useState(pendingRequest && !pendingRequest.recoveryRequired ? { amount: pendingRequest.payload.amount_cents ? String(pendingRequest.payload.amount_cents / 100) : '', reason: pendingRequest.payload.reason || '', type: pendingRequest.payload.amount_cents ? 'partial' : 'full' } : { amount: '', reason: '', type: 'full' })
  const [refundRequestKey, setRefundRequestKey] = useState(pendingRequest?.key || null)
  const [processing, setProcessing] = useState(false)
 
@@ -67,17 +79,19 @@ function RefundsPageSession({ eventId, identity }) {
    if (eventResponse.data.permissions?.refund !== true || eventResponse.data.permissions?.view_finance !== true) throw new Error('Refund access is not available for your role')
    authorizedEvent.current = true
    try {
-    const legacy = JSON.parse(window.sessionStorage.getItem(legacyStorageKey) || 'null')
-    const cached = JSON.parse(window.sessionStorage.getItem(storageKey) || 'null')
-    if (legacy?.key && legacy.payload && !cached) {
+    const legacy = readSavedRefund(legacyStorageKey)
+    const cached = readSavedRefund(storageKey)
+    if (cached?.recoveryRequired || legacy?.recoveryRequired) {
+     setPendingRequest({ recoveryRequired: true })
+    } else if (legacy?.key && !cached) {
      window.sessionStorage.setItem(storageKey, JSON.stringify(legacy))
      setPendingRequest(legacy)
      setRefundingId(legacy.orderId)
      setRefundRequestKey(legacy.key)
      setRefundForm({ amount: legacy.payload.amount_cents ? String(legacy.payload.amount_cents / 100) : '', reason: legacy.payload.reason || '', type: legacy.payload.amount_cents ? 'partial' : 'full' })
     }
-    if (legacy?.key === (cached || legacy)?.key) importedLegacyKey.current = legacy.key
-   } catch { /* A malformed saved operation is never submitted. */ }
+    if (legacy?.key && legacy.key === (cached || legacy)?.key) importedLegacyKey.current = legacy.key
+   } catch { setPendingRequest({ recoveryRequired: true }) }
    const res = await requestApi('get', `/organizer/events/${eventId}/stats`)
       if (!canApply()) return
    setOrders(res.data.recent_orders || [])
@@ -92,7 +106,7 @@ function RefundsPageSession({ eventId, identity }) {
  useEffect(() => { fetchOrders() }, [fetchOrders])
 
  const handleRefund = async (orderId) => {
-    if (!current() || !authorizedEvent.current || (pendingRequest && pendingRequest.orderId !== orderId)) return
+    if (!current() || !authorizedEvent.current || pendingRequest?.recoveryRequired || (pendingRequest && pendingRequest.orderId !== orderId)) return
   if (processing || accessRefreshing) return
   setProcessing(true)
   setNotice('')
@@ -177,8 +191,9 @@ function RefundsPageSession({ eventId, identity }) {
     <p>The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.</p>
     <a className="inline-flex min-h-11 items-center font-semibold underline" href={supportMailto(`Refund review for order ${pendingRequest.orderId}`)}>Contact support</a>
    </div>}
-   {pendingRequest && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
-   {pendingRequest && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing || accessRefreshing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : 'Retry saved refund'}</button>}
+   {pendingRequest?.recoveryRequired && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved refund recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a refund.</p><a href={supportMailto('Recover an unreadable refund request')} className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</a></div>}
+   {pendingRequest && !pendingRequest.recoveryRequired && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
+   {pendingRequest && !pendingRequest.recoveryRequired && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing || accessRefreshing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : 'Retry saved refund'}</button>}
    {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{loadError} <button className="min-h-11 font-semibold underline" onClick={fetchOrders}>Retry</button></p>}
    {loadError && orders.length === 0 ? null : orders.length === 0 ? (
     <div className="card p-12 text-center">
@@ -240,7 +255,7 @@ function RefundsPageSession({ eventId, identity }) {
            <input id={`refund-reason-${order.id}`} disabled={processing || accessRefreshing || Boolean(pendingRequest)} value={refundForm.reason} onChange={e => setRefundForm({...refundForm, reason: e.target.value})}
             className="input !py-2 text-sm" placeholder="Customer request, event cancelled..." />
           </div>
-          <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || (refundForm.type === 'partial' && !refundForm.amount)}
+          <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || (refundForm.type === 'partial' && !refundForm.amount)}
            className="btn-primary text-sm !py-2.5 !bg-red-500 hover:!bg-red-600 gap-1 disabled:opacity-50">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
            {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? 'Retry saved refund' : 'Process Refund'}

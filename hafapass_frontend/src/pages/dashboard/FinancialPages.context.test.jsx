@@ -283,3 +283,60 @@ for (const [Page, tool, kind] of [[BoxOfficePage, 'box-office', 'box-office'], [
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 }
+
+for (const [Page, tool, kind] of [[BoxOfficePage, 'box-office', 'box-office'], [RefundsPage, 'refunds', 'refund']]) {
+  const invalid = ['{broken', 'null', 'false', '0', '{}', JSON.stringify({ key: 'existing-key', payload: {} })]
+  it.each(invalid)(`${kind} preserves an invalid v2 journal %s without sending or replacing a money request`, async raw => {
+    const key = `hafapass:pending-${kind}:v2:actor-a:1:37`
+    window.sessionStorage.setItem(key, raw)
+    mount(Page, tool)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Money actions are paused')
+    expect(screen.getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', expect.stringMatching(/^mailto:/))
+    if (kind === 'box-office') {
+      expect(screen.getByRole('button', { name: 'Add Entry 37' })).toBeDisabled()
+      const retry = screen.getByRole('button', { name: /Retry saved sale/ })
+      expect(retry).toBeDisabled(); await userEvent.click(retry)
+    } else {
+      expect(screen.getByRole('button', { name: 'Refund', exact: true })).toBeDisabled()
+      expect(screen.queryByRole('button', { name: 'Retry saved refund' })).not.toBeInTheDocument()
+    }
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem(key)).toBe(raw)
+  })
+  it(`${kind} does not import an invalid legacy journal or start a new operation`, async () => {
+    const legacy = `hafapass:pending-${kind}:actor-a:37`
+    const current = `hafapass:pending-${kind}:v2:actor-a:1:37`
+    window.sessionStorage.setItem(legacy, '{broken')
+    mount(Page, tool)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Money actions are paused')
+    expect(window.sessionStorage.getItem(legacy)).toBe('{broken')
+    expect(window.sessionStorage.getItem(current)).toBeNull()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+  it(`${kind} fails closed when its recovery storage cannot be read`, async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (key) {
+      if (key.startsWith(`hafapass:pending-${kind}`)) throw new Error('Synthetic storage refusal')
+      return key === 'hafapass_organization_id' ? '1' : key === 'hafapass_scanner_user_id' ? 'actor-a' : null
+    })
+    mount(Page, tool)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Money actions are paused')
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+  it(`${kind} keeps a valid legacy operation paused if migration cannot be persisted`, async () => {
+    const saved = kind === 'box-office' ? { key: 'original-key', payload: { line_items: [{ ticket_type_id: 37, quantity: 1 }], payment_method: 'door_cash' }, total_cents: 500 }
+      : { key: 'original-key', orderId: 370, payload: { reason: 'Original reason' } }
+    const legacy = `hafapass:pending-${kind}:actor-a:37`
+    const current = `hafapass:pending-${kind}:v2:actor-a:1:37`
+    window.sessionStorage.setItem(legacy, JSON.stringify(saved))
+    const originalSet = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (key === current) throw new Error('Synthetic migration failure')
+      return originalSet.call(this, key, value)
+    })
+    mount(Page, tool)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Money actions are paused')
+    expect(JSON.parse(window.sessionStorage.getItem(legacy))).toEqual(saved)
+    expect(window.sessionStorage.getItem(current)).toBeNull()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+}

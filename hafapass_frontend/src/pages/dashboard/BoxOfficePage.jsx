@@ -7,6 +7,21 @@ import apiClient from '../../api/client'
 import QRCode from '../../components/QRCode'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import SeatSelector from '../../components/SeatSelector'
+import { supportMailto } from '../../utils/supportContact'
+
+const readSavedSale = key => {
+  try {
+    const raw = window.sessionStorage.getItem(key)
+    if (raw === null) return null
+    const sale = JSON.parse(raw)
+    const payload = sale?.payload
+    const valid = typeof sale?.key === 'string' && sale.key.trim() && Number.isSafeInteger(sale.total_cents) && sale.total_cents >= 0
+      && payload && ['door_cash', 'door_card'].includes(payload.payment_method)
+      && Array.isArray(payload.line_items) && payload.line_items.length > 0
+      && payload.line_items.every(item => Number.isSafeInteger(item?.ticket_type_id) && item.ticket_type_id > 0 && Number.isSafeInteger(item?.quantity) && item.quantity > 0)
+    return valid ? sale : { recoveryRequired: true }
+  } catch { return { recoveryRequired: true } }
+}
 
 export default function BoxOfficePage() {
  const { id } = useParams()
@@ -52,9 +67,7 @@ function BoxOfficePageSession({ id, identity }) {
   const authorizedEvent = useRef(false)
   const [accessRefreshing, setAccessRefreshing] = useState(false)
   const importedLegacyKey = useRef(null)
-  const [pendingSale, setPendingSale] = useState(() => {
-    try { return JSON.parse(window.sessionStorage.getItem(saleStorageKey) || 'null') } catch { return null }
-  })
+  const [pendingSale, setPendingSale] = useState(() => readSavedSale(saleStorageKey))
   const pendingSaleRef = useRef(pendingSale)
   const saleLocked = submitting || accessRefreshing || Boolean(pendingSale)
 
@@ -77,20 +90,27 @@ function BoxOfficePageSession({ id, identity }) {
       // Legacy operations have no organization namespace. Import only after
       // this bound event response proves their original event is accessible.
       try {
-        const legacy = JSON.parse(window.sessionStorage.getItem(legacyStorageKey) || 'null')
-        if (legacy?.key && legacy.payload && !pendingSaleRef.current) {
+        const legacy = readSavedSale(legacyStorageKey)
+        if (legacy?.recoveryRequired) {
+          pendingSaleRef.current = legacy
+          setPendingSale(legacy)
+        } else if (legacy?.key && !pendingSaleRef.current) {
           window.sessionStorage.setItem(saleStorageKey, JSON.stringify(legacy))
           pendingSaleRef.current = legacy
           setPendingSale(legacy)
         }
-        if (legacy?.key === pendingSaleRef.current?.key) importedLegacyKey.current = legacy.key
-      } catch { /* A malformed saved operation is never submitted. */ }
+        if (legacy?.key && legacy.key === pendingSaleRef.current?.key) importedLegacyKey.current = legacy.key
+      } catch {
+        const unresolved = { recoveryRequired: true }
+        pendingSaleRef.current = unresolved
+        setPendingSale(unresolved)
+      }
       setEvent(res.data)
       // Initialize quantities to 0
       const initial = {}
       res.data.ticket_types?.forEach(tt => { initial[tt.id] = 0 })
       if (!pendingSaleRef.current) setQuantities(initial)
-      else {
+      else if (!pendingSaleRef.current.recoveryRequired) {
         const payload = pendingSaleRef.current.payload
         setQuantities(Object.fromEntries(payload.line_items.map(item => [item.ticket_type_id, item.quantity])))
         setBuyerName(payload.buyer_name || '')
@@ -144,7 +164,7 @@ function BoxOfficePageSession({ id, identity }) {
     : event?.ticket_types?.reduce((s, tt) => s + (quantities[tt.id] || 0) * tt.price_cents, 0) || 0
 
   const handleSale = async () => {
-    if (!current() || !authorizedEvent.current) return
+    if (!current() || !authorizedEvent.current || pendingSaleRef.current?.recoveryRequired) return
     if (submitting || (!pendingSaleRef.current && totalItems === 0)) return
     const recoveringSavedSale = Boolean(pendingSaleRef.current)
     setSubmitting(true)
@@ -230,7 +250,8 @@ function BoxOfficePageSession({ id, identity }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Ticket Selection */}
         <div className="lg:col-span-2 space-y-4">
-          {pendingSale && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+          {pendingSale?.recoveryRequired && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved sale recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a sale.</p><a href={supportMailto('Recover an unreadable box office sale')} className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</a></div>}
+          {pendingSale && !pendingSale.recoveryRequired && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status">
             <p className="font-semibold">A saved sale needs confirmation</p>
             <p className="mt-1">Retry uses the original sale and payment identity. Do not create another sale or collect another payment until its outcome is confirmed.</p>
             <p className="mt-2 break-all font-mono text-xs">Reference: {pendingSale.key}</p>
@@ -356,7 +377,7 @@ function BoxOfficePageSession({ id, identity }) {
           {/* Process Sale Button */}
           <button
             onClick={handleSale}
-            disabled={submitting || (!pendingSale && (totalItems === 0 || (event.assigned_seating && !seatReservation)))}
+            disabled={submitting || accessRefreshing || pendingSale?.recoveryRequired || (!pendingSale && (totalItems === 0 || (event.assigned_seating && !seatReservation)))}
             className="w-full mt-6 py-4 rounded-xl bg-brand-600 text-white font-semibold text-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
           >
             {submitting ? (
