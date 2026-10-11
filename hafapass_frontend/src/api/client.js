@@ -41,8 +41,12 @@ apiClient.interceptors.request.use(async (config) => {
   // A token that resolves after a session change must never reach the transport.
   assertCurrentAuth(config.authContext)
   assertCurrentOrganization(config)
-  const organizationId = window.localStorage.getItem('hafapass_organization_id')
+  const organizationBound = Object.hasOwn(config, 'organizationId')
+  const organizationId = organizationBound
+    ? config.organizationId
+    : window.localStorage.getItem('hafapass_organization_id')
   if (organizationId) config.headers['X-Organization-Id'] = organizationId
+  else if (organizationBound) config.headers.delete('X-Organization-Id')
 
   if (apiClient._authTokenGetter) {
     try {

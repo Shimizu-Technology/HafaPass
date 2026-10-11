@@ -86,6 +86,21 @@ describe('session-bound API requests', () => {
     expect(getToken).not.toHaveBeenCalled()
   })
 
+  it.each(['1', null])('uses the captured organization %s instead of a stale supplied header', async organizationId => {
+    clearBinding = setAuthTokenGetter(() => Promise.resolve('owner-token'), {
+      userId: 'owner', sessionId: 'session', ready: true,
+    })
+    if (organizationId) window.localStorage.setItem('hafapass_organization_id', organizationId)
+    const adapter = vi.fn(config => Promise.resolve({ config, status: 200, statusText: 'OK', headers: {}, data: {} }))
+    apiClient.defaults.adapter = adapter
+    await apiClient.put('/organizer_profile', { business_name: 'Captured profile' }, {
+      organizationId, authContext: getApiAuthContext(), headers: { 'X-Organization-Id': 'stale-organization' },
+    })
+    const headers = adapter.mock.calls[0][0].headers
+    if (organizationId) expect(headers.get('X-Organization-Id')).toBe(organizationId)
+    else expect(headers.has('X-Organization-Id')).toBe(false)
+  })
+
   it.each([false, true])('rejects an organization change during token acquisition (auth-bound: %s)', async authBound => {
     let finishToken, requestedToken
     const requested = new Promise(resolve => { requestedToken = resolve })
