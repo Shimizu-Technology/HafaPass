@@ -4,8 +4,9 @@ import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
+import * as admissionStore from '../../utils/admissionStore'
 import { applySyncResults, canonicalJson, clearAllAdmissionData, clearEventAdmissionData, loadUsableManifest,
-  localScanState, queueAdmission, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
+  localScanState, queueAdmission, queuedActions, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
 
@@ -36,6 +37,16 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
     const ticket = { ticket_id: 14, state: 'admitted', credential_hash: 'c'.repeat(64), attendee_name: 'Guest' }
     const manifest = await signedManifest(eventId, [ticket, { ...ticket, ticket_id: 15 }])
     const synced = []
+    let acknowledgeUndo
+    let acknowledgementReturned = false
+    let finishRefresh
+    const refreshed = new Promise(resolve => { finishRefresh = resolve })
+    const originalSave = admissionStore.saveVerifiedManifest
+    vi.spyOn(admissionStore, 'saveVerifiedManifest').mockImplementation(async (...args) => {
+      const saved = await originalSave(...args)
+      if (acknowledgementReturned) finishRefresh()
+      return saved
+    })
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
       ? { events: [{ id: eventId, title: 'History event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: { can_reverse: true }, recent_actions: [
@@ -45,8 +56,11 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
     apiClient.post.mockImplementation((url, payload) => {
       if (!url.endsWith('/sync')) return Promise.resolve({ data: device })
       synced.push(...payload.actions)
-      return Promise.resolve({ data: { device: { ...device, last_sequence: payload.actions.at(-1).sequence },
-        results: payload.actions.map(action => ({ ...action, result: 'accepted', reason_code: 'reversed' })), summary: {} } })
+      return new Promise(resolve => { acknowledgeUndo = () => {
+        acknowledgementReturned = true
+        resolve({ data: { device: { ...device, last_sequence: payload.actions.at(-1).sequence },
+          results: payload.actions.map(action => ({ ...action, result: 'accepted', reason_code: 'reversed' })), summary: {} } })
+      } })
     })
     render(<MemoryRouter initialEntries={[`/dashboard/scanner?event=${eventId}`]}><ScannerPage /></MemoryRouter>)
     expect(await screen.findByText('HP-T14')).toBeInTheDocument()
@@ -62,13 +76,25 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
     await userEvent.setup().click(undo)
     await waitFor(() => expect(synced).toHaveLength(1))
     expect(synced[0]).toMatchObject({ kind: 'reverse', reverses_action_uuid: 'admission-b', ticket_id: 15 })
+    expect(await queuedActions(eventId, device.id)).toMatchObject([{ action_uuid: synced[0].action_uuid, kind: 'reverse' }])
+    expect(screen.queryByText('Admission reversal confirmed')).not.toBeInTheDocument()
+    await act(async () => {
+      acknowledgeUndo()
+      // Teardown must follow the real ACK transaction and signed cache refresh,
+      // rather than merely observing the outgoing request.
+      await refreshed
+    })
+    expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+    expect(await screen.findByText('Admission reversal confirmed')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
   })
 
-  it.each([['download', 'owner-b', false], ['download', 'owner-a', false], ['setup', 'owner-a', false],
-    ['download', 'owner-b', true], ['download', 'owner-a', true], ['setup', 'owner-a', true],
-    ['download', 'owner-a', true, true]])(
-    'does not let a late %s callback invalidate the newer accepted guard for %s (bad signature: %s, same key: %s)', async (phase, nextOwner, badSignature, sameSigningKey) => {
-      const eventId = 94401
+  // Each case owns an event journal; clearAllAdmissionData deliberately retains
+  // unknown scans, so it cannot be used as queue isolation between fixtures.
+  it.each([['download', 'owner-b', false, false], ['download', 'owner-a', false, false], ['setup', 'owner-a', false, false],
+    ['download', 'owner-b', true, false], ['download', 'owner-a', true, false], ['setup', 'owner-a', true, false],
+    ['download', 'owner-a', true, true]].map((scenario, index) => [...scenario, 94402 + index]))(
+    'does not let a late %s callback invalidate the newer accepted guard for %s (bad signature: %s, same key: %s)', async (phase, nextOwner, badSignature, sameSigningKey, eventId) => {
       const device = { id: 43, identifier: 'original-device', effective: true, last_sequence: 1,
         authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
       const ticket = { ticket_id: 14, state: 'valid', credential_hash: 'c'.repeat(64), attendee_name: 'Guest' }
@@ -85,7 +111,9 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
         ? { events: [{ id: eventId, title: 'Context event' }] }
         : url.endsWith('/manifest') ? manifestResponse
           : { counts: {}, permissions: { can_reverse: false }, recent_actions: [] } }))
-      apiClient.post.mockResolvedValue({ data: device })
+      apiClient.post.mockImplementation(url => url.endsWith('/sync')
+        ? Promise.reject(new Error('Unexpected queued scan in isolated context fixture'))
+        : Promise.resolve({ data: device }))
 
       let finishVerification
       const verify = crypto.subtle.verify.bind(crypto.subtle)
@@ -139,6 +167,7 @@ describe('stale manifest callbacks preserve newer account and key state', () => 
       expect((await loadUsableManifest(eventId)).digest).toBe(latest.digest)
       expect((await localScanState(eventId, ticket.ticket_id)).action_uuid).toBe(later.action_uuid)
       expect(await queueAdmission({ ...input, deviceId: replacementDevice.id, manifestVersion: 5 })).toBeNull()
+      expect(apiClient.post.mock.calls.some(([url]) => url.endsWith('/sync'))).toBe(false)
     },
   )
 })
