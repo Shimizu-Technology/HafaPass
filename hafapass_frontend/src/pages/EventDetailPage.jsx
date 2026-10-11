@@ -11,6 +11,7 @@ import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
+import { isTicketPurchasable, ticketPriceCents } from '../utils/ticketPricing'
 import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function EventDetailPage() {
@@ -170,7 +171,7 @@ function EventDetailContent() {
 
   // Build JSON-LD structured data for the event
   const ticketTypes = event.ticket_types || []
-  const prices = ticketTypes.map(t => (t.current_price_cents ?? t.price_cents) / 100).filter(p => Number.isFinite(p) && p >= 0)
+  const prices = ticketTypes.filter(isTicketPurchasable).map(ticketPriceCents).filter(price => price !== null).map(price => price / 100)
   const eventJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Event',
