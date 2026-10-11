@@ -118,7 +118,7 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
         </div></div>
       )}
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} disabled={saving} className="px-3 py-1.5 text-sm text-neutral-600 hover:text-neutral-800">Cancel</button>
+        <button type="button" onClick={onCancel} disabled={saving} className="min-h-11 rounded px-3 py-1.5 text-sm text-content-muted hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-focus">Cancel</button>
         <button type="submit" disabled={saving} className="btn-primary text-sm px-4 py-1.5">
           {saving ? 'Saving...' : initial ? 'Update' : 'Add Tier'}
         </button>
@@ -224,7 +224,7 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-sm font-medium text-neutral-700">Pricing Tiers</h4>
         {!showForm && !editingId && (
-          <button disabled={locked} onClick={() => setShowForm(true)} className="text-xs text-brand-500 hover:text-brand-600 font-medium flex items-center gap-1">
+          <button disabled={locked} onClick={() => setShowForm(true)} className="min-h-11 rounded px-2 text-sm text-brand-800 hover:text-brand-900 font-medium flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-focus">
             <Plus className="w-3 h-3" /> Add Tier
           </button>
         )}
@@ -264,14 +264,14 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
                 eventTimezone={eventTimezone}
               />
             ) : (
-              <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-3 py-3 px-3 bg-neutral-50 rounded-lg text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 flex flex-wrap items-center gap-2">
                   {tier.tier_type === 'quantity_based' ? (
                     <Hash className="w-3.5 h-3.5 text-neutral-400" />
                   ) : (
                     <Clock className="w-3.5 h-3.5 text-neutral-400" />
                   )}
-                  <span className="font-medium text-neutral-800">{tier.name}</span>
+                  <span className="font-medium text-neutral-800 [overflow-wrap:anywhere]">{tier.name}</span>
                   <span className="text-neutral-500">${(tier.price_cents / 100).toFixed(2)}</span>
                   {tier.active && (
                     <span className="text-xs bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full font-medium">Active</span>
@@ -280,11 +280,11 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
                     <span className="text-xs text-neutral-400">{tier.quantity_sold}/{tier.quantity_limit} sold</span>
                   )}
                 </div>
-                <div className="flex items-center gap-1">
-                  <button disabled={locked} aria-label={`Edit pricing tier ${tier.name}`} onClick={() => { setEditingId(tier.id); setShowForm(false) }} className="p-1 text-neutral-400 hover:text-brand-500">
+                <div className="flex items-center justify-end gap-1">
+                  <button disabled={locked} aria-label={`Edit pricing tier ${tier.name}`} onClick={() => { setEditingId(tier.id); setShowForm(false) }} className="min-h-11 min-w-11 grid place-items-center rounded text-content-muted hover:text-brand-800 focus-visible:ring-2 focus-visible:ring-focus">
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
-                  <button aria-label={`Delete pricing tier ${tier.name}`} onClick={() => handleDelete(tier.id)} disabled={locked} className="p-1 text-neutral-400 hover:text-red-500">
+                  <button aria-label={`Delete pricing tier ${tier.name}`} onClick={() => handleDelete(tier.id)} disabled={locked} className="min-h-11 min-w-11 grid place-items-center rounded text-content-muted hover:text-red-800 focus-visible:ring-2 focus-visible:ring-focus">
                     {deletingId === tier.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                   </button>
                 </div>

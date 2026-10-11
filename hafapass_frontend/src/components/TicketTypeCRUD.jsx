@@ -223,7 +223,7 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
 
   return (
     <div className="card p-5 sm:p-6 mt-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <h2 className="text-lg font-semibold text-neutral-900">Ticket Types</h2>
         {!showForm && !editingId && (
           <button disabled={locked} onClick={() => setShowForm(true)} className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5">
@@ -269,13 +269,13 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
                 />
               ) : (
                 <div>
-                  <div className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl">
-                    <div>
-                      <p className="font-medium text-neutral-900">{tt.name}</p>
+                  <div className="flex flex-col gap-3 p-3 bg-neutral-50 rounded-xl sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 sm:flex-1">
+                      <p className="font-medium text-neutral-900 [overflow-wrap:anywhere]">{tt.name}</p>
                       {tt.description && <p className="text-sm text-neutral-500">{tt.description}</p>}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right mr-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+                      <div className="min-w-0 text-left sm:mr-2 sm:text-right">
                         <p className="font-semibold text-neutral-900">${(tt.price_cents / 100).toFixed(2)}</p>
                         {tt.current_price_cents != null && tt.current_price_cents !== tt.price_cents && (
                           <p className="text-xs text-emerald-600">Current: ${(tt.current_price_cents / 100).toFixed(2)}</p>
@@ -292,17 +292,17 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
                     {confirmDeleteId === tt.id ? (
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-red-600 mr-1">Delete?</span>
-                        <button onClick={() => handleDelete(tt.id)} disabled={locked} className="text-red-600 hover:text-red-800 text-xs font-medium">
+                        <button onClick={() => handleDelete(tt.id)} disabled={locked} className="min-h-11 min-w-11 rounded px-2 text-red-700 hover:text-red-900 text-sm font-medium focus-visible:ring-2 focus-visible:ring-focus">
                           {deletingId === tt.id ? '...' : 'Yes'}
                         </button>
-                        <button disabled={locked} onClick={() => setConfirmDeleteId(null)} className="text-neutral-500 hover:text-neutral-700 text-xs font-medium">No</button>
+                        <button disabled={locked} onClick={() => setConfirmDeleteId(null)} className="min-h-11 min-w-11 rounded px-2 text-content-muted hover:text-neutral-900 text-sm font-medium focus-visible:ring-2 focus-visible:ring-focus">No</button>
                       </div>
                     ) : (
                       <>
-                        <button disabled={locked} aria-label={`Edit ${tt.name}`} onClick={() => { setEditingId(tt.id); setShowForm(false) }} className="p-1.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors">
+                        <button disabled={locked} aria-label={`Edit ${tt.name}`} onClick={() => { setEditingId(tt.id); setShowForm(false) }} className="min-h-11 min-w-11 grid place-items-center text-content-muted hover:text-brand-800 rounded-lg hover:bg-brand-50 focus-visible:ring-2 focus-visible:ring-focus">
                           <Pencil className="w-4 h-4" />
                         </button>
-                        <button disabled={locked} aria-label={`Delete ${tt.name}`} onClick={() => setConfirmDeleteId(tt.id)} className="p-1.5 text-neutral-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
+                        <button disabled={locked} aria-label={`Delete ${tt.name}`} onClick={() => setConfirmDeleteId(tt.id)} className="min-h-11 min-w-11 grid place-items-center text-content-muted hover:text-red-800 rounded-lg hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-focus">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </>
