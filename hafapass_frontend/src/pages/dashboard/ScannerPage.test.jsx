@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto'
+import { openDB } from 'idb'
 import { act, render as testingRender, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -684,17 +685,25 @@ describe('scanner recovery and camera ownership', () => {
     render(<ScannerPage />)
     await waitFor(() => expect(syncCalls).toBe(1))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+    const db = await openDB('hafapass-admissions')
+    const before = await Promise.all(['devices', 'manifests', 'trusted_keys'].map(name => db.get(name, eventId)))
+    const savedActions = await queuedActions(eventId, device.id)
     const originalGet = IDBObjectStore.prototype.get
-    vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(function (...args) {
+    const fault = vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(function (...args) {
       if (this.name === 'journal_devices') throw new DOMException('Storage unavailable', 'UnknownError')
       return originalGet.apply(this, args)
     })
     await userEvent.setup().click(screen.getByRole('button', { name: 'Sync now' }))
     expect(await screen.findByText(/Saved scanner data could not be read/)).toBeInTheDocument()
     expect(syncCalls).toBe(1)
-    expect(await queuedActions(eventId, device.id)).toHaveLength(1)
+    expect(await queuedActions(eventId, device.id)).toEqual(savedActions)
+    // Inspect retained bytes while the journal fault is active. The access
+    // loader now deliberately reads a consistent journal snapshot as well.
+    expect(await Promise.all(['devices', 'manifests', 'trusted_keys'].map(name => db.get(name, eventId)))).toEqual(before)
+    fault.mockRestore()
     expect((await loadAuthorizedScanner(eventId))?.device.id).toBe(device.id)
     expect(screen.getByRole('button', { name: 'Start QR scanner' })).toBeEnabled()
+    db.close()
   })
 
 })

@@ -206,7 +206,7 @@ describe('admissionStore', () => {
         }
         return request
       })
-      await expect(saveDevice(eventId, device)).rejects.toThrow(/account or setup changed/)
+      await expect(saveDevice(eventId, device)).rejects.toMatchObject({ manifestContextChanged: true })
       expect((await loadAuthorizedScanner(eventId)).device).toMatchObject({ id: 72, owner_user_id: 'new-owner' })
       expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: 72 })
       window.localStorage.setItem('hafapass_scanner_user_id', 'purge-owner')
