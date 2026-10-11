@@ -29,6 +29,125 @@ test('buyer discovers a governed collection and filters Guam inventory', async (
   await expect(page).toHaveURL(/village=Hag/)
 })
 
+for (const width of [320, 390, 768, 1440]) {
+  test(`discovery filters remain readable and retain selection after reload at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: {} }))
+    await page.route('**/api/v1/event_categories', route => json(route, { categories: [] }))
+    const requestedFilters = []
+    await page.route('**/api/v1/events**', route => {
+      const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+      requestedFilters.push(params)
+      return json(route, { events: [event], meta: { current_page: 1, total_pages: 1, total_count: 1 } })
+    })
+    await page.goto('/events')
+    await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    const checkFilterText = async () => {
+      for (const label of ['When', 'Price', 'Village']) {
+        await expect(page.locator('label').filter({ hasText: new RegExp(`^${label}$`) })).toBeVisible()
+        const fit = await page.getByLabel(label, { exact: true }).evaluate(select => {
+          const box = select.getBoundingClientRect()
+          const style = getComputedStyle(select)
+          const canvas = document.createElement('canvas')
+          const context = canvas.getContext('2d')
+          context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+          return { height: box.height, width: box.width, required: context.measureText(select.selectedOptions[0].textContent).width
+            + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 20 }
+        })
+        expect(fit.height).toBeGreaterThanOrEqual(44)
+        expect(fit.width).toBeGreaterThanOrEqual(fit.required)
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    }
+    await checkFilterText()
+    await page.getByLabel('When', { exact: true }).selectOption('weekend')
+    await page.getByLabel('Price', { exact: true }).selectOption('under_25')
+    await page.getByLabel('Village', { exact: true }).selectOption('Tamuning-Tumon-Harmon')
+    await expect.poll(() => requestedFilters.at(-1)).toMatchObject({ window: 'weekend', price: 'under_25', village: 'Tamuning-Tumon-Harmon' })
+    await expect(page).toHaveURL(/date=weekend/)
+    await expect(page).toHaveURL(/price=under_25/)
+    await expect(page).toHaveURL(/village=Tamuning-Tumon-Harmon/)
+    await checkFilterText()
+    await page.reload()
+    await expect(page.getByLabel('When', { exact: true })).toHaveValue('weekend')
+    await expect(page.getByLabel('Price', { exact: true })).toHaveValue('under_25')
+    await expect(page.getByLabel('Village', { exact: true })).toHaveValue('Tamuning-Tumon-Harmon')
+    await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
+    await checkFilterText()
+  })
+}
+
+test('a late previous filter response cannot replace the currently selected results', async ({ page }) => {
+  let previousRoute
+  let currentServed = false
+  const duplicateCurrentRoutes = []
+  await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+  await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: {} }))
+  await page.route('**/api/v1/events**', route => {
+    if (!new URL(route.request().url()).searchParams.has('price')) previousRoute = route
+    else if (!currentServed) {
+      currentServed = true
+      return json(route, { events: [{ ...event, title: 'Current free result' }], meta: { current_page: 1, total_pages: 1, total_count: 1 } })
+    } else duplicateCurrentRoutes.push(route)
+  })
+  try {
+    await page.goto('/events')
+    await expect.poll(() => Boolean(previousRoute)).toBe(true)
+    await page.getByLabel('Price', { exact: true }).selectOption('free')
+    await expect(page.getByRole('link', { name: /Current free result/ })).toBeVisible()
+    const previousResponse = page.waitForResponse(response => response.url().includes('/api/v1/events') && !new URL(response.url()).searchParams.has('price'))
+    await json(previousRoute, { events: [{ ...event, title: 'Stale previous result' }], meta: { current_page: 1, total_pages: 1, total_count: 1 } })
+    await (await previousResponse).finished()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(page.getByRole('link', { name: /Current free result/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /Stale previous result/ })).toHaveCount(0)
+    await expect(page.getByLabel('Price', { exact: true })).toHaveValue('free')
+  } finally {
+    for (const route of duplicateCurrentRoutes) await route.abort()
+  }
+})
+
+test('an unavailable event listing offers retry and preserves the chosen filters', async ({ page }) => {
+  let unavailable = true
+  const requests = []
+  await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+  await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: {} }))
+  await page.route('**/api/v1/events**', route => {
+    requests.push(Object.fromEntries(new URL(route.request().url()).searchParams))
+    return unavailable ? json(route, { error: 'Synthetic outage' }, 503)
+      : json(route, { events: [event], meta: { current_page: 1, total_pages: 1, total_count: 1 } })
+  })
+  await page.goto('/events?price=under_25&village=Hag%C3%A5t%C3%B1a')
+  await expect(page.getByRole('alert')).toContainText("Couldn't load events")
+  await expect(page.getByRole('heading', { name: 'No matching events' })).toHaveCount(0)
+  unavailable = false
+  await page.getByRole('button', { name: 'Try again', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(requests.at(-1)).toMatchObject({ price: 'under_25', village: 'Hagåtña' })
+  await expect(page.getByLabel('Price', { exact: true })).toHaveValue('under_25')
+  await expect(page.getByLabel('Village', { exact: true })).toHaveValue('Hagåtña')
+})
+
+test('empty discovery results can clear filters on a narrow phone', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 })
+  await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+  await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: {} }))
+  await page.route('**/api/v1/events**', route => {
+    const filtered = new URL(route.request().url()).searchParams.has('q')
+    return json(route, { events: filtered ? [] : [event], meta: { current_page: 1, total_pages: 1, total_count: filtered ? 0 : 1 } })
+  })
+  await page.goto('/events?search=unmatched')
+  await expect(page.getByRole('heading', { name: 'No matching events' })).toBeVisible()
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
+  await expect(page).toHaveURL(/\/events$/)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
+})
+
 test('partner link records anonymous attribution and opens the intended event', async ({ page }) => {
   let anonymousId
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
