@@ -28,6 +28,18 @@ const STATUS_BADGES = {
   archived: { label: 'Archived', className: 'bg-neutral-200 text-neutral-700' }
 }
 
+function EventToolsNav({ id, permissions }) {
+  const tools = [
+    { allowed: permissions.manage_attendees, path: 'guest-list', label: 'Guest list' },
+    { allowed: permissions.manage_marketing, path: 'promo-codes', label: 'Promo codes' },
+    { allowed: permissions.refund === true && permissions.view_finance === true, path: 'refunds', label: 'Refunds' },
+  ].filter(tool => tool.allowed === true)
+  if (!tools.length) return null
+  return <nav aria-label="Event tools" className="mb-6 flex flex-wrap gap-2">
+    {tools.map(tool => <Link key={tool.path} to={`/dashboard/events/${id}/${tool.path}`} className="btn-secondary min-h-11 text-sm">{tool.label}</Link>)}
+  </nav>
+}
+
 function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading, reason, onReasonChange, requireReason = false }) {
   return (
     <Dialog labelledBy="event-confirm-title" onClose={onCancel} busy={loading} className="max-w-md">
@@ -53,6 +65,10 @@ function EditEventSession({ id, identity }) {
   const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/edit`)
   const loadGeneration = useRef(0)
   const pendingLoad = useRef(null)
+  const inventoryGeneration = useRef(0)
+  const pendingInventoryLoad = useRef(null)
+  const [inventoryRefreshing, setInventoryRefreshing] = useState(false)
+  const [inventoryError, setInventoryError] = useState(null)
   const navigate = useNavigate()
   const categories = useEventCategories()
   const capabilities = useLaunchCapabilities()
@@ -144,6 +160,31 @@ function EditEventSession({ id, identity }) {
     } finally {
       request.release()
       if (canApply()) setLoading(false)
+    }
+  }, [id, beginRequest])
+
+  // Ticket mutations refresh saved inventory, not the event draft or its
+  // schedule baseline. Keep the editor mounted while this request is pending.
+  const refreshInventory = useCallback(async () => {
+    const request = beginRequest()
+    if (!request) return
+    pendingInventoryLoad.current?.controller.abort()
+    pendingInventoryLoad.current = request
+    const generation = ++inventoryGeneration.current
+    const canApply = () => request.current() && generation === inventoryGeneration.current
+    setInventoryRefreshing(true)
+    setInventoryError(null)
+    try {
+      const res = await apiClient.get(`/organizer/events/${id}`, request.config)
+      if (!canApply()) return
+      setEvent(saved => ({ ...saved, ticket_types: res.data.ticket_types || [],
+        publish_checklist: res.data.publish_checklist || [],
+        permissions: res.data.permissions || saved.permissions }))
+    } catch {
+      if (canApply()) setInventoryError('Ticket changes were saved, but the latest ticket list could not be loaded. Retry to update the list. Your event draft is still here.')
+    } finally {
+      if (canApply()) setInventoryRefreshing(false)
+      request.release()
     }
   }, [id, beginRequest])
 
@@ -336,7 +377,10 @@ function EditEventSession({ id, identity }) {
     )
   }
 
-  if (!permissions.edit_event_content) return <EventAccessNotice event={event} />
+  if (!permissions.edit_event_content) return <>
+    <EventAccessNotice event={event} />
+    <div className="max-w-2xl mx-auto px-4"><EventToolsNav id={id} permissions={permissions} /></div>
+  </>
 
   const statusBadge = STATUS_BADGES[event?.status] || STATUS_BADGES.draft
 
@@ -419,6 +463,8 @@ function EditEventSession({ id, identity }) {
           {statusBadge.label}
         </span>
       </div>
+
+      <EventToolsNav id={id} permissions={permissions} />
 
       {/* Publish Button for Draft Events */}
       {canManage && event?.status === 'draft' && (
@@ -730,7 +776,14 @@ function EditEventSession({ id, identity }) {
       </form>
 
       {/* Ticket Types CRUD */}
-      {permissions.manage_inventory && <section id="ticket-types" className="scroll-mt-24"><TicketTypeCRUD remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} /></section>}
+      {permissions.manage_inventory && <section id="ticket-types" className="scroll-mt-24" aria-busy={inventoryRefreshing}>
+        {inventoryRefreshing && <p role="status" className="mt-6 text-sm text-neutral-600">Updating ticket list…</p>}
+        {inventoryError && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p>{inventoryError}</p>
+          <button type="button" onClick={refreshInventory} className="mt-2 min-h-11 font-semibold underline underline-offset-2">Retry ticket list</button>
+        </div>}
+        <TicketTypeCRUD remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={refreshInventory} eventTimezone={event?.timezone} />
+      </section>}
 
       {/* Danger Zone — HP-28 */}
       {canManage && event && event.status !== 'archived' && (

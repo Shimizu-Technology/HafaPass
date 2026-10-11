@@ -8,14 +8,14 @@ import EditEventPage from './EditEventPage'
 const uploads = vi.hoisted(() => new Map())
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ eventId, onUploaded }) => { uploads.set(String(eventId), onUploaded); return <p>Cover image control</p> } }))
-vi.mock('../../components/TicketTypeCRUD', () => ({ default: () => null }))
+vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ onRefresh, ticketTypes }) => <div><button type="button" onClick={onRefresh}>Refresh saved inventory</button>{ticketTypes.map(ticket => <p key={ticket.id}>{ticket.name}</p>)}</div> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const dto = id => ({ id, title: id === 11 ? 'Alpha event' : 'Beta event', status: 'draft', venue_name: 'Synthetic venue',
   starts_at: '2026-11-20T07:00:00Z', timezone: 'Pacific/Guam', category: 'other', age_restriction: 'all_ages', ticket_types: [],
-  permissions: { edit_event_content: true, manage_events: true }, publish_checklist: [] })
+  permissions: { edit_event_content: true, manage_events: true, manage_inventory: true }, publish_checklist: [] })
 const Location = () => <p data-testid="editor-location">{useLocation().pathname}</p>
 const mount = () => render(<MemoryRouter initialEntries={['/dashboard/events/11/edit']}>
   <Link to="/dashboard/events/11/edit">Open Alpha</Link><Link to="/dashboard/events/22/edit">Open Beta</Link><Location />
@@ -142,6 +142,40 @@ describe('event editor context ownership with the real router', () => {
     await screen.findByDisplayValue('Fresh editor context')
     await act(async () => old.resolve({ data: { ...dto(11), title: 'Stale editor context' } }))
     expect(screen.getByLabelText(/Event Title/)).toHaveValue('Fresh editor context')
+  })
+
+  it.each(['success', 'error'])('ignores a pending Alpha inventory refresh %s after moving to Beta', async outcome => {
+    const old = deferred()
+    mount()
+    await screen.findByDisplayValue('Alpha event')
+    apiClient.get.mockReturnValueOnce(old.promise)
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh saved inventory' }))
+    await screen.findByText('Updating ticket list…')
+    await beta()
+    await userEvent.type(screen.getByLabelText(/Event Title/), ' unsaved')
+    await act(async () => outcome === 'success'
+      ? old.resolve({ data: { ...rows[11], ticket_types: [{ id: 1, name: 'Old Alpha inventory' }] } })
+      : old.reject(new Error('Old refresh failure')))
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Beta event unsaved')
+    expect(screen.queryByText('Old Alpha inventory')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry ticket list' })).not.toBeInTheDocument()
+  })
+
+  it('does not let a delayed inventory refresh replace a newer saved schedule baseline', async () => {
+    const old = deferred()
+    mount()
+    await screen.findByDisplayValue('Alpha event')
+    apiClient.get.mockReturnValueOnce(old.promise)
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh saved inventory' }))
+    const start = screen.getByLabelText(/Start Date & Time/)
+    await userEvent.clear(start); await userEvent.type(start, '2026-11-20T19:00')
+    apiClient.put.mockResolvedValueOnce({ data: { ...rows[11], starts_at: '2026-11-20T09:00:00Z' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    await act(async () => old.resolve({ data: rows[11] }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[1][1]).not.toHaveProperty('starts_at')
   })
 
   it('pins the save body and identity before delayed token acquisition and suppresses transport after navigation', async () => {
