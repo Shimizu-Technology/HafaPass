@@ -68,7 +68,7 @@ class Ticket < ApplicationRecord
   end
 
   def previously_admitted?
-    checked_in? || first_admitted_at.present? || admission_actions.kind_admit.result_accepted.exists?
+    checked_in? || first_admitted_at.present? || inventory_retained? || admission_actions.kind_admit.result_accepted.exists?
   end
 
   def held_by?(user)
@@ -109,7 +109,12 @@ class Ticket < ApplicationRecord
       with_lock do
         raise AdmissionError, "Ticket is not checked in" unless checked_in?
 
-        update!(status: :issued, checked_in_at: nil)
+        known_admission_at = first_admitted_at || [checked_in_at,
+          admission_actions.kind_admit.result_accepted.minimum(:received_at)].compact.min
+        if known_admission_at.nil? && !inventory_retained?
+          raise AdmissionError, "Admission history requires organizer review before Undo"
+        end
+        update!(status: :issued, checked_in_at: nil, first_admitted_at: known_admission_at)
       end
     end
   end

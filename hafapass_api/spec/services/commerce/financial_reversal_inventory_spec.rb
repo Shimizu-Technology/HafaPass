@@ -90,4 +90,80 @@ RSpec.describe Commerce::FinancialReversalInventory do
     expect(TicketInventoryRetention.count).to eq(1)
     expect(ticket.reload).not_to be_admission_allowed
   end
+
+  it "refuses rollback when legacy check-in and Undo leave sole admission evidence without retention rows" do
+    ticket.check_in!
+    first = ticket.reload.first_admitted_at
+    ticket.reverse_check_in!
+    expect(ticket.reload).to be_issued
+    expect(ticket.checked_in_at).to be_nil
+    expect(ticket.admission_actions).to be_empty
+    expect(TicketInventoryRetention.count).to eq(0)
+
+    migration = RetainAdmittedInventoryAfterFinancialReversal.new
+    expect { migration.down }.to raise_error(ActiveRecord::IrreversibleMigration, /admission history/)
+    expect(ticket.reload.first_admitted_at).to eq(first)
+    expect(ActiveRecord::Base.connection.table_exists?(:ticket_inventory_retentions)).to be(true)
+    retention = described_class.call(ticket: ticket, refund: refund)
+    expect(retention.refund_id).to eq(refund.id)
+    expect(ticket_type.reload.quantity_sold).to eq(2)
+  end
+
+  it "allows actual PostgreSQL down and up when neither admission history nor retention evidence exists" do
+    connection = ActiveRecord::Base.connection
+    expect(TicketInventoryRetention.count).to eq(0)
+    expect(Ticket.where.not(first_admitted_at: nil).count).to eq(0)
+    migration = RetainAdmittedInventoryAfterFinancialReversal.new
+    migration.down
+    expect(connection.table_exists?(:ticket_inventory_retentions)).to be(false)
+    expect(connection.column_exists?(:tickets, :first_admitted_at)).to be(false)
+    migration.up
+    expect(connection.table_exists?(:ticket_inventory_retentions)).to be(true)
+    expect(connection.column_exists?(:tickets, :first_admitted_at)).to be(true)
+    expect(TicketInventoryRetention.count).to eq(0)
+  end
+
+  it "preserves an existing legacy admission timestamp through Undo and subsequent refund retention" do
+    known = 1.hour.ago
+    ticket.update!(status: :checked_in, checked_in_at: known)
+    stored = ticket.reload.checked_in_at
+    expect(ticket.first_admitted_at).to be_nil
+    expect(ticket.admission_actions).to be_empty
+    ticket.reverse_check_in!
+    expect(ticket.reload.first_admitted_at).to eq(stored)
+    expect(ticket.checked_in_at).to be_nil
+    retention = described_class.call(ticket: ticket, refund: refund)
+    expect(retention.refund_id).to eq(refund.id)
+    expect(ticket_type.reload.quantity_sold).to eq(2)
+  end
+
+  it "uses an existing accepted action's earliest server timestamp when legacy Undo has no timestamp" do
+    ticket.update!(status: :checked_in, checked_in_at: nil)
+    known = 2.hours.ago
+    AdmissionAction.create!(organization: event.organization, event: event, ticket: ticket,
+      actor_user: event.organizer_profile.user, kind: :admit, source: :manual, result: :accepted,
+      reason_code: "admitted", action_uuid: "synthetic-legacy-journal-undo", received_at: known, occurred_at: known)
+    ticket.reverse_check_in!
+    expect(ticket.reload.first_admitted_at).to be_within(0.000001).of(known)
+    described_class.call(ticket: ticket, refund: refund)
+    expect(ticket.reload).to be_inventory_retained
+    expect(ticket_type.reload.quantity_sold).to eq(2)
+  end
+
+  it "refuses unprotected unknown legacy Undo while permitting already-retained Undo without inventing a date" do
+    ticket.update!(status: :checked_in, checked_in_at: nil)
+    expect(ticket.first_admitted_at).to be_nil
+    expect(ticket.admission_actions).to be_empty
+    expect { ticket.reverse_check_in! }.to raise_error(Ticket::AdmissionError, /Admission history requires organizer review/)
+    expect(ticket.reload).to be_checked_in
+    expect(ticket.first_admitted_at).to be_nil
+    retention = described_class.call(ticket: ticket, refund: refund)
+    ticket.reverse_check_in!
+    expect(ticket.reload).to be_issued
+    expect(ticket.first_admitted_at).to be_nil
+    expect(ticket.inventory_retention.id).to eq(retention.id)
+    expect(ticket).to be_previously_admitted
+    expect(ticket).not_to be_admission_allowed
+    expect(ticket_type.reload.quantity_sold).to eq(2)
+  end
 end

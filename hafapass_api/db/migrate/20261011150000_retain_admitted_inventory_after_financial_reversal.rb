@@ -21,6 +21,9 @@ class RetainAdmittedInventoryAfterFinancialReversal < ActiveRecord::Migration[8.
     if select_value("SELECT COUNT(*) FROM ticket_inventory_retentions").to_i.positive?
       raise ActiveRecord::IrreversibleMigration, "Retained occupied inventory requires reconciliation; preserve its evidence"
     end
+    if select_value("SELECT COUNT(*) FROM tickets WHERE first_admitted_at IS NOT NULL").to_i.positive?
+      raise ActiveRecord::IrreversibleMigration, "Preserve admission history; use a compatible application rollback or forward repair"
+    end
     drop_table :ticket_inventory_retentions
     remove_column :tickets, :first_admitted_at
   end
