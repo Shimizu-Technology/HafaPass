@@ -31,8 +31,8 @@ const device = id => ({ id, identifier: `context-${id}`, effective: true, last_s
   authorization_expires_at: new Date(Date.now() + 600_000).toISOString() })
 const ticket = { ticket_id: 501, code: 'HP-T501', state: 'valid', attendee_name: 'Synthetic Guest',
   ticket_type: 'Admission', credential_hash: 'c'.repeat(64) }
-function view() {
-  return <MemoryRouter><Wrapper><Scanner /></Wrapper></MemoryRouter>
+function view(offlineOnly = false) {
+  return <MemoryRouter><Wrapper><Scanner offlineOnly={offlineOnly} /></Wrapper></MemoryRouter>
 }
 
 function VisitControl() {
@@ -60,6 +60,7 @@ beforeEach(async () => {
   vi.resetModules()
   vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_scanner_context')
   window.localStorage.clear()
+  window.sessionStorage.clear()
   Object.assign(auth, { userId: 'staff-a', sessionId: 'session-a', getToken: vi.fn().mockResolvedValue('synthetic-token-a') })
   ;({ default: api } = await import('../../api/client'))
   store = await import('../../utils/admissionStore')
@@ -77,6 +78,7 @@ afterEach(async () => {
     await store.clearEventAdmissionData(eventId)
   }
   window.localStorage.clear()
+  window.sessionStorage.clear()
   vi.unstubAllEnvs()
 })
 
@@ -109,7 +111,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
         { config, status: 503, data: {}, headers: {} })) : null)
     const mounted = render(view())
     await findManifest(1)
-    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    await waitFor(() => expect(screen.getByLabelText('Ticket QR code')).toBeEnabled())
     expect(await store.loadAuthorizedScanner(eventId)).not.toBeNull()
     mounted.unmount()
   })
@@ -131,6 +133,23 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     expect(screen.queryByText('Old door totals refused')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
     expect((await store.loadAuthorizedScanner(eventId)).manifest.payload.version).toBe(2)
+    mounted.unmount()
+  })
+
+  it('does not clear a newer peer refusal recorded while online setup is in flight', async () => {
+    const held = deferred()
+    let dashboardConfig
+    await preparePrivateReads(config => {
+      if (config.url === `/organizer/events/${eventId}/admissions`) { dashboardConfig = config; return held.promise }
+    })
+    const mounted = render(view())
+    await waitFor(() => expect(dashboardConfig).toBeDefined())
+    const key = `hafapass:scanner-refusal:v1:staff-a:${eventId}`
+    window.localStorage.setItem(key, 'newer-peer-refusal')
+    await act(async () => held.resolve(response(dashboardConfig, { counts: {}, permissions: {}, recent_actions: [] })))
+    await screen.findByText('Stay connected to verify scanner access. Saved refusal evidence could not be cleared.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(window.localStorage.getItem(key)).toBe('newer-peer-refusal')
     mounted.unmount()
   })
 
@@ -178,7 +197,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
       { config: searchConfig, status: 403, data: { error: 'Old search refused' }, headers: {} })))
     expect((await store.loadAuthorizedScanner(eventId)).manifest.payload.version).toBe(2)
     expect(screen.queryByText('Old search refused')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    await waitFor(() => expect(screen.getByLabelText('Ticket QR code')).toBeEnabled())
     mounted.unmount()
   })
 
@@ -235,11 +254,135 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
     await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
-    await screen.findByText('Scanner access could not be removed. Reload this device before admitting more guests. Saved scans remain on this device.')
+    await screen.findByText('Saved scanner access could not be removed. Stay connected and verify access before admitting more guests. Saved scans remain on this device.')
     await act(async () => window.dispatchEvent(new Event('offline')))
     await screen.findByText('Scanner access was refused. Reconnect to verify access before admitting more guests.')
     expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
     mounted.unmount()
+  })
+
+  it.each([401, 403])('pauses admission immediately while current %s refusal cache removal is pending', async status => {
+    await preparePrivateReads(config => config.url.endsWith('/search')
+      ? Promise.reject(new AxiosError('Access withdrawn', undefined, config, null,
+        { config, status, data: { error: 'Access withdrawn' }, headers: {} })) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    const held = deferred()
+    const original = store.purgeExpiredAdmissionAccess
+    vi.spyOn(store, 'purgeExpiredAdmissionAccess').mockImplementationOnce(async (...args) => {
+      await held.promise
+      return original(...args)
+    })
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Ticket QR code'), 'new-attempt-during-denial')
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await screen.findByText('Scanner access is being checked. Admission is paused; saved scans remain on this device.')
+    expect(await store.loadAuthorizedScanner(eventId)).not.toBeNull()
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check ticket', exact: true })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Check ticket', exact: true }))
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    await act(async () => held.resolve())
+    await screen.findByText('Access withdrawn')
+    expect(await store.loadAuthorizedScanner(eventId)).toBeNull()
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    mounted.unmount()
+  })
+
+  it('restores a verified peer grant renewed while refusal removal is pending', async () => {
+    await preparePrivateReads(config => config.url.endsWith('/search')
+      ? Promise.reject(new AxiosError('Older grant refused', undefined, config, null,
+        { config, status: 403, data: { error: 'Older grant refused' }, headers: {} })) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    const held = deferred()
+    const original = store.purgeExpiredAdmissionAccess
+    vi.spyOn(store, 'purgeExpiredAdmissionAccess').mockImplementationOnce(async (...args) => {
+      await held.promise
+      return original(...args)
+    })
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await screen.findByText('Scanner access is being checked. Admission is paused; saved scans remain on this device.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    const renewed = { ...device(91), authorization_expires_at: new Date(Date.now() + 7_200_000).toISOString() }
+    await store.saveDevice(eventId, renewed, { context: await store.captureAdmissionAccessContext(eventId) })
+    await store.saveVerifiedManifest(await signedManifest(eventId, [ticket], { version: 2, expires_at: renewed.authorization_expires_at }))
+    await act(async () => held.resolve())
+    await findManifest(2)
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    expect(screen.queryByText('Older grant refused')).not.toBeInTheDocument()
+    expect((await store.loadAuthorizedScanner(eventId)).manifest.payload.version).toBe(2)
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    expect([...Array(window.localStorage.length)].map((_, index) => window.localStorage.key(index)).filter(key => key.startsWith('hafapass:scanner-refusal:'))).toEqual([])
+    expect([...Array(window.sessionStorage.length)].map((_, index) => window.sessionStorage.key(index)).filter(key => key.startsWith('hafapass:scanner-refusal:'))).toEqual([])
+    mounted.unmount()
+  })
+
+  it.each(['localStorage', 'sessionStorage'])('keeps a failed purge locked across offline remount when %s cannot save the refusal marker', async unavailable => {
+    await preparePrivateReads(config => config.url.endsWith('/search')
+      ? Promise.reject(new AxiosError('Access withdrawn', undefined, config, null,
+        { config, status: 403, data: { error: 'Access withdrawn' }, headers: {} })) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    const setItem = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (this === window[unavailable] && key.startsWith('hafapass:scanner-refusal:')) throw new Error('Synthetic marker storage failure')
+      return setItem.call(this, key, value)
+    })
+    vi.spyOn(store, 'purgeExpiredAdmissionAccess').mockRejectedValueOnce(new Error('Synthetic storage write failure'))
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await screen.findByText('Saved scanner access could not be removed. Stay connected and verify access before admitting more guests. Saved scans remain on this device.')
+    mounted.unmount()
+    const remounted = render(view(true))
+    await screen.findByText('Scanner access was refused. Reconnect to verify access before admitting more guests.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(screen.getByTestId('scanner-pending-count')).toHaveTextContent('1')
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    remounted.unmount()
+    await preparePrivateReads(null, { manifestVersion: 2 })
+    const recovered = render(view())
+    await findManifest(2)
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    recovered.unmount()
+  })
+
+  it('removes only the refused event restore pointer if both marker stores and the cache purge fail', async () => {
+    await preparePrivateReads(config => config.url.endsWith('/search')
+      ? Promise.reject(new AxiosError('Access withdrawn', undefined, config, null,
+        { config, status: 403, data: { error: 'Access withdrawn' }, headers: {} })) : null)
+    const mounted = render(view())
+    await findManifest(1)
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    const setItem = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (key.startsWith('hafapass:scanner-refusal:')) throw new Error('Synthetic marker storage failure')
+      return setItem.call(this, key, value)
+    })
+    vi.spyOn(store, 'purgeExpiredAdmissionAccess').mockRejectedValueOnce(new Error('Synthetic storage write failure'))
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
+    await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
+    await screen.findByText('Saved scanner access could not be removed or locked. Stay online and ask the door manager for help. Do not reload this device offline.')
+    expect(window.localStorage.getItem('hafapass_scanner_event_id')).toBeNull()
+    mounted.unmount()
+    const remounted = render(view(true))
+    await screen.findByText('Could not load assigned events. Connect once to authorize this scanner and download an event list.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    remounted.unmount()
   })
 
   it.each(['event', 'account', 'visit', 'unmount'])('does not download an old private blob after %s changes', async change => {
