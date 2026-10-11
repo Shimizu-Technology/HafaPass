@@ -251,7 +251,22 @@ export default function ScannerPage({ offlineOnly = false }) {
         if (!current()) return
         if (retainedDevice?.id === currentDevice.id) {
           currentDevice = retainedDevice
-          setDevice(retainedDevice)
+          if (retainedDevice.status === 'revoked') {
+            try {
+              const context = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current, expectedDevice: retainedDevice })
+              if (await purgeExpiredAdmissionAccess(selectedEventId, { context }) && current()) {
+                const revokedDevice = await loadDevice(selectedEventId)
+                if (current() && revokedDevice?.id === retainedDevice.id && revokedDevice.status === 'revoked') {
+                  setDevice(null)
+                  setManifest(null)
+                  setRecoveryDevice(revokedDevice)
+                  setError('This scanner device was revoked. Ask the event manager for help. Saved scans remain on this device.')
+                }
+              }
+            } catch (revocationError) {
+              if (!revocationError.manifestContextChanged) throw revocationError
+            }
+          } else setDevice(retainedDevice)
         }
         if (eventIdRef.current === String(selectedEventId)) setDashboard(current => current ? { ...current, counts: response.data.summary } : current)
         remaining = pendingAfterSync
@@ -260,6 +275,7 @@ export default function ScannerPage({ offlineOnly = false }) {
       await refreshPending(selectedEventId, currentDevice)
       const retainedAccess = await loadDevice(selectedEventId)
       if (!current()) return
+      if (retainedAccess?.id === currentDevice.id && retainedAccess.status === 'revoked') return
       if (!retainedAccess || retainedAccess.id !== currentDevice.id) {
         setDevice(null)
         setManifest(null)
@@ -365,7 +381,12 @@ export default function ScannerPage({ offlineOnly = false }) {
           if (current()) setError('Connection unavailable. Using saved access; scans remain on this device until sync succeeds.')
         }
       }
-      if (!cached) throw new Error('Connect once to authorize this scanner and download the event list. Expired saved access is removed from this device.')
+      if (!cached) {
+        if ((await loadDevice(selectedEventId))?.status === 'revoked') {
+          throw new Error('This scanner device was revoked. Ask the event manager for help. Saved scans remain on this device.')
+        }
+        throw new Error('Connect once to authorize this scanner and download the event list. Expired saved access is removed from this device.')
+      }
       if (!current()) return
       setDevice(cached.device)
       setManifest(cached.manifest)

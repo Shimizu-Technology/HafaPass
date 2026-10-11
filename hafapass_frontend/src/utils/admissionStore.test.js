@@ -36,6 +36,69 @@ describe('admissionStore', () => {
 
   describe('late acknowledgement access metadata', () => {
     const eventId = 95701
+    it.each([true, false])('keeps same-ID terminal revocation monotonic through cache purge and later active receipts (context: %s)', async hasContext => {
+      window.localStorage.setItem('hafapass_scanner_user_id', 'ack-owner')
+      await clearEventAdmissionData(eventId)
+      const device = { id: 91, identifier: 'terminal-device', status: 'active', effective: true, last_sequence: 0,
+        authorization_expires_at: new Date(Date.now() + 60_000).toISOString(), user: { name: 'Private staff name' } }
+      const tickets = [14, 15, 16].map(ticket_id => ({ ticket_id, state: 'valid', credential_hash: 'c'.repeat(64) }))
+      await saveDevice(eventId, device)
+      await saveVerifiedManifest(await signedManifest(eventId, tickets))
+      const original = await queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+        ticket: tickets[0], credentialHash: tickets[0].credential_hash, source: 'online' })
+      const context = await captureAdmissionAccessContext(eventId)
+      const peer = { ...device, authorization_expires_at: new Date(Date.now() + 3_600_000).toISOString() }
+      await saveDevice(eventId, peer, { context })
+      await saveVerifiedManifest(await signedManifest(eventId, tickets, { version: 2, expires_at: peer.authorization_expires_at }))
+      const pending = []
+      for (const ticket of tickets.slice(1)) pending.push(await queueAdmission({ eventId, deviceId: 91,
+        manifestVersion: 2, ticket, credentialHash: ticket.credential_hash, source: 'offline' }))
+      expect(await applySyncResults(eventId, { ...peer, status: 'revoked', effective: false, last_sequence: original.sequence },
+        [{ action_uuid: original.action_uuid, ticket_id: 14, kind: 'admit', result: 'accepted' }], 'ack-owner',
+        hasContext ? { context } : {})).toBe(1)
+      expect((await localScanState(eventId, 14)).action_uuid).toBe(original.action_uuid)
+      expect((await loadDevice(eventId)).status).toBe('revoked')
+      expect(await loadAuthorizedScanner(eventId)).toBeNull()
+      const tombstone = await loadDevice(eventId)
+      expect(tombstone).toMatchObject({ id: 91, status: 'revoked', effective: false, next_sequence: pending[1].sequence })
+      expect(tombstone.user).toBeUndefined()
+      const afterRevocation = await captureAdmissionAccessContext(eventId)
+      expect(await applySyncResults(eventId, { ...peer, last_sequence: pending[0].sequence },
+        [{ action_uuid: pending[0].action_uuid, ticket_id: 15, kind: 'admit', result: 'accepted' }],
+        'ack-owner', { context: afterRevocation })).toBe(1)
+      expect(await loadDevice(eventId)).toMatchObject({ status: 'revoked', effective: false })
+      expect((await localScanState(eventId, 15)).action_uuid).toBe(pending[0].action_uuid)
+      await expect(saveDevice(eventId, peer, { context: await captureAdmissionAccessContext(eventId) })).rejects.toThrow(/revoked/)
+      await expect(queueAdmission({ eventId, deviceId: 91, manifestVersion: 2, ticket: { ...tickets[0], ticket_id: 17 },
+        credentialHash: 'd'.repeat(64), source: 'offline' })).rejects.toThrow(/authorization has expired/)
+      expect((await queuedActions(eventId, 91)).map(action => action.action_uuid)).toEqual([pending[1].action_uuid])
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: 91 })
+    })
+
+    it.each(['account', 'device'])('does not apply an original device revocation to a newer %s', async boundary => {
+      const isolatedEvent = boundary === 'account' ? 95702 : 95703
+      window.localStorage.setItem('hafapass_scanner_user_id', 'ack-owner')
+      await clearEventAdmissionData(isolatedEvent)
+      const original = { id: 91, identifier: 'original-device', status: 'active', effective: true,
+        authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+      await saveDevice(isolatedEvent, original)
+      await saveVerifiedManifest(await signedManifest(isolatedEvent))
+      const action = await queueAdmission({ eventId: isolatedEvent, deviceId: 91, manifestVersion: 1,
+        ticket: { ticket_id: 14 }, credentialHash: 'c'.repeat(64), source: 'online' })
+      const context = await captureAdmissionAccessContext(isolatedEvent)
+      if (boundary === 'account') { await clearAllAdmissionData(); window.localStorage.setItem('hafapass_scanner_user_id', 'new-owner') }
+      const replacement = { ...original, id: 92, identifier: 'replacement-device' }
+      await saveDevice(isolatedEvent, replacement)
+      await saveVerifiedManifest(await signedManifest(isolatedEvent, [], { version: 2 }))
+      const pending = await queueAdmission({ eventId: isolatedEvent, deviceId: 92, manifestVersion: 2,
+        ticket: { ticket_id: 15 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+      expect(await applySyncResults(isolatedEvent, { ...original, status: 'revoked', effective: false },
+        [{ action_uuid: action.action_uuid, ticket_id: 14, kind: 'admit', result: 'accepted' }], 'ack-owner', { context })).toBe(0)
+      expect((await loadAuthorizedScanner(isolatedEvent)).device).toMatchObject({ id: 92, effective: true, status: 'active' })
+      expect((await queuedActions(isolatedEvent, 92)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+      expect(await loadPendingDeviceIdentity(isolatedEvent)).toMatchObject({ device_id: 92 })
+    })
+
     it.each([
       ['accepted', true, true, true], ['rejected', true, true, true],
       ['accepted', false, false, true], ['accepted', true, false, true],
