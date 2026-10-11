@@ -240,6 +240,26 @@ RSpec.describe "release candidate tooling" do
         .to raise_error(HafaPass::ReleaseCandidate::Error, /skipped reviews do not qualify/)
     end
 
+    it "records explicit independent evidence without claiming the skipped bot completed review" do
+      shell = instance_double(HafaPass::ReleaseCandidate::Shell)
+      statuses = [{ "context" => "CodeRabbit", "state" => "success", "description" => "Review skipped: file limit" }]
+      allow(shell).to receive(:capture!) do |*command|
+        JSON.generate(command.join(" ").include?("/files?") ? [[{ "filename" => "scanner.jsx" }]] : [statuses])
+      end
+      verifier = instance_double(HafaPass::ReleaseCandidate::IndependentReviewEvidence)
+      allow(HafaPass::ReleaseCandidate::IndependentReviewEvidence).to receive(:new).and_return(verifier)
+      allow(verifier).to receive(:verify!).with(
+        path: "bundle.json", acknowledged: true, repository: "owner/repo", number: 61, sha: "a" * 40,
+        changed_files: ["scanner.jsx"]
+      ).and_return({ "provider" => "independent", "head_sha" => "a" * 40 })
+      result = described_class.new(shell: shell).send(:code_review_evidence, "owner/repo", 61, "a" * 40,
+        independent_review: "bundle.json", acknowledged: true)
+      expect(result).to include("provider" => "independent", "observed_github_review" => include("statuses" => statuses))
+      expect(result).not_to have_key("review_id")
+      expect { described_class.new(shell: shell).send(:code_review_evidence, "owner/repo", 61, "a" * 40, acknowledged: true) }
+        .to raise_error(HafaPass::ReleaseCandidate::Error, /requires --independent-review-evidence/)
+    end
+
     it "counts unresolved threads beyond the first page and rejects missing thread evidence" do
       shell = instance_double(HafaPass::ReleaseCandidate::Shell)
       payload = ->(nodes, has_next, cursor = nil) do
@@ -269,6 +289,23 @@ RSpec.describe "release candidate tooling" do
   end
 
   describe HafaPass::ReleaseCandidate::EvidenceWriter do
+    it "archives verified review bytes privately and omits bytes from JSON without mutating evidence" do
+      bytes = "Actual completed bounded review.\n"
+      report = { "report_path" => "reviews/actual.md", "report_sha256" => Digest::SHA256.hexdigest(bytes), "report_bytes" => bytes }
+      manifest = { "candidate_id" => "pilot-rc-1", "created_at" => "2026-10-10T00:00:00Z",
+        "source" => { "commit_sha" => "a" * 40 },
+        "github" => { "source_pull_request" => { "number" => 61, "code_review" => { "reports" => [report] } } } }
+      Dir.mktmpdir do |directory|
+        described_class.new(directory).write!(manifest)
+        archive = File.join(directory, "reviews/actual.md")
+        expect(File.binread(archive)).to eq(bytes)
+        expect(File.stat(archive).mode & 0o777).to eq(0o600)
+        captured = JSON.parse(File.read(File.join(directory, "candidate.json")))
+        expect(captured.dig("github", "source_pull_request", "code_review", "reports", 0)).not_to have_key("report_bytes")
+        expect(report.fetch("report_bytes")).to eq(bytes)
+      end
+    end
+
     it "writes private, non-overwritable evidence files" do
       manifest = {
         "candidate_id" => "pilot-rc-1",
