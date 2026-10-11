@@ -66,6 +66,7 @@ function EditEventSession({ id, identity }) {
   const loadGeneration = useRef(0)
   const pendingLoad = useRef(null)
   const inventoryGeneration = useRef(0)
+  const eventSaveGeneration = useRef(0)
   const pendingInventoryLoad = useRef(null)
   const [inventoryRefreshing, setInventoryRefreshing] = useState(false)
   const [inventoryError, setInventoryError] = useState(null)
@@ -171,6 +172,7 @@ function EditEventSession({ id, identity }) {
     pendingInventoryLoad.current?.controller.abort()
     pendingInventoryLoad.current = request
     const generation = ++inventoryGeneration.current
+    const savedGeneration = eventSaveGeneration.current
     const canApply = () => request.current() && generation === inventoryGeneration.current
     setInventoryRefreshing(true)
     setInventoryError(null)
@@ -178,8 +180,12 @@ function EditEventSession({ id, identity }) {
       const res = await apiClient.get(`/organizer/events/${id}`, request.config)
       if (!canApply()) return
       setEvent(saved => ({ ...saved, ticket_types: res.data.ticket_types || [],
-        publish_checklist: res.data.publish_checklist || [],
-        permissions: res.data.permissions || saved.permissions }))
+        // A successful event save owns newer readiness and access metadata.
+        // Still apply ticket data without reviving its pre-save checklist.
+        ...(savedGeneration === eventSaveGeneration.current ? {
+          publish_checklist: res.data.publish_checklist || [],
+          permissions: res.data.permissions || saved.permissions,
+        } : {}) }))
     } catch {
       if (canApply()) setInventoryError('Ticket changes were saved, but the latest ticket list could not be loaded. Retry to update the list. Your event draft is still here.')
     } finally {
@@ -272,6 +278,7 @@ function EditEventSession({ id, identity }) {
       if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
       const res = await apiClient.put(`/organizer/events/${id}`, payload, request.config)
       if (!request.current()) return
+      eventSaveGeneration.current += 1
       setEvent(current => ({ ...current, ...res.data }))
       setChangeReason('')
       setSuccessMessage('Event updated successfully.')

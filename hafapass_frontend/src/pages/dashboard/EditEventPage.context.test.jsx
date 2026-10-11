@@ -178,6 +178,44 @@ describe('event editor context ownership with the real router', () => {
     expect(apiClient.put.mock.calls[1][1]).not.toHaveProperty('starts_at')
   })
 
+  it.each([true, false])('keeps newer saved publish readiness %s when older inventory completes', async ready => {
+    const old = deferred()
+    const checklist = complete => [{ code: 'tickets', label: 'Tickets', complete }]
+    rows[11] = { ...rows[11], publish_checklist: checklist(!ready) }
+    mount()
+    await screen.findByDisplayValue('Alpha event')
+    apiClient.get.mockReturnValueOnce(old.promise)
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh saved inventory' }))
+    await screen.findByText('Updating ticket list…')
+    await userEvent.type(screen.getByLabelText(/Event Title/), ' saved draft')
+    apiClient.put.mockResolvedValueOnce({ data: { ...rows[11], title: 'Alpha event saved draft', publish_checklist: checklist(ready) } })
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toHaveProperty('disabled', !ready)
+    // This inventory response was captured before the newer event save.
+    await act(async () => old.resolve({ data: { ...rows[11], ticket_types: [{ id: 1, name: 'Refreshed admission' }] } }))
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toHaveProperty('disabled', !ready)
+    expect(screen.getByText('Refreshed admission')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Alpha event saved draft')
+    expect(screen.queryByText('Updating ticket list…')).not.toBeInTheDocument()
+  })
+
+  it('applies refreshed readiness after a failed save and retains the unsaved draft', async () => {
+    const old = deferred()
+    rows[11] = { ...rows[11], publish_checklist: [{ code: 'tickets', label: 'Tickets', complete: false }] }
+    mount()
+    await screen.findByDisplayValue('Alpha event')
+    apiClient.get.mockReturnValueOnce(old.promise)
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh saved inventory' }))
+    await userEvent.type(screen.getByLabelText(/Event Title/), ' unsaved draft')
+    apiClient.put.mockRejectedValueOnce(new Error('Synthetic save failure'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Failed to update event')
+    await act(async () => old.resolve({ data: { ...rows[11], publish_checklist: [{ code: 'tickets', label: 'Tickets', complete: true }] } }))
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Alpha event unsaved draft')
+  })
+
   it('pins the save body and identity before delayed token acquisition and suppresses transport after navigation', async () => {
     const actual = await vi.importActual('../../api/client')
     const token = deferred(), adapter = vi.fn()
