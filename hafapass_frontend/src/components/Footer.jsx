@@ -1,3 +1,4 @@
+import HafaPassMark from './HafaPassMark'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supportMailto } from '../utils/supportContact'
@@ -13,9 +14,7 @@ export default function Footer() {
           <div className="lg:col-span-1">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-lg bg-brand-500/20 flex items-center justify-center">
-                <svg className="w-4.5 h-4.5 text-brand-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
-                </svg>
+                <HafaPassMark className="h-5 w-5 text-brand-300" />
               </div>
               <span className="text-base font-bold text-neutral-200 tracking-tight">HafaPass</span>
             </div>

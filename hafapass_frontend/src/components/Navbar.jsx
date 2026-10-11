@@ -1,3 +1,4 @@
+import HafaPassMark from './HafaPassMark'
 import { useState, useEffect, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { UserButton, SignedIn, useAuth } from '@clerk/clerk-react'
@@ -77,19 +78,16 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
         isDarkMode
           ? 'bg-neutral-950 border-b border-white/10'
           : scrolled
-            ? 'bg-white/80 backdrop-blur-2xl border-b border-neutral-200/50 shadow-soft'
-            : 'bg-white/50 backdrop-blur-xl border-b border-transparent'
+            ? 'bg-white border-b border-neutral-200 shadow-sm'
+            : 'bg-white border-b border-neutral-200'
       }`}
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-md shadow-brand-500/20 transition-all duration-300 group-hover:scale-105 group-hover:shadow-glow-brand">
-              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
-                <path d="M13 5v2" /><path d="M13 17v2" /><path d="M13 11v2" />
-              </svg>
+            <div className="w-9 h-9 rounded-xl bg-brand-700 flex items-center justify-center">
+              <HafaPassMark className="h-5 w-5 text-white" />
             </div>
             <span className={`text-xl font-bold tracking-tight transition-colors duration-300 ${isDarkMode ? 'text-white' : 'text-neutral-900'}`}>
               Hafa<span className="text-brand-500">Pass</span>
