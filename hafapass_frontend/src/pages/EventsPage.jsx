@@ -157,7 +157,7 @@ export default function EventsPage() {
               </button>
             )})}
            </div>
-           <div className="grid grid-cols-2 gap-3 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]">
+           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]">
             <div className="col-span-2 min-w-0 sm:hidden">
              <label htmlFor="event-category" className="mb-1 block text-sm font-medium text-neutral-600">Category</label>
              <select id="event-category" value={activeCategory} onChange={event => changeCategory(event.target.value)} className="input min-h-11 !py-2 text-base !px-3">
