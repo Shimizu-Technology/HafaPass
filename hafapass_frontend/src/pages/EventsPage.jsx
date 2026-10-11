@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams, useMatch } from 'react-router-dom'
 import { Search, Music, UtensilsCrossed, Trophy, Users, Sparkles, Moon, CalendarPlus, Ticket } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
@@ -27,6 +27,7 @@ export default function EventsPage() {
   const [loadError, setLoadError] = useState(false)
   const [retry, setRetry] = useState(0)
   const [meta, setMeta] = useState({ current_page: 1, total_pages: 1, total_count: 0 })
+  const onListingRoute = Boolean(useMatch('/events'))
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [activeCategory, setActiveCategory] = useState(searchParams.get('category') || 'all')
@@ -40,6 +41,7 @@ export default function EventsPage() {
   const ResultItem = reducedMotion ? 'div' : StaggerItem
 
   useEffect(() => {
+    if (!onListingRoute) return undefined
     let active = true
     setLoading(true)
     setLoadError(false)
@@ -76,9 +78,10 @@ export default function EventsPage() {
     }, 250)
 
     return () => { active = false; clearTimeout(timer) }
-  }, [search, activeCategory, dateRange, price, village, page, retry])
+  }, [search, activeCategory, dateRange, price, village, page, retry, onListingRoute])
 
   useEffect(() => {
+    if (!onListingRoute) return
     const nextParams = {}
     if (search.trim()) nextParams.search = search.trim()
     if (activeCategory !== 'all') nextParams.category = activeCategory
@@ -89,10 +92,12 @@ export default function EventsPage() {
     if (searchParams.toString() !== new URLSearchParams(nextParams).toString()) {
       setSearchParams(nextParams, { replace: true })
     }
-  }, [search, activeCategory, dateRange, price, village, page, searchParams, setSearchParams])
+  }, [search, activeCategory, dateRange, price, village, page, searchParams, setSearchParams, onListingRoute])
 
   const changeCategory = (value) => { setActiveCategory(value); setPage(1) }
   const clearFilters = () => { setSearch(''); setActiveCategory('all'); setDateRange('upcoming'); setPrice('all'); setVillage(''); setPage(1) }
+
+  if (!onListingRoute) return null
 
   return (
     <div className="min-h-screen bg-stone-50">

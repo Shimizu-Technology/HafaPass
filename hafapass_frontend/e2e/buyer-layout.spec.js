@@ -66,3 +66,18 @@ test('an event outage retries in place instead of pretending the event is missin
   expect(requests).toBeGreaterThan(failedRequests)
   await expect(page).toHaveURL(/\/events\/guam-community-night$/)
 })
+
+
+test('opening an event preserves filters without rewriting the event URL from an exiting listing', async ({ page }) => {
+  await prepare(page)
+  await page.route('**/api/v1/event_categories', route => json(route, { categories: [] }))
+  await page.route('**/api/v1/events**', route => new URL(route.request().url()).pathname === '/api/v1/events'
+    ? json(route, { events: [event], meta: { current_page: 1, total_pages: 1, total_count: 1 } }) : route.fallback())
+  await page.goto('/events?search=Music')
+  await page.getByRole('link', { name: /Guam Community Night/ }).click()
+  await expect(page).toHaveURL(/\/events\/guam-community-night$/)
+  const back = page.getByRole('link', { name: 'All Events', exact: true })
+  await expect(back).toHaveAttribute('href', '/events?search=Music')
+  await back.click()
+  await expect(page.getByRole('textbox', { name: 'Search events and venues' })).toHaveValue('Music')
+})
