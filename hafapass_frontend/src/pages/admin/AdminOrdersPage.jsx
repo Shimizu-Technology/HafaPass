@@ -1,13 +1,18 @@
-import { Fragment, useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
+import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 
 const orderStatuses = ['', 'pending', 'completed', 'refunded', 'cancelled', 'partially_refunded', 'expired']
 
 const money = (cents = 0) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
-export default function AdminOrdersPage() {
+function AdminOrdersPageSession({ identity, resourcePath }) {
+  const { beginRequest } = usePlatformRequests(identity, resourcePath)
+  const loadGeneration = useRef(0)
+  const pendingLoad = useRef(null)
+  const [loadError, setLoadError] = useState('')
   const [orders, setOrders] = useState([])
   const [meta, setMeta] = useState({})
   const [loading, setLoading] = useState(true)
@@ -17,17 +22,24 @@ export default function AdminOrdersPage() {
   const [expanded, setExpanded] = useState(null)
 
   const fetchOrders = useCallback(() => {
+    const request = beginRequest()
+    if (!request) return
+    pendingLoad.current?.abort()
+    pendingLoad.current = request
+    const generation = ++loadGeneration.current
+    const active = () => request.current() && generation === loadGeneration.current
     setLoading(true)
+    setLoadError('')
     const params = { page, per_page: 20 }
     if (search) params.search = search
     if (status) params.status = status
-    apiClient.get('/admin/orders', { params })
-      .then(res => { setOrders(res.data.orders); setMeta(res.data.meta) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [page, search, status])
+    apiClient.get('/admin/orders', { ...request.config, params })
+      .then(res => { if (active()) { setOrders(res.data.orders); setMeta(res.data.meta); setExpanded(null); } })
+      .catch(() => { if (active()) setLoadError('Could not load orders. Your filters have been kept.') })
+      .finally(() => { request.release(); if (active()) setLoading(false) })
+  }, [page, search, status, beginRequest])
 
-  useEffect(() => { fetchOrders() }, [fetchOrders])
+  useEffect(() => { fetchOrders(); return () => pendingLoad.current?.abort() }, [fetchOrders])
 
   const statusBadge = (s) => {
     const styles = {
@@ -48,13 +60,14 @@ export default function AdminOrdersPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
           <input
             type="text"
+            aria-label="Search orders by buyer name or email"
             placeholder="Search by buyer name or email..."
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
             className="w-full pl-10 pr-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
           />
         </div>
-        <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+        <select aria-label="Filter orders by status" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
           <option value="">All Statuses</option>
           {orderStatuses.filter(Boolean).map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
         </select>
@@ -63,6 +76,8 @@ export default function AdminOrdersPage() {
       <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-brand-500 animate-spin" /></div>
+        ) : loadError ? (
+          <div role="alert" className="p-5 text-red-700">{loadError} <button onClick={fetchOrders} className="min-h-11 rounded px-3 font-semibold underline focus-visible:ring-2 focus-visible:ring-focus">Try again</button></div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -83,7 +98,9 @@ export default function AdminOrdersPage() {
                   <Fragment key={order.id}>
                     <tr className="hover:bg-neutral-50/50 transition-colors cursor-pointer" onClick={() => setExpanded(expanded === order.id ? null : order.id)}>
                       <td className="px-4 py-3">
-                        {expanded === order.id ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
+                        <button aria-label={`Order ${order.id} details`} aria-expanded={expanded === order.id} aria-controls={`order-${order.id}-details`} onClick={event => { event.stopPropagation(); setExpanded(expanded === order.id ? null : order.id) }} className="grid min-h-11 min-w-11 place-items-center rounded focus-visible:ring-2 focus-visible:ring-focus">
+                          {expanded === order.id ? <ChevronUp aria-hidden="true" className="w-4 h-4 text-content-muted" /> : <ChevronDown aria-hidden="true" className="w-4 h-4 text-content-muted" />}
+                        </button>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-neutral-500">#{order.id}</td>
                       <td className="px-4 py-3">
@@ -99,7 +116,7 @@ export default function AdminOrdersPage() {
                       <td className="px-4 py-3 text-neutral-500 hidden lg:table-cell">{new Date(order.created_at).toLocaleDateString()}</td>
                     </tr>
                     {expanded === order.id && (
-                      <tr key={`${order.id}-detail`}>
+                      <tr id={`order-${order.id}-details`} key={`${order.id}-detail`}>
                         <td colSpan={8} className="px-4 py-3 bg-neutral-50/50">
                           <div className="pl-8 space-y-5">
                             <div>
@@ -210,4 +227,11 @@ export default function AdminOrdersPage() {
       )}
     </AdminLayout>
   )
+}
+
+export default function AdminOrdersPage() {
+  const identity = usePlatformIdentity()
+  const visit = usePlatformVisit()
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <AdminOrdersPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath={visit.pathname} />
 }

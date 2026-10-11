@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Loader2, Mail, Search, Send, ShieldCheck } from 'lucide-react'
 import apiClient from '../../api/client'
+import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 
 const badge = {
   delivered: 'bg-emerald-100 text-emerald-800',
@@ -14,7 +15,13 @@ const badge = {
   suppressed: 'bg-neutral-800 text-white',
 }
 
-export default function SupportPage() {
+function SupportSession({ identity, resourcePath }) {
+  const { beginRequest } = usePlatformRequests(identity, resourcePath)
+  const searchGeneration = useRef(0)
+  const deliveryGeneration = useRef(0)
+  const pendingSearch = useRef(null)
+  const pendingDelivery = useRef(null)
+  const actionBusy = useRef(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState({ orders: [], tickets: [], events: [] })
   const [deliveries, setDeliveries] = useState([])
@@ -26,59 +33,86 @@ export default function SupportPage() {
   const [busyAction, setBusyAction] = useState(null)
 
   const loadDeliveries = useCallback(() => {
+    const request = beginRequest()
+    if (!request) return
+    pendingDelivery.current?.abort()
+    pendingDelivery.current = request
+    const generation = ++deliveryGeneration.current
+    const active = () => request.current() && generation === deliveryGeneration.current
     setDeliveryLoading(true)
     setDeliveryError('')
-    return apiClient.get('/support/message_deliveries').then(response => setDeliveries(response.data.deliveries || []))
-      .catch(() => setDeliveryError('Recent deliveries could not be loaded.'))
-      .finally(() => setDeliveryLoading(false))
-  }, [])
+    return apiClient.get('/support/message_deliveries', request.config).then(response => { if (active()) setDeliveries(response.data.deliveries || []) })
+      .catch(() => { if (active()) setDeliveryError('Recent deliveries could not be loaded.') })
+      .finally(() => { request.release(); if (active()) setDeliveryLoading(false) })
+  }, [beginRequest])
 
-  useEffect(() => { loadDeliveries() }, [loadDeliveries])
+  useEffect(() => { loadDeliveries(); return () => { pendingDelivery.current?.abort(); pendingSearch.current?.abort() } }, [loadDeliveries])
 
   const search = async (event) => {
     event.preventDefault()
     if (query.trim().length < 3) return
+    const request = beginRequest()
+    if (!request) return
+    pendingSearch.current?.abort()
+    pendingSearch.current = request
+    const generation = ++searchGeneration.current
+    const active = () => request.current() && generation === searchGeneration.current
+    setSearched(false)
     setLoading(true)
     setMessage('')
     setResults({ orders: [], tickets: [], events: [] })
     try {
-      const response = await apiClient.get('/support/search', { params: { q: query.trim() } })
+      const response = await apiClient.get('/support/search', { ...request.config, params: { q: query.trim() } })
+      if (!active()) return
       setResults({ orders: response.data.orders || [], tickets: response.data.tickets || [], events: response.data.events || [] })
       setSearched(true)
     } catch (error) {
-      setMessage(error.response?.data?.error || 'Lookup failed')
+      if (active()) setMessage(error.response?.data?.error || 'Lookup failed. Your search has been kept; try Search again.')
     } finally {
-      setLoading(false)
+      request.release()
+      if (active()) setLoading(false)
     }
   }
 
   const replay = async (delivery) => {
-    if (busyAction) return
+    if (actionBusy.current) return
+    const request = beginRequest()
+    if (!request) return
+    actionBusy.current = true
     setBusyAction(`delivery:${delivery.id}`)
     setMessage('')
     try {
-      await apiClient.post(`/support/message_deliveries/${delivery.id}/resend`)
+      await apiClient.post(`/support/message_deliveries/${delivery.id}/resend`, {}, request.config)
+      if (!request.current()) return
       setMessage(`Delivery #${delivery.id} queued with its original idempotency key.`)
       loadDeliveries()
     } catch (error) {
-      setMessage(error.response?.data?.error || 'Replay failed')
+      if (request.current()) setMessage(error.response?.data?.error || 'Replay failed')
     } finally {
-      setBusyAction(null)
+      request.release()
+      actionBusy.current = false
+      if (request.current()) setBusyAction(null)
     }
   }
 
   const fulfill = async (order) => {
-    if (busyAction) return
+    if (actionBusy.current) return
+    const request = beginRequest()
+    if (!request) return
+    actionBusy.current = true
     setBusyAction(`order:${order.id}`)
     setMessage('')
     try {
-      await apiClient.post(`/support/message_deliveries/orders/${order.id}/fulfill`)
+      await apiClient.post(`/support/message_deliveries/orders/${order.id}/fulfill`, {}, request.config)
+      if (!request.current()) return
       setMessage(`A consolidated fulfillment message was queued for ${order.reference}.`)
       loadDeliveries()
     } catch (error) {
-      setMessage(error.response?.data?.error || 'Fulfillment resend failed')
+      if (request.current()) setMessage(error.response?.data?.error || 'Fulfillment resend failed')
     } finally {
-      setBusyAction(null)
+      request.release()
+      actionBusy.current = false
+      if (request.current()) setBusyAction(null)
     }
   }
 
@@ -150,4 +184,11 @@ export default function SupportPage() {
       </div>
     </main>
   )
+}
+
+export default function SupportPage() {
+  const identity = usePlatformIdentity()
+  const visit = usePlatformVisit()
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <SupportSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath={visit.pathname} />
 }

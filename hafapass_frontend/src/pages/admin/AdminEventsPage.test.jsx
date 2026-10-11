@@ -4,7 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
 import AdminEventsPage from './AdminEventsPage'
 
-vi.mock('../../api/client', () => ({
+vi.mock('../../api/client', async importOriginal => ({
+  ...await importOriginal(),
   default: { get: vi.fn(), patch: vi.fn() },
 }))
 
@@ -46,6 +47,6 @@ describe('AdminEventsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Candidate cannot change after orders exist.')
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/events/42', {
       live_money_proof_candidate: true,
-    }))
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 })

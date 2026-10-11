@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, Search, Star, ChevronLeft, ChevronRight } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
+import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 import PilotReadinessReviewDialog from '../../components/PilotReadinessReviewDialog'
 import PilotValidationReviewDialog from '../../components/PilotValidationReviewDialog'
 import EventDayRehearsalReviewDialog from '../../components/EventDayRehearsalReviewDialog'
@@ -13,7 +14,12 @@ import PilotCloseoutDialog from '../../components/PilotCloseoutDialog'
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
 const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 'other']
 
-export default function AdminEventsPage() {
+function AdminEventsPageSession({ identity, resourcePath }) {
+  const { beginRequest } = usePlatformRequests(identity, resourcePath)
+  const loadGeneration = useRef(0)
+  const pendingLoad = useRef(null)
+  const mutationBusy = useRef(false)
+  const [loadError, setLoadError] = useState('')
   const [events, setEvents] = useState([])
   const [meta, setMeta] = useState({})
   const [loading, setLoading] = useState(true)
@@ -24,37 +30,58 @@ export default function AdminEventsPage() {
   const [actionError, setActionError] = useState('')
 
   const fetchEvents = useCallback(() => {
+    const request = beginRequest()
+    if (!request) return
+    pendingLoad.current?.abort()
+    pendingLoad.current = request
+    const generation = ++loadGeneration.current
+    const active = () => request.current() && generation === loadGeneration.current
     setLoading(true)
+    setLoadError('')
     const params = { page, per_page: 20 }
     if (search) params.search = search
     if (status) params.status = status
     if (category) params.category = category
-    apiClient.get('/admin/events', { params })
-      .then(res => { setEvents(res.data.events); setMeta(res.data.meta) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [page, search, status, category])
+    apiClient.get('/admin/events', { ...request.config, params })
+      .then(res => { if (active()) { setEvents(res.data.events); setMeta(res.data.meta); } })
+      .catch(() => { if (active()) setLoadError('Could not load events. Your filters have been kept.') })
+      .finally(() => { request.release(); if (active()) setLoading(false) })
+  }, [page, search, status, category, beginRequest])
 
-  useEffect(() => { fetchEvents() }, [fetchEvents])
+  useEffect(() => { fetchEvents(); return () => pendingLoad.current?.abort() }, [fetchEvents])
 
   const toggleFeatured = async (event) => {
+    if (mutationBusy.current) return
+    const request = beginRequest()
+    if (!request) return
+    mutationBusy.current = true
+    setActionError('')
     try {
-      const res = await apiClient.patch(`/admin/events/${event.id}`, { is_featured: !event.is_featured })
+      const res = await apiClient.patch(`/admin/events/${event.id}`, { is_featured: !event.is_featured }, request.config)
+      if (!request.current()) return
       setEvents(prev => prev.map(e => e.id === event.id ? res.data : e))
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      if (request.current()) setActionError(err.response?.data?.error || 'The change was not confirmed. Reload the saved event before trying again.')
+    } finally { request.release(); mutationBusy.current = false }
   }
 
   const toggleProofCandidate = async (event) => {
     setActionError('')
+    if (mutationBusy.current) return
+    const request = beginRequest()
+    if (!request) return
+    mutationBusy.current = true
+    setActionError('')
     try {
-      const res = await apiClient.patch(`/admin/events/${event.id}`, { live_money_proof_candidate: !event.live_money_proof_candidate })
+      const res = await apiClient.patch(`/admin/events/${event.id}`, { live_money_proof_candidate: !event.live_money_proof_candidate }, request.config)
+      if (!request.current()) return
       setEvents(prev => prev.map(item => item.id === event.id ? res.data : item))
     } catch (err) {
-      console.error(err)
+      if (!request.current()) return
       const errors = err.response?.data?.errors
       setActionError(Array.isArray(errors) ? errors.join(' ') :
         err.response?.data?.error || err.response?.data?.message || 'The proof-candidate flag could not be updated.')
-    }
+    } finally { request.release(); mutationBusy.current = false }
   }
 
   return (
@@ -85,6 +112,8 @@ export default function AdminEventsPage() {
       <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-brand-500 animate-spin" /></div>
+        ) : loadError ? (
+          <div role="alert" className="p-5 text-red-700">{loadError} <button onClick={fetchEvents} className="min-h-11 rounded px-3 font-semibold underline focus-visible:ring-2 focus-visible:ring-focus">Try again</button></div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -154,4 +183,11 @@ export default function AdminEventsPage() {
       )}
     </AdminLayout>
   )
+}
+
+export default function AdminEventsPage() {
+  const identity = usePlatformIdentity()
+  const visit = usePlatformVisit()
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <AdminEventsPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath={visit.pathname} />
 }
