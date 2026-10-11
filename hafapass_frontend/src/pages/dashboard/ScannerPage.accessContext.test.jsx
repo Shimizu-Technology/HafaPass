@@ -241,11 +241,17 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
       const mounted = render(view())
       await screen.findByText(/Manifest v1/)
       await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+      // Settle the automatic empty-journal sync before injecting a scan that
+      // must remain unknown. The first ready render can precede that sync's
+      // IndexedDB read; an explicit interaction also flushes its busy state.
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Sync now' }))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+      expect(api.defaults.adapter.mock.calls.some(([config]) => config.url.endsWith('/sync'))).toBe(false)
       await waitFor(() => expect(expiryCallbacks.length).toBeGreaterThan(0))
       const timer = expiryCallbacks.at(-1)
       const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
         ticket: { ...ticket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
-      const user = userEvent.setup()
       if (method === 'lookup') {
         await user.type(screen.getByLabelText('Attendee name or ticket number'), 'Guest')
         await user.click(screen.getByRole('button', { name: 'Search', exact: true }))
