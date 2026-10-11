@@ -22,13 +22,19 @@ for (const width of [390, 1440]) {
     const title = page.getByLabel(/Event Title/)
     await expect(title).toHaveValue(event.title)
     await title.fill('Unsaved event draft')
-    if (width < 768) await page.getByRole('button', { name: 'Open menu', exact: true }).click()
+    if (width < 768) {
+      const menu = page.getByRole('button', { name: 'Toggle menu', exact: true })
+      if (await menu.getAttribute('aria-expanded') === 'false') await menu.click()
+    }
     await page.getByRole('link', { name: 'Events', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Leave unsaved event changes?' })).toBeVisible()
     await expect(page).toHaveURL(/\/dashboard\/events\/601\/edit$/)
     await page.getByRole('button', { name: 'Stay and save', exact: true }).click()
     await expect(title).toHaveValue('Unsaved event draft')
-    if (width < 768) await page.getByRole('button', { name: 'Open menu', exact: true }).click()
+    if (width < 768) {
+      const menu = page.getByRole('button', { name: 'Toggle menu', exact: true })
+      if (await menu.getAttribute('aria-expanded') === 'false') await menu.click()
+    }
     await page.getByRole('link', { name: 'Events', exact: true }).click()
     await expect(page.getByRole('dialog')).toHaveCount(1)
     await page.getByRole('button', { name: 'Leave without saving', exact: true }).click()
@@ -59,8 +65,15 @@ test('reload requests native confirmation and dismissal retains the draft', asyn
   const title = page.getByLabel(/Event Title/)
   await title.fill('Unsaved before reload')
   let dialogType
-  page.once('dialog', async dialog => { dialogType = dialog.type(); await dialog.dismiss() })
-  await page.reload().catch(() => {})
+  let finishDismissal
+  const dismissed = new Promise(resolve => { finishDismissal = resolve })
+  page.once('dialog', async dialog => {
+    dialogType = dialog.type()
+    await dialog.dismiss()
+    finishDismissal()
+  })
+  await page.reload({ waitUntil: 'commit', timeout: 5000 }).catch(() => {})
+  await dismissed
   expect(dialogType).toBe('beforeunload')
   await expect(title).toHaveValue('Unsaved before reload')
 })
