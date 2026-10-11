@@ -27,54 +27,78 @@ export default function AttendeesPage() {
 
 function AttendeesPageSession({ id, identity }) {
  const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/attendees`)
+ const accessEpoch = useRef(0)
+ const accessDenied = useRef(false)
+ const requests = useRef(new Set())
+ const [loading, setLoading] = useState(true)
+ const [error, setError] = useState(null)
+ const [detailError, setDetailError] = useState(null)
+ const [loadAttempt, setLoadAttempt] = useState(0)
+ const [attendees, setAttendees] = useState([])
+ const [meta, setMeta] = useState(null)
+ const [event, setEvent] = useState(null)
+ const [page, setPage] = useState(1)
+ const listGeneration = useRef(0)
+ const [search, setSearch] = useState('')
+ const [statusFilter, setStatusFilter] = useState('')
+ const [ticketTypeFilter, setTicketTypeFilter] = useState('')
+ const withdrawAccess = useCallback(message => {
+  accessDenied.current = true
+  ++accessEpoch.current
+  requests.current.forEach(request => request.controller.abort())
+  setAttendees([]); setMeta(null); setEvent(null)
+  setDetailError(null); setError(message); setLoading(false)
+ }, [])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
   const request = beginRequest()
   if (!request) throw new DOMException('Page context changed', 'AbortError')
+  const epoch = accessEpoch.current
+  requests.current.add(request)
   try {
    const response = method === 'get' || method === 'delete'
     ? await apiClient[method](url, { ...payload, ...request.config })
     : await apiClient[method](url, payload, { ...options, ...request.config })
-   if (!request.current()) throw new DOMException('Page context changed', 'AbortError')
+   if (!request.current() || epoch !== accessEpoch.current) throw new DOMException('Page context changed', 'AbortError')
    return response
-  } finally { request.release() }
- }, [beginRequest])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [detailError, setDetailError] = useState(null)
-  const [loadAttempt, setLoadAttempt] = useState(0)
-  const [attendees, setAttendees] = useState([])
-  const [meta, setMeta] = useState(null)
-  const [event, setEvent] = useState(null)
-  const [page, setPage] = useState(1)
-  const listGeneration = useRef(0)
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [ticketTypeFilter, setTicketTypeFilter] = useState('')
-
-  useEffect(() => {
-    let active = true
-
-    requestApi('get', `/organizer/events/${id}`)
-      .then((response) => {
-        if (active && current()) { setEvent(response.data); setDetailError(null) }
-      })
-      .catch((err) => {
-        if (!active || !current()) return
-        if (err.response?.status === 401) setDetailError('Please sign in.')
-        else if (err.response?.status === 404) setDetailError('Event not found.')
-        else setDetailError('Failed to load event details.')
-      })
-
-    return () => { active = false }
-  }, [id, requestApi, current, loadAttempt])
+  } catch (requestError) {
+   if (request.current() && epoch === accessEpoch.current && [401, 403, 404].includes(requestError.response?.status)) {
+    withdrawAccess(requestError.response.status === 401 ? 'Please sign in.'
+     : requestError.response.status === 404 ? 'Event not found.' : 'Your attendee access changed. Retry to verify access before viewing this list.')
+   }
+   throw requestError
+  } finally { requests.current.delete(request); request.release() }
+ }, [beginRequest, withdrawAccess])
 
   const fetchAttendees = useCallback(async () => {
     const generation = ++listGeneration.current
-    const canApply = () => current() && generation === listGeneration.current
     if (!current()) return
+    const epoch = ++accessEpoch.current
+    requests.current.forEach(request => request.controller.abort())
+    const canApply = () => current() && generation === listGeneration.current && epoch === accessEpoch.current
     setLoading(true)
     setError(null)
     try {
+      try {
+        const response = await requestApi('get', `/organizer/events/${id}`)
+        if (!canApply()) return
+        const saved = response.data
+        if (String(saved.id) !== String(id) || saved.organization_id == null || (identity.organizationId != null && String(saved.organization_id) !== String(identity.organizationId))) {
+          withdrawAccess('The event context could not be verified. Return to your dashboard and select the event again.')
+          return
+        }
+        if (saved.permissions?.view_attendees !== true) {
+          withdrawAccess('Your event access does not include viewing attendees.')
+          return
+        }
+        accessDenied.current = false
+        setEvent(saved); setDetailError(null)
+      } catch {
+        if (!canApply()) return
+        setDetailError('Failed to load event details.')
+        // A list endpoint can independently authorize a normal metadata outage.
+        // After a known denial, only fresh event permission verification restores it.
+        if (accessDenied.current) return
+      }
       const params = new URLSearchParams({ page: String(page), per_page: '25' })
       if (search.trim()) params.set('search', search.trim())
       if (statusFilter) params.set('status', statusFilter)
@@ -94,7 +118,7 @@ function AttendeesPageSession({ id, identity }) {
     } finally {
       if (canApply()) setLoading(false)
     }
-  }, [id, page, search, statusFilter, ticketTypeFilter, requestApi, current])
+  }, [id, page, search, statusFilter, ticketTypeFilter, requestApi, current, identity.organizationId, withdrawAccess])
 
   useEffect(() => { fetchAttendees() }, [fetchAttendees, loadAttempt])
 

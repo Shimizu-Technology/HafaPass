@@ -34,17 +34,8 @@ export default function RefundsPage() {
 
 function RefundsPageSession({ eventId, identity }) {
  const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${eventId}/refunds`)
- const requestApi = useCallback(async (method, url, payload, options = {}) => {
-  const request = beginRequest()
-  if (!request) throw new DOMException('Page context changed', 'AbortError')
-  try {
-   const response = method === 'get' || method === 'delete'
-    ? await apiClient[method](url, { ...payload, ...request.config })
-    : await apiClient[method](url, payload, { ...options, ...request.config })
-   if (!request.current()) throw new DOMException('Page context changed', 'AbortError')
-   return response
-  } finally { request.release() }
- }, [beginRequest])
+ const accessEpoch = useRef(0)
+ const requests = useRef(new Set())
  const legacyStorageKey = `hafapass:pending-refund:${identity.owner}:${eventId}`
  const storageKey = `hafapass:pending-refund:v2:${identity.owner}:${identity.organizationId ?? 'default'}:${eventId}`
  const authorizedEvent = useRef(false)
@@ -61,13 +52,48 @@ function RefundsPageSession({ eventId, identity }) {
  const [refundForm, setRefundForm] = useState(pendingRequest && !pendingRequest.recoveryRequired ? { amount: pendingRequest.payload.amount_cents ? String(pendingRequest.payload.amount_cents / 100) : '', reason: pendingRequest.payload.reason || '', type: pendingRequest.payload.amount_cents ? 'partial' : 'full' } : { amount: '', reason: '', type: 'full' })
  const [refundRequestKey, setRefundRequestKey] = useState(pendingRequest?.key || null)
  const [processing, setProcessing] = useState(false)
+ const withdrawAccess = useCallback(message => {
+  ++accessEpoch.current
+  authorizedEvent.current = false
+  requests.current.forEach(request => request.controller.abort())
+  // The durable financial operation is retained unchanged. Access refusal is
+  // not a provider verdict and cannot clear or replace its original identity.
+  setOrders([]); setRefundingId(null); setRefundRequestKey(null)
+  setRefundForm({ amount: '', reason: '', type: 'full' })
+  setNotice(''); setLoadError(''); setProcessing(false); setAccessRefreshing(false); setLoading(false)
+  setContextError(message)
+ }, [])
+ const requestApi = useCallback(async (method, url, payload, options = {}) => {
+  const verifying = method === 'get' && url === `/organizer/events/${eventId}`
+  if (!verifying && !authorizedEvent.current) throw new DOMException('Refund access is not verified', 'AbortError')
+  const request = beginRequest()
+  if (!request) throw new DOMException('Page context changed', 'AbortError')
+  const epoch = accessEpoch.current
+  requests.current.add(request)
+  try {
+   const response = method === 'get' || method === 'delete'
+    ? await apiClient[method](url, { ...payload, ...request.config })
+    : await apiClient[method](url, payload, { ...options, ...request.config })
+   if (!request.current() || epoch !== accessEpoch.current) throw new DOMException('Page context changed', 'AbortError')
+   return response
+  } catch (requestError) {
+   if (request.current() && epoch === accessEpoch.current && [401, 403].includes(requestError.response?.status)) {
+    withdrawAccess(requestError.response.status === 401 ? 'Please sign in to verify refund access.'
+     : 'Your refund access changed. Retry to verify permissions. The original saved financial operation is retained.')
+   }
+   throw requestError
+  } finally { requests.current.delete(request); request.release() }
+ }, [beginRequest, eventId, withdrawAccess])
 
  const fetchOrders = useCallback(async () => {
   const generation = ++loadGeneration.current
-  const canApply = () => current() && generation === loadGeneration.current
   if (!current()) return
+  const epoch = ++accessEpoch.current
+  requests.current.forEach(request => request.controller.abort())
+  const canApply = () => current() && generation === loadGeneration.current && epoch === accessEpoch.current
   setLoadError('')
   setContextError('')
+  setProcessing(false)
   authorizedEvent.current = false
   setAccessRefreshing(true)
   try {
@@ -83,6 +109,8 @@ function RefundsPageSession({ eventId, identity }) {
     const cached = readSavedRefund(storageKey)
     if (cached?.recoveryRequired || legacy?.recoveryRequired) {
      setPendingRequest({ recoveryRequired: true })
+     setRefundingId(null); setRefundRequestKey(null)
+     setRefundForm({ amount: '', reason: '', type: 'full' })
     } else if (legacy?.key && !cached) {
      window.sessionStorage.setItem(storageKey, JSON.stringify(legacy))
      setPendingRequest(legacy)
@@ -90,8 +118,18 @@ function RefundsPageSession({ eventId, identity }) {
      setRefundRequestKey(legacy.key)
      setRefundForm({ amount: legacy.payload.amount_cents ? String(legacy.payload.amount_cents / 100) : '', reason: legacy.payload.reason || '', type: legacy.payload.amount_cents ? 'partial' : 'full' })
     }
+    if (cached?.key && !cached.recoveryRequired && !legacy?.recoveryRequired) {
+     setPendingRequest(cached)
+     setRefundingId(cached.orderId)
+     setRefundRequestKey(cached.key)
+     setRefundForm({ amount: cached.payload.amount_cents ? String(cached.payload.amount_cents / 100) : '', reason: cached.payload.reason || '', type: cached.payload.amount_cents ? 'partial' : 'full' })
+    }
     if (legacy?.key && legacy.key === (cached || legacy)?.key) importedLegacyKey.current = legacy.key
-   } catch { setPendingRequest({ recoveryRequired: true }) }
+   } catch {
+    setPendingRequest({ recoveryRequired: true })
+    setRefundingId(null); setRefundRequestKey(null)
+    setRefundForm({ amount: '', reason: '', type: 'full' })
+   }
    const res = await requestApi('get', `/organizer/events/${eventId}/stats`)
       if (!canApply()) return
    setOrders(res.data.recent_orders || [])
@@ -108,6 +146,8 @@ function RefundsPageSession({ eventId, identity }) {
  const handleRefund = async (orderId) => {
     if (!current() || !authorizedEvent.current || pendingRequest?.recoveryRequired || (pendingRequest && pendingRequest.orderId !== orderId)) return
   if (processing || accessRefreshing) return
+  const epoch = accessEpoch.current
+  const canApply = () => current() && epoch === accessEpoch.current
   setProcessing(true)
   setNotice('')
   let request = pendingRequest
@@ -128,7 +168,7 @@ function RefundsPageSession({ eventId, identity }) {
    const response = await requestApi('post', `/organizer/events/${eventId}/orders/${orderId}/refund`, request.payload, {
     headers: { 'Idempotency-Key': request.key },
    })
-   if (!current()) return
+   if (!canApply()) return
    const status = response.data.status
    request = { ...request, financeReview: Boolean(needsFinanceReview(response.data, request)) }
    window.sessionStorage.setItem(storageKey, JSON.stringify(request))
@@ -148,7 +188,7 @@ function RefundsPageSession({ eventId, identity }) {
    } else { setNotice('The refund outcome is not confirmed. Retry this saved request before starting another refund.') }
    fetchOrders()
   } catch (e) {
-      if (!current()) return
+      if (!canApply()) return
    const data = e.response?.data
    if (request?.financeReview && data?.finance_review_required === false) {
     request = { ...request, financeReview: false }
@@ -171,7 +211,7 @@ function RefundsPageSession({ eventId, identity }) {
     setNotice(`${data?.error || 'The refund response could not be confirmed.'} Retry this saved request to check the outcome; do not create another refund.`)
    }
   }
-  if (current()) setProcessing(false)
+  if (canApply()) setProcessing(false)
  }
 
  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>

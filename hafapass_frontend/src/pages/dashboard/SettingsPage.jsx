@@ -29,40 +29,69 @@ export default function SettingsPage() {
 
 function SettingsPageSession({ identity }) {
  const { current, beginRequest } = useOrganizerRequests(identity, '/dashboard/settings')
+ const accessEpoch = useRef(0)
+ const verifiedOwner = useRef(false)
+ const requests = useRef(new Set())
+ const [organization, setOrganization] = useState(null)
+ const [memberships, setMemberships] = useState([])
+ const [accounts, setAccounts] = useState([])
+ const [email, setEmail] = useState('')
+ const [role, setRole] = useState('manager')
+ const [invitationUrl, setInvitationUrl] = useState('')
+ const [loading, setLoading] = useState(true)
+ const [busy, setBusy] = useState(false)
+ const [error, setError] = useState(null)
+ const [notice, setNotice] = useState(null)
+ const loadGeneration = useRef(0)
+ const withdrawAccess = useCallback(message => {
+  ++accessEpoch.current
+  verifiedOwner.current = false
+  requests.current.forEach(request => request.controller.abort())
+  setOrganization(null); setMemberships([]); setAccounts([]); setInvitationUrl('')
+  setEmail(''); setRole('manager'); setNotice(null); setBusy(false); setLoading(false)
+  setError(message)
+ }, [])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
+  const verifying = method === 'get' && url === '/organizer/organization'
+  if (!verifying && !verifiedOwner.current) throw new DOMException('Organization access is not verified', 'AbortError')
   const request = beginRequest()
   if (!request) throw new DOMException('Page context changed', 'AbortError')
+  const epoch = accessEpoch.current
+  requests.current.add(request)
   try {
    const response = method === 'get' || method === 'delete'
     ? await apiClient[method](url, { ...payload, ...request.config })
     : await apiClient[method](url, payload, { ...options, ...request.config })
-   if (!request.current()) throw new DOMException('Page context changed', 'AbortError')
+   if (!request.current() || epoch !== accessEpoch.current) throw new DOMException('Page context changed', 'AbortError')
    return response
-  } finally { request.release() }
- }, [beginRequest])
-  const [organization, setOrganization] = useState(null)
-  const [memberships, setMemberships] = useState([])
-  const [accounts, setAccounts] = useState([])
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState('manager')
-  const [invitationUrl, setInvitationUrl] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
-  const [notice, setNotice] = useState(null)
-  const loadGeneration = useRef(0)
+  } catch (requestError) {
+   if (request.current() && epoch === accessEpoch.current && [401, 403].includes(requestError.response?.status)) {
+    withdrawAccess(requestError.response.status === 401 ? 'Please sign in to verify organization access.'
+     : 'Your organization access changed. Retry to verify your current role before managing this organization.')
+   }
+   throw requestError
+  } finally { requests.current.delete(request); request.release() }
+ }, [beginRequest, withdrawAccess])
 
-  const canManage = organization?.role === 'owner'
+  const canManage = organization?.role === 'owner' && verifiedOwner.current
 
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current
-    const canApply = () => current() && generation === loadGeneration.current
     if (!current()) return
+    const epoch = ++accessEpoch.current
+    requests.current.forEach(request => request.controller.abort())
+    const canApply = () => current() && generation === loadGeneration.current && epoch === accessEpoch.current
     setLoading(true)
+    setBusy(false)
     setError(null)
     try {
       const organizationResponse = await requestApi('get', '/organizer/organization')
       if (!canApply()) return
+      if (organizationResponse.data.id == null || (identity.organizationId != null && String(organizationResponse.data.id) !== String(identity.organizationId))) {
+        withdrawAccess('The organization context could not be verified. Return to your dashboard and select it again.')
+        return
+      }
+      verifiedOwner.current = organizationResponse.data.role === 'owner'
       setOrganization(organizationResponse.data)
       if (organizationResponse.data.role === 'owner') {
         const [membersResponse, accountsResponse] = await Promise.all([
@@ -72,87 +101,95 @@ function SettingsPageSession({ identity }) {
         if (!canApply()) return
         setMemberships(membersResponse.data)
         setAccounts(accountsResponse.data)
-      }
+      } else { setMemberships([]); setAccounts([]); setInvitationUrl(''); setNotice(null) }
     } catch (requestError) {
       if (!canApply()) return
       setError(requestError.response?.data?.error || 'Could not load organization settings.')
     } finally {
       if (canApply()) setLoading(false)
     }
-  }, [requestApi, current])
+  }, [requestApi, current, identity.organizationId, withdrawAccess])
 
   useEffect(() => { load() }, [load])
 
   const invite = async event => {
     event.preventDefault()
     if (!current() || !canManage || busy) return
+    const epoch = accessEpoch.current
+    const canApply = () => current() && epoch === accessEpoch.current
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
       const response = await requestApi('post', '/organizer/memberships', { email, role })
-      if (!current()) return
+      if (!canApply()) return
       const url = `${window.location.origin}/organization-invitations/accept?token=${encodeURIComponent(response.data.invitation_token)}`
       setInvitationUrl(url)
       setEmail('')
       setMemberships(current => [...current, response.data])
       setNotice('Invitation created. Copy the secure link and send it to the invited email address.')
     } catch (requestError) {
-      if (!current()) return
+      if (!canApply()) return
       setError(requestError.response?.data?.error || requestError.response?.data?.errors?.[0] || 'Could not create invitation.')
     } finally {
-      if (current()) setBusy(false)
+      if (canApply()) setBusy(false)
     }
   }
 
   const changeRole = async (membership, nextRole) => {
     if (!current() || !canManage || busy) return
+    const epoch = accessEpoch.current
+    const canApply = () => current() && epoch === accessEpoch.current
     setBusy(true)
     setError(null)
     try {
       const response = await requestApi('patch', `/organizer/memberships/${membership.id}`, { role: nextRole })
-      if (!current()) return
+      if (!canApply()) return
       setMemberships(current => current.map(item => item.id === membership.id ? response.data : item))
     } catch (requestError) {
-      if (!current()) return
+      if (!canApply()) return
       setError(requestError.response?.data?.error || requestError.response?.data?.errors?.[0] || 'Could not update role.')
     } finally {
-      if (current()) setBusy(false)
+      if (canApply()) setBusy(false)
     }
   }
 
   const revoke = async membership => {
     if (!current() || !canManage || busy) return
     if (!window.confirm(`Revoke ${membership.email}'s access?`)) return
+    const epoch = accessEpoch.current
+    const canApply = () => current() && epoch === accessEpoch.current
     setBusy(true)
     setError(null)
     try {
       await requestApi('delete', `/organizer/memberships/${membership.id}`)
-      if (!current()) return
+      if (!canApply()) return
       setMemberships(current => current.map(item => item.id === membership.id ? { ...item, status: 'revoked' } : item))
     } catch (requestError) {
-      if (!current()) return
+      if (!canApply()) return
       setError(requestError.response?.data?.error || 'Could not revoke access.')
     } finally {
-      if (current()) setBusy(false)
+      if (canApply()) setBusy(false)
     }
   }
 
   const startOnboarding = async provider => {
     if (!current() || !canManage || busy) return
+    const epoch = accessEpoch.current
+    const canApply = () => current() && epoch === accessEpoch.current
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
       const response = await requestApi('post', '/organizer/connected_accounts', { provider })
-      if (!current()) return
+      if (!canApply()) return
       setAccounts(current => [...current.filter(account => account.provider !== provider), response.data])
       setNotice(response.data.next_action)
     } catch (requestError) {
-      if (!current()) return
+      if (!canApply()) return
       setError(requestError.response?.data?.error || 'Could not start payout onboarding.')
     } finally {
-      if (current()) setBusy(false)
+      if (canApply()) setBusy(false)
     }
   }
 
