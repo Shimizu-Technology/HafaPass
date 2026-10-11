@@ -1,4 +1,5 @@
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe "Stripe webhooks", type: :request do
   let(:organizer_profile) { create(:organizer_profile) }
@@ -247,6 +248,97 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect do
       post_stripe_event("charge.dispute.closed", dispute, event_id: "evt_dispute_lost")
     end.not_to change { ticket_type.reload.quantity_sold }
+  end
+
+  it "recognizes a signed lost dispute without releasing previously admitted capacity after Undo" do
+    configure_signed_inventory_test_context
+    checkout = create_pending_checkout(intent_id: "pi_retained_dispute", quantity: 2)
+    expect(checkout.payment.provider_environment).to eq("test")
+    expect(checkout.payment.provider_platform_account_id).to eq("acct_syntheticinventory")
+    post_stripe_event("payment_intent.succeeded",
+      { id: "pi_retained_dispute", amount_received: checkout.payment.amount_cents, currency: "usd" })
+    used, unused = checkout.order.reload.tickets.order(:id).to_a
+    used.check_in!
+    used.reverse_check_in!
+    sold = ticket_type.reload.quantity_sold
+    object = { id: "dp_retained_dispute", payment_intent: "pi_retained_dispute",
+      amount: checkout.payment.amount_cents, currency: "usd", reason: "fraudulent", status: "lost" }
+    signed_inventory_reversal_event("charge.dispute.closed", object, "evt_retained_dispute")
+
+    expect(response).to have_http_status(:ok)
+    expect(checkout.order.reconciliation_exceptions.pluck(:code))
+      .to match_array(%w[stripe_fee_adjustment_review_required admitted_inventory_retained])
+    lost = Dispute.find_by!(provider_dispute_id: object[:id])
+    expect(lost).to be_lost
+    expect(used.reload).to be_issued
+    expect(used.inventory_retention).to have_attributes(dispute_id: lost.id, refund_id: nil)
+    expect(unused.reload).to be_cancelled
+    expect(ticket_type.reload.quantity_sold).to eq(sold - 1)
+    expect(used).not_to be_admission_allowed
+    expect(WebhookEvent.find_by!(provider_event_id: "evt_retained_dispute")).to be_processed
+    expect do
+      signed_inventory_reversal_event("charge.dispute.closed", object, "evt_retained_dispute_retry")
+    end.not_to change(TicketInventoryRetention, :count)
+    expect(ticket_type.reload.quantity_sold).to eq(sold - 1)
+  end
+
+  it "recognizes a signed unknown whole-order refund and retains the admitted ticket exactly once" do
+    configure_signed_inventory_test_context
+    checkout = create_pending_checkout(intent_id: "pi_retained_refund")
+    expect(checkout.payment.provider_environment).to eq("test")
+    expect(checkout.payment.provider_platform_account_id).to eq("acct_syntheticinventory")
+    post_stripe_event("payment_intent.succeeded",
+      { id: "pi_retained_refund", amount_received: checkout.payment.amount_cents, currency: "usd" })
+    ticket = checkout.order.reload.tickets.first
+    ticket.check_in!
+    sold = ticket_type.reload.quantity_sold
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError.new("Synthetic lost response"))
+    expect do
+      Commerce::RefundCreator.call(order: checkout.order, amount_cents: checkout.order.total_cents,
+        idempotency_key: "retained-refund-original")
+    end.to raise_error(Commerce::RefundCreator::RefundError, /unknown/)
+    refund = checkout.order.refunds.find_by!(idempotency_key: "retained-refund-original")
+    object = { id: "re_retained_refund", payment_intent: "pi_retained_refund",
+      metadata: { hafapass_refund_key: refund.idempotency_key }, amount: refund.amount_cents, currency: "usd", status: "succeeded" }
+    signed_inventory_reversal_event("refund.updated", object, "evt_retained_refund")
+
+    expect(response).to have_http_status(:ok)
+    expect(checkout.order.reconciliation_exceptions.pluck(:code))
+      .to match_array(%w[stripe_fee_adjustment_review_required admitted_inventory_retained])
+    expect(refund.reload).to be_succeeded
+    expect(refund.provider_refund_id).to eq(object[:id])
+    expect(checkout.order.reload).to be_refunded
+    expect(checkout.payment.reload).to be_refunded
+    expect(ticket.reload).to be_checked_in
+    expect(ticket.inventory_retention.refund_id).to eq(refund.id)
+    expect(ticket_type.reload.quantity_sold).to eq(sold)
+    expect do
+      signed_inventory_reversal_event("refund.updated", object, "evt_retained_refund_retry")
+    end.not_to change(TicketInventoryRetention, :count)
+    expect(ticket_type.reload.quantity_sold).to eq(sold)
+  end
+
+  def signed_inventory_reversal_event(type, object, event_id)
+    secret = "whsec_synthetic_inventory_retention"
+    allow(ENV).to receive(:[]).with("STRIPE_WEBHOOK_SECRET").and_return(secret)
+    timestamp = Time.current.to_i
+    payload = { id: event_id, type: type, livemode: false, created: timestamp, data: { object: object } }.to_json
+    signature = OpenSSL::HMAC.hexdigest("SHA256", secret, "#{timestamp}.#{payload}")
+    post "/webhooks/stripe", params: payload,
+      headers: { "Content-Type" => "application/json", "Stripe-Signature" => "t=#{timestamp},v1=#{signature}" }
+  end
+
+  def configure_signed_inventory_test_context
+    # A controlled SDK account-read response supplies a coherent test context.
+    # Signature verification and local financial/inventory transitions are real;
+    # these tests are not hosted or actual-provider acceptance.
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("sk_test_synthetic_inventory")
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_PLATFORM_ACCOUNT_ID").and_return("acct_syntheticinventory")
+    SiteSetting.instance.update!(payment_mode: "test")
+    accounts = double(retrieve_current: OpenStruct.new(id: "acct_syntheticinventory"))
+    allow(Stripe::StripeClient).to receive(:new).with("sk_test_synthetic_inventory")
+      .and_return(double(v1: double(accounts: accounts)))
   end
 
   it "does not treat a closed warning inquiry as a lost chargeback" do

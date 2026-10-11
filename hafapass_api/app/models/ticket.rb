@@ -16,6 +16,7 @@ class Ticket < ApplicationRecord
   has_many :support_notes, dependent: :restrict_with_error
   has_many :admission_actions, dependent: :restrict_with_error
   has_many :ticket_transfers, dependent: :restrict_with_error
+  has_one :inventory_retention, class_name: "TicketInventoryRetention", dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
 
@@ -25,6 +26,8 @@ class Ticket < ApplicationRecord
   validates :qr_code, uniqueness: true, allow_nil: true
   validates :holder_email, format: { with: URI::MailTo::EMAIL_REGEXP }, allow_blank: true
   validate :assigned_seat_matches_ticket
+  validate :preserve_retained_inventory
+  validate :preserve_first_admission
 
   before_validation :normalize_holder
   after_update :audit_assigned_seat_cancellation, if: :assigned_seat_just_cancelled?
@@ -52,11 +55,20 @@ class Ticket < ApplicationRecord
   end
 
   def admission_allowed?
-    issued? && order.ticket_fulfilled? && !order.ticket_access_blocked? && !refund_pending? && event.published?
+    issued? && order.ticket_fulfilled? && !order.ticket_access_blocked? && !refund_pending? &&
+      !inventory_retained? && event.published?
   end
 
   def refund_pending?
-    pending_refund_tickets.any?
+    order.full_refund_pending? || pending_refund_tickets.any?
+  end
+
+  def inventory_retained?
+    inventory_retention.present?
+  end
+
+  def previously_admitted?
+    checked_in? || first_admitted_at.present? || admission_actions.kind_admit.result_accepted.exists?
   end
 
   def held_by?(user)
@@ -79,13 +91,15 @@ class Ticket < ApplicationRecord
         if order.ticket_access_blocked?
           raise AdmissionError, "Ticket access is suspended while a payment dispute is reviewed"
         end
-        raise AdmissionError, "Ticket access is paused while its selected refund is pending" if refund_pending?
+        raise AdmissionError, "Ticket access is paused while its refund is pending" if refund_pending?
+        raise AdmissionError, "Refunded or disputed admission requires organizer review" if inventory_retained?
         raise AdmissionError, "Event is #{event.status}; check-in is unavailable" unless event.reload.published?
         if credential && !TicketCredential.valid_scan_for?(self, credential)
           raise AdmissionError, "Ticket credential has been replaced"
         end
 
-        update!(status: :checked_in, checked_in_at: Time.current)
+        at = Time.current
+        update!(status: :checked_in, checked_in_at: at, first_admitted_at: first_admitted_at || at)
       end
     end
   end
@@ -101,6 +115,8 @@ class Ticket < ApplicationRecord
   end
 
   def release_inventory!
+    raise AdmissionError, "Occupied inventory requires organizer review" if inventory_retained?
+
     ticket_type.with_lock do
       ticket_type.decrement!(:quantity_sold) if ticket_type.quantity_sold.positive?
     end
@@ -115,6 +131,19 @@ class Ticket < ApplicationRecord
   end
 
   private
+
+  def preserve_retained_inventory
+    return unless persisted? && inventory_retained?
+    if cancelled? || %w[event_seat_id ticket_type_id pricing_tier_id order_id].any? { |field| will_save_change_to_attribute?(field) }
+      errors.add(:base, "Retained occupied inventory cannot be cancelled or moved")
+    end
+  end
+
+  def preserve_first_admission
+    if persisted? && first_admitted_at_in_database.present? && will_save_change_to_first_admitted_at?
+      errors.add(:first_admitted_at, "must preserve the original admission")
+    end
+  end
 
   def order_item_total_cents
     order_item.subtotal_cents + order_item.fee_cents + order_item.tax_cents - order_item.discount_cents

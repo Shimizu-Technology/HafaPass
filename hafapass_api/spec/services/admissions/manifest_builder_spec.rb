@@ -67,6 +67,37 @@ RSpec.describe Admissions::ManifestBuilder do
     expect(original.reload.ticket_count).to eq(1)
   end
 
+  it "signs the aggregate pending-full fence for legacy amount-only rows and clears only a definitive failure" do
+    original = described_class.call(event: event, actor: profile.user)
+    refund = create(:refund, order: order, amount_cents: order.total_cents, status: :pending,
+      provider_refund_id: nil, succeeded_at: nil, failure_code: "provider_result_unknown")
+    expect(refund.refund_tickets).to be_empty
+    paused = described_class.call(event: event, actor: profile.user)
+    expect(paused.version).to eq(original.version + 1)
+    expect(paused.payload.dig("tickets", 0, "state")).to eq("refund_pending")
+    expect(Admissions::ManifestSigner.verify(digest: paused.digest, signature: paused.signature)).to be(true)
+    expect(original.reload.payload.dig("tickets", 0, "state")).to eq("valid")
+
+    Commerce::RefundCreator.reconcile_refund!(refund: refund,
+      provider_refund: OpenStruct.new(id: "re_synthetic_full_failed", status: "failed"))
+    resumed = described_class.call(event: event, actor: profile.user)
+    expect(resumed.version).to eq(paused.version + 1)
+    expect(resumed.payload.dig("tickets", 0, "state")).to eq("valid")
+  end
+
+  it "does not make retained inventory valid when an exception is resolved and a used ticket is reversed" do
+    ticket.check_in!
+    refund = create(:refund, order: order)
+    retention = Commerce::FinancialReversalInventory.call(ticket: ticket, refund: refund)
+    retained = described_class.call(event: event, actor: profile.user)
+    expect(retained.payload.dig("tickets", 0, "state")).to eq("inventory_retained")
+    retention.reconciliation_exception.resolve!
+    ticket.reverse_check_in!
+    refreshed = described_class.call(event: event, actor: profile.user)
+    expect(refreshed.payload.dig("tickets", 0, "state")).to eq("inventory_retained")
+    expect(ticket.reload).not_to be_admission_allowed
+  end
+
   it "signs exact accepted reversal proofs across independent staff and manager devices" do
     staff = create(:user)
     create(:organization_membership, organization: profile.organization, user: staff, role: :scanner)

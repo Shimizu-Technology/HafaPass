@@ -367,13 +367,7 @@ class StripeWebhookProcessor
 
   def cancel_disputed_tickets!(order, dispute)
     order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
-      ticket.release_inventory!
-      ticket.update!(
-        status: :cancelled,
-        cancelled_at: Time.current,
-        cancellation_reason: "payment_dispute_lost",
-        scan_credential_version: ticket.scan_credential_version + 1
-      )
+      Commerce::FinancialReversalInventory.call(ticket: ticket, dispute: dispute, reason: "payment_dispute_lost")
     end
     order.event.notify_waitlist_if_available
     dispute

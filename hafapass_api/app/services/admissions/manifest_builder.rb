@@ -81,7 +81,7 @@ module Admissions
     attr_reader :event, :actor
 
     def manifest_tickets
-      event.tickets.includes(:ticket_type, :pending_refund_tickets, { order: :disputes },
+      event.tickets.includes(:ticket_type, :inventory_retention, :pending_refund_tickets, { order: [:disputes, :refunds] },
         event_seat: { venue_seat: { seating_row: :seating_section } }).order(:id).map do |ticket|
         {
           ticket_id: ticket.id,
@@ -112,6 +112,7 @@ module Admissions
     def admission_state(ticket)
       return "cancelled" if ticket.cancelled?
       return "transferred" if ticket.transferred?
+      return "inventory_retained" if ticket.inventory_retained?
       return "payment_blocked" if ticket.order.ticket_access_blocked?
       return "refund_pending" if ticket.refund_pending?
       return "unfulfilled" unless ticket.order.ticket_fulfilled?

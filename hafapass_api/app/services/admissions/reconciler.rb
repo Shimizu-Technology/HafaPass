@@ -259,6 +259,7 @@ module Admissions
     def current_block_reason(ticket)
       return "cancelled" if ticket.cancelled?
       return "transferred" if ticket.transferred?
+      return "inventory_retained" if ticket.inventory_retained?
       return "payment_blocked" if ticket.order.ticket_access_blocked?
       return "refund_pending" if ticket.refund_pending?
       return "unfulfilled" unless ticket.order.ticket_fulfilled?
