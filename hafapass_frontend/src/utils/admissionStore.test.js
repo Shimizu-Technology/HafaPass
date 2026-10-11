@@ -34,6 +34,74 @@ describe('admissionStore', () => {
     expect(canonicalJson({ z: 2, a: { d: 4, b: 3 } })).toBe('{"a":{"b":3,"d":4},"z":2}')
   })
 
+  describe('late acknowledgement access metadata', () => {
+    const eventId = 95701
+    it.each([
+      ['accepted', true, true, true], ['rejected', true, true, true],
+      ['accepted', false, false, true], ['accepted', true, false, true],
+      ['accepted', true, false, false],
+    ])('acknowledges %s exactly without replacing peer metadata (peer: %s, effective: %s, context: %s)', async (verdict, peerRenewed, replyEffective, hasContext) => {
+      window.localStorage.setItem('hafapass_scanner_user_id', 'ack-owner')
+      await clearEventAdmissionData(eventId)
+      const now = Date.now()
+      const oldExpiry = new Date(now + 60_000).toISOString()
+      const renewedExpiry = new Date(now + 3_600_000).toISOString()
+      const device = { id: 91, identifier: 'ack-device', effective: true, status: 'active',
+        last_sequence: 0, authorization_expires_at: oldExpiry }
+      const tickets = [14, 15].map(ticket_id => ({ ticket_id, state: 'valid', credential_hash: 'c'.repeat(64) }))
+      await saveDevice(eventId, device)
+      await saveVerifiedManifest(await signedManifest(eventId, tickets, { expires_at: renewedExpiry }))
+      const original = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1,
+        ticket: tickets[0], credentialHash: tickets[0].credential_hash, source: 'online' })
+      const context = await captureAdmissionAccessContext(eventId)
+      if (peerRenewed) {
+        await saveDevice(eventId, { ...device, authorization_expires_at: renewedExpiry }, { context })
+        await saveVerifiedManifest(await signedManifest(eventId, tickets, { version: 2, expires_at: renewedExpiry }))
+      }
+      const unknown = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: peerRenewed ? 2 : 1,
+        ticket: tickets[1], credentialHash: tickets[1].credential_hash, source: 'offline' })
+      const reply = { ...device, last_sequence: original.sequence, effective: replyEffective }
+      expect(await applySyncResults(eventId, reply, [{ action_uuid: original.action_uuid,
+        ticket_id: original.ticket_id, kind: 'admit', result: verdict, reason_code: verdict === 'accepted' ? 'admitted' : 'refund_pending' }],
+      'ack-owner', hasContext ? { context } : {})).toBe(1)
+      expect(await localScanState(eventId, original.ticket_id)).toMatchObject({ status: verdict, action_uuid: original.action_uuid })
+      expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([unknown.action_uuid])
+      expect(await loadDevice(eventId)).toMatchObject({ effective: peerRenewed ? true : replyEffective,
+        authorization_expires_at: peerRenewed ? renewedExpiry : oldExpiry,
+        last_sequence: original.sequence, next_sequence: unknown.sequence })
+      if (peerRenewed) {
+        vi.spyOn(Date, 'now').mockReturnValue(now + 61_000)
+        expect((await loadAuthorizedScanner(eventId)).manifest.payload.version).toBe(2)
+      } else expect(await loadAuthorizedScanner(eventId)).toBeNull()
+      expect((await queuedActions(eventId, device.id)).map(action => action.action_uuid)).toEqual([unknown.action_uuid])
+      expect(await loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: device.id })
+    })
+
+    it('retains metadata when the originating setup changes during a device metadata write, while committing the exact receipt', async () => {
+      window.localStorage.setItem('hafapass_scanner_user_id', 'ack-owner')
+      await clearEventAdmissionData(eventId)
+      const device = { id: 91, identifier: 'ack-device', effective: true, last_sequence: 0,
+        authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+      await saveDevice(eventId, device)
+      await saveVerifiedManifest(await signedManifest(eventId))
+      const action = await queueAdmission({ eventId, deviceId: device.id, manifestVersion: 1,
+        ticket: { ticket_id: 14 }, credentialHash: 'c'.repeat(64), source: 'online' })
+      let current = true
+      const context = await captureAdmissionAccessContext(eventId, { isCurrent: () => current })
+      const originalPut = IDBObjectStore.prototype.put
+      vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (...args) {
+        const request = originalPut.apply(this, args)
+        if (this.name === 'devices') request.addEventListener('success', () => { current = false })
+        return request
+      })
+      expect(await applySyncResults(eventId, { ...device, effective: false }, [{ action_uuid: action.action_uuid,
+        ticket_id: 14, kind: 'admit', result: 'accepted' }], 'ack-owner', { context })).toBe(1)
+      expect((await loadDevice(eventId)).effective).toBe(true)
+      expect((await localScanState(eventId, 14)).action_uuid).toBe(action.action_uuid)
+      expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+    })
+  })
+
   describe('conditional access removal', () => {
     const eventId = 95601
     const device = { id: 71, identifier: 'purge-context', effective: true, last_sequence: 0,

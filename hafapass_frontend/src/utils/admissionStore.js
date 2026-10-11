@@ -45,6 +45,9 @@ const accessKeyIdentity = key => key ? JSON.stringify([key.key_id, key.public_ke
 const accessJournalIdentity = journal => journal ? JSON.stringify([
   journal.owner_user_id, journal.event_id, journal.device_id, journal.identifier,
 ]) : null
+const accessSnapshotMatches = (context, device, manifest, key, journal) => context
+  && accessDeviceIdentity(device) === context.device && accessManifestIdentity(manifest) === context.manifest
+  && accessKeyIdentity(key) === context.key && accessJournalIdentity(journal) === context.journal
 
 // Capture access before starting network/crypto work. Sequence/queue changes are
 // deliberately excluded: a legitimate refusal must still remove current access
@@ -100,8 +103,7 @@ async function removeAdmissionAccess(eventId, { context, removeAuthorization }) 
       if (!current()) throw manifestContextError('Scanner access changed while removing its cache')
     }
     assertCurrent()
-    if (accessDeviceIdentity(device) !== context.device || accessManifestIdentity(manifest) !== context.manifest
-      || accessKeyIdentity(key) !== context.key || accessJournalIdentity(journal) !== context.journal) {
+    if (!accessSnapshotMatches(context, device, manifest, key, journal)) {
       throw manifestContextError('Scanner cache was replaced before its removal')
     }
     if (!removeAuthorization && device?.owner_user_id !== context.owner) {
@@ -323,8 +325,7 @@ export async function saveDevice(eventId, device, { isCurrent = () => true, cont
       journal.get([owner, Number(eventId)]),
     ])
     assertCurrent()
-    if (accessDeviceIdentity(previous) !== context.device || accessManifestIdentity(manifest) !== context.manifest
-      || accessKeyIdentity(key) !== context.key || accessJournalIdentity(identity) !== context.journal) {
+    if (!accessSnapshotMatches(context, previous, manifest, key, identity)) {
       throw manifestContextError('Scanner cache was replaced before its registration could be saved')
     }
     const prior = previous?.owner_user_id === owner ? previous : null
@@ -501,14 +502,20 @@ export async function localScanState(eventId, ticketId) {
   return (await database()).get('scan_states', [Number(eventId), Number(ticketId)])
 }
 
-export async function applySyncResults(eventId, device, results, owner = currentScannerOwner()) {
+export async function applySyncResults(eventId, device, results, owner = currentScannerOwner(), { context } = {}) {
   if (!owner || owner !== currentScannerOwner()) return 0
   const db = await database()
-  const transaction = db.transaction(['devices', 'queue', 'scan_states', 'journal_devices'], 'readwrite')
+  const transaction = db.transaction(['devices', 'queue', 'scan_states', 'journal_devices', 'manifests', 'trusted_keys'], 'readwrite')
   const devices = transaction.objectStore('devices')
   const storedDevice = await devices.get(Number(eventId))
   const identity = await transaction.objectStore('journal_devices').get([owner, Number(eventId)])
+  const [manifest, key] = await Promise.all([
+    transaction.objectStore('manifests').get(Number(eventId)),
+    transaction.objectStore('trusted_keys').get(Number(eventId)),
+  ])
   const hasAccess = storedDevice?.owner_user_id === owner && storedDevice.id === device.id
+  const metadataCurrent = () => context?.owner === owner && context.eventId === Number(eventId)
+    && context.isCurrent() && accessSnapshotMatches(context, storedDevice, manifest, key, identity)
   // Expiry/sign-out can remove attendee access during a request. The original owner's
   // minimal journal still permits acknowledgement, without recreating admission access.
   if ((!hasAccess && identity?.device_id !== device.id) || owner !== currentScannerOwner()) {
@@ -574,13 +581,23 @@ export async function applySyncResults(eventId, device, results, owner = current
     await transaction.done.catch(() => {})
     return 0
   }
-  if (hasAccess) await devices.put({
-    ...storedDevice,
-    ...device,
-    event_id: Number(eventId),
-    owner_user_id: owner,
-    next_sequence: Math.max(Number(storedDevice.next_sequence || 0), Number(device.last_sequence || 0)),
-  })
+  if (hasAccess) {
+    // A valid receipt is authority for its journal action, not for replacing a
+    // newer peer's lease. Sequence progress remains monotonic in either case.
+    const progress = { ...storedDevice, event_id: Number(eventId), owner_user_id: owner,
+      last_sequence: Math.max(Number(storedDevice.last_sequence || 0), Number(device.last_sequence || 0)),
+      next_sequence: Math.max(Number(storedDevice.next_sequence || 0), Number(device.last_sequence || 0)) }
+    const updateMetadata = metadataCurrent()
+    await devices.put(updateMetadata ? { ...storedDevice, ...device,
+      event_id: progress.event_id, owner_user_id: owner,
+      last_sequence: progress.last_sequence, next_sequence: progress.next_sequence } : progress)
+    if (updateMetadata && !metadataCurrent()) await devices.put(progress)
+    if (owner !== currentScannerOwner()) {
+      transaction.abort()
+      await transaction.done.catch(() => {})
+      return 0
+    }
+  }
   await transaction.done
   return acknowledged
 }

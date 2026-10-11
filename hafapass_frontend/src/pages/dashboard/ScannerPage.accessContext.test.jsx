@@ -54,6 +54,116 @@ afterEach(async () => {
 })
 
 describe('scanner setup refusal with the real Clerk wrapper and Axios interceptor', () => {
+  it.each([false, true])('uses the manifest GET context for a refusal after an older ACK (peer refresh during GET: %s)', async refreshedAgain => {
+    const oldDevice = { ...device(91), authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }
+    const renewedDevice = { ...oldDevice, authorization_expires_at: new Date(Date.now() + 3_600_000).toISOString() }
+    const firstTicket = { ...ticket, credential_hash: await store.sha256Hex('manifest-refusal-qr') }
+    const originalManifest = await signedManifest(eventId, [firstTicket])
+    const heldAck = deferred()
+    const heldManifest = deferred()
+    let action, ackConfig, manifestConfig
+    let downloads = 0
+    api.defaults.adapter = vi.fn(config => {
+      if (config.url.endsWith('/sync')) { action = JSON.parse(config.data).actions[0]; ackConfig = config; return heldAck.promise }
+      if (config.url.endsWith('/manifest') && ++downloads > 1) { manifestConfig = config; return heldManifest.promise }
+      return Promise.resolve(response(config, config.url === '/organizer/events'
+        ? { events: [{ id: eventId, title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
+          : config.url.endsWith('/scanner_devices') ? oldDevice : config.url.endsWith('/manifest') ? originalManifest
+            : { counts: {}, permissions: {}, recent_actions: [] }))
+    })
+    const mounted = render(view())
+    await screen.findByText(/Manifest v1/)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Ticket QR credential'), 'manifest-refusal-qr')
+    await user.click(screen.getByRole('button', { name: 'Validate', exact: true }))
+    await waitFor(() => expect(action).toBeDefined())
+    await store.saveDevice(eventId, renewedDevice, { context: await store.captureAdmissionAccessContext(eventId) })
+    await store.saveVerifiedManifest(await signedManifest(eventId, [{ ...firstTicket, state: 'admitted' }],
+      { version: 2, expires_at: renewedDevice.authorization_expires_at }))
+    await act(async () => heldAck.resolve(response(ackConfig, { device: { ...oldDevice, last_sequence: action.sequence },
+      results: [{ ...action, result: 'accepted', reason_code: 'admitted' }], summary: {} })))
+    await waitFor(() => expect(manifestConfig).toBeDefined())
+    if (refreshedAgain) {
+      const newest = { ...renewedDevice, authorization_expires_at: new Date(Date.now() + 7_200_000).toISOString() }
+      await store.saveDevice(eventId, newest, { context: await store.captureAdmissionAccessContext(eventId) })
+      await store.saveVerifiedManifest(await signedManifest(eventId, [{ ...firstTicket, state: 'admitted' }],
+        { version: 3, expires_at: newest.authorization_expires_at }))
+    }
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: refreshedAgain ? 3 : 2,
+      ticket: { ...firstTicket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    await act(async () => heldManifest.reject(new AxiosError('Current manifest access refused', undefined, manifestConfig, null,
+      { config: manifestConfig, status: 403, data: { error: 'Current manifest access refused' }, headers: {} })))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' }).querySelector('.animate-spin')).toBeNull())
+    if (refreshedAgain) {
+      expect((await store.loadAuthorizedScanner(eventId)).manifest.payload.version).toBe(3)
+      expect(screen.queryByText('Current manifest access refused')).not.toBeInTheDocument()
+    } else {
+      await screen.findByText('Current manifest access refused')
+      expect(await store.loadAuthorizedScanner(eventId)).toBeNull()
+    }
+    expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
+    expect(await store.loadPendingDeviceIdentity(eventId)).toMatchObject({ device_id: 91 })
+    mounted.unmount()
+  })
+
+  it.each(['accepted', 'rejected'])('uses the retained peer lease after an old %s receipt, even while another saved scan remains unknown', async verdict => {
+    const now = Date.now()
+    const oldDevice = { ...device(91), authorization_expires_at: new Date(now + 60_000).toISOString() }
+    const renewedDevice = { ...oldDevice, authorization_expires_at: new Date(now + 3_600_000).toISOString() }
+    const hash = await store.sha256Hex('late-ACK-qr')
+    const firstTicket = { ...ticket, credential_hash: hash }
+    const guardedTicket = { ...ticket, ticket_id: 503, credential_hash: await store.sha256Hex('peer-guard-qr') }
+    let currentManifest = await signedManifest(eventId, [firstTicket, guardedTicket], { expires_at: renewedDevice.authorization_expires_at })
+    const held = deferred()
+    let original
+    let syncCalls = 0
+    api.defaults.adapter = vi.fn(config => {
+      if (config.url.endsWith('/sync')) {
+        syncCalls += 1
+        if (syncCalls === 1) { original = JSON.parse(config.data).actions[0]; return held.promise }
+        return Promise.reject(new AxiosError('Other saved scan remains unknown', undefined, config, null,
+          { config, status: 503, data: {}, headers: {} }))
+      }
+      return Promise.resolve(response(config, config.url === '/organizer/events'
+        ? { events: [{ id: eventId, title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
+          : config.url.endsWith('/scanner_devices') ? oldDevice : config.url.endsWith('/manifest') ? currentManifest
+            : { counts: {}, permissions: {}, recent_actions: [] }))
+    })
+    const mounted = render(view())
+    await screen.findByText(/Manifest v1/)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Ticket QR credential'), 'late-ACK-qr')
+    await user.click(screen.getByRole('button', { name: 'Validate', exact: true }))
+    await waitFor(() => expect(original).toBeDefined())
+    const peerContext = await store.captureAdmissionAccessContext(eventId)
+    await store.saveDevice(eventId, renewedDevice, { context: peerContext })
+    const guardContext = await store.captureAdmissionAccessContext(eventId)
+    const guarded = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 1,
+      ticket: guardedTicket, credentialHash: guardedTicket.credential_hash, source: 'online' })
+    await store.applySyncResults(eventId, { ...renewedDevice, last_sequence: guarded.sequence }, [{ action_uuid: guarded.action_uuid,
+      ticket_id: 503, kind: 'admit', result: 'accepted' }], 'staff-a', { context: guardContext })
+    currentManifest = await signedManifest(eventId, [{ ...firstTicket, state: verdict === 'accepted' ? 'admitted' : 'refund_pending' },
+      { ...guardedTicket, state: 'admitted' }],
+      { version: 2, expires_at: renewedDevice.authorization_expires_at })
+    await store.saveVerifiedManifest(currentManifest)
+    const unknown = await store.queueAdmission({ eventId, deviceId: 91, manifestVersion: 2,
+      ticket: { ...firstTicket, ticket_id: 502 }, credentialHash: 'd'.repeat(64), source: 'offline' })
+    await act(async () => held.resolve(response({}, { device: { ...oldDevice, last_sequence: original.sequence },
+      results: [{ ...original, result: verdict, reason_code: verdict === 'accepted' ? 'admitted' : 'refund_pending' }], summary: {} })))
+    await screen.findByText(verdict === 'accepted' ? 'Admission confirmed' : 'Refund pending — do not admit')
+    await waitFor(() => expect(syncCalls).toBe(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+    vi.spyOn(Date, 'now').mockReturnValue(now + 61_000)
+    await user.type(screen.getByLabelText('Ticket QR credential'), 'peer-guard-qr')
+    await user.click(screen.getByRole('button', { name: 'Validate', exact: true }))
+    await screen.findByText('Already scanned on this device')
+    expect(screen.queryByText('Scanner unavailable')).not.toBeInTheDocument()
+    expect((await store.loadAuthorizedScanner(eventId)).device.authorization_expires_at).toBe(renewedDevice.authorization_expires_at)
+    expect((await store.queuedActions(eventId, 91)).map(action => action.action_uuid)).toEqual([unknown.action_uuid])
+    expect((await store.localScanState(eventId, 501)).action_uuid).toBe(original.action_uuid)
+    mounted.unmount()
+  })
+
   it.each([['timer', false], ['timer', true], ['lookup', false], ['lookup', true]])(
     'binds %s expiry to its original snapshot (peer renewed: %s)', async (method, peerRenewed) => {
       const prepared = device(91)

@@ -137,7 +137,18 @@ export default function ScannerPage({ offlineOnly = false }) {
     const current = () => mountedRef.current && owner === currentScannerOwner()
       && eventIdRef.current === String(selectedEventId) && generation === setupGenerationRef.current
     const context = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
-    const response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`)
+    let response
+    try {
+      response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`)
+    } catch (manifestError) {
+      if ([401, 403, 404, 410, 422].includes(manifestError.response?.status)) {
+        const removed = await purgeExpiredAdmissionAccess(selectedEventId, { context })
+        manifestError.scannerAccessRefused = true
+        manifestError.scannerAccessPurged = removed && current()
+        if (manifestError.scannerAccessPurged) { setDevice(null); setManifest(null); setRecoveryDevice(null) }
+      }
+      throw manifestError
+    }
     if (!current() || selectedDevice.owner_user_id !== currentScannerOwner()) return null
     let verified
     try {
@@ -216,7 +227,7 @@ export default function ScannerPage({ offlineOnly = false }) {
         if (response.data?.device?.id !== currentDevice.id || !Array.isArray(results) || batch.some(action => !results.some(result => result.action_uuid === action.action_uuid && result.kind === action.kind && ['accepted', 'conflict', 'rejected'].includes(result.result)))) {
           throw new Error('The server did not confirm every saved scan. They remain on this device; please retry synchronization.')
         }
-        await applySyncResults(selectedEventId, response.data.device, response.data.results, owner)
+        await applySyncResults(selectedEventId, response.data.device, response.data.results, owner, { context: failureContext })
         if (!current()) return
         const pendingAfterSync = await queuedActions(selectedEventId, currentDevice.id)
         if (batch.some(action => pendingAfterSync.some(pending => pending.action_uuid === action.action_uuid))) {
@@ -234,7 +245,14 @@ export default function ScannerPage({ offlineOnly = false }) {
           }
           return admissionAcknowledgement(current, result)
         })
-        currentDevice = { ...currentDevice, ...response.data.device }
+        // Receipt reconciliation may retain a newer peer's authorization. Never
+        // reapply the old response's lease over the store's retained device.
+        const retainedDevice = await loadDevice(selectedEventId)
+        if (!current()) return
+        if (retainedDevice?.id === currentDevice.id) {
+          currentDevice = retainedDevice
+          setDevice(retainedDevice)
+        }
         if (eventIdRef.current === String(selectedEventId)) setDashboard(current => current ? { ...current, counts: response.data.summary } : current)
         remaining = pendingAfterSync
       }
@@ -261,7 +279,9 @@ export default function ScannerPage({ offlineOnly = false }) {
         if (current()) setError('Saved scanner data could not be read. Reload this device and retry; saved scans have not been removed.')
         return
       }
-      if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
+      if (syncError.scannerAccessRefused) {
+        if (syncError.scannerAccessPurged) setError(syncError.response?.data?.error || 'Scanner authorization was refused. Saved scans remain available to the original staff account after access is restored.')
+      } else if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
         if (!await purgeExpiredAdmissionAccess(selectedEventId, { context: failureContext }) || !current()) return
         if (eventIdRef.current === String(selectedEventId)) { setDevice(null); setManifest(null); setRecoveryDevice(null) }
         setError(syncError.response?.data?.error || 'Scanner authorization was refused. Saved scans remain available to the original staff account after access is restored.')
