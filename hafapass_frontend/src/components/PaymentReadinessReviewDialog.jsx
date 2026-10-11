@@ -1,3 +1,4 @@
+import AdminAccessRecovery from './AdminAccessRecovery'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, FileCheck2, Loader2, ShieldAlert, ShieldCheck, X } from 'lucide-react'
 import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
@@ -279,6 +280,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
 
 export default function PaymentReadinessReviewDialog(props) {
   const identity = useCapturedDialogIdentity()
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.key} identity={identity} />
   if (!identity.ready) return <p role="status">Checking account access…</p>
   return <PaymentReadinessReviewDialogSession key={`${identity.key}:${props.account.id}`} {...props} />
 }

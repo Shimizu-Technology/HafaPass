@@ -1,3 +1,4 @@
+import AdminAccessRecovery from './AdminAccessRecovery'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Loader2, RadioTower, ShieldAlert, ShieldCheck, Smartphone, X } from 'lucide-react'
 import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
@@ -247,6 +248,7 @@ function EventDayRehearsalReviewDialogSession({ event, onComplete }) {
 
 export default function EventDayRehearsalReviewDialog(props) {
   const identity = useCapturedDialogIdentity()
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.key} identity={identity} />
   if (!identity.ready) return <p role="status">Checking account access…</p>
   return <EventDayRehearsalReviewDialogSession key={`${identity.key}:${props.event.id}`} {...props} />
 }

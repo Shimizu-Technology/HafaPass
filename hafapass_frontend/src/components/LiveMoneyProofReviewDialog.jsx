@@ -1,3 +1,4 @@
+import AdminAccessRecovery from './AdminAccessRecovery'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, Check, ExternalLink, Loader2, ShieldAlert, ShieldCheck, X } from 'lucide-react'
 import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
@@ -197,6 +198,7 @@ function LiveMoneyProofReviewDialogSession({ event, onComplete }) {
 
 export default function LiveMoneyProofReviewDialog(props) {
   const identity = useCapturedDialogIdentity()
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.key} identity={identity} />
   if (!identity.ready) return <p role="status">Checking account access…</p>
   return <LiveMoneyProofReviewDialogSession key={`${identity.key}:${props.event.id}`} {...props} />
 }

@@ -1,3 +1,4 @@
+import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -35,7 +36,7 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
     if (status) params.status = status
     apiClient.get('/admin/orders', { ...request.config, params })
       .then(res => { if (active()) { setOrders(res.data.orders); setMeta(res.data.meta); setExpanded(null); } })
-      .catch(() => { if (active()) setLoadError('Could not load orders. Your filters have been kept.') })
+      .catch(error => { if (active() && !request.handleError(error)) setLoadError('Could not load orders. Your filters have been kept.') })
       .finally(() => { request.release(); if (active()) setLoading(false) })
   }, [page, search, status, beginRequest])
 
@@ -230,9 +231,10 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
 }
 
 export default function AdminOrdersPage() {
-  const identity = usePlatformIdentity()
+  const identity = usePlatformIdentity('admin')
   const visit = usePlatformVisit('/admin/orders')
   if (!visit.active) return null
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.accountKey} identity={identity} />
   if (!identity.ready) return <p role="status">Checking account access…</p>
   return <AdminOrdersPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/admin/orders" />
 }
