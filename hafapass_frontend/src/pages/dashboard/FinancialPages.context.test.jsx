@@ -176,7 +176,7 @@ for (const [Page, tool] of [[AttendeesPage, 'attendees'], [EventAnalyticsPage, '
     await act(async () => replacement === 'organization' ? selectOrganization(2)
       : bind(replacement === 'account' ? 'actor-b' : 'actor-a', 'session-b'))
     const expected = tool === 'attendees' ? 'Attendee 37' : tool === 'box-office' ? 'Event 37' : tool === 'analytics' ? 'Buyer 37' : /Order #370/
-    const currentText = replacement === 'organization' ? tool === 'refunds' ? /could not be authorized/ : tool === 'box-office' ? 'Failed to load event.' : tool === 'analytics' ? /Your event access changed/ : /Failed to load (attendees|event details)/ : expected
+    const currentText = replacement === 'organization' ? tool === 'refunds' ? /Your refund access changed/ : tool === 'box-office' ? 'Failed to load event.' : tool === 'analytics' ? /Your event access changed/ : /Your attendee access changed/ : expected
     await screen.findAllByText(currentText)
     await act(async () => old.resolve({ data: { ...event(37), title: 'Old private context', recent_orders: [], attendees: [], preview: {} } }))
     expect(screen.queryByText('Old private context')).not.toBeInTheDocument()

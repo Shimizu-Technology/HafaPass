@@ -20,7 +20,7 @@ async function findManifest(version) {
   return screen.findByText(new RegExp(`Manifest v${version}`))
 }
 
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() }, getApiAuthContext: () => null, subscribeApiAuthContext: () => () => {} }))
 vi.mock('@zxing/browser', () => ({ BrowserQRCodeReader: class {
   decodeFromVideoDevice(_device, _video, callback) { camera.callbacks.push(callback); const stop = vi.fn(); camera.stops.push(stop); return Promise.resolve({ stop }) }
 } }))
@@ -581,6 +581,7 @@ describe('scanner recovery and camera ownership', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Start camera' }))
     await waitFor(() => expect(camera.callbacks).toHaveLength(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Sync now' }))
     await findManifest(2)
     expect(camera.stops[0]).not.toHaveBeenCalled()

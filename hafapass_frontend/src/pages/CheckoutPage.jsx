@@ -87,6 +87,7 @@ function CheckoutContent({ buyerId }) {
   const [formErrors, setFormErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [cancelledCleanupRequired, setCancelledCleanupRequired] = useState(false)
   const [canStartNewCheckout, setCanStartNewCheckout] = useState(false)
   const [checkoutNeedsRecovery, setCheckoutNeedsRecovery] = useState(false)
   const [recoveryVersion, setRecoveryVersion] = useState(0)
@@ -105,6 +106,7 @@ function CheckoutContent({ buyerId }) {
   const [recovering, setRecovering] = useState(false)
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
+  const [checkoutRecovered, setCheckoutRecovered] = useState(false)
   const [step, setStep] = useState('info')
   const [secondsRemaining, setSecondsRemaining] = useState(null)
 
@@ -178,6 +180,7 @@ function CheckoutContent({ buyerId }) {
       paymentContext.current = { ...context, orderId: String(id) }
       setEvent(order.event)
       setOrderData(order)
+      setCheckoutRecovered(true)
       setOrderId(id)
       setClientSecret(order.client_secret)
       setStripePublishableKey(order.stripe_publishable_key)
@@ -443,7 +446,9 @@ function CheckoutContent({ buyerId }) {
     <div className="max-w-2xl mx-auto px-4 py-16">
       <div className="card p-8 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        {canStartNewCheckout
+        {cancelledCleanupRequired
+          ? <button type="button" onClick={() => window.location.reload()} className="btn-primary mb-3">Reload checkout</button>
+          : canStartNewCheckout
           ? <button type="button" onClick={startNewCheckout} className="btn-primary mb-3">Start a new checkout</button>
           : <button type="button" onClick={retrySavedCheckout} className="btn-primary mb-3">Retry saved checkout</button>}
         <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">Back to Event</Link>
@@ -760,15 +765,41 @@ function CheckoutContent({ buyerId }) {
               <button disabled={submitting} onClick={async () => {
                 const context = captureContext()
                 const cancellingOrderId = orderId
-                const current = () => contextCurrent(context) && getActiveCheckout(slug) === String(cancellingOrderId) && !getCheckoutAttempt(slug)
+                const viewCurrent = () => lifecycle.current.active && lifecycle.current.generation === context.generation
+                  && lifecycle.current.buyerId === context.buyerId && currentRoute.current.buyerId === context.buyerId
+                  && currentRoute.current.slug === context.slug && currentRoute.current.pathname === context.pathname
+                  && currentRoute.current.search === context.search
+                const current = () => {
+                  try { return contextCurrent(context) && getActiveCheckout(slug) === String(cancellingOrderId) && !getCheckoutAttempt(slug) }
+                  catch { return false }
+                }
                 if (!current() || !paymentContext.current || !contextCurrent(paymentContext.current)
                   || paymentContext.current.orderId !== String(cancellingOrderId)) return
                 setSubmitting(true)
                 setSubmitError(null)
                 try {
-                  if (orderId) await apiClient.post(`/orders/${orderId}/cancel`, {}, { headers: orderAccessHeaders(orderId) })
-                  if (!current() || !clearActiveCheckout(slug, cancellingOrderId)) return
+                  const response = await apiClient.post(`/orders/${cancellingOrderId}/cancel`, {}, { headers: orderAccessHeaders(cancellingOrderId) })
+                  if (response.data?.status !== 'cancelled') throw new Error('Cancellation outcome is not confirmed')
+                  if (!viewCurrent()) return
+                  // Server cancellation is authoritative for this rendered order.
+                  // Stop payment even when browser storage cannot be read/cleared;
+                  // preserve any newer saved checkout rather than overwriting it.
                   paymentContext.current = null
+                  setClientSecret(null)
+                  setStripePublishableKey(null)
+                  let cleared = false
+                  try { cleared = current() && clearActiveCheckout(slug, cancellingOrderId) } catch { /* Preserve surviving recovery data. */ }
+                  if (!cleared) {
+                    setCancelledCleanupRequired(true)
+                    setError('Your order was cancelled, but this page could not reset its saved checkout. Reload the page to verify its current state before starting again.')
+                    return
+                  }
+                  if (checkoutRecovered) {
+                    // Recovery has the server order, not the original editable
+                    // selection and buyer form. Re-select against fresh inventory.
+                    navigate(`/events/${slug}`, { replace: true, state: { browseFrom: location.state?.browseFrom } })
+                    return
+                  }
                   setStep('info')
                   setClientSecret(null)
                   setStripePublishableKey(null)
@@ -776,7 +807,7 @@ function CheckoutContent({ buyerId }) {
                   setOrderData(null)
                 } catch (err) {
                   if (current()) setSubmitError(err.response?.data?.error || 'We could not confirm cancellation. Please refresh this order before starting another checkout.')
-                } finally { if (contextCurrent(context)) setSubmitting(false) }
+                } finally { if (viewCurrent()) setSubmitting(false) }
               }}
                 className="text-sm text-brand-500 hover:text-brand-600 font-medium">{t('checkout.editInfo')}</button>
             </div>

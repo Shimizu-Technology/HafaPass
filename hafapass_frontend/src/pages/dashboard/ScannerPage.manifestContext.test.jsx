@@ -16,7 +16,7 @@ async function findManifest(version) {
   return screen.findByText(new RegExp(`Manifest v${version}`))
 }
 
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() }, getApiAuthContext: () => null, subscribeApiAuthContext: () => () => {} }))
 
 async function signWithKey(payload, keys) {
   const digest = await sha256Hex(canonicalJson(payload))

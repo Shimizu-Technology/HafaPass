@@ -1,3 +1,4 @@
+import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, Search, Star, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -44,7 +45,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
     if (category) params.category = category
     apiClient.get('/admin/events', { ...request.config, params })
       .then(res => { if (active()) { setEvents(res.data.events); setMeta(res.data.meta); } })
-      .catch(() => { if (active()) setLoadError('Could not load events. Your filters have been kept.') })
+      .catch(error => { if (active() && !request.handleError(error)) setLoadError('Could not load events. Your filters have been kept.') })
       .finally(() => { request.release(); if (active()) setLoading(false) })
   }, [page, search, status, category, beginRequest])
 
@@ -61,6 +62,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
       if (!request.current()) return
       setEvents(prev => prev.map(e => e.id === event.id ? res.data : e))
     } catch (err) {
+      if (request.handleError(err)) return
       if (request.current()) setActionError(err.response?.data?.error || 'The change was not confirmed. Reload the saved event before trying again.')
     } finally { request.release(); mutationBusy.current = false }
   }
@@ -77,6 +79,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
       if (!request.current()) return
       setEvents(prev => prev.map(item => item.id === event.id ? res.data : item))
     } catch (err) {
+      if (request.handleError(err)) return
       if (!request.current()) return
       const errors = err.response?.data?.errors
       setActionError(Array.isArray(errors) ? errors.join(' ') :
@@ -186,9 +189,10 @@ function AdminEventsPageSession({ identity, resourcePath }) {
 }
 
 export default function AdminEventsPage() {
-  const identity = usePlatformIdentity()
+  const identity = usePlatformIdentity('admin')
   const visit = usePlatformVisit('/admin/events')
   if (!visit.active) return null
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.accountKey} identity={identity} />
   if (!identity.ready) return <p role="status">Checking account access…</p>
   return <AdminEventsPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/admin/events" />
 }

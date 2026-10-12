@@ -29,40 +29,69 @@ export default function SettingsPage() {
 
 function SettingsPageSession({ identity }) {
  const { current, beginRequest } = useOrganizerRequests(identity, '/dashboard/settings')
+ const accessEpoch = useRef(0)
+ const verifiedOwner = useRef(false)
+ const requests = useRef(new Set())
+ const [organization, setOrganization] = useState(null)
+ const [memberships, setMemberships] = useState([])
+ const [accounts, setAccounts] = useState([])
+ const [email, setEmail] = useState('')
+ const [role, setRole] = useState('manager')
+ const [invitationUrl, setInvitationUrl] = useState('')
+ const [loading, setLoading] = useState(true)
+ const [busy, setBusy] = useState(false)
+ const [error, setError] = useState(null)
+ const [notice, setNotice] = useState(null)
+ const loadGeneration = useRef(0)
+ const withdrawAccess = useCallback(message => {
+  ++accessEpoch.current
+  verifiedOwner.current = false
+  requests.current.forEach(request => request.controller.abort())
+  setOrganization(null); setMemberships([]); setAccounts([]); setInvitationUrl('')
+  setEmail(''); setRole('manager'); setNotice(null); setBusy(false); setLoading(false)
+  setError(message)
+ }, [])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
+  const verifying = method === 'get' && url === '/organizer/organization'
+  if (!verifying && !verifiedOwner.current) throw new DOMException('Organization access is not verified', 'AbortError')
   const request = beginRequest()
   if (!request) throw new DOMException('Page context changed', 'AbortError')
+  const epoch = accessEpoch.current
+  requests.current.add(request)
   try {
    const response = method === 'get' || method === 'delete'
     ? await apiClient[method](url, { ...payload, ...request.config })
     : await apiClient[method](url, payload, { ...options, ...request.config })
-   if (!request.current()) throw new DOMException('Page context changed', 'AbortError')
+   if (!request.current() || epoch !== accessEpoch.current) throw new DOMException('Page context changed', 'AbortError')
    return response
-  } finally { request.release() }
- }, [beginRequest])
-  const [organization, setOrganization] = useState(null)
-  const [memberships, setMemberships] = useState([])
-  const [accounts, setAccounts] = useState([])
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState('manager')
-  const [invitationUrl, setInvitationUrl] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
-  const [notice, setNotice] = useState(null)
-  const loadGeneration = useRef(0)
+  } catch (requestError) {
+   if (request.current() && epoch === accessEpoch.current && [401, 403].includes(requestError.response?.status)) {
+    withdrawAccess(requestError.response.status === 401 ? 'Please sign in to verify organization access.'
+     : 'Your organization access changed. Retry to verify your current role before managing this organization.')
+   }
+   throw requestError
+  } finally { requests.current.delete(request); request.release() }
+ }, [beginRequest, withdrawAccess])
 
-  const canManage = organization?.role === 'owner'
+  const canManage = organization?.role === 'owner' && verifiedOwner.current
 
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current
-    const canApply = () => current() && generation === loadGeneration.current
     if (!current()) return
+    const epoch = ++accessEpoch.current
+    requests.current.forEach(request => request.controller.abort())
+    const canApply = () => current() && generation === loadGeneration.current && epoch === accessEpoch.current
     setLoading(true)
+    setBusy(false)
     setError(null)
     try {
       const organizationResponse = await requestApi('get', '/organizer/organization')
       if (!canApply()) return
+      if (organizationResponse.data.id == null || (identity.organizationId != null && String(organizationResponse.data.id) !== String(identity.organizationId))) {
+        withdrawAccess('The organization context could not be verified. Return to your dashboard and select it again.')
+        return
+      }
+      verifiedOwner.current = organizationResponse.data.role === 'owner'
       setOrganization(organizationResponse.data)
       if (organizationResponse.data.role === 'owner') {
         const [membersResponse, accountsResponse] = await Promise.all([
@@ -72,94 +101,112 @@ function SettingsPageSession({ identity }) {
         if (!canApply()) return
         setMemberships(membersResponse.data)
         setAccounts(accountsResponse.data)
-      }
+      } else { setMemberships([]); setAccounts([]); setInvitationUrl(''); setNotice(null) }
     } catch (requestError) {
       if (!canApply()) return
       setError(requestError.response?.data?.error || 'Could not load organization settings.')
     } finally {
       if (canApply()) setLoading(false)
     }
-  }, [requestApi, current])
+  }, [requestApi, current, identity.organizationId, withdrawAccess])
 
   useEffect(() => { load() }, [load])
 
   const invite = async event => {
     event.preventDefault()
     if (!current() || !canManage || busy) return
+    const epoch = accessEpoch.current
+    const canApply = () => current() && epoch === accessEpoch.current
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
       const response = await requestApi('post', '/organizer/memberships', { email, role })
-      if (!current()) return
+      if (!canApply()) return
       const url = `${window.location.origin}/organization-invitations/accept?token=${encodeURIComponent(response.data.invitation_token)}`
       setInvitationUrl(url)
       setEmail('')
       setMemberships(current => [...current, response.data])
       setNotice('Invitation created. Copy the secure link and send it to the invited email address.')
     } catch (requestError) {
-      if (!current()) return
+      if (!canApply()) return
       setError(requestError.response?.data?.error || requestError.response?.data?.errors?.[0] || 'Could not create invitation.')
     } finally {
-      if (current()) setBusy(false)
+      if (canApply()) setBusy(false)
     }
   }
 
   const changeRole = async (membership, nextRole) => {
     if (!current() || !canManage || busy) return
+    const epoch = accessEpoch.current
+    const canApply = () => current() && epoch === accessEpoch.current
     setBusy(true)
     setError(null)
     try {
       const response = await requestApi('patch', `/organizer/memberships/${membership.id}`, { role: nextRole })
-      if (!current()) return
+      if (!canApply()) return
       setMemberships(current => current.map(item => item.id === membership.id ? response.data : item))
     } catch (requestError) {
-      if (!current()) return
+      if (!canApply()) return
       setError(requestError.response?.data?.error || requestError.response?.data?.errors?.[0] || 'Could not update role.')
     } finally {
-      if (current()) setBusy(false)
+      if (canApply()) setBusy(false)
     }
   }
 
   const revoke = async membership => {
     if (!current() || !canManage || busy) return
     if (!window.confirm(`Revoke ${membership.email}'s access?`)) return
+    const epoch = accessEpoch.current
+    const canApply = () => current() && epoch === accessEpoch.current
     setBusy(true)
     setError(null)
     try {
       await requestApi('delete', `/organizer/memberships/${membership.id}`)
-      if (!current()) return
+      if (!canApply()) return
       setMemberships(current => current.map(item => item.id === membership.id ? { ...item, status: 'revoked' } : item))
     } catch (requestError) {
-      if (!current()) return
+      if (!canApply()) return
       setError(requestError.response?.data?.error || 'Could not revoke access.')
     } finally {
-      if (current()) setBusy(false)
+      if (canApply()) setBusy(false)
     }
   }
 
   const startOnboarding = async provider => {
     if (!current() || !canManage || busy) return
+    const epoch = accessEpoch.current
+    const canApply = () => current() && epoch === accessEpoch.current
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
       const response = await requestApi('post', '/organizer/connected_accounts', { provider })
-      if (!current()) return
+      if (!canApply()) return
       setAccounts(current => [...current.filter(account => account.provider !== provider), response.data])
       setNotice(response.data.next_action)
     } catch (requestError) {
-      if (!current()) return
+      if (!canApply()) return
       setError(requestError.response?.data?.error || 'Could not start payout onboarding.')
     } finally {
-      if (current()) setBusy(false)
+      if (canApply()) setBusy(false)
     }
   }
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+  if (!organization && error) return (
+    <section className="mx-auto max-w-2xl px-4 py-8 sm:px-6" aria-labelledby="organization-recovery-heading">
+      <Link to="/dashboard" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-700">← Back to dashboard</Link>
+      <h1 id="organization-recovery-heading" className="mt-4 text-2xl font-bold text-neutral-950">Verify organization access</h1>
+      <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <p>{error}</p>
+        <button type="button" onClick={load} className="mt-3 min-h-11 font-semibold underline">Retry organization settings</button>
+      </div>
+    </section>
+  )
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6" aria-label="Organization settings">
       <Link to="/dashboard" className="text-sm font-medium text-brand-600 hover:text-brand-700">← Back to dashboard</Link>
       <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -212,10 +259,10 @@ function SettingsPageSession({ identity }) {
                   </div>
                   {membership.role === 'owner' ? <StatusPill ready>Owner</StatusPill> : (
                     <div className="flex items-center gap-2">
-                      <select disabled={busy || membership.status === 'revoked'} value={membership.role} onChange={event => changeRole(membership, event.target.value)} className="input !w-auto !py-2 text-sm">
+                      <select aria-label={`Role for ${membership.email}`} disabled={busy || membership.status === 'revoked'} value={membership.role} onChange={event => changeRole(membership, event.target.value)} className="input min-h-11 !w-auto !py-2 text-sm">
                         {TEAM_ROLES.map(item => <option key={item} value={item}>{label(item)}</option>)}
                       </select>
-                      <button disabled={busy || membership.status === 'revoked'} onClick={() => revoke(membership)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Revoke ${membership.email}`}><Trash2 className="h-4 w-4" /></button>
+                      <button disabled={busy || membership.status === 'revoked'} onClick={() => revoke(membership)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Revoke ${membership.email}`}><Trash2 className="h-4 w-4" /></button>
                     </div>
                   )}
                 </div>
@@ -239,7 +286,7 @@ function SettingsPageSession({ identity }) {
                       {provider === 'stripe' && 'Blocked unless Stripe confirms Guam entity and bank eligibility in writing.'}
                     </p>
                     {account?.requirements_due?.length > 0 && <p className="mt-3 text-xs text-amber-700">Due: {account.requirements_due.map(label).join(', ')}</p>}
-                    {!account && <button disabled={busy} onClick={() => startOnboarding(provider)} className="mt-4 w-full rounded-lg border border-brand-200 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">Start review</button>}
+                    {!account && <button disabled={busy} onClick={() => startOnboarding(provider)} className="mt-4 min-h-11 w-full rounded-lg border border-brand-200 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">Start review</button>}
                   </article>
                 )
               })}
@@ -247,6 +294,6 @@ function SettingsPageSession({ identity }) {
           </section>
         </>
       )}
-    </main>
+    </section>
   )
 }

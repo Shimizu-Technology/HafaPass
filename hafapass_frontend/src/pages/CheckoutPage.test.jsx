@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import CheckoutPage from './CheckoutPage'
 import apiClient from '../api/client'
 import { getActiveCheckout, getOrderAccess, getCheckoutAttempt } from '../utils/orderAccess'
+import * as orderAccess from '../utils/orderAccess'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: vi.fn() }))
@@ -25,7 +26,7 @@ function RetainedRoute() {
 
 describe('checkout navigation', () => {
   beforeEach(() => { vi.clearAllMocks(); apiClient.post.mockReset(); apiClient.get.mockReset(); window.sessionStorage.clear(); window.localStorage.clear() })
-  afterEach(() => vi.unstubAllEnvs())
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
   it('waits for authoritative Clerk hydration and device binding before recovering an unbound legacy attempt', async () => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
@@ -120,6 +121,141 @@ describe('checkout navigation', () => {
     expect(screen.queryByText('Incorrect redirect')).not.toBeInTheDocument()
     expect(apiClient.post).toHaveBeenCalledWith('/orders/923/payment_resume', {}, { headers: { 'X-Guest-Order-Token': 'saved-buyer-token' } })
     expect(apiClient.post).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['saved', 'resume'])('returns a %s payment recovery to fresh event selection after confirmed cancellation', async source => {
+    if (source === 'saved') window.sessionStorage.setItem('hafapass:active-checkout:paid-event', '923')
+    window.sessionStorage.setItem('hafapass:order-access:923', 'saved-buyer-token')
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
+    apiClient.post.mockResolvedValueOnce({ data: {
+      id: 923, status: 'pending', client_secret: 'original-secret', stripe_publishable_key: 'pk_test',
+      total_cents: 1000, event: { slug: 'paid-event', title: 'Paid event' },
+      order_items: [{ id: 1, name: 'Admission', quantity: 1, unit_price_cents: 1000, subtotal_cents: 1000 }],
+    } })
+    let confirmCancellation
+    apiClient.post.mockImplementationOnce(() => new Promise(resolve => { confirmCancellation = resolve }))
+    render(<MemoryRouter initialEntries={[source === 'resume' ? '/checkout/paid-event?resume=923' : '/checkout/paid-event']}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+      <Route path='/events/:slug' element={<h1>Choose available tickets again</h1>} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Payment form')
+    const user = userEvent.setup()
+    const edit = screen.getByRole('button', { name: 'checkout.editInfo' })
+    await user.click(edit)
+    expect(edit).toBeDisabled()
+    await user.click(edit)
+    expect(apiClient.post).toHaveBeenCalledTimes(2)
+    expect(getActiveCheckout('paid-event')).toBe('923')
+    await act(async () => confirmCancellation({ data: { status: 'cancelled' } }))
+    expect(await screen.findByRole('heading', { name: 'Choose available tickets again' })).toBeInTheDocument()
+    expect(getActiveCheckout('paid-event')).toBeNull()
+    expect(getCheckoutAttempt('paid-event')).toBeNull()
+    expect(getOrderAccess(923)).toBe('saved-buyer-token')
+    expect(apiClient.post).toHaveBeenNthCalledWith(2, '/orders/923/cancel', {}, { headers: { 'X-Guest-Order-Token': 'saved-buyer-token' } })
+    expect(apiClient.post).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['false', 'throws', 'read throws', 'partial clear'])('withdraws cancelled payment when saved-checkout cleanup %s', async outcome => {
+    window.sessionStorage.setItem('hafapass:order-access:923', 'saved-buyer-token')
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
+    apiClient.post.mockResolvedValueOnce({ data: {
+      id: 923, status: 'pending', client_secret: 'original-secret', stripe_publishable_key: 'pk_test',
+      total_cents: 1000, event: { slug: 'paid-event', title: 'Paid event' },
+      order_items: [{ id: 1, name: 'Admission', quantity: 1, unit_price_cents: 1000, subtotal_cents: 1000 }],
+    } })
+    apiClient.post.mockImplementationOnce(async () => {
+      if (outcome === 'read throws') {
+        const get = Storage.prototype.getItem
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (key) {
+          if (key === 'hafapass:active-checkout:paid-event') throw new Error('Synthetic read failure')
+          return get.call(this, key)
+        })
+      }
+      if (outcome === 'partial clear') {
+        const remove = Storage.prototype.removeItem
+        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (key) {
+          if (key === 'hafapass:active-checkout-buyer:paid-event') throw new Error('Synthetic partial removal')
+          return remove.call(this, key)
+        })
+      }
+      return { data: { status: 'cancelled' } }
+    })
+    render(<MemoryRouter initialEntries={['/checkout/paid-event?resume=923']}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Payment form')
+    if (['false', 'throws'].includes(outcome)) {
+      const clear = vi.spyOn(orderAccess, 'clearActiveCheckout')
+      if (outcome === 'false') clear.mockReturnValueOnce(false)
+      else clear.mockImplementationOnce(() => { throw new Error('Synthetic storage failure') })
+    }
+    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.editInfo' }))
+    expect(await screen.findByText(/Your order was cancelled, but this page could not reset/)).toBeInTheDocument()
+    expect(screen.queryByText('Payment form')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reload checkout' })).toBeInTheDocument()
+    vi.restoreAllMocks()
+    expect(getActiveCheckout('paid-event')).toBe(outcome === 'partial clear' ? null : '923')
+    expect(getOrderAccess(923)).toBe('saved-buyer-token')
+    expect(apiClient.post).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['rejected', 'lost response', 'unconfirmed success'])('retains the original recovered payment after %s cancellation', async outcome => {
+    window.sessionStorage.setItem('hafapass:order-access:923', 'saved-buyer-token')
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
+    const order = { id: 923, status: 'pending', client_secret: 'original-secret', stripe_publishable_key: 'pk_test',
+      total_cents: 1000, event: { slug: 'paid-event', title: 'Paid event' },
+      order_items: [{ id: 1, name: 'Admission', quantity: 1, unit_price_cents: 1000, subtotal_cents: 1000 }] }
+    apiClient.post.mockResolvedValueOnce({ data: order })
+    if (outcome === 'rejected') apiClient.post.mockRejectedValueOnce({ response: { status: 422, data: { error: 'Payment is processing; cancellation unavailable' } } })
+    else if (outcome === 'lost response') apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    else apiClient.post.mockResolvedValueOnce({ data: { status: 'pending' } })
+    const tree = <MemoryRouter initialEntries={['/checkout/paid-event?resume=923']}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+      <Route path='/events/:slug' element={<h1>Unsafe new selection</h1>} />
+    </Routes></MemoryRouter>
+    const view = render(tree)
+    await screen.findByText('Payment form')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.editInfo' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(outcome === 'rejected'
+      ? 'Payment is processing; cancellation unavailable' : 'We could not confirm cancellation')
+    expect(screen.getByText('Payment form')).toBeInTheDocument()
+    expect(screen.queryByText('Unsafe new selection')).not.toBeInTheDocument()
+    expect(getActiveCheckout('paid-event')).toBe('923')
+    expect(getOrderAccess(923)).toBe('saved-buyer-token')
+    expect(getCheckoutAttempt('paid-event')).toBeNull()
+    expect(apiClient.post).toHaveBeenCalledTimes(2)
+    // A page reload still recovers the same reservation with the same capability.
+    view.unmount()
+    apiClient.post.mockResolvedValueOnce({ data: order })
+    render(tree)
+    expect(await screen.findByText('Payment form')).toBeInTheDocument()
+    expect(apiClient.post).toHaveBeenNthCalledWith(3, '/orders/923/payment_resume', {}, { headers: { 'X-Guest-Order-Token': 'saved-buyer-token' } })
+    expect(apiClient.post).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps the original selection and buyer form when cancelling a payment created in the current visit', async () => {
+    const event = { id: 37, slug: 'paid-event', title: 'Paid event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000 }] }
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_flat_cents: 0 } })
+    apiClient.post.mockResolvedValueOnce({ data: { id: 923, client_secret: 'new-secret', stripe_publishable_key: 'pk_test', guest_access_token: 'new-buyer-token' } })
+    apiClient.post.mockResolvedValueOnce({ data: { status: 'cancelled' } })
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+      <Route path='/events/:slug' element={<h1>Selection unnecessarily lost</h1>} />
+    </Routes></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('checkout.fullName'), 'Guest Buyer')
+    await user.type(screen.getByLabelText('checkout.emailAddress'), 'guest@example.invalid')
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: /checkout.continueToPayment/ }))
+    await screen.findByText('Payment form')
+    await user.click(screen.getByRole('button', { name: 'checkout.editInfo' }))
+    expect(await screen.findByLabelText('checkout.fullName')).toHaveValue('Guest Buyer')
+    expect(screen.getByLabelText('checkout.emailAddress')).toHaveValue('guest@example.invalid')
+    expect(screen.getByText('Admission')).toBeInTheDocument()
+    expect(screen.queryByText('Selection unnecessarily lost')).not.toBeInTheDocument()
+    expect(getActiveCheckout('paid-event')).toBeNull()
+    expect(apiClient.post).toHaveBeenCalledTimes(2)
+    expect(apiClient.post).toHaveBeenNthCalledWith(2, '/orders/923/cancel', {}, { headers: { 'X-Guest-Order-Token': 'new-buyer-token' } })
   })
 
   it('restores the server promo code for a discounted unpaid checkout without a local promo draft', async () => {

@@ -1,3 +1,4 @@
+import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -68,7 +69,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
     if (roleFilter) params.role = roleFilter
     apiClient.get('/admin/users', { ...request.config, params })
       .then(res => { if (active()) { setUsers(res.data.users); setMeta(res.data.meta); } })
-      .catch(() => { if (active()) setLoadError('Could not load users. Your filters have been kept.') })
+      .catch(error => { if (active() && !request.handleError(error)) setLoadError('Could not load users. Your filters have been kept.') })
       .finally(() => { request.release(); if (active()) setLoading(false) })
   }, [page, search, roleFilter, beginRequest])
 
@@ -86,6 +87,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
       if (!request.current()) return
       setUsers(prev => prev.map(u => u.id === user.id ? res.data : u))
     } catch (err) {
+      if (request.handleError(err)) return
       if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
     } finally { request.release(); mutationBusy.current = false }
   }
@@ -103,6 +105,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
       if (!request.current()) return
       setUsers(current => current.map(item => item.id === user.id ? { ...item, organizer_profile: { ...profile, ...response.data } } : item))
     } catch (err) {
+      if (request.handleError(err)) return
       if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
     } finally { request.release(); mutationBusy.current = false }
   }
@@ -137,6 +140,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
         }
       } : item))
     } catch (err) {
+      if (request.handleError(err)) return
       if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
     } finally { request.release(); mutationBusy.current = false }
   }
@@ -259,9 +263,10 @@ function AdminUsersPageSession({ identity, resourcePath }) {
 }
 
 export default function AdminUsersPage() {
-  const identity = usePlatformIdentity()
+  const identity = usePlatformIdentity('admin')
   const visit = usePlatformVisit('/admin/users')
   if (!visit.active) return null
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.accountKey} identity={identity} />
   if (!identity.ready) return <p role="status">Checking account access…</p>
   return <AdminUsersPageSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/admin/users" />
 }

@@ -3,8 +3,8 @@ import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
 } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
-import apiClient from '../../api/client'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../../api/client'
 import { formatEventDateTime } from '../../utils/eventTime'
 import {
   applySyncResults, captureAdmissionAccessContext, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
@@ -34,6 +34,68 @@ const credentialValue = raw => {
   } catch {
     return value
   }
+}
+
+const refusalStorageKey = (owner, eventId) => `hafapass:scanner-refusal:v1:${encodeURIComponent(owner || 'guest')}:${eventId}`
+const refusalStores = () => [() => window.localStorage, () => window.sessionStorage]
+function hasStoredRefusal(owner, eventId) {
+  return refusalStores().some(storage => {
+    try { return storage().getItem(refusalStorageKey(owner, eventId)) !== null }
+    catch { return true } // Unreadable refusal evidence cannot authorize offline entry.
+  })
+}
+function saveStoredRefusal(owner, eventId, token) {
+  let saved = false
+  for (const storage of refusalStores()) {
+    try { storage().setItem(refusalStorageKey(owner, eventId), token); saved = true } catch { /* Try the other storage. */ }
+  }
+  if (!saved) {
+    // Quota failures may still permit deletion. Remove only this event's restore
+    // pointer so an offline remount cannot rediscover its unquarantined cache.
+    try {
+      if (window.localStorage.getItem('hafapass_scanner_event_id') === String(eventId)) window.localStorage.removeItem('hafapass_scanner_event_id')
+    } catch { /* Unreadable storage is blocked by hasStoredRefusal. */ }
+  }
+  return saved
+}
+function storedRefusalTokens(owner, eventId) {
+  const tokens = []
+  for (const storage of refusalStores()) {
+    try {
+      const token = storage().getItem(refusalStorageKey(owner, eventId))
+      if (token !== null) tokens.push(token)
+    } catch { /* hasStoredRefusal keeps unreadable storage blocked. */ }
+  }
+  return tokens
+}
+function clearStoredRefusal(owner, eventId, tokens) {
+  const allowed = new Set(Array.isArray(tokens) ? tokens : [tokens])
+  for (const storage of refusalStores()) {
+    try {
+      const key = refusalStorageKey(owner, eventId)
+      if (allowed.has(storage().getItem(key))) storage().removeItem(key)
+    } catch { /* Keep entry paused if refusal evidence cannot be cleared. */ }
+  }
+  return !hasStoredRefusal(owner, eventId)
+}
+function canPersistRefusal(owner, eventId) {
+  // A readable but unwritable store cannot remember a later denial. Probe an
+  // exclusively owned key; never replace or clear the actual refusal key.
+  const token = crypto.randomUUID()
+  const key = `${refusalStorageKey(owner, eventId)}:probe:${token}`
+  let available = false
+  for (const storage of refusalStores()) {
+    let verified = false
+    try {
+      const target = storage()
+      target.setItem(key, token)
+      verified = target.getItem(key) === token
+      if (target.getItem(key) === token) target.removeItem(key)
+      verified = verified && target.getItem(key) === null
+    } catch { verified = false /* Try the other store; unreadable stores remain quarantined. */ }
+    available ||= verified
+  }
+  return available
 }
 
 function admissionAcknowledgement(current, receipt) {
@@ -76,6 +138,7 @@ function ResultPanel({ result }) {
 
 export default function ScannerPage({ offlineOnly = false }) {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const requestedEventId = searchParams.get('event')
   const [events, setEvents] = useState([])
   const [eventId, setEventId] = useState('')
@@ -93,6 +156,7 @@ export default function ScannerPage({ offlineOnly = false }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [cameraError, setCameraError] = useState(null)
   const [sessionCount, setSessionCount] = useState(0)
@@ -113,6 +177,27 @@ export default function ScannerPage({ offlineOnly = false }) {
   const cameraGenerationRef = useRef(0)
   const currentManifestRef = useRef(manifest)
   currentManifestRef.current = manifest
+  const visitRef = useRef(location.key)
+  visitRef.current = location.key
+  const searchRequestRef = useRef(null)
+  const downloadRequestRef = useRef(null)
+  const dashboardRequestRef = useRef(null)
+  const privateReadGenerationRef = useRef(0)
+  const refusedAccessRef = useRef(new Set())
+
+  useEffect(() => {
+    const abortReads = () => {
+      ++privateReadGenerationRef.current
+      searchRequestRef.current?.abort()
+      downloadRequestRef.current?.abort()
+      dashboardRequestRef.current?.abort()
+      setSearching(false)
+      setDownloading(false)
+    }
+    abortReads()
+    const unsubscribe = subscribeApiAuthContext(abortReads)
+    return () => { unsubscribe(); abortReads() }
+  }, [eventId, location.key])
 
   useEffect(() => {
     mountedRef.current = true
@@ -134,11 +219,101 @@ export default function ScannerPage({ offlineOnly = false }) {
     if (eventIdRef.current === String(selectedEventId)) setPendingCount(count)
   }, [])
 
+  const stopCamera = useCallback(() => {
+    cameraGenerationRef.current += 1
+    if (detectorTimerRef.current) clearInterval(detectorTimerRef.current)
+    detectorTimerRef.current = null
+    zxingControlsRef.current?.stop()
+    zxingControlsRef.current = null
+    streamRef.current?.getTracks().forEach(track => track.stop())
+    streamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
+    setScanning(false)
+  }, [])
+
+  const beginPrivateRead = useCallback((requestRef, selectedEventId) => {
+    requestRef.current?.abort()
+    const controller = new AbortController()
+    requestRef.current = controller
+    const owner = currentScannerOwner()
+    const generation = setupGenerationRef.current
+    const visit = visitRef.current
+    const readGeneration = privateReadGenerationRef.current
+    const authContext = getApiAuthContext()
+    const organizationId = window.localStorage.getItem('hafapass_organization_id')
+    const scopeCurrent = () => mountedRef.current && !controller.signal.aborted && requestRef.current === controller
+      && owner === currentScannerOwner() && selectedEventId === eventIdRef.current
+      && visit === visitRef.current
+      && readGeneration === privateReadGenerationRef.current && authContext === getApiAuthContext()
+      && organizationId === window.localStorage.getItem('hafapass_organization_id')
+    const current = () => scopeCurrent() && generation === setupGenerationRef.current
+    return { selectedEventId, current, scopeCurrent, controller, config: { signal: controller.signal, authContext, organizationId } }
+  }, [])
+
+  const handlePrivateReadError = useCallback(async (readError, request, context, fallback) => {
+    if (!request.current() || readError.manifestContextChanged) return
+    if ([401, 403].includes(readError.response?.status) && context) {
+      const owner = currentScannerOwner()
+      const refusedKey = JSON.stringify([owner, String(request.selectedEventId)])
+      const token = crypto.randomUUID()
+      const stored = saveStoredRefusal(owner, request.selectedEventId, token)
+      refusedAccessRef.current.add(refusedKey)
+      const deniedGeneration = ++setupGenerationRef.current
+      const denialCurrent = () => request.scopeCurrent() && deniedGeneration === setupGenerationRef.current
+      // Pause entry before yielding to IndexedDB. A late setup continuation or
+      // camera callback must not admit during the refusal's storage transaction.
+      ++presentationRef.current
+      currentManifestRef.current = null
+      stopCamera()
+      for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef]) {
+        if (ref.current !== request.controller) ref.current?.abort()
+      }
+      setDevice(null); setManifest(null); setRecoveryDevice(null); setDashboard(null)
+      setSearchResults([]); setSearchQuery(''); setManualCode(''); setScanResult(null)
+      setSearching(false); setDownloading(false); setSetupBusy(false)
+      setError('Scanner access is being checked. Admission is paused; saved scans remain on this device.')
+      let removed = false
+      const message = readError.response?.data?.error || 'Scanner access was refused. Reload while connected to verify access. Saved scans remain on this device.'
+      try { removed = await purgeExpiredAdmissionAccess(request.selectedEventId, { context: { ...context, isCurrent: denialCurrent } }) }
+      catch {
+        if (denialCurrent()) setError(stored
+          ? 'Saved scanner access could not be removed. Stay connected and verify access before admitting more guests. Saved scans remain on this device.'
+          : 'Saved scanner access could not be removed or locked. Stay online and ask the door manager for help. Do not reload this device offline.')
+        return
+      }
+      // A peer renewal or a later visit owns its own access. An old refusal must
+      // never erase that newer grant or its attendee records.
+      if (!denialCurrent()) return
+      if (!removed) {
+        const renewed = await loadAuthorizedScanner(request.selectedEventId).catch(() => null)
+        if (!denialCurrent()) return
+        if (renewed && clearStoredRefusal(owner, request.selectedEventId, token)) {
+          refusedAccessRef.current.delete(refusedKey)
+          currentManifestRef.current = renewed.manifest
+          setDevice(renewed.device); setManifest(renewed.manifest); setError(null)
+          return
+        }
+      }
+      setError(message)
+      return
+    }
+    setError(readError.response?.data?.error || fallback)
+  }, [stopCamera])
+
   const fetchDashboard = useCallback(async selectedEventId => {
     if (!selectedEventId || !online) return
-    const response = await apiClient.get(`/organizer/events/${selectedEventId}/admissions`)
-    if (eventIdRef.current === String(selectedEventId)) setDashboard(response.data)
-  }, [online])
+    const request = beginPrivateRead(dashboardRequestRef, String(selectedEventId))
+    let context
+    try {
+      context = await captureAdmissionAccessContext(request.selectedEventId, { isCurrent: request.current })
+      if (!request.current()) return
+      const response = await apiClient.get(`/organizer/events/${request.selectedEventId}/admissions`, request.config)
+      if (request.current()) setDashboard(response.data)
+    } catch (dashboardError) {
+      await handlePrivateReadError(dashboardError, request, context, 'Door totals could not be loaded. Please retry while connected.')
+      throw dashboardError
+    }
+  }, [online, beginPrivateRead, handlePrivateReadError])
 
   const downloadManifest = useCallback(async (selectedEventId, selectedDevice) => {
     const owner = currentScannerOwner()
@@ -333,6 +508,10 @@ export default function ScannerPage({ offlineOnly = false }) {
     const generation = ++setupGenerationRef.current
     const owner = currentScannerOwner()
     const current = () => generation === setupGenerationRef.current && eventIdRef.current === String(selectedEventId) && owner === currentScannerOwner()
+    const refusedKey = JSON.stringify([owner, String(selectedEventId)])
+    const priorRefusalTokens = storedRefusalTokens(owner, selectedEventId)
+    const accessRefused = refusedAccessRef.current.has(refusedKey) || hasStoredRefusal(owner, selectedEventId)
+    const safetyStorageReady = canPersistRefusal(owner, selectedEventId)
     setSetupBusy(true)
     setError(null)
     setScanResult(null)
@@ -344,6 +523,8 @@ export default function ScannerPage({ offlineOnly = false }) {
     try {
       const pendingIdentity = await loadPendingDeviceIdentity(selectedEventId)
       await refreshPending(selectedEventId, pendingIdentity ? { id: pendingIdentity.device_id } : null)
+      if (!online && !safetyStorageReady) throw new Error('This browser cannot save scanner safety checks. Stay connected and ask the door manager for help before admitting guests.')
+      if (!online && (accessRefused || hasStoredRefusal(owner, selectedEventId))) throw new Error('Scanner access was refused. Reconnect to verify access before admitting more guests.')
       let cached = await loadAuthorizedScanner(selectedEventId)
       if (online) {
         let networkPhase = true
@@ -386,7 +567,7 @@ export default function ScannerPage({ offlineOnly = false }) {
             if (current()) setRecoveryDevice(null)
             throw connectionError
           }
-          if (!cached || !networkPhase) throw connectionError
+          if (!cached || !networkPhase || accessRefused || !safetyStorageReady) throw connectionError
           if (current()) setError('Connection unavailable. Using saved access; scans remain on this device until sync succeeds.')
         }
       }
@@ -397,6 +578,10 @@ export default function ScannerPage({ offlineOnly = false }) {
         throw new Error('Connect once to authorize this scanner and download the event list. Expired saved access is removed from this device.')
       }
       if (!current()) return
+      if (accessRefused || hasStoredRefusal(owner, selectedEventId)) {
+        if (!online || !clearStoredRefusal(owner, selectedEventId, priorRefusalTokens)) throw new Error('Stay connected to verify scanner access. Saved refusal evidence could not be cleared.')
+        refusedAccessRef.current.delete(refusedKey)
+      }
       setDevice(cached.device)
       setManifest(cached.manifest)
       await refreshPending(selectedEventId, cached.device)
@@ -472,6 +657,10 @@ export default function ScannerPage({ offlineOnly = false }) {
   const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted', presentation = ++presentationRef.current) => {
     if (!device || !manifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== manifest.digest) return
     const owner = currentScannerOwner()
+    if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) {
+      showResult({ type: 'error', message: 'Scanner access needs verification', detail: 'Reconnect and verify access before admitting another guest.' })
+      return
+    }
     const generation = setupGenerationRef.current
     const current = () => mountedRef.current && owner === currentScannerOwner()
       && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
@@ -490,7 +679,7 @@ export default function ScannerPage({ offlineOnly = false }) {
       return
     }
     const localState = await localScanState(eventId, ticket.ticket_id)
-    if (!current()) return
+    if (!current() || refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) return
     if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket,
         ...(localState.status === 'pending' ? { actionUuid: localState.action_uuid, actionKind: 'admit', deviceId: device.id } : {}),
@@ -544,6 +733,7 @@ export default function ScannerPage({ offlineOnly = false }) {
     const current = () => mountedRef.current && owner === currentScannerOwner()
       && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
     try {
+      if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) throw new Error('Reconnect and verify scanner access before scanning.')
       if (!device?.effective || new Date(device.authorization_expires_at).getTime() <= Date.now()) {
         throw new Error('This scanner authorization expired. Reconnect before scanning.')
       }
@@ -563,18 +753,6 @@ export default function ScannerPage({ offlineOnly = false }) {
       if (current()) showResult({ type: 'error', message: 'Scanner unavailable', detail: scanError.message, latency: performance.now() - startedAt })
     }
   }, [admitEntry, device, eventId, manifest, showResult, ticketsByHash])
-
-  const stopCamera = useCallback(() => {
-    cameraGenerationRef.current += 1
-    if (detectorTimerRef.current) clearInterval(detectorTimerRef.current)
-    detectorTimerRef.current = null
-    zxingControlsRef.current?.stop()
-    zxingControlsRef.current = null
-    streamRef.current?.getTracks().forEach(track => track.stop())
-    streamRef.current = null
-    if (videoRef.current) videoRef.current.srcObject = null
-    setScanning(false)
-  }, [])
 
   processCredentialRef.current = processCredential
 
@@ -650,17 +828,20 @@ export default function ScannerPage({ offlineOnly = false }) {
 
   const runSearch = async event => {
     event.preventDefault()
-    if (!online || searchQuery.trim().length < 2) return
+    if (!eventId || !online || searchQuery.trim().length < 2) return
+    const request = beginPrivateRead(searchRequestRef, eventId)
     setSearching(true)
-    const selectedEventId = eventId
-    const generation = setupGenerationRef.current
+    setError(null)
+    let context
     try {
-      const response = await apiClient.get(`/organizer/events/${eventId}/admissions/search`, { params: { q: searchQuery.trim() } })
-      if (eventIdRef.current === selectedEventId && setupGenerationRef.current === generation) setSearchResults(response.data)
+      context = await captureAdmissionAccessContext(request.selectedEventId, { isCurrent: request.current })
+      if (!request.current()) return
+      const response = await apiClient.get(`/organizer/events/${request.selectedEventId}/admissions/search`, { ...request.config, params: { q: searchQuery.trim() } })
+      if (request.current()) setSearchResults(response.data)
     } catch (searchError) {
-      setError(searchError.response?.data?.error || 'Attendee search failed.')
+      await handlePrivateReadError(searchError, request, context, 'Attendee search failed. Please retry.')
     } finally {
-      setSearching(false)
+      if (request.current()) setSearching(false)
     }
   }
 
@@ -688,13 +869,26 @@ export default function ScannerPage({ offlineOnly = false }) {
   }
 
   const downloadDoorList = async () => {
-    const response = await apiClient.get(`/organizer/events/${eventId}/admissions/door_list`, { responseType: 'blob' })
-    const url = URL.createObjectURL(response.data)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `hafapass-door-list-${eventId}.pdf`
-    link.click()
-    URL.revokeObjectURL(url)
+    if (!eventId || !online || downloading) return
+    const request = beginPrivateRead(downloadRequestRef, eventId)
+    setDownloading(true)
+    setError(null)
+    let context
+    try {
+      context = await captureAdmissionAccessContext(request.selectedEventId, { isCurrent: request.current })
+      if (!request.current()) return
+      const response = await apiClient.get(`/organizer/events/${request.selectedEventId}/admissions/door_list`, { ...request.config, responseType: 'blob' })
+      if (!request.current()) return
+      const url = URL.createObjectURL(response.data)
+      try {
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `hafapass-door-list-${request.selectedEventId}.pdf`
+        if (request.current()) link.click()
+      } finally { URL.revokeObjectURL(url) }
+    } catch (downloadError) {
+      await handlePrivateReadError(downloadError, request, context, 'Door list download failed. Please retry while connected.')
+    } finally { if (request.current()) setDownloading(false) }
   }
 
   const resetScanner = async () => {
@@ -842,7 +1036,7 @@ export default function ScannerPage({ offlineOnly = false }) {
 
           {dashboard && (
             <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800" aria-label="Download emergency door list" title="Download emergency door list"><Download className="h-5 w-5" /></button></div>
+              <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} disabled={!online || downloading} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800 disabled:opacity-50" aria-label="Download emergency door list" title="Download emergency door list">{downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}</button></div>
               <div className="grid grid-cols-2 gap-3">
                 {[['Admitted', dashboard.counts.admitted], ['Remaining', dashboard.counts.remaining], ['Conflicts', dashboard.counts.conflicts], ['Rejected', dashboard.counts.rejected]].map(([label, value]) => (
                   <div key={label} className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">{label}</p><p className="text-2xl font-bold">{value}</p></div>

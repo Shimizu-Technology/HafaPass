@@ -1,3 +1,4 @@
+import AdminAccessRecovery from './AdminAccessRecovery'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, Check, CirclePause, CirclePlay, Loader2, ShieldAlert, X } from 'lucide-react'
 import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
@@ -270,6 +271,7 @@ function LivePilotOperationsDialogSession({ event, onComplete }) {
 
 export default function LivePilotOperationsDialog(props) {
   const identity = useCapturedDialogIdentity()
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.key} identity={identity} />
   if (!identity.ready) return <p role="status">Checking account access…</p>
   return <LivePilotOperationsDialogSession key={`${identity.key}:${props.event.id}`} {...props} />
 }

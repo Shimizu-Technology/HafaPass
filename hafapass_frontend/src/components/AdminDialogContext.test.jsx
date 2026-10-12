@@ -72,6 +72,27 @@ describe.each(cases)('$name captured admin-dialog authority', entry => {
     expect(screen.getByRole('button', { name: entry.reject })).toBeEnabled()
   })
 
+  it('closes private evidence after an explicit current administrator denial without borrowing a later opening', async () => {
+    if (entry.key) apiClient.get.mockResolvedValue({ data: details(entry, 'Private evidence to purge') })
+    apiClient[entry.method].mockRejectedValueOnce({ response: { status: 403, data: { error: 'Admin access required' } } })
+    render(<entry.Component {...props(entry, vi.fn())} />)
+    await open(entry)
+    await userEvent.click(await screen.findByRole('button', { name: entry.approve }))
+    expect(await screen.findByRole('button', { name: 'Retry administrator access' })).toBeEnabled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('Private evidence to purge', { exact: false })).not.toBeInTheDocument()
+    expect(apiClient[entry.method]).toHaveBeenCalledTimes(1)
+  })
+
+  if (entry.key) it('never exposes cached parent evidence when an opening read loses administrator access', async () => {
+    apiClient.get.mockRejectedValueOnce({ response: { status: 403, data: { error: 'Admin access required' } } })
+    render(<entry.Component {...props(entry, vi.fn())} />)
+    await userEvent.click(screen.getByRole('button', { name: entry.trigger }))
+    expect(await screen.findByRole('button', { name: 'Retry administrator access' })).toBeEnabled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('Provided evidence', { exact: false })).not.toBeInTheDocument()
+  })
+
   if (entry.key) it('discards a closed dialog read even after the same account opens it again', async () => {
     const old = deferred()
     apiClient.get.mockReturnValueOnce(old.promise).mockResolvedValue({ data: details(entry, 'Fresh opening evidence') })

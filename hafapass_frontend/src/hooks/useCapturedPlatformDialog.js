@@ -1,10 +1,10 @@
-import { useCallback, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
+import { usePlatformIdentity, getAdminAuthority, subscribeAdminAuthority, withdrawAdminAuthority } from './usePlatformContext'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 
 export function useCapturedDialogIdentity() {
-  const authContext = useSyncExternalStore(subscribeApiAuthContext, getApiAuthContext)
-  return { key: JSON.stringify([authContext?.generation, authContext?.userId, authContext?.sessionId]),
-    ready: authContext ? authContext.ready : !import.meta.env.VITE_CLERK_PUBLISHABLE_KEY }
+  const identity = usePlatformIdentity('admin')
+  return { ...identity, key: identity.accountKey }
 }
 
 const contextError = () => Object.assign(new Error('Dialog authorization changed'), { name: 'DialogContextChanged' })
@@ -29,16 +29,19 @@ export default function useCapturedPlatformDialog(open) {
     const unsubscribe = subscribeApiAuthContext(() => {
       if (captured.current && getApiAuthContext() !== captured.current.authContext) withdraw()
     })
-    return () => { unsubscribe(); mounted.current = false; withdraw() }
+    const unsubscribeAuthority = subscribeAdminAuthority(() => {
+      if (captured.current && (getAdminAuthority().denied || getAdminAuthority().generation !== captured.current.authorityGeneration)) withdraw()
+    })
+    return () => { unsubscribeAuthority(); unsubscribe(); mounted.current = false; withdraw() }
   }, [withdraw])
   useLayoutEffect(() => { if (!open) withdraw() }, [open, withdraw])
 
   const capture = () => {
     if (!mounted.current || captured.current?.busy) return false
     const authContext = getApiAuthContext()
-    if (authContext ? !authContext.ready : Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY)) return false
+    if (getAdminAuthority().denied || (authContext ? !authContext.ready : Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY))) return false
     withdraw()
-    captured.current = { authContext, generation: ++generation.current, active: true, busy: false, read: 0, requests: new Set() }
+    captured.current = { authContext, authorityGeneration: getAdminAuthority().generation, generation: ++generation.current, active: true, busy: false, read: 0, requests: new Set() }
     return true
   }
   const begin = (kind = 'read') => {
@@ -56,6 +59,9 @@ export default function useCapturedPlatformDialog(open) {
         const response = await (['get', 'delete'].includes(method) ? apiClient[method](url, bound) : apiClient[method](url, body, bound))
         if (!current() || controller.signal.aborted) throw contextError()
         return response
+      } catch (error) {
+        if (current()) withdrawAdminAuthority(error, scope.authContext, scope.authorityGeneration)
+        throw error
       } finally { scope.requests.delete(controller) }
     }
     return { current, finish: () => { if (kind === 'mutation') scope.busy = false }, api: {
