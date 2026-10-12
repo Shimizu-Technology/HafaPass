@@ -36,6 +36,26 @@ describe('scanner recovery and camera ownership', () => {
   })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); window.localStorage.clear() })
 
+  it.each(['manual', 'camera'])('refuses retained %s callbacks before a peer withdrawal notification arrives', async input => {
+    const eventId = 92001
+    window.localStorage.setItem('hafapass_scanner_user_id', 'peer-owner')
+    await saveDevice(eventId, { id: 91, identifier: 'peer-scanner', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() })
+    const ticket = { ticket_id: 501, state: 'admitted', attendee_name: 'Private peer attendee', credential_hash: await sha256Hex('peer-private-qr') }
+    await saveVerifiedManifest(await signedManifest(eventId, [ticket]))
+    window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
+    render(<ScannerPage offlineOnly />)
+    await screen.findByText('Ticket list ready · 1 ticket')
+    if (input === 'camera') await userEvent.click(screen.getByRole('button', { name: 'Start camera' }))
+    window.localStorage.setItem('hafapass_scanner_binding_pending', 'peer-withdrawal')
+    await act(async () => clearAllAdmissionData())
+    if (input === 'manual') {
+      await userEvent.type(screen.getByLabelText('Ticket QR code'), 'peer-private-qr')
+      await userEvent.click(screen.getByRole('button', { name: 'Check ticket' }))
+    } else await act(async () => camera.callbacks[0]({ getText: () => 'peer-private-qr' }))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+    expect(screen.queryByText(/Private peer attendee/)).not.toBeInTheDocument()
+  })
+
   it('keeps access expiry visible and uses the earlier device authorization window', async () => {
     const eventId = 92001
     const deviceExpiry = new Date(Date.now() + 300_000).toISOString()

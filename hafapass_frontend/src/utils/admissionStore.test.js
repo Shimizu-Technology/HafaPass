@@ -715,6 +715,16 @@ describe('admissionStore', () => {
     expect(await queuedActions(eventId, 44)).toHaveLength(0)
   })
 
+  it('does not let stale account preparation purge a replacement scanner', async () => {
+    const eventId = 96802
+    window.localStorage.setItem('hafapass_scanner_user_id', 'replacement-owner')
+    await saveDevice(eventId, { id: 46, identifier: 'replacement-device', effective: true, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() })
+    await saveVerifiedManifest(await signedManifest(eventId))
+    const expected = await loadAuthorizedScanner(eventId)
+    await expect(clearAllAdmissionData({ isCurrent: () => false })).rejects.toMatchObject({ manifestContextChanged: true })
+    expect(await loadAuthorizedScanner(eventId)).toEqual(expected)
+  })
+
   it('removes expired authorization and attendee data without losing unacknowledged scans', async () => {
     const eventId = 91005
     const now = Date.now()

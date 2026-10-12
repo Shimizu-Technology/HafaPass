@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
@@ -10,6 +10,7 @@ import {
   applySyncResults, captureAdmissionAccessContext, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
   queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess,
 } from '../../utils/admissionStore'
+import { scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding } from '../../utils/scannerAccountBinding'
 
 const LOOKUP_STATUS_LABELS = {
   issued: 'Issued', checked_in: 'Already checked in', cancelled: 'Cancelled',
@@ -137,6 +138,9 @@ function ResultPanel({ result }) {
 }
 
 export default function ScannerPage({ offlineOnly = false, offlineEventId = null }) {
+  const bindingRevision = useSyncExternalStore(subscribeScannerBinding, scannerBindingRevision)
+  const bindingOwnerRef = useRef(currentScannerOwner())
+  const withdrawalRef = useRef(scannerWithdrawalRevision())
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const requestedEventId = searchParams.get('event')
@@ -241,12 +245,15 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     setScanning(false)
   }, [])
 
-  useLayoutEffect(() => {
-    // A query/visit change withdraws the previous event before the next paint.
-    // Keep its durable scan journal; only the current page's authority is reset.
+  const withdrawPresentation = useCallback(() => {
     ++setupGenerationRef.current
     ++presentationRef.current
+    ++privateReadGenerationRef.current
+    searchRequestRef.current?.abort()
+    downloadRequestRef.current?.abort()
+    dashboardRequestRef.current?.abort()
     currentManifestRef.current = null
+    resultContextRef.current = null
     stopCamera()
     setEventSelection(null)
     setEvents([])
@@ -261,7 +268,22 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     setPendingCount(0)
     setError(null)
     setSetupBusy(true)
-  }, [routeScope, selectionVisit, stopCamera])
+  }, [stopCamera])
+
+  useLayoutEffect(() => {
+    // Withdraw private presentation before the next paint, keeping the journal.
+    withdrawPresentation()
+  }, [routeScope, selectionVisit, withdrawPresentation])
+
+  useLayoutEffect(() => {
+    const owner = currentScannerOwner()
+    if (owner === bindingOwnerRef.current && withdrawalRef.current === scannerWithdrawalRevision()) return
+    bindingOwnerRef.current = owner
+    withdrawalRef.current = scannerWithdrawalRevision()
+    withdrawPresentation()
+    setSetupBusy(false)
+    setError('Saved event access changed. Sign in and prepare this scanner again.')
+  }, [bindingRevision, withdrawPresentation])
 
   const beginPrivateRead = useCallback((requestRef, selectedEventId) => {
     requestRef.current?.abort()
@@ -705,12 +727,13 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted', presentation = ++presentationRef.current) => {
     if (!device || !manifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== manifest.digest) return
     const owner = currentScannerOwner()
+    if (!owner || device.owner_user_id !== owner) return
     if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) {
       showResult({ type: 'error', message: 'Scanner access needs verification', detail: 'Reconnect and verify access before admitting another guest.' })
       return
     }
     const generation = setupGenerationRef.current
-    const current = () => mountedRef.current && owner === currentScannerOwner()
+    const current = () => mountedRef.current && owner && device.owner_user_id === owner && owner === currentScannerOwner()
       && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
     if (!device.effective || new Date(device.authorization_expires_at).getTime() <= Date.now() || new Date(manifest.payload.expires_at).getTime() <= Date.now()) {
       try {
@@ -726,6 +749,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       setManifest(null)
       return
     }
+    const savedDevice = await loadDevice(eventId)
+    if (!current() || savedDevice?.id !== device.id || savedDevice.owner_user_id !== owner || !savedDevice.effective) return
     const localState = await localScanState(eventId, ticket.ticket_id)
     if (!current() || refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) return
     if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
@@ -777,8 +802,9 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     const startedAt = performance.now()
     const presentation = ++presentationRef.current
     const owner = currentScannerOwner()
+    if (!owner || device?.owner_user_id !== owner) return
     const generation = setupGenerationRef.current
-    const current = () => mountedRef.current && owner === currentScannerOwner()
+    const current = () => mountedRef.current && owner && device?.owner_user_id === owner && owner === currentScannerOwner()
       && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
     try {
       if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) throw new Error('Reconnect and verify scanner access before scanning.')

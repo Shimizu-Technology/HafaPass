@@ -1,9 +1,10 @@
 import { openDB } from 'idb'
+import { currentScannerOwner } from './scannerAccountBinding'
+
+export { currentScannerOwner } from './scannerAccountBinding'
 
 const DB_NAME = 'hafapass-admissions'
 const DB_VERSION = 2
-
-export const currentScannerOwner = () => window.localStorage.getItem('hafapass_scanner_user_id') || (import.meta.env.PROD ? null : 'local-preview')
 
 const manifestContextError = message => Object.assign(new Error(message), { manifestContextChanged: true })
 
@@ -407,11 +408,20 @@ export async function purgeExpiredAdmissionAccess(eventId, { context } = {}) {
 }
 
 // A shared door device must forget attendee data and authorization on account changes.
-export async function clearAllAdmissionData() {
+export async function clearAllAdmissionData({ isCurrent = () => true } = {}) {
   const db = await database()
   const transaction = db.transaction(['manifests', 'devices', 'trusted_keys', 'scan_states'], 'readwrite')
-  await Promise.all(Array.from(transaction.objectStoreNames).map(name => transaction.objectStore(name).clear()))
-  await transaction.done
+  try {
+    if (!isCurrent()) throw manifestContextError('Account preparation changed before clearing scanner access')
+    await Promise.all(Array.from(transaction.objectStoreNames).map(name => transaction.objectStore(name).clear()))
+    if (!isCurrent()) throw manifestContextError('Account preparation changed while clearing scanner access')
+    await transaction.done
+  } catch (error) {
+    try { transaction.abort() } catch { /* Already failed/aborted. */ }
+    await transaction.done.catch(() => {})
+    throw error
+  }
+  if (!isCurrent()) return
   window.localStorage.removeItem('hafapass_scanner_browser_id')
   window.localStorage.removeItem('hafapass_scanner_event_id')
 }
