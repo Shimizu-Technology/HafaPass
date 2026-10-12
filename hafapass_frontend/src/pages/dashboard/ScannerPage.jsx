@@ -141,10 +141,15 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const location = useLocation()
   const requestedEventId = searchParams.get('event')
   const routeScope = JSON.stringify([location.key, location.search, offlineOnly ? offlineEventId : null])
+  const selectionVisitRef = useRef({ route: routeScope, generation: 0 })
+  if (selectionVisitRef.current.route !== routeScope) {
+    selectionVisitRef.current = { route: routeScope, generation: selectionVisitRef.current.generation + 1 }
+  }
+  const selectionVisit = selectionVisitRef.current.generation
   const [events, setEvents] = useState([])
   const [eventSelection, setEventSelection] = useState(null)
-  const eventId = eventSelection?.route === routeScope ? eventSelection.id : ''
-  const setEventId = useCallback(id => setEventSelection({ route: routeScope, id: String(id) }), [routeScope])
+  const eventId = eventSelection?.route === routeScope && eventSelection?.visit === selectionVisit ? eventSelection.id : ''
+  const setEventId = useCallback(id => setEventSelection({ route: routeScope, visit: selectionVisit, id: String(id) }), [routeScope, selectionVisit])
   const [device, setDevice] = useState(null)
   const [recoveryDevice, setRecoveryDevice] = useState(null)
   const [manifest, setManifest] = useState(null)
@@ -187,8 +192,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const dashboardRequestRef = useRef(null)
   const privateReadGenerationRef = useRef(0)
   const refusedAccessRef = useRef(new Set())
-  const routeScopeRef = useRef(routeScope)
-  routeScopeRef.current = routeScope
+  const routeScopeRef = useRef(null)
+  routeScopeRef.current = JSON.stringify([routeScope, selectionVisit])
 
   useEffect(() => {
     const abortReads = () => {
@@ -243,6 +248,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     ++presentationRef.current
     currentManifestRef.current = null
     stopCamera()
+    setEventSelection(null)
     setEvents([])
     setDevice(null)
     setRecoveryDevice(null)
@@ -255,7 +261,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     setPendingCount(0)
     setError(null)
     setSetupBusy(true)
-  }, [routeScope, stopCamera])
+  }, [routeScope, selectionVisit, stopCamera])
 
   const beginPrivateRead = useCallback((requestRef, selectedEventId) => {
     requestRef.current?.abort()

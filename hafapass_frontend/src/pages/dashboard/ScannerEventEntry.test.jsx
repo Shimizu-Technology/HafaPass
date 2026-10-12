@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
 import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
@@ -153,6 +154,57 @@ it('does not register an old event when its setup cache read completes after cha
   expect(screen.getByLabelText('Event to scan')).toHaveValue('92002')
   expect(apiClient.post.mock.calls.some(([path]) => path.includes('/92001/'))).toBe(false)
   expect(await queuedActions(92001, 91)).toHaveLength(1)
+})
+
+it('does not revive a manual event selection when Back returns to a previous URL while its assigned list is delayed', async () => {
+  const pendingLookup = vi.spyOn(admissionStore, 'loadPendingDeviceIdentity')
+  const manifests = { 92001: await signedManifest(92001), 92002: await signedManifest(92002) }
+  const assigned = { events: [{ id: 92001, title: 'URL event A' }, { id: 92002, title: 'Manually selected event B' }] }
+  let listCalls = 0
+  let releaseAway
+  let releaseBack
+  apiClient.get.mockImplementation(path => {
+    if (path === '/organizer/events') {
+      if (++listCalls === 1) return Promise.resolve({ data: assigned })
+      return new Promise(resolve => { if (listCalls === 2) releaseAway = resolve; else releaseBack = resolve })
+    }
+    if (path === '/me') return Promise.resolve({ data: { id: 7 } })
+    const eventId = path.match(/\/events\/(\d+)\//)?.[1]
+    return Promise.resolve({ data: path.endsWith('/manifest') ? manifests[eventId] : { counts: {} } })
+  })
+  apiClient.post.mockImplementation(path => {
+    const eventId = path.match(/\/events\/(\d+)\//)?.[1]
+    return Promise.resolve({ data: { id: Number(eventId), identifier: `pop-device-${eventId}`, effective: true,
+      authorization_expires_at: new Date(Date.now() + 600_000).toISOString() } })
+  })
+  let navigate
+  function Navigation() { navigate = useNavigate(); return null }
+  render(<MemoryRouter initialEntries={['/dashboard/scanner?event=92001']}><Navigation /><ScannerPage /></MemoryRouter>)
+  await waitFor(() => expect(screen.getByLabelText('Ticket QR code')).toBeEnabled())
+  await userEvent.selectOptions(screen.getByLabelText('Event to scan'), '92002')
+  await waitFor(() => expect(screen.getByLabelText('Ticket QR code')).toBeEnabled())
+  const registrations = id => apiClient.post.mock.calls.filter(([path]) => path === `/organizer/events/${id}/scanner_devices`).length
+  const pendingLookupsForB = () => pendingLookup.mock.calls.filter(([id]) => String(id) === '92002').length
+  expect(registrations(92002)).toBe(1)
+  const verifiedBLookups = pendingLookupsForB()
+  await act(async () => navigate('/dashboard/scanner?event=92003'))
+  await waitFor(() => expect(releaseAway).toBeDefined())
+  await act(async () => navigate(-1))
+  await waitFor(() => expect(releaseBack).toBeDefined())
+  // A stale configureEvent starts this lookup synchronously, before any IndexedDB yield.
+  expect(pendingLookupsForB()).toBe(verifiedBLookups)
+  expect(screen.getByLabelText('Event to scan')).toHaveValue('')
+  expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+  expect(screen.queryByRole('option', { name: 'Manually selected event B' })).not.toBeInTheDocument()
+  expect(registrations(92002)).toBe(1)
+  await act(async () => releaseBack({ data: assigned }))
+  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('92001'))
+  await waitFor(() => expect(screen.getByLabelText('Ticket QR code')).toBeEnabled())
+  expect(registrations(92001)).toBe(2)
+  expect(registrations(92002)).toBe(1)
+  await act(async () => releaseAway({ data: { events: [{ id: 92003, title: 'Obsolete away event' }] } }))
+  expect(screen.getByLabelText('Event to scan')).toHaveValue('92001')
+  expect(screen.queryByRole('option', { name: 'Obsolete away event' })).not.toBeInTheDocument()
 })
 
 it('ignores an obsolete assigned-list response after a query change', async () => {
