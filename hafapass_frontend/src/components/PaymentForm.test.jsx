@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PaymentForm from './PaymentForm'
 
 const confirmPayment = vi.fn()
+const paymentElementOptions = vi.hoisted(() => vi.fn())
 
 vi.mock('@stripe/react-stripe-js', () => ({
-  PaymentElement: () => <div>Payment fields</div>,
+  PaymentElement: ({ options }) => { paymentElementOptions(options); return <div>Payment fields</div> },
   useElements: () => ({ ready: true }),
   useStripe: () => ({ confirmPayment }),
 }))
@@ -14,6 +15,19 @@ vi.mock('@stripe/react-stripe-js', () => ({
 describe('PaymentForm', () => {
   beforeEach(() => {
     confirmPayment.mockReset()
+    paymentElementOptions.mockClear()
+  })
+
+  it('keeps Link disabled at the Stripe boundary before payment and after a declined attempt', async () => {
+    confirmPayment.mockResolvedValue({ error: { type: 'card_error', message: 'Your card was declined.' } })
+    render(<PaymentForm totalCents={1250} returnUrl="https://example.test/confirmation"
+      onSuccess={vi.fn()} submitting={false} setSubmitting={vi.fn()} />)
+    const walletPolicy = { applePay: 'auto', googlePay: 'auto', link: 'never' }
+    expect(paymentElementOptions).toHaveBeenLastCalledWith(expect.objectContaining({ wallets: walletPolicy }))
+    await userEvent.click(screen.getByRole('button', { name: 'Pay $12.50' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your card was declined.')
+    expect(paymentElementOptions).toHaveBeenLastCalledWith(expect.objectContaining({ wallets: walletPolicy }))
+    expect(screen.getByRole('button', { name: 'Pay $12.50' })).toBeEnabled()
   })
 
   it('hands a processing payment to the authoritative confirmation flow', async () => {

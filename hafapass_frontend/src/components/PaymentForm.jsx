@@ -72,6 +72,8 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
             wallets: {
               applePay: 'auto',
               googlePay: 'auto',
+              // Disable Link only in this form; it can offer non-card funding.
+              link: 'never',
             },
           }}
         />

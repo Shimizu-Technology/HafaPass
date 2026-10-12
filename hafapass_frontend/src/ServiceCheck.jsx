@@ -15,23 +15,32 @@ export default function ServiceCheck() {
   const { status, retry } = useBackendAvailability(HEALTH_URL)
   const location = useLocation()
   const [cachedScanner, setCachedScanner] = useState(null)
+  const scannerRoute = JSON.stringify([location.key, location.pathname, location.search])
 
   useEffect(() => {
     let current = true
     if (location.pathname !== '/dashboard/scanner') { setCachedScanner(null); return }
-    const eventId = window.localStorage.getItem('hafapass_scanner_event_id')
-    loadAuthorizedScanner(eventId).then(scanner => { if (current) setCachedScanner(scanner) }).catch(() => { if (current) setCachedScanner(null) })
+    const requestedEventId = new URLSearchParams(location.search).get('event')
+    let eventId = requestedEventId
+    try { eventId ??= window.localStorage.getItem('hafapass_scanner_event_id') } catch { /* Unavailable storage cannot authorize a fallback. */ }
+    setCachedScanner(null)
+    if (!eventId) return
+    loadAuthorizedScanner(eventId).then(scanner => {
+      if (current && scanner && Number(scanner.manifest?.payload?.event?.id) === Number(eventId)) {
+        setCachedScanner({ scanner, eventId, route: scannerRoute })
+      }
+    }).catch(() => { if (current) setCachedScanner(null) })
     return () => { current = false }
-  }, [location.pathname, status])
+  }, [location.pathname, location.search, scannerRoute, status])
 
   // Previously authorized door access must survive an API or authentication-service outage.
-  const cachedDoor = location.pathname === '/dashboard/scanner' && cachedScanner ? <main className="min-h-screen bg-neutral-50">
+  const cachedDoor = location.pathname === '/dashboard/scanner' && cachedScanner?.route === scannerRoute ? <main className="min-h-screen bg-neutral-50">
       <EnvironmentBanner offlineOnly />
       <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
         Using this device’s saved event access. Scans stay on this device until services reconnect.
         <button className="ml-3 min-h-11 font-semibold underline" onClick={retry}>Check connection</button>
       </div>
-      <Suspense fallback={<p className="px-4 py-8" role="status">Opening the saved scanner…</p>}><ScannerPage offlineOnly /></Suspense>
+      <Suspense fallback={<p className="px-4 py-8" role="status">Opening the saved scanner…</p>}><ScannerPage offlineOnly offlineEventId={cachedScanner.eventId} /></Suspense>
     </main> : null
   if (cachedDoor && status !== 'available') return cachedDoor
 

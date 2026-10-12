@@ -446,6 +446,36 @@ describe('checkout navigation', () => {
     expect(apiClient.post.mock.calls[1][1].checkout_key).not.toBe(originalKey)
   })
 
+  it('shows the server buyer when a paid recovery follows local edits after a lost response', async () => {
+    const event = { id: 37, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000 }] }
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1' } })
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+    </Routes></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('checkout.fullName'), 'Original Buyer')
+    await user.type(screen.getByLabelText('checkout.emailAddress'), 'original@example.invalid')
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: /checkout.continueToPayment/ }))
+    await screen.findByRole('button', { name: 'Recover earlier checkout' })
+    const original = apiClient.post.mock.calls[0][1]
+    await user.clear(screen.getByLabelText('checkout.fullName'))
+    await user.type(screen.getByLabelText('checkout.fullName'), 'Edited Buyer')
+    await user.clear(screen.getByLabelText('checkout.emailAddress'))
+    await user.type(screen.getByLabelText('checkout.emailAddress'), 'edited@example.invalid')
+    apiClient.post.mockResolvedValueOnce({ data: { id: 925, guest_access_token: 'original-access' } })
+    apiClient.post.mockResolvedValueOnce({ data: { id: 925, event, buyer_name: 'Original Buyer', buyer_email: 'original@example.invalid', client_secret: 'test-original-secret', stripe_publishable_key: 'pk_test_fixture', expires_at: new Date(Date.now() + 300000).toISOString(), total_cents: 1080, order_items: [{ ticket_type_id: 7, name: 'Admission', quantity: 1, unit_price_cents: 1000 }] } })
+    await user.click(screen.getByRole('button', { name: 'Recover earlier checkout' }))
+    expect(await screen.findByText('Payment form')).toBeInTheDocument()
+    expect(screen.getByText('Original Buyer')).toBeInTheDocument()
+    expect(screen.getByText(/original@example.invalid/)).toBeInTheDocument()
+    expect(screen.queryByText('Edited Buyer')).not.toBeInTheDocument()
+    expect(screen.queryByText(/edited@example.invalid/)).not.toBeInTheDocument()
+    expect(apiClient.post).toHaveBeenNthCalledWith(2, '/orders', original)
+    expect(apiClient.post).toHaveBeenCalledTimes(3)
+  })
+
   it('preserves buyer edits after a lost response and explicitly recovers the original order', async () => {
     const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
     apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_flat_cents: 0 } })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
@@ -136,12 +136,20 @@ function ResultPanel({ result }) {
   )
 }
 
-export default function ScannerPage({ offlineOnly = false }) {
+export default function ScannerPage({ offlineOnly = false, offlineEventId = null }) {
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const requestedEventId = searchParams.get('event')
+  const routeScope = JSON.stringify([location.key, location.search, offlineOnly ? offlineEventId : null])
+  const selectionVisitRef = useRef({ route: routeScope, generation: 0 })
+  if (selectionVisitRef.current.route !== routeScope) {
+    selectionVisitRef.current = { route: routeScope, generation: selectionVisitRef.current.generation + 1 }
+  }
+  const selectionVisit = selectionVisitRef.current.generation
   const [events, setEvents] = useState([])
-  const [eventId, setEventId] = useState('')
+  const [eventSelection, setEventSelection] = useState(null)
+  const eventId = eventSelection?.route === routeScope && eventSelection?.visit === selectionVisit ? eventSelection.id : ''
+  const setEventId = useCallback(id => setEventSelection({ route: routeScope, visit: selectionVisit, id: String(id) }), [routeScope, selectionVisit])
   const [device, setDevice] = useState(null)
   const [recoveryDevice, setRecoveryDevice] = useState(null)
   const [manifest, setManifest] = useState(null)
@@ -184,6 +192,8 @@ export default function ScannerPage({ offlineOnly = false }) {
   const dashboardRequestRef = useRef(null)
   const privateReadGenerationRef = useRef(0)
   const refusedAccessRef = useRef(new Set())
+  const routeScopeRef = useRef(null)
+  routeScopeRef.current = JSON.stringify([routeScope, selectionVisit])
 
   useEffect(() => {
     const abortReads = () => {
@@ -230,6 +240,28 @@ export default function ScannerPage({ offlineOnly = false }) {
     if (videoRef.current) videoRef.current.srcObject = null
     setScanning(false)
   }, [])
+
+  useLayoutEffect(() => {
+    // A query/visit change withdraws the previous event before the next paint.
+    // Keep its durable scan journal; only the current page's authority is reset.
+    ++setupGenerationRef.current
+    ++presentationRef.current
+    currentManifestRef.current = null
+    stopCamera()
+    setEventSelection(null)
+    setEvents([])
+    setDevice(null)
+    setRecoveryDevice(null)
+    setManifest(null)
+    setDashboard(null)
+    setScanResult(null)
+    setManualCode('')
+    setSearchQuery('')
+    setSearchResults([])
+    setPendingCount(0)
+    setError(null)
+    setSetupBusy(true)
+  }, [routeScope, selectionVisit, stopCamera])
 
   const beginPrivateRead = useCallback((requestRef, selectedEventId) => {
     requestRef.current?.abort()
@@ -507,7 +539,9 @@ export default function ScannerPage({ offlineOnly = false }) {
     if (!selectedEventId) return
     const generation = ++setupGenerationRef.current
     const owner = currentScannerOwner()
-    const current = () => generation === setupGenerationRef.current && eventIdRef.current === String(selectedEventId) && owner === currentScannerOwner()
+    const route = routeScopeRef.current
+    const current = () => mountedRef.current && route === routeScopeRef.current
+      && generation === setupGenerationRef.current && eventIdRef.current === String(selectedEventId) && owner === currentScannerOwner()
     const refusedKey = JSON.stringify([owner, String(selectedEventId)])
     const priorRefusalTokens = storedRefusalTokens(owner, selectedEventId)
     const accessRefused = refusedAccessRef.current.has(refusedKey) || hasStoredRefusal(owner, selectedEventId)
@@ -523,18 +557,24 @@ export default function ScannerPage({ offlineOnly = false }) {
     try {
       const pendingIdentity = await loadPendingDeviceIdentity(selectedEventId)
       await refreshPending(selectedEventId, pendingIdentity ? { id: pendingIdentity.device_id } : null)
+      if (!current()) return
       if (!online && !safetyStorageReady) throw new Error('This browser cannot save scanner safety checks. Stay connected and ask the door manager for help before admitting guests.')
       if (!online && (accessRefused || hasStoredRefusal(owner, selectedEventId))) throw new Error('Scanner access was refused. Reconnect to verify access before admitting more guests.')
       let cached = await loadAuthorizedScanner(selectedEventId)
+      if (!current()) return
       if (online) {
         let networkPhase = true
         let failureContext = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
         try {
+          if (!current()) return
           let previousIdentity = await loadPendingDeviceIdentity(selectedEventId)
+          if (!current()) return
           if (!previousIdentity) {
             const me = await apiClient.get('/me')
+            if (!current()) return
             previousIdentity = await loadPendingDeviceIdentity(selectedEventId, me.data.id)
           }
+          if (!current()) return
           const registration = await apiClient.post(`/organizer/events/${selectedEventId}/scanner_devices`, {
             identifier: previousIdentity?.identifier || browserIdentifier(),
             name: `Scanner · ${navigator.platform || 'browser'}`,
@@ -610,14 +650,17 @@ export default function ScannerPage({ offlineOnly = false }) {
   useEffect(() => {
     let active = true
     const restoreSaved = async () => {
-      const saved = window.localStorage.getItem('hafapass_scanner_event_id')
+      let saved = requestedEventId ?? offlineEventId
+      try { saved ??= window.localStorage.getItem('hafapass_scanner_event_id') } catch { /* Missing storage cannot select another event. */ }
       const cached = saved ? await loadAuthorizedScanner(saved).catch(() => null) : null
       if (!active) return
-      if (cached) {
+      if (cached && Number(cached.manifest?.payload?.event?.id) === Number(saved)) {
         setEvents([{ ...cached.manifest.payload.event, id: Number(saved) }])
         setEventId(saved)
       } else {
-        setError('Could not load assigned events. Connect once to authorize this scanner and download an event list.')
+        setError(requestedEventId !== null || offlineEventId !== null
+          ? 'This event is not saved on this device. Connect to verify access and download its ticket list.'
+          : 'Could not load assigned events. Connect once to authorize this scanner and download an event list.')
         setSetupBusy(false)
       }
     }
@@ -627,12 +670,17 @@ export default function ScannerPage({ offlineOnly = false }) {
       const accessible = response.data.events || []
       setEvents(accessible)
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
-      const initial = accessible.find(event => String(event.id) === requestedEventId)?.id || accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
+      const initial = requestedEventId !== null
+        ? accessible.find(event => String(event.id) === requestedEventId)?.id
+        : accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
       if (initial) setEventId(String(initial))
-      else setSetupBusy(false)
+      else {
+        if (requestedEventId !== null) setError('This event is not assigned to your account. Choose an assigned event or ask the event manager for access.')
+        setSetupBusy(false)
+      }
     }).catch(() => { if (active) void restoreSaved() })
     return () => { active = false }
-  }, [offlineOnly, requestedEventId])
+  }, [offlineOnly, offlineEventId, requestedEventId, routeScope, setEventId])
 
   useEffect(() => {
     if (!eventId) return
@@ -914,7 +962,7 @@ export default function ScannerPage({ offlineOnly = false }) {
   }
 
   const selectedEvent = events.find(event => String(event.id) === eventId)
-  const ready = Boolean(device && manifest)
+  const ready = Boolean(eventId && device && manifest && Number(manifest.payload?.event?.id) === Number(eventId))
   const expiresAt = Math.min(Date.parse(device?.authorization_expires_at || ''), Date.parse(manifest?.payload.expires_at || ''))
   const eventTimezone = manifest?.payload.event?.timezone || selectedEvent?.timezone || 'Pacific/Guam'
   const expiryLabel = Number.isFinite(expiresAt) ? formatEventDateTime(expiresAt, eventTimezone) : null
@@ -932,7 +980,7 @@ export default function ScannerPage({ offlineOnly = false }) {
         <div className="w-full sm:max-w-sm">
           <label htmlFor="scanner-event" className="mb-1 block text-sm font-medium text-neutral-800">Event to scan</label>
           <select id="scanner-event" value={eventId} onChange={event => setEventId(event.target.value)} className="input w-full">
-            {!events.length && <option value="">No assigned events</option>}
+            {!eventId && <option value="">{events.length ? 'Choose an assigned event' : 'No assigned events'}</option>}
             {events.map(event => <option key={event.id} value={event.id}>{event.title}</option>)}
           </select>
         </div>

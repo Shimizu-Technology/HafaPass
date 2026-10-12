@@ -813,7 +813,7 @@ function CheckoutContent({ buyerId }) {
             </div>
             {submitError && <p role="alert" className="mb-4 text-sm text-red-700">{submitError}</p>}
             <div className="bg-neutral-50 rounded-xl p-3 mb-4 text-sm text-neutral-600">
-              <span className="font-medium">{buyerName}</span> &middot; {buyerEmail}
+              <span className="font-medium">{orderData?.buyer_name}</span> &middot; {orderData?.buyer_email}
             </div>
             {countdownLabel && (
               <div className={`mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${checkoutExpired ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
