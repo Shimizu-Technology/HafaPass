@@ -6,6 +6,7 @@ import { useBackendAvailability } from './hooks/useBackendAvailability'
 import PrivatePreviewPage from './pages/PrivatePreviewPage'
 import EnvironmentBanner from './components/EnvironmentBanner'
 import { loadAuthorizedScanner } from './utils/admissionStore'
+import { currentScannerOwner } from './utils/scannerAccountBinding'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1').replace(/\/$/, '')
 const HEALTH_URL = `${API_BASE_URL}/health`
@@ -19,6 +20,7 @@ export default function ServiceCheck() {
 
   useEffect(() => {
     let current = true
+    const owner = currentScannerOwner()
     if (location.pathname !== '/dashboard/scanner') { setCachedScanner(null); return }
     const requestedEventId = new URLSearchParams(location.search).get('event')
     let eventId = requestedEventId
@@ -26,8 +28,8 @@ export default function ServiceCheck() {
     setCachedScanner(null)
     if (!eventId) return
     loadAuthorizedScanner(eventId).then(scanner => {
-      if (current && scanner && Number(scanner.manifest?.payload?.event?.id) === Number(eventId)) {
-        setCachedScanner({ scanner, eventId, route: scannerRoute })
+      if (current && owner && owner === currentScannerOwner() && scanner && Number(scanner.manifest?.payload?.event?.id) === Number(eventId)) {
+        setCachedScanner({ scanner, eventId, route: scannerRoute, owner })
       }
     }).catch(() => { if (current) setCachedScanner(null) })
     return () => { current = false }
@@ -42,19 +44,22 @@ export default function ServiceCheck() {
       </div>
       <Suspense fallback={<p className="px-4 py-8" role="status">Opening the saved scanner…</p>}><ScannerPage offlineOnly offlineEventId={cachedScanner.eventId} /></Suspense>
     </main> : null
-  if (cachedDoor && status !== 'available') return cachedDoor
-
-  if (status === 'checking') {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-center" role="status">
-        <div>
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-brand-400" />
-          <p className="mt-4 font-semibold text-white/70">Checking HåfaPass services…</p>
-        </div>
-      </main>
-    )
+  const renderServices = ({ scannerOwner }) => {
+    if (cachedDoor && cachedScanner.owner === scannerOwner && status !== 'available') return cachedDoor
+    if (status === 'checking') {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-center" role="status">
+          <div>
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-brand-400" />
+            <p className="mt-4 font-semibold text-white/70">Checking HåfaPass services…</p>
+          </div>
+        </main>
+      )
+    }
+    if (status === 'unavailable') return <PrivatePreviewPage onRetry={retry} />
+    return <App />
   }
-
-  if (status === 'unavailable') return <PrivatePreviewPage onRetry={retry} />
-  return <ClerkProviderWrapper loadingFallback={cachedDoor}><App /></ClerkProviderWrapper>
+  // Health transitions must not unmount the observer of definitive Clerk
+  // sign-out/account changes, including while the saved scanner is open.
+  return <ClerkProviderWrapper loadingFallback={cachedScanner?.owner === currentScannerOwner() ? cachedDoor : null}>{renderServices}</ClerkProviderWrapper>
 }

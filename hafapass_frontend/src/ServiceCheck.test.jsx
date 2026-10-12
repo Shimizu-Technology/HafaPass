@@ -5,13 +5,17 @@ import { useBackendAvailability } from './hooks/useBackendAvailability'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import ServiceCheck from './ServiceCheck'
 import { loadAuthorizedScanner } from './utils/admissionStore'
+import { currentScannerOwner } from './utils/scannerAccountBinding'
 
 vi.mock('./hooks/useBackendAvailability', () => ({
   useBackendAvailability: vi.fn(),
 }))
 
 vi.mock('./components/ClerkProviderWrapper', () => ({
-  default: ({ children, loadingFallback }) => <div data-testid="clerk-provider">{loadingFallback && <div data-testid="auth-loading-fallback">{loadingFallback}</div>}{children}</div>,
+  default: function MockClerkProvider({ children, loadingFallback }) {
+    const { status } = useBackendAvailability()
+    return <div data-testid="clerk-provider">{loadingFallback && status === 'available' && <div data-testid="auth-loading-fallback">{loadingFallback}</div>}{typeof children === 'function' ? children({ scannerOwner: currentScannerOwner() }) : children}</div>
+  },
 }))
 
 vi.mock('./utils/admissionStore', () => ({ loadAuthorizedScanner: vi.fn() }))
@@ -59,7 +63,7 @@ describe('ServiceCheck', () => {
     useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
     render(<MemoryRouter initialEntries={['/dashboard/scanner']}><ServiceCheck /></MemoryRouter>)
     expect(await screen.findByText('Cached door scanner')).toBeInTheDocument()
-    expect(screen.queryByTestId('clerk-provider')).not.toBeInTheDocument()
+    expect(screen.getByTestId('clerk-provider')).toBeInTheDocument()
     expect(loadAuthorizedScanner).toHaveBeenCalledWith('37')
   })
 
@@ -115,6 +119,18 @@ describe('ServiceCheck', () => {
     loadAuthorizedScanner.mockResolvedValue({ manifest: { payload: { event: { id: 37 } } } })
     render(<MemoryRouter initialEntries={['/dashboard/scanner?event=38']}><ServiceCheck /></MemoryRouter>)
     await waitFor(() => expect(loadAuthorizedScanner).toHaveBeenCalledWith('38'))
+    expect(screen.queryByText('Cached door scanner')).not.toBeInTheDocument()
+  })
+
+  it('ignores a verified cache result that finishes after its owner changes', async () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
+    let finishLoad
+    loadAuthorizedScanner.mockReturnValue(new Promise(resolve => { finishLoad = resolve }))
+    render(<MemoryRouter initialEntries={['/dashboard/scanner?event=37']}><ServiceCheck /></MemoryRouter>)
+    await waitFor(() => expect(finishLoad).toBeDefined())
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-b')
+    await act(async () => finishLoad({ manifest: { payload: { event: { id: 37 } } } }))
     expect(screen.queryByText('Cached door scanner')).not.toBeInTheDocument()
   })
 

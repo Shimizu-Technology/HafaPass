@@ -1,9 +1,10 @@
 import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-react'
 import { Sentry } from '../monitoring'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { setAuthTokenGetter } from '../api/client'
 import { clearAllAdmissionData } from '../utils/admissionStore'
 import { clearUploadRecovery } from '../utils/uploadRecovery'
+import { completeScannerBinding, currentScannerOwner, hasPendingScannerBinding, SCANNER_OWNER_KEY, withdrawScannerBinding } from '../utils/scannerAccountBinding'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -11,6 +12,7 @@ function AuthTokenSync({ children, loadingFallback }) {
   const [boundUser, setBoundUser] = useState(null)
   const [bindingReady, setBindingReady] = useState(false)
   const [bindingFailed, setBindingFailed] = useState(false)
+  const [bindingWithdrawn, setBindingWithdrawn] = useState(hasPendingScannerBinding)
   const [bindingAttempt, setBindingAttempt] = useState(0)
   const { getToken, isLoaded: authLoaded, sessionId, userId } = useAuth()
   const { isLoaded, isSignedIn, user } = useUser()
@@ -23,30 +25,36 @@ function AuthTokenSync({ children, loadingFallback }) {
     })
   }, [getToken, authLoaded, isLoaded, currentUserId, userId, sessionId])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isLoaded) return
     Sentry.setUser(currentUserId ? { id: currentUserId } : null)
-    const key = 'hafapass_scanner_user_id'
     let active = true
     setBindingReady(false)
     setBindingFailed(false)
     const prepareBinding = async () => {
       try {
-        const previous = window.localStorage.getItem(key)
-        const changed = previous && previous !== currentUserId
+        const previous = window.localStorage.getItem(SCANNER_OWNER_KEY)
+        const changed = (previous && previous !== currentUserId) || hasPendingScannerBinding()
         if (changed) {
-          await clearAllAdmissionData()
+          setBindingWithdrawn(true)
+          withdrawScannerBinding()
+          await clearAllAdmissionData({ isCurrent: () => active })
+          if (!active) return
           clearUploadRecovery(previous)
         }
         if (!active) return
         if (changed) window.localStorage.removeItem('hafapass_organization_id')
-        if (currentUserId) window.localStorage.setItem(key, currentUserId)
-        else window.localStorage.removeItem(key)
+        completeScannerBinding(currentUserId)
+        setBindingWithdrawn(false)
         setBoundUser(currentUserId)
         setBindingReady(true)
       } catch {
         // Keep the previous owner and cached routes inaccessible until a full purge succeeds.
-        if (active) setBindingFailed(true)
+        if (active) {
+          try { withdrawScannerBinding() } catch { /* In-memory withdrawal still blocks access when storage fails. */ }
+          setBindingWithdrawn(true)
+          setBindingFailed(true)
+        }
       }
     }
     void prepareBinding()
@@ -59,14 +67,16 @@ function AuthTokenSync({ children, loadingFallback }) {
     <p>We could not clear this device’s saved event access. Your account is still locked for privacy. Please try again.</p>
     <button className="btn-primary mt-4" onClick={() => setBindingAttempt(attempt => attempt + 1)}>Retry account preparation</button>
   </div>
-  if (!isLoaded && loadingFallback) return loadingFallback
+  const savedOwner = !bindingWithdrawn && !hasPendingScannerBinding()
+    && (!bindingReady || (boundUser && boundUser === currentScannerOwner())) ? currentScannerOwner() : null
+  if (!isLoaded && loadingFallback && savedOwner) return loadingFallback
   if (isLoaded && (!bindingReady || boundUser !== currentUserId)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
-  return children
+  return typeof children === 'function' ? children({ scannerOwner: isLoaded ? currentUserId : savedOwner }) : children
 }
 
 export default function ClerkProviderWrapper({ children, loadingFallback }) {
   if (!clerkPubKey) {
-    return <>{children}</>
+    return <>{typeof children === 'function' ? children({ scannerOwner: currentScannerOwner() }) : children}</>
   }
 
   return (
