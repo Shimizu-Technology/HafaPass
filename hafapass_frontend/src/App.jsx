@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import SupportRoute from './components/SupportRoute'
+import { useAuthReturnIntentCleanup } from './hooks/useAuthReturnPath'
 
 // Lazy-loaded — heavier pages loaded on demand
 const HomePage = lazy(() => import('./pages/HomePage'))
@@ -60,6 +61,7 @@ function PageLoader() {
 }
 
 function App() {
+  useAuthReturnIntentCleanup()
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>

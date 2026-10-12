@@ -1,11 +1,9 @@
 import { useLayoutEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useAuth } from '@clerk/clerk-react'
 import { clearAuthReturnIntent, createAuthReturnIntent, readAuthReturnIntent, storeAuthReturnIntent } from '../utils/authDestination'
 
 export default function useAuthReturnPath(entryPath) {
   const location = useLocation()
-  const { isSignedIn } = useAuth()
   const journey = useRef(null)
   const visit = JSON.stringify([location.key, location.pathname, location.search])
   if (journey.current?.visit !== visit) {
@@ -22,7 +20,17 @@ export default function useAuthReturnPath(entryPath) {
   const intent = journey.current.intent
   useLayoutEffect(() => {
     storeAuthReturnIntent(intent)
-    if (isSignedIn) clearAuthReturnIntent(intent.id)
-  }, [intent, isSignedIn])
+  }, [intent])
   return intent.destination
+}
+
+export function useAuthReturnIntentCleanup() {
+  const location = useLocation()
+  const inAuthFlow = /^\/sign-(in|up)(?:\/|$)/.test(location.pathname)
+  const intentId = inAuthFlow ? null : readAuthReturnIntent()?.id
+  // SDK sign-in can precede account binding and temporarily unmount App.
+  // Only committed navigation out of the auth routes completes this attempt.
+  useLayoutEffect(() => {
+    if (intentId) clearAuthReturnIntent(intentId)
+  }, [intentId, location.key, location.pathname])
 }

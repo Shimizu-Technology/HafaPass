@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, Link, useNavigate, useLocation } from 'react-router-dom'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readAuthReturnIntent } from '../utils/authDestination'
+import { useAuthReturnIntentCleanup } from '../hooks/useAuthReturnPath'
 
 const auth = vi.hoisted(() => ({ signedIn: false, listeners: new Set() }))
 vi.mock('@clerk/clerk-react', async () => {
@@ -49,11 +50,15 @@ function Navigation() {
   </>
 }
 function mount(path) {
-  return render(<MemoryRouter initialEntries={[path]}><LocationLabel /><Navigation /><Routes>
+  return render(<MemoryRouter initialEntries={[path]}><LocationLabel /><Navigation /><JourneyRoutes /></MemoryRouter>)
+}
+function JourneyRoutes() {
+  useAuthReturnIntentCleanup()
+  return <Routes>
     <Route path="/sign-in/*" element={<SignInPage />} />
     <Route path="/sign-up/*" element={<SignUpPage />} />
     <Route path="*" element={<p>Requested destination</p>} />
-  </Routes></MemoryRouter>)
+  </Routes>
 }
 
 describe('Clerk auth return journey', () => {
