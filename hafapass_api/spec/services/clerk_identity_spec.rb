@@ -129,5 +129,4 @@ RSpec.describe ClerkIdentity do
     expect(described_class.profile("user_recipient")).to be_nil
     expect(described_class.profile("other_subject")).to be_nil
   end
-
 end
