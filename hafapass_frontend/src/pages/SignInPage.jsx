@@ -1,13 +1,10 @@
 import HafaPassMark from '../components/HafaPassMark'
-import { useLocation } from 'react-router-dom'
-import { safeReturnPath } from '../utils/authDestination'
+import useAuthReturnPath from '../hooks/useAuthReturnPath'
 import { SignIn } from '@clerk/clerk-react'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 export default function SignInPage() {
-  const location = useLocation()
-  const returnTo = safeReturnPath(new URLSearchParams(location.search).get('returnTo'))
   if (!clerkPubKey) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50">
@@ -19,6 +16,11 @@ export default function SignInPage() {
     )
   }
 
+  return <SignInJourney />
+}
+
+function SignInJourney() {
+  const returnTo = useAuthReturnPath('/sign-in')
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-surface px-4 py-8">
       <div className="flex items-center gap-2 mb-6">
