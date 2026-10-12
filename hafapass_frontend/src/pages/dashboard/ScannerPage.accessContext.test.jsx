@@ -72,6 +72,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   await store.clearAllAdmissionData()
   for (const owner of ['staff-a', 'staff-b']) {
     window.localStorage.setItem('hafapass_scanner_user_id', owner)
@@ -487,7 +488,6 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     expect(create).not.toHaveBeenCalled()
     expect(click).not.toHaveBeenCalled()
     if (change !== 'unmount') mounted.unmount()
-    vi.unstubAllGlobals()
   })
 
   it('reports a failed door-list request and allows a current retry without losing scanner access', async () => {
@@ -510,7 +510,6 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     expect(create).toHaveBeenCalledTimes(1)
     expect(revoke).toHaveBeenCalledWith('blob:current-door-list')
     mounted.unmount()
-    vi.unstubAllGlobals()
   })
 
   it('disables offline entry for a known terminal revoked ACK despite a peer lease and another unknown scan', async () => {

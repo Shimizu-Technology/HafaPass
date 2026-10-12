@@ -770,8 +770,16 @@ function CheckoutContent({ buyerId }) {
                 try {
                   const response = await apiClient.post(`/orders/${cancellingOrderId}/cancel`, {}, { headers: orderAccessHeaders(cancellingOrderId) })
                   if (response.data?.status !== 'cancelled') throw new Error('Cancellation outcome is not confirmed')
-                  if (!current() || !clearActiveCheckout(slug, cancellingOrderId)) return
+                  if (!current()) return
                   paymentContext.current = null
+                  let cleared = false
+                  try { cleared = clearActiveCheckout(slug, cancellingOrderId) } catch { /* Keep the saved recovery record intact. */ }
+                  if (!cleared) {
+                    setClientSecret(null)
+                    setStripePublishableKey(null)
+                    setError('Your order was cancelled, but this page could not reset its saved checkout. Reload or retry the saved checkout to verify its current state before starting again.')
+                    return
+                  }
                   if (checkoutRecovered) {
                     // Recovery has the server order, not the original editable
                     // selection and buyer form. Re-select against fresh inventory.

@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import CheckoutPage from './CheckoutPage'
 import apiClient from '../api/client'
 import { getActiveCheckout, getOrderAccess, getCheckoutAttempt } from '../utils/orderAccess'
+import * as orderAccess from '../utils/orderAccess'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: vi.fn() }))
@@ -25,7 +26,7 @@ function RetainedRoute() {
 
 describe('checkout navigation', () => {
   beforeEach(() => { vi.clearAllMocks(); apiClient.post.mockReset(); apiClient.get.mockReset(); window.sessionStorage.clear(); window.localStorage.clear() })
-  afterEach(() => vi.unstubAllEnvs())
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
   it('waits for authoritative Clerk hydration and device binding before recovering an unbound legacy attempt', async () => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
@@ -151,6 +152,31 @@ describe('checkout navigation', () => {
     expect(getCheckoutAttempt('paid-event')).toBeNull()
     expect(getOrderAccess(923)).toBe('saved-buyer-token')
     expect(apiClient.post).toHaveBeenNthCalledWith(2, '/orders/923/cancel', {}, { headers: { 'X-Guest-Order-Token': 'saved-buyer-token' } })
+    expect(apiClient.post).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['false', 'throws'])('withdraws cancelled payment when saved-checkout cleanup %s', async outcome => {
+    window.sessionStorage.setItem('hafapass:order-access:923', 'saved-buyer-token')
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
+    apiClient.post.mockResolvedValueOnce({ data: {
+      id: 923, status: 'pending', client_secret: 'original-secret', stripe_publishable_key: 'pk_test',
+      total_cents: 1000, event: { slug: 'paid-event', title: 'Paid event' },
+      order_items: [{ id: 1, name: 'Admission', quantity: 1, unit_price_cents: 1000, subtotal_cents: 1000 }],
+    } })
+    apiClient.post.mockResolvedValueOnce({ data: { status: 'cancelled' } })
+    render(<MemoryRouter initialEntries={['/checkout/paid-event?resume=923']}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Payment form')
+    const clear = vi.spyOn(orderAccess, 'clearActiveCheckout')
+    if (outcome === 'false') clear.mockReturnValueOnce(false)
+    else clear.mockImplementationOnce(() => { throw new Error('Synthetic storage failure') })
+    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.editInfo' }))
+    expect(await screen.findByText(/Your order was cancelled, but this page could not reset/)).toBeInTheDocument()
+    expect(screen.queryByText('Payment form')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry saved checkout' })).toBeInTheDocument()
+    expect(getActiveCheckout('paid-event')).toBe('923')
+    expect(getOrderAccess(923)).toBe('saved-buyer-token')
     expect(apiClient.post).toHaveBeenCalledTimes(2)
   })
 

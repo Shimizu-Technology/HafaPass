@@ -657,7 +657,7 @@ export default function ScannerPage({ offlineOnly = false }) {
   const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted', presentation = ++presentationRef.current) => {
     if (!device || !manifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== manifest.digest) return
     const owner = currentScannerOwner()
-    if (hasStoredRefusal(owner, eventId)) {
+    if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) {
       showResult({ type: 'error', message: 'Scanner access needs verification', detail: 'Reconnect and verify access before admitting another guest.' })
       return
     }
@@ -679,7 +679,7 @@ export default function ScannerPage({ offlineOnly = false }) {
       return
     }
     const localState = await localScanState(eventId, ticket.ticket_id)
-    if (!current() || hasStoredRefusal(owner, eventId)) return
+    if (!current() || refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) return
     if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket,
         ...(localState.status === 'pending' ? { actionUuid: localState.action_uuid, actionKind: 'admit', deviceId: device.id } : {}),
@@ -733,7 +733,7 @@ export default function ScannerPage({ offlineOnly = false }) {
     const current = () => mountedRef.current && owner === currentScannerOwner()
       && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
     try {
-      if (hasStoredRefusal(owner, eventId)) throw new Error('Reconnect and verify scanner access before scanning.')
+      if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) throw new Error('Reconnect and verify scanner access before scanning.')
       if (!device?.effective || new Date(device.authorization_expires_at).getTime() <= Date.now()) {
         throw new Error('This scanner authorization expired. Reconnect before scanning.')
       }
