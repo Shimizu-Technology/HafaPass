@@ -97,4 +97,37 @@ RSpec.describe ClerkIdentity do
     2.times { described_class.verified_email_addresses("user_recipient") }
     expect(http).to have_received(:request).exactly(3).times
   end
+  it "uses the verified primary profile email and reuses the same current-request evidence" do
+    allow(http).to receive(:request).and_return(double(code: "200", body: {
+      id: "user_recipient", first_name: " Jane ", last_name: " Doe ", primary_email_address_id: "email_primary",
+      email_addresses: [
+        { id: "email_other", email_address: "OTHER@example.com", verification: { status: "verified" } },
+        { id: "email_primary", email_address: "PRIMARY@example.com", verification: { status: "verified" } }
+      ]
+    }.to_json))
+    described_class.with_request_cache do
+      expect(described_class.profile("user_recipient")).to include(email: "primary@example.com", first_name: "Jane", last_name: "Doe")
+      expect(described_class.verified_email_addresses("user_recipient")).to eq(["other@example.com", "primary@example.com"])
+    end
+    expect(http).to have_received(:request).once
+    expect(described_class::RequestCache.profiles).to be_nil
+  end
+
+  it "never backfills an unverified primary email" do
+    allow(http).to receive(:request).and_return(double(code: "200", body: {
+      id: "user_recipient", primary_email_address_id: "email_primary", email_addresses: [
+        { id: "email_primary", email_address: "unverified@example.com", verification: { status: "unverified" } }
+      ]
+    }.to_json))
+    expect(described_class.profile("user_recipient")).to include(email: nil, verified_emails: [])
+  end
+
+  it "returns unavailable for malformed profile and mismatched authenticated subject" do
+    allow(http).to receive(:request).and_return(double(code: "200", body: {
+      id: "user_recipient", email_addresses: [nil]
+    }.to_json))
+    expect(described_class.profile("user_recipient")).to be_nil
+    expect(described_class.profile("other_subject")).to be_nil
+  end
+
 end

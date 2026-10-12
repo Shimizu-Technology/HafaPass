@@ -59,3 +59,19 @@ describe('mobile administrator user controls', () => {
     expect(apiClient.patch).not.toHaveBeenCalled()
   })
 })
+
+describe('users without provider contact data', () => {
+  it('identifies each desktop and mobile row and never asks to promote null', async () => {
+    apiClient.get.mockResolvedValue({ data: { users: [7, 8].map(id => ({ id, email: null, first_name: null, last_name: null, role: 'attendee', created_at: '2026-10-01', orders_count: 0 })), meta: {} } })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    show()
+    const rows = await screen.findAllByRole('combobox', { name: 'Role for User #7' })
+    expect(rows).toHaveLength(2)
+    expect(screen.getAllByRole('combobox', { name: 'Role for User #8' })).toHaveLength(2)
+    expect(screen.getAllByText('Email unavailable')).toHaveLength(4)
+    expect(screen.getAllByText('User #7')).toHaveLength(2)
+    await userEvent.selectOptions(rows[1], 'admin')
+    expect(confirm).toHaveBeenCalledWith('Promote User #7 to admin? This grants full platform access.')
+    expect(apiClient.patch).not.toHaveBeenCalled()
+  })
+})
