@@ -61,5 +61,5 @@ export default function ServiceCheck() {
   }
   // Health transitions must not unmount the observer of definitive Clerk
   // sign-out/account changes, including while the saved scanner is open.
-  return <ClerkProviderWrapper loadingFallback={cachedScanner?.owner === currentScannerOwner() ? cachedDoor : null}>{renderServices}</ClerkProviderWrapper>
+  return <ClerkProviderWrapper loadingFallback={cachedScanner?.owner === currentScannerOwner() ? cachedDoor : null} loadingFallbackOwner={cachedScanner?.owner}>{renderServices}</ClerkProviderWrapper>
 }

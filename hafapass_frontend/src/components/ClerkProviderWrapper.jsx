@@ -1,14 +1,17 @@
 import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-react'
 import { Sentry } from '../monitoring'
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { setAuthTokenGetter } from '../api/client'
 import { clearAllAdmissionData } from '../utils/admissionStore'
 import { clearUploadRecovery } from '../utils/uploadRecovery'
-import { completeScannerBinding, currentScannerOwner, hasPendingScannerBinding, SCANNER_OWNER_KEY, withdrawScannerBinding } from '../utils/scannerAccountBinding'
+import { captureScannerBindingContext, completeScannerBinding, currentScannerOwner, hasPendingScannerBinding, scannerBindingContextCurrent, scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding, withdrawScannerBinding } from '../utils/scannerAccountBinding'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
-function AuthTokenSync({ children, loadingFallback }) {
+function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
+  useSyncExternalStore(subscribeScannerBinding, scannerBindingRevision)
+  const initialFallbackOwner = useRef(currentScannerOwner())
+  const verifiedWithdrawal = useRef(scannerWithdrawalRevision())
   const [boundUser, setBoundUser] = useState(null)
   const [bindingReady, setBindingReady] = useState(false)
   const [bindingFailed, setBindingFailed] = useState(false)
@@ -26,32 +29,38 @@ function AuthTokenSync({ children, loadingFallback }) {
   }, [getToken, authLoaded, isLoaded, currentUserId, userId, sessionId])
 
   useLayoutEffect(() => {
-    if (!isLoaded) return
+    if (!isLoaded || authLoaded === false || (authLoaded && userId !== currentUserId)) return
     Sentry.setUser(currentUserId ? { id: currentUserId } : null)
     let active = true
+    let bindingContext
+    const current = () => active && (!bindingContext || scannerBindingContextCurrent(bindingContext))
     setBindingReady(false)
     setBindingFailed(false)
     const prepareBinding = async () => {
       try {
-        const previous = window.localStorage.getItem(SCANNER_OWNER_KEY)
+        bindingContext = captureScannerBindingContext()
+        if (!bindingContext) throw new Error('Scanner binding storage is unavailable')
+        const previous = bindingContext.owner
         const changed = (previous && previous !== currentUserId) || hasPendingScannerBinding()
         if (changed) {
           setBindingWithdrawn(true)
           withdrawScannerBinding()
-          await clearAllAdmissionData({ isCurrent: () => active })
-          if (!active) return
+          bindingContext = captureScannerBindingContext()
+          await clearAllAdmissionData({ isCurrent: current })
+          if (!current()) return
           clearUploadRecovery(previous)
         }
-        if (!active) return
+        if (!current()) return
         if (changed) window.localStorage.removeItem('hafapass_organization_id')
-        completeScannerBinding(currentUserId)
+        completeScannerBinding(currentUserId, { context: bindingContext })
+        verifiedWithdrawal.current = scannerWithdrawalRevision()
         setBindingWithdrawn(false)
         setBoundUser(currentUserId)
         setBindingReady(true)
       } catch {
         // Keep the previous owner and cached routes inaccessible until a full purge succeeds.
         if (active) {
-          try { withdrawScannerBinding() } catch { /* In-memory withdrawal still blocks access when storage fails. */ }
+          if (!bindingContext || scannerBindingContextCurrent(bindingContext)) withdrawScannerBinding()
           setBindingWithdrawn(true)
           setBindingFailed(true)
         }
@@ -59,7 +68,7 @@ function AuthTokenSync({ children, loadingFallback }) {
     }
     void prepareBinding()
     return () => { active = false }
-  }, [isLoaded, currentUserId, bindingAttempt])
+  }, [isLoaded, currentUserId, authLoaded, userId, sessionId, bindingAttempt])
 
   // Only the account-bound, verified door cache can operate before Clerk loads.
   // A definitive sign-out or account switch still purges that cache before routes mount.
@@ -67,21 +76,22 @@ function AuthTokenSync({ children, loadingFallback }) {
     <p>We could not clear this device’s saved event access. Your account is still locked for privacy. Please try again.</p>
     <button className="btn-primary mt-4" onClick={() => setBindingAttempt(attempt => attempt + 1)}>Retry account preparation</button>
   </div>
-  const savedOwner = !bindingWithdrawn && !hasPendingScannerBinding()
+  const currentVerification = verifiedWithdrawal.current === scannerWithdrawalRevision()
+  const savedOwner = currentVerification && !bindingWithdrawn && !hasPendingScannerBinding()
     && (!bindingReady || (boundUser && boundUser === currentScannerOwner())) ? currentScannerOwner() : null
-  if (!isLoaded && loadingFallback && savedOwner) return loadingFallback
+  if (!isLoaded && loadingFallback && savedOwner && savedOwner === (loadingFallbackOwner ?? initialFallbackOwner.current)) return loadingFallback
   if (isLoaded && (!bindingReady || boundUser !== currentUserId)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
-  return typeof children === 'function' ? children({ scannerOwner: isLoaded ? currentUserId : savedOwner }) : children
+  return typeof children === 'function' ? children({ scannerOwner: isLoaded ? (currentVerification && currentUserId === currentScannerOwner() ? currentUserId : null) : savedOwner }) : children
 }
 
-export default function ClerkProviderWrapper({ children, loadingFallback }) {
+export default function ClerkProviderWrapper({ children, loadingFallback, loadingFallbackOwner }) {
   if (!clerkPubKey) {
     return <>{typeof children === 'function' ? children({ scannerOwner: currentScannerOwner() }) : children}</>
   }
 
   return (
     <ClerkProvider publishableKey={clerkPubKey} afterSignOutUrl="/">
-      <AuthTokenSync loadingFallback={loadingFallback}>{children}</AuthTokenSync>
+      <AuthTokenSync loadingFallback={loadingFallback} loadingFallbackOwner={loadingFallbackOwner}>{children}</AuthTokenSync>
     </ClerkProvider>
   )
 }

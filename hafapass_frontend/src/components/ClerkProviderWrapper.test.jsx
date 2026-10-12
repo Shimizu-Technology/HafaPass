@@ -19,11 +19,12 @@ describe('account-bound scanner authentication bootstrap', () => {
     vi.resetModules()
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'test-configured-key')
     window.localStorage.clear()
+    window.sessionStorage.clear()
     Object.assign(auth, { isLoaded: false, isSignedIn: false, user: null })
     clear.mockReset().mockResolvedValue(undefined)
     Wrapper = (await import('./ClerkProviderWrapper')).default
   })
-  afterEach(() => vi.unstubAllEnvs())
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
   it('opens only the supplied verified scanner fallback while Clerk cannot load, then mounts normal routes for its owner', async () => {
     window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
@@ -138,12 +139,13 @@ describe('account-bound scanner authentication bootstrap', () => {
   it('keeps access withdrawn when durable withdrawal storage fails', async () => {
     window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
     const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage unavailable') })
+    clear.mockRejectedValueOnce(new Error('IndexedDB unavailable'))
     Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
     const { rerender } = render(<Wrapper loadingFallback={<p>Verified saved scanner</p>}><p>Normal routes</p></Wrapper>)
     expect(await screen.findByRole('alert')).toHaveTextContent('locked for privacy')
     const { currentScannerOwner } = await import('../utils/scannerAccountBinding')
     expect(currentScannerOwner()).toBeNull()
-    expect(clear).not.toHaveBeenCalled()
+    expect(clear).toHaveBeenCalledOnce()
     write.mockRestore()
     Object.assign(auth, { isLoaded: false })
     rerender(<Wrapper loadingFallback={<p>Verified saved scanner</p>}><p>Normal routes</p></Wrapper>)
@@ -175,5 +177,55 @@ describe('account-bound scanner authentication bootstrap', () => {
     await screen.findByText('Normal routes')
     expect(clear).toHaveBeenCalledOnce()
     expect(window.localStorage.getItem('hafapass_scanner_binding_pending')).toBeNull()
+  })
+
+  it.each(['new-key quota', 'all local writes'])('purges and refuses a fresh loading boot after localStorage %s failure', async failure => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
+    const originalSet = Storage.prototype.setItem
+    const quota = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (this === window.localStorage && (failure === 'all local writes' || this.getItem(key) === null)) throw new DOMException('Quota exhausted', 'QuotaExceededError')
+      return originalSet.call(this, key, value)
+    })
+    window.sessionStorage.setItem('quota-regression', 'still writable')
+    let finishClear
+    clear.mockReturnValueOnce(new Promise(resolve => { finishClear = resolve }))
+    Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
+    const { unmount } = render(<Wrapper loadingFallback={<p>Verified saved scanner</p>}><p>Normal routes</p></Wrapper>)
+    expect(clear).toHaveBeenCalledOnce()
+    unmount()
+    await act(async () => finishClear())
+    if (failure === 'new-key quota') {
+      expect(window.localStorage.getItem('hafapass_scanner_user_id')).toBe('!')
+      // The shared existing-key fallback alone must protect another page/tab.
+      window.sessionStorage.removeItem('hafapass_scanner_binding_pending')
+    }
+    vi.resetModules()
+    Wrapper = (await import('./ClerkProviderWrapper')).default
+    Object.assign(auth, { isLoaded: false })
+    render(<Wrapper loadingFallback={<p>Verified saved scanner</p>}><p>Normal routes</p></Wrapper>)
+    expect(screen.queryByText('Verified saved scanner')).not.toBeInTheDocument()
+    const { currentScannerOwner } = await import('../utils/scannerAccountBinding')
+    expect(currentScannerOwner()).toBeNull()
+    quota.mockRestore()
+    window.sessionStorage.removeItem('quota-regression')
+  })
+
+  it('does not let an old purge completion overwrite a newer peer binding', async () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
+    let finishClear
+    clear.mockReturnValueOnce(new Promise(resolve => { finishClear = resolve }))
+    Object.assign(auth, { isLoaded: true, isSignedIn: true, user: { id: 'owner-b' } })
+    render(<Wrapper loadingFallback={<p>Verified saved scanner</p>}><p>Normal routes</p></Wrapper>)
+    await act(async () => {
+      window.localStorage.setItem('hafapass_scanner_user_id', 'owner-c')
+      window.localStorage.removeItem('hafapass_scanner_binding_pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_user_id', newValue: 'owner-c', storageArea: window.localStorage }))
+    })
+    expect(clear.mock.calls[0][0].isCurrent()).toBe(false)
+    await act(async () => finishClear())
+    expect(window.localStorage.getItem('hafapass_scanner_user_id')).toBe('owner-c')
+    expect(window.localStorage.getItem('hafapass_scanner_binding_pending')).toBeNull()
+    expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
+    expect(screen.queryByText('Verified saved scanner')).not.toBeInTheDocument()
   })
 })

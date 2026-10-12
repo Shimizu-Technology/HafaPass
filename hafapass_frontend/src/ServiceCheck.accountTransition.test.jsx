@@ -7,6 +7,10 @@ import { clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, 
 import { signedManifest } from './test/manifestFixture'
 
 const state = vi.hoisted(() => ({ status: 'available', loaded: true, owner: 'staff-a', retry: vi.fn(), getToken: vi.fn() }))
+const camera = vi.hoisted(() => ({ stops: [] }))
+vi.mock('@zxing/browser', () => ({ BrowserQRCodeReader: class {
+  decodeFromVideoDevice() { const stop = vi.fn(); camera.stops.push(stop); return Promise.resolve({ stop }) }
+} }))
 vi.mock('./hooks/useBackendAvailability', () => ({ useBackendAvailability: () => ({ status: state.status, retry: state.retry }) }))
 vi.mock('@clerk/clerk-react', () => ({
   ClerkProvider: ({ children }) => children,
@@ -33,6 +37,7 @@ describe('scanner authorization through actual service and auth boundaries', () 
   })
   beforeEach(async () => {
     window.localStorage.clear()
+    camera.stops = []
     Object.assign(state, { status: 'available', loaded: true, owner: 'staff-a' })
     await clearAllAdmissionData()
     await clearEventAdmissionData(eventId)
@@ -84,5 +89,26 @@ describe('scanner authorization through actual service and auth boundaries', () 
     expect(await screen.findByText('Ticket list ready · 1 ticket')).toBeInTheDocument()
     expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
     await act(async () => { expect(await queuedActions(eventId, 96)).toHaveLength(1) })
+  })
+
+  it.each(['pending', 'completed same owner'])('removes an already presented private result and stops its camera on peer-tab withdrawal while Clerk is still loading (%s)', async completion => {
+    Object.assign(state, { status: 'unavailable', loaded: false })
+    render(application())
+    await screen.findByText('Ticket list ready · 1 ticket')
+    await userEvent.type(screen.getByLabelText('Ticket QR code'), 'synthetic-private-qr')
+    await userEvent.click(screen.getByRole('button', { name: 'Check ticket' }))
+    await screen.findByText(/Synthetic private attendee/)
+    await userEvent.click(screen.getByRole('button', { name: 'Start camera' }))
+    expect(camera.stops).toHaveLength(1)
+    // A peer tab writes shared storage; it cannot call this tab's module state.
+    window.localStorage.setItem('hafapass_scanner_binding_pending', 'peer-withdrawal')
+    await act(async () => {
+      await clearAllAdmissionData()
+      if (completion === 'completed same owner') window.localStorage.removeItem('hafapass_scanner_binding_pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: 'peer-withdrawal', storageArea: window.localStorage }))
+    })
+    expect(screen.queryByText(/Synthetic private attendee/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Ticket QR code')).not.toBeInTheDocument()
+    expect(camera.stops[0]).toHaveBeenCalledOnce()
   })
 })
