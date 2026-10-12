@@ -155,7 +155,7 @@ describe('checkout navigation', () => {
     expect(apiClient.post).toHaveBeenCalledTimes(2)
   })
 
-  it.each(['false', 'throws'])('withdraws cancelled payment when saved-checkout cleanup %s', async outcome => {
+  it.each(['false', 'throws', 'read throws', 'partial clear'])('withdraws cancelled payment when saved-checkout cleanup %s', async outcome => {
     window.sessionStorage.setItem('hafapass:order-access:923', 'saved-buyer-token')
     apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
     apiClient.post.mockResolvedValueOnce({ data: {
@@ -163,19 +163,38 @@ describe('checkout navigation', () => {
       total_cents: 1000, event: { slug: 'paid-event', title: 'Paid event' },
       order_items: [{ id: 1, name: 'Admission', quantity: 1, unit_price_cents: 1000, subtotal_cents: 1000 }],
     } })
-    apiClient.post.mockResolvedValueOnce({ data: { status: 'cancelled' } })
+    apiClient.post.mockImplementationOnce(async () => {
+      if (outcome === 'read throws') {
+        const get = Storage.prototype.getItem
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (key) {
+          if (key === 'hafapass:active-checkout:paid-event') throw new Error('Synthetic read failure')
+          return get.call(this, key)
+        })
+      }
+      if (outcome === 'partial clear') {
+        const remove = Storage.prototype.removeItem
+        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (key) {
+          if (key === 'hafapass:active-checkout-buyer:paid-event') throw new Error('Synthetic partial removal')
+          return remove.call(this, key)
+        })
+      }
+      return { data: { status: 'cancelled' } }
+    })
     render(<MemoryRouter initialEntries={['/checkout/paid-event?resume=923']}><Routes>
       <Route path='/checkout/:slug' element={<CheckoutPage />} />
     </Routes></MemoryRouter>)
     await screen.findByText('Payment form')
-    const clear = vi.spyOn(orderAccess, 'clearActiveCheckout')
-    if (outcome === 'false') clear.mockReturnValueOnce(false)
-    else clear.mockImplementationOnce(() => { throw new Error('Synthetic storage failure') })
+    if (['false', 'throws'].includes(outcome)) {
+      const clear = vi.spyOn(orderAccess, 'clearActiveCheckout')
+      if (outcome === 'false') clear.mockReturnValueOnce(false)
+      else clear.mockImplementationOnce(() => { throw new Error('Synthetic storage failure') })
+    }
     await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.editInfo' }))
     expect(await screen.findByText(/Your order was cancelled, but this page could not reset/)).toBeInTheDocument()
     expect(screen.queryByText('Payment form')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Retry saved checkout' })).toBeInTheDocument()
-    expect(getActiveCheckout('paid-event')).toBe('923')
+    expect(screen.getByRole('button', { name: 'Reload checkout' })).toBeInTheDocument()
+    vi.restoreAllMocks()
+    expect(getActiveCheckout('paid-event')).toBe(outcome === 'partial clear' ? null : '923')
     expect(getOrderAccess(923)).toBe('saved-buyer-token')
     expect(apiClient.post).toHaveBeenCalledTimes(2)
   })
