@@ -138,4 +138,18 @@ describe('Clerk auth return journey', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/my-tickets')
     expect(readAuthReturnIntent()).toBeNull()
   })
+
+  it('does not resume an older destination when saving its replacement fails', async () => {
+    const page = mount('/sign-in?returnTo=%2Fmy-tickets')
+    expect(readAuthReturnIntent()?.destination).toBe('/my-tickets')
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
+    await userEvent.click(screen.getByRole('button', { name: 'Start new admin attempt' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue nested auth' }))
+    expect(screen.getByTestId('auth-target')).toHaveTextContent('/admin')
+    const nested = screen.getByTestId('location').textContent
+    page.unmount()
+    mount(nested)
+    expect(screen.getByTestId('auth-target').textContent).toBe('/')
+    expect(readAuthReturnIntent()).toBeNull()
+  })
 })

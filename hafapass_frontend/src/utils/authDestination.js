@@ -31,7 +31,10 @@ export function readAuthReturnIntent() {
 }
 
 export function storeAuthReturnIntent(intent) {
-  try { window.sessionStorage.setItem(intentKey, JSON.stringify(intent)) } catch { /* The mounted auth journey still retains its in-memory intent. */ }
+  try { window.sessionStorage.setItem(intentKey, JSON.stringify(intent)) } catch {
+    // A failed replacement must not resume an older attempt after a reload.
+    try { window.sessionStorage.removeItem(intentKey) } catch { /* The mounted journey still retains its in-memory intent. */ }
+  }
 }
 
 export function clearAuthReturnIntent(intentId) {
