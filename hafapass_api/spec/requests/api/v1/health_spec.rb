@@ -8,6 +8,20 @@ RSpec.describe "Health endpoints", type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("status" => "ok")
     end
+
+    it "identifies the running release without querying database or queue readiness" do
+      allow(ApplicationRevision).to receive(:current).and_return("B" * 40)
+      expect(SystemReadiness).not_to receive(:call)
+      get "/api/v1/health"
+      expect(response.parsed_body["revision"]).to eq("b" * 40)
+    end
+
+    it "does not expose an invalid revision environment value" do
+      allow(ApplicationRevision).to receive(:current).and_return("invalid-private-configuration")
+      get "/api/v1/health"
+      expect(response.parsed_body["revision"]).to be_nil
+      expect(response.body).not_to include("invalid-private-configuration")
+    end
   end
 
   describe "GET /api/v1/readiness" do
