@@ -26,7 +26,7 @@ describe('refund outcome and recovery', () => {
     const first = mountRefunds()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
-    await user.click(screen.getByRole('button', { name: 'Process Refund' }))
+    await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
     await screen.findByText(/Refund pending — waiting/)
     const original = apiClient.post.mock.calls[0]
     expect(screen.getByLabelText('Type')).toBeDisabled()
@@ -45,7 +45,7 @@ describe('refund outcome and recovery', () => {
     mountRefunds()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
-    await user.click(screen.getByRole('button', { name: 'Process Refund' }))
+    await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
     await screen.findByText(/Provider outcome uncertain/)
     const original = apiClient.post.mock.calls[0]
     apiClient.post.mockResolvedValueOnce({ data: { id: 81, status: 'failed' } })
@@ -59,7 +59,7 @@ describe('refund outcome and recovery', () => {
     mountRefunds()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
-    await user.click(screen.getByRole('button', { name: 'Process Refund' }))
+    await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
     expect(await screen.findByText('Test refund complete. No real money was returned.')).toBeInTheDocument()
     expect(screen.queryByText('Refund confirmed by the payment provider.')).not.toBeInTheDocument()
   })
@@ -69,7 +69,7 @@ describe('refund outcome and recovery', () => {
     mountRefunds()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
-    await user.click(screen.getByRole('button', { name: 'Process Refund' }))
+    await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
     expect(await screen.findByText(/Cash repayment requires a manager/)).toHaveTextContent('No new refund was confirmed')
     expect(window.sessionStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Retry saved refund' })).not.toBeInTheDocument()
@@ -81,7 +81,7 @@ describe('refund outcome and recovery', () => {
     const first = mountRefunds()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
-    await user.click(screen.getByRole('button', { name: 'Process Refund' }))
+    await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
     const notice = 'The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.'
     await screen.findByText(notice)
     const original = apiClient.post.mock.calls[0]
@@ -169,7 +169,36 @@ describe('refund outcome and recovery', () => {
     mountRefunds()
     await userEvent.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
     expect(screen.queryByLabelText('Cash return reference')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Process Refund' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Refund \$\d/ })).toBeInTheDocument()
   })
 
+})
+
+describe('refund labels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks(); window.localStorage.clear(); window.sessionStorage.clear()
+    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [
+      { id: 922, buyer_name: 'Single', buyer_email: 'one@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500 },
+      { id: 923, buyer_name: 'Group', buyer_email: 'group@example.invalid', ticket_count: 3, total_cents: 10500, refundable_cents: 10500 },
+    ] } })
+  })
+
+  it('pluralizes tickets, keeps the row trigger neutral and names the amount on the danger confirm', async () => {
+    const user = userEvent.setup()
+    mountRefunds()
+    expect(await screen.findByText(/1 ticket ·/)).toBeInTheDocument()
+    expect(screen.getByText(/3 tickets ·/)).toBeInTheDocument()
+    expect(screen.queryByText(/ticket\(s\)/)).not.toBeInTheDocument()
+    const triggers = screen.getAllByRole('button', { name: 'Refund', exact: true })
+    for (const trigger of triggers) expect(trigger.className).not.toMatch(/red|danger/)
+    await user.click(triggers[1])
+    const confirm = screen.getByRole('button', { name: 'Refund $105.00' })
+    expect(confirm.className).toMatch(/action-danger/)
+    await user.selectOptions(screen.getByLabelText('Type'), 'partial')
+    expect(screen.getByRole('button', { name: 'Process Refund' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Amount ($)'), '20')
+    expect(screen.getByRole('button', { name: 'Refund $20.00' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
 })

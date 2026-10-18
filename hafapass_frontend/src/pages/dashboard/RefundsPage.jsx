@@ -8,6 +8,7 @@ import { useParams } from 'react-router-dom'
 import { RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
 import { supportMailto } from '../../utils/supportContact'
+import { refundConfirmLabel, ticketCountLabel } from '../../utils/eventToolFormat'
 
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
 const needsFinanceReview = (data, request) => data?.finance_review_required === true || (request?.financeReview && data?.finance_review_required !== false)
@@ -289,7 +290,7 @@ function RefundsPageSession({ eventId, identity }) {
          <div className="min-w-0">
           <p className="font-medium text-neutral-900 break-words">{order.reference || `Order #${order.id}`} &middot; {order.buyer_name}</p>
           <p className="text-sm text-neutral-600 break-words">
-           {order.buyer_email} &middot; {order.ticket_count} ticket(s) &middot; ${(order.total_cents / 100).toFixed(2)}
+           {order.buyer_email} &middot; {ticketCountLabel(order.ticket_count)} &middot; ${(order.total_cents / 100).toFixed(2)}
            {order.refunded_cents > 0 && <> &middot; ${(order.refunded_cents / 100).toFixed(2)} refunded</>}
           </p>
          </div>
@@ -297,8 +298,8 @@ function RefundsPageSession({ eventId, identity }) {
         {refundingId !== order.id ? (
          <button onClick={() => { setRefundingId(order.id); setRefundRequestKey(newRefundRequestKey()); setRefundForm(initialRefundForm()) }}
           disabled={processing || accessRefreshing || Boolean(pendingRequest) || order.refundable_cents <= 0}
-          className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50 shrink-0 self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed">
-          <RotateCcw className="w-3 h-3" /> {isCashOrder(order) ? 'Record cash already returned' : 'Refund'}
+          className="btn-secondary min-h-11 text-sm !py-2 !px-4 gap-1.5 shrink-0 self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed">
+          <RotateCcw className="w-4 h-4" /> {isCashOrder(order) ? 'Record cash already returned' : 'Refund'}
          </button>
         ) : (
          <button disabled={processing || accessRefreshing || Boolean(pendingRequest)} onClick={() => { setRefundingId(null); setRefundRequestKey(null) }} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
@@ -342,7 +343,7 @@ function RefundsPageSession({ eventId, identity }) {
           <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || (refundForm.type === 'partial' && !refundForm.amount)}
            className="btn-primary text-sm !py-2.5 !bg-action-danger hover:!bg-action-danger-hover gap-1 disabled:opacity-50">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-           {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund' : isCashOrder(order) ? 'Record cash already returned' : 'Process Refund'}
+           {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund' : isCashOrder(order) ? 'Record cash already returned' : refundConfirmLabel(order, refundForm)}
           </button>
          </div>
         </div>

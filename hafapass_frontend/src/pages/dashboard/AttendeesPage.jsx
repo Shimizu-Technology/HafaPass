@@ -1,9 +1,10 @@
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
-import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Loader2, Search, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
+import { pluralize } from '../../utils/eventToolFormat'
 
 const STATUS_STYLES = {
   checked_in: { label: 'Checked In', className: 'bg-green-100 text-green-800' },
@@ -42,6 +43,8 @@ function AttendeesPageSession({ id, identity }) {
  const [search, setSearch] = useState('')
  const [statusFilter, setStatusFilter] = useState('')
  const [ticketTypeFilter, setTicketTypeFilter] = useState('')
+ const [exporting, setExporting] = useState(false)
+ const [exportError, setExportError] = useState(null)
  const withdrawAccess = useCallback(message => {
   accessDenied.current = true
   ++accessEpoch.current
@@ -122,15 +125,43 @@ function AttendeesPageSession({ id, identity }) {
 
   useEffect(() => { fetchAttendees() }, [fetchAttendees, loadAttempt])
 
+  // The API owns the attendee CSV (spreadsheet-safe values, every active
+  // ticket), so the button downloads that export instead of the current page.
+  const downloadExport = async () => {
+    if (exporting) return
+    setExporting(true); setExportError(null)
+    try {
+      const response = await requestApi('get', `/organizer/events/${id}/crm/export`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(response.data)
+      try { const link = document.createElement('a'); link.href = url; link.download = `${event?.slug || `event-${id}`}-attendees.csv`; link.click() }
+      finally { window.URL.revokeObjectURL(url) }
+    } catch (exportFailure) {
+      if (exportFailure?.name !== 'AbortError' && current()) setExportError('Unable to export attendees. Try again when your connection is available.')
+    } finally { if (current()) setExporting(false) }
+  }
+
   const visibleError = detailError || error
+  const totalCount = Number.isInteger(meta?.total_count) ? meta.total_count : attendees.length
   const ticketTypes = event?.ticket_types || []
   const totalPages = meta?.total_pages || 1
 
   return (
     <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
 
-      <h2 className="text-2xl font-bold text-neutral-900 mb-1">Attendees</h2>
-      {event && <p className="text-neutral-600 mb-6">{event.title}</p>}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold text-neutral-900 mb-1">Attendees</h2>
+          {event && <p className="text-neutral-600 break-words">{event.title}</p>}
+          {!loading && !(visibleError && attendees.length === 0) && <p role="status" className="mt-1 text-sm font-medium text-neutral-700 tabular-nums">{pluralize(totalCount, 'attendee')}{(search.trim() || statusFilter || ticketTypeFilter) ? ' match these filters' : ''}</p>}
+        </div>
+        {event && <div className="flex flex-col items-start gap-1 sm:items-end">
+          <button type="button" onClick={downloadExport} disabled={exporting} aria-describedby="attendee-export-help" className="btn-secondary min-h-11 gap-1.5 !px-4 !py-2.5 text-sm">
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Export CSV
+          </button>
+          <p id="attendee-export-help" className="text-xs text-neutral-500">Includes every active attendee, not only these filters.</p>
+        </div>}
+      </div>
+      {exportError && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}</p>}
 
       {visibleError && (
         <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"><p>{visibleError}</p><button type="button" className="min-h-11 font-semibold underline" onClick={() => setLoadAttempt(value => value + 1)}>Retry attendee list</button></div>
