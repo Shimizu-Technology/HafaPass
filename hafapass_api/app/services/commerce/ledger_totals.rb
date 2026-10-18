@@ -23,6 +23,10 @@ module Commerce
         .where(refunds: { order_id: order_ids, status: Refund.statuses[:succeeded] })
       refunded_fees = refund_allocations.sum(:fee_cents) + refund_allocations.sum(:organizer_fee_cents)
       refunded_proceeds = refund_allocations.sum(:organizer_proceeds_cents)
+      cash_order_ids = settled_orders.where(payment_method: "door_cash")
+        .or(settled_orders.where(id: Payment.where(provider: "door_cash").select(:order_id))).select(:id)
+      cash_proceeds = OrderItem.where(order_id: cash_order_ids).sum(:organizer_proceeds_cents)
+      cash_refunds = refund_allocations.where(refunds: { order_id: cash_order_ids }).sum(:organizer_proceeds_cents)
 
       {
         gross_cents: gross,
@@ -31,7 +35,7 @@ module Commerce
         net_cents: charged - refunds,
         fee_cents: [gross_fees - refunded_fees, 0].max,
         organizer_proceeds_cents: [proceeds - refunded_proceeds, 0].max,
-        payout_ready_cents: [proceeds - refunded_proceeds, 0].max
+        payout_ready_cents: [proceeds - refunded_proceeds - cash_proceeds + cash_refunds, 0].max
       }
     end
 
