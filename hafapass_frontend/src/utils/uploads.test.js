@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { webcrypto } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import apiClient from '../api/client'
 import { uploadImage } from './uploads'
 
@@ -13,7 +14,12 @@ describe('verified uploads', () => {
     window.localStorage.clear()
     window.sessionStorage.clear()
     window.localStorage.setItem('hafapass_scanner_user_id', 'original-user')
-    vi.stubGlobal('crypto', webcrypto)
+    // FileReader belongs to jsdom's realm; Node WebCrypto can reject its raw
+    // ArrayBuffer after a worker reuses a context. Hash the same bytes through
+    // a native Buffer so the recovery tests still exercise real SHA-256.
+    vi.stubGlobal('crypto', { subtle: {
+      digest: (algorithm, bytes) => webcrypto.subtle.digest(algorithm, Buffer.from(new Uint8Array(bytes))),
+    } })
     apiClient.post.mockResolvedValueOnce({ data: { url: 'https://storage.invalid/cover', fields: { key: 'owned-key' }, upload_token: 'scoped-token' } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
   })
