@@ -56,6 +56,15 @@ test('phone event navigation supports Escape and restores focus without exposing
   await expect(trigger).toBeFocused()
 })
 
+// A section jump must bring the section near the top unless the document ends
+// first: once the browser has scrolled as far as it can, the section only has
+// to sit below the sticky header and be visible.
+async function sectionTopOrScrollLimit(page, section) {
+  const { y } = await section.boundingBox()
+  const atEnd = await page.evaluate(() => Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1)
+  return y < 180 || (atEnd && y < (await page.viewportSize()).height - 40)
+}
+
 for (const width of [320, 1440]) {
   test(`ticket navigation scrolls and focuses the editor section without losing a draft at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 }); await prepare(page)
@@ -69,13 +78,13 @@ for (const width of [320, 1440]) {
     await expect(section).toBeFocused()
     await expect(title).toHaveValue('Preserved before ticket jump')
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect.poll(async () => (await section.boundingBox()).y).toBeLessThan(180)
+    await expect.poll(() => sectionTopOrScrollLimit(page, section)).toBe(true)
     expect((await section.boundingBox()).y).toBeGreaterThanOrEqual(60)
     await title.focus()
     if (width < 1024) await page.getByRole('button', { name: 'Event navigation', exact: true }).click()
     await page.getByRole('navigation', { name: 'Event workspace', exact: true }).getByRole('link', { name: 'Ticket types', exact: true }).click()
     await expect(section).toBeFocused()
-    await expect.poll(async () => (await section.boundingBox()).y).toBeLessThan(180)
+    await expect.poll(() => sectionTopOrScrollLimit(page, section)).toBe(true)
     await expect(title).toHaveValue('Preserved before ticket jump')
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   })
