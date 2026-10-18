@@ -1,0 +1,16 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Run once from the web service's pre-deploy/release hook, never from build or
+# web/worker/clock startup. Rails' PostgreSQL migration advisory lock requires
+# a direct connection, not Neon's transaction-pooled application endpoint.
+require_relative "../config/release_migration_configuration"
+
+begin
+  ReleaseMigrationConfiguration.apply!
+rescue ArgumentError => e
+  warn e.message
+  exit 1
+end
+
+exec("bundle", "exec", "rails", "db:migrate")

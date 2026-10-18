@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
+import EventAccessNotice from '../../components/EventAccessNotice'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import { ClipboardList } from 'lucide-react'
 import useEventCategories from '../../hooks/useEventCategories'
@@ -15,6 +16,17 @@ const AGE_RESTRICTIONS = [
 export default function CreateEventPage() {
  const navigate = useNavigate()
  const categories = useEventCategories()
+ const [access, setAccess] = useState(null)
+ const [accessError, setAccessError] = useState('')
+ useEffect(() => {
+  let active = true
+  apiClient.get('/organizer/organization').then(response => {
+   if (active) setAccess(response.data.permissions?.manage_events === true)
+  }).catch(() => {
+   if (active) setAccessError('Could not confirm event creation access. Return to your dashboard and try again.')
+  })
+  return () => { active = false }
+ }, [])
  const [submitting, setSubmitting] = useState(false)
  const [error, setError] = useState(null)
  const [formErrors, setFormErrors] = useState({})
@@ -76,7 +88,7 @@ export default function CreateEventPage() {
 
  const handleSubmit = async (e) => {
   e.preventDefault()
-  if (!validate()) return
+  if (!access || !validate()) return
 
   setSubmitting(true)
   setError(null)
@@ -108,6 +120,10 @@ export default function CreateEventPage() {
    setSubmitting(false)
   }
  }
+
+ if (accessError) return <EventAccessNotice message={accessError} />
+ if (access === null) return <p className="mx-auto max-w-2xl px-4 py-8" role="status">Checking event creation access…</p>
+ if (!access) return <EventAccessNotice message="Your organization access does not include creating events. Open your assigned tasks from the dashboard." />
 
  return (
   <div className="max-w-2xl mx-auto px-4 py-8">

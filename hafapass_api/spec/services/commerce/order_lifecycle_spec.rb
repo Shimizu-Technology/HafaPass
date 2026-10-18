@@ -50,7 +50,7 @@ RSpec.describe "Commerce order lifecycle" do
 
     expect(StripeService).to have_received(:create_payment_intent).with(
       an_instance_of(Order),
-      idempotency_key: match(/payment:order:/)
+      idempotency_key: match(/payment:order:/), payment: an_instance_of(Payment)
     )
   end
 
@@ -114,7 +114,7 @@ RSpec.describe "Commerce order lifecycle" do
     expect(result.order.reload).to be_expired
     expect(StripeService).to have_received(:cancel_payment_intent).with(
       result.payment.provider_payment_id,
-      idempotency_key: "cancel:payment:#{result.payment.id}"
+      idempotency_key: "cancel:payment:#{result.payment.id}", payment: result.payment
     )
 
     expect do

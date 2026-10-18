@@ -10,22 +10,58 @@ const apiClient = axios.create({
   },
 })
 
+let authContext = null
+let authGeneration = 0
+const authSubscribers = new Set()
+
+export const getApiAuthContext = () => authContext
+export function subscribeApiAuthContext(callback) {
+  authSubscribers.add(callback)
+  return () => authSubscribers.delete(callback)
+}
+
+function assertCurrentAuth(expected) {
+  // Axios copies custom configuration objects when merging request options.
+  if (expected && (!authContext?.ready || !expected.ready
+    || expected.generation !== authContext.generation || expected.userId !== authContext.userId
+    || expected.sessionId !== authContext.sessionId)) {
+    throw new axios.CanceledError('Account authorization changed')
+  }
+}
+
+function assertCurrentOrganization(config) {
+  if (Object.hasOwn(config, 'organizationId') && config.organizationId !== window.localStorage.getItem('hafapass_organization_id')) {
+    throw new axios.CanceledError('Organization selection changed')
+  }
+}
+
 // Request interceptor to attach auth token when available
 apiClient.interceptors.request.use(async (config) => {
-  const organizationId = window.localStorage.getItem('hafapass_organization_id')
+  // Account-sensitive callers can bind a request to the installed Clerk session.
+  // A token that resolves after a session change must never reach the transport.
+  assertCurrentAuth(config.authContext)
+  assertCurrentOrganization(config)
+  const organizationBound = Object.hasOwn(config, 'organizationId')
+  const organizationId = organizationBound
+    ? config.organizationId
+    : window.localStorage.getItem('hafapass_organization_id')
   if (organizationId) config.headers['X-Organization-Id'] = organizationId
+  else if (organizationBound) config.headers.delete('X-Organization-Id')
 
-  // Clerk token will be attached here once auth is configured (Task 3)
-  // The token is set via setAuthToken() called from the ClerkProvider wrapper
   if (apiClient._authTokenGetter) {
     try {
       const token = await apiClient._authTokenGetter()
+      assertCurrentAuth(config.authContext)
+      assertCurrentOrganization(config)
+      if (config.authContext && !token) throw new Error('Account authorization is not ready')
       if (token) {
         config.headers.Authorization = `Bearer ${token}`
       }
-    } catch {
-      // Silently fail if token retrieval fails
+    } catch (error) {
+      if (config.authContext || Object.hasOwn(config, 'organizationId')) throw error
     }
+  } else if (config.authContext) {
+    throw new Error('Account authorization is not ready')
   }
   return config
 })
@@ -50,8 +86,22 @@ apiClient.interceptors.response.use(
 )
 
 // Helper to set the auth token getter (called from ClerkProvider wrapper)
-export function setAuthTokenGetter(getter) {
+export function setAuthTokenGetter(getter, identity = {}) {
   apiClient._authTokenGetter = getter
+  const installed = Object.freeze({
+    generation: ++authGeneration,
+    userId: identity.userId || null,
+    sessionId: identity.sessionId || null,
+    ready: Boolean(getter && identity.ready && identity.userId && identity.sessionId),
+  })
+  authContext = installed
+  authSubscribers.forEach(callback => callback())
+  return () => {
+    if (authContext !== installed) return
+    apiClient._authTokenGetter = null
+    authContext = null
+    authSubscribers.forEach(callback => callback())
+  }
 }
 
 export default apiClient

@@ -1,6 +1,7 @@
 module Api
   module V1
     class OrganizerProfilesController < ApplicationController
+      before_action :require_requested_profile_context
       def show
         profile = current_profile
         if profile
@@ -87,7 +88,23 @@ module Api
         params.permit(:business_name, :business_description, :logo_url)
       end
 
+      def require_requested_profile_context
+        requested_id = request.headers["X-Organization-Id"].presence
+        return unless requested_id
+
+        @requested_organization = OrganizationContext.resolve(user: current_user, requested_id: requested_id)
+        unless @requested_organization
+          return render json: { error: "Organization membership required" }, status: :forbidden
+        end
+        return if @requested_organization.organizer_profile
+
+        render json: { error: "Organizer setup is unavailable for this organization. Select another organization or contact support." },
+          status: :not_found
+      end
+
       def current_profile
+        return @requested_organization.organizer_profile if request.headers["X-Organization-Id"].present?
+
         organization = OrganizationContext.resolve(
           user: current_user,
           requested_id: request.headers["X-Organization-Id"].presence

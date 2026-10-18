@@ -6,6 +6,11 @@ class WebhooksController < ActionController::API
     event = verified_stripe_event(payload)
     return unless event
 
+    if Rails.env.staging? && JSON.parse(payload)["livemode"] != false
+      render json: { error: "Staging accepts only signed Stripe test events" }, status: :bad_request
+      return
+    end
+
     StripeWebhookProcessor.call(event: event, payload: JSON.parse(payload))
     render json: { received: true }, status: :ok
   rescue JSON::ParserError

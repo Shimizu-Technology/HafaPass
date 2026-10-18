@@ -287,8 +287,12 @@ class Event < ApplicationRecord
         .limit(tt.available_quantity)
 
       entries.each do |entry|
-        entry.notify!
-        EmailService.send_waitlist_notification_async(entry)
+        entry.with_lock do
+          next unless entry.waiting?
+
+          entry.notify!
+          EmailService.send_waitlist_notification_async(entry)
+        end
       end
     end
   end

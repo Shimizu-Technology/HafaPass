@@ -34,6 +34,9 @@ module Settlements
           raise FinalizationError, "Resolve open reconciliation exceptions before finalizing"
         end
 
+        if StripeProcessingFees.missing_count(event.orders.select(:id)).positive?
+          raise FinalizationError, "Verify actual Stripe processing fees before finalizing"
+        end
         result = Calculator.call(event)
         source_digest = result.attributes[:source_digest]
         settlement = event.settlements.find_by(source_digest: result.attributes[:source_digest])

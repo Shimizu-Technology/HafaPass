@@ -10,14 +10,9 @@ class SendTicketEmailJob < ApplicationJob
     ticket = Ticket.find_by(id: ticket_id)
     return unless ticket # Ticket was deleted
 
-    delivery = MessageDelivery.find_by(id: delivery_id)
-    delivery&.update!(attempts: delivery.attempts + 1)
-    EmailService.send_ticket_email(ticket)
-    delivery&.update!(status: :sent, sent_at: Time.current, last_error: nil)
-    Rails.logger.info("[SendTicketEmailJob] Sent ticket email for ticket #{ticket_id}")
-  rescue => e
-    delivery&.update!(status: :failed, last_error: e.message)
-    Rails.logger.error("[SendTicketEmailJob] Failed for ticket #{ticket_id}: #{e.message}")
-    raise # Re-raise to trigger retry
+    delivery = MessageDelivery.find_by(id: delivery_id, ticket_id: ticket.id, template: "ticket_delivery")
+    raise MessageWirePayload::Unavailable, "Legacy ticket email requires its existing durable delivery; reconcile before sending" unless delivery
+
+    MessageDeliveryJob.new.perform(delivery.id)
   end
 end

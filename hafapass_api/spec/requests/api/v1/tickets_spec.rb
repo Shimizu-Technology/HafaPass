@@ -1,4 +1,5 @@
 require "rails_helper"
+require "pdf/reader"
 
 RSpec.describe "Api::V1::Tickets", type: :request do
   let(:organizer_profile) { create(:organizer_profile) }
@@ -46,6 +47,22 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response).to have_http_status(:not_found)
     end
 
+    it "withholds admission artifacts while a selected refund remains unknown" do
+      refund = create(:refund, order: order, status: :pending, provider_refund_id: nil,
+        succeeded_at: nil, failure_code: "provider_result_unknown")
+      refund.refund_tickets.create!(ticket: ticket, amount_cents: refund.amount_cents)
+      headers = { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+      get "/api/v1/tickets/#{ticket.display_credential}", headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("admission_allowed" => false, "scan_credential" => nil,
+        "admission_block_reason" => "Ticket access is paused while its refund is pending")
+
+      get "/api/v1/tickets/#{ticket.display_credential}/download", headers: headers
+      expect(response).to have_http_status(:not_found)
+      expect(ticket.reload).to be_issued
+      expect(refund.reload).to be_pending
+    end
+
     it "does not expose a scan credential after the ticket is cancelled" do
       ticket.update!(status: :cancelled, cancelled_at: Time.current)
 
@@ -54,6 +71,32 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body["scan_credential"]).to be_nil
       expect(response.parsed_body["admission_allowed"]).to be(false)
+    end
+
+    it "withholds every owned admission artifact during a legacy unknown full-value refund" do
+      create(:refund, order: order, amount_cents: order.total_cents, status: :pending,
+        provider_refund_id: nil, succeeded_at: nil, failure_code: "provider_result_unknown")
+      headers = { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+      get "/api/v1/tickets/#{ticket.display_credential}", headers: headers
+      expect(response.parsed_body).to include("admission_allowed" => false, "scan_credential" => nil,
+        "admission_block_reason" => "Ticket access is paused while its refund is pending")
+      %w[download wallet/apple wallet/google].each do |suffix|
+        get "/api/v1/tickets/#{ticket.display_credential}/#{suffix}", headers: headers
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+
+    it "reports retained admission truthfully and denies artifacts after Undo and exception resolution" do
+      ticket.check_in!
+      retention = Commerce::FinancialReversalInventory.call(ticket: ticket, refund: create(:refund, order: order))
+      ticket.reverse_check_in!
+      retention.reconciliation_exception.resolve!
+      headers = { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+      get "/api/v1/tickets/#{ticket.display_credential}", headers: headers
+      expect(response.parsed_body).to include("status" => "issued", "admission_allowed" => false,
+        "scan_credential" => nil, "admission_block_reason" => "Refunded or disputed admission requires organizer review")
+      get "/api/v1/tickets/#{ticket.display_credential}/download", headers: headers
+      expect(response).to have_http_status(:not_found)
     end
 
     it "keeps a cancelled ticket record viewable after its free order closes" do
@@ -77,6 +120,29 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response.content_type).to include("application/pdf")
       expect(response.headers["Content-Disposition"]).to include("attachment")
       expect(response.headers["Content-Disposition"]).to include(".pdf")
+    end
+
+    it "downloads a multilingual PDF through the owning guest session" do
+      event.update!(title: "Music & Food <show> 🎟️ 日本語", venue_name: "Hågatña 日本会館")
+      get "/api/v1/tickets/#{ticket.display_credential}/download",
+        headers: { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to include("application/pdf")
+      reader = PDF::Reader.new(StringIO.new(response.body))
+      expect(reader.pages.map(&:text).join("\n")).to include(event.title.delete("\uFE0F"), event.venue_name)
+    end
+
+    it "reports unsupported PDF text only to the owning guest without an artifact" do
+      event.update!(title: "Unsupported \u{10FFFF}")
+      get "/api/v1/tickets/#{ticket.display_credential}/download",
+        headers: { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error_code"]).to eq("unsupported_pdf_text")
+      expect(response.content_type).to include("application/json")
+      expect(response.headers["Content-Disposition"]).to be_nil
+      expect(response.body).not_to include(ticket.scan_credential, ticket.attendee_name, event.title)
     end
 
     it "does not expose a PDF admission credential to a public display link" do

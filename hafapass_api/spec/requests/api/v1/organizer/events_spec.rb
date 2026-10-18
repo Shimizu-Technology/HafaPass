@@ -211,6 +211,54 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(change).to have_attributes(change_type: "rescheduled", reason: "Venue requested a later start")
       expect(EmailService).to have_received(:send_event_change_notifications_async).with(change)
     end
+
+    it "journals every buyer notification inside the reschedule transaction" do
+      event.update!(status: :published, published_at: Time.current)
+      orders = [create(:order, event: event), create(:order, event: event, buyer_email: "second@example.invalid")]
+      original_transaction_depth = Event.connection.open_transactions
+      allow(MessageDelivery).to receive(:find_or_create_by!).and_wrap_original do |original, *arguments, &block|
+        expect(Event.connection.open_transactions).to be > original_transaction_depth
+        original.call(*arguments, &block)
+      end
+      new_start = (event.starts_at + 1.hour).change(usec: 0)
+
+      put "/api/v1/organizer/events/#{event.id}", params: {
+        starts_at: new_start.iso8601, ends_at: (new_start + 4.hours).iso8601,
+        change_reason: "Fixture reschedule"
+      }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.starts_at).to eq(new_start)
+      change = event.event_changes.find_by!(change_type: "rescheduled")
+      deliveries = MessageDelivery.where(template: "event_change", event: event)
+      expect(deliveries.pluck(:order_id)).to match_array(orders.map(&:id))
+      expect(deliveries.pluck(:idempotency_key)).to match_array(orders.map { |order| "event-change/#{change.id}/#{order.id}" })
+    end
+
+    it "rolls back the saved schedule, change and earlier buyer journal if a later journal fails" do
+      event.update!(status: :published, published_at: Time.current)
+      2.times { create(:order, event: event) }
+      original_start = event.starts_at
+      journal_attempts = 0
+      allow(MessageDelivery).to receive(:find_or_create_by!).and_wrap_original do |original, *arguments, &block|
+        journal_attempts += 1
+        raise StandardError, "journal unavailable" if journal_attempts == 2
+
+        original.call(*arguments, &block)
+      end
+
+      expect {
+        put "/api/v1/organizer/events/#{event.id}", params: {
+          starts_at: (original_start + 1.hour).iso8601, ends_at: (original_start + 5.hours).iso8601,
+          change_reason: "Fixture reschedule"
+        }, headers: headers
+      }.to raise_error(StandardError, "journal unavailable")
+
+      expect(journal_attempts).to eq(2)
+      expect(event.reload.starts_at).to eq(original_start)
+      expect(event.event_changes).to be_empty
+      expect(MessageDelivery.where(template: "event_change", event: event)).to be_empty
+    end
   end
 
   describe "DELETE /api/v1/organizer/events/:id" do

@@ -206,7 +206,8 @@ module Commerce
         payment.provider_payment_id,
         amount_cents: refund.amount_cents,
         reason: refund.reason,
-        idempotency_key: refund.idempotency_key
+        idempotency_key: refund.idempotency_key,
+        payment: payment
       )
     rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError
       raise
@@ -217,7 +218,7 @@ module Commerce
     end
 
     def recover_provider_refund(refund)
-      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key)
+      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key, payment: refund.payment)
       return response if response
       return if refund.created_at > PROVIDER_REPLAY_WINDOW.ago
 
@@ -314,16 +315,17 @@ module Commerce
           stripe_refund_id: provider_refund.id
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
-        if refund.refund_tickets.any?
+        StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
+        if full_refund
+          release_fully_refunded_inventory!(refund)
+        elsif refund.refund_tickets.any?
           release_refunded_tickets!(refund)
-        elsif full_refund
-          release_fully_refunded_inventory!(refund.order)
         end
+        EmailService.send_refund_notification_async(refund.order, refund: refund)
       end
 
       raise RefundError, validation_error if validation_error
 
-      EmailService.send_refund_notification_async(refund.order)
       refund.order.event.notify_waitlist_if_available if full_refund || refund.refund_tickets.any?
       refund.reload
     end
@@ -393,10 +395,10 @@ module Commerce
       payment.update!(status: succeeded_total >= payment.amount_cents ? :refunded : :partially_refunded)
     end
 
-    def release_fully_refunded_inventory!(refunded_order)
+    def release_fully_refunded_inventory!(refund)
+      refunded_order = refund.order
       refunded_order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
-        ticket.release_inventory!
-        cancel_ticket!(ticket)
+        FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end
       refunded_order.order_items.where.not(item_kind: OrderItem.item_kinds[:ticket]).find_each do |item|
         next if item.catalog_fulfillment&.fulfilled?
@@ -409,18 +411,8 @@ module Commerce
 
     def release_refunded_tickets!(refund)
       refund.tickets.includes(:ticket_type, :pricing_tier).order(:id).lock.each do |ticket|
-        ticket.release_inventory!
-        cancel_ticket!(ticket)
+        FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end
-    end
-
-    def cancel_ticket!(ticket)
-      ticket.update!(
-        status: :cancelled,
-        cancelled_at: Time.current,
-        cancellation_reason: reason,
-        scan_credential_version: ticket.scan_credential_version + 1
-      )
     end
 
     def record_promoter_commission_reversal!(refund)

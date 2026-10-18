@@ -3,6 +3,7 @@
 # This file is a long-running process entrypoint, not an autoloadable library.
 # Keep it outside lib/ so Rails eager loading cannot execute the scheduler while
 # booting production or CI.
+abort("Solid Queue owns scheduling; do not start a separate commerce clock") if RuntimeConfiguration.solid_queue?
 running = true
 Signal.trap("TERM") { running = false }
 Signal.trap("INT") { running = false }

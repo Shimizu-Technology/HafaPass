@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Loader2, Image as ImageIcon } from 'lucide-react'
 import { uploadImage } from '../utils/uploads'
+import { uploadScope, uploadScopeCurrent } from '../utils/uploadRecovery'
 
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -10,13 +11,33 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
   const [dragOver, setDragOver] = useState(false)
+  const [retryFile, setRetryFile] = useState(null)
   const inputRef = useRef(null)
+  const active = useRef(true)
+  const generation = useRef(0)
+  const currentEvent = useRef(eventId)
+  currentEvent.current = eventId
+  const currentScope = uploadScope(eventId)
+
+  useEffect(() => { active.current = true; return () => { active.current = false; generation.current += 1 } }, [])
+  useEffect(() => {
+    generation.current += 1
+    setUploading(false)
+    setError(null)
+    setRetryFile(null)
+    setPreview(null)
+  }, [eventId, currentScope.userId, currentScope.organizationId])
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
 
   const handleFile = async (file) => {
     if (!file || disabled || uploading) return
+    const startedEvent = eventId
+    const startedGeneration = generation.current
+    const startedScope = uploadScope(eventId)
+    const current = () => active.current && generation.current === startedGeneration && currentEvent.current === startedEvent && uploadScopeCurrent(startedScope)
     setError(null)
+    setRetryFile(null)
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
       setError('Please upload a JPG, PNG, or WebP image.')
@@ -33,14 +54,18 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
     setUploading(true)
 
     try {
-      const finalUrl = await uploadImage(file, eventId)
+      const finalUrl = await uploadImage(file, eventId, current)
+      if (!current()) return
       onUploaded(finalUrl)
       setPreview(null)
-    } catch {
-      setError('Upload failed. Please try again.')
+    } catch (uploadError) {
+      if (!current()) return
+      const interrupted = ['Network Error', 'Failed to fetch'].includes(uploadError.message) || uploadError.code === 'ECONNABORTED'
+      setError(uploadError.response?.data?.error || (interrupted ? 'Image upload was interrupted. Retry the upload to recover it.' : uploadError.message) || 'Upload failed. Please try again.')
+      setRetryFile(file)
       setPreview(null)
     } finally {
-      setUploading(false)
+      if (current()) setUploading(false)
     }
   }
 
@@ -106,10 +131,11 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
         type="file"
         accept=".jpg,.jpeg,.png,.webp"
         className="hidden"
-        onChange={(e) => handleFile(e.target.files[0])}
+        onChange={(e) => { const file = e.target.files[0]; e.target.value = ''; handleFile(file) }}
       />
 
       {error && <p role="alert" className="mt-1 text-sm text-red-600">{error}</p>}
+      {retryFile && <button type="button" className="btn-secondary mt-2" disabled={disabled || uploading} onClick={() => handleFile(retryFile)}>Retry image upload</button>}
     </div>
   )
 }

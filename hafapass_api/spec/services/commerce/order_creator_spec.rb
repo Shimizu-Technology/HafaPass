@@ -175,10 +175,29 @@ RSpec.describe Commerce::OrderCreator do
     order = event.orders.last
     expect(StripeService).to have_received(:cancel_payment_intent).with(
       intent.id,
-      idempotency_key: "cancel:payment-setup:#{order.payments.first.id}"
+      idempotency_key: "cancel:payment-setup:#{order.payments.first.id}", payment: order.payments.first
     )
     expect(order.reload).to be_cancelled
     expect(order.inventory_holds).to all(be_released)
+  end
+
+  it "cancels an attached intent without exposing its secret if setup outlasts the reservation" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    intent = OpenStruct.new(id: "pi_expired_setup", client_secret: "expired_secret",
+      allowed_payment_method_types: ["card"], payment_method_types: ["card"])
+    allow(StripeService).to receive(:create_payment_intent) do |sale_order, **|
+      sale_order.update!(expires_at: 1.minute.ago)
+      intent
+    end
+    allow(StripeService).to receive(:cancel_payment_intent).and_return(OpenStruct.new(status: "canceled"))
+    result = described_class.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "expired@example.invalid", buyer_name: "Expired Buyer", payment_required: true)
+    expect(result.payment_intent).to be_nil
+    expect(result.order).to be_expired
+    expect(result.payment).to have_attributes(status: "cancelled", provider_payment_id: intent.id)
+    expect(result.order.inventory_holds).to all(be_expired)
+    expect(StripeService).to have_received(:cancel_payment_intent).with(intent.id,
+      idempotency_key: "cancel:payment:#{result.payment.id}", payment: result.payment)
   end
 
   it "rejects a checkout that exceeds the active pricing tier allocation before payment setup" do
@@ -319,5 +338,29 @@ RSpec.describe Commerce::OrderCreator do
       end.to raise_error(described_class::CheckoutError, /recorded payment/)
       expect(event.orders).to be_empty
     end
+  end
+  it "retains a contradictory created intent and reservation for review without exposing or recreating the operation" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    intent = OpenStruct.new(id: "pi_policy_mismatch", client_secret: "private_secret",
+      allowed_payment_method_types: ["card"], payment_method_types: ["card", "us_bank_account"])
+    allow(StripeService).to receive(:create_payment_intent).and_return(intent)
+    allow(StripeService).to receive(:cancel_payment_intent)
+    options = { event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "buyer@example.invalid", buyer_name: "Buyer", checkout_key_digest: "c" * 64,
+      checkout_request_digest: "d" * 64 }
+    expect { described_class.call(**options) }.to raise_error(described_class::CheckoutError, /support review/)
+    order = event.orders.last
+    expect(order).to be_pending
+    expect(order.payments.last.provider_payment_id).to eq("pi_policy_mismatch")
+    expect(order.inventory_holds).to all(be_active)
+    expect(order.reconciliation_exceptions.open).to exist(code: "payment_method_policy_mismatch")
+    expect(StripeService).not_to have_received(:cancel_payment_intent)
+    allow(StripeService).to receive(:retrieve_payment_intent).and_return(
+      OpenStruct.new(id: intent.id, client_secret: intent.client_secret, amount: order.total_cents,
+        currency: "usd", livemode: false, status: "requires_payment_method",
+        allowed_payment_method_types: ["card"], payment_method_types: ["card", "us_bank_account"]))
+    expect { described_class.call(**options) }.to raise_error(Commerce::PaymentRecovery::RecoveryError, /support review/)
+    expect(event.orders.count).to eq(1)
+    expect(StripeService).to have_received(:create_payment_intent).once
   end
 end

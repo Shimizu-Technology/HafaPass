@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import AdminAccessRecovery from './AdminAccessRecovery'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Loader2, RadioTower, ShieldAlert, ShieldCheck, Smartphone, X } from 'lucide-react'
-import apiClient from '../api/client'
+import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
 
 const scanScenarios = [
   ['valid_unique', 'Unique valid ticket'], ['invalid_credential', 'Invalid credential'],
@@ -121,8 +122,13 @@ function EvidenceSummary({ review }) {
   </div>
 }
 
-export default function EventDayRehearsalReviewDialog({ event, onComplete }) {
+function EventDayRehearsalReviewDialogSession({ event, onComplete }) {
   const [open, setOpen] = useState(false)
+  const dialog = useCapturedPlatformDialog(open)
+  const { canClose } = dialog
+  const openCaptured = () => { if (dialog.capture()) { setBusy(false); setOpen(true) } }
+  const closeCaptured = useCallback(() => { if (canClose()) setOpen(false) }, [canClose])
+
   const [details, setDetails] = useState(null)
   const [form, setForm] = useState(initialForm)
   const [reason, setReason] = useState('')
@@ -141,18 +147,20 @@ export default function EventDayRehearsalReviewDialog({ event, onComplete }) {
   [form])
 
   const load = async () => {
+    const scope = dialog.begin()
+    if (!scope) return
     setLoading(true); setError('')
-    try { setDetails((await apiClient.get(`/admin/events/${event.id}/event_day_rehearsal`)).data) }
-    catch (requestError) { setError(requestError.response?.data?.error || 'Gate G rehearsal could not be loaded.') }
-    finally { setLoading(false) }
+    try { const response = await scope.api.get(`/admin/events/${event.id}/event_day_rehearsal`); if (!scope.current()) return; setDetails(response.data) }
+    catch (requestError) { if (!scope.current()) return; setError(requestError.response?.data?.error || 'Gate G rehearsal could not be loaded.') }
+    finally { if (scope.current()) setLoading(false) }
   }
   useEffect(() => {
     if (!open) return undefined
     load(); const trigger = triggerRef.current; const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const frame = window.requestAnimationFrame(() => closeRef.current?.focus())
+    closeRef.current?.focus()
     const onKeyDown = keyboardEvent => {
-      if (keyboardEvent.key === 'Escape' && !busy) setOpen(false)
+      if (keyboardEvent.key === 'Escape' && !busy) closeCaptured()
       if (keyboardEvent.key !== 'Tab' || !dialogRef.current) return
       const focusable = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
       if (!focusable.length) return
@@ -161,15 +169,17 @@ export default function EventDayRehearsalReviewDialog({ event, onComplete }) {
       else if (!keyboardEvent.shiftKey && document.activeElement === last) { keyboardEvent.preventDefault(); first.focus() }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', onKeyDown); document.body.style.overflow = previousOverflow; trigger?.focus() }
+    return () => { window.removeEventListener('keydown', onKeyDown); document.body.style.overflow = previousOverflow; trigger?.focus() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, closeCaptured])
 
   const request = async operation => {
+    const scope = dialog.begin('mutation')
+    if (!scope) return false
     setBusy(true); setError('')
-    try { await operation(); await load(); setForm(initialForm()); setReason(''); onComplete?.() }
-    catch (requestError) { setError(requestError.response?.data?.error || 'The Gate G decision could not be recorded.') }
-    finally { setBusy(false) }
+    try { await operation(scope.api); if (!scope.current()) return false; await load(); if (!scope.current()) return false; setForm(initialForm()); setReason(''); onComplete?.() }
+    catch (requestError) { if (!scope.current()) return false; setError(requestError.response?.data?.error || 'The Gate G decision could not be recorded.') }
+    finally { if (scope.current()) setBusy(false); scope.finish() }
   }
   const submit = submitEvent => {
     submitEvent.preventDefault()
@@ -185,22 +195,22 @@ export default function EventDayRehearsalReviewDialog({ event, onComplete }) {
     payload.reconciliation_results = Object.fromEntries(Object.entries(payload.reconciliation_results).map(([key, value]) =>
       [key, ['all_card_attempts_resolved', 'all_devices_synced'].includes(key) ? value : Number.parseInt(value, 10)]))
     payload.effective_at = new Date(payload.effective_at).toISOString(); payload.expires_at = new Date(payload.expires_at).toISOString()
-    request(() => apiClient.post(`/admin/events/${event.id}/event_day_rehearsal_reviews`, payload))
+    request(api => api.post(`/admin/events/${event.id}/event_day_rehearsal_reviews`, payload))
   }
   const updateDevice = (index, field, value) => setForm(current => ({ ...current, device_results: current.device_results.map((device, position) => position === index ? { ...device, [field]: value } : device) }))
   const updateNested = (section, key, field, value) => setForm(current => ({ ...current, [section]: { ...current[section], [key]: { ...current[section][key], [field]: value } } }))
-  const approve = () => request(() => apiClient.post(`/admin/event_day_rehearsal_reviews/${pending.id}/approve`))
-  const reject = () => request(() => apiClient.post(`/admin/event_day_rehearsal_reviews/${pending.id}/reject`, { reason }))
-  const revoke = revokeEvent => { revokeEvent.preventDefault(); request(() => apiClient.post(`/admin/event_day_rehearsal_reviews/${approval.id}/revoke`, { reason })) }
+  const approve = () => request(api => api.post(`/admin/event_day_rehearsal_reviews/${pending.id}/approve`))
+  const reject = () => request(api => api.post(`/admin/event_day_rehearsal_reviews/${pending.id}/reject`, { reason }))
+  const revoke = revokeEvent => { revokeEvent.preventDefault(); request(api => api.post(`/admin/event_day_rehearsal_reviews/${approval.id}/revoke`, { reason })) }
 
   return <>
-    <button ref={triggerRef} type="button" onClick={() => setOpen(true)} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-900 transition-colors hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 focus-visible:ring-offset-2">
+    <button ref={triggerRef} type="button" onClick={openCaptured} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-900 transition-colors hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 focus-visible:ring-offset-2">
       {rehearsal.approved || rehearsal.approval_recorded ? <ShieldCheck className="h-4 w-4" /> : <RadioTower className="h-4 w-4" />}
       {rehearsal.approved || rehearsal.approval_recorded ? 'Review rehearsal approval' : rehearsal.pending_submission ? 'Review rehearsal evidence' : 'Prepare Gate G rehearsal'}
     </button>
-    {open && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) setOpen(false) }}>
+    {open && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) closeCaptured() }}>
       <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="event-day-rehearsal-title" className="max-h-[96vh] w-full overflow-y-auto rounded-t-3xl bg-stone-50 shadow-2xl sm:max-w-6xl sm:rounded-3xl">
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-200 bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-800">Gate G · physical event-day rehearsal</p><h2 id="event-day-rehearsal-title" className="mt-1 text-2xl font-bold tracking-tight text-neutral-950">{event.title}</h2><p className="mt-1 max-w-4xl text-sm leading-relaxed text-neutral-600">Record the real signed-manifest, three-device offline, outage, door-sale, alert, staffing, and zero-variance rehearsal for the exact Gate F candidate.</p></div><button ref={closeRef} type="button" aria-label="Close Gate G rehearsal review" disabled={busy} onClick={() => setOpen(false)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600"><X className="h-5 w-5" /></button></header>
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-200 bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-800">Gate G · physical event-day rehearsal</p><h2 id="event-day-rehearsal-title" className="mt-1 text-2xl font-bold tracking-tight text-neutral-950">{event.title}</h2><p className="mt-1 max-w-4xl text-sm leading-relaxed text-neutral-600">Record the real signed-manifest, three-device offline, outage, door-sale, alert, staffing, and zero-variance rehearsal for the exact Gate F candidate.</p></div><button ref={closeRef} type="button" aria-label="Close Gate G rehearsal review" disabled={busy} onClick={closeCaptured} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600"><X className="h-5 w-5" /></button></header>
         <div className="px-6 py-6 sm:px-8 sm:py-8">
           {error && <div role="alert" className="mb-6 flex items-start gap-3 border-l-4 border-red-600 bg-red-50 p-4 text-sm text-red-900"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" /><p>{error}</p></div>}
           {loading && !details ? <div className="flex justify-center py-16"><Loader2 aria-label="Loading Gate G rehearsal" className="h-8 w-8 animate-spin text-violet-700" /></div> : <>
@@ -234,4 +244,11 @@ export default function EventDayRehearsalReviewDialog({ event, onComplete }) {
       </section>
     </div>}
   </>
+}
+
+export default function EventDayRehearsalReviewDialog(props) {
+  const identity = useCapturedDialogIdentity()
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.key} identity={identity} />
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <EventDayRehearsalReviewDialogSession key={`${identity.key}:${props.event.id}`} {...props} />
 }

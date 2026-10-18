@@ -1,0 +1,28 @@
+default: &default
+  inventory_expiry:
+    class: ExpireInventoryHoldsJob
+    schedule: every minute
+  seat_expiry:
+    class: ExpireSeatHoldsJob
+    schedule: every minute
+  runtime_recovery:
+    class: RuntimeRecoveryJob
+    schedule: every minute
+  stripe_fee_recovery:
+    class: SweepPendingStripeFeesJob
+    schedule: every 5 minutes
+  marketplace_retention:
+    class: PurgeMarketplaceAnalyticsJob
+    schedule: every day at 00:00 UTC
+  runtime_retention:
+    class: RuntimeRetentionJob
+    schedule: every day at 00:30 UTC
+
+production:
+  <<: *default
+staging:
+  <<: *default
+development:
+  <<: *default
+test:
+  <<: *default

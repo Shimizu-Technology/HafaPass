@@ -151,5 +151,25 @@ RSpec.describe SystemReadiness do
         expect(Sentry).not_to have_received(:capture_exception)
       end
     end
+
+    context "with the staging Sidekiq adapter" do
+      before do
+        require "sidekiq/api"
+        allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("staging"))
+        allow(ActiveJob::Base).to receive(:queue_adapter_name).and_return("sidekiq")
+        allow(described_class).to receive(:job_queue_check).and_return(ready: true, status: "connected")
+        allow(described_class).to receive(:worker_check).and_return(ready: true, status: "active", processes: 1)
+        allow(StageSafety).to receive(:call).with(runtime: true).and_return(ready: true, status: "simulation_only")
+      end
+
+      it "requires an active commerce clock even while money and email remain simulated" do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("REDIS_URL").and_return("redis://localhost:6379/15")
+        allow(Operations::CommerceClockLease).to receive(:status).and_return(ready: false, status: "missing")
+        expect(described_class.call[:status]).to eq("not_ready")
+        allow(Operations::CommerceClockLease).to receive(:status).and_return(ready: true, status: "active")
+        expect(described_class.call[:status]).to eq("ready")
+      end
+    end
   end
 end

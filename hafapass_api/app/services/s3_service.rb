@@ -86,7 +86,7 @@ class S3Service
 
     def s3_client
       @s3_client ||= Aws::S3::Client.new(region: ENV.fetch("AWS_REGION", "us-west-2"),
-        credentials: Aws::Credentials.new(ENV["AWS_ACCESS_KEY_ID"], ENV["AWS_SECRET_ACCESS_KEY"]))
+        credentials: Aws::Credentials.new(ENV["AWS_ACCESS_KEY_ID"], ENV["AWS_SECRET_ACCESS_KEY"], ENV["AWS_SESSION_TOKEN"]))
     end
 
     def s3_bucket

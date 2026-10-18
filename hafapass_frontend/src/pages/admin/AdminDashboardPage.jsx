@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, Calendar, Users, DollarSign, Ticket, ArrowRight } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
+import AdminAccessRecovery from '../../components/AdminAccessRecovery'
+import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 import { StaggerContainer, StaggerItem } from '../../components/ui/ScrollReveal'
 
 function StatCard({ label, value, icon: Icon, color }) {
@@ -19,16 +21,34 @@ function StatCard({ label, value, icon: Icon, color }) {
   )
 }
 
-export default function AdminDashboardPage() {
+function AdminDashboardSession({ identity }) {
+  const { beginRequest } = usePlatformRequests(identity, '/admin')
+  const generation = useRef(0)
+  const pendingRead = useRef(null)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  useEffect(() => {
-    apiClient.get('/admin/dashboard')
-      .then(res => setData(res.data))
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
+  const refresh = useCallback(async () => {
+    const request = beginRequest()
+    if (!request) return
+    pendingRead.current?.abort()
+    pendingRead.current = request
+    const read = ++generation.current
+    const current = () => request.current() && read === generation.current
+    setLoading(true); setError('')
+    try {
+      const response = await apiClient.get('/admin/dashboard', request.config)
+      if (current()) setData(response.data)
+    } catch (failure) {
+      if (!current() || request.handleError(failure)) return
+      setError('Unable to load the administrator dashboard. Please try again.')
+    } finally {
+      request.release()
+      if (current()) setLoading(false)
+    }
+  }, [beginRequest])
+  useEffect(() => { refresh(); return () => pendingRead.current?.abort() }, [refresh])
 
   if (loading) {
     return (
@@ -40,7 +60,7 @@ export default function AdminDashboardPage() {
     )
   }
 
-  if (!data) return <AdminLayout><p className="text-neutral-500">Failed to load dashboard.</p></AdminLayout>
+  if (error || !data) return <AdminLayout><section role="alert" className="rounded-xl border border-neutral-200 bg-white p-5"><p className="text-neutral-700">{error || 'Unable to load the administrator dashboard.'}</p><button type="button" onClick={refresh} className="btn-primary mt-4">Retry dashboard</button></section></AdminLayout>
 
   const totalEvents = Object.values(data.total_events).reduce((a, b) => a + b, 0)
   const totalUsers = Object.values(data.total_users).reduce((a, b) => a + b, 0)
@@ -151,4 +171,14 @@ export default function AdminDashboardPage() {
       </div>
     </AdminLayout>
   )
+}
+
+
+export default function AdminDashboardPage() {
+  const identity = usePlatformIdentity('admin')
+  const visit = usePlatformVisit('/admin')
+  if (!visit.active) return null
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.accountKey} identity={identity} />
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <AdminDashboardSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} />
 }

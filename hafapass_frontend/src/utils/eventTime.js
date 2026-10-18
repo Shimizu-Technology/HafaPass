@@ -43,6 +43,14 @@ export function formatEventDateTime(value, timeZone = DEFAULT_EVENT_TIME_ZONE, o
   })
 }
 
+export function formatEventTimeRange(start, end, timeZone = DEFAULT_EVENT_TIME_ZONE) {
+  const startTime = formatEventTime(start, timeZone)
+  if (!startTime || !validDate(end)) return startTime
+  const sameLocalDay = formatEventDate(start, timeZone) === formatEventDate(end, timeZone)
+  const endLabel = sameLocalDay ? formatEventTime(end, timeZone) : formatEventDateTime(end, timeZone)
+  return `${startTime} – ${endLabel}`
+}
+
 export function toEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
   const date = validDate(value)
   if (!date) return ''

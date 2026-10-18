@@ -3,6 +3,7 @@
 require "uri"
 require "base64"
 require "openssl"
+require_relative "provider_rehearsal"
 
 # Staging runs the production runtime against separate data, with real test
 # identity and simulated commerce. It never supplies production approvals.
@@ -13,21 +14,27 @@ class StageSafety
     def call(runtime: false)
       checks = {
         database: staging_database?,
-        redis: staging_redis?,
+        redis: RuntimeConfiguration.solid_queue? || staging_redis?,
         clerk_test_identity: clerk_test_identity?,
         public_urls: public_urls?,
         application_secret: application_secret?,
         admission_signing: admission_signing?,
         admin_bootstrap_disabled: !ActiveModel::Type::Boolean.new.cast(ENV["ENABLE_FIRST_USER_ADMIN_BOOTSTRAP"]),
         no_live_stripe_credentials: no_live_stripe_credentials?,
+        provider_rehearsal: ProviderRehearsal.configuration_valid?,
         launch_scope: ENV.fetch("HAFAPASS_LAUNCH_SCOPE", "general_admission") == "general_admission"
       }
       if runtime
-        checks[:simulated_payments] = simulated_payments?
-        checks[:durable_jobs] = ActiveJob::Base.queue_adapter_name == "sidekiq"
+        if ProviderRehearsal.stripe_enabled?
+          checks[:test_provider_payments] = test_provider_payments?
+        else
+          checks[:simulated_payments] = simulated_payments?
+        end
+        checks[:durable_jobs] = ActiveJob::Base.queue_adapter_name == (RuntimeConfiguration.solid_queue? ? "solid_queue" : "sidekiq")
       end
       ready = checks.values.all?
-      { ready: ready, status: ready ? "simulation_only" : "unsafe_staging_configuration", checks: checks }
+      status = ProviderRehearsal.enabled? ? "provider_rehearsal" : "simulation_only"
+      { ready: ready, status: ready ? status : "unsafe_staging_configuration", checks: checks }
     end
 
     def validate!
@@ -57,6 +64,12 @@ class StageSafety
 
     def simulated_payments?
       SiteSetting.instance.simulate_mode?
+    rescue ActiveRecord::ActiveRecordError
+      false
+    end
+
+    def test_provider_payments?
+      SiteSetting.instance.test_mode?
     rescue ActiveRecord::ActiveRecordError
       false
     end

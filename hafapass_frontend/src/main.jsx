@@ -1,7 +1,11 @@
+import '@fontsource-variable/plus-jakarta-sans'
+import '@fontsource-variable/plus-jakarta-sans/wght-italic.css'
+import '@fontsource-variable/space-grotesk'
 import './i18n'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import DraftNavigationProvider from './components/DraftNavigationProvider'
 import { HelmetProvider } from 'react-helmet-async'
 import './index.css'
 import ServiceCheck from './ServiceCheck.jsx'
@@ -16,14 +20,13 @@ async function removeLegacyPrivateCaches() {
 }
 
 removeLegacyPrivateCaches().finally(() => {
+  const router = createBrowserRouter([{ path: '*', element: <Sentry.ErrorBoundary fallback={({ error, resetError }) => <ErrorFallback error={error} resetError={resetError} />}>
+    <DraftNavigationProvider><ServiceCheck /></DraftNavigationProvider>
+  </Sentry.ErrorBoundary> }])
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       <HelmetProvider>
-        <BrowserRouter>
-          <Sentry.ErrorBoundary fallback={({ error, resetError }) => <ErrorFallback error={error} resetError={resetError} />}>
-            <ServiceCheck />
-          </Sentry.ErrorBoundary>
-        </BrowserRouter>
+        <RouterProvider router={router} />
       </HelmetProvider>
     </StrictMode>,
   )

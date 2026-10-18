@@ -49,7 +49,7 @@ test('finance dashboard separates ticket economics and immutable payout state', 
     connected_account: { provider: 'paypal', payout_ready: true }
   }))
   await page.route('**/api/v1/organizer/events/42', route => json(route, {
-    id: 42, title: 'Guam Night Market', status: 'completed'
+    id: 42, organization_id: 1, permissions: { view_finance: true, manage_finance: true, payout: true, view_attendees: true }, title: 'Guam Night Market', status: 'completed'
   }))
 
   await page.goto('/dashboard/events/42/analytics')

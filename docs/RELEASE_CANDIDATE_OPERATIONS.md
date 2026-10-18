@@ -16,7 +16,7 @@ Gate A is complete only when the automated capture, protected-branch controls, p
 
 - Pull requests required, including for administrators.
 - Strict required status checks: backend RSpec, backend quality/security, frontend quality/build/security, browser smoke tests, repository hygiene, and the release-freeze contract.
-- The `CodeRabbit` status context required on pull requests and bound to the CodeRabbit GitHub App (app ID `347564`). A successful skipped status is insufficient; capture also requires a submitted CodeRabbit review on the source PR head.
+- The `CodeRabbit` status context required on pull requests and bound to the CodeRabbit GitHub App (app ID `347564`). A successful skipped status is insufficient review evidence. Capture requires a submitted CodeRabbit review on the source PR head, or the user-authorized independent evidence procedure in [Independent review evidence](INDEPENDENT_REVIEW_EVIDENCE.md). The required status/App binding remains unchanged.
 - Review conversations resolved before merge.
 - Force pushes and branch deletion disabled.
 
@@ -41,7 +41,7 @@ The command deliberately refuses to proceed unless:
 - `HEAD` is a GitHub PR merge commit.
 - The full local `scripts/gate.sh` succeeds on that exact checkout.
 - Every required check passed on the exact merge commit.
-- The source PR has all required checks, a completed current-head CodeRabbit status and submitted bot review, and no unresolved thread.
+- The source PR has all required checks, completed current-head review provenance (GitHub CodeRabbit or explicitly authorized independent evidence), and no unresolved thread.
 - No open issue is labeled or titled P0/P1.
 - Branch protection enforces the required contract.
 
@@ -76,7 +76,7 @@ gh variable get RELEASE_FREEZE
 1. Open a focused PR from the frozen `main`.
 2. Explain which Gates B–J it affects and what evidence, pilot run, or closeout decision it invalidates.
 3. A maintainer adds `release-approved` only after reviewing that impact.
-4. Run the normal CI and CodeRabbit review cycle in [the delivery playbook](PHASE_DELIVERY_PLAYBOOK.md#5-coderabbit-review-cycle).
+4. Run the normal CI and authorized review cycle in [the delivery playbook](PHASE_DELIVERY_PLAYBOOK.md#5-coderabbit-review-cycle).
 5. Merge, capture a new candidate ID, update every affected evidence reference, and retire—not move—the old tag.
 
 Never retag an existing candidate. An immutable failed or superseded candidate remains useful audit history.
@@ -87,5 +87,5 @@ Never retag an existing candidate. An immutable failed or superseded candidate r
 - Human Gate A approvals, Gate B–J owners, and due dates are recorded.
 - `main` protection and the release-freeze check are active.
 - The annotated tag, `main`, manifest commit, release IDs, and schema version agree.
-- Exact-commit local gate, CI, current-head CodeRabbit review, P0/P1, and review-thread evidence is retained.
+- Exact-commit local gate, CI, current-head review provenance, P0/P1, and review-thread evidence is retained.
 - Any exception has explicit ownership, expiry, risk, and traceable remediation.

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 module Commerce
   class OrderLifecycle
     class InvalidTransition < StandardError; end
@@ -36,6 +38,9 @@ module Commerce
 
           holds = order.inventory_holds.order(:id).lock.to_a
           catalog_holds = order.catalog_item_holds.order(:id).lock.to_a
+          # Checkout locks ticket types before the seat session. Match that
+          # order so a reused hold cannot deadlock a payment finalization.
+          holds.map(&:ticket_type).uniq(&:id).sort_by(&:id).each(&:lock!)
           seat_session = order.seat_hold_session
           seat_session&.lock!
           seat_hold_invalid = seat_session && (!seat_session.status_claimed? || seat_session.expires_at <= Time.current)
@@ -75,11 +80,8 @@ module Commerce
           mark_payment_succeeded!(payment)
           order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
           record_marketplace_purchase!(order)
-          completed_now = true
-        end
-
-        if completed_now
           EmailService.send_order_confirmation_async(order)
+          completed_now = true
         end
 
         completed_now ? :completed : :unchanged
@@ -154,6 +156,7 @@ module Commerce
         return unless payment
 
         payment.update!(status: :succeeded, succeeded_at: payment.succeeded_at || Time.current)
+        StripeProcessingFees.request!(payment)
       end
 
       def release_locked_order!(order, reason:, expired: false, at: Time.current)
@@ -280,11 +283,14 @@ module Commerce
         payments.each do |payment|
           next if payment.provider_payment_id.blank?
 
-          StripeService.cancel_payment_intent(
-            payment.provider_payment_id,
-            idempotency_key: "cancel:payment:#{payment.id}"
-          )
-        rescue Stripe::StripeError, StripeService::PaymentError => e
+          Timeout.timeout(30.seconds) do
+            StripeService.cancel_payment_intent(
+              payment.provider_payment_id,
+              idempotency_key: "cancel:payment:#{payment.id}",
+              payment: payment
+            )
+          end
+        rescue Stripe::StripeError, StripeService::PaymentError, IOError, Timeout::Error => e
           ReconciliationException.create!(
             order: order,
             payment: payment,

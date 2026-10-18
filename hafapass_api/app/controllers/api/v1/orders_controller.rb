@@ -1,81 +1,98 @@
 # frozen_string_literal: true
 
 class Api::V1::OrdersController < ApplicationController
+  CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id catalog_items
+    registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
+    terms_accepted terms_version live_money_proof].freeze
   skip_before_action :authenticate_user!, only: [
-    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :optional_authenticate_user!, only: [
-    :create, :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :set_accessible_order, only: [
-    :show, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
 
   def create
-    if Rails.env.production? && !PolicyRegistry.production_approved?
-      return render json: { error: "Checkout is unavailable until the current policy register is approved" },
-        status: :service_unavailable
+    checkout_key = params[:checkout_key].presence
+    if checkout_key && (!checkout_key.is_a?(String) || !checkout_key.match?(/\A[0-9a-f]{64}\z/))
+      return render json: { error: "Checkout recovery key is invalid", checkout_recovery_required: true }, status: :unprocessable_entity
+    end
+    # Claim before any validation. A final rejected key can never be revived by
+    # an earlier request which has not yet reached inventory reservation.
+    checkout_digest = if checkout_key
+      # Parameter wrapping follows the Order schema; it must not change a
+      # previously issued recovery identity when unrelated columns are added.
+      canonical = params.to_unsafe_h.slice(*CHECKOUT_DIGEST_FIELDS)
+      canonical["authenticated_buyer_id"] = @current_user&.id
+      Digest::SHA256.hexdigest(JSON.generate(canonical_checkout_request(canonical)))
+    end
+    @checkout_claim = CheckoutAttempt.claim!(key_digest: Digest::SHA256.hexdigest(checkout_key),
+      request_digest: checkout_digest) if checkout_key
+    existing_order = @checkout_claim&.attempt&.order
+
+    event = existing_order&.event || Event.published.find_by(id: params[:event_id])
+    unless event
+      render_checkout_rejection("Event not found", status: :not_found)
+      return
     end
 
-    event = Event.published.find_by(id: params[:event_id])
-    unless event
-      render json: { error: "Event not found" }, status: :not_found
-      return
+    if Rails.env.production? && !PolicyRegistry.production_approved?
+      return render_checkout_rejection("Checkout is unavailable until the current policy register is approved", status: :service_unavailable)
     end
 
     release_gate = event.production_release_gate_status
     if release_gate == :pilot_readiness
-      return render json: { error: "Checkout is unavailable until this event has a current pilot readiness approval" },
-        status: :service_unavailable
+      return render_checkout_rejection("Checkout is unavailable until this event has a current pilot readiness approval", status: :service_unavailable)
     end
 
     if release_gate == :pilot_validation
-      return render json: { error: "Checkout is unavailable until this event has a current Gate F validation approval" },
-        status: :service_unavailable
+      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate F validation approval", status: :service_unavailable)
     end
 
     if release_gate == :event_day_rehearsal
-      return render json: { error: "Checkout is unavailable until this event has a current Gate G rehearsal approval" },
-        status: :service_unavailable
+      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate G rehearsal approval", status: :service_unavailable)
     end
 
     if release_gate == :live_money
-      return render json: { error: "Checkout is unavailable until this event has a current Gate H live-money approval" },
-        status: :service_unavailable
+      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate H live-money approval", status: :service_unavailable)
     end
 
     if release_gate == :live_pilot
-      return render json: { error: "Checkout is unavailable until this event has a current Gate I bounded-pilot approval" },
-        status: :service_unavailable
+      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate I bounded-pilot approval", status: :service_unavailable)
     end
 
     if release_gate == :live_pilot_operation
-      return render json: { error: "Checkout is unavailable while the bounded live-pilot sales window is inactive" },
-        status: :service_unavailable
+      return render_checkout_rejection("Checkout is unavailable while the bounded live-pilot sales window is inactive", status: :service_unavailable)
     end
 
-    unless params[:buyer_email].present? && params[:buyer_name].present?
-      render json: { error: "buyer_email and buyer_name are required" }, status: :unprocessable_entity
-      return
-    end
+    unless existing_order
+      unless params[:buyer_email].present? && params[:buyer_name].present?
+        render_checkout_rejection("buyer_email and buyer_name are required", status: :unprocessable_entity)
+        return
+      end
 
-    unless ActiveModel::Type::Boolean.new.cast(params[:terms_accepted]) &&
-        params[:terms_version].to_s == PolicyRegistry.buyer_terms[:version]
-      return render json: { error: "Accept the current HafaPass buyer terms before checkout" },
-        status: :unprocessable_entity
-    end
+      unless ActiveModel::Type::Boolean.new.cast(params[:terms_accepted]) &&
+          params[:terms_version].to_s == PolicyRegistry.buyer_terms[:version]
+        return render_checkout_rejection("Accept the current HafaPass buyer terms before checkout", status: :unprocessable_entity)
+      end
 
+      proof_authorization = proof_authorization_for(event)
+      if event.live_money_proof_candidate? && proof_authorization.nil?
+        return render_checkout_rejection("An approved administrator live-money proof authorization is required", status: :forbidden)
+      end
+    end
     buyer_terms = PolicyRegistry.buyer_terms
-    proof_authorization = proof_authorization_for(event)
-    if event.live_money_proof_candidate? && proof_authorization.nil?
-      return render json: { error: "An approved administrator live-money proof authorization is required" },
-        status: :forbidden
-    end
     result = Commerce::OrderCreator.call(
       event: event,
+      checkout_key_digest: checkout_key && Digest::SHA256.hexdigest(checkout_key),
+      checkout_request_digest: checkout_digest,
+      checkout_attempt: @checkout_claim&.attempt,
+      checkout_lease_token: @checkout_claim&.lease_token,
       line_items: params[:line_items],
       buyer_email: params[:buyer_email],
       buyer_name: params[:buyer_name],
@@ -100,23 +117,36 @@ class Api::V1::OrdersController < ApplicationController
       include_tickets: result.payment_intent.nil?,
       guest_access_token: result.guest_access_token
     ).merge(
-      payment_mode: StripeService.payment_mode
+      payment_mode: result.payment&.provider_environment || StripeService.payment_mode
     )
     if result.payment_intent
       response_payload.merge!(
         client_secret: result.payment_intent.client_secret,
-        stripe_publishable_key: StripeService.publishable_key
+        stripe_publishable_key: StripeService.publishable_key(payment: result.payment),
+        stripe_account: result.payment&.provider_account_id
       )
     end
 
     render json: response_payload, status: :created
-  rescue Commerce::OrderCreator::CheckoutError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+  rescue Commerce::OrderCreator::CheckoutError, Commerce::PaymentRecovery::RecoveryError => e
+    render_checkout_rejection(e.message, status: :unprocessable_entity)
+  rescue CheckoutAttempt::Conflict => e
+    render json: { error: e.message, checkout_recovery_required: e.recovery_required }, status: :unprocessable_entity
   rescue LiveMoneyProofAuthorizations::Manager::AuthorizationError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render_checkout_rejection(e.message, status: :unprocessable_entity)
   rescue LivePilot::InventoryLimitError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render_checkout_rejection(e.message, status: :unprocessable_entity)
   end
+
+  def render_checkout_rejection(message, status:)
+    payload = { error: message }
+    if @checkout_claim
+      fenced = @checkout_claim.attempt.reject!(@checkout_claim.lease_token)
+      payload[:checkout_recovery_required] = !fenced
+    end
+    render json: payload, status: status
+  end
+  private :render_checkout_rejection
 
   def show
     render json: OrderPresenter.call(
@@ -124,6 +154,33 @@ class Api::V1::OrdersController < ApplicationController
       include_tickets: @order.completed? || @order.partially_refunded? || @order.refunded? || @order.cancelled?
     )
   end
+
+  def payment_resume
+    buyer_authorized = (@order.user_id.present? && @order.user_id == @current_user&.id) ||
+      GuestOrderAccess.find(guest_access_token)&.id == @order.id
+    return render json: { error: "Order not found" }, status: :not_found unless buyer_authorized
+
+    recovery = Commerce::PaymentRecovery.call(order: @order)
+    payload = OrderPresenter.call(recovery.order).merge(payment_state: recovery.payment_state,
+      payment_mode: @order.payments.order(:id).last&.provider_environment)
+    if recovery.payment_intent
+      payload.merge!(client_secret: recovery.payment_intent.client_secret,
+        stripe_publishable_key: recovery.publishable_key,
+        stripe_account: @order.payments.order(:id).last.provider_account_id)
+    end
+    render json: payload
+  rescue Commerce::PaymentRecovery::RecoveryError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def canonical_checkout_request(value)
+    case value
+    when Hash then value.keys.sort.to_h { |key| [key, canonical_checkout_request(value[key])] }
+    when Array then value.map { |entry| canonical_checkout_request(entry) }
+    else value
+    end
+  end
+  private :canonical_checkout_request
 
   def proof_authorization_for(event)
     return unless event.live_money_proof_candidate?
@@ -144,7 +201,9 @@ class Api::V1::OrdersController < ApplicationController
 
   def resend
     delivery = FulfillmentResender.call(order: @order, requested_by: @current_user)
-    render json: { message: "Tickets sent", delivery_id: delivery.id }, status: :accepted
+    render json: { message: "Ticket email request saved", delivery_id: delivery.id }, status: :accepted
+  rescue FulfillmentResender::Unconfirmed => e
+    render json: { error: e.message, reconciliation_required: true }, status: :conflict
   rescue FulfillmentResender::Cooldown => e
     render json: { error: e.message }, status: :too_many_requests
   rescue FulfillmentResender::NotAvailable => e

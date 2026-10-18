@@ -5,17 +5,20 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
 import BoxOfficePage from './BoxOfficePage'
 
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/SeatSelector', () => ({ default: () => null }))
 vi.mock('../../components/QRCode', () => ({ default: () => null }))
 
 function mountBoxOffice() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/box-office']}><Routes><Route path="/dashboard/events/:id/box-office" element={<BoxOfficePage />} /></Routes></MemoryRouter>) }
 
+// A retry keeps the operation fixed but receives its own cancellable transport.
+const operation = ([url, payload, { signal: _signal, ...config }]) => [url, payload, config]
+
 describe('uncertain box office sale', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.sessionStorage.clear()
-    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: true } } : url === '/organizer/card_present_account' ? { payment_ready: true } : url.endsWith('/summary') ? {} : { id: 37, title: 'Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 500, quantity_available: 10, quantity_sold: 0 }] } }))
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: true } } : url === '/organizer/card_present_account' ? { payment_ready: true } : url.endsWith('/summary') ? {} : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 500, quantity_available: 10, quantity_sold: 0 }] } }))
   })
 
   it('retries the original operation and immutable payload after losing a response and reloading', async () => {
@@ -36,9 +39,9 @@ describe('uncertain box office sale', () => {
     mountBoxOffice()
     await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
-    expect(apiClient.post.mock.calls[1]).toEqual([url, payload, options])
+    expect(operation(apiClient.post.mock.calls[1])).toEqual(operation([url, payload, options]))
     expect(await screen.findByText('Sale Complete!')).toBeInTheDocument()
-    expect(window.sessionStorage.getItem('hafapass:pending-box-office:local-preview:37')).toBeNull()
+    expect(window.sessionStorage.getItem('hafapass:pending-box-office:v2:local-preview:default:37')).toBeNull()
   })
 
   it('preserves a cash sale identity across a lost response and reload', async () => {
@@ -56,7 +59,7 @@ describe('uncertain box office sale', () => {
     mountBoxOffice()
     await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
     await screen.findByText('Sale Complete!')
-    expect(apiClient.post.mock.calls[1]).toEqual(original)
-    expect(window.sessionStorage.getItem('hafapass:pending-box-office:local-preview:37')).toBeNull()
+    expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
+    expect(window.sessionStorage.getItem('hafapass:pending-box-office:v2:local-preview:default:37')).toBeNull()
   })
 })

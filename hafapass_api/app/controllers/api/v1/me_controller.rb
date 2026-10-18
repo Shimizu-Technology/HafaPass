@@ -2,6 +2,7 @@ module Api
   module V1
     class MeController < ApplicationController
       def show
+        ClerkProfileSync.call(current_user)
         render json: {
           id: current_user.id,
           clerk_id: current_user.clerk_id,

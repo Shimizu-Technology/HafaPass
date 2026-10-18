@@ -1,6 +1,55 @@
 import apiClient from '../api/client'
+import { forgetUploadToken, uploadRecoveryPrefix, uploadScope, uploadScopeCurrent } from './uploadRecovery'
 
-export async function uploadImage(file, eventId) {
+const inFlight = new Map()
+class UploadContextChanged extends Error {}
+
+async function recoveryKey(file, scope) {
+  const bytes = file.arrayBuffer ? await file.arrayBuffer() : await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('The image could not be read. Please select it again.'))
+    reader.readAsArrayBuffer(file)
+  })
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(value => value.toString(16).padStart(2, '0')).join('')
+  return `${uploadRecoveryPrefix(scope)}${file.type}:${hash}`
+}
+
+function requireScope(scope) {
+  if (!uploadScopeCurrent(scope)) throw new UploadContextChanged('Your account or organization changed. Please select the image again.')
+  if (scope.isCurrent && !scope.isCurrent()) throw new UploadContextChanged('The image upload context changed. Please select the image again.')
+}
+
+async function completeUpload(key, uploadToken, scope) {
+  requireScope(scope)
+  try {
+    const completed = await apiClient.post('/uploads/complete', { upload_token: uploadToken })
+    requireScope(scope)
+    if (!completed.data.public_url) throw new Error('The uploaded image could not be verified. Retry this image upload.')
+    forgetUploadToken(key, uploadToken)
+    return completed.data.public_url
+  } catch (error) {
+    // Network/5xx failures may follow a committed completion; retain its identity.
+    if ([401, 403, 404, 422].includes(error.response?.status)) forgetUploadToken(key, uploadToken)
+    throw error
+  }
+}
+
+async function upload(file, eventId, scope, key) {
+  requireScope(scope)
+  const savedToken = window.sessionStorage.getItem(key)
+  if (savedToken) {
+    try {
+      return await completeUpload(key, savedToken, scope)
+    } catch (error) {
+      // Missing bytes/expired authorization can restart this image operation.
+      // Authentication and permission failures cannot authorize a fresh upload.
+      if (![404, 422].includes(error.response?.status)) throw error
+      requireScope(scope)
+      // Another operation may have replaced this token while completion ran.
+      if (window.sessionStorage.getItem(key)) throw error
+    }
+  }
   const response = await apiClient.post('/uploads/presign', {
     filename: file.name,
     content_type: file.type,
@@ -9,6 +58,10 @@ export async function uploadImage(file, eventId) {
   })
   const { url, fields, upload_token } = response.data
   if (!upload_token) throw new Error('Upload authorization is missing. Please try again.')
+  requireScope(scope)
+  // Persist before storage receives bytes. An interrupted upload/completion can
+  // be verified through the same server receipt after retry or page reload.
+  window.sessionStorage.setItem(key, upload_token)
   let uploaded
   if (fields) {
     const body = new FormData()
@@ -18,8 +71,35 @@ export async function uploadImage(file, eventId) {
   } else {
     uploaded = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
   }
-  if (!uploaded.ok) throw new Error('Image storage could not accept this upload. Please try again.')
-  const completed = await apiClient.post('/uploads/complete', { upload_token })
-  if (!completed.data.public_url) throw new Error('The uploaded image could not be verified. Please try again.')
-  return completed.data.public_url
+  if (!uploaded.ok) {
+    forgetUploadToken(key, upload_token)
+    throw new Error('Image storage could not accept this upload. Please try again.')
+  }
+  return completeUpload(key, upload_token, scope)
+}
+
+export async function uploadImage(file, eventId, isCurrent) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file?.type)) throw new Error('Choose a JPG, PNG, or WebP image.')
+  if (!file.size || file.size > 5 * 1024 * 1024) throw new Error('Image must be between 1 byte and 5 MB.')
+  const scope = { ...uploadScope(eventId), isCurrent }
+  if (!scope.userId) throw new Error('Sign in before uploading an image.')
+  const key = await recoveryKey(file, scope)
+  while (inFlight.has(key)) {
+    const previous = inFlight.get(key)
+    try {
+      const result = await previous
+      requireScope(scope)
+      return result
+    } catch (error) {
+      requireScope(scope)
+      // A remounted caller may reconcile the original saved token after the
+      // old component withdraws its authority. Other failures stay explicit.
+      if (!(error instanceof UploadContextChanged)) throw error
+    }
+    if (inFlight.get(key) === previous) inFlight.delete(key)
+  }
+  requireScope(scope)
+  const operation = upload(file, eventId, scope, key)
+  inFlight.set(key, operation)
+  try { return await operation } finally { if (inFlight.get(key) === operation) inFlight.delete(key) }
 }

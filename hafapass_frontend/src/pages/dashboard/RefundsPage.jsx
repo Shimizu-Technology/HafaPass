@@ -1,40 +1,153 @@
-import { currentScannerOwner } from '../../utils/admissionStore'
-import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
+import EventWorkspace from '../../components/EventWorkspace'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams } from 'react-router-dom'
+import { RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
+import { supportMailto } from '../../utils/supportContact'
 
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
 const needsFinanceReview = (data, request) => data?.finance_review_required === true || (request?.financeReview && data?.finance_review_required !== false)
 
+const readSavedRefund = key => {
+ try {
+  const raw = window.sessionStorage.getItem(key)
+  if (raw === null) return null
+  const request = JSON.parse(raw)
+  const payload = request?.payload
+  const valid = typeof request?.key === 'string' && request.key.trim() && Number.isSafeInteger(request.orderId) && request.orderId > 0
+   && payload && typeof payload === 'object' && !Array.isArray(payload)
+   && (payload.reason == null || typeof payload.reason === 'string')
+   && (!Object.hasOwn(payload, 'amount_cents') || payload.amount_cents == null || (Number.isSafeInteger(payload.amount_cents) && payload.amount_cents > 0))
+  return valid ? request : { recoveryRequired: true }
+ } catch { return { recoveryRequired: true } }
+}
+
 export default function RefundsPage() {
  const { id: eventId } = useParams()
- const storageKey = `hafapass:pending-refund:${currentScannerOwner()}:${eventId}`
- const [pendingRequest, setPendingRequest] = useState(() => {
-  try { return JSON.parse(window.sessionStorage.getItem(storageKey) || 'null') } catch { return null }
- })
+ const identity = useOrganizerIdentity()
+ const visit = useOrganizerPageVisit(`/dashboard/events/${eventId}/refunds`)
+ if (!visit.active) return null
+ if (!identity.ready) return <p role="status" className="p-6">Preparing your account…</p>
+ return <RefundsPageSession key={`${identity.accountKey}:${identity.organizationId}:${eventId}:${visit.generation}`} eventId={eventId} identity={identity} />
+}
+
+function RefundsPageSession({ eventId, identity }) {
+ const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${eventId}/refunds`)
+ const accessEpoch = useRef(0)
+ const requests = useRef(new Set())
+ const legacyStorageKey = `hafapass:pending-refund:${identity.owner}:${eventId}`
+ const storageKey = `hafapass:pending-refund:v2:${identity.owner}:${identity.organizationId ?? 'default'}:${eventId}`
+ const authorizedEvent = useRef(false)
+ const [accessRefreshing, setAccessRefreshing] = useState(false)
+ const importedLegacyKey = useRef(null)
+ const [contextError, setContextError] = useState('')
+ const [pendingRequest, setPendingRequest] = useState(() => readSavedRefund(storageKey))
  const [notice, setNotice] = useState('')
  const [loadError, setLoadError] = useState('')
  const [orders, setOrders] = useState([])
  const [loading, setLoading] = useState(true)
+ const loadGeneration = useRef(0)
  const [refundingId, setRefundingId] = useState(pendingRequest?.orderId || null)
- const [refundForm, setRefundForm] = useState(pendingRequest ? { amount: pendingRequest.payload.amount_cents ? String(pendingRequest.payload.amount_cents / 100) : '', reason: pendingRequest.payload.reason || '', type: pendingRequest.payload.amount_cents ? 'partial' : 'full' } : { amount: '', reason: '', type: 'full' })
+ const [refundForm, setRefundForm] = useState(pendingRequest && !pendingRequest.recoveryRequired ? { amount: pendingRequest.payload.amount_cents ? String(pendingRequest.payload.amount_cents / 100) : '', reason: pendingRequest.payload.reason || '', type: pendingRequest.payload.amount_cents ? 'partial' : 'full' } : { amount: '', reason: '', type: 'full' })
  const [refundRequestKey, setRefundRequestKey] = useState(pendingRequest?.key || null)
  const [processing, setProcessing] = useState(false)
+ const withdrawAccess = useCallback(message => {
+  ++accessEpoch.current
+  authorizedEvent.current = false
+  requests.current.forEach(request => request.controller.abort())
+  // The durable financial operation is retained unchanged. Access refusal is
+  // not a provider verdict and cannot clear or replace its original identity.
+  setOrders([]); setRefundingId(null); setRefundRequestKey(null)
+  setRefundForm({ amount: '', reason: '', type: 'full' })
+  setNotice(''); setLoadError(''); setProcessing(false); setAccessRefreshing(false); setLoading(false)
+  setContextError(message)
+ }, [])
+ const requestApi = useCallback(async (method, url, payload, options = {}) => {
+  const verifying = method === 'get' && url === `/organizer/events/${eventId}`
+  if (!verifying && !authorizedEvent.current) throw new DOMException('Refund access is not verified', 'AbortError')
+  const request = beginRequest()
+  if (!request) throw new DOMException('Page context changed', 'AbortError')
+  const epoch = accessEpoch.current
+  requests.current.add(request)
+  try {
+   const response = method === 'get' || method === 'delete'
+    ? await apiClient[method](url, { ...payload, ...request.config })
+    : await apiClient[method](url, payload, { ...options, ...request.config })
+   if (!request.current() || epoch !== accessEpoch.current) throw new DOMException('Page context changed', 'AbortError')
+   return response
+  } catch (requestError) {
+   if (request.current() && epoch === accessEpoch.current && [401, 403].includes(requestError.response?.status)) {
+    withdrawAccess(requestError.response.status === 401 ? 'Please sign in to verify refund access.'
+     : 'Your refund access changed. Retry to verify permissions. The original saved financial operation is retained.')
+   }
+   throw requestError
+  } finally { requests.current.delete(request); request.release() }
+ }, [beginRequest, eventId, withdrawAccess])
 
  const fetchOrders = useCallback(async () => {
+  const generation = ++loadGeneration.current
+  if (!current()) return
+  const epoch = ++accessEpoch.current
+  requests.current.forEach(request => request.controller.abort())
+  const canApply = () => current() && generation === loadGeneration.current && epoch === accessEpoch.current
   setLoadError('')
+  setContextError('')
+  setProcessing(false)
+  authorizedEvent.current = false
+  setAccessRefreshing(true)
   try {
-   const res = await apiClient.get(`/organizer/events/${eventId}/stats`)
+   const eventResponse = await requestApi('get', `/organizer/events/${eventId}`)
+   if (!canApply()) return
+   if (String(eventResponse.data.id) !== String(eventId) || eventResponse.data.organization_id == null || (identity.organizationId != null && String(eventResponse.data.organization_id) !== String(identity.organizationId))) {
+    throw new Error('Event authorization does not match this page')
+   }
+   if (eventResponse.data.permissions?.refund !== true || eventResponse.data.permissions?.view_finance !== true) throw new Error('Refund access is not available for your role')
+   authorizedEvent.current = true
+   try {
+    const legacy = readSavedRefund(legacyStorageKey)
+    const cached = readSavedRefund(storageKey)
+    if (cached?.recoveryRequired || legacy?.recoveryRequired) {
+     setPendingRequest({ recoveryRequired: true })
+     setRefundingId(null); setRefundRequestKey(null)
+     setRefundForm({ amount: '', reason: '', type: 'full' })
+    } else if (legacy?.key && !cached) {
+     window.sessionStorage.setItem(storageKey, JSON.stringify(legacy))
+     setPendingRequest(legacy)
+     setRefundingId(legacy.orderId)
+     setRefundRequestKey(legacy.key)
+     setRefundForm({ amount: legacy.payload.amount_cents ? String(legacy.payload.amount_cents / 100) : '', reason: legacy.payload.reason || '', type: legacy.payload.amount_cents ? 'partial' : 'full' })
+    }
+    if (cached?.key && !cached.recoveryRequired && !legacy?.recoveryRequired) {
+     setPendingRequest(cached)
+     setRefundingId(cached.orderId)
+     setRefundRequestKey(cached.key)
+     setRefundForm({ amount: cached.payload.amount_cents ? String(cached.payload.amount_cents / 100) : '', reason: cached.payload.reason || '', type: cached.payload.amount_cents ? 'partial' : 'full' })
+    }
+    if (legacy?.key && legacy.key === (cached || legacy)?.key) importedLegacyKey.current = legacy.key
+   } catch {
+    setPendingRequest({ recoveryRequired: true })
+    setRefundingId(null); setRefundRequestKey(null)
+    setRefundForm({ amount: '', reason: '', type: 'full' })
+   }
+   const res = await requestApi('get', `/organizer/events/${eventId}/stats`)
+      if (!canApply()) return
    setOrders(res.data.recent_orders || [])
-  } catch { setLoadError('Recent orders could not be loaded. Please try again.') }
-  setLoading(false)
- }, [eventId])
+  } catch {
+   if (canApply()) {
+    if (authorizedEvent.current) setLoadError('Recent orders could not be loaded. Please try again.')
+    else setContextError('This event could not be authorized for the selected organization. Retry before viewing or processing refunds.')
+   }
+  } finally { if (canApply()) { setLoading(false); setAccessRefreshing(false) } }
+ }, [eventId, requestApi, current, identity.organizationId, legacyStorageKey, storageKey])
 
  useEffect(() => { fetchOrders() }, [fetchOrders])
 
  const handleRefund = async (orderId) => {
-  if (processing) return
+    if (!current() || !authorizedEvent.current || pendingRequest?.recoveryRequired || (pendingRequest && pendingRequest.orderId !== orderId)) return
+  if (processing || accessRefreshing) return
+  const epoch = accessEpoch.current
+  const canApply = () => current() && epoch === accessEpoch.current
   setProcessing(true)
   setNotice('')
   let request = pendingRequest
@@ -52,9 +165,10 @@ export default function RefundsPage() {
    request ||= { orderId, key: refundRequestKey || newRefundRequestKey(), payload }
    window.sessionStorage.setItem(storageKey, JSON.stringify(request))
    setPendingRequest(request)
-   const response = await apiClient.post(`/organizer/events/${eventId}/orders/${orderId}/refund`, request.payload, {
+   const response = await requestApi('post', `/organizer/events/${eventId}/orders/${orderId}/refund`, request.payload, {
     headers: { 'Idempotency-Key': request.key },
    })
+   if (!canApply()) return
    const status = response.data.status
    request = { ...request, financeReview: Boolean(needsFinanceReview(response.data, request)) }
    window.sessionStorage.setItem(storageKey, JSON.stringify(request))
@@ -66,6 +180,7 @@ export default function RefundsPage() {
    } else if (['succeeded', 'failed', 'cancelled'].includes(status)) {
     setNotice(status === 'succeeded' ? response.data.refund_simulated ? 'Test refund complete. No real money was returned.' : 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
     window.sessionStorage.removeItem(storageKey)
+    if (importedLegacyKey.current === request.key) window.sessionStorage.removeItem(legacyStorageKey)
     setPendingRequest(null)
     setRefundingId(null)
     setRefundRequestKey(null)
@@ -73,6 +188,7 @@ export default function RefundsPage() {
    } else { setNotice('The refund outcome is not confirmed. Retry this saved request before starting another refund.') }
    fetchOrders()
   } catch (e) {
+      if (!canApply()) return
    const data = e.response?.data
    if (request?.financeReview && data?.finance_review_required === false) {
     request = { ...request, financeReview: false }
@@ -85,6 +201,7 @@ export default function RefundsPage() {
     setPendingRequest(request)
    } else if (data?.reconciliation_required === false) {
     window.sessionStorage.removeItem(storageKey)
+    if (importedLegacyKey.current === request.key) window.sessionStorage.removeItem(legacyStorageKey)
     setPendingRequest(null)
     setRefundingId(null)
     setRefundRequestKey(null)
@@ -94,31 +211,31 @@ export default function RefundsPage() {
     setNotice(`${data?.error || 'The refund response could not be confirmed.'} Retry this saved request to check the outcome; do not create another refund.`)
    }
   }
-  setProcessing(false)
+  if (canApply()) setProcessing(false)
  }
 
  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
 
+ if (contextError) return <div role="alert" className="mx-auto max-w-2xl p-6"><p>{contextError}</p><button type="button" onClick={fetchOrders} className="btn-primary mt-4">Retry refund access</button></div>
+
  return (
-  <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-   <Link to={`/dashboard/events/${eventId}/analytics`} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
-    <ArrowLeft className="w-4 h-4" /> Back to Analytics
-   </Link>
+  <EventWorkspace eventId={eventId}><div className="max-w-4xl mx-auto">
 
    <div className="mb-8">
-    <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Refunds</h1>
+    <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Refunds</h2>
     <p className="text-sm text-neutral-500 mt-1">Process full or partial refunds for completed orders</p>
    </div>
 
    {notice && !pendingRequest?.financeReview && <p role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{notice}</p>}
    {pendingRequest?.financeReview && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
     <p>The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.</p>
-    <a className="inline-flex min-h-11 items-center font-semibold underline" href={`mailto:contact@hafapass.com?subject=${encodeURIComponent(`Refund review for order ${pendingRequest.orderId}`)}`}>Contact support</a>
+    <a className="inline-flex min-h-11 items-center font-semibold underline" href={supportMailto(`Refund review for order ${pendingRequest.orderId}`)}>Contact support</a>
    </div>}
-   {pendingRequest && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
-   {pendingRequest && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : 'Retry saved refund'}</button>}
+   {pendingRequest?.recoveryRequired && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved refund recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a refund.</p><a href={supportMailto('Recover an unreadable refund request')} className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</a></div>}
+   {pendingRequest && !pendingRequest.recoveryRequired && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
+   {pendingRequest && !pendingRequest.recoveryRequired && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing || accessRefreshing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : 'Retry saved refund'}</button>}
    {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{loadError} <button className="min-h-11 font-semibold underline" onClick={fetchOrders}>Retry</button></p>}
-   {orders.length === 0 ? (
+   {loadError && orders.length === 0 ? null : orders.length === 0 ? (
     <div className="card p-12 text-center">
      <DollarSign className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
      <p className="text-neutral-500">No recent orders</p>
@@ -142,12 +259,12 @@ export default function RefundsPage() {
         </div>
         {refundingId !== order.id ? (
          <button onClick={() => { setRefundingId(order.id); setRefundRequestKey(newRefundRequestKey()); setRefundForm({ amount: '', reason: '', type: 'full' }) }}
-          disabled={processing || Boolean(pendingRequest) || order.refundable_cents <= 0}
+          disabled={processing || accessRefreshing || Boolean(pendingRequest) || order.refundable_cents <= 0}
           className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50 shrink-0 self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed">
           <RotateCcw className="w-3 h-3" /> Refund
          </button>
         ) : (
-         <button disabled={processing || Boolean(pendingRequest)} onClick={() => { setRefundingId(null); setRefundRequestKey(null) }} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
+         <button disabled={processing || accessRefreshing || Boolean(pendingRequest)} onClick={() => { setRefundingId(null); setRefundRequestKey(null) }} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
         )}
        </div>
 
@@ -160,7 +277,7 @@ export default function RefundsPage() {
          <div className="flex gap-3 items-end flex-wrap">
           <div>
            <label htmlFor={`refund-type-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">Type</label>
-           <select id={`refund-type-${order.id}`} disabled={processing || Boolean(pendingRequest)} value={refundForm.type} onChange={e => setRefundForm({...refundForm, type: e.target.value})} className="input !py-2 text-sm w-32">
+           <select id={`refund-type-${order.id}`} disabled={processing || accessRefreshing || Boolean(pendingRequest)} value={refundForm.type} onChange={e => setRefundForm({...refundForm, type: e.target.value})} className="input !py-2 text-sm w-32">
             <option value="full">Full</option>
             <option value="partial">Partial</option>
            </select>
@@ -168,17 +285,17 @@ export default function RefundsPage() {
           {refundForm.type === 'partial' && (
            <div>
             <label htmlFor={`refund-amount-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">Amount ($)</label>
-            <input id={`refund-amount-${order.id}`} disabled={processing || Boolean(pendingRequest)} type="number" step="0.01" min="0.01" max={(order.refundable_cents / 100).toFixed(2)}
+            <input id={`refund-amount-${order.id}`} disabled={processing || accessRefreshing || Boolean(pendingRequest)} type="number" step="0.01" min="0.01" max={(order.refundable_cents / 100).toFixed(2)}
              value={refundForm.amount} onChange={e => setRefundForm({...refundForm, amount: e.target.value})}
              className="input !py-2 text-sm w-28" placeholder="0.00" />
            </div>
           )}
           <div className="flex-1 min-w-[200px]">
            <label htmlFor={`refund-reason-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">Reason (optional)</label>
-           <input id={`refund-reason-${order.id}`} disabled={processing || Boolean(pendingRequest)} value={refundForm.reason} onChange={e => setRefundForm({...refundForm, reason: e.target.value})}
+           <input id={`refund-reason-${order.id}`} disabled={processing || accessRefreshing || Boolean(pendingRequest)} value={refundForm.reason} onChange={e => setRefundForm({...refundForm, reason: e.target.value})}
             className="input !py-2 text-sm" placeholder="Customer request, event cancelled..." />
           </div>
-          <button onClick={() => handleRefund(order.id)} disabled={processing || (refundForm.type === 'partial' && !refundForm.amount)}
+          <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || (refundForm.type === 'partial' && !refundForm.amount)}
            className="btn-primary text-sm !py-2.5 !bg-red-500 hover:!bg-red-600 gap-1 disabled:opacity-50">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
            {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? 'Retry saved refund' : 'Process Refund'}
@@ -190,6 +307,6 @@ export default function RefundsPage() {
      ))}
     </div>
    )}
-  </div>
+  </div></EventWorkspace>
  )
 }

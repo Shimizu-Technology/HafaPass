@@ -4,7 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
 import AdminEventsPage from './AdminEventsPage'
 
-vi.mock('../../api/client', () => ({
+vi.mock('../../api/client', async importOriginal => ({
+  ...await importOriginal(),
   default: { get: vi.fn(), patch: vi.fn() },
 }))
 
@@ -39,13 +40,13 @@ describe('AdminEventsPage', () => {
 
   it('shows the server rejection when the proof-candidate flag cannot change', async () => {
     apiClient.patch.mockRejectedValue({ response: { data: { errors: ['Candidate cannot change after orders exist.'] } } })
-    render(<MemoryRouter><AdminEventsPage /></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Mark as hidden proof candidate' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Candidate cannot change after orders exist.')
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/events/42', {
       live_money_proof_candidate: true,
-    }))
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 })

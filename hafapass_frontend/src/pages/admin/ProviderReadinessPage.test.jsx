@@ -1,9 +1,10 @@
+import { MemoryRouter } from 'react-router-dom'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import ProviderReadinessPage from './ProviderReadinessPage'
 
-vi.mock('../../api/client', () => ({
+vi.mock('../../api/client', async original => ({ ...await original(),
   default: { get: vi.fn(), post: vi.fn() },
 }))
 
@@ -25,7 +26,7 @@ describe('ProviderReadinessPage', () => {
   })
 
   it('distinguishes configuration from independent approval and submits the exact controls', async () => {
-    render(<ProviderReadinessPage />)
+    render(<MemoryRouter initialEntries={['/admin/provider-readiness']}><ProviderReadinessPage /></MemoryRouter>)
     await screen.findByText('Production policy register')
 
     expect(screen.getByText('Disabled Pending Approval')).toBeInTheDocument()
@@ -42,6 +43,7 @@ describe('ProviderReadinessPage', () => {
         evidence_digest: 'a'.repeat(64),
         controls: { counsel_approved: true, privacy_approved: true },
       }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     ))
   })
 
@@ -51,7 +53,7 @@ describe('ProviderReadinessPage', () => {
       pending_submission: { id: 91, actor_user_id: 7, evidence_reference: 'provider-report-4' },
     }] } })
 
-    render(<ProviderReadinessPage />)
+    render(<MemoryRouter initialEntries={['/admin/provider-readiness']}><ProviderReadinessPage /></MemoryRouter>)
 
     expect(await screen.findByText(/Admin #7 submitted evidence provider-report-4/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Approve exact snapshot' })).toBeInTheDocument()

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import AdminAccessRecovery from './AdminAccessRecovery'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ClipboardCheck, Loader2, Plus, Trash2, X } from 'lucide-react'
-import apiClient from '../api/client'
+import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
 
 const outcomeFields = [
   ['support_contacts_count', 'Support contacts'], ['entry_latency_p50_ms', 'Entry latency p50 (ms)'],
@@ -98,8 +99,13 @@ function CloseoutSummary({ review }) {
   </div>
 }
 
-export default function PilotCloseoutDialog({ event, onComplete }) {
+function PilotCloseoutDialogSession({ event, onComplete }) {
   const [open, setOpen] = useState(false); const [details, setDetails] = useState(null)
+  const dialog = useCapturedPlatformDialog(open)
+  const { canClose } = dialog
+  const openCaptured = () => { if (dialog.capture()) { setBusy(false); setOpen(true); load() } }
+  const closeCaptured = useCallback(() => { if (canClose()) setOpen(false) }, [canClose])
+
   const [form, setForm] = useState(initialForm); const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('')
   const triggerRef = useRef(null); const closeRef = useRef(null)
@@ -112,23 +118,27 @@ export default function PilotCloseoutDialog({ event, onComplete }) {
 
   useEffect(() => {
     if (!open) return undefined
-    const handler = keyEvent => { if (keyEvent.key === 'Escape' && !busy) setOpen(false) }
+    const handler = keyEvent => { if (keyEvent.key === 'Escape') closeCaptured() }
     document.addEventListener('keydown', handler); closeRef.current?.focus()
     return () => document.removeEventListener('keydown', handler)
-  }, [open, busy])
-  useEffect(() => { if (!open) triggerRef.current?.focus() }, [open])
+  }, [open, closeCaptured])
+  useEffect(() => { if (!open) triggerRef.current?.focus() }, [open, closeCaptured])
 
   const load = async () => {
+    const scope = dialog.begin()
+    if (!scope) return
     setLoading(true); setError('')
-    try { setDetails((await apiClient.get(`/admin/events/${event.id}/pilot_closeout`)).data) }
-    catch (requestError) { setError(requestError.response?.data?.error || 'Gate J closeout could not be loaded.') }
-    finally { setLoading(false) }
+    try { const response = await scope.api.get(`/admin/events/${event.id}/pilot_closeout`); if (!scope.current()) return; setDetails(response.data) }
+    catch (requestError) { if (!scope.current()) return; setError(requestError.response?.data?.error || 'Gate J closeout could not be loaded.') }
+    finally { if (scope.current()) setLoading(false) }
   }
   const request = async action => {
+    const scope = dialog.begin('mutation')
+    if (!scope) return false
     setBusy(true); setError('')
-    try { await action(); setReason(''); await load(); onComplete?.(); return true }
-    catch (requestError) { setError(requestError.response?.data?.error || 'The Gate J decision could not be recorded.'); return false }
-    finally { setBusy(false) }
+    try { await action(scope.api); if (!scope.current()) return false; setReason(''); await load(); if (!scope.current()) return false; onComplete?.(); return true }
+    catch (requestError) { if (!scope.current()) return false; setError(requestError.response?.data?.error || 'The Gate J decision could not be recorded.'); return false }
+    finally { if (scope.current()) setBusy(false); scope.finish() }
   }
   const setSection = (section, key, value) => setForm(current => ({
     ...current, [section]: { ...current[section], [key]: value },
@@ -146,7 +156,7 @@ export default function PilotCloseoutDialog({ event, onComplete }) {
   }))
   const submit = submitEvent => {
     submitEvent.preventDefault()
-    request(() => apiClient.post(`/admin/events/${event.id}/pilot_closeout_reviews`, {
+    request(api => api.post(`/admin/events/${event.id}/pilot_closeout_reviews`, {
       ...form,
       outcome_metrics: Object.fromEntries(Object.entries(form.outcome_metrics).map(([key, value]) => [key, Number(value)])),
       retrospective_actions: form.retrospective_actions.map(action => ({ ...action, due_at: iso(action.due_at) })),
@@ -169,10 +179,10 @@ export default function PilotCloseoutDialog({ event, onComplete }) {
       event.pilot_closeout?.approval_recorded ? 'Revalidate Gate J closeout' : 'Prepare Gate J closeout'
 
   return <>
-    <button ref={triggerRef} type="button" onClick={() => { setOpen(true); load() }} className="min-h-11 text-left text-xs font-semibold text-violet-800 underline decoration-violet-300 underline-offset-4 hover:text-violet-950">{triggerLabel}</button>
-    {open && <div role="presentation" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-neutral-950/55 px-3 py-4 sm:px-6 sm:py-8" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) setOpen(false) }}>
+    <button ref={triggerRef} type="button" onClick={openCaptured} className="min-h-11 text-left text-xs font-semibold text-violet-800 underline decoration-violet-300 underline-offset-4 hover:text-violet-950">{triggerLabel}</button>
+    {open && <div role="presentation" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-neutral-950/55 px-3 py-4 sm:px-6 sm:py-8" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) closeCaptured() }}>
       <section role="dialog" aria-modal="true" aria-labelledby="pilot-closeout-title" className="w-full max-w-7xl overflow-hidden rounded-2xl bg-stone-50 shadow-2xl">
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-800">Gate J · close out before expanding</p><h2 id="pilot-closeout-title" className="mt-1 text-2xl font-bold">{details?.event?.title || event.title}</h2><p className="mt-1 max-w-4xl text-sm text-neutral-600">Reconcile the completed pilot, measure customer and operating outcomes, close access and device obligations, approve retrospective actions, and make an explicit Guam expansion decision.</p></div><button ref={closeRef} type="button" aria-label="Close Gate J pilot closeout" disabled={busy} onClick={() => setOpen(false)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-stone-200"><X className="h-5 w-5" /></button></header>
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-800">Gate J · close out before expanding</p><h2 id="pilot-closeout-title" className="mt-1 text-2xl font-bold">{details?.event?.title || event.title}</h2><p className="mt-1 max-w-4xl text-sm text-neutral-600">Reconcile the completed pilot, measure customer and operating outcomes, close access and device obligations, approve retrospective actions, and make an explicit Guam expansion decision.</p></div><button ref={closeRef} type="button" aria-label="Close Gate J pilot closeout" disabled={busy} onClick={closeCaptured} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-stone-200"><X className="h-5 w-5" /></button></header>
         <div className="px-6 py-6 sm:px-8 sm:py-8">
           {error && <p role="alert" className="mb-6 border-l-4 border-red-600 bg-red-50 p-4 text-sm text-red-900">{error}</p>}
           {loading && !details ? <div className="flex justify-center py-16"><Loader2 aria-label="Loading Gate J closeout" className="h-8 w-8 animate-spin text-violet-700" /></div> : <>
@@ -188,11 +198,18 @@ export default function PilotCloseoutDialog({ event, onComplete }) {
               <fieldset className="space-y-4"><legend className="text-lg font-bold">Explicit expansion decision</legend><div className="border-l-4 border-violet-500 bg-violet-50 p-4 text-sm text-violet-950">This records a governed decision; it does not invent demand, provider capacity, or customer evidence, enable unfinished features, authorize a new region, or bypass event-specific release gates.</div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><label className="text-xs font-semibold">Decision<select value={form.expansion_decision} onChange={change => chooseDecision(change.target.value)} className="input mt-1"><option value="hold">Hold expansion</option><option value="repeat_bounded_pilot">Repeat one bounded pilot</option><option value="limited_guam_expansion">Limited Guam expansion</option></select></label><label className="text-xs font-semibold">Event limit<input required type="number" min="0" max="10" value={form.expansion_scope.event_limit} onChange={change => setSection('expansion_scope', 'event_limit', change.target.value)} className="input mt-1" /></label><label className="text-xs font-semibold">Max inventory per event<input required type="number" min="0" max="1000" value={form.expansion_scope.max_inventory_per_event} onChange={change => setSection('expansion_scope', 'max_inventory_per_event', change.target.value)} className="input mt-1" /></label>{form.expansion_decision !== 'hold' && <label className="text-xs font-semibold">Decision expires<input required type="datetime-local" value={form.expansion_scope.expires_at} onChange={change => setSection('expansion_scope', 'expires_at', change.target.value)} className="input mt-1" /></label>}{form.expansion_decision === 'limited_guam_expansion' && <><label className="text-xs font-semibold">Demand evidence reference<input required value={form.expansion_scope.demand_evidence_reference} onChange={change => setSection('expansion_scope', 'demand_evidence_reference', change.target.value)} className="input mt-1" /></label><label className="text-xs font-semibold">Capacity evidence reference<input required value={form.expansion_scope.capacity_evidence_reference} onChange={change => setSection('expansion_scope', 'capacity_evidence_reference', change.target.value)} className="input mt-1" /></label></>}<label className="text-xs font-semibold sm:col-span-2 lg:col-span-3">Rationale<textarea required value={form.expansion_scope.rationale} onChange={change => setSection('expansion_scope', 'rationale', change.target.value)} className="input mt-1 min-h-24" /></label></div><div><p className="text-sm font-bold">Measured product investments to prioritize</p><div className="mt-2 flex flex-wrap gap-3">{investmentFields.map(([key, label]) => <label key={key} className="flex gap-2 text-sm"><input type="checkbox" checked={form.expansion_scope.recommended_product_investments.includes(key)} onChange={() => toggleInvestment(key)} className="h-5 w-5" />{label}</label>)}</div>{form.expansion_scope.recommended_product_investments.length > 0 && <label className="mt-3 block text-xs font-semibold">Product demand/capacity evidence reference<input required value={form.expansion_scope.product_evidence_reference} onChange={change => setSection('expansion_scope', 'product_evidence_reference', change.target.value)} className="input mt-1" /></label>}</div></fieldset>
               <div className="flex justify-end border-t pt-6"><button disabled={busy || !allAttested} className="btn-primary min-h-11 disabled:opacity-50"><ClipboardCheck className="h-4 w-4" /> Sign and submit Gate J closeout</button></div>
             </form>}
-            {mode === 'pending' && <div className="space-y-7"><div className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950"><strong>Independent decision required.</strong> A different administrator must inspect the restricted evidence and approve this exact state-bound snapshot.</div><CloseoutSummary review={pending} /><label className="block text-sm font-semibold">Rejection reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex flex-wrap justify-end gap-3 border-t pt-6"><button disabled={busy || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/pilot_closeout_reviews/${pending.id}/reject`, { reason }))} className="min-h-11 rounded-full border border-red-300 px-5 font-semibold text-red-800 disabled:opacity-50">Reject closeout</button><button disabled={busy} onClick={() => request(() => apiClient.post(`/admin/pilot_closeout_reviews/${pending.id}/approve`))} className="btn-primary min-h-11"><Check className="h-4 w-4" /> Approve exact Gate J decision</button></div></div>}
-            {mode === 'approved' && <div className="space-y-7"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-5 text-emerald-950"><strong>Gate J closeout independently approved.</strong><p className="mt-1 text-sm">Expansion decision: {approval.expansion_decision.replaceAll('_', ' ')}. External evidence remains subject to its owners and retention policy.</p></div><CloseoutSummary review={approval} /><label className="block text-sm font-semibold">Revocation reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex justify-end"><button disabled={busy || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/pilot_closeout_reviews/${approval.id}/revoke`, { reason }))} className="min-h-11 rounded-full bg-red-700 px-5 font-semibold text-white disabled:opacity-50">Revoke Gate J approval</button></div></div>}
+            {mode === 'pending' && <div className="space-y-7"><div className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950"><strong>Independent decision required.</strong> A different administrator must inspect the restricted evidence and approve this exact state-bound snapshot.</div><CloseoutSummary review={pending} /><label className="block text-sm font-semibold">Rejection reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex flex-wrap justify-end gap-3 border-t pt-6"><button disabled={busy || !reason.trim()} onClick={() => request(api => api.post(`/admin/pilot_closeout_reviews/${pending.id}/reject`, { reason }))} className="min-h-11 rounded-full border border-red-300 px-5 font-semibold text-red-800 disabled:opacity-50">Reject closeout</button><button disabled={busy} onClick={() => request(api => api.post(`/admin/pilot_closeout_reviews/${pending.id}/approve`))} className="btn-primary min-h-11"><Check className="h-4 w-4" /> Approve exact Gate J decision</button></div></div>}
+            {mode === 'approved' && <div className="space-y-7"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-5 text-emerald-950"><strong>Gate J closeout independently approved.</strong><p className="mt-1 text-sm">Expansion decision: {approval.expansion_decision.replaceAll('_', ' ')}. External evidence remains subject to its owners and retention policy.</p></div><CloseoutSummary review={approval} /><label className="block text-sm font-semibold">Revocation reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex justify-end"><button disabled={busy || !reason.trim()} onClick={() => request(api => api.post(`/admin/pilot_closeout_reviews/${approval.id}/revoke`, { reason }))} className="min-h-11 rounded-full bg-red-700 px-5 font-semibold text-white disabled:opacity-50">Revoke Gate J approval</button></div></div>}
           </>}
         </div>
       </section>
     </div>}
   </>
+}
+
+export default function PilotCloseoutDialog(props) {
+  const identity = useCapturedDialogIdentity()
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.key} identity={identity} />
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <PilotCloseoutDialogSession key={`${identity.key}:${props.event.id}`} {...props} />
 }
