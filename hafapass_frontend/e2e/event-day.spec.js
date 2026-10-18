@@ -40,71 +40,77 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/me', route => json(route, { id: 7, role: 'organizer' }))
 })
 
-test('scanner validates locally, records an offline scan, and reconciles it after reconnecting', async ({ page, context }) => {
-  const credentials = ['ticket-one-secret', 'ticket-two-secret']
-  const manifest = signedManifest(credentials.map((credential, index) => ({
-    ticket_id: index + 1,
-    code: `HP-T${index + 1}`,
-    credential_hash: crypto.createHash('sha256').update(credential).digest('hex'),
-    attendee_name: index ? 'Jose Cruz' : 'Mina Cruz',
-    ticket_type: 'General Admission',
-    state: 'valid',
-  })))
-  const device = { id: 8, identifier: 'browser-test', name: 'North door', effective: true, status: 'active', authorization_expires_at: new Date(Date.now() + 86_400_000).toISOString(), last_sequence: 0, user: { id: 7, name: 'Door Staff' } }
-  const syncedActions = []
+for (const fragment of ['', '#manual-ticket-entry']) {
+  test(`scanner validates locally, records an offline scan, and reconnects with fragment ${fragment || 'none'}`, async ({ page, context }) => {
+    await page.setViewportSize({ width: fragment ? 390 : 1440, height: 900 })
+    const credentials = ['ticket-one-secret', 'ticket-two-secret']
+    const manifest = signedManifest(credentials.map((credential, index) => ({
+      ticket_id: index + 1,
+      code: `HP-T${index + 1}`,
+      credential_hash: crypto.createHash('sha256').update(credential).digest('hex'),
+      attendee_name: index ? 'Jose Cruz' : 'Mina Cruz',
+      ticket_type: 'General Admission',
+      state: 'valid',
+    })))
+    const device = { id: 8, identifier: 'browser-test', name: 'North door', effective: true, status: 'active', authorization_expires_at: new Date(Date.now() + 86_400_000).toISOString(), last_sequence: 0, user: { id: 7, name: 'Door Staff' } }
+    const syncedActions = []
 
-  await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [{ id: 42, title: 'Guam Night Market', status: 'published' }], meta: {} }))
-  await page.route('**/api/v1/organizer/events/42/scanner_devices', route => json(route, device, 201))
-  await page.route('**/api/v1/organizer/events/42/scanner_devices/8/manifest', route => json(route, manifest))
-  await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, {
-    counts: { admitted: syncedActions.length, remaining: 2 - syncedActions.length, conflicts: 0, rejected: 0 },
-    devices: [device], recent_actions: [], permissions: { can_reverse: true },
-  }))
-  await page.route('**/api/v1/organizer/events/42/scanner_devices/8/sync', async route => {
-    const actions = route.request().postDataJSON().actions
-    syncedActions.push(...actions)
-    return json(route, {
-      results: actions.map(action => ({ ...action, result: 'accepted', reason_code: 'admitted', attendee: {} })),
-      device: { ...device, last_sequence: actions.at(-1).sequence },
-      summary: { admitted: syncedActions.length, remaining: 2 - syncedActions.length, conflicts: 0, rejected: 0 },
+    await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [{ id: 42, title: 'Guam Night Market', status: 'published' }], meta: {} }))
+    await page.route('**/api/v1/organizer/events/42/scanner_devices', route => json(route, device, 201))
+    await page.route('**/api/v1/organizer/events/42/scanner_devices/8/manifest', route => json(route, manifest))
+    await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, {
+      counts: { admitted: syncedActions.length, remaining: 2 - syncedActions.length, conflicts: 0, rejected: 0 },
+      devices: [device], recent_actions: [], permissions: { can_reverse: true },
+    }))
+    await page.route('**/api/v1/organizer/events/42/scanner_devices/8/sync', async route => {
+      const actions = route.request().postDataJSON().actions
+      syncedActions.push(...actions)
+      return json(route, {
+        results: actions.map(action => ({ ...action, result: 'accepted', reason_code: 'admitted', attendee: {} })),
+        device: { ...device, last_sequence: actions.at(-1).sequence },
+        summary: { admitted: syncedActions.length, remaining: 2 - syncedActions.length, conflicts: 0, rejected: 0 },
+      })
     })
+
+    await page.goto(`/dashboard/scanner?event=42${fragment}`)
+    await expectManifest(page, 'Manifest v1 · 2 tickets')
+    await context.setOffline(true)
+    await page.getByLabel('Ticket QR code').fill(credentials[1])
+    await page.getByRole('button', { name: 'Check ticket' }).click()
+    await expect(page.getByText('Admitted offline')).toBeVisible()
+    await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
+
+    await page.getByLabel('Ticket QR code').fill(credentials[1])
+    await page.getByRole('button', { name: 'Check ticket' }).click()
+    await expect(page.getByText('Already scanned on this device')).toBeVisible()
+
+    await context.setOffline(false)
+    await expect.poll(() => syncedActions.length).toBe(1)
+    await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
+
+    // The app shell can reload while its API is unavailable; verified IndexedDB access remains usable.
+    await page.route('**/api/v1/health', route => json(route, { status: 'unavailable' }, 503))
+    await page.reload()
+    await expect(page.getByText('Using this device’s saved event access.', { exact: false })).toBeVisible()
+    await expectManifest(page, 'Manifest v1 · 2 tickets')
+    await page.getByLabel('Ticket QR code').fill(credentials[0])
+    await page.getByRole('button', { name: 'Check ticket' }).click()
+    await expect(page.getByText('Admitted offline')).toBeVisible()
+    await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
+
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    const scannerUrl = page.url()
+    await page.evaluate(() => { window.__reconnectOldDocument = true })
+    await page.getByRole('button', { name: 'Reload to reconnect', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => window.__reconnectOldDocument ?? false)).toBe(false)
+    await expect(page).toHaveURL(scannerUrl)
+    await expect.poll(() => syncedActions.length).toBe(2)
+    expect(new Set(syncedActions.map(action => action.action_uuid)).size).toBe(2)
+    expect(syncedActions.map(action => action.ticket_id).sort()).toEqual([1, 2])
+    await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
   })
 
-  await page.goto('/dashboard/scanner')
-  await expectManifest(page, 'Manifest v1 · 2 tickets')
-  await context.setOffline(true)
-  await page.getByLabel('Ticket QR code').fill(credentials[1])
-  await page.getByRole('button', { name: 'Check ticket' }).click()
-  await expect(page.getByText('Admitted offline')).toBeVisible()
-  await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
-
-  await page.getByLabel('Ticket QR code').fill(credentials[1])
-  await page.getByRole('button', { name: 'Check ticket' }).click()
-  await expect(page.getByText('Already scanned on this device')).toBeVisible()
-
-  await context.setOffline(false)
-  await expect.poll(() => syncedActions.length).toBe(1)
-  await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
-
-  // The app shell can reload while its API is unavailable; verified IndexedDB access remains usable.
-  await page.route('**/api/v1/health', route => json(route, { status: 'unavailable' }, 503))
-  await page.reload()
-  await expect(page.getByText('Using this device’s saved event access.', { exact: false })).toBeVisible()
-  await expectManifest(page, 'Manifest v1 · 2 tickets')
-  await page.getByLabel('Ticket QR code').fill(credentials[0])
-  await page.getByRole('button', { name: 'Check ticket' }).click()
-  await expect(page.getByText('Admitted offline')).toBeVisible()
-  await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
-
-  await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
-  const scannerUrl = page.url()
-  await page.getByRole('link', { name: 'Reload to reconnect', exact: true }).click()
-  await expect(page).toHaveURL(scannerUrl)
-  await expect.poll(() => syncedActions.length).toBe(2)
-  expect(new Set(syncedActions.map(action => action.action_uuid)).size).toBe(2)
-  expect(syncedActions.map(action => action.ticket_id).sort()).toEqual([1, 2])
-  await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
-})
+}
 
 test('online scanner waits neutrally before accepted and refused acknowledgements', async ({ page }) => {
   const credentials = ['online-accepted-secret', 'online-refused-secret']

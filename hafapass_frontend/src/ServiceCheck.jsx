@@ -40,7 +40,7 @@ export default function ServiceCheck() {
       <EnvironmentBanner offlineOnly />
       <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
         Using this device’s saved event access. Saved scans stay on this device. When services return, reload to reconnect.
-        <a className="ml-3 inline-flex min-h-11 items-center font-semibold underline" href={`${location.pathname}${location.search}${location.hash}`}>Reload to reconnect</a>
+        <button type="button" className="ml-3 inline-flex min-h-11 items-center font-semibold underline" onClick={() => window.location.reload()}>Reload to reconnect</button>
       </div>
       <Suspense fallback={<p className="px-4 py-8" role="status">Opening the saved scanner…</p>}><ScannerPage offlineOnly offlineEventId={cachedScanner.eventId} /></Suspense>
     </main> : null

@@ -141,8 +141,9 @@ RSpec.describe Qa::Fixtures do
 
     it "refuses an environment service that could supply an unverified hostaddr" do
       ENV["PGSERVICE"] = "unverified_service"
+      allow(ActiveRecord::Base).to receive(:connection_db_config).and_return(connection_config(host: "localhost"))
       expect(fixture).not_to receive(:fixture_user)
-      expect { fixture.call }.to raise_error(described_class::UnsafeEnvironment)
+      expect { fixture.call }.to raise_error(described_class::UnsafeEnvironment, /local hafapass_qa_/)
       expect(User.count).to eq(0)
     end
   end
