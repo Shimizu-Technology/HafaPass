@@ -372,7 +372,7 @@ function TicketContent({ authContext }) {
           {/* Event Details */}
           <div className="px-4 sm:px-6 py-5 space-y-3">
             <div>
-              <h2 className="font-display text-lg font-bold text-neutral-900">{event.title}</h2>
+              <h1 className="font-display text-lg font-bold text-neutral-900">{event.title}</h1>
               <p className="text-sm text-action font-semibold font-sans">{ticket_type.name}</p>
               {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
               {ticket.seat?.obstructed_view && <p className="mt-1 text-xs text-amber-700">Obstructed view{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
