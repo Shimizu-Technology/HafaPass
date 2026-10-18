@@ -210,27 +210,28 @@ function EditEventSession({ id, identity }) {
   const validate = () => {
     const errors = {}
     if (!form.title.trim()) errors.title = 'Title is required'
-    if (!canManage) { setFormErrors(errors); return Object.keys(errors).length === 0 }
-    if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
-    if (!form.starts_at) errors.starts_at = 'Start date/time is required'
-    if (form.ends_at && form.starts_at) {
-      if (compareLocalDateTimes(form.ends_at, form.starts_at) <= 0) {
-        errors.ends_at = 'End time must be after the start time'
+    if (canManage) {
+      if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
+      if (!form.starts_at) errors.starts_at = 'Start date/time is required'
+      if (form.ends_at && form.starts_at) {
+        if (compareLocalDateTimes(form.ends_at, form.starts_at) <= 0) {
+          errors.ends_at = 'End time must be after the start time'
+        }
       }
-    }
-    if (form.doors_open_at && form.starts_at) {
-      if (compareLocalDateTimes(form.doors_open_at, form.starts_at) > 0) {
-        errors.doors_open_at = 'Doors open time must be before the start time'
+      if (form.doors_open_at && form.starts_at) {
+        if (compareLocalDateTimes(form.doors_open_at, form.starts_at) > 0) {
+          errors.doors_open_at = 'Doors open time must be before the start time'
+        }
       }
-    }
-    if (form.max_capacity) {
-      const cap = Number(form.max_capacity)
-      if (!Number.isInteger(cap) || cap < 1) {
-        errors.max_capacity = 'Max capacity must be a positive integer'
+      if (form.max_capacity) {
+        const cap = Number(form.max_capacity)
+        if (!Number.isInteger(cap) || cap < 1) {
+          errors.max_capacity = 'Max capacity must be a positive integer'
+        }
       }
-    }
-    if (scheduleChanged && ['published', 'postponed'].includes(event?.status) && !changeReason.trim()) {
-      errors.change_reason = 'Explain the schedule change for ticket holders'
+      if (scheduleChanged && ['published', 'postponed'].includes(event?.status) && !changeReason.trim()) {
+        errors.change_reason = 'Explain the schedule change for ticket holders'
+      }
     }
     setFormErrors(errors)
     if (Object.keys(errors).length) requestAnimationFrame(() => { if (current()) document.getElementById(Object.keys(errors)[0])?.focus() })
