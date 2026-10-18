@@ -18,12 +18,13 @@ const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 
 
 // One compact per-row disclosure keeps the table scannable. The gate dialogs stay
 // mounted while it is open, because each dialog lives inside its own trigger.
-function ReleaseGatesControl({ event, onComplete, toggleProofCandidate }) {
-  const [open, setOpen] = useState(false)
+// The page owns `open` so a list refresh after a gate action keeps the row
+// expanded and the closed dialog can return focus to its trigger.
+function ReleaseGatesControl({ event, open, onToggle, onComplete, toggleProofCandidate }) {
   const panelId = `release-gates-${event.id}`
   return (
     <div className="min-w-40">
-      <button type="button" aria-expanded={open} aria-controls={panelId} aria-label={`Release gates for ${event.title}`} onClick={() => setOpen(value => !value)}
+      <button type="button" aria-expanded={open} aria-controls={panelId} aria-label={`Release gates for ${event.title}`} onClick={onToggle}
         className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 transition-[background-color,transform] duration-150 ease-out hover:bg-neutral-100 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
         Release gates
         <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 transition-transform duration-150 ease-out motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
@@ -55,6 +56,13 @@ function AdminEventsPageSession({ identity, resourcePath }) {
   const [category, setCategory] = useState('')
   const [page, setPage] = useState(1)
   const [actionError, setActionError] = useState('')
+  const [openGates, setOpenGates] = useState(() => new Set())
+  const toggleGates = useCallback(eventId => setOpenGates(previous => {
+    const next = new Set(previous)
+    if (next.has(eventId)) next.delete(eventId)
+    else next.add(eventId)
+    return next
+  }), [])
 
   const fetchEvents = useCallback(() => {
     const request = beginRequest()
@@ -177,7 +185,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                     <td className="px-4 py-3 text-neutral-500 hidden md:table-cell capitalize">{event.category}</td>
                     <td className="px-4 py-3 text-right text-neutral-700">{event.tickets_sold}</td>
                     <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
-                    <td className="px-4 py-3"><ReleaseGatesControl event={event} onComplete={fetchEvents} toggleProofCandidate={toggleProofCandidate} /></td>
+                    <td className="px-4 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={fetchEvents} toggleProofCandidate={toggleProofCandidate} /></td>
                     <td className="px-4 py-3 text-center">
                       <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
                         <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-400 text-amber-400' : 'text-neutral-300'}`} />

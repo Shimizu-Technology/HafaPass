@@ -18,7 +18,7 @@ vi.mock('../../components/PilotValidationReviewDialog', () => ({ default: () => 
 vi.mock('../../components/EventDayRehearsalReviewDialog', () => ({ default: () => <button type="button">Prepare Gate G rehearsal</button> }))
 vi.mock('../../components/LiveMoneyProofReviewDialog', () => ({ default: () => <button type="button">Prepare Gate H live-money proof</button> }))
 vi.mock('../../components/LivePilotOperationsDialog', () => ({ default: () => <button type="button">Prepare Gate I bounded pilot</button> }))
-vi.mock('../../components/PilotCloseoutDialog', () => ({ default: () => <button type="button">Prepare Gate J closeout</button> }))
+vi.mock('../../components/PilotCloseoutDialog', () => ({ default: ({ onComplete }) => <button type="button" onClick={onComplete}>Prepare Gate J closeout</button> }))
 
 const proofEvent = {
   id: 42,
@@ -50,6 +50,16 @@ describe('AdminEventsPage', () => {
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/events/42', {
       live_money_proof_candidate: true,
     }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
+  })
+  it('keeps the release gates open after a gate action refreshes the list', async () => {
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Gate J closeout' }))
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Prepare Gate J closeout' })).toBeInTheDocument()
   })
   it('collapses every release gate action behind one per-row control', async () => {
     render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
