@@ -97,8 +97,12 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
   await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
 
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
-  await page.getByRole('button', { name: 'Check connection', exact: true }).click()
+  const scannerUrl = page.url()
+  await page.getByRole('link', { name: 'Reload to reconnect', exact: true }).click()
+  await expect(page).toHaveURL(scannerUrl)
   await expect.poll(() => syncedActions.length).toBe(2)
+  expect(new Set(syncedActions.map(action => action.action_uuid)).size).toBe(2)
+  expect(syncedActions.map(action => action.ticket_id).sort()).toEqual([1, 2])
   await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
 })
 
