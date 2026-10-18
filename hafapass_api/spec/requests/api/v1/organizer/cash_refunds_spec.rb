@@ -26,6 +26,7 @@ RSpec.describe "Organizer cash return recording", type: :request do
     expect { post path, params: payload, headers: headers, as: :json }.not_to change(Refund, :count)
     expect(response).to have_http_status(:created)
     expect(StripeService).not_to have_received(:refund_payment)
+    expect(EmailService).not_to have_received(:send_refund_notification_async)
     get "/api/v1/organizer/events/#{event.id}/orders", headers: auth_headers(user)
     history = response.parsed_body["orders"].first
     expect(history).to include("payment_method" => "door_cash", "payment_provider" => "door_cash")

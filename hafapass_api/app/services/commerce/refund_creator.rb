@@ -364,7 +364,9 @@ module Commerce
         elsif refund.refund_tickets.any?
           release_refunded_tickets!(refund)
         end
-        EmailService.send_refund_notification_async(refund.order, refund: refund)
+        unless refund.provider == "door_cash" && refund.provider_payload["manual_record"] == true
+          EmailService.send_refund_notification_async(refund.order, refund: refund)
+        end
       end
 
       raise RefundError, validation_error if validation_error

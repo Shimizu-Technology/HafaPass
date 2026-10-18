@@ -58,10 +58,9 @@ module Qa
 
     def verify_environment!
       config = ActiveRecord::Base.connection_db_config
-      local_hosts = [nil, "", "localhost", "127.0.0.1", "::1"]
       unless (Rails.env.development? || Rails.env.test?) && ENV["HAFAPASS_QA_FIXTURES"] == "1" &&
           config.adapter == "postgresql" && config.database.match?(/\Ahafapass_qa_[a-z0-9_]+\z/) &&
-          local_hosts.include?(config.configuration_hash[:host])
+          local_connection?(config.configuration_hash)
         raise UnsafeEnvironment, "QA fixtures require development/test, HAFAPASS_QA_FIXTURES=1 and a local hafapass_qa_* database"
       end
       unless name.to_s.match?(/\A[a-z0-9][a-z0-9_-]{0,31}\z/) && (identities.keys - ROLES).empty?
@@ -76,6 +75,25 @@ module Qa
       unless SiteSetting.instance.simulate_mode? && EmailService.send(:delivery_provider) == "simulated"
         raise UnsafeEnvironment, "QA fixtures require simulated payments and simulated email"
       end
+    end
+
+    def local_connection?(parameters)
+      # A service file can supply addresses that are absent from Rails' config.
+      # Require explicit connection settings rather than trusting that indirection.
+      return false unless parameters[:service].to_s.empty? && ENV["PGSERVICE"].to_s.empty?
+
+      # Missing parameters inherit environment values independently: even
+      # host=localhost does not override PGHOSTADDR. Treat empty values
+      # conservatively too, rather than relying on driver-specific defaults.
+      host = parameters[:host].to_s
+      host = ENV["PGHOST"].to_s if host.empty?
+      hostaddr = parameters[:hostaddr].to_s
+      hostaddr = ENV["PGHOSTADDR"].to_s if hostaddr.empty?
+
+      # Reject host lists too, including a socket path followed by a remote host.
+      local_host = ["", "localhost", "127.0.0.1", "::1"].include?(host) ||
+        (!host.include?(",") && host.start_with?("/", "@"))
+      local_host && ["", "127.0.0.1", "::1"].include?(hostaddr)
     end
 
     def fixture_user(role)

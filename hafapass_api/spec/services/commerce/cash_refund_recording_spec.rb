@@ -76,6 +76,7 @@ RSpec.describe "Organizer retained cash accounting" do
     expect(Settlements::Calculator.call(event).attributes).to include(organizer_proceeds_cents: 0,
       adjustment_cents: 0, payable_cents: 0, negative_balance_cents: 0)
     expect(StripeService).not_to have_received(:refund_payment)
+    expect(EmailService).not_to have_received(:send_refund_notification_async)
   end
 
   it "uses immutable payment provenance if an order's display method changes" do
@@ -120,6 +121,7 @@ RSpec.describe "Organizer retained cash accounting" do
     expect { record_return(amount: 701, key: "too-much") }
       .to raise_error(Commerce::RefundCreator::RefundError, /exceeds refundable balance/)
     expect(cash_order.reload.refunded_cents).to eq(300)
+    expect(EmailService).not_to have_received(:send_refund_notification_async)
   end
 
   it "requires an actor, reason, bounded reference and a valid past return timestamp" do
@@ -148,7 +150,7 @@ RSpec.describe "Organizer retained cash accounting" do
 
   it "rolls back cash evidence and allocations together if finalization fails" do
     cash_order
-    allow(EmailService).to receive(:send_refund_notification_async).and_raise("local record interrupted")
+    allow_any_instance_of(RefundItem).to receive(:save!).and_raise("local record interrupted")
     expect { record_return(amount: 1000) }.to raise_error("local record interrupted")
     expect(cash_order.refunds).to be_empty
     expect(cash_order.reload).to be_completed

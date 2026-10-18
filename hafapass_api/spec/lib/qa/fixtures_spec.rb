@@ -3,11 +3,13 @@ require Rails.root.join("lib/qa/fixtures")
 
 RSpec.describe Qa::Fixtures do
   around do |example|
-    previous = ENV["HAFAPASS_QA_FIXTURES"]
+    keys = %w[HAFAPASS_QA_FIXTURES PGHOST PGHOSTADDR PGSERVICE]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    keys.each { |key| ENV.delete(key) }
     ENV["HAFAPASS_QA_FIXTURES"] = "1"
     example.run
   ensure
-    ENV["HAFAPASS_QA_FIXTURES"] = previous
+    previous.each { |key, value| ENV[key] = value }
   end
 
   before do
@@ -69,6 +71,80 @@ RSpec.describe Qa::Fixtures do
     )
     expect { described_class.call }.to raise_error(described_class::UnsafeEnvironment)
     expect(User.count).to eq(0)
+  end
+
+  describe "local connection safety" do
+    let(:fixture) { described_class.new(name: "connection_safety") }
+
+    def connection_config(**options)
+      ActiveRecord::DatabaseConfigurations::HashConfig.new("test", "primary",
+        { adapter: "postgresql", database: "hafapass_qa_fixture_spec" }.merge(options))
+    end
+
+    [
+      { host: "remote.example.invalid" },
+      { host: "localhost", hostaddr: "192.0.2.1" },
+      { host: "/tmp", hostaddr: "192.0.2.1" },
+      { host: "localhost,remote.example.invalid" },
+      { host: "/tmp,remote.example.invalid" },
+      { host: "localhost", service: "unverified_service" },
+      { host: "localhost", hostaddr: "127.0.0.1,192.0.2.1" }
+    ].each do |options|
+      it "refuses the nonlocal destination #{options.inspect} before fixture writes" do
+        allow(ActiveRecord::Base).to receive(:connection_db_config).and_return(connection_config(**options))
+        expect(fixture).not_to receive(:fixture_user)
+        expect { fixture.call }.to raise_error(described_class::UnsafeEnvironment, /local hafapass_qa_/)
+        expect(User.count).to eq(0)
+      end
+    end
+
+    [nil, ""].each do |unset|
+      it "refuses PGHOST when configured host is #{unset.inspect}" do
+        ENV["PGHOST"] = "remote.example.invalid"
+        allow(ActiveRecord::Base).to receive(:connection_db_config).and_return(connection_config(host: unset))
+        expect(fixture).not_to receive(:fixture_user)
+        expect { fixture.call }.to raise_error(described_class::UnsafeEnvironment)
+        expect(User.count).to eq(0)
+      end
+
+      it "refuses PGHOSTADDR despite localhost when configured hostaddr is #{unset.inspect}" do
+        ENV["PGHOSTADDR"] = "192.0.2.1"
+        allow(ActiveRecord::Base).to receive(:connection_db_config).and_return(connection_config(host: "localhost", hostaddr: unset))
+        expect(fixture).not_to receive(:fixture_user)
+        expect { fixture.call }.to raise_error(described_class::UnsafeEnvironment)
+        expect(User.count).to eq(0)
+      end
+    end
+
+    [
+      {}, { host: "" }, { host: "localhost" }, { host: "127.0.0.1" }, { host: "::1" },
+      { host: "/tmp" }, { host: "/var/run/postgresql" }, { host: "@local_socket" },
+      { host: "localhost", hostaddr: "127.0.0.1" }, { hostaddr: "::1" }
+    ].each do |options|
+      it "accepts the local connection #{options.inspect}" do
+        allow(ActiveRecord::Base).to receive(:connection_db_config).and_return(connection_config(**options))
+        expect { fixture.send(:verify_environment!) }.not_to raise_error
+      end
+    end
+
+    it "accepts local environment fallbacks and explicit local overrides of remote environment values" do
+      ENV["PGHOST"] = "/tmp"
+      ENV["PGHOSTADDR"] = "127.0.0.1"
+      allow(ActiveRecord::Base).to receive(:connection_db_config).and_return(connection_config)
+      expect { fixture.send(:verify_environment!) }.not_to raise_error
+
+      ENV["PGHOST"] = "remote.example.invalid"
+      ENV["PGHOSTADDR"] = "192.0.2.1"
+      allow(ActiveRecord::Base).to receive(:connection_db_config).and_return(connection_config(host: "localhost", hostaddr: "::1"))
+      expect { fixture.send(:verify_environment!) }.not_to raise_error
+    end
+
+    it "refuses an environment service that could supply an unverified hostaddr" do
+      ENV["PGSERVICE"] = "unverified_service"
+      expect(fixture).not_to receive(:fixture_user)
+      expect { fixture.call }.to raise_error(described_class::UnsafeEnvironment)
+      expect(User.count).to eq(0)
+    end
   end
 
   it "requires the explicit fixture opt-in" do
