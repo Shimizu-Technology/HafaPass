@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import runtimeCaching from './src/config/pwaRuntimeCaching.js'
+import { execFileSync } from 'node:child_process'
+import { releaseMetadataPlugin, resolveRevision } from './config/releaseMetadata.js'
+
+let gitRevision = null
+try { gitRevision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() } catch { /* Source archives may have no Git metadata. */ }
+const applicationRevision = resolveRevision(process.env, gitRevision)
 
 const hasSentryUploadConfig = Boolean(
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT,
@@ -26,8 +32,10 @@ function manualChunks(id) {
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: { 'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(applicationRevision || '') },
   plugins: [
     react(),
+    releaseMetadataPlugin(applicationRevision),
     VitePWA({
       registerType: 'autoUpdate',
       // Use the existing manifest.json in public/ — don't generate a new one
@@ -46,7 +54,7 @@ export default defineConfig({
       authToken: process.env.SENTRY_AUTH_TOKEN,
       org: process.env.SENTRY_ORG,
       project: process.env.SENTRY_PROJECT,
-      release: { name: process.env.VITE_SENTRY_RELEASE || process.env.COMMIT_REF },
+      release: { name: applicationRevision || undefined },
       sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
     }),
   ],
