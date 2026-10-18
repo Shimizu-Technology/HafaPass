@@ -16,7 +16,8 @@ module Api
 
         def create
           ticket_type = @event.ticket_types.build(parsed_ticket_type_params)
-          if ticket_type.save
+          saved = @event.with_lock("FOR NO KEY UPDATE") { ticket_type.save }
+          if saved
             render json: ticket_type_json(ticket_type), status: :created
           else
             render json: { errors: ticket_type.errors.full_messages }, status: :unprocessable_entity
@@ -24,7 +25,11 @@ module Api
         end
 
         def update
-          if @ticket_type.update(parsed_ticket_type_params)
+          updated = @event.with_lock("FOR NO KEY UPDATE") do
+            @ticket_type.lock!
+            @ticket_type.update(parsed_ticket_type_params)
+          end
+          if updated
             render json: ticket_type_json(@ticket_type)
           else
             render json: { errors: @ticket_type.errors.full_messages }, status: :unprocessable_entity
@@ -32,7 +37,11 @@ module Api
         end
 
         def destroy
-          if @ticket_type.destroy
+          destroyed = @event.with_lock("FOR NO KEY UPDATE") do
+            @ticket_type.lock!
+            @ticket_type.destroy
+          end
+          if destroyed
             head :no_content
           else
             render json: { error: "Ticket types with inventory or financial history cannot be deleted" },
