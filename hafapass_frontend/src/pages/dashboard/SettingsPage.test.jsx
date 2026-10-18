@@ -34,7 +34,7 @@ describe('SettingsPage', () => {
 
     await screen.findByText('Island Events')
     expect(screen.getByText('Payout setup incomplete')).toBeInTheDocument()
-    expect(screen.getByText(/Blocked unless Stripe confirms Guam/)).toBeInTheDocument()
+    expect(screen.getByText(/Unavailable unless Stripe confirms Guam/)).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Teammate email'), { target: { value: 'finance@example.com' } })
     fireEvent.change(screen.getByLabelText('Team role'), { target: { value: 'finance' } })
@@ -46,4 +46,21 @@ describe('SettingsPage', () => {
       email: 'finance@example.com', role: 'finance'
     }, expect.objectContaining({ organizationId: null, signal: expect.any(AbortSignal) })))
   })
+
+it('retains the assisted continuation and unmet requirements after settings reload', async () => {
+  const account = { id: 4, provider: 'manual', status: 'onboarding', payout_ready: false, requirements_due: ['bank_account_review'] }
+  const originalGet = apiClient.get.getMockImplementation()
+  apiClient.get.mockImplementation(path => path === '/organizer/connected_accounts' ? Promise.resolve({ data: [account] }) : originalGet(path))
+  const view = render(<MemoryRouter initialEntries={['/dashboard/settings']}><SettingsPage /></MemoryRouter>)
+  await screen.findByText('Review status: Onboarding')
+  expect(screen.getByText('Still required: Bank Account Review.')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Continue with HafaPass team' })).toHaveAttribute('href', expect.stringContaining('mailto:'))
+  expect(screen.queryByRole('button', { name: 'Start bank review' })).not.toBeInTheDocument()
+  view.unmount()
+  render(<MemoryRouter initialEntries={['/dashboard/settings']}><SettingsPage /></MemoryRouter>)
+  await screen.findByText('Review status: Onboarding')
+  expect(screen.getByRole('link', { name: 'Continue with HafaPass team' })).toBeInTheDocument()
+  expect(screen.getByText(/no message is sent by starting a review/)).toBeInTheDocument()
+})
+
 })

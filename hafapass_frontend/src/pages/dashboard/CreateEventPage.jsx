@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 import EventAccessNotice from '../../components/EventAccessNotice'
@@ -6,6 +6,10 @@ import CoverImageUpload from '../../components/CoverImageUpload'
 import { ClipboardList } from 'lucide-react'
 import useEventCategories from '../../hooks/useEventCategories'
 import { compareLocalDateTimes } from '../../utils/eventTime'
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
+import useDraftProtection from '../../hooks/useDraftProtection'
+import FormErrorSummary from '../../components/FormErrorSummary'
+import { emptyEventForm, hasNewEventDraft, newEventDraftKey, readNewEventDraft } from '../../utils/newEventDraft'
 
 const AGE_RESTRICTIONS = [
  { value: 'all_ages', label: 'All Ages' },
@@ -14,40 +18,64 @@ const AGE_RESTRICTIONS = [
 ]
 
 export default function CreateEventPage() {
+ const identity = useOrganizerIdentity()
+ const visit = useOrganizerPageVisit('/dashboard/events/new')
+ if (!visit.active) return null
+ if (!identity.ready) return <p role="status" className="p-6">Preparing your account…</p>
+ return <CreateEventSession key={`${identity.accountKey}:${identity.organizationId}:${visit.generation}`} identity={identity} />
+}
+
+function CreateEventSession({ identity }) {
  const navigate = useNavigate()
+ const { current, beginRequest } = useOrganizerRequests(identity, '/dashboard/events/new')
+ const created = useRef(false)
+ const [draftKey, setDraftKey] = useState('')
+ const [recoveryAvailable, setRecoveryAvailable] = useState(true)
+ const [restored, setRestored] = useState(false)
  const categories = useEventCategories()
  const [access, setAccess] = useState(null)
  const [accessError, setAccessError] = useState('')
  useEffect(() => {
-  let active = true
-  apiClient.get('/organizer/organization').then(response => {
-   if (active) setAccess(response.data.permissions?.manage_events === true)
+  const request = beginRequest()
+  if (!request) return
+  apiClient.get('/organizer/organization', request.config).then(response => {
+   if (!request.current()) return
+   if (identity.organizationId != null && String(response.data.id) !== String(identity.organizationId)) {
+    setAccessError('Your organization changed. Return to your dashboard and select it again.'); return
+   }
+   const allowed = response.data.permissions?.manage_events === true
+   if (allowed) {
+    // The dashboard can turn an implicit default organization into an explicit
+    // selection. Both must recover the same verified organization's draft.
+    const key = newEventDraftKey({ authContext: identity.authContext, owner: identity.owner, organizationId: response.data.id == null ? identity.organizationId : String(response.data.id) })
+    const saved = readNewEventDraft(key)
+    setDraftKey(key); setForm(saved.form); setRestored(saved.restored)
+   }
+   setAccess(allowed)
   }).catch(() => {
-   if (active) setAccessError('Could not confirm event creation access. Return to your dashboard and try again.')
-  })
-  return () => { active = false }
- }, [])
+   if (request.current()) setAccessError('Could not confirm event creation access. Return to your dashboard and try again.')
+  }).finally(() => request.release())
+  return () => request.controller.abort()
+ }, [beginRequest, identity.organizationId, identity.owner, identity.authContext])
  const [submitting, setSubmitting] = useState(false)
  const [error, setError] = useState(null)
  const [formErrors, setFormErrors] = useState({})
 
- const [form, setForm] = useState({
-  title: '',
-  short_description: '',
-  description: '',
-  category: 'other',
-  age_restriction: 'all_ages',
-  venue_name: '',
-  venue_address: '',
-  venue_city: 'Guam',
-  starts_at: '',
-  ends_at: '',
-  doors_open_at: '',
-  max_capacity: '',
-  cover_image_url: ''
- })
+ const [form, setForm] = useState(() => ({ ...emptyEventForm }))
+ const dirty = hasNewEventDraft(form)
+ const draftCurrent = useCallback(() => current() && !created.current, [current])
+ useDraftProtection({ dirty, scope: draftKey, pathname: '/dashboard/events/new', isCurrent: draftCurrent })
+ useEffect(() => {
+  if (!access || !draftKey || !current() || created.current) return
+  try {
+   if (dirty) window.sessionStorage.setItem(draftKey, JSON.stringify(form))
+   else window.sessionStorage.removeItem(draftKey)
+   setRecoveryAvailable(true)
+  } catch { setRecoveryAvailable(false) }
+ }, [form, dirty, access, current, draftKey])
 
  const updateField = (field, value) => {
+  if (!current()) return
   setForm(prev => ({ ...prev, [field]: value }))
   if (formErrors[field]) {
    setFormErrors(prev => ({ ...prev, [field]: null }))
@@ -83,12 +111,15 @@ export default function CreateEventPage() {
   }
 
   setFormErrors(errors)
+  if (Object.keys(errors).length) requestAnimationFrame(() => { if (current()) document.getElementById(Object.keys(errors)[0])?.focus() })
   return Object.keys(errors).length === 0
  }
 
  const handleSubmit = async (e) => {
   e.preventDefault()
-  if (!access || !validate()) return
+  if (!current() || !access || submitting || !validate()) return
+  const request = beginRequest()
+  if (!request) return
 
   setSubmitting(true)
   setError(null)
@@ -111,13 +142,18 @@ export default function CreateEventPage() {
     cover_image_url: form.cover_image_url.trim() || undefined
    }
 
-   const res = await apiClient.post('/organizer/events', payload)
+   const res = await apiClient.post('/organizer/events', payload, request.config)
+   if (!request.current()) return
+   created.current = true
+   try { window.sessionStorage.removeItem(draftKey) } catch { /* The saved event remains authoritative. */ }
    navigate(`/dashboard/events/${res.data.id}/edit`)
   } catch (err) {
+   if (!request.current()) return
    const msg = err.response?.data?.errors?.join(', ') || err.response?.data?.error || 'Failed to create event'
    setError(msg)
   } finally {
-   setSubmitting(false)
+   if (request.current()) setSubmitting(false)
+   request.release()
   }
  }
 
@@ -139,12 +175,20 @@ export default function CreateEventPage() {
    <h1 className="text-2xl font-bold text-neutral-900 mb-6">Create New Event</h1>
 
    {error && (
-    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+    <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
      {error}
     </div>
    )}
 
-   <form onSubmit={handleSubmit} className="space-y-8">
+   <div className="mb-6 rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-700">
+    <p role="status">{!recoveryAvailable ? 'Draft recovery is unavailable in this browser. Stay here until you create the event.' : restored ? 'Your unfinished event was restored in this tab. It has not been created yet.' : 'Unfinished details are kept in this tab until you create the event. They are not saved to your organization yet.'}</p>
+    {dirty && <button type="button" className="mt-2 min-h-11 font-semibold text-red-700 underline" disabled={submitting} onClick={() => {
+     if (!window.confirm('Discard these unfinished event details?')) return
+     setForm({ ...emptyEventForm }); setRestored(false); setFormErrors({}); setError(null)
+    }}>Discard unfinished event</button>}
+   </div>
+   <FormErrorSummary errors={formErrors} />
+   <form noValidate onSubmit={handleSubmit} className="space-y-8">
     {/* Basic Info Section */}
     <section>
      <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Basic Info</h2>
@@ -155,6 +199,9 @@ export default function CreateEventPage() {
        </label>
        <input
         id="title"
+        aria-invalid={Boolean(formErrors.title)}
+        aria-describedby={formErrors.title ? 'title-error' : undefined}
+        required
         type="text"
         value={form.title}
         onChange={(e) => updateField('title', e.target.value)}
@@ -162,7 +209,7 @@ export default function CreateEventPage() {
         placeholder="e.g., Full Moon Beach Party"
         disabled={submitting}
        />
-       {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
+       {formErrors.title && <p id="title-error" className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
       </div>
 
       <div>
@@ -244,6 +291,9 @@ export default function CreateEventPage() {
        </label>
        <input
         id="venue_name"
+        aria-invalid={Boolean(formErrors.venue_name)}
+        aria-describedby={formErrors.venue_name ? 'venue_name-error' : undefined}
+        required
         type="text"
         value={form.venue_name}
         onChange={(e) => updateField('venue_name', e.target.value)}
@@ -251,7 +301,7 @@ export default function CreateEventPage() {
         placeholder="e.g., Tumon Beach Club"
         disabled={submitting}
        />
-       {formErrors.venue_name && <p className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
+       {formErrors.venue_name && <p id="venue_name-error" className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
       </div>
 
       <div>
@@ -297,13 +347,16 @@ export default function CreateEventPage() {
        </label>
        <input
         id="starts_at"
+        aria-invalid={Boolean(formErrors.starts_at)}
+        aria-describedby={formErrors.starts_at ? 'starts_at-error' : undefined}
+        required
         type="datetime-local"
         value={form.starts_at}
         onChange={(e) => updateField('starts_at', e.target.value)}
         className={`input ${formErrors.starts_at ? 'input-error' : ''}`}
         disabled={submitting}
        />
-       {formErrors.starts_at && <p className="mt-1 text-sm text-red-600">{formErrors.starts_at}</p>}
+       {formErrors.starts_at && <p id="starts_at-error" className="mt-1 text-sm text-red-600">{formErrors.starts_at}</p>}
       </div>
 
       <div>
@@ -312,13 +365,15 @@ export default function CreateEventPage() {
        </label>
        <input
         id="ends_at"
+        aria-invalid={Boolean(formErrors.ends_at)}
+        aria-describedby={formErrors.ends_at ? 'ends_at-error' : undefined}
         type="datetime-local"
         value={form.ends_at}
         onChange={(e) => updateField('ends_at', e.target.value)}
         className={`input ${formErrors.ends_at ? 'input-error' : ''}`}
         disabled={submitting}
        />
-       {formErrors.ends_at && <p className="mt-1 text-sm text-red-600">{formErrors.ends_at}</p>}
+       {formErrors.ends_at && <p id="ends_at-error" className="mt-1 text-sm text-red-600">{formErrors.ends_at}</p>}
       </div>
 
       <div>
@@ -327,13 +382,15 @@ export default function CreateEventPage() {
        </label>
        <input
         id="doors_open_at"
+        aria-invalid={Boolean(formErrors.doors_open_at)}
+        aria-describedby={formErrors.doors_open_at ? 'doors_open_at-error' : undefined}
         type="datetime-local"
         value={form.doors_open_at}
         onChange={(e) => updateField('doors_open_at', e.target.value)}
         className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`}
         disabled={submitting}
        />
-       {formErrors.doors_open_at && <p className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
+       {formErrors.doors_open_at && <p id="doors_open_at-error" className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
       </div>
      </div>
     </section>
@@ -348,6 +405,8 @@ export default function CreateEventPage() {
        </label>
        <input
         id="max_capacity"
+        aria-invalid={Boolean(formErrors.max_capacity)}
+        aria-describedby={formErrors.max_capacity ? 'max_capacity-error' : undefined}
         type="number"
         min="1"
         value={form.max_capacity}
@@ -356,7 +415,7 @@ export default function CreateEventPage() {
         placeholder="Leave blank for unlimited"
         disabled={submitting}
        />
-       {formErrors.max_capacity && <p className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
+       {formErrors.max_capacity && <p id="max_capacity-error" className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
       </div>
 
       <CoverImageUpload

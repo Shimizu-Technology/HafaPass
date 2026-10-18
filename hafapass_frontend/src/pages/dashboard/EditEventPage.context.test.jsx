@@ -200,7 +200,7 @@ describe('event editor context ownership with the real router', () => {
     expect(screen.queryByText('Updating ticket list…')).not.toBeInTheDocument()
   })
 
-  it('applies refreshed readiness after a failed save and retains the unsaved draft', async () => {
+  it('applies refreshed readiness after a failed save but blocks publish until the retained draft is saved', async () => {
     const old = deferred()
     rows[11] = { ...rows[11], publish_checklist: [{ code: 'tickets', label: 'Tickets', complete: false }] }
     mount()
@@ -212,7 +212,8 @@ describe('event editor context ownership with the real router', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     await screen.findByText('Failed to update event')
     await act(async () => old.resolve({ data: { ...rows[11], publish_checklist: [{ code: 'tickets', label: 'Tickets', complete: true }] } }))
-    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Event Title/)).toHaveValue('Alpha event unsaved draft')
   })
 

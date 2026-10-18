@@ -1,5 +1,5 @@
 import HafaPassMark from './HafaPassMark'
-import { useState, useEffect, useSyncExternalStore } from 'react'
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { UserButton, SignedIn, useAuth } from '@clerk/clerk-react'
 import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search, Compass, Heart } from 'lucide-react'
@@ -10,6 +10,7 @@ import LanguageSwitcher from './LanguageSwitcher'
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
+  const menuTrigger = useRef(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [roleState, setRoleState] = useState(null)
@@ -74,7 +75,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   return (
     <header
-      className={`sticky top-0 z-50 transition-all duration-500 ${
+      className={`app-nav sticky top-0 z-50 ${
         isDarkMode
           ? 'bg-neutral-950 border-b border-white/10'
           : scrolled
@@ -183,7 +184,10 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
           </div>
 
           {/* Mobile menu button */}
+          <div className="flex items-center gap-1 xl:hidden">
+          <LanguageSwitcher isDarkMode={isDarkMode} />
           <button
+            ref={menuTrigger}
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className={`xl:hidden w-11 h-11 flex items-center justify-center rounded-xl transition-colors ${
               isDarkMode
@@ -196,6 +200,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
+          </div>
         </div>
       </div>
 
@@ -208,7 +213,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <nav id="primary-mobile-navigation" aria-label="Mobile navigation" className={`xl:hidden border-t ${
+        <nav onKeyDown={event => { if (event.key === 'Escape') { setMobileMenuOpen(false); menuTrigger.current?.focus() } }} id="primary-mobile-navigation" aria-label="Mobile navigation" className={`mobile-nav xl:hidden overflow-y-auto border-t ${
           isDarkMode
             ? 'border-white/10 bg-neutral-950/95 backdrop-blur-2xl'
             : 'border-neutral-200/50 bg-white/90 backdrop-blur-2xl'
