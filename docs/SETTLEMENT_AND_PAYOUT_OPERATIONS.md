@@ -10,6 +10,20 @@
 6. Submit the payout with a unique idempotency key.
 7. Reconcile processing payouts to paid, failed, or reversed from provider/bank evidence. Every transition is audited.
 
+The organizer's **Request payout** action reserves a request. A `processing` result does not confirm a transfer. Production simulation cannot mark a payout paid. Manual processing remains reserved until an administrator records a confirmed outcome.
+
+## Recording a confirmed outcome
+
+The administrator endpoint `PATCH /api/v1/admin/payouts/:id` accepts `status` (`paid`, `failed`, or `reversed`), an optional `provider_payout_id`, and an `evidence` object containing:
+
+- `reference`: an opaque reference to the restricted bank/provider confirmation;
+- `confirmed_at`: the actual confirmation timestamp in ISO8601 with an offset, after the request and not in the future;
+- `reason`: what was reconciled, including the matched cents and outcome.
+
+Recording `paid` requires a real provider/bank transfer identifier; `sim_*` and `manual_po_*` placeholders are rejected. A reversal retains the original transfer identifier and records its own confirmation reference. Failed/reversed outcomes also require confirmation evidence before releasing reserved funds. Store bank documents in the restricted evidence location and send only their reference, never account credentials or full bank documents.
+
+The status change and append-only actor/evidence audit commit together under the organization's payout lock. Competing terminal outcomes cannot both win. An exact retry returns the saved outcome; changed evidence or a conflicting outcome is refused. This endpoint records an operator's confirmation; it does not query a bank, send money, or independently verify the supplied document.
+
 ## Adjustment rules
 
 - Use `reserve_hold` with a negative amount and `reserve_release` with a positive amount.

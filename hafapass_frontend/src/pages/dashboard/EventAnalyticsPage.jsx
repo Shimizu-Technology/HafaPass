@@ -41,6 +41,7 @@ function EventAnalyticsPageSession({ id, identity }) {
  const [attendeesLoading, setAttendeesLoading] = useState(false)
  const [finance, setFinance] = useState(null)
  const [financeBusy, setFinanceBusy] = useState(false)
+ const [payoutNotice, setPayoutNotice] = useState('')
  const loadGeneration = useRef(0)
  const accessEpoch = useRef(0)
  const verifiedRights = useRef(null)
@@ -52,7 +53,7 @@ function EventAnalyticsPageSession({ id, identity }) {
   verifiedRights.current = null
   requests.current.forEach(request => request.controller.abort())
   setStats(null); setFinance(null); setAttendees(null); setShowAttendees(false); setEvent(null)
-  setFinanceBusy(false); setAttendeesLoading(false); setLoading(false)
+  setFinanceBusy(false); setPayoutNotice(''); setAttendeesLoading(false); setLoading(false)
   setError(message)
  }, [])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
@@ -142,7 +143,7 @@ function EventAnalyticsPageSession({ id, identity }) {
   if (!current() || verifiedRights.current?.manage_finance !== true || financeBusy) return
   const epoch = accessEpoch.current
   const canApply = () => current() && epoch === accessEpoch.current
-  setFinanceBusy(true); setError(null)
+  setFinanceBusy(true); setError(null); setPayoutNotice('')
   try {
    await requestApi('post', `/organizer/events/${id}/finance/finalize`)
    if (canApply()) await refreshFinance()
@@ -151,16 +152,19 @@ function EventAnalyticsPageSession({ id, identity }) {
  }
  const createPayout = async settlement => {
   if (!current() || verifiedRights.current?.payout !== true || financeBusy) return
-  if (!window.confirm(`Send ${formatCents(settlement.available_to_payout_cents)} to the verified payout account?`)) return
+  if (!window.confirm(`Request a payout of ${formatCents(settlement.available_to_payout_cents)}? A processing request is not confirmation that money has been sent.`)) return
   const epoch = accessEpoch.current
   const canApply = () => current() && epoch === accessEpoch.current
-  setFinanceBusy(true); setError(null)
+  setFinanceBusy(true); setError(null); setPayoutNotice('')
   try {
-   await requestApi('post', `/organizer/events/${id}/finance/payout`, {
+   const response = await requestApi('post', `/organizer/events/${id}/finance/payout`, {
     settlement_id: settlement.id,
     amount_cents: settlement.available_to_payout_cents,
    }, { headers: { 'Idempotency-Key': crypto.randomUUID() } })
-   if (canApply()) await refreshFinance()
+   if (canApply()) {
+    setPayoutNotice(response.data?.status === 'paid' ? 'Payout recorded as paid.' : 'Payout requested. Processing does not confirm that money has been sent.')
+    await refreshFinance()
+   }
   } catch (requestError) { if (canApply()) setError(requestError.response?.data?.error || 'Could not create payout.') }
   finally { if (canApply()) setFinanceBusy(false) }
  }
@@ -281,10 +285,11 @@ function EventAnalyticsPageSession({ id, identity }) {
      </div>
 
      {finance.preview.negative_balance_cents > 0 && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">A {formatCents(finance.preview.negative_balance_cents)} negative balance will be withheld from future organization payouts.</div>}
+     {payoutNotice && <p role="status" className="mt-4 rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700">{payoutNotice}</p>}
 
      <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-5">
       {permissions.manage_finance === true && ['completed', 'cancelled'].includes(event?.status) && <button disabled={financeBusy} onClick={finalizeSettlement} className="rounded-xl border border-brand-200 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50">{financeBusy ? 'Working…' : latestSettlement ? 'Finalize current version' : 'Finalize statement'}</button>}
-      {permissions.payout === true && latestSettlement?.available_to_payout_cents > 0 && <button disabled={financeBusy || !finance.connected_account?.payout_ready} onClick={() => createPayout(latestSettlement)} className="btn-primary text-sm disabled:opacity-50">Pay {formatCents(latestSettlement.available_to_payout_cents)}</button>}
+      {permissions.payout === true && latestSettlement?.available_to_payout_cents > 0 && <button disabled={financeBusy || !finance.connected_account?.payout_ready} onClick={() => createPayout(latestSettlement)} className="btn-primary text-sm disabled:opacity-50">Request payout {formatCents(latestSettlement.available_to_payout_cents)}</button>}
       {latestSettlement && <p className="text-xs text-neutral-500">Version {latestSettlement.version} · {latestSettlement.status} · {formatCents(latestSettlement.available_to_payout_cents)} available</p>}
      </div>
 
