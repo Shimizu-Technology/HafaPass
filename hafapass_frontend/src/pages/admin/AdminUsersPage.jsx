@@ -7,6 +7,9 @@ import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../.
 import PaymentReadinessReviewDialog from '../../components/PaymentReadinessReviewDialog'
 
 const roles = ['', 'attendee', 'organizer', 'support', 'admin']
+const userEmail = (user, fallback = 'Email unavailable') => user.email?.trim() || fallback
+const userLabel = user => userEmail(user, `User #${user.id}`)
+const userName = user => [user.first_name, user.last_name].filter(name => name?.trim()).join(' ') || `User #${user.id}`
 
 function OrganizerReadiness({ user, reviewOrganizer, syncConnectedAccount, fetchUsers }) {
   const profile = user.organizer_profile
@@ -17,7 +20,7 @@ function OrganizerReadiness({ user, reviewOrganizer, syncConnectedAccount, fetch
     <div className="min-w-0 space-y-2 lg:min-w-[13rem]">
       <p className="break-words font-medium text-neutral-800">{profile.business_name}</p>
       <select value={profile.verification_status} onChange={event => reviewOrganizer(user, event.target.value)}
-        aria-label={`Verification status for ${profile.business_name || user.email}`} className="input min-h-11 !text-sm">
+        aria-label={`Verification status for ${profile.business_name || userLabel(user)}`} className="input min-h-11 !text-sm">
         {['unverified', 'pending', 'verified', 'rejected', 'suspended'].map(status => <option key={status} value={status}>{status}</option>)}
       </select>
       {account ? (
@@ -76,7 +79,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
   useEffect(() => { fetchUsers(); return () => pendingLoad.current?.abort() }, [fetchUsers])
 
   const changeRole = async (user, newRole) => {
-    if (newRole === 'admin' && !window.confirm(`Promote ${user.email} to admin? This grants full platform access.`)) return
+    if (newRole === 'admin' && !window.confirm(`Promote ${userLabel(user)} to admin? This grants full platform access.`)) return
     if (mutationBusy.current) return
     const request = beginRequest()
     if (!request) return
@@ -198,12 +201,12 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                 <tbody className="divide-y divide-neutral-100">
                   {users.map(user => (
                     <tr key={user.id} className="hover:bg-neutral-50/50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-neutral-900">{user.first_name} {user.last_name}</td>
-                      <td className="px-4 py-3 text-neutral-500">{user.email}</td>
+                      <td className="px-4 py-3 font-medium text-neutral-900">{userName(user)}</td>
+                      <td className="px-4 py-3 text-neutral-500">{userEmail(user)}</td>
                       <td className="px-4 py-3">
                         <select
                           value={user.role}
-                          aria-label={`Role for ${user.email}`}
+                          aria-label={`Role for ${userLabel(user)}`}
                           onChange={e => changeRole(user, e.target.value)}
                           className={`min-h-11 text-sm px-2 py-1 rounded-lg font-medium border border-neutral-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${roleBadge(user.role)}`}
                         >
@@ -222,16 +225,16 @@ function AdminUsersPageSession({ identity, resourcePath }) {
             </div>
             <div className="grid gap-4 p-4 lg:hidden">
               {users.map(user => (
-                <article key={user.id} aria-label={`User ${user.email}`} className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
-                  <h2 className="break-words font-semibold text-neutral-900">{user.first_name} {user.last_name}</h2>
-                  <p className="mt-1 break-all text-sm text-content-muted">{user.email}</p>
+                <article key={user.id} aria-label={userEmail(user, '') ? `User ${userLabel(user)}` : userLabel(user)} className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
+                  <h2 className="break-words font-semibold text-neutral-900">{userName(user)}</h2>
+                  <p className="mt-1 break-all text-sm text-content-muted">{userEmail(user)}</p>
                   <label className="mt-4 block text-sm font-medium text-neutral-800">
                     Platform role
-                    <select value={user.role} aria-label={`Role for ${user.email}`} onChange={event => changeRole(user, event.target.value)} className={`input mt-1 min-h-11 ${roleBadge(user.role)}`}>
+                    <select value={user.role} aria-label={`Role for ${userLabel(user)}`} onChange={event => changeRole(user, event.target.value)} className={`input mt-1 min-h-11 ${roleBadge(user.role)}`}>
                       {roles.filter(Boolean).map(role => <option key={role} value={role}>{role}</option>)}
                     </select>
                   </label>
-                  <section aria-label={`Organizer readiness for ${user.email}`} className="mt-4 border-t border-neutral-200 pt-4">
+                  <section aria-label={`Organizer readiness for ${userLabel(user)}`} className="mt-4 border-t border-neutral-200 pt-4">
                     <h3 className="mb-2 text-sm font-semibold text-neutral-900">Organizer readiness</h3>
                     <OrganizerReadiness user={user} reviewOrganizer={reviewOrganizer} syncConnectedAccount={syncConnectedAccount} fetchUsers={fetchUsers} />
                   </section>
