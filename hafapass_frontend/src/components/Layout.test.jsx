@@ -4,7 +4,7 @@ import { MemoryRouter, Link, Route, Routes } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import Layout from './Layout'
 vi.mock('./Navbar', () => ({ default: () => <nav><Link to="/dashboard/new">Next page</Link></nav> }))
-vi.mock('./Footer', () => ({ default: () => null }))
+vi.mock('./Footer', () => ({ default: () => null, WorkspaceFooter: () => null }))
 vi.mock('./EnvironmentBanner', () => ({ default: () => null }))
 beforeEach(() => { window.scrollTo = vi.fn(); window.history.replaceState(null, '', '/') })
 function Page() {

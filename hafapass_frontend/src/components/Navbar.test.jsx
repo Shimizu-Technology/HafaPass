@@ -21,7 +21,7 @@ let Navbar, Wrapper, apiClient, setAuthTokenGetter
 const response = (config, userId = 'buyer-a', role = 'admin') => ({ config, data: { clerk_id: userId, role }, status: 200, statusText: 'OK', headers: {} })
 const rejection = (config, status) => new AxiosError('Account lookup unavailable', undefined, config, null, { config, status, data: {} })
 const bind = () => setAuthTokenGetter(auth.getToken, { userId: auth.userId, sessionId: auth.sessionId, ready: auth.isLoaded && auth.isSignedIn })
-const view = (wrapped = false) => <MemoryRouter>{wrapped ? <Wrapper><Navbar /></Wrapper> : <Navbar />}</MemoryRouter>
+const view = (wrapped = false, path = '/') => <MemoryRouter initialEntries={[path]}>{wrapped ? <Wrapper><Navbar /></Wrapper> : <Navbar />}</MemoryRouter>
 
 describe('account-bound navbar with the real API authentication interceptor', () => {
   beforeEach(async () => {
@@ -135,5 +135,53 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     const mobile = screen.getByRole('navigation', { name: 'Mobile navigation' })
     await user.click(within(mobile).getByRole('link', { name: 'Admin' }))
     expect(screen.queryByRole('navigation', { name: 'Mobile navigation' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the public buyer links on public routes', async () => {
+    render(view(true, '/events'))
+    await screen.findByRole('link', { name: 'Admin' })
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    for (const name of ['nav.events', 'Discover', 'nav.myTickets', 'Saved', 'nav.scanner', 'nav.dashboard']) {
+      expect(within(primary).getByRole('link', { name })).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('link', { name: /View public site/ })).not.toBeInTheDocument()
+  })
+
+  it.each(['/dashboard', '/dashboard/events/6/edit', '/admin/users', '/support'])('switches %s to workspace navigation', async path => {
+    render(view(true, path))
+    const admin = await screen.findByRole('link', { name: 'Admin' })
+    expect(admin).toHaveAttribute('href', '/admin')
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(within(primary).getByRole('link', { name: 'nav.dashboard' })).toHaveAttribute('href', '/dashboard')
+    expect(within(primary).getByRole('link', { name: 'nav.scanner' })).toHaveAttribute('href', '/dashboard/scanner')
+    expect(within(primary).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/dashboard/settings')
+    expect(within(primary).getByRole('link', { name: 'Support' })).toHaveAttribute('href', '/support')
+    for (const name of ['nav.events', 'Discover', 'nav.myTickets', 'Saved']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /View public site/ })).toHaveAttribute('href', '/')
+    expect(screen.queryByRole('button', { name: 'Search events' })).not.toBeInTheDocument()
+  })
+
+  it.each([['attendee', []], ['support', ['Support']]])('gates workspace platform links for the %s role', async (role, visible) => {
+    apiClient.defaults.adapter.mockImplementation(config => Promise.resolve(response(config, 'buyer-a', role)))
+    render(view(true, '/dashboard'))
+    await waitFor(() => expect(apiClient.defaults.adapter).toHaveBeenCalled())
+    await waitFor(() => expect(Boolean(screen.queryByRole('link', { name: 'Support' }))).toBe(visible.includes('Support')))
+    expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Settings' })).toHaveLength(1)
+  })
+
+  it('opens and closes the workspace mobile menu', async () => {
+    render(view(true, '/dashboard/settings'))
+    await screen.findByRole('link', { name: 'Admin' })
+    const user = userEvent.setup()
+    const toggle = screen.getByRole('button', { name: 'Toggle menu' })
+    await user.click(toggle)
+    const mobile = screen.getByRole('navigation', { name: 'Mobile navigation' })
+    expect(within(mobile).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).getByRole('link', { name: /View public site/ })).toHaveAttribute('href', '/')
+    within(mobile).getByRole('link', { name: 'Settings' }).focus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('navigation', { name: 'Mobile navigation' })).not.toBeInTheDocument()
+    expect(toggle).toHaveFocus()
   })
 })
