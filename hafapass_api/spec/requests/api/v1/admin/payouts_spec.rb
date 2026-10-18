@@ -84,6 +84,23 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     end
   end
 
+  it "requires acknowledgment of the latest conflict and retains that acknowledgment on retry" do
+    payout.update!(failure_code: "provider_result_conflict")
+    conflict = AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: admin)
+    reconcile
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("conflict_audit_id")).to eq(conflict.id)
+    expect(payout.reload).to be_status_processing
+    reconcile(payload.merge(evidence: evidence.merge(conflict_audit_id: conflict.id + 1)))
+    expect(response).to have_http_status(:unprocessable_content)
+    2.times do
+      reconcile(payload.merge(evidence: evidence.merge(conflict_audit_id: conflict.id)))
+      expect(response).to have_http_status(:ok)
+    end
+    expect(payout.reload).to have_attributes(status: "paid", failure_code: nil)
+    expect(AuditLog.where(auditable: payout, action: "payout.reconciled").count).to eq(1)
+  end
+
   it "refuses ordinary organizer access even with well-formed confirmation evidence" do
     reconcile(payload, actor: profile.user)
     expect(response).to have_http_status(:forbidden)

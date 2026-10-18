@@ -24,6 +24,10 @@ Recording `paid` requires a real provider/bank transfer identifier; `sim_*` and 
 
 The status change and append-only actor/evidence audit commit together under the organization's payout lock. Competing terminal outcomes cannot both win. An exact retry returns the saved outcome; changed evidence or a conflicting outcome is refused. This endpoint records an operator's confirmation; it does not query a bank, send money, or independently verify the supplied document.
 
+Late submission results use the same locks. A late processing reply or error cannot overwrite an evidence-backed terminal outcome. A conflicting paid reply reopens `processing` with `provider_result_conflict`, preserves the earlier transfer identity and both outcomes in the audit trail, and blocks organization payouts. Review the conflict and restricted confirmation evidence before resolving it. The refusal response supplies `conflict_audit_id`; the new reconciliation's `evidence.conflict_audit_id` must acknowledge that exact latest conflict. Retrying the earlier request without this acknowledgment keeps the hold.
+
+Automated production payout adapters remain disabled. Before enabling one, implement and test crash-safe dispatch ownership that prevents a failed/reversed reconciliation from releasing funds while its original provider submission can still pay. Session advisory locks require a direct PostgreSQL connection and must not be added to the pooled application URL. The current manual gateway makes no external transfer; administrator evidence records the separate bank outcome.
+
 ## Adjustment rules
 
 - Use `reserve_hold` with a negative amount and `reserve_release` with a positive amount.

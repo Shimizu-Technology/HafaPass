@@ -2,6 +2,8 @@
 
 class OrganizationPayoutBalance
   def self.available_cents(organization)
+    return 0 if organization.payouts.exists?(failure_code: "provider_result_conflict")
+
     order_ids = Order.where(event_id: organization.events.select(:id)).select(:id)
     # Cash release requires every reconciliation item to be resolved, including
     # new/uncatalogued codes. RefundSafety's narrower list governs buyer refund

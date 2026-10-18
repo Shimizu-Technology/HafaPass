@@ -53,9 +53,89 @@ RSpec.describe "Payout reconciliation concurrency", :non_transactional do
     threads&.each(&:join)
   end
 
+  [[:processing, "paid"], [:rejection, "paid"], [:timeout, "paid"], [:paid, "failed"], [:paid, "reversed"]].each do |reply, reconciled_status|
+    it "protects a #{reconciled_status} reconciliation from a late #{reply} submission" do
+      profile = create(:organizer_profile, :verified)
+      organization = profile.organization
+      event = create(:event, :completed, organizer_profile: profile)
+      order = create(:order, event: event, subtotal_cents: 5000, service_fee_cents: 0,
+        discount_cents: 0, total_cents: 5000)
+      create(:order_item, order: order, unit_price_cents: 5000, subtotal_cents: 5000,
+        fee_cents: 0, organizer_proceeds_cents: 5000)
+      create(:payment, :succeeded, order: order, provider_environment: "simulate", provider_payment_id: "sim_fixture")
+      create(:connected_account, organization: organization)
+      settlement = Settlements::Finalizer.call(event: event, actor: profile.user)
+      admin = create(:user, :admin)
+      entered = Queue.new
+      resume = Queue.new
+      result = Queue.new
+      allow(Sentry).to receive(:capture_exception)
+      allow(PayoutGateway).to receive(:submit) do |reserved|
+        entered << reserved.id
+        resume.pop
+        raise PayoutGateway::PayoutError, "Rejected" if reply == :rejection
+        raise IOError, "Connection lost" if reply == :timeout
+
+        PayoutGateway::Result.new(provider_payout_id: reply == :paid ? "bank-transfer-fixture" : "manual_po_fixture",
+          status: reply)
+      end
+      thread = Thread.new do
+        ActiveRecord::Base.connection_pool.with_connection do
+          result << PayoutCreator.call(settlement: Settlement.find(settlement.id),
+            actor: User.find(profile.user_id), idempotency_key: "paused-submit")
+        rescue StandardError => error
+          result << error
+        end
+      end
+      Timeout.timeout(10) do
+        payout = Payout.find(entered.pop)
+        evidence = { reference: "bank/#{reconciled_status}", confirmed_at: Time.current.iso8601(6),
+          reason: "Verified external outcome" }
+        PayoutReconciler.call(payout: payout, actor: admin, status: reconciled_status,
+          provider_payout_id: "bank-transfer-fixture", evidence: evidence)
+        resume << true
+        thread.join
+        outcome = result.pop
+        if %i[rejection timeout].include?(reply)
+          expect(outcome).to be_a(PayoutCreator::PayoutError)
+        else
+          expect(outcome).to be_a(Payout)
+        end
+        payout.reload
+        if reply == :paid && reconciled_status == "failed"
+          expect(payout).to have_attributes(status: "processing", failure_code: "provider_result_conflict")
+          expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
+          expect(settlement.available_to_payout_cents).to eq(0)
+          conflict = AuditLog.find_by!(auditable: payout, action: "payout.provider_result_conflict")
+          expect do
+            PayoutReconciler.call(payout: payout, actor: admin, status: "failed",
+              provider_payout_id: "bank-transfer-fixture", evidence: evidence)
+          end.to raise_error(PayoutReconciler::ReconciliationError, /latest provider conflict/)
+          expect(payout.reload.failure_code).to eq("provider_result_conflict")
+          expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
+          PayoutReconciler.call(payout: payout, actor: admin, status: "paid",
+            provider_payout_id: "bank-transfer-fixture", evidence: evidence.merge(
+              reference: "bank/confirmed-late-payment", conflict_audit_id: conflict.id))
+          expect(payout.reload).to have_attributes(status: "paid", failure_code: nil)
+        else
+          expect(payout.status).to eq(reconciled_status)
+          expect(AuditLog.where(auditable: payout, action: "payout.late_result_ignored")).to exist
+        end
+        expect(payout.provider_payout_id).to eq("bank-transfer-fixture")
+        expect(AuditLog.where(auditable: payout, action: "payout.reconciled").first.after_data.fetch("status"))
+          .to eq(reconciled_status)
+        expect(OrganizationPayoutBalance.available_cents(organization)).to eq(reconciled_status == "reversed" ? 5000 : 0)
+        expect(PayoutGateway).to have_received(:submit).once
+      end
+    ensure
+      thread&.kill if thread&.alive?
+      thread&.join
+    end
+  end
+
   def clean_test_data
     ActiveRecord::Base.connection.execute(<<~SQL)
-      TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
+      TRUNCATE TABLE organizations, users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
       RESTART IDENTITY CASCADE
     SQL
   end
