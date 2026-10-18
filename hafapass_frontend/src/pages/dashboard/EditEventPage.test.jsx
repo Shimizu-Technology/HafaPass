@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -42,6 +42,27 @@ describe('published event content and schedule edits', () => {
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
     await screen.findByText('Event updated successfully.')
     expect(Object.keys(apiClient.put.mock.calls[0][1]).sort()).toEqual(['category', 'cover_image_url', 'description', 'short_description', 'title'])
+  })
+
+  it('focuses the invalid title and connects its summary error for a content-only marketer', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...event, permissions: { edit_event_content: true } } })
+    const user = userEvent.setup()
+    mount()
+    const title = await screen.findByLabelText(/Event Title/)
+    await user.clear(title)
+    const save = screen.getByRole('button', { name: 'Save Changes' })
+    await user.click(save)
+    expect(apiClient.put).not.toHaveBeenCalled()
+    await waitFor(() => expect(title).toHaveFocus())
+    expect(title).toHaveAttribute('aria-invalid', 'true')
+    expect(title).toHaveAttribute('aria-describedby', 'title-error')
+    expect(screen.getByRole('link', { name: 'Title is required' })).toHaveAttribute('href', '#title')
+    expect(screen.queryByLabelText(/Venue Name/)).not.toBeInTheDocument()
+    await user.type(title, 'Corrected marketer title')
+    await user.click(save)
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1].title).toBe('Corrected marketer title')
+    expect(apiClient.put.mock.calls[0][1]).not.toHaveProperty('venue_name')
   })
 
   it('saves a cover without changing precise schedule times or requiring a reason', async () => {
