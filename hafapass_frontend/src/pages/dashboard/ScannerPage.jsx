@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../../api/client'
-import { formatEventDateTime } from '../../utils/eventTime'
+import { DEFAULT_EVENT_TIME_ZONE, formatEventDateTime } from '../../utils/eventTime'
 import {
   applySyncResults, captureAdmissionAccessContext, captureOrganizationAdmissionContexts, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
   queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess,
@@ -102,6 +102,31 @@ function canPersistRefusal(owner, eventId) {
   return available
 }
 
+const localDay = (value, timeZone) => {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || DEFAULT_EVENT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(value) }
+  catch { return new Intl.DateTimeFormat('en-CA', { timeZone: DEFAULT_EVENT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(value) }
+}
+
+// Only published events can issue scanner manifests, so drafts and other
+// states are never chosen automatically. Prefer what is on today (live first,
+// then later today, then earlier today), then the soonest upcoming event, then
+// the most recent past one. Returns null when no published event is listed;
+// the caller then keeps the first non-draft event, as before.
+function defaultScannerEvent(events, now = Date.now()) {
+  const ranked = events.filter(event => event.status === 'published').map(event => {
+    const start = Date.parse(event.starts_at || '')
+    const parsedEnd = Date.parse(event.ends_at || '')
+    const end = Number.isFinite(parsedEnd) ? parsedEnd : start
+    if (!Number.isFinite(start)) return { event, rank: [4, 0] }
+    const today = localDay(now, event.timezone)
+    const onToday = (start <= now && now < end) || localDay(start, event.timezone) === today || localDay(end, event.timezone) === today
+    if (onToday) return { event, rank: end > now ? [0, start] : [1, -end] }
+    return { event, rank: start > now ? [2, start] : [3, -end] }
+  })
+  ranked.sort((first, second) => first.rank[0] - second.rank[0] || first.rank[1] - second.rank[1])
+  return ranked[0]?.event || null
+}
+
 function admissionAcknowledgement(current, receipt) {
   const result = receipt.result || receipt.status
   if (result === 'accepted') return { ...current, type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
@@ -109,7 +134,7 @@ function admissionAcknowledgement(current, receipt) {
   return { ...current, type: result === 'conflict' ? 'warning' : 'error', message: receipt.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
 }
 
-function ResultPanel({ result }) {
+function ResultPanel({ result, className = '' }) {
   if (!result) return null
   const styles = {
     pending: ['bg-neutral-50 border-neutral-300 text-neutral-900', Loader2],
@@ -119,7 +144,7 @@ function ResultPanel({ result }) {
   }
   const [classes, Icon] = styles[result.type]
   return (
-    <div className={`rounded-2xl border-2 p-5 ${classes}`} role="status" aria-live="assertive" aria-atomic="true">
+    <div className={`rounded-2xl border-2 p-5 ${classes} ${className}`} role="status" aria-live="assertive" aria-atomic="true">
       <div className="flex gap-3">
         <Icon aria-hidden="true" className="h-7 w-7 shrink-0" />
         <div className="min-w-0 break-words">
@@ -778,7 +803,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       setEvents(accessible)
       setEventMeta(response.data.meta || null)
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
-      const preferred = eventIdRef.current || (requestedEventId !== null ? requestedEventId : saved)
+      // A saved draft only exists from the earlier first-in-list default; drafts
+      // never issue manifests, so it cannot hold scans and should not win.
+      const savedDraft = accessible.some(event => String(event.id) === String(saved) && event.status === 'draft')
+      const preferred = eventIdRef.current || (requestedEventId !== null ? requestedEventId : (savedDraft ? null : saved))
       let selected = accessible.find(event => String(event.id) === String(preferred))
       if (!selected && preferred) {
         // A page boundary is not an authorization decision. Resolve the exact
@@ -803,7 +831,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         }
       }
       if (!current()) return
-      if (!selected && requestedEventId === null && !eventIdRef.current) selected = accessible[0]
+      if (!selected && requestedEventId === null && !eventIdRef.current) selected = defaultScannerEvent(accessible) || accessible.find(event => event.status !== 'draft')
       if (selected) {
         setResolvedEvent(selected)
         setEventId(String(selected.id))
@@ -1112,62 +1140,73 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const eventTimezone = manifest?.payload.event?.timezone || selectedEvent?.timezone || 'Pacific/Guam'
   const expiryLabel = Number.isFinite(expiresAt) ? formatEventDateTime(expiresAt, eventTimezone) : null
 
+  // Phones stack every block in one flex column (wrappers use `contents`) and
+  // reorder it so the event, door status and camera fit the first screen.
+  // From the sm breakpoint the original two-column layout is unchanged.
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
-      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 max-w-2xl">
-          <Link to="/dashboard" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-800">All events</Link>
-          <h1 className="font-display text-3xl font-bold text-neutral-950">Check-in</h1>
-          {selectedEvent && <p className="mt-2 break-words text-base font-semibold text-neutral-900">{selectedEvent.title}</p>}
-          <p className="mt-2 text-sm text-neutral-700">Scan a ticket, check the result, then welcome the guest.</p>
-          <p className="mt-2 text-sm text-neutral-600">Prepare this device online before the event.</p>
+    <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4 sm:block sm:py-8">
+      <div className="contents sm:mb-5 sm:flex sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="contents sm:block sm:min-w-0 sm:max-w-2xl">
+          <div className="order-1 flex flex-row-reverse items-center justify-between gap-3 sm:block">
+            <Link to="/dashboard" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-800">All events</Link>
+            <h1 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl">Check-in</h1>
+          </div>
+          {selectedEvent && <p className="mt-2 hidden break-words text-base font-semibold text-neutral-900 sm:block">{selectedEvent.title}</p>}
+          <div className="order-9 sm:order-none">
+            <p className="text-sm text-neutral-700 sm:mt-2">Scan a ticket, check the result, then welcome the guest.</p>
+            <p className="mt-2 text-sm text-neutral-600">Prepare this device online before the event.</p>
+          </div>
         </div>
-        <div className="w-full sm:max-w-sm">
+        <div className="contents sm:block sm:w-full sm:max-w-sm">
           {!offlineOnly && <>
-            <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue or event ID." query={listing.q} onSearch={listing.search} busy={eventListLoading} />
-            {eventListLoading && <p role="status" className="mb-2 text-sm">Loading events…</p>}
-            {eventListError && <p role="alert" className="mb-2 text-sm text-red-800">{eventListError} <button type="button" className="min-h-11 underline" onClick={() => setEventListRetry(value => value + 1)}>Retry event search</button></p>}
-            {!eventListLoading && listing.q && events.length === 0 && <p role="status" className="mb-2 text-sm">No matching events. Try another search. Your selected event stays ready.</p>}
+            <div className="order-9 sm:order-none">
+              <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue or event ID." query={listing.q} onSearch={listing.search} busy={eventListLoading} />
+            </div>
+            {eventListLoading && <p role="status" className="order-2 text-sm sm:order-none sm:mb-2">Loading events…</p>}
+            {eventListError && <p role="alert" className="order-2 text-sm text-red-800 sm:order-none sm:mb-2">{eventListError} <button type="button" className="min-h-11 underline" onClick={() => setEventListRetry(value => value + 1)}>Retry event search</button></p>}
+            {!eventListLoading && listing.q && events.length === 0 && <p role="status" className="order-9 text-sm sm:order-none sm:mb-2">No matching events. Try another search. Your selected event stays ready.</p>}
           </>}
-          <label htmlFor="scanner-event" className="mb-1 block text-sm font-medium text-neutral-800">Event to scan</label>
-          <select id="scanner-event" disabled={eventListLoading} value={eventId} onChange={event => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('event', event.target.value); return next })} className="input w-full">
-            {!eventId && <option value="">{events.length ? 'Choose an assigned event' : 'No assigned events'}</option>}
-            {selectedEvent && !events.some(event => String(event.id) === eventId) && <option value={eventId}>{selectedEvent.title} (selected)</option>}
-            {events.map(event => <option key={event.id} value={event.id}>{event.title}</option>)}
-          </select>
-          {!offlineOnly && <OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={eventListLoading} label="Event pages" />}
+          <div className="order-2 sm:order-none">
+            <label htmlFor="scanner-event" className="mb-1 block text-sm font-medium text-neutral-800">Event to scan</label>
+            <select id="scanner-event" disabled={eventListLoading} value={eventId} onChange={event => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('event', event.target.value); return next })} className="input w-full">
+              {!eventId && <option value="">{events.length ? 'Choose an assigned event' : 'No assigned events'}</option>}
+              {selectedEvent && !events.some(event => String(event.id) === eventId) && <option value={eventId}>{selectedEvent.title} (selected)</option>}
+              {events.map(event => <option key={event.id} value={event.id}>{event.title}</option>)}
+            </select>
+          </div>
+          {!offlineOnly && <div className="order-9 sm:order-none"><OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={eventListLoading} label="Event pages" /></div>}
         </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Check-in status">
-        <div className={`rounded-xl border p-3 ${online ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-          <p className="flex items-center gap-2 text-sm font-semibold">{online ? <ShieldCheck className="h-4 w-4" /> : <CloudOff className="h-4 w-4" />}{online ? 'Online' : 'Offline mode'}</p>
+      <div className="order-3 grid grid-cols-4 gap-2 sm:order-none sm:mb-4" aria-label="Check-in status">
+        <div className={`flex items-center rounded-xl border p-2 sm:block sm:p-3 ${online ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+          <p className="flex flex-col items-start gap-1 text-xs font-semibold sm:flex-row sm:items-center sm:gap-2 sm:text-sm">{online ? <ShieldCheck className="h-4 w-4" /> : <CloudOff className="h-4 w-4" />}{online ? 'Online' : 'Offline mode'}</p>
         </div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-3"><p className="text-sm text-neutral-700">Waiting to sync</p><p className="text-xl font-bold" data-testid="scanner-pending-count">{pendingCount}</p></div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-3"><p className="text-sm text-neutral-700">Scans this session</p><p className="text-xl font-bold">{sessionCount}</p></div>
-        <button onClick={() => syncQueue()} disabled={!ready || !online || syncing} className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50">
+        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Waiting to sync</p><p className="text-lg font-bold sm:text-xl" data-testid="scanner-pending-count">{pendingCount}</p></div>
+        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Scans this session</p><p className="text-lg font-bold sm:text-xl">{sessionCount}</p></div>
+        <button onClick={() => syncQueue()} disabled={!ready || !online || syncing} className="btn-secondary flex flex-col items-center justify-center gap-1 !px-2 !py-2 text-xs disabled:opacity-50 sm:flex-row sm:gap-2 sm:!px-6 sm:!py-3 sm:text-base">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync now
         </button>
       </div>
 
-      {pendingCount > 0 && <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Sync saved scans before switching accounts or signing out. Unconfirmed scans need the original staff account to recover online.</p>}
-      {!online && <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Offline scans stay on this device. Other gates may have newer admissions. Sync when connected.</p>}
-      {ready && <section aria-label="Ticket list readiness" className="mb-5 rounded-xl border border-neutral-200 bg-white p-4">
+      {pendingCount > 0 && <p className="order-4 rounded-xl sm:order-none sm:mb-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Sync saved scans before switching accounts or signing out. Unconfirmed scans need the original staff account to recover online.</p>}
+      {!online && <p className="order-4 rounded-xl sm:order-none sm:mb-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Offline scans stay on this device. Other gates may have newer admissions. Sync when connected.</p>}
+      {ready && <section aria-label="Ticket list readiness" className="order-4 rounded-xl border border-neutral-200 bg-white p-3 sm:order-none sm:mb-5 sm:p-4">
         <p className="font-semibold text-neutral-950">Ticket list ready · {manifest.payload.tickets.length} {manifest.payload.tickets.length === 1 ? 'ticket' : 'tickets'}</p>
         <p className="mt-1 text-sm text-neutral-700">{expiryLabel ? `Access expires ${expiryLabel} · ${eventTimezone}` : 'Reconnect to verify the access expiry.'}</p>
       </section>}
-      {error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p>{error}</p>{!ready && eventId && online && <button type="button" disabled={setupBusy} onClick={() => configureEvent(eventId)} className="mt-2 min-h-11 font-semibold underline">Verify scanner access</button>}</div>}
-      {setupBusy && <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border bg-white p-4 text-sm"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> Preparing this device and verifying its ticket list…</div>}
+      {error && <div role="alert" className="order-4 rounded-xl sm:order-none sm:mb-5 border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p>{error}</p>{!ready && eventId && online && <button type="button" disabled={setupBusy} onClick={() => configureEvent(eventId)} className="mt-2 min-h-11 font-semibold underline">Verify scanner access</button>}</div>}
+      {setupBusy && <div role="status" className="order-4 flex sm:order-none sm:mb-5 items-center gap-2 rounded-xl border bg-white p-4 text-sm"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> Preparing this device and verifying its ticket list…</div>}
 
-      <nav aria-label="Check-in tools" className="mb-4 flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold text-brand-800">
+      <nav aria-label="Check-in tools" className="order-7 flex sm:order-none sm:mb-4 flex-wrap gap-x-5 gap-y-1 text-sm font-semibold text-brand-800">
         <a href="#scanner-camera" className="inline-flex min-h-11 items-center underline underline-offset-4">Use camera</a>
         <a href="#manual-ticket-entry" className="inline-flex min-h-11 items-center underline underline-offset-4">Enter QR code</a>
         <a href="#attendee-lookup" className="inline-flex min-h-11 items-center underline underline-offset-4">Find attendee</a>
       </nav>
-      <div className="grid gap-6 lg:grid-cols-[1.35fr_.65fr]">
-        <div className="space-y-5">
-          <ResultPanel result={scanResult} />
-          <section id="scanner-camera" className="scroll-mt-24 overflow-hidden rounded-2xl bg-neutral-950">
+      <div className="contents sm:grid sm:gap-6 lg:grid-cols-[1.35fr_.65fr]">
+        <div className="contents sm:block sm:space-y-5">
+          <ResultPanel result={scanResult} className="order-5 sm:order-none" />
+          <section id="scanner-camera" className="order-5 scroll-mt-24 overflow-hidden sm:order-none rounded-2xl bg-neutral-950">
             <button onClick={scanning ? stopCamera : startCamera} disabled={!ready}
               className="flex min-h-11 w-full items-center justify-center gap-2 bg-brand-800 px-4 py-4 font-semibold text-white enabled:hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-neutral-700">
               {scanning ? <><StopCircle className="h-5 w-5" /> Stop camera</> : <><Camera className="h-5 w-5" /> Start camera</>}
@@ -1183,9 +1222,9 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
             </div>
 
           </section>
-          {cameraError && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{cameraError} You can enter the ticket QR code below or find the attendee online.</p>}
+          {cameraError && <p role="alert" className="order-5 rounded-xl sm:order-none border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{cameraError} You can enter the ticket QR code below or find the attendee online.</p>}
 
-          <section id="manual-ticket-entry" className="scroll-mt-24 rounded-2xl border border-neutral-200 bg-white p-5">
+          <section id="manual-ticket-entry" className="order-8 scroll-mt-24 sm:order-none rounded-2xl border border-neutral-200 bg-white p-5">
             <h2 className="font-semibold text-neutral-950">Enter a ticket QR code</h2>
             <p id="manual-ticket-help" className="mb-3 text-sm text-neutral-700">Camera not working? Paste the QR code or link from the ticket. For a ticket number such as HP-T123, use attendee lookup below.</p>
             <label htmlFor="manual-ticket-code" className="mb-1 block text-sm font-medium text-neutral-800">Ticket QR code</label>
@@ -1195,7 +1234,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
             </form>
           </section>
 
-          <section id="attendee-lookup" className="scroll-mt-24 rounded-2xl border border-neutral-200 bg-white p-5">
+          <section id="attendee-lookup" className="order-8 scroll-mt-24 sm:order-none rounded-2xl border border-neutral-200 bg-white p-5">
             <h2 className="font-semibold text-neutral-950">Find an attendee</h2>
             <p id="attendee-lookup-help" className="mb-3 text-sm text-neutral-700">Search online by name or HafaPass ticket number. Email addresses stay private.{!online && ' Reconnect to use this search.'}</p>
             <label htmlFor="attendee-query" className="mb-1 block text-sm font-medium text-neutral-800">Attendee name or ticket number</label>
@@ -1218,8 +1257,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           </section>
         </div>
 
-        <aside className="space-y-5">
-          <section className="rounded-xl border border-neutral-200 bg-white p-5">
+        <aside className="contents sm:block sm:space-y-5">
+          <section className="order-10 rounded-xl border border-neutral-200 bg-white p-5 sm:order-none">
             <div className="flex items-start gap-3"><Smartphone aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-brand-800" /><div className="min-w-0 break-words">
               <h2 className="font-semibold text-neutral-950">{device?.name || 'Device not ready'}</h2>
               <p className="mt-1 text-sm text-neutral-700">{selectedEvent?.title}</p>
@@ -1236,18 +1275,18 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           </section>
 
           {dashboard && (
-            <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} disabled={!online || downloading} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800 disabled:opacity-50" aria-label="Download emergency door list" title="Download emergency door list">{downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}</button></div>
-              <div className="grid grid-cols-2 gap-3">
+            <section className="order-6 rounded-2xl border border-neutral-200 bg-white p-3 sm:order-none sm:p-5">
+              <div className="mb-1 flex items-center justify-between sm:mb-4"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} disabled={!online || downloading} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800 disabled:opacity-50" aria-label="Download emergency door list" title="Download emergency door list">{downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}</button></div>
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-2 sm:gap-3">
                 {[['Admitted', dashboard.counts.admitted], ['Remaining', dashboard.counts.remaining], ['Conflicts', dashboard.counts.conflicts], ['Rejected', dashboard.counts.rejected]].map(([label, value]) => (
-                  <div key={label} className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">{label}</p><p className="text-2xl font-bold">{value}</p></div>
+                  <div key={label} className="rounded-xl bg-neutral-50 p-2 sm:p-3"><p className="text-xs text-neutral-500">{label}</p><p className="text-lg font-bold sm:text-2xl">{value}</p></div>
                 ))}
               </div>
             </section>
           )}
 
           {dashboard?.permissions?.can_reverse && (
-            <section className="rounded-2xl border border-neutral-200 bg-white p-5">
+            <section className="order-10 rounded-2xl border sm:order-none border-neutral-200 bg-white p-5">
               <h2 className="mb-3 font-semibold">Recent admissions</h2>
               <div className="space-y-2">
                 {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => {
