@@ -23,7 +23,9 @@ test('owner can review team roles, Guam payout gates, and create an invitation',
   await page.goto('/dashboard/settings')
 
   await expect(page.getByRole('heading', { name: 'Island Events' })).toBeVisible()
-  await expect(page.getByText(/Blocked unless Stripe confirms Guam/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Assisted local bank setup' })).toBeVisible()
+  await page.getByText('Other provider availability', { exact: true }).click()
+  await expect(page.getByText(/Unavailable unless Stripe confirms Guam/)).toBeVisible()
   await page.getByLabel('Teammate email').fill('finance@example.com')
   await page.getByLabel('Team role').selectOption('finance')
   await page.getByRole('button', { name: 'Invite' }).click()

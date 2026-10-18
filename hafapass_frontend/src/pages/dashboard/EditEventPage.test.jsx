@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
 import EditEventPage from './EditEventPage'
 
-vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ onUploaded }) => <button type="button" onClick={() => onUploaded('https://images.invalid/verified.png')}>Choose verified cover</button> }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ ticketTypes }) => <ul>{ticketTypes.map(type => <li key={type.id}>{type.name}</li>)}</ul> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
@@ -73,7 +73,7 @@ describe('published event content and schedule edits', () => {
     await user.clear(start)
     await user.type(start, '2026-10-16T20:00')
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
-    await screen.findByText('Explain the schedule change for ticket holders')
+    await screen.findByRole('link', { name: 'Explain the schedule change for ticket holders' })
     expect(apiClient.put).not.toHaveBeenCalled()
     await user.type(screen.getByLabelText(/Reason for schedule change/), 'Synthetic schedule correction')
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
@@ -94,4 +94,26 @@ describe('published event content and schedule edits', () => {
     expect(apiClient.put.mock.calls[0][1]).toMatchObject({ doors_open_at: null, change_reason: 'Doors open with the event' })
     expect(apiClient.put.mock.calls[0][1]).not.toHaveProperty('starts_at')
   })
+})
+
+it('requires saving before publishing, names the saved preview and confirms the saved title', async () => {
+  const draft = { ...event, status: 'draft', slug: 'workshop', publish_checklist: [{ code: 'event_details', label: 'Details', complete: true }] }
+  apiClient.get.mockResolvedValue({ data: draft })
+  apiClient.put.mockResolvedValue({ data: { ...draft, title: 'Saved new title' } })
+  apiClient.post.mockResolvedValue({ data: { ...draft, title: 'Saved new title', status: 'published' } })
+  const user = userEvent.setup()
+  mount()
+  const title = await screen.findByLabelText(/Event Title/)
+  await user.clear(title)
+  await user.type(title, 'Saved new title')
+  expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+  expect(screen.getByRole('link', { name: 'Preview saved event' })).toHaveAttribute('href', '/events/workshop?preview=true')
+  expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+  await screen.findByText('Event updated successfully.')
+  await user.click(screen.getByRole('button', { name: 'Publish Event' }))
+  expect(screen.getByRole('dialog')).toHaveTextContent('Publish the saved event “Saved new title”?')
+  await user.click(screen.getByRole('button', { name: 'Yes, Publish' }))
+  await screen.findByText('Event published successfully!')
+  expect(apiClient.post).toHaveBeenCalledTimes(1)
 })

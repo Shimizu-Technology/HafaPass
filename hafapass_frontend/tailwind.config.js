@@ -62,6 +62,8 @@ export default {
           hover: '#ad2b24',
           teal: '#0b6563',
           'teal-hover': '#0e504f',
+          danger: '#b91c1c',
+          'danger-hover': '#991b1b',
         },
         focus: '#087e7a',
       },
@@ -108,5 +110,6 @@ export default {
       },
     },
   },
+  future: { hoverOnlyWhenSupported: true },
   plugins: [],
 }

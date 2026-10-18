@@ -6,22 +6,7 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    scroll-behavior: smooth;
-  }
-
-  /* Enabled controls restore full contrast immediately, including buttons with transition-all utilities. */
-.btn-primary, .btn-secondary {
-  transition-property: background-color, border-color, color, box-shadow, transform;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    html {
-      scroll-behavior: auto;
-    }
-    *, *::before, *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
-    }
+    scroll-behavior: auto;
   }
 
   body {
@@ -37,6 +22,15 @@
     @apply text-brand-900;
   }
 
+  :focus-visible {
+    outline: 2px solid theme('colors.focus');
+    outline-offset: 3px;
+  }
+
+  button, a, [role="button"] { touch-action: manipulation; }
+  button { user-select: none; }
+  input, select, textarea { scroll-margin-block: 7rem 4rem; }
+
   /* Smooth transitions on all interactive elements */
   a, button, input, select, textarea {
     @apply transition-colors duration-200;
@@ -47,21 +41,26 @@
   .btn-primary {
     @apply inline-flex min-h-11 items-center justify-center px-6 py-3 font-semibold rounded-xl bg-action
            text-white transition-all duration-200
-           hover:shadow-glow-accent hover:-translate-y-0.5
+           hover:shadow-glow-accent
            active:translate-y-0 active:shadow-md
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2
            disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none;
     box-shadow: 0 1px 3px rgba(240,86,74,0.3), 0 1px 2px rgba(0,0,0,0.06);
   }
 
-  .btn-primary:hover {
-    @apply bg-action-hover;
+  @media (hover: hover) and (pointer: fine) {
+    .btn-primary:hover:not(:disabled) { @apply bg-action-hover; }
+    .btn-teal:hover:not(:disabled) { @apply bg-action-teal-hover; }
+    .btn-danger:hover:not(:disabled) { @apply bg-action-danger-hover; }
   }
+
+  .btn-teal { @apply btn-primary bg-action-teal; }
+  .btn-danger { @apply btn-primary bg-action-danger; }
 
   .btn-secondary {
     @apply inline-flex min-h-11 items-center justify-center px-6 py-3 bg-white text-neutral-700 font-semibold rounded-xl
            border border-neutral-200/80 transition-all duration-200
-           hover:bg-neutral-50 hover:border-neutral-300 hover:shadow-soft hover:-translate-y-0.5
+           hover:bg-neutral-50 hover:border-neutral-300 hover:shadow-soft
            active:translate-y-0
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2
            disabled:opacity-50 disabled:cursor-not-allowed;
@@ -114,4 +113,25 @@
     scroll-behavior: auto !important;
   }
   .btn-primary:hover, .btn-secondary:hover, .card-hover:hover { transform: none; }
+}
+
+/* Keep the shell clear of notches/home indicators, while normal document
+   scrolling lets the browser bring focused fields above its keyboard. */
+.app-shell {
+  min-height: 100dvh;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.app-nav { padding-top: env(safe-area-inset-top, 0px); }
+.mobile-nav {
+  max-height: calc(100dvh - 4rem - env(safe-area-inset-top, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  overscroll-behavior: contain;
+}
+@media (pointer: coarse), (max-width: 767px) {
+  /* Override small per-page utility fonts that cause Safari input zoom. */
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select {
+    font-size: max(16px, 1rem);
+  }
 }
