@@ -24,7 +24,16 @@ test('buyer discovers a governed collection and filters Guam inventory', async (
 
   await page.goto('/discover')
   await expect(page.getByRole('heading', { name: 'Family Weekend' })).toBeVisible()
-  await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
+  const eventCard = page.getByRole('link', { name: /Family Night Market/ })
+  await expect(eventCard).toBeVisible()
+  // Visibility can precede the public route fade finishing. Audit the rendered
+  // colors after every ancestor is opaque; keep the contrast rule enabled.
+  await expect.poll(() => eventCard.evaluate(element => {
+    for (let node = element; node; node = node.parentElement) {
+      if (Number(getComputedStyle(node).opacity) !== 1) return false
+    }
+    return true
+  })).toBe(true)
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations.filter(item => ['serious', 'critical'].includes(item.impact))).toEqual([])
 
