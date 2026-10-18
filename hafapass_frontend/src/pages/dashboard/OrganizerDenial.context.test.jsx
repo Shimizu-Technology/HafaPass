@@ -26,6 +26,7 @@ function fixture(url) {
   if (url === '/organizer/connected_accounts') return [{ id: 1, provider: 'paypal', status: 'verified', payout_ready: true, requirements_due: ['private_provider_requirement'] }]
   if (url.includes('/attendees')) return { attendees: [attendee('Private attendee')], meta: { total_pages: 1 } }
   if (url.endsWith('/stats')) return { recent_orders: [order] }
+  if (url.endsWith('/orders')) return { orders: [order] }
   return event
 }
 beforeEach(() => {
@@ -147,7 +148,7 @@ describe('refund denial preserves financial identity while withdrawing private a
   it.each([401, 403])('withdraws earlier buyer records after current stats %s without treating it as a refund verdict', async status => {
     window.sessionStorage.setItem(journalKey, JSON.stringify(journal))
     mount(RefundsPage, '/dashboard/events/37/refunds'); await screen.findByText(/Private refund buyer/)
-    apiClient.get.mockImplementation(url => url.endsWith('/stats') ? Promise.reject(denied(status)) : Promise.resolve({ data: event }))
+    apiClient.get.mockImplementation(url => url.endsWith('/orders') ? Promise.reject(denied(status)) : Promise.resolve({ data: event }))
     apiClient.post.mockResolvedValueOnce({ data: { status: 'pending' } })
     await userEvent.click(screen.getByRole('button', { name: 'Retry saved refund' }))
     await screen.findByRole('alert')
@@ -176,7 +177,7 @@ describe('refund denial preserves financial identity while withdrawing private a
   it.each(['success', 'denial'])('cannot apply an old refund %s after access retry changes the epoch', async outcome => {
     window.sessionStorage.setItem(journalKey, JSON.stringify(journal))
     let statsFailed = true
-    apiClient.get.mockImplementation(url => url.endsWith('/stats') && statsFailed ? Promise.reject({ response: { status: 503 } }) : Promise.resolve({ data: fixture(url) }))
+    apiClient.get.mockImplementation(url => url.endsWith('/orders') && statsFailed ? Promise.reject({ response: { status: 503 } }) : Promise.resolve({ data: fixture(url) }))
     const old = deferred(); apiClient.post.mockReturnValueOnce(old.promise)
     mount(RefundsPage, '/dashboard/events/37/refunds')
     await userEvent.click(await screen.findByRole('button', { name: 'Retry saved refund' }))

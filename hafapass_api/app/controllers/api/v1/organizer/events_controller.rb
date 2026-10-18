@@ -11,8 +11,17 @@ module Api
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(:event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc)
-          pagy, paginated_events = paginate(events)
+            .includes(:event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc, id: :desc)
+          if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
+            assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner]).select(:event_id)
+            events = events.where(id: assigned_ids)
+          end
+          query = params[:q].to_s.strip.first(200)
+          if query.present?
+            pattern = "%#{Event.sanitize_sql_like(query)}%"
+            events = events.where("events.title ILIKE :q OR events.venue_name ILIKE :q OR events.slug ILIKE :q OR CAST(events.id AS TEXT) = :id", q: pattern, id: query)
+          end
+          pagy, paginated_events = paginate(events, items: params.fetch(:per_page, 20).to_i.clamp(1, 100))
 
           @event_permission_maps = OrganizationAuthorization.permissions_for_events(
             user: current_user, organization: current_organization, events: paginated_events.to_a

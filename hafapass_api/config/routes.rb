@@ -179,7 +179,7 @@ Rails.application.routes.draw do
           get "crm/segments", to: "crm#segments"
           post "catalog_fulfillments/:order_item_id", to: "catalog_fulfillments#create"
           # Refunds for specific orders
-          resources :orders, only: [] do
+          resources :orders, only: [:index] do
             member do
               post :refund, to: "refunds#create"
             end

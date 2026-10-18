@@ -3,7 +3,7 @@ import { openDB } from 'idb'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { signedManifest } from '../test/manifestFixture'
 import {
-  applySyncResults, captureAdmissionAccessContext, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission, queueReversal,
+  applySyncResults, captureAdmissionAccessContext, captureOrganizationAdmissionContexts, canonicalJson, clearEventAdmissionData, clearAllAdmissionData, loadAuthorizedScanner, loadDevice, loadPendingDeviceIdentity, loadUsableManifest, localScanState, queueAdmission, queueReversal,
   queuedActions, purgeExpiredAdmissionAccess, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex,
 } from './admissionStore'
 
@@ -856,6 +856,31 @@ describe('admissionStore', () => {
     expect(await queuedActions(eventId, device.id)).toHaveLength(1)
     expect(await applySyncResults(eventId, device, [{ action_uuid: action.action_uuid, kind: 'admit', result: 'accepted' }])).toBe(1)
     expect(await queuedActions(eventId, device.id)).toHaveLength(0)
+  })
+
+  it('captures owned organization and legacy grants only, retaining per-grant snapshot fences and journals', async () => {
+    await clearAllAdmissionData()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'enumeration-owner')
+    const expiry = new Date(Date.now() + 600000).toISOString()
+    for (const [id, organization_id] of [[93101, '1'], [93102, '2'], [93103, null]]) {
+      await saveDevice(id, { id, organization_id, effective: true, authorization_expires_at: expiry })
+      await saveVerifiedManifest(await signedManifest(id, []))
+    }
+    const pending = await queueAdmission({ eventId: 93101, deviceId: 93101, manifestVersion: 1, ticket: { ticket_id: 501 }, credentialHash: 'enumeration-unknown', source: 'offline' })
+    const contexts = await captureOrganizationAdmissionContexts('1')
+    expect(contexts.map(context => context.eventId)).toEqual([93101, 93103])
+    await saveDevice(93101, { id: 93101, organization_id: '1', effective: true, authorization_expires_at: new Date(Date.now() + 900000).toISOString() })
+    expect(await purgeExpiredAdmissionAccess(93101, { context: contexts[0] })).toBe(false)
+    expect(await loadAuthorizedScanner(93101)).not.toBeNull()
+    expect((await queuedActions(93101, 93101)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+    expect(await loadAuthorizedScanner(93102)).not.toBeNull()
+    let current = true
+    const captured = await captureOrganizationAdmissionContexts('1', { isCurrent: () => current })
+    current = false
+    expect(await purgeExpiredAdmissionAccess(93103, { context: captured.find(context => context.eventId === 93103) })).toBe(false)
+    expect(await loadAuthorizedScanner(93103)).not.toBeNull()
+    window.localStorage.setItem('hafapass_scanner_user_id', 'other-enumeration-owner')
+    expect(await captureOrganizationAdmissionContexts('1')).toEqual([])
   })
 
 })

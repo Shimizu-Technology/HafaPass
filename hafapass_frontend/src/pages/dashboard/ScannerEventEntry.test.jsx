@@ -34,7 +34,7 @@ it('selects the clicked assigned event ahead of the saved event without deleting
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/92002/scanner_devices', expect.anything()))
   expect(await queuedActions(92001, 91)).toHaveLength(1)
 })
-it('never registers a requested event outside the server assigned list', async () => {
+it('never registers a requested event without a list or direct authorization grant', async () => {
   window.localStorage.setItem('hafapass_scanner_event_id', '92002')
   await mount(99999)
   await screen.findByText(/This event is not assigned to your account/)
@@ -156,7 +156,7 @@ it('does not register an old event when its setup cache read completes after cha
   expect(await queuedActions(92001, 91)).toHaveLength(1)
 })
 
-it('does not revive a manual event selection when Back returns to a previous URL while its assigned list is delayed', async () => {
+it('persists manual selection in the URL and reauthorizes it after Back before reviving entry', async () => {
   const pendingLookup = vi.spyOn(admissionStore, 'loadPendingDeviceIdentity')
   const manifests = { 92001: await signedManifest(92001), 92002: await signedManifest(92002) }
   const assigned = { events: [{ id: 92001, title: 'URL event A' }, { id: 92002, title: 'Manually selected event B' }] }
@@ -165,8 +165,8 @@ it('does not revive a manual event selection when Back returns to a previous URL
   let releaseBack
   apiClient.get.mockImplementation(path => {
     if (path === '/organizer/events') {
-      if (++listCalls === 1) return Promise.resolve({ data: assigned })
-      return new Promise(resolve => { if (listCalls === 2) releaseAway = resolve; else releaseBack = resolve })
+      if (++listCalls <= 2) return Promise.resolve({ data: assigned })
+      return new Promise(resolve => { if (listCalls === 3) releaseAway = resolve; else releaseBack = resolve })
     }
     if (path === '/me') return Promise.resolve({ data: { id: 7 } })
     const eventId = path.match(/\/events\/(\d+)\//)?.[1]
@@ -198,12 +198,12 @@ it('does not revive a manual event selection when Back returns to a previous URL
   expect(screen.queryByRole('option', { name: 'Manually selected event B' })).not.toBeInTheDocument()
   expect(registrations(92002)).toBe(1)
   await act(async () => releaseBack({ data: assigned }))
-  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('92001'))
+  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('92002'))
   await waitFor(() => expect(screen.getByLabelText('Ticket QR code')).toBeEnabled())
-  expect(registrations(92001)).toBe(2)
-  expect(registrations(92002)).toBe(1)
+  expect(registrations(92001)).toBe(1)
+  expect(registrations(92002)).toBe(2)
   await act(async () => releaseAway({ data: { events: [{ id: 92003, title: 'Obsolete away event' }] } }))
-  expect(screen.getByLabelText('Event to scan')).toHaveValue('92001')
+  expect(screen.getByLabelText('Event to scan')).toHaveValue('92002')
   expect(screen.queryByRole('option', { name: 'Obsolete away event' })).not.toBeInTheDocument()
 })
 

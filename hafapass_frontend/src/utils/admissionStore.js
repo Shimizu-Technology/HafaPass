@@ -37,7 +37,7 @@ const database = () => openDB(DB_NAME, DB_VERSION, {
 
 const accessDeviceIdentity = device => device ? JSON.stringify([
   device.id, device.owner_user_id, device.identifier, device.effective,
-  device.authorization_expires_at, device.status,
+  device.authorization_expires_at, device.status, device.organization_id,
 ]) : null
 const accessManifestIdentity = record => record ? JSON.stringify([
   record.owner_user_id, record.envelope?.digest, record.envelope?.payload?.version, record.downloaded_at,
@@ -85,6 +85,19 @@ export async function captureAdmissionAccessContext(eventId, options = {}) {
     throw manifestContextError('Scanner access was renewed before its old snapshot could be removed')
   }
   return snapshot.context
+}
+
+// Snapshot every owned grant in the refused discovery scope before the HTTP
+// request. Legacy records lack organization metadata: quarantine those rather
+// than guessing that an unscoped lease belongs to another organization.
+export async function captureOrganizationAdmissionContexts(organizationId, { isCurrent = () => true } = {}) {
+  const owner = currentScannerOwner()
+  const db = await database()
+  const devices = await db.getAll('devices')
+  if (owner !== currentScannerOwner() || !isCurrent()) throw manifestContextError('Scanner discovery scope changed')
+  const candidates = devices.filter(device => device.owner_user_id === owner
+    && (organizationId == null || device.organization_id == null || String(device.organization_id) === String(organizationId)))
+  return Promise.all(candidates.map(device => captureAdmissionAccessContext(device.event_id, { isCurrent })))
 }
 
 async function removeAdmissionAccess(eventId, { context, removeAuthorization }) {

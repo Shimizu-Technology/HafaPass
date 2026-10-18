@@ -1,3 +1,6 @@
+import useOperationalListing from '../../hooks/useOperationalListing'
+import OperationalSearch from '../../components/OperationalSearch'
+import OperationalPagination from '../../components/OperationalPagination'
 import { uploadImage } from '../../utils/uploads'
 import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck } from 'lucide-react'
 import { useState, useLayoutEffect, useRef } from 'react'
@@ -116,8 +119,8 @@ function StatusBadge({ status }) {
 
 function EventListCard({ event }) {
  const permissions = event.permissions || {}
- const destination = permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : `/dashboard/events/${event.id}/edit`
- const actionLabel = permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : "View event"
+ const destination = permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
+ const actionLabel = permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"
  const ticketsSold = event.ticket_types
   ? event.ticket_types.reduce((sum, tt) => sum + (tt.quantity_sold || 0), 0)
   : 0
@@ -258,7 +261,10 @@ function DashboardSession({ authContext }) {
  const [profileContext, setProfileContext] = useState(null)
  const [readinessLoading, setReadinessLoading] = useState(false)
  const [organizations, setOrganizations] = useState([])
- const [selectedOrganizationId, setSelectedOrganizationId] = useState('')
+ const [selectedOrganizationId, setSelectedOrganizationId] = useState(window.localStorage.getItem('hafapass_organization_id') || '')
+ const listing = useOperationalListing(`events:${authContext?.userId || currentScannerOwner()}:${selectedOrganizationId}`)
+ const [eventMeta, setEventMeta] = useState(null)
+ const [listLoading, setListLoading] = useState(false)
  const loadGeneration = useRef(0)
  const mounted = useRef(false)
  const requests = useRef(new Set())
@@ -266,7 +272,7 @@ function DashboardSession({ authContext }) {
  const permissions = organization?.permissions || {}
  const canManageProfile = permissions.manage_organization === true
  const canCreate = permissions.manage_events === true
- const canScan = events.some(event => event.permissions?.scan)
+ const canScan = permissions.scan === true || events.some(event => event.permissions?.scan)
  const canManageSettings = permissions.manage_members || permissions.manage_payout_settings
 
  const contextCurrent = context => Boolean(context && mounted.current && context.generation === loadGeneration.current
@@ -335,11 +341,19 @@ function DashboardSession({ authContext }) {
   requests.current.clear()
   closeEditor(editorRef.current)
   setReadinessLoading(false)
+  const requestedOrganization = window.localStorage.getItem('hafapass_organization_id')
+  if (profileContext?.organizationId !== requestedOrganization) {
+   setLoading(true)
+   setProfile(null)
+   setProfileContext(null)
+   setEvents([])
+   setEventMeta(null)
+  }
   let context = { generation, authContext, owner: currentScannerOwner(), organizationId: window.localStorage.getItem('hafapass_organization_id') }
   const current = () => contextCurrent(context)
   const request = beginRequest(context)
   if (!request) return
-  setLoading(true)
+  setListLoading(true)
   setError(null)
   try {
    const organizationsRes = await apiClient.get('/organizer/organizations', request.config)
@@ -363,11 +377,12 @@ function DashboardSession({ authContext }) {
    setProfile(profileRes.data)
    setProfileContext(context)
 
-   const eventsRes = await apiClient.get('/organizer/events', selectedConfig)
+   const eventsRes = await apiClient.get('/organizer/events', { ...selectedConfig, params: { q: listing.q, page: listing.page } })
    if (!current()) return
    // Handle both paginated { events: [...], meta: {...} } and legacy array response
    const eventsData = eventsRes.data.events || eventsRes.data
    setEvents(Array.isArray(eventsData) ? eventsData : [])
+   setEventMeta(eventsRes.data.meta || null)
   } catch (err) {
    if (!current()) return
    if (err.response?.status === 404) {
@@ -381,7 +396,7 @@ function DashboardSession({ authContext }) {
    }
   } finally {
    request.release()
-   if (current()) setLoading(false)
+   if (current()) { setLoading(false); setListLoading(false) }
   }
  }
 
@@ -401,12 +416,13 @@ function DashboardSession({ authContext }) {
    owned.forEach(controller => controller.abort())
    window.removeEventListener('storage', changed)
   }
- }, [])
+ }, [listing.q, listing.page, selectedOrganizationId])
 
  if (loading) {
   return (
-   <div className="min-h-[60vh] flex items-center justify-center">
+   <div className="min-h-[60vh] flex flex-col gap-3 items-center justify-center">
     <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+    <p role="status">Loading {organization?.name || 'selected organization'}…</p>
    </div>
   )
  }
@@ -476,7 +492,7 @@ function DashboardSession({ authContext }) {
     <div className="flex min-w-0 flex-wrap items-center gap-3 lg:justify-end">
      {canScan && <Link
       to="/dashboard/scanner"
-      className="inline-flex items-center justify-center gap-2 bg-brand-500 text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-brand-600 transition-colors text-sm"
+      className="inline-flex items-center justify-center gap-2 bg-action-teal text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-action-teal-hover transition-colors text-sm"
      >
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
@@ -485,7 +501,7 @@ function DashboardSession({ authContext }) {
      </Link>}
      {canCreate && <Link
       to="/dashboard/events/new"
-      className="inline-flex items-center justify-center gap-2 bg-accent-500 text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-accent-600 transition-colors text-sm"
+      className="inline-flex items-center justify-center gap-2 bg-action text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-action-hover transition-colors text-sm"
      >
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -539,13 +555,16 @@ function DashboardSession({ authContext }) {
     </div>
    </section>}
 
+   <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue, link name or event ID." query={listing.q} onSearch={listing.search} busy={listLoading} />
+   {listLoading && <p role="status" className="mb-3 text-sm text-neutral-700">Loading events…</p>}
+   <div aria-busy={listLoading}>
    {events.length === 0 ? (
     <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-12 text-center">
      <svg className="mx-auto h-12 w-12 text-neutral-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
      </svg>
-     <h3 className="text-lg font-medium text-neutral-900 mb-1">{canCreate ? 'No events yet' : 'No assigned events'}</h3>
-     <p className="text-neutral-500 mb-4">{canCreate ? 'Get started by creating your first event' : 'Ask your event manager to assign an event to you.'}</p>
+     <h3 className="text-lg font-medium text-neutral-900 mb-1">{listing.q || listing.page > 1 ? 'No matching events' : canCreate ? 'No events yet' : 'No assigned events'}</h3>
+     <p className="text-neutral-500 mb-4">{listing.q || listing.page > 1 ? 'Try another search or return to the previous page.' : canCreate ? 'Get started by creating your first event' : 'Ask your event manager to assign an event to you.'}</p>
      {canCreate && <Link
       to="/dashboard/events/new"
       className="btn-primary gap-2"
@@ -563,6 +582,8 @@ function DashboardSession({ authContext }) {
      ))}
     </div>
    )}
+   </div>
+   <OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={listLoading} label="Event pages" />
   </div>
  )
 }

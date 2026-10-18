@@ -11,7 +11,7 @@ async function prepare(page) {
   await page.route('**/api/v1/events', route => json(route, { events: [], meta: { current_page: 1, total_pages: 1, total_count: 0 } }))
   await page.route('**/api/v1/organizer/organizations', route => json(route, [{ id: 1, name: 'Synthetic Organizer', role: 'owner', permissions: { manage_organization: true, manage_events: true } }]))
   await page.route('**/api/v1/organizer_profile', route => json(route, { id: 1, business_name: 'Synthetic Organizer', policy_accepted: true, verification_status: 'verified', payout_ready: false }))
-  await page.route('**/api/v1/organizer/events', route => json(route, { events: [event] }))
+  await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [event] }))
   await page.route('**/api/v1/organizer/events/601', route => json(route, event))
 }
 for (const width of [390, 1440]) {

@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,6 +45,41 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllEnvs() })
 
 describe('dashboard mutation ownership', () => {
+  it.each(['success', 'failure'])('withdraws Alpha rows and controls throughout a delayed Beta organization switch (%s)', async outcome => {
+    const betaProfile = deferred(), betaEvents = deferred()
+    const normalGet = apiClient.get.getMockImplementation()
+    apiClient.get.mockImplementation((path, config) => {
+      const org = config?.organizationId || window.localStorage.getItem('hafapass_organization_id')
+      if (path === '/organizer_profile' && org === '2') return betaProfile.promise
+      if (path === '/organizer/events') return org === '2' ? betaEvents.promise : Promise.resolve({ data: { events: [{ id: 101, title: 'Private Alpha event', status: 'published', permissions: { scan: true, edit_event_content: true }, ticket_types: [{ quantity_sold: 19 }] }], meta: { total_count: 21, total_pages: 2 } } })
+      return normalGet(path, config)
+    })
+    mount()
+    await screen.findByRole('link', { name: /Private Alpha event/ })
+    await userEvent.selectOptions(screen.getByLabelText('Organization'), '2')
+    expect(screen.getByRole('status')).toHaveTextContent('Loading Beta organization')
+    expect(screen.queryByRole('link', { name: /Private Alpha event/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Welcome, Alpha' })).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Edit Profile')).not.toBeInTheDocument()
+    expect(screen.queryByText('19 sold')).not.toBeInTheDocument()
+    expect(screen.queryByText('Organizer readiness')).not.toBeInTheDocument()
+    if (outcome === 'failure') {
+      await act(async () => betaProfile.reject({ response: { status: 503 } }))
+      await screen.findByText('Failed to load dashboard. Please try again.')
+      expect(screen.queryByText(/Private Alpha/)).not.toBeInTheDocument()
+      expect(screen.queryByText('19 sold')).not.toBeInTheDocument()
+      expect(screen.queryByTitle('Edit Profile')).not.toBeInTheDocument()
+    } else {
+      await act(async () => betaProfile.resolve({ data: profiles[2] }))
+      await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/organizer/events', expect.objectContaining({ organizationId: '2' })))
+      expect(screen.getByRole('status')).toHaveTextContent('Loading Beta organization')
+      expect(screen.queryByRole('link', { name: /Private Alpha event/ })).not.toBeInTheDocument()
+      await act(async () => betaEvents.resolve({ data: { events: [{ id: 202, title: 'Authorized Beta event', status: 'published', permissions: { scan: true } }] } }))
+      expect(await screen.findByRole('link', { name: /Authorized Beta event/ })).toBeInTheDocument()
+      expect(screen.queryByText(/Private Alpha/)).not.toBeInTheDocument()
+    }
+  })
+
   it.each(['success', 'error'])('ignores a late Alpha readiness %s and its finally while Beta is busy', async outcome => {
     const old = deferred(), current = deferred()
     apiClient.post.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)

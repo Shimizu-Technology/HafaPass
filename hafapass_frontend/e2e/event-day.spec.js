@@ -53,7 +53,7 @@ test('scanner validates locally, records an offline scan, and reconciles it afte
   const device = { id: 8, identifier: 'browser-test', name: 'North door', effective: true, status: 'active', authorization_expires_at: new Date(Date.now() + 86_400_000).toISOString(), last_sequence: 0, user: { id: 7, name: 'Door Staff' } }
   const syncedActions = []
 
-  await page.route('**/api/v1/organizer/events', route => json(route, { events: [{ id: 42, title: 'Guam Night Market', status: 'published' }], meta: {} }))
+  await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [{ id: 42, title: 'Guam Night Market', status: 'published' }], meta: {} }))
   await page.route('**/api/v1/organizer/events/42/scanner_devices', route => json(route, device, 201))
   await page.route('**/api/v1/organizer/events/42/scanner_devices/8/manifest', route => json(route, manifest))
   await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, {
@@ -110,7 +110,7 @@ test('online scanner waits neutrally before accepted and refused acknowledgement
   const device = { id: 8, identifier: 'online-wait-test', effective: true, status: 'active', last_sequence: 0,
     authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
   const held = []
-  await page.route('**/api/v1/organizer/events', route => json(route, { events: [{ id: 42, title: 'Guam Night Market' }] }))
+  await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [{ id: 42, title: 'Guam Night Market' }] }))
   await page.route('**/api/v1/organizer/events/42/scanner_devices', route => json(route, device, 201))
   await page.route('**/api/v1/organizer/events/42/scanner_devices/8/manifest', route => json(route, manifest))
   await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, { counts: {}, permissions: {}, recent_actions: [] }))
@@ -146,7 +146,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     const device = { id: 8, identifier: 'history-browser', effective: true, status: 'active', last_sequence: 0,
       authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
     const synced = []
-    await page.route('**/api/v1/organizer/events', route => json(route, { events: [{ id: 42, title: 'Guam Night Market' }] }))
+    await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [{ id: 42, title: 'Guam Night Market' }] }))
     await page.route('**/api/v1/organizer/events/42/scanner_devices', route => json(route, device, 201))
     await page.route('**/api/v1/organizer/events/42/scanner_devices/8/manifest', route => json(route, manifest))
     await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, {

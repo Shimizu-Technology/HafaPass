@@ -29,7 +29,7 @@ test('an earlier setup refusal cannot erase the current scanner or its accepted 
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
   await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: {} }))
   await page.route('**/api/v1/me', route => json(route, { id: 7, role: 'organizer' }))
-  await page.route('**/api/v1/organizer/events', route => json(route,
+  await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route,
     { events: [42, 43].map(id => ({ id, title: `Context event ${id}` })) }))
   await page.route('**/api/v1/organizer/events/*/scanner_devices', route => {
     if (++registrations === 1) { oldRegistration = route; return }

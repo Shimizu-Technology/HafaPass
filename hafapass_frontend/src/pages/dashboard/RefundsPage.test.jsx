@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -7,7 +7,7 @@ import RefundsPage from './RefundsPage'
 
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn() } }))
 beforeEach(() => vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test'))
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers() })
 function mountRefunds() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/refunds']}><Routes><Route path="/dashboard/events/:id/refunds" element={<RefundsPage />} /></Routes></MemoryRouter>) }
 
 // A retry keeps the operation fixed but receives its own cancellable transport.
@@ -18,7 +18,7 @@ describe('refund outcome and recovery', () => {
     vi.clearAllMocks()
     window.localStorage.clear()
     window.sessionStorage.clear()
-    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, recent_orders: [{ id: 922, buyer_name: 'Guest', buyer_email: 'guest@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500 }] } })
+    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [{ id: 922, buyer_name: 'Guest', buyer_email: 'guest@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500 }] } })
   })
 
   it('keeps pending refunds truthful and retries the same request across reload', async () => {
@@ -110,4 +110,66 @@ describe('refund outcome and recovery', () => {
     expect(window.sessionStorage.getItem(key)).toBeNull()
     expect(screen.getByRole('button', { name: 'Refund', exact: true })).toBeEnabled()
   })
+  it('records cash already returned only with required evidence and preserves the exact record on uncertain retries', async () => {
+    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [{ id: 922, buyer_name: 'Cash buyer', buyer_email: 'cash@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500, payment_method: 'door_cash', payment_provider: 'door_cash', created_at: '2026-01-01T00:00:00Z' }] } })
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    const first = mountRefunds()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Record cash already returned' }))
+    expect(screen.getByText(/The organizer holds door cash/)).toHaveTextContent('HafaPass does not send money')
+    await user.click(screen.getByRole('button', { name: 'Record cash already returned' }))
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Cash return reference')).toHaveFocus()
+    expect(screen.getByLabelText('Cash return reference')).toHaveAttribute('aria-invalid', 'true')
+    await user.type(screen.getByLabelText('Cash return reference'), 'receipt-671')
+    fireEvent.change(screen.getByLabelText('Cash returned at (your device time)'), { target: { value: '2026-01-02T12:30' } })
+    await user.type(screen.getByLabelText('Reason (required)'), 'Cash returned at door')
+    await user.click(screen.getByRole('button', { name: 'Record cash already returned' }))
+    await screen.findByRole('button', { name: 'Retry saved cash return record' })
+    const original = apiClient.post.mock.calls[0]
+    expect(original[1]).toMatchObject({ reason: 'Cash returned at door', cash_return: { reference: 'receipt-671', returned_at: new Date('2026-01-02T12:30').toISOString() } })
+    expect(screen.getByLabelText('Cash return reference')).toBeDisabled()
+    first.unmount()
+    apiClient.post.mockResolvedValueOnce({ data: { status: 'succeeded', provider: 'door_cash', manual_record: true } })
+    mountRefunds()
+    await user.click(await screen.findByRole('button', { name: 'Retry saved cash return record' }))
+    await screen.findByText('Cash return recorded. The organizer returned physical cash; HafaPass did not transfer money.')
+    expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
+  })
+
+  it('records a same-minute cash return with seconds precision and retries its exact timestamp', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-18T12:03:55'))
+    const created_at = new Date('2026-10-18T12:03:40').toISOString()
+    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [{ id: 922, buyer_name: 'Same minute buyer', total_cents: 500, refundable_cents: 500, payment_method: 'door_cash', payment_provider: 'door_cash', created_at }] } })
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    mountRefunds()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Record cash already returned' }))
+    const returnedInput = screen.getByLabelText('Cash returned at (your device time)')
+    expect(returnedInput).toHaveAttribute('step', '1')
+    expect(returnedInput).toHaveAttribute('min', '2026-10-18T12:03:40')
+    await user.type(screen.getByLabelText('Cash return reference'), 'same-minute-receipt')
+    fireEvent.change(returnedInput, { target: { value: '2026-10-18T12:03:50' } })
+    expect(returnedInput).toHaveValue('2026-10-18T12:03:50.000')
+    await user.type(screen.getByLabelText('Reason (required)'), 'Cash returned ten seconds after purchase')
+    await user.click(screen.getByRole('button', { name: 'Record cash already returned' }))
+    await screen.findByRole('button', { name: 'Retry saved cash return record' })
+    const original = apiClient.post.mock.calls[0]
+    expect(original[1].cash_return.returned_at).toBe(new Date('2026-10-18T12:03:50').toISOString())
+    vi.setSystemTime(new Date('2026-10-18T12:04:30'))
+    apiClient.post.mockResolvedValueOnce({ data: { status: 'succeeded', provider: 'door_cash', manual_record: true } })
+    await user.click(screen.getByRole('button', { name: 'Retry saved cash return record' }))
+    await screen.findByText('Cash return recorded. The organizer returned physical cash; HafaPass did not transfer money.')
+    expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
+  })
+
+  it.each([['online', 'stripe'], ['door_cash', 'boh_clover'], ['online', 'door_cash']])('does not expose manual cash controls for %s / %s', async (payment_method, payment_provider) => {
+    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [{ id: 922, buyer_name: 'Buyer', total_cents: 500, refundable_cents: 500, payment_method, payment_provider }] } })
+    mountRefunds()
+    await userEvent.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
+    expect(screen.queryByLabelText('Cash return reference')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Process Refund' })).toBeInTheDocument()
+  })
+
 })
