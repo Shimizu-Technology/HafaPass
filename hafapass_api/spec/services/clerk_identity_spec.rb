@@ -122,11 +122,19 @@ RSpec.describe ClerkIdentity do
     expect(described_class.profile("user_recipient")).to include(email: nil, verified_emails: [])
   end
 
-  it "returns unavailable for malformed profile and mismatched authenticated subject" do
+  it "returns unavailable for a malformed profile" do
     allow(http).to receive(:request).and_return(double(code: "200", body: {
       id: "user_recipient", email_addresses: [nil]
     }.to_json))
     expect(described_class.profile("user_recipient")).to be_nil
+  end
+
+  it "rejects a well-formed profile belonging to a different authenticated subject" do
+    allow(http).to receive(:request).and_return(double(code: "200", body: {
+      id: "user_recipient", primary_email_address_id: "email_primary", email_addresses: [
+        { id: "email_primary", email_address: "verified@example.test", verification: { status: "verified" } }
+      ]
+    }.to_json))
     expect(described_class.profile("other_subject")).to be_nil
   end
 end

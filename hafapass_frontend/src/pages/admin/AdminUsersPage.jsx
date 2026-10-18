@@ -7,7 +7,8 @@ import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../.
 import PaymentReadinessReviewDialog from '../../components/PaymentReadinessReviewDialog'
 
 const roles = ['', 'attendee', 'organizer', 'support', 'admin']
-const userLabel = user => user.email?.trim() || `User #${user.id}`
+const userEmail = (user, fallback = 'Email unavailable') => user.email?.trim() || fallback
+const userLabel = user => userEmail(user, `User #${user.id}`)
 const userName = user => [user.first_name, user.last_name].filter(name => name?.trim()).join(' ') || `User #${user.id}`
 
 function OrganizerReadiness({ user, reviewOrganizer, syncConnectedAccount, fetchUsers }) {
@@ -201,7 +202,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                   {users.map(user => (
                     <tr key={user.id} className="hover:bg-neutral-50/50 transition-colors">
                       <td className="px-4 py-3 font-medium text-neutral-900">{userName(user)}</td>
-                      <td className="px-4 py-3 text-neutral-500">{user.email?.trim() || 'Email unavailable'}</td>
+                      <td className="px-4 py-3 text-neutral-500">{userEmail(user)}</td>
                       <td className="px-4 py-3">
                         <select
                           value={user.role}
@@ -224,9 +225,9 @@ function AdminUsersPageSession({ identity, resourcePath }) {
             </div>
             <div className="grid gap-4 p-4 lg:hidden">
               {users.map(user => (
-                <article key={user.id} aria-label={user.email?.trim() ? `User ${userLabel(user)}` : userLabel(user)} className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
+                <article key={user.id} aria-label={userEmail(user, '') ? `User ${userLabel(user)}` : userLabel(user)} className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
                   <h2 className="break-words font-semibold text-neutral-900">{userName(user)}</h2>
-                  <p className="mt-1 break-all text-sm text-content-muted">{user.email?.trim() || 'Email unavailable'}</p>
+                  <p className="mt-1 break-all text-sm text-content-muted">{userEmail(user)}</p>
                   <label className="mt-4 block text-sm font-medium text-neutral-800">
                     Platform role
                     <select value={user.role} aria-label={`Role for ${userLabel(user)}`} onChange={event => changeRole(user, event.target.value)} className={`input mt-1 min-h-11 ${roleBadge(user.role)}`}>

@@ -15,15 +15,25 @@ RSpec.describe ClerkProfileSync do
     user.update!(email: "contact@example.test", first_name: "Preferred", last_name: "Name")
     described_class.call(user)
     expect(user.attributes).to include("email" => "contact@example.test", "first_name" => "Preferred", "last_name" => "Name")
+    expect(user.reload.clerk_profile_checked_at).to be_nil
+    expect(ClerkIdentity).not_to have_received(:profile)
   end
 
   it "bounds provider calls across distinct model instances, and refreshes after expiry" do
+    allow(ClerkIdentity).to receive(:profile).and_return(profile.merge(last_name: nil))
     described_class.call(user)
     described_class.call(User.find(user.id))
     expect(ClerkIdentity).to have_received(:profile).once
     user.update!(clerk_profile_checked_at: 6.minutes.ago)
     described_class.call(user)
     expect(ClerkIdentity).to have_received(:profile).twice
+  end
+
+  it "stops looking up a complete profile even after the lease expires" do
+    described_class.call(user)
+    user.update!(clerk_profile_checked_at: 6.minutes.ago)
+    described_class.call(User.find(user.id))
+    expect(ClerkIdentity).to have_received(:profile).once
   end
 
   it "retains saved fields on outages and bounds retry attempts" do

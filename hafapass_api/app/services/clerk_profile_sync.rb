@@ -7,6 +7,8 @@ class ClerkProfileSync
   REFRESH_INTERVAL = 5.minutes
 
   def self.call(user)
+    return user if %i[email first_name last_name].all? { |field| user.public_send(field).present? }
+
     checked_at = Time.current.change(nsec: 0)
     acquired = User.where(id: user.id)
       .where("clerk_profile_checked_at IS NULL OR clerk_profile_checked_at < ?", checked_at - REFRESH_INTERVAL)
