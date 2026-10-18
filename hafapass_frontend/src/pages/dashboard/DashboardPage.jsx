@@ -266,6 +266,8 @@ function DashboardSession({ authContext }) {
  const [eventMeta, setEventMeta] = useState(null)
  const [listLoading, setListLoading] = useState(false)
  const loadGeneration = useRef(0)
+ const loadingOrganization = useRef(null)
+ const eventRequest = useRef(null)
  const mounted = useRef(false)
  const requests = useRef(new Set())
  const organization = organizations.find(item => String(item.id) === selectedOrganizationId)
@@ -334,6 +336,32 @@ function DashboardSession({ authContext }) {
   }
  }
 
+ // List navigation owns only its GET. Profile edits and readiness mutations
+ // keep the same organization/account context until a full reload withdraws it.
+ const fetchEvents = async (context = profileContext) => {
+  const request = beginRequest(context)
+  if (!request) return
+  eventRequest.current?.controller.abort()
+  eventRequest.current = request
+  const current = () => request.current() && eventRequest.current === request
+  setListLoading(true)
+  setError(null)
+  try {
+   const response = await apiClient.get('/organizer/events', { ...request.config, params: { q: listing.q, page: listing.page } })
+   if (!current()) return
+   const data = response.data.events || response.data
+   setEvents(Array.isArray(data) ? data : [])
+   setEventMeta(response.data.meta || null)
+  } catch (err) {
+   if (current()) setError(err.response?.status === 401 ? 'Please sign in to access the dashboard.' : 'Failed to load events. Please try again.')
+  } finally {
+   request.release()
+   if (current()) { setLoading(false); setListLoading(false) }
+  }
+ }
+ const fetchEventsRef = useRef(fetchEvents)
+ fetchEventsRef.current = fetchEvents
+
  const fetchDashboard = async () => {
   if (!mounted.current) return
   const generation = ++loadGeneration.current
@@ -342,6 +370,7 @@ function DashboardSession({ authContext }) {
   closeEditor(editorRef.current)
   setReadinessLoading(false)
   const requestedOrganization = window.localStorage.getItem('hafapass_organization_id')
+  loadingOrganization.current = requestedOrganization || ''
   if (profileContext?.organizationId !== requestedOrganization) {
    setLoading(true)
    setProfile(null)
@@ -355,6 +384,7 @@ function DashboardSession({ authContext }) {
   if (!request) return
   setListLoading(true)
   setError(null)
+  let eventsStarted = false
   try {
    const organizationsRes = await apiClient.get('/organizer/organizations', request.config)
    if (!current()) return
@@ -362,6 +392,7 @@ function DashboardSession({ authContext }) {
    setOrganizations(availableOrganizations)
    const storedOrganizationId = window.localStorage.getItem('hafapass_organization_id')
    const selectedOrganization = availableOrganizations.find(item => item.id.toString() === storedOrganizationId) || availableOrganizations[0]
+   loadingOrganization.current = selectedOrganization ? String(selectedOrganization.id) : ''
    if (selectedOrganization) {
     window.localStorage.setItem('hafapass_organization_id', selectedOrganization.id.toString())
     setSelectedOrganizationId(selectedOrganization.id.toString())
@@ -377,12 +408,8 @@ function DashboardSession({ authContext }) {
    setProfile(profileRes.data)
    setProfileContext(context)
 
-   const eventsRes = await apiClient.get('/organizer/events', { ...selectedConfig, params: { q: listing.q, page: listing.page } })
-   if (!current()) return
-   // Handle both paginated { events: [...], meta: {...} } and legacy array response
-   const eventsData = eventsRes.data.events || eventsRes.data
-   setEvents(Array.isArray(eventsData) ? eventsData : [])
-   setEventMeta(eventsRes.data.meta || null)
+   eventsStarted = true
+   void fetchEventsRef.current(context)
   } catch (err) {
    if (!current()) return
    if (err.response?.status === 404) {
@@ -396,7 +423,7 @@ function DashboardSession({ authContext }) {
    }
   } finally {
    request.release()
-   if (current()) { setLoading(false); setListLoading(false) }
+   if (current() && !eventsStarted) { setLoading(false); setListLoading(false) }
   }
  }
 
@@ -416,7 +443,15 @@ function DashboardSession({ authContext }) {
    owned.forEach(controller => controller.abort())
    window.removeEventListener('storage', changed)
   }
- }, [listing.q, listing.page, selectedOrganizationId])
+ }, [])
+
+ useLayoutEffect(() => {
+  if (loadingOrganization.current !== selectedOrganizationId) fetchDashboardRef.current()
+ }, [selectedOrganizationId])
+
+ useLayoutEffect(() => {
+  void fetchEventsRef.current()
+ }, [listing.q, listing.page])
 
  if (loading) {
   return (
@@ -450,7 +485,6 @@ function DashboardSession({ authContext }) {
    <select aria-label="Organization" value={selectedOrganizationId} onChange={event => {
     window.localStorage.setItem('hafapass_organization_id', event.target.value)
     setSelectedOrganizationId(event.target.value)
-    fetchDashboard()
    }} className="input mt-2 min-h-[44px] min-w-0 max-w-full">
     {organizations.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
    </select>
@@ -482,7 +516,6 @@ function DashboardSession({ authContext }) {
        <select value={selectedOrganizationId} onChange={event => {
         window.localStorage.setItem('hafapass_organization_id', event.target.value)
         setSelectedOrganizationId(event.target.value)
-        fetchDashboard()
        }} className="input min-h-[44px] min-w-0 max-w-full !w-full !py-2 text-sm sm:flex-1 sm:max-w-sm">
         {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {(organization.role || 'staff').replaceAll('_', ' ')}</option>)}
        </select>

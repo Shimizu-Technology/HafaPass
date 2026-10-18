@@ -16,6 +16,56 @@ const meta = (page, count = 21) => ({ current_page: page, total_pages: Math.ceil
 const event = id => ({ id, organization_id: 1, title: `Discovery event ${id}`, status: 'published', timezone: 'Pacific/Guam', permissions: { scan: true, edit_event_content: true, refund: true, view_finance: true } })
 const order = id => ({ id, reference: `HP-OLDER-${id}`, buyer_name: `Buyer ${id}`, buyer_email: `buyer${id}@example.invalid`, ticket_count: 1, total_cents: 1000, refundable_cents: 1000, created_at: '2026-01-01T00:00:00Z' })
 const organization = { id: 1, name: 'Discovery org', permissions: { manage_organization: true, manage_events: true } }
+const deferred = () => {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+// Hold renewal separately so these tests keep the grant unchanged. A real
+// peer renewal is allowed to supersede a refusal of an older grant.
+async function concurrentScannerReads() {
+  const manifest = await signedManifest(1, [])
+  const direct = deferred(), dashboard = deferred(), renewal = deferred()
+  let holding = false, directConfig, dashboardConfig, initialSummaryReturned = false, startupSyncStarted = false
+  const startupSync = deferred()
+  const capture = admissionStore.captureAdmissionAccessContext
+  vi.spyOn(admissionStore, 'captureAdmissionAccessContext').mockImplementation(async (...args) => {
+    const context = await capture(...args)
+    if (initialSummaryReturned && !startupSyncStarted) {
+      startupSyncStarted = true
+      await startupSync.promise
+    }
+    return context
+  })
+  apiClient.get.mockImplementation((url, config) => {
+    if (url === '/organizer/events') return Promise.resolve({ data: { events: [event(config.params.page === 2 ? 21 : 1)], meta: meta(config.params.page) } })
+    if (url === '/organizer/events/1') { directConfig = config; return direct.promise }
+    if (holding && url.endsWith('/admissions')) { dashboardConfig = config; return dashboard.promise }
+    if (holding && url.endsWith('/manifest')) return renewal.promise
+    if (url.endsWith('/admissions')) initialSummaryReturned = true
+    return Promise.resolve({ data: url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } })
+  })
+  apiClient.post.mockResolvedValue({ data: { id: 91, identifier: 'concurrent-scanner', effective: true, authorization_expires_at: new Date(Date.now() + 600000).toISOString() } })
+  const mounted = view(ScannerPage, '/dashboard/scanner?event=1')
+  // Observe and release the automatic startup sync before clicking the manual
+  // control. Waiting for its initial enabled render can race this effect.
+  await waitFor(() => expect(startupSyncStarted).toBe(true))
+  expect(screen.getByRole('button', { name: 'Sync now' })).toBeDisabled()
+  await act(async () => startupSync.resolve())
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+  holding = true
+  return { direct, dashboard, renewal, mounted, manifest,
+    directConfig: () => directConfig, dashboardConfig: () => dashboardConfig,
+    startDirect: async () => {
+      await userEvent.click(screen.getByRole('button', { name: 'Next', exact: true }))
+      await waitFor(() => expect(directConfig).toBeDefined())
+    },
+    startDashboard: async () => {
+      await userEvent.click(screen.getByRole('button', { name: 'Sync now' }))
+      await waitFor(() => expect(dashboardConfig).toBeDefined())
+    },
+  }
+}
 function ScannerNavigation() { const navigate = useNavigate(); return <button onClick={() => navigate('/dashboard/scanner?event=21')}>Open other scanner</button> }
 function view(Page, path = '/dashboard', extra = null) {
   return render(<MemoryRouter initialEntries={[path]}>{extra}<Routes>
@@ -238,6 +288,76 @@ describe('complete operational discovery', () => {
     await act(async () => rejectOld({ response: { status: 403 } }))
     await waitFor(() => expect(screen.getByLabelText('Ticket QR code')).toBeEnabled())
     expect((await loadAuthorizedScanner(1)).manifest.payload.version).toBe(2)
+  })
+
+  it.each(['dashboard-first', 'direct-first'])('completes independent scanner summary and direct reads (%s)', async order => {
+    const reads = await concurrentScannerReads()
+    if (order === 'dashboard-first') { await reads.startDashboard(); await reads.startDirect() }
+    else { await reads.startDirect(); await reads.startDashboard() }
+    expect(reads.directConfig().signal).not.toBe(reads.dashboardConfig().signal)
+    expect(reads.directConfig().signal.aborted).toBe(false)
+    expect(reads.dashboardConfig().signal.aborted).toBe(false)
+    await act(async () => {
+      reads.direct.resolve({ data: event(1) })
+      reads.dashboard.resolve({ data: { counts: { admitted: 7 }, permissions: {}, recent_actions: [] } })
+      reads.renewal.resolve({ data: reads.manifest })
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+    expect(screen.getByRole('heading', { name: 'Door totals' }).parentElement.parentElement).toHaveTextContent('7')
+    expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    expect(screen.getByLabelText('Event to scan')).toHaveValue('1')
+    expect(screen.queryByText(/canceled|could not be loaded|could not be synchronized/i)).not.toBeInTheDocument()
+    expect(await loadAuthorizedScanner(1)).not.toBeNull()
+    expect(apiClient.post.mock.calls.filter(([url]) => url.endsWith('/scanner_devices'))).toHaveLength(1)
+  })
+
+  it.each([401, 403, 404, 'permissions'])('honors a direct-event %s after an independent summary starts, preserving the journal', async refusal => {
+    const reads = await concurrentScannerReads()
+    await reads.startDirect()
+    await reads.startDashboard()
+    const pending = await queueAdmission({ eventId: 1, deviceId: 91, manifestVersion: 1,
+      ticket: { ticket_id: 501 }, credentialHash: 'concurrent-pending', source: 'offline' })
+    await act(async () => refusal === 'permissions'
+      ? reads.direct.resolve({ data: { ...event(1), permissions: { scan: false } } })
+      : reads.direct.reject({ response: { status: refusal } }))
+    await screen.findByText('This event is no longer available for scanning. Saved scans remain on this device.')
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Start camera' })).toBeDisabled()
+    expect(reads.dashboardConfig().signal.aborted).toBe(true)
+    expect(await loadAuthorizedScanner(1)).toBeNull()
+    expect((await queuedActions(1, 91)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+    await act(async () => {
+      reads.dashboard.resolve({ data: { counts: { admitted: 99 }, permissions: {}, recent_actions: [] } })
+      reads.renewal.resolve({ data: reads.manifest })
+    })
+    expect(screen.queryByRole('heading', { name: 'Door totals' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect(await loadAuthorizedScanner(1)).toBeNull()
+    reads.mounted.unmount()
+    render(<MemoryRouter initialEntries={['/dashboard/scanner?event=1']}><ScannerPage offlineOnly /></MemoryRouter>)
+    await screen.findByText(/This event is not saved on this device/)
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    expect((await queuedActions(1, 91)).map(action => action.action_uuid)).toEqual([pending.action_uuid])
+  })
+
+  it.each([403, 503])('handles concurrent summary %s without allowing a late direct success to restore refused access', async status => {
+    const reads = await concurrentScannerReads()
+    await reads.startDashboard()
+    await reads.startDirect()
+    await act(async () => reads.dashboard.reject({ response: { status, data: { error: 'Summary request failed' } } }))
+    await screen.findByText('Summary request failed')
+    expect(reads.directConfig().signal.aborted).toBe(status === 403)
+    await act(async () => {
+      reads.direct.resolve({ data: event(1) })
+      reads.renewal.resolve({ data: reads.manifest })
+    })
+    if (status === 403) {
+      expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+      expect(await loadAuthorizedScanner(1)).toBeNull()
+    } else {
+      expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+      expect(await loadAuthorizedScanner(1)).not.toBeNull()
+    }
   })
 
   it.each([403, 404, 'permissions'])('withdraws prepared event access when direct revalidation refuses it (%s)', async refusal => {

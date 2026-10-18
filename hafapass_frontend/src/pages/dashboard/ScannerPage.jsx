@@ -204,6 +204,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const downloadRequestRef = useRef(null)
   const dashboardRequestRef = useRef(null)
   const eventListAccessRef = useRef(null)
+  const directEventAccessRef = useRef(null)
   const privateReadGenerationRef = useRef(0)
   const refusedAccessRef = useRef(new Set())
   const routeScopeRef = useRef(null)
@@ -216,6 +217,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       downloadRequestRef.current?.abort()
       dashboardRequestRef.current?.abort()
       eventListAccessRef.current?.abort()
+      directEventAccessRef.current?.abort()
       setSearching(false)
       setDownloading(false)
     }
@@ -264,6 +266,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     downloadRequestRef.current?.abort()
     dashboardRequestRef.current?.abort()
     eventListAccessRef.current?.abort()
+    directEventAccessRef.current?.abort()
     currentManifestRef.current = null
     resultContextRef.current = null
     stopCamera()
@@ -332,7 +335,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       ++presentationRef.current
       currentManifestRef.current = null
       stopCamera()
-      for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef, eventListAccessRef]) {
+      for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef, eventListAccessRef, directEventAccessRef]) {
         if (ref.current !== request.controller) ref.current?.abort()
       }
       setDevice(null); setManifest(null); setRecoveryDevice(null); setDashboard(null)
@@ -375,7 +378,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     ++presentationRef.current
     currentManifestRef.current = null
     stopCamera()
-    for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef]) ref.current?.abort()
+    for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef, directEventAccessRef]) ref.current?.abort()
     setDevice(null); setManifest(null); setRecoveryDevice(null); setDashboard(null)
     setEvents([]); setResolvedEvent(null); setEventMeta(null)
     setSearchResults([]); setSearchQuery(''); setManualCode(''); setScanResult(null)
@@ -758,11 +761,13 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     const generation = setupGenerationRef.current
     const readGeneration = privateReadGenerationRef.current
     eventListAccessRef.current?.abort()
+    directEventAccessRef.current?.abort()
     eventListAccessRef.current = controller
     const scopeCurrent = () => current() && !controller.signal.aborted && eventListAccessRef.current === controller
       && preparedEventId === eventIdRef.current && readGeneration === privateReadGenerationRef.current
     const listAccess = { preparedEventId, scopeCurrent, current: () => scopeCurrent() && generation === setupGenerationRef.current }
     let listContexts = []
+    let verification = null
     Promise.resolve().then(async () => {
       listContexts = await captureOrganizationAdmissionContexts(organizationId, { isCurrent: listAccess.current })
       if (!listAccess.current()) throw new DOMException('Scanner context changed', 'AbortError')
@@ -778,12 +783,12 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       if (!selected && preferred) {
         // A page boundary is not an authorization decision. Resolve the exact
         // event through the authorized endpoint before preparing this device.
-        const verification = String(preferred) === eventIdRef.current ? beginPrivateRead(dashboardRequestRef, String(preferred)) : null
+        verification = String(preferred) === eventIdRef.current ? beginPrivateRead(directEventAccessRef, String(preferred)) : null
         const accessContext = verification ? await captureAdmissionAccessContext(String(preferred), { isCurrent: verification.current }) : null
         if (!current() || (verification && !verification.current())) return
         try {
-          const direct = await apiClient.get(`/organizer/events/${encodeURIComponent(preferred)}`, config)
-          if (!current()) return
+          const direct = await apiClient.get(`/organizer/events/${encodeURIComponent(preferred)}`, verification?.config || config)
+          if (!current() || (verification && !verification.current())) return
           if (String(direct.data.id) === String(preferred) && direct.data.permissions?.scan === true
             && (organizationId == null || String(direct.data.organization_id) === organizationId)) selected = direct.data
           else if (verification) { const refusal = new Error('Scanner permission was refused'); refusal.response = { status: 403 }; throw refusal }
@@ -815,7 +820,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       setEventListError('Events could not be loaded. Retry while connected.')
       if (!eventIdRef.current) void restoreSaved()
     }).finally(() => { if (current()) setEventListLoading(false) })
-    return () => { active = false; controller.abort() }
+    return () => { active = false; controller.abort(); verification?.controller.abort() }
   }, [offlineOnly, offlineEventId, requestedEventId, routeScope, setEventId, listing.q, listing.page, eventListRetry, bindingRevision, beginPrivateRead, handlePrivateReadError, handleEventListRefusal])
 
   useEffect(() => {

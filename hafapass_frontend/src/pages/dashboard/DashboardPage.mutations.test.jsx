@@ -32,6 +32,7 @@ beforeEach(() => {
   apiClient.get.mockReset(); apiClient.post.mockReset(); apiClient.put.mockReset()
   uploadImage.mockReset()
   window.localStorage.clear()
+  window.sessionStorage.clear()
   window.localStorage.setItem('hafapass_organization_id', '1')
   profiles = { 1: profile('Alpha'), 2: profile('Beta') }
   apiClient.get.mockImplementation((path, config) => {
@@ -45,6 +46,70 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllEnvs() })
 
 describe('dashboard mutation ownership', () => {
+  it.each(['page', 'search'])('keeps a readiness mutation live while changing the event %s', async navigation => {
+    const pending = deferred()
+    const normalGet = apiClient.get.getMockImplementation()
+    apiClient.get.mockImplementation((path, config) => path === '/organizer/events'
+      ? Promise.resolve({ data: { events: [{ id: config.params.page, title: `Event page ${config.params.page}`, status: 'published' }],
+        meta: { current_page: config.params.page, total_pages: 2, total_count: 21 } } }) : normalGet(path, config))
+    apiClient.post.mockReturnValueOnce(pending.promise)
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }))
+    const readinessConfig = apiClient.post.mock.calls[0][2]
+    const profileReads = apiClient.get.mock.calls.filter(([path]) => path !== '/organizer/events')
+    if (navigation === 'page') await userEvent.click(screen.getByRole('button', { name: 'Next', exact: true }))
+    else {
+      await userEvent.type(screen.getByLabelText('Find an event'), 'venue')
+      await userEvent.click(screen.getByRole('button', { name: 'Search events', exact: true }))
+    }
+    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/organizer/events', expect.objectContaining({
+      params: { q: navigation === 'search' ? 'venue' : '', page: navigation === 'page' ? 2 : 1 }, organizationId: '1',
+    })))
+    expect(readinessConfig.signal.aborted).toBe(false)
+    expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()
+    expect(apiClient.get.mock.calls.filter(([path]) => path !== '/organizer/events')).toEqual(profileReads)
+    await act(async () => pending.resolve({ data: { ...profiles[1], verification_status: 'pending' } }))
+    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.getByLabelText('Find an event')).toHaveValue(navigation === 'search' ? 'venue' : '')
+    expect(screen.getByText(`Page ${navigation === 'page' ? 2 : 1} of 2 · 21 results`)).toBeInTheDocument()
+  })
+
+  it.each([true, false])('loads each organization once, including initial auto-selection (%s)', async stored => {
+    if (!stored) window.localStorage.removeItem('hafapass_organization_id')
+    mount()
+    await screen.findByRole('heading', { name: 'Welcome, Alpha' })
+    for (const path of ['/organizer/organizations', '/organizer_profile', '/organizer/events']) {
+      expect(apiClient.get.mock.calls.filter(([url]) => url === path)).toHaveLength(1)
+    }
+    await switchTo(2)
+    for (const path of ['/organizer/organizations', '/organizer_profile', '/organizer/events']) {
+      expect(apiClient.get.mock.calls.filter(([url]) => url === path)).toHaveLength(2)
+    }
+    expect(apiClient.get.mock.calls.filter(([url]) => url === '/organizer_profile').map(([, config]) => config.organizationId)).toEqual(['1', '2'])
+  })
+
+  it.each(['success', 'error'])('ignores a paged Alpha list %s after switching organizations', async outcome => {
+    const old = deferred()
+    const normalGet = apiClient.get.getMockImplementation()
+    apiClient.get.mockImplementation((path, config) => {
+      if (path !== '/organizer/events') return normalGet(path, config)
+      if (config.params.page === 2) return old.promise
+      return Promise.resolve({ data: { events: [{ id: 101, title: `Organization ${config.organizationId} event`, status: 'published' }],
+        meta: { current_page: 1, total_pages: 2, total_count: 21 } } })
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Next', exact: true }))
+    const oldConfig = apiClient.get.mock.calls.at(-1)[1]
+    await switchTo(2)
+    expect(oldConfig.signal.aborted).toBe(true)
+    await act(async () => outcome === 'success'
+      ? old.resolve({ data: { events: [{ id: 102, title: 'Obsolete Alpha list', status: 'published' }] } })
+      : old.reject({ response: { status: 503 } }))
+    expect(screen.getByRole('heading', { name: 'Welcome, Beta' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Organization 2 event/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Obsolete Alpha|Failed to load/)).not.toBeInTheDocument()
+  })
+
   it.each(['success', 'failure'])('withdraws Alpha rows and controls throughout a delayed Beta organization switch (%s)', async outcome => {
     const betaProfile = deferred(), betaEvents = deferred()
     const normalGet = apiClient.get.getMockImplementation()
