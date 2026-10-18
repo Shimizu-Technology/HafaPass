@@ -1,3 +1,6 @@
+import useOperationalListing from '../../hooks/useOperationalListing'
+import OperationalSearch from '../../components/OperationalSearch'
+import OperationalPagination from '../../components/OperationalPagination'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
@@ -7,7 +10,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../../api/client'
 import { formatEventDateTime } from '../../utils/eventTime'
 import {
-  applySyncResults, captureAdmissionAccessContext, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
+  applySyncResults, captureAdmissionAccessContext, captureOrganizationAdmissionContexts, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
   queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess,
 } from '../../utils/admissionStore'
 import { scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding } from '../../utils/scannerAccountBinding'
@@ -141,7 +144,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const bindingRevision = useSyncExternalStore(subscribeScannerBinding, scannerBindingRevision)
   const bindingOwnerRef = useRef(currentScannerOwner())
   const withdrawalRef = useRef(scannerWithdrawalRevision())
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const requestedEventId = searchParams.get('event')
   const routeScope = JSON.stringify([location.key, location.search, offlineOnly ? offlineEventId : null])
@@ -151,6 +154,12 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   }
   const selectionVisit = selectionVisitRef.current.generation
   const [events, setEvents] = useState([])
+  const listing = useOperationalListing(`scanner-events:${currentScannerOwner()}:${window.localStorage.getItem('hafapass_organization_id')}`)
+  const [eventMeta, setEventMeta] = useState(null)
+  const [resolvedEvent, setResolvedEvent] = useState(null)
+  const [eventListError, setEventListError] = useState('')
+  const [eventListLoading, setEventListLoading] = useState(false)
+  const [eventListRetry, setEventListRetry] = useState(0)
   const [eventSelection, setEventSelection] = useState(null)
   const eventId = eventSelection?.route === routeScope && eventSelection?.visit === selectionVisit ? eventSelection.id : ''
   const setEventId = useCallback(id => setEventSelection({ route: routeScope, visit: selectionVisit, id: String(id) }), [routeScope, selectionVisit])
@@ -194,6 +203,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const searchRequestRef = useRef(null)
   const downloadRequestRef = useRef(null)
   const dashboardRequestRef = useRef(null)
+  const eventListAccessRef = useRef(null)
+  const directEventAccessRef = useRef(null)
   const privateReadGenerationRef = useRef(0)
   const refusedAccessRef = useRef(new Set())
   const routeScopeRef = useRef(null)
@@ -205,6 +216,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       searchRequestRef.current?.abort()
       downloadRequestRef.current?.abort()
       dashboardRequestRef.current?.abort()
+      eventListAccessRef.current?.abort()
+      directEventAccessRef.current?.abort()
       setSearching(false)
       setDownloading(false)
     }
@@ -252,11 +265,14 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     searchRequestRef.current?.abort()
     downloadRequestRef.current?.abort()
     dashboardRequestRef.current?.abort()
+    eventListAccessRef.current?.abort()
+    directEventAccessRef.current?.abort()
     currentManifestRef.current = null
     resultContextRef.current = null
     stopCamera()
     setEventSelection(null)
     setEvents([])
+    setResolvedEvent(null)
     setDevice(null)
     setRecoveryDevice(null)
     setManifest(null)
@@ -319,7 +335,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       ++presentationRef.current
       currentManifestRef.current = null
       stopCamera()
-      for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef]) {
+      for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef, eventListAccessRef, directEventAccessRef]) {
         if (ref.current !== request.controller) ref.current?.abort()
       }
       setDevice(null); setManifest(null); setRecoveryDevice(null); setDashboard(null)
@@ -352,6 +368,50 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       return
     }
     setError(readError.response?.data?.error || fallback)
+  }, [stopCamera])
+
+  const handleEventListRefusal = useCallback(async (readError, request, contexts) => {
+    if (!request.current()) return
+    const owner = currentScannerOwner()
+    const generation = ++setupGenerationRef.current
+    const denialCurrent = () => request.scopeCurrent() && generation === setupGenerationRef.current
+    ++presentationRef.current
+    currentManifestRef.current = null
+    stopCamera()
+    for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef, directEventAccessRef]) ref.current?.abort()
+    setDevice(null); setManifest(null); setRecoveryDevice(null); setDashboard(null)
+    setEvents([]); setResolvedEvent(null); setEventMeta(null)
+    setSearchResults([]); setSearchQuery(''); setManualCode(''); setScanResult(null)
+    setSearching(false); setDownloading(false); setSetupBusy(false)
+    // Persist every refusal before the first storage yield. The journals and
+    // their device identities remain available for authorized recovery.
+    const refusals = contexts.map(context => {
+      const token = crypto.randomUUID()
+      refusedAccessRef.current.add(JSON.stringify([owner, String(context.eventId)]))
+      saveStoredRefusal(owner, context.eventId, token)
+      return { context, token }
+    })
+    setError(readError.response?.data?.error || 'Scanner access was refused. Sign in and verify your event assignments while connected. Saved scans remain on this device.')
+    for (const { context, token } of refusals) {
+      try {
+        const removed = await purgeExpiredAdmissionAccess(context.eventId, { context: { ...context, isCurrent: denialCurrent } })
+        if (!denialCurrent()) return
+        if (!removed) {
+          const renewed = await loadAuthorizedScanner(context.eventId).catch(() => null)
+          if (!denialCurrent()) return
+          if (renewed && clearStoredRefusal(owner, context.eventId, token)) {
+            refusedAccessRef.current.delete(JSON.stringify([owner, String(context.eventId)]))
+            if (String(context.eventId) === request.preparedEventId) {
+              currentManifestRef.current = renewed.manifest
+              setDevice(renewed.device); setManifest(renewed.manifest)
+              setResolvedEvent(renewed.manifest.payload.event); setError(null)
+            }
+          }
+        }
+      } catch {
+        if (denialCurrent()) setError('Saved scanner access could not be removed. Stay connected and verify access before admitting more guests. Saved scans remain on this device.')
+      }
+    }
   }, [stopCamera])
 
   const fetchDashboard = useCallback(async selectedEventId => {
@@ -561,9 +621,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     if (!selectedEventId) return
     const generation = ++setupGenerationRef.current
     const owner = currentScannerOwner()
+    const organizationId = window.localStorage.getItem('hafapass_organization_id')
     const route = routeScopeRef.current
     const current = () => mountedRef.current && route === routeScopeRef.current
-      && generation === setupGenerationRef.current && eventIdRef.current === String(selectedEventId) && owner === currentScannerOwner()
+      && generation === setupGenerationRef.current && eventIdRef.current === String(selectedEventId) && owner === currentScannerOwner() && organizationId === window.localStorage.getItem('hafapass_organization_id')
     const refusedKey = JSON.stringify([owner, String(selectedEventId)])
     const priorRefusalTokens = storedRefusalTokens(owner, selectedEventId)
     const accessRefused = refusedAccessRef.current.has(refusedKey) || hasStoredRefusal(owner, selectedEventId)
@@ -603,7 +664,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           })
           networkPhase = false
           if (!current()) return
-          await saveDevice(selectedEventId, registration.data, { isCurrent: current, context: failureContext })
+          await saveDevice(selectedEventId, { ...registration.data, organization_id: organizationId }, { isCurrent: current, context: failureContext })
           if (!current()) return
           const registeredDevice = await loadDevice(selectedEventId)
           if (current()) setRecoveryDevice(registeredDevice)
@@ -687,22 +748,80 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       }
     }
     if (offlineOnly) { void restoreSaved(); return () => { active = false } }
-    apiClient.get('/organizer/events').then(response => {
-      if (!active) return
-      const accessible = response.data.events || []
+    const controller = new AbortController()
+    const owner = currentScannerOwner()
+    const authContext = getApiAuthContext()
+    const organizationId = window.localStorage.getItem('hafapass_organization_id')
+    const current = () => active && owner === currentScannerOwner() && authContext === getApiAuthContext()
+      && organizationId === window.localStorage.getItem('hafapass_organization_id')
+    const config = { signal: controller.signal, organizationId, ...(authContext ? { authContext } : {}) }
+    setEventListLoading(true)
+    setEventListError('')
+    const preparedEventId = eventIdRef.current
+    const generation = setupGenerationRef.current
+    const readGeneration = privateReadGenerationRef.current
+    eventListAccessRef.current?.abort()
+    directEventAccessRef.current?.abort()
+    eventListAccessRef.current = controller
+    const scopeCurrent = () => current() && !controller.signal.aborted && eventListAccessRef.current === controller
+      && preparedEventId === eventIdRef.current && readGeneration === privateReadGenerationRef.current
+    const listAccess = { preparedEventId, scopeCurrent, current: () => scopeCurrent() && generation === setupGenerationRef.current }
+    let listContexts = []
+    let verification = null
+    Promise.resolve().then(async () => {
+      listContexts = await captureOrganizationAdmissionContexts(organizationId, { isCurrent: listAccess.current })
+      if (!listAccess.current()) throw new DOMException('Scanner context changed', 'AbortError')
+      return apiClient.get('/organizer/events', { ...config, params: { q: listing.q, page: listing.page, purpose: 'scan' } })
+    }).then(async response => {
+      if (!current()) return
+      const accessible = (response.data.events || []).filter(event => event.permissions?.scan !== false)
       setEvents(accessible)
+      setEventMeta(response.data.meta || null)
       const saved = window.localStorage.getItem('hafapass_scanner_event_id')
-      const initial = requestedEventId !== null
-        ? accessible.find(event => String(event.id) === requestedEventId)?.id
-        : accessible.find(event => String(event.id) === saved)?.id || accessible[0]?.id
-      if (initial) setEventId(String(initial))
-      else {
+      const preferred = eventIdRef.current || (requestedEventId !== null ? requestedEventId : saved)
+      let selected = accessible.find(event => String(event.id) === String(preferred))
+      if (!selected && preferred) {
+        // A page boundary is not an authorization decision. Resolve the exact
+        // event through the authorized endpoint before preparing this device.
+        verification = String(preferred) === eventIdRef.current ? beginPrivateRead(directEventAccessRef, String(preferred)) : null
+        const accessContext = verification ? await captureAdmissionAccessContext(String(preferred), { isCurrent: verification.current }) : null
+        if (!current() || (verification && !verification.current())) return
+        try {
+          const direct = await apiClient.get(`/organizer/events/${encodeURIComponent(preferred)}`, verification?.config || config)
+          if (!current() || (verification && !verification.current())) return
+          if (String(direct.data.id) === String(preferred) && direct.data.permissions?.scan === true
+            && (organizationId == null || String(direct.data.organization_id) === organizationId)) selected = direct.data
+          else if (verification) { const refusal = new Error('Scanner permission was refused'); refusal.response = { status: 403 }; throw refusal }
+        } catch (directError) {
+          if (!current()) return
+          if (![401, 403, 404].includes(directError.response?.status)) throw directError
+          if (String(preferred) === eventIdRef.current) {
+            if (!verification?.current()) return
+            await handlePrivateReadError({ response: { status: 403, data: { error: 'This event is no longer available for scanning. Saved scans remain on this device.' } } }, verification, accessContext, 'Scanner access could not be verified.')
+            return
+          }
+        }
+      }
+      if (!current()) return
+      if (!selected && requestedEventId === null && !eventIdRef.current) selected = accessible[0]
+      if (selected) {
+        setResolvedEvent(selected)
+        setEventId(String(selected.id))
+      } else {
         if (requestedEventId !== null) setError('This event is not assigned to your account. Choose an assigned event or ask the event manager for access.')
         setSetupBusy(false)
       }
-    }).catch(() => { if (active) void restoreSaved() })
-    return () => { active = false }
-  }, [offlineOnly, offlineEventId, requestedEventId, routeScope, setEventId])
+    }).catch(async listError => {
+      if (!current()) return
+      if ([401, 403].includes(listError.response?.status)) {
+        await handleEventListRefusal(listError, listAccess, listContexts)
+        return
+      }
+      setEventListError('Events could not be loaded. Retry while connected.')
+      if (!eventIdRef.current) void restoreSaved()
+    }).finally(() => { if (current()) setEventListLoading(false) })
+    return () => { active = false; controller.abort(); verification?.controller.abort() }
+  }, [offlineOnly, offlineEventId, requestedEventId, routeScope, setEventId, listing.q, listing.page, eventListRetry, bindingRevision, beginPrivateRead, handlePrivateReadError, handleEventListRefusal])
 
   useEffect(() => {
     if (!eventId) return
@@ -987,7 +1106,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     }
   }
 
-  const selectedEvent = events.find(event => String(event.id) === eventId)
+  const selectedEvent = events.find(event => String(event.id) === eventId) || (String(resolvedEvent?.id) === eventId ? resolvedEvent : null)
   const ready = Boolean(eventId && device && manifest && Number(manifest.payload?.event?.id) === Number(eventId))
   const expiresAt = Math.min(Date.parse(device?.authorization_expires_at || ''), Date.parse(manifest?.payload.expires_at || ''))
   const eventTimezone = manifest?.payload.event?.timezone || selectedEvent?.timezone || 'Pacific/Guam'
@@ -1004,11 +1123,19 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           <p className="mt-2 text-sm text-neutral-600">Prepare this device online before the event.</p>
         </div>
         <div className="w-full sm:max-w-sm">
+          {!offlineOnly && <>
+            <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue or event ID." query={listing.q} onSearch={listing.search} busy={eventListLoading} />
+            {eventListLoading && <p role="status" className="mb-2 text-sm">Loading events…</p>}
+            {eventListError && <p role="alert" className="mb-2 text-sm text-red-800">{eventListError} <button type="button" className="min-h-11 underline" onClick={() => setEventListRetry(value => value + 1)}>Retry event search</button></p>}
+            {!eventListLoading && listing.q && events.length === 0 && <p role="status" className="mb-2 text-sm">No matching events. Try another search. Your selected event stays ready.</p>}
+          </>}
           <label htmlFor="scanner-event" className="mb-1 block text-sm font-medium text-neutral-800">Event to scan</label>
-          <select id="scanner-event" value={eventId} onChange={event => setEventId(event.target.value)} className="input w-full">
+          <select id="scanner-event" disabled={eventListLoading} value={eventId} onChange={event => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('event', event.target.value); return next })} className="input w-full">
             {!eventId && <option value="">{events.length ? 'Choose an assigned event' : 'No assigned events'}</option>}
+            {selectedEvent && !events.some(event => String(event.id) === eventId) && <option value={eventId}>{selectedEvent.title} (selected)</option>}
             {events.map(event => <option key={event.id} value={event.id}>{event.title}</option>)}
           </select>
+          {!offlineOnly && <OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={eventListLoading} label="Event pages" />}
         </div>
       </div>
 
@@ -1029,7 +1156,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         <p className="font-semibold text-neutral-950">Ticket list ready · {manifest.payload.tickets.length} {manifest.payload.tickets.length === 1 ? 'ticket' : 'tickets'}</p>
         <p className="mt-1 text-sm text-neutral-700">{expiryLabel ? `Access expires ${expiryLabel} · ${eventTimezone}` : 'Reconnect to verify the access expiry.'}</p>
       </section>}
-      {error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
+      {error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p>{error}</p>{!ready && eventId && online && <button type="button" disabled={setupBusy} onClick={() => configureEvent(eventId)} className="mt-2 min-h-11 font-semibold underline">Verify scanner access</button>}</div>}
       {setupBusy && <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border bg-white p-4 text-sm"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> Preparing this device and verifying its ticket list…</div>}
 
       <nav aria-label="Check-in tools" className="mb-4 flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold text-brand-800">

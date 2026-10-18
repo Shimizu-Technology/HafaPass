@@ -120,6 +120,15 @@ RSpec.describe Commerce::RefundCreator do
     end.not_to change(Refund, :count)
   end
 
+  it "notifies the buyer once for an ordinary provider refund and its replay" do
+    refund = described_class.call(order: order, amount_cents: 1000, idempotency_key: "notified-refund")
+    expect(refund).to have_attributes(provider: "stripe", status: "succeeded")
+    expect(EmailService).to have_received(:send_refund_notification_async).with(order, refund: refund).once
+
+    expect(described_class.call(order: order, amount_cents: 1000, idempotency_key: "notified-refund")).to eq(refund)
+    expect(EmailService).to have_received(:send_refund_notification_async).with(order, refund: refund).once
+  end
+
   it "finalizes an existing pending refund during provider reconciliation" do
     pending = create(
       :refund,

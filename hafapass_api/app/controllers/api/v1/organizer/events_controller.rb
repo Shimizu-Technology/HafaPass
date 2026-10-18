@@ -11,8 +11,17 @@ module Api
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(:event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc)
-          pagy, paginated_events = paginate(events)
+            .includes(:event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc, id: :desc)
+          if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
+            assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner]).select(:event_id)
+            events = events.where(id: assigned_ids)
+          end
+          query = params[:q].to_s.strip.first(200)
+          if query.present?
+            pattern = "%#{Event.sanitize_sql_like(query)}%"
+            events = events.where("events.title ILIKE :q OR events.venue_name ILIKE :q OR events.slug ILIKE :q OR CAST(events.id AS TEXT) = :id", q: pattern, id: query)
+          end
+          pagy, paginated_events = paginate(events, items: params.fetch(:per_page, 20).to_i.clamp(1, 100))
 
           @event_permission_maps = OrganizationAuthorization.permissions_for_events(
             user: current_user, organization: current_organization, events: paginated_events.to_a
@@ -41,25 +50,29 @@ module Api
         end
 
         def update
-          attributes = parsed_event_params
-          can_manage = OrganizationAuthorization.allowed?(
-            user: current_user, organization: current_organization, permission: :manage_events, event: @event
-          )
-          unless can_manage
-            attributes.slice!("title", "description", "short_description", "cover_image_url", "category")
-          end
-          attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
-          reschedule = reschedule?(attributes)
-          change_reason = params[:change_reason].to_s.strip.presence
-          if reschedule && change_reason.blank?
-            return render json: { error: "A reason is required when changing the schedule of a published or postponed event" },
-              status: :unprocessable_entity
-          end
-
-          before_data = event_change_snapshot(@event) if reschedule
           updated = false
-          event_change = nil
           Event.transaction do
+            # Checkout takes the event before ticket types. NO KEY UPDATE also
+            # permits foreign-key checks from payment finalization while it
+            # finishes consuming a hold under the ticket-type lock.
+            @event.lock!("FOR NO KEY UPDATE")
+            @event.ticket_types.order(:id).lock.load
+            attributes = parsed_event_params
+            can_manage = OrganizationAuthorization.allowed?(
+              user: current_user, organization: current_organization, permission: :manage_events, event: @event
+            )
+            unless can_manage
+              attributes.slice!("title", "description", "short_description", "cover_image_url", "category")
+            end
+            attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
+            reschedule = reschedule?(attributes)
+            change_reason = params[:change_reason].to_s.strip.presence
+            if reschedule && change_reason.blank?
+              return render json: { error: "A reason is required when changing the schedule of a published or postponed event" },
+                status: :unprocessable_entity
+            end
+
+            before_data = event_change_snapshot(@event) if reschedule
             updated = @event.update(attributes)
             if updated && reschedule
               event_change = @event.event_changes.create!(

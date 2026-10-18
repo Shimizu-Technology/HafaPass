@@ -81,6 +81,19 @@ describe('ServiceCheck', () => {
     useBackendAvailability.mockReturnValue({ status: 'available', retry })
     render(<MemoryRouter initialEntries={['/dashboard/scanner']}><ServiceCheck /></MemoryRouter>)
     expect(await screen.findByTestId('auth-loading-fallback')).toHaveTextContent('Cached door scanner')
+    expect(screen.getByRole('button', { name: 'Reload to reconnect' })).toHaveAttribute('type', 'button')
+  })
+
+  it('offers an explicit reconnect action on a scanner route with a fragment', async () => {
+    loadAuthorizedScanner.mockResolvedValue({ device: { id: 9 }, manifest: { payload: { event: { id: 38 } } } })
+    useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
+    render(<MemoryRouter initialEntries={['/dashboard/scanner?event=38#manual']}><ServiceCheck /></MemoryRouter>)
+    expect(await screen.findByText('Cached door scanner')).toBeInTheDocument()
+    const reconnect = screen.getByRole('button', { name: 'Reload to reconnect' })
+    expect(reconnect).toHaveAttribute('type', 'button')
+    expect(reconnect).not.toHaveAttribute('download')
+    expect(screen.getByRole('status')).toHaveTextContent('Saved scans stay on this device')
+    expect(retry).not.toHaveBeenCalled()
   })
 
   it('reloads saved authorization when health changes after an online scanner was prepared', async () => {

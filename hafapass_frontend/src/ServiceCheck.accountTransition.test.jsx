@@ -88,6 +88,7 @@ describe('scanner authorization through actual service and auth boundaries', () 
     }
     expect(await screen.findByText('Ticket list ready · 1 ticket')).toBeInTheDocument()
     expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Reload to reconnect' })).toHaveAttribute('type', 'button')
     await act(async () => { expect(await queuedActions(eventId, 96)).toHaveLength(1) })
   })
 

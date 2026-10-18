@@ -2,6 +2,14 @@ require 'rails_helper'
 
 RSpec.describe Event, type: :model do
   describe "validations" do
+    it "rejects capacity outside its database integer range before persistence" do
+      event = build(:event, max_capacity: 2_147_483_647)
+      expect(event).to be_valid
+      event.max_capacity = 2_147_483_648
+      expect(event).not_to be_valid
+      expect(event.errors[:max_capacity]).to include("must be less than or equal to 2147483647")
+    end
+
     it "is valid with valid attributes" do
       event = build(:event)
       expect(event).to be_valid

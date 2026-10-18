@@ -270,7 +270,8 @@ function TicketContent({ authContext }) {
       <div className="max-w-md mx-auto px-4 py-12 text-center">
         <div className="card p-8">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-          <p className="text-red-700 font-medium mb-4">{error}</p>
+          <h1 className="text-xl font-bold text-neutral-950 mb-3">Ticket unavailable</h1>
+          <p role="alert" className="text-red-700 font-medium mb-4">{error}</p>
           <Link to="/events" className="btn-primary text-sm">
             Browse Events
           </Link>
@@ -372,7 +373,7 @@ function TicketContent({ authContext }) {
           {/* Event Details */}
           <div className="px-4 sm:px-6 py-5 space-y-3">
             <div>
-              <h2 className="font-display text-lg font-bold text-neutral-900">{event.title}</h2>
+              <h1 className="font-display text-lg font-bold text-neutral-900">{event.title}</h1>
               <p className="text-sm text-action font-semibold font-sans">{ticket_type.name}</p>
               {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
               {ticket.seat?.obstructed_view && <p className="mt-1 text-xs text-amber-700">Obstructed view{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}

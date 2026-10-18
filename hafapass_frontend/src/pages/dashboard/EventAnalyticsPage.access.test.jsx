@@ -18,13 +18,25 @@ function fixture(url) { return url.endsWith('/stats') ? stats : url.endsWith('/f
 function mount() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/analytics']}><Routes><Route path="/dashboard/events/:id/analytics" element={<EventAnalyticsPage />} /></Routes></MemoryRouter>) }
 const privateReads = () => apiClient.get.mock.calls.filter(([url]) => /\/(stats|finance|attendees)$/.test(url))
 beforeEach(() => {
-  vi.clearAllMocks(); window.localStorage.clear()
+  vi.clearAllMocks(); apiClient.get.mockReset(); apiClient.post.mockReset(); window.localStorage.clear()
   vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
   window.localStorage.setItem('hafapass_scanner_user_id', 'actor-a'); window.localStorage.setItem('hafapass_organization_id', '1')
   clearAuth = setAuthTokenGetter(() => Promise.resolve('synthetic-token'), { userId: 'actor-a', sessionId: 'session-a', ready: true })
   apiClient.get.mockImplementation(url => Promise.resolve({ data: fixture(url) }))
 })
 afterEach(() => { clearAuth?.(); vi.unstubAllEnvs(); vi.restoreAllMocks() })
+
+it('distinguishes requesting a payout from a confirmed transfer', async () => {
+  const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  apiClient.post.mockResolvedValueOnce({ data: { id: 9, status: 'processing' } })
+  mount()
+  await userEvent.click(await screen.findByRole('button', { name: 'Request payout $5.00' }))
+  expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('not confirmation that money has been sent'))
+  expect(await screen.findByRole('status')).toHaveTextContent('Payout requested. Processing does not confirm that money has been sent.')
+  expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/37/finance/payout', {
+    settlement_id: 7, amount_cents: 500,
+  }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.any(String) } }))
+})
 
 describe('authoritative analytics access', () => {
   it('verifies event permissions before requesting private records', async () => {
@@ -43,7 +55,7 @@ describe('authoritative analytics access', () => {
     mount()
     expect(await screen.findByRole('alert')).toHaveTextContent('Your event access does not include analytics and finances.')
     expect(privateReads()).toHaveLength(0)
-    expect(screen.queryByRole('button', { name: /^Pay / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Request payout / })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to Dashboard' })).toBeInTheDocument()
   })
   it('rejects a mismatched event or organization before private data is requested', async () => {
@@ -62,7 +74,7 @@ describe('authoritative analytics access', () => {
     await userEvent.click(screen.getByRole('button', { name: 'View All' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Your event access changed')
     expect(screen.queryByText('Private buyer')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Finalize|^Pay / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Finalize|^Request payout / })).not.toBeInTheDocument()
     expect(apiClient.post.mock.calls[0][2].signal.aborted).toBe(true)
     await act(async () => mutation.resolve({ data: { status: 'finalized' } }))
     expect(apiClient.get.mock.calls.filter(([url]) => url.endsWith('/finance'))).toHaveLength(previousFinanceReads)
@@ -76,7 +88,7 @@ describe('authoritative analytics access', () => {
     expect(alert).toHaveTextContent(status === 401 ? 'Please sign in' : 'Your event access changed')
     expect(screen.queryByText('Private buyer')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'View All' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Pay / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Request payout / })).not.toBeInTheDocument()
   })
   it('ignores old private read completion after denial and verifies current rights before retry', async () => {
     const oldFinance = deferred()
@@ -85,7 +97,7 @@ describe('authoritative analytics access', () => {
     const oldConfig = apiClient.get.mock.calls.find(([url]) => url.endsWith('/finance'))[1]
     expect(oldConfig.signal.aborted).toBe(true)
     await act(async () => oldFinance.resolve({ data: finance }))
-    expect(screen.queryByRole('button', { name: /^Pay / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Request payout / })).not.toBeInTheDocument()
     const freshVerify = deferred()
     apiClient.get.mockImplementation(url => url === '/organizer/events/37' ? freshVerify.promise : Promise.resolve({ data: fixture(url) }))
     const readsBefore = privateReads().length
@@ -93,7 +105,7 @@ describe('authoritative analytics access', () => {
     expect(privateReads()).toHaveLength(readsBefore)
     await act(async () => freshVerify.resolve({ data: { ...event, permissions: { view_finance: true } } }))
     await screen.findAllByText('Private buyer')
-    expect(screen.queryByRole('button', { name: /Finalize|^Pay / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Finalize|^Request payout / })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'View All' })).not.toBeInTheDocument()
   })
 })
@@ -112,7 +124,7 @@ it('cannot revive an old mutation after retry grants a different current permiss
   const financeReads = apiClient.get.mock.calls.filter(([url]) => url.endsWith('/finance')).length
   await act(async () => old.resolve({ data: { status: 'finalized' } }))
   expect(apiClient.get.mock.calls.filter(([url]) => url.endsWith('/finance'))).toHaveLength(financeReads)
-  expect(screen.queryByRole('button', { name: /Finalize|^Pay / })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Finalize|^Request payout / })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'View All' })).not.toBeInTheDocument()
 })
 

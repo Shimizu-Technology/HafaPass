@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -200,7 +200,7 @@ describe('event editor context ownership with the real router', () => {
     expect(screen.queryByText('Updating ticket list…')).not.toBeInTheDocument()
   })
 
-  it('applies refreshed readiness after a failed save and retains the unsaved draft', async () => {
+  it('applies refreshed readiness after a failed save but blocks publish until the retained draft is saved', async () => {
     const old = deferred()
     rows[11] = { ...rows[11], publish_checklist: [{ code: 'tickets', label: 'Tickets', complete: false }] }
     mount()
@@ -212,8 +212,32 @@ describe('event editor context ownership with the real router', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     await screen.findByText('Failed to update event')
     await act(async () => old.resolve({ data: { ...rows[11], publish_checklist: [{ code: 'tickets', label: 'Tickets', complete: true }] } }))
-    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Event Title/)).toHaveValue('Alpha event unsaved draft')
+  })
+
+  it('reconciles canonical saved fields without erasing a cover update after the save snapshot', async () => {
+    const pending = deferred()
+    rows[11] = { ...rows[11], venue_city: 'Tamuning', max_capacity: 300,
+      publish_checklist: [{ code: 'event_details', label: 'Details', complete: true }] }
+    apiClient.put.mockReturnValueOnce(pending.promise)
+    mount()
+    await userEvent.clear(await screen.findByLabelText('City'))
+    fireEvent.change(screen.getByLabelText('Max Capacity'), { target: { value: '0200' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(apiClient.put.mock.calls[0][1].cover_image_url).toBeNull()
+    // An upload begun before the save can finish while form inputs are disabled.
+    await act(async () => uploads.get('11')('https://synthetic.invalid/new-cover.png'))
+    await act(async () => pending.resolve({ data: { ...rows[11], cover_image_url: null, venue_city: 'Guam', max_capacity: 200 } }))
+    await screen.findByText('Event updated successfully.')
+    expect(screen.getByLabelText('City')).toHaveValue('Guam')
+    expect(screen.getByLabelText('Max Capacity').value).toBe('200')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[1][1].cover_image_url).toBe('https://synthetic.invalid/new-cover.png')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
   })
 
   it('pins the save body and identity before delayed token acquisition and suppresses transport after navigation', async () => {

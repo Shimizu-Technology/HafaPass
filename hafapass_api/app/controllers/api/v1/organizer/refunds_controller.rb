@@ -14,12 +14,18 @@ module Api
             return
           end
 
+          options = {}
+          if params.key?(:cash_return)
+            evidence = params[:cash_return]
+            options[:cash_return] = evidence.respond_to?(:permit) ? evidence.permit(:reference, :returned_at).to_h : {}
+          end
           refund = Commerce::RefundCreator.call(
             order: @order,
             amount_cents: params[:amount_cents],
             reason: params[:reason],
             requested_by: current_user,
-            idempotency_key: idempotency_key
+            idempotency_key: idempotency_key,
+            **options
           )
 
           AuditLogger.record!(
@@ -58,6 +64,9 @@ module Api
             amount_cents: refund.amount_cents,
             currency: refund.currency,
             reason: refund.reason,
+            provider: refund.provider,
+            manual_record: refund.provider_payload["manual_record"] == true,
+            cash_return: refund.provider_payload["cash_return"],
             provider_refund_id: refund.provider_refund_id,
             succeeded_at: refund.succeeded_at,
             refunded_total_cents: refund.order.refunded_cents,

@@ -1,3 +1,4 @@
+import { validEventCapacity } from '../../utils/eventCapacity'
 import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -9,6 +10,7 @@ import CoverImageUpload from '../../components/CoverImageUpload'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
+import FormErrorSummary from '../../components/FormErrorSummary'
 import { organizerChecklist } from '../../utils/organizerChecklist'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
@@ -52,7 +54,7 @@ function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, o
         )}
         <div className="flex gap-3 justify-end">
           <button onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-neutral-700 hover:text-neutral-900 disabled:opacity-50">Cancel</button>
-          <button onClick={onConfirm} disabled={loading || (requireReason && !reason?.trim())} className={`px-4 py-2 text-sm font-medium rounded-xl text-white ${confirmClass || 'bg-red-600 hover:bg-red-700'} disabled:opacity-50`}>
+          <button onClick={onConfirm} disabled={loading || (requireReason && !reason?.trim())} className={`px-4 py-2 text-sm font-medium rounded-xl text-white ${confirmClass || 'bg-action-danger hover:bg-action-danger-hover'} disabled:opacity-50`}>
             {loading ? 'Processing...' : confirmLabel}
           </button>
         </div>
@@ -115,6 +117,14 @@ function EditEventSession({ id, identity }) {
     recurrence_end_date: '',
     show_attendees: true
   })
+
+  const savedForm = eventForm(event || {})
+  const hasUnsavedChanges = Object.keys(form).some(field => {
+    const value = typeof form[field] === 'string' ? form[field].trim() : form[field]
+    const savedValue = typeof savedForm[field] === 'string' ? savedForm[field].trim() : savedForm[field]
+    return value !== savedValue
+  })
+
 
   const fetchEvent = useCallback(async () => {
     const request = beginRequest()
@@ -201,29 +211,30 @@ function EditEventSession({ id, identity }) {
   const validate = () => {
     const errors = {}
     if (!form.title.trim()) errors.title = 'Title is required'
-    if (!canManage) { setFormErrors(errors); return Object.keys(errors).length === 0 }
-    if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
-    if (!form.starts_at) errors.starts_at = 'Start date/time is required'
-    if (form.ends_at && form.starts_at) {
-      if (compareLocalDateTimes(form.ends_at, form.starts_at) <= 0) {
-        errors.ends_at = 'End time must be after the start time'
+    if (canManage) {
+      if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
+      if (!form.starts_at) errors.starts_at = 'Start date/time is required'
+      if (form.ends_at && form.starts_at) {
+        if (compareLocalDateTimes(form.ends_at, form.starts_at) <= 0) {
+          errors.ends_at = 'End time must be after the start time'
+        }
       }
-    }
-    if (form.doors_open_at && form.starts_at) {
-      if (compareLocalDateTimes(form.doors_open_at, form.starts_at) > 0) {
-        errors.doors_open_at = 'Doors open time must be before the start time'
+      if (form.doors_open_at && form.starts_at) {
+        if (compareLocalDateTimes(form.doors_open_at, form.starts_at) > 0) {
+          errors.doors_open_at = 'Doors open time must be before the start time'
+        }
       }
-    }
-    if (form.max_capacity) {
-      const cap = Number(form.max_capacity)
-      if (!Number.isInteger(cap) || cap < 1) {
-        errors.max_capacity = 'Max capacity must be a positive integer'
+      if (form.max_capacity) {
+        if (!validEventCapacity(form.max_capacity)) {
+          errors.max_capacity = 'Max capacity must be a positive integer'
+        }
       }
-    }
-    if (scheduleChanged && ['published', 'postponed'].includes(event?.status) && !changeReason.trim()) {
-      errors.change_reason = 'Explain the schedule change for ticket holders'
+      if (scheduleChanged && ['published', 'postponed'].includes(event?.status) && !changeReason.trim()) {
+        errors.change_reason = 'Explain the schedule change for ticket holders'
+      }
     }
     setFormErrors(errors)
+    if (Object.keys(errors).length) requestAnimationFrame(() => { if (current()) document.getElementById(Object.keys(errors)[0])?.focus() })
     return Object.keys(errors).length === 0
   }
 
@@ -232,6 +243,7 @@ function EditEventSession({ id, identity }) {
     if (!current() || submitting || !permissions.edit_event_content || !validate()) return
     const request = beginRequest()
     if (!request) return
+    const submittedForm = form
     setSubmitting(true)
     setSubmitError(null)
     setSuccessMessage(null)
@@ -247,7 +259,7 @@ function EditEventSession({ id, identity }) {
         venue_city: form.venue_city.trim() || 'Guam',
         timezone: event?.timezone || 'Pacific/Guam',
         ...scheduleChanges,
-        max_capacity: form.max_capacity ? parseInt(form.max_capacity, 10) : null,
+        max_capacity: form.max_capacity ? Number(form.max_capacity) : null,
         cover_image_url: form.cover_image_url.trim() || null,
         recurrence_rule: form.recurrence_rule || null,
         recurrence_end_date: form.recurrence_end_date || null,
@@ -262,6 +274,13 @@ function EditEventSession({ id, identity }) {
       if (!request.current()) return
       eventSaveGeneration.current += 1
       setEvent(current => ({ ...current, ...res.data }))
+      const canonicalForm = eventForm({ ...event, ...res.data })
+      // Reconcile only fields the server returned, and only if they still
+      // match the submitted snapshot. Partial responses and a later upload
+      // callback must not erase the organizer's remaining draft.
+      setForm(latest => Object.fromEntries(Object.entries(latest).map(([field, value]) => [field,
+        Object.hasOwn(res.data, field) && value === submittedForm[field] ? canonicalForm[field] : value,
+      ])))
       setChangeReason('')
       setSuccessMessage('Event updated successfully.')
     } catch (err) {
@@ -275,7 +294,7 @@ function EditEventSession({ id, identity }) {
   }
 
   const handlePublish = async () => {
-    if (publishing) return
+    if (!current() || publishing || submitting || hasUnsavedChanges || !canManage) return
     const request = beginRequest()
     if (!request) return
     setPublishing(true)
@@ -361,19 +380,13 @@ function EditEventSession({ id, identity }) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-8">
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>
-        <Link to="/dashboard" className="mt-4 inline-block text-brand-500 hover:text-brand-700 text-sm font-medium">Back to Dashboard</Link>
+        <Link to="/dashboard" className="mt-4 inline-block text-action-teal hover:text-action-teal-hover text-sm font-medium">Back to Dashboard</Link>
       </div>
     )
   }
 
   if (!permissions.edit_event_content) return <EventWorkspace eventId={id} event={event}><EventAccessNotice event={{ ...event, title: 'Your event tools' }} /></EventWorkspace>
 
-  const savedForm = eventForm(event)
-  const hasUnsavedChanges = Object.keys(form).some(field => {
-    const value = typeof form[field] === 'string' ? form[field].trim() : form[field]
-    const savedValue = typeof savedForm[field] === 'string' ? savedForm[field].trim() : savedForm[field]
-    return value !== savedValue
-  })
 
   return (
     <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges}><div className="mx-auto max-w-3xl">
@@ -384,9 +397,9 @@ function EditEventSession({ id, identity }) {
               href={`/events/${event.slug}${event.status === 'published' || event.status === 'completed' ? '' : '?preview=true'}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1"
+              className="text-action-teal hover:text-action-teal-hover text-sm font-medium flex items-center gap-1"
             >
-              <Eye className="w-4 h-4" /> Preview
+              <Eye className="w-4 h-4" /> Preview saved event
             </a>
           )}
           {canManage && <button
@@ -409,7 +422,7 @@ function EditEventSession({ id, identity }) {
               }
             }}
             disabled={cloning}
-            className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1 disabled:opacity-50"
+            className="text-action-teal hover:text-action-teal-hover text-sm font-medium flex items-center gap-1 disabled:opacity-50"
           >
             <Copy className="w-4 h-4" /> {cloning ? 'Cloning...' : 'Clone'}
           </button>}
@@ -417,6 +430,8 @@ function EditEventSession({ id, identity }) {
       </div>
 
       <h2 className="mb-6 text-xl font-semibold text-neutral-950">Event details</h2>
+
+      {hasUnsavedChanges && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">You have unsaved changes. Save Changes before publishing. Preview shows the last saved event.</p>}
 
       {/* Publish Button for Draft Events */}
       {canManage && event?.status === 'draft' && (
@@ -426,7 +441,7 @@ function EditEventSession({ id, identity }) {
               <p className="text-sm font-medium text-brand-800">Prepare your event for publishing</p>
               <p className="text-xs text-brand-600 mt-0.5">Complete the steps below, save your changes, and preview your event before publishing.</p>
             </div>
-            <button onClick={() => setShowPublishConfirm(true)} disabled={!readyToPublish} className="btn-primary text-sm px-4 py-2 disabled:opacity-50">Publish Event</button>
+            <button onClick={() => setShowPublishConfirm(true)} disabled={!readyToPublish || hasUnsavedChanges || submitting || publishing} className="btn-primary text-sm px-4 py-2 disabled:opacity-50">Publish Event</button>
           </div>
           <ul className="grid sm:grid-cols-2 gap-2 mt-4" aria-label="Publishing checklist">
             {organizerSteps.map(item => (
@@ -445,9 +460,9 @@ function EditEventSession({ id, identity }) {
       {showPublishConfirm && (
         <ConfirmModal
           title="Publish Event?"
-          message="This will make your event visible to the public. Attendees will be able to browse and purchase tickets."
+          message={`Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
           confirmLabel={publishing ? 'Publishing...' : 'Yes, Publish'}
-          confirmClass="bg-brand-500 hover:bg-brand-600"
+          confirmClass="bg-action-teal hover:bg-action-teal-hover"
           onConfirm={handlePublish}
           onCancel={() => setShowPublishConfirm(false)}
           loading={publishing}
@@ -494,7 +509,7 @@ function EditEventSession({ id, identity }) {
           title="Postpone Event?"
           message="Ticket sales will stop immediately. Update the schedule before resuming the event."
           confirmLabel="Yes, Postpone"
-          confirmClass="bg-orange-600 hover:bg-orange-700"
+          confirmClass="bg-action-danger hover:bg-action-danger-hover"
           onConfirm={() => handleLifecycle('postpone', 'Event has been postponed and sales are paused.')}
           onCancel={() => { setShowPostponeConfirm(false); setLifecycleReason('') }}
           loading={dangerLoading}
@@ -512,7 +527,8 @@ function EditEventSession({ id, identity }) {
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm" role="alert">{submitError}</div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <FormErrorSummary errors={formErrors} />
+      <form noValidate onSubmit={handleSubmit} className="space-y-8">
         {/* Cover Image Upload */}
         <section>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Cover Image</h2>
@@ -532,8 +548,8 @@ function EditEventSession({ id, identity }) {
               <label htmlFor="title" className="block text-sm font-medium text-neutral-700 mb-1">
                 Event Title <span className="text-red-500">*</span>
               </label>
-              <input id="title" type="text" value={form.title} onChange={(e) => updateField('title', e.target.value)} className={`input ${formErrors.title ? 'input-error' : ''}`} placeholder="e.g., Full Moon Beach Party" disabled={submitting} />
-              {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
+              <input id="title" aria-invalid={Boolean(formErrors.title)} aria-describedby={formErrors.title ? 'title-error' : undefined} required type="text" value={form.title} onChange={(e) => updateField('title', e.target.value)} className={`input ${formErrors.title ? 'input-error' : ''}`} placeholder="e.g., Full Moon Beach Party" disabled={submitting} />
+              {formErrors.title && <p id="title-error" className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
             </div>
             <div>
               <label htmlFor="short_description" className="block text-sm font-medium text-neutral-700 mb-1">Short Description</label>
@@ -569,8 +585,8 @@ function EditEventSession({ id, identity }) {
               <label htmlFor="venue_name" className="block text-sm font-medium text-neutral-700 mb-1">
                 Venue Name <span className="text-red-500">*</span>
               </label>
-              <input id="venue_name" type="text" value={form.venue_name} onChange={(e) => updateField('venue_name', e.target.value)} className={`input ${formErrors.venue_name ? 'input-error' : ''}`} placeholder="e.g., Tumon Beach Club" disabled={submitting} />
-              {formErrors.venue_name && <p className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
+              <input id="venue_name" aria-invalid={Boolean(formErrors.venue_name)} aria-describedby={formErrors.venue_name ? 'venue_name-error' : undefined} required type="text" value={form.venue_name} onChange={(e) => updateField('venue_name', e.target.value)} className={`input ${formErrors.venue_name ? 'input-error' : ''}`} placeholder="e.g., Tumon Beach Club" disabled={submitting} />
+              {formErrors.venue_name && <p id="venue_name-error" className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
             </div>
             <div>
               <label htmlFor="venue_address" className="block text-sm font-medium text-neutral-700 mb-1">Venue Address</label>
@@ -592,25 +608,25 @@ function EditEventSession({ id, identity }) {
               <label htmlFor="starts_at" className="block text-sm font-medium text-neutral-700 mb-1">
                 Start Date & Time <span className="text-red-500">*</span>
               </label>
-              <input id="starts_at" type="datetime-local" value={form.starts_at} onChange={(e) => updateField('starts_at', e.target.value)} className={`input ${formErrors.starts_at ? 'input-error' : ''}`} disabled={submitting} />
-              {formErrors.starts_at && <p className="mt-1 text-sm text-red-600">{formErrors.starts_at}</p>}
+              <input id="starts_at" aria-invalid={Boolean(formErrors.starts_at)} aria-describedby={formErrors.starts_at ? 'starts_at-error' : undefined} required type="datetime-local" value={form.starts_at} onChange={(e) => updateField('starts_at', e.target.value)} className={`input ${formErrors.starts_at ? 'input-error' : ''}`} disabled={submitting} />
+              {formErrors.starts_at && <p id="starts_at-error" className="mt-1 text-sm text-red-600">{formErrors.starts_at}</p>}
             </div>
             <div>
               <label htmlFor="ends_at" className="block text-sm font-medium text-neutral-700 mb-1">End Date & Time</label>
-              <input id="ends_at" type="datetime-local" value={form.ends_at} onChange={(e) => updateField('ends_at', e.target.value)} className={`input ${formErrors.ends_at ? 'input-error' : ''}`} disabled={submitting} />
-              {formErrors.ends_at && <p className="mt-1 text-sm text-red-600">{formErrors.ends_at}</p>}
+              <input id="ends_at" aria-invalid={Boolean(formErrors.ends_at)} aria-describedby={formErrors.ends_at ? 'ends_at-error' : undefined} type="datetime-local" value={form.ends_at} onChange={(e) => updateField('ends_at', e.target.value)} className={`input ${formErrors.ends_at ? 'input-error' : ''}`} disabled={submitting} />
+              {formErrors.ends_at && <p id="ends_at-error" className="mt-1 text-sm text-red-600">{formErrors.ends_at}</p>}
             </div>
             <div>
               <label htmlFor="doors_open_at" className="block text-sm font-medium text-neutral-700 mb-1">Doors Open At</label>
-              <input id="doors_open_at" type="datetime-local" value={form.doors_open_at} onChange={(e) => updateField('doors_open_at', e.target.value)} className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`} disabled={submitting} />
-              {formErrors.doors_open_at && <p className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
+              <input id="doors_open_at" aria-invalid={Boolean(formErrors.doors_open_at)} aria-describedby={formErrors.doors_open_at ? 'doors_open_at-error' : undefined} type="datetime-local" value={form.doors_open_at} onChange={(e) => updateField('doors_open_at', e.target.value)} className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`} disabled={submitting} />
+              {formErrors.doors_open_at && <p id="doors_open_at-error" className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
             </div>
             {scheduleChanged && ['published', 'postponed'].includes(event?.status) && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
                 <label htmlFor="change_reason" className="block text-sm font-semibold text-amber-950">Reason for schedule change <span className="text-red-500">*</span></label>
                 <p className="mb-2 mt-1 text-xs text-amber-800">Ticket holders will see this explanation and can keep their tickets or request a refund.</p>
-                <textarea id="change_reason" rows="3" value={changeReason} onChange={(e) => { setChangeReason(e.target.value); setFormErrors(prev => ({ ...prev, change_reason: null })) }} className={`input ${formErrors.change_reason ? 'input-error' : ''}`} placeholder="Explain what changed and why" disabled={submitting} />
-                {formErrors.change_reason && <p className="mt-1 text-sm text-red-600">{formErrors.change_reason}</p>}
+                <textarea id="change_reason" aria-invalid={Boolean(formErrors.change_reason)} aria-describedby={formErrors.change_reason ? 'change_reason-error' : undefined} rows="3" value={changeReason} onChange={(e) => { setChangeReason(e.target.value); setFormErrors(prev => ({ ...prev, change_reason: null })) }} className={`input ${formErrors.change_reason ? 'input-error' : ''}`} placeholder="Explain what changed and why" disabled={submitting} />
+                {formErrors.change_reason && <p id="change_reason-error" className="mt-1 text-sm text-red-600">{formErrors.change_reason}</p>}
               </div>
             )}
           </div>
@@ -622,8 +638,8 @@ function EditEventSession({ id, identity }) {
           <div className="space-y-4">
             <div>
               <label htmlFor="max_capacity" className="block text-sm font-medium text-neutral-700 mb-1">Max Capacity</label>
-              <input id="max_capacity" type="number" min="1" value={form.max_capacity} onChange={(e) => updateField('max_capacity', e.target.value)} className={`input ${formErrors.max_capacity ? 'input-error' : ''}`} placeholder="Leave blank for unlimited" disabled={submitting} />
-              {formErrors.max_capacity && <p className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
+              <input id="max_capacity" aria-invalid={Boolean(formErrors.max_capacity)} aria-describedby={formErrors.max_capacity ? 'max_capacity-error' : undefined} type="number" min="1" value={form.max_capacity} onChange={(e) => updateField('max_capacity', e.target.value)} className={`input ${formErrors.max_capacity ? 'input-error' : ''}`} placeholder="Leave blank for unlimited" disabled={submitting} />
+              {formErrors.max_capacity && <p id="max_capacity-error" className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
             </div>
             <div className="flex items-center gap-3">
               <input
@@ -702,7 +718,7 @@ function EditEventSession({ id, identity }) {
                 <h3 className="text-sm font-medium text-neutral-700 mb-2">Linked Recurring Events</h3>
                 <div className="space-y-2">
                   {event?.recurrence_parent_id && (
-                    <Link to={`/dashboard/events/${event.recurrence_parent_id}/edit`} className="block text-sm text-brand-500 hover:text-brand-700">
+                    <Link to={`/dashboard/events/${event.recurrence_parent_id}/edit`} className="block text-sm text-action-teal hover:text-action-teal-hover">
                       ← View Parent Event
                     </Link>
                   )}

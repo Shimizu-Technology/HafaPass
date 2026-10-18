@@ -36,6 +36,7 @@ function fixtures(url, config) {
   if (url === '/organizer/organization') return { id: Number(org), name: `Organization ${org}`, role: 'owner' }
   if (url === '/organizer/memberships' || url === '/organizer/connected_accounts') return []
   if (url.includes('/attendees')) return { attendees: [{ id: Number(id), attendee_name: `Attendee ${id}`, attendee_email: 'synthetic@example.invalid', status: 'issued', ticket_type: 'Entry' }], meta: { total_pages: 1 } }
+  if (url.endsWith('/orders')) return { orders: [order(id)] }
   if (url.endsWith('/stats')) return { recent_orders: [order(id)], tickets_by_type: [], total_tickets_sold: 1, tickets_checked_in: 0 }
   if (url.endsWith('/finance')) return finance
   if (url.endsWith('/summary')) return {}

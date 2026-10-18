@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
 import EditEventPage from './EditEventPage'
 
-vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ onUploaded }) => <button type="button" onClick={() => onUploaded('https://images.invalid/verified.png')}>Choose verified cover</button> }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ ticketTypes }) => <ul>{ticketTypes.map(type => <li key={type.id}>{type.name}</li>)}</ul> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
@@ -44,6 +44,27 @@ describe('published event content and schedule edits', () => {
     expect(Object.keys(apiClient.put.mock.calls[0][1]).sort()).toEqual(['category', 'cover_image_url', 'description', 'short_description', 'title'])
   })
 
+  it('focuses the invalid title and connects its summary error for a content-only marketer', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...event, permissions: { edit_event_content: true } } })
+    const user = userEvent.setup()
+    mount()
+    const title = await screen.findByLabelText(/Event Title/)
+    await user.clear(title)
+    const save = screen.getByRole('button', { name: 'Save Changes' })
+    await user.click(save)
+    expect(apiClient.put).not.toHaveBeenCalled()
+    await waitFor(() => expect(title).toHaveFocus())
+    expect(title).toHaveAttribute('aria-invalid', 'true')
+    expect(title).toHaveAttribute('aria-describedby', 'title-error')
+    expect(screen.getByRole('link', { name: 'Title is required' })).toHaveAttribute('href', '#title')
+    expect(screen.queryByLabelText(/Venue Name/)).not.toBeInTheDocument()
+    await user.type(title, 'Corrected marketer title')
+    await user.click(save)
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1].title).toBe('Corrected marketer title')
+    expect(apiClient.put.mock.calls[0][1]).not.toHaveProperty('venue_name')
+  })
+
   it('saves a cover without changing precise schedule times or requiring a reason', async () => {
     const user = userEvent.setup()
     mount()
@@ -73,7 +94,7 @@ describe('published event content and schedule edits', () => {
     await user.clear(start)
     await user.type(start, '2026-10-16T20:00')
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
-    await screen.findByText('Explain the schedule change for ticket holders')
+    await screen.findByRole('link', { name: 'Explain the schedule change for ticket holders' })
     expect(apiClient.put).not.toHaveBeenCalled()
     await user.type(screen.getByLabelText(/Reason for schedule change/), 'Synthetic schedule correction')
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
@@ -93,5 +114,103 @@ describe('published event content and schedule edits', () => {
     await screen.findByText('Event updated successfully.')
     expect(apiClient.put.mock.calls[0][1]).toMatchObject({ doors_open_at: null, change_reason: 'Doors open with the event' })
     expect(apiClient.put.mock.calls[0][1]).not.toHaveProperty('starts_at')
+  })
+})
+
+it('requires saving before publishing, names the saved preview and confirms the saved title', async () => {
+  const draft = { ...event, status: 'draft', slug: 'workshop', publish_checklist: [{ code: 'event_details', label: 'Details', complete: true }] }
+  apiClient.get.mockResolvedValue({ data: draft })
+  apiClient.put.mockResolvedValue({ data: { ...draft, title: 'Saved new title' } })
+  apiClient.post.mockResolvedValue({ data: { ...draft, title: 'Saved new title', status: 'published' } })
+  const user = userEvent.setup()
+  mount()
+  const title = await screen.findByLabelText(/Event Title/)
+  await user.clear(title)
+  await user.type(title, 'Saved new title')
+  expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+  expect(screen.getByRole('link', { name: 'Preview saved event' })).toHaveAttribute('href', '/events/workshop?preview=true')
+  expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+  await screen.findByText('Event updated successfully.')
+  await user.click(screen.getByRole('button', { name: 'Publish Event' }))
+  expect(screen.getByRole('dialog')).toHaveTextContent('Publish the saved event “Saved new title”?')
+  await user.click(screen.getByRole('button', { name: 'Yes, Publish' }))
+  await screen.findByText('Event published successfully!')
+  expect(apiClient.post).toHaveBeenCalledTimes(1)
+})
+
+
+describe('canonical saved event form', () => {
+  const readyDraft = { ...event, status: 'draft', venue_city: 'Tamuning', max_capacity: 300,
+    description: 'Keep this event description', ticket_types: [{ id: 4, name: 'Saved admission' }],
+    publish_checklist: [{ code: 'event_details', label: 'Details', complete: true }] }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiClient.get.mockResolvedValue({ data: readyDraft })
+  })
+
+  it.each(['full', 'partial'])('clears saved default-city and leading-zero edits from a %s response', async response => {
+    const normalized = { id: readyDraft.id, venue_city: 'Guam', max_capacity: 200 }
+    apiClient.put.mockResolvedValue({ data: response === 'full' ? { ...readyDraft, ...normalized } : normalized })
+    const user = userEvent.setup()
+    mount()
+    const city = await screen.findByLabelText('City')
+    const capacity = screen.getByLabelText('Max Capacity')
+    await user.clear(city)
+    fireEvent.change(capacity, { target: { value: '0200' } })
+    expect(capacity.value).toBe('0200')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ venue_city: 'Guam', max_capacity: 200 })
+    expect(city).toHaveValue('Guam')
+    expect(capacity.value).toBe('200')
+    expect(screen.getByLabelText('Description')).toHaveValue('Keep this event description')
+    expect(screen.getByText('Saved admission')).toBeInTheDocument()
+    expect(screen.queryByText(/Preview shows the last saved event/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
+  })
+
+  it('retains raw city/capacity edits and blocks publishing after a failed save', async () => {
+    apiClient.put.mockRejectedValue(new Error('Synthetic failure'))
+    const user = userEvent.setup()
+    mount()
+    await user.clear(await screen.findByLabelText('City'))
+    const capacity = screen.getByLabelText('Max Capacity')
+    fireEvent.change(capacity, { target: { value: '0200' } })
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Failed to update event')
+    expect(screen.getByLabelText('City')).toHaveValue('')
+    expect(capacity.value).toBe('0200')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
+  })
+
+  it('keeps a decimal capacity dirty and sends valid exponential notation as the validated number', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...readyDraft, max_capacity: 1 } })
+    apiClient.put.mockResolvedValue({ data: { ...readyDraft, max_capacity: 100 } })
+    const user = userEvent.setup()
+    mount()
+    const capacity = await screen.findByLabelText('Max Capacity')
+    fireEvent.change(capacity, { target: { value: '1.2' } })
+    expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByRole('link', { name: 'Max capacity must be a positive integer' })
+    expect(apiClient.put).not.toHaveBeenCalled()
+    expect(capacity.value).toBe('1.2')
+    for (const value of ['2147483648', '9007199254740992']) {
+      fireEvent.change(capacity, { target: { value } })
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+      expect(apiClient.put).not.toHaveBeenCalled()
+      expect(capacity).toHaveAttribute('aria-invalid', 'true')
+      expect(capacity.value).toBe(value)
+    }
+    fireEvent.change(capacity, { target: { value: '1e2' } })
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1].max_capacity).toBe(100)
+    expect(capacity.value).toBe('100')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
   })
 })

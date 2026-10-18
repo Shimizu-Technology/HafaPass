@@ -23,7 +23,9 @@ test('owner can review team roles, Guam payout gates, and create an invitation',
   await page.goto('/dashboard/settings')
 
   await expect(page.getByRole('heading', { name: 'Island Events' })).toBeVisible()
-  await expect(page.getByText(/Blocked unless Stripe confirms Guam/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Assisted local bank setup' })).toBeVisible()
+  await page.getByText('Other provider availability', { exact: true }).click()
+  await expect(page.getByText(/Unavailable unless Stripe confirms Guam/)).toBeVisible()
   await page.getByLabel('Teammate email').fill('finance@example.com')
   await page.getByLabel('Team role').selectOption('finance')
   await page.getByRole('button', { name: 'Invite' }).click()
@@ -32,6 +34,9 @@ test('owner can review team roles, Guam payout gates, and create an invitation',
 })
 
 test('finance dashboard separates ticket economics and immutable payout state', async ({ page }) => {
+  let requested = false
+  let requests = 0
+  await page.route('**/api/v1/organizer/events/42/finance/payout', route => { requested = true; requests += 1; return json(route, { id: 31, status: 'processing' }) })
   await page.route('**/api/v1/organizer/events/42/stats', route => json(route, {
     total_tickets_sold: 1,
     total_revenue_cents: 5250,
@@ -44,8 +49,8 @@ test('finance dashboard separates ticket economics and immutable payout state', 
       gross_cents: 5000, refund_cents: 0, processing_fee_cents: 183,
       payable_cents: 4817, negative_balance_cents: 0
     },
-    settlements: [{ id: 9, version: 1, status: 'finalized', available_to_payout_cents: 4817 }],
-    payouts: [],
+    settlements: [{ id: 9, version: 1, status: 'finalized', available_to_payout_cents: requested ? 0 : 4817 }],
+    payouts: requested ? [{ id: 31, provider: 'manual', status: 'processing', amount_cents: 4817 }] : [],
     connected_account: { provider: 'paypal', payout_ready: true }
   }))
   await page.route('**/api/v1/organizer/events/42', route => json(route, {
@@ -57,5 +62,18 @@ test('finance dashboard separates ticket economics and immutable payout state', 
   await expect(page.getByRole('heading', { name: 'Settlement and payout' })).toBeVisible()
   await expect(page.getByText('$48.17').first()).toBeVisible()
   await expect(page.getByText('paypal ready')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Pay $48.17' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Request payout $48.17' })).toBeEnabled()
+  await page.setViewportSize({ width: 390, height: 844 })
+  page.once('dialog', async dialog => {
+    expect(dialog.message()).toContain('not confirmation that money has been sent')
+    await dialog.accept()
+  })
+  await page.getByRole('button', { name: 'Request payout $48.17' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Payout requested.' })).toContainText('Processing does not confirm that money has been sent.')
+  await expect(page.getByText('manual · processing')).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('manual · processing')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Request payout/ })).toHaveCount(0)
+  expect(requests).toBe(1)
+
 })

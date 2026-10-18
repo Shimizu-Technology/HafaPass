@@ -41,7 +41,7 @@ module Commerce
     end
 
     def initialize(order:, amount_cents: nil, reason: nil, requested_by: nil, idempotency_key: nil,
-      provider_refund: nil, tickets: nil, payment: nil)
+      provider_refund: nil, tickets: nil, payment: nil, cash_return: nil)
       @order = order
       @requested_amount_cents = amount_cents&.to_i
       @reason = reason
@@ -50,9 +50,12 @@ module Commerce
       @provider_refund = provider_refund
       @tickets = tickets.nil? ? nil : Array(tickets).compact
       @captured_payment = payment
+      @cash_return = cash_return
     end
 
     def call
+      return record_cash_return! if cash_return
+
       refund = reserve_refund!
       return refund unless refund.pending?
       return refund if refund.provider_refund_id.present? && !provider_refund
@@ -76,7 +79,41 @@ module Commerce
 
     private
 
-    attr_reader :order, :requested_amount_cents, :reason, :requested_by, :idempotency_key, :provider_refund, :tickets, :captured_payment
+    attr_reader :order, :requested_amount_cents, :reason, :requested_by, :idempotency_key, :provider_refund, :tickets, :captured_payment, :cash_return
+
+    # This records an organizer's attestation that physical cash was already
+    # returned. It never sends money or represents a provider refund. Keep the
+    # evidence, allocations and ticket changes in one recoverable transaction.
+    def record_cash_return!
+      validate_cash_return!
+      Order.transaction do
+        refund = reserve_refund!
+        next refund unless refund.pending?
+
+        response = OpenStruct.new(id: "cash_return_#{refund.id}", status: "succeeded",
+          amount: refund.amount_cents, currency: refund.currency)
+        finalize_refund!(refund, response)
+      end
+    end
+
+    def validate_cash_return!
+      unless cash_return.is_a?(Hash) && requested_by&.persisted? && reason.present? && provider_refund.nil?
+        raise RefundError, "Cash return requires an actor, reason, reference and returned_at timestamp"
+      end
+      evidence = cash_return.stringify_keys
+      reference = evidence["reference"].to_s.strip
+      timestamp = evidence["returned_at"].to_s
+      raise ArgumentError unless timestamp.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
+
+      returned_at = Time.iso8601(timestamp)
+      unless reference.present? && reference.length <= 255 && returned_at <= Time.current && returned_at >= order.created_at
+        raise RefundError, "Cash return reference or timestamp is invalid"
+      end
+      @cash_return_evidence = { "reference" => reference, "returned_at" => returned_at.utc.iso8601(6),
+        "recorded_by_user_id" => requested_by.id, "cash_custodian" => "organizer" }
+    rescue ArgumentError
+      raise RefundError, "Cash return timestamp must be ISO 8601 with an offset"
+    end
 
     def reserve_refund!
       existing = order.refunds.find_by(idempotency_key: idempotency_key)
@@ -102,10 +139,14 @@ module Commerce
         unless payment && payment.order_id == order.id && (payment.succeeded? || payment.partially_refunded?)
           raise RefundError, "A captured payment is required for a refund"
         end
-        unless payment.provider == "stripe" && payment.provider_payment_id.present?
+        if cash_return
+          unless payment.provider == "door_cash" && order.payment_method == "door_cash"
+            raise RefundError, "Cash return recording requires an organizer-collected cash payment"
+          end
+        elsif payment.provider != "stripe" || payment.provider_payment_id.blank?
           raise RefundError, "Automated refunds are not supported for this payment provider"
         end
-        if Rails.env.production? && (payment.provider_payment_id.start_with?("sim_") || payment.provider_payload["simulated"] == true)
+        if Rails.env.production? && (payment.provider_payment_id.to_s.start_with?("sim_") || payment.provider_payload["simulated"] == true)
           raise RefundError, "Simulated payments cannot be refunded in production"
         end
         payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
@@ -126,7 +167,8 @@ module Commerce
           amount_cents: amount,
           currency: order.currency,
           status: :pending,
-          reason: reason
+          reason: reason,
+          provider_payload: cash_return ? { cash_return: @cash_return_evidence, manual_record: true } : {}
         )
         selected_tickets&.each do |ticket|
           refund.refund_tickets.create!(ticket: ticket, amount_cents: ticket.refundable_cents)
@@ -233,7 +275,8 @@ module Commerce
 
     def validate_replay!(refund)
       unless (requested_amount_cents.nil? || requested_amount_cents == refund.amount_cents) &&
-          (tickets.nil? || tickets.map(&:id).sort == refund.refund_tickets.pluck(:ticket_id).sort)
+          (tickets.nil? || tickets.map(&:id).sort == refund.refund_tickets.pluck(:ticket_id).sort) &&
+          (!cash_return || (refund.provider == "door_cash" && refund.provider_payload["cash_return"] == @cash_return_evidence))
         raise RefundError, "Idempotency-Key was already used for a different refund request"
       end
       @replayed_refund = true
@@ -289,7 +332,7 @@ module Commerce
 
         refund.update!(
           provider_refund_id: provider_refund.id,
-          provider_payload: { status: provider_refund.respond_to?(:status) ? provider_refund.status : nil }.compact,
+          provider_payload: refund.provider_payload.merge("status" => provider_status),
           failure_code: nil,
           failure_message: nil,
           status: :pending
@@ -312,7 +355,7 @@ module Commerce
           refund_amount_cents: succeeded_total,
           refund_reason: reason,
           refunded_at: Time.current,
-          stripe_refund_id: provider_refund.id
+          stripe_refund_id: refund.provider == "stripe" ? provider_refund.id : refund.order.stripe_refund_id
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
         StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
@@ -321,7 +364,9 @@ module Commerce
         elsif refund.refund_tickets.any?
           release_refunded_tickets!(refund)
         end
-        EmailService.send_refund_notification_async(refund.order, refund: refund)
+        unless refund.provider == "door_cash" && refund.provider_payload["manual_record"] == true
+          EmailService.send_refund_notification_async(refund.order, refund: refund)
+        end
       end
 
       raise RefundError, validation_error if validation_error
