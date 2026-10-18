@@ -28,6 +28,7 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
       timezone: organization.timezone,
       currency: organization.currency,
       role: role,
+      permissions: OrganizationAuthorization.permissions_for(user: current_user, organization: organization),
       payout_ready: organization.payout_ready?
     }
   end

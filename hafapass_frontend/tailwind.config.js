@@ -50,10 +50,26 @@ export default {
           raised: '#ffffff',
           overlay: 'rgba(255, 255, 255, 0.8)',
         },
+        // Roles keep readable UI colors independent from decorative brand shades.
+        content: {
+          DEFAULT: '#0f172a',
+          muted: '#475569',
+          inverse: '#ffffff',
+          'inverse-muted': '#cbd5e1',
+        },
+        action: {
+          DEFAULT: '#c9362e',
+          hover: '#ad2b24',
+          teal: '#0b6563',
+          'teal-hover': '#0e504f',
+          danger: '#b91c1c',
+          'danger-hover': '#991b1b',
+        },
+        focus: '#087e7a',
       },
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
-        display: ['"Space Grotesk"', '"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans Variable"', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['"Space Grotesk Variable"', '"Plus Jakarta Sans Variable"', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         'soft': '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
@@ -94,5 +110,6 @@ export default {
       },
     },
   },
+  future: { hoverOnlyWhenSupported: true },
   plugins: [],
 }

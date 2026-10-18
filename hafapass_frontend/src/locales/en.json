@@ -166,7 +166,10 @@
     "privacy": "Privacy Policy",
     "connect": "Connect",
     "copyright": "Shimizu Technology. All rights reserved.",
-    "madeWith": "Made with aloha on Guam"
+    "madeWith": "Made with aloha on Guam",
+    "help": "Get help",
+    "findTickets": "Find your tickets",
+    "contactSupport": "Contact support"
   },
   "categories": {
     "all": "All Events",

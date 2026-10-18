@@ -58,6 +58,30 @@ RSpec.describe "Organizer event-day admissions", type: :request do
     expect(response.parsed_body.dig("recent_actions", 0, "attendee")).to include("attendee_name" => "Mina Cruz")
   end
 
+  it "preserves admission history while identifying the exact reversed admission" do
+    device = create(:scanner_device, event: event, organization: organization, user: owner)
+    manifest = Admissions::ManifestBuilder.call(event: event, actor: owner)
+    scan = { action_uuid: "history-first", kind: "admit", source: "online", sequence: 1,
+      manifest_version: manifest.version, occurred_at: Time.current.iso8601(6), ticket_id: ticket.id,
+      credential_hash: Digest::SHA256.hexdigest(ticket.scan_credential) }
+    first = Admissions::Reconciler.call(device: device, actor: owner, actions: [scan]).first.action
+    expect(first).to be_result_accepted
+    undo = { action_uuid: "history-undo", kind: "reverse", source: "online", sequence: 2,
+      manifest_version: manifest.version, occurred_at: Time.current.iso8601(6), reverses_action_uuid: first.action_uuid }
+    expect(Admissions::Reconciler.call(device: device, actor: owner, actions: [undo]).first.action).to be_result_accepted
+    manifest = Admissions::ManifestBuilder.call(event: event, actor: owner)
+    later = Admissions::Reconciler.call(device: device, actor: owner,
+      actions: [scan.merge(action_uuid: "history-later", sequence: 3, manifest_version: manifest.version,
+        occurred_at: Time.current.iso8601(6))]).first.action
+    expect(later).to be_result_accepted
+    get "/api/v1/organizer/events/#{event.id}/admissions", headers: headers
+    expect(response).to have_http_status(:ok)
+    history = response.parsed_body.fetch("recent_actions").index_by { |action| action.fetch("action_uuid") }
+    expect(history.fetch(first.action_uuid)).to include("reversed" => true, "result" => "accepted")
+    expect(history.fetch(later.action_uuid)).to include("reversed" => false, "result" => "accepted")
+    expect(response.parsed_body.dig("permissions", "can_reverse")).to be(true)
+  end
+
   it "limits scanner devices to assigned events and minimum attendee information" do
     scanner = create(:user)
     create(:organization_membership, organization: organization, user: scanner, role: :scanner)

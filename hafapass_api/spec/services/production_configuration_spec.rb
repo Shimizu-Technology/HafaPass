@@ -11,6 +11,7 @@ RSpec.describe ProductionConfiguration do
     "CLERK_ISSUER" => "https://fixture.clerk.accounts.dev",
     "FRONTEND_URL" => "https://hafapass.example/",
     "PUBLIC_WEB_URL" => "https://hafapass.example/",
+    "PUBLIC_API_URL" => "https://api.hafapass.example",
     "ALLOWED_ORIGINS" => "https://hafapass.example/,https://admin.hafapass.example",
     "GIT_SHA" => "a" * 40,
     "SENTRY_DSN" => "configured",
@@ -23,7 +24,11 @@ RSpec.describe ProductionConfiguration do
     "AWS_BUCKET" => "configured",
     "AWS_REGION" => "configured",
     "ADMISSION_MANIFEST_PRIVATE_KEY_PEM" => "configured",
-    "ENABLE_FIRST_USER_ADMIN_BOOTSTRAP" => "false"
+    "ENABLE_FIRST_USER_ADMIN_BOOTSTRAP" => "false",
+    "STRIPE_TEST_SECRET_KEY" => nil, "STRIPE_TEST_PUBLISHABLE_KEY" => nil,
+    "STRIPE_TEST_PLATFORM_ACCOUNT_ID" => nil, "STRIPE_LIVE_SECRET_KEY" => nil,
+    "STRIPE_LIVE_PUBLISHABLE_KEY" => nil, "STRIPE_LIVE_PLATFORM_ACCOUNT_ID" => nil,
+    "STRIPE_SECRET_KEY" => nil, "STRIPE_PUBLISHABLE_KEY" => nil
   }.freeze
 
   around do |example|
@@ -60,5 +65,30 @@ RSpec.describe ProductionConfiguration do
   it "reports invalid authentication configuration rather than just nonempty credentials" do
     ENV["CLERK_ISSUER"] = "http://untrusted.example"
     expect(described_class.call[:checks][:clerk]).to be(false)
+  end
+
+  it "requires the API origin independently of the frontend origins" do
+    ENV["PUBLIC_API_URL"] = "http://api.hafapass.example"
+    expect(described_class.call[:checks][:public_urls]).to be(false)
+  end
+
+  %w[test live].each do |mode|
+    it "requires the selected #{mode} Stripe account context before readiness" do
+      SiteSetting.instance.update!(payment_mode: mode)
+      ENV["STRIPE_#{mode.upcase}_SECRET_KEY"] = "sk_#{mode}_fixture"
+      ENV["STRIPE_#{mode.upcase}_PUBLISHABLE_KEY"] = "pk_#{mode}_fixture"
+      expect(described_class.call).to include(ready: false)
+      expect(described_class.call[:checks][:stripe_payment_context]).to be(false)
+      ENV["STRIPE_#{mode.upcase}_PLATFORM_ACCOUNT_ID"] = "acct_fixture"
+      expect(described_class.call[:checks][:stripe_payment_context]).to be(true)
+      ENV["STRIPE_#{mode.upcase}_SECRET_KEY"] = mode == "test" ? "sk_live_wrong" : "sk_test_wrong"
+      expect(described_class.call[:checks][:stripe_payment_context]).to be(false)
+    end
+  end
+
+  it "reports unavailable payment configuration without raising a database error" do
+    allow(SiteSetting).to receive(:instance).and_raise(ActiveRecord::StatementInvalid)
+    expect(described_class.call).to include(ready: false)
+    expect(described_class.call[:checks][:stripe_payment_context]).to be(false)
   end
 end

@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useAuth } from '@clerk/clerk-react'
 import { useLocation, useParams, Link } from 'react-router-dom'
 import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
-import api from '../api/client'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { orderAccessHeaders } from '../utils/orderAccess'
+import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
 
 function AddToHomeScreenInstructions() {
   const [expanded, setExpanded] = useState(false)
+  const reducedMotion = useReducedMotion()
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
   const isAndroid = /Android/.test(navigator.userAgent)
 
@@ -18,7 +20,8 @@ function AddToHomeScreenInstructions() {
     <div className="mt-4">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-700 transition-colors mx-auto"
+        aria-expanded={expanded}
+        className="min-h-11 flex items-center gap-2 rounded text-sm text-content-inverse-muted hover:text-white transition-colors mx-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
       >
         <Smartphone className="w-4 h-4" />
         <span>Add to Home Screen</span>
@@ -27,9 +30,10 @@ function AddToHomeScreenInstructions() {
       <AnimatePresence>
         {expanded && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
+            initial={reducedMotion ? false : { opacity: 1, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            exit={reducedMotion ? undefined : { opacity: 1, height: 0 }}
+            transition={{ duration: reducedMotion ? 0 : 0.2 }}
             className="overflow-hidden"
           >
             <div className="mt-3 p-3 bg-neutral-50 rounded-xl text-xs text-neutral-600 space-y-1.5">
@@ -92,6 +96,30 @@ export default function TicketPage() {
   const { credential } = useParams()
   const location = useLocation()
   const orderId = new URLSearchParams(location.search).get('order')
+  const routeKey = JSON.stringify([credential, orderId])
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+    ? <AuthenticatedTicket key={routeKey} /> : <TicketContent key={routeKey} />
+}
+
+function AuthenticatedTicket() {
+  const { isLoaded, userId, sessionId } = useAuth()
+  const context = useSyncExternalStore(subscribeApiAuthContext, getApiAuthContext)
+  const accountReady = context?.ready && context.userId === userId && context.sessionId === sessionId
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)
+    || (userId ? !accountReady : context?.userId)) {
+    return <div className="grid min-h-[60vh] place-items-center" role="status">Preparing your account…</div>
+  }
+  // Guests keep their explicit order capability; signed-in requests bind to the
+  // authoritative session. A changed session remounts private state immediately.
+  return <TicketContent key={JSON.stringify([userId, sessionId, context?.generation])}
+    authContext={userId ? context : undefined} />
+}
+
+function TicketContent({ authContext }) {
+  const reducedMotion = useReducedMotion()
+  const { credential } = useParams()
+  const location = useLocation()
+  const orderId = new URLSearchParams(location.search).get('order')
   const [ticket, setTicket] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -99,55 +127,91 @@ export default function TicketPage() {
   const [downloadError, setDownloadError] = useState(null)
   const [walletLoading, setWalletLoading] = useState(null)
   const [walletError, setWalletError] = useState(null)
+  const lifecycle = useRef({ active: false, generation: 0 })
+  const access = useRef({ buyerId: checkoutBuyerIdentity(), auth: getApiAuthContext(), token: getOrderAccess(orderId) })
+  useLayoutEffect(() => {
+    const state = lifecycle.current
+    state.active = true
+    state.generation += 1
+    return () => { state.active = false; state.generation += 1 }
+  }, [])
+
+  function currentOperation() {
+    const generation = lifecycle.current.generation
+    return () => lifecycle.current.active && lifecycle.current.generation === generation
+      && checkoutBuyerIdentity() === access.current.buyerId && getApiAuthContext() === access.current.auth
+      && getOrderAccess(orderId) === access.current.token
+  }
 
   useEffect(() => {
+    let active = true
+    const generation = lifecycle.current.generation
+    const current = () => active && lifecycle.current.active && lifecycle.current.generation === generation
+      && checkoutBuyerIdentity() === access.current.buyerId && getApiAuthContext() === access.current.auth
+      && getOrderAccess(orderId) === access.current.token
     async function fetchTicket() {
       try {
         setLoading(true)
         setError(null)
         const response = await api.get(`/tickets/${encodeURIComponent(credential)}`, {
-          headers: orderAccessHeaders(orderId),
+          headers: orderAccessHeaders(orderId, access.current.token), authContext,
         })
+        if (!current()) return
         setTicket(response.data)
       } catch (err) {
+        if (!current()) return
         if (err.response?.status === 404) {
           setError('Ticket not found.')
         } else {
           setError('Failed to load ticket. Please try again.')
         }
       } finally {
-        setLoading(false)
+        if (current()) setLoading(false)
       }
     }
     fetchTicket()
-  }, [credential, orderId])
+    return () => { active = false }
+  }, [credential, orderId, authContext])
 
   async function handleDownload() {
+    const current = currentOperation()
+    if (!current()) return
     let downloadUrl
     let downloadLink
     try {
       setDownloading(true)
       setDownloadError(null)
       const response = await api.get(`/tickets/${encodeURIComponent(credential)}/download`, {
-        headers: orderAccessHeaders(orderId),
+        headers: orderAccessHeaders(orderId, access.current.token), authContext,
         responseType: 'blob',
       })
+      if (!current()) return
       downloadUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
       downloadLink = document.createElement('a')
       downloadLink.href = downloadUrl
       downloadLink.setAttribute('download', `hafapass-ticket-${ticket.id}.pdf`)
       document.body.appendChild(downloadLink)
       downloadLink.click()
-    } catch {
-      setDownloadError('We couldn’t download the PDF. Your ticket is still available here. Check your connection and try Download PDF again.')
+    } catch (error) {
+      if (!current()) return
+      let failure = error.response?.data
+      if (error.response?.status === 422 && typeof failure?.text === 'function') {
+        try { failure = JSON.parse(await failure.text()) } catch { failure = null }
+      }
+      if (!current()) return
+      const unsupportedText = error.response?.status === 422 && failure?.error_code === 'unsupported_pdf_text'
+      setDownloadError(unsupportedText
+        ? 'The PDF cannot display some text on this ticket. Your ticket and entry QR are still available here. Use this browser ticket or contact the organizer.'
+        : 'We couldn’t download the PDF. Your ticket is still available here. Check your connection and try Download PDF again.')
     } finally {
       downloadLink?.remove()
       if (downloadUrl) window.URL.revokeObjectURL(downloadUrl)
-      setDownloading(false)
+      if (current()) setDownloading(false)
     }
   }
 
   async function handleShare() {
+    if (!currentOperation()()) return
     if (navigator.share) {
       try {
         await navigator.share({
@@ -162,29 +226,34 @@ export default function TicketPage() {
   }
 
   async function handleWallet(kind) {
+    const current = currentOperation()
+    if (!current()) return
+    let walletUrl
     setWalletLoading(kind)
     setWalletError(null)
     try {
       if (kind === 'apple') {
         const response = await api.get(`/tickets/${encodeURIComponent(credential)}/wallet/apple`, {
-          headers: orderAccessHeaders(orderId), responseType: 'blob',
+          headers: orderAccessHeaders(orderId, access.current.token), authContext, responseType: 'blob',
         })
-        const url = window.URL.createObjectURL(response.data)
+        if (!current()) return
+        walletUrl = window.URL.createObjectURL(response.data)
         const link = document.createElement('a')
-        link.href = url
+        link.href = walletUrl
         link.download = `hafapass-ticket-${ticket.id}.pkpass`
         link.click()
-        window.URL.revokeObjectURL(url)
       } else {
         const response = await api.get(`/tickets/${encodeURIComponent(credential)}/wallet/google`, {
-          params: { response: 'json' }, headers: orderAccessHeaders(orderId),
+          params: { response: 'json' }, headers: orderAccessHeaders(orderId, access.current.token), authContext,
         })
+        if (!current()) return
         window.location.assign(response.data.url)
       }
     } catch (err) {
-      setWalletError(err.response?.data?.error || `${kind === 'apple' ? 'Apple' : 'Google'} Wallet is unavailable.`)
+      if (current()) setWalletError(err.response?.data?.error || `${kind === 'apple' ? 'Apple' : 'Google'} Wallet is unavailable.`)
     } finally {
-      setWalletLoading(null)
+      if (walletUrl) window.URL.revokeObjectURL(walletUrl)
+      if (current()) setWalletLoading(null)
     }
   }
 
@@ -201,7 +270,8 @@ export default function TicketPage() {
       <div className="max-w-md mx-auto px-4 py-12 text-center">
         <div className="card p-8">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-          <p className="text-red-700 font-medium mb-4">{error}</p>
+          <h1 className="text-xl font-bold text-neutral-950 mb-3">Ticket unavailable</h1>
+          <p role="alert" className="text-red-700 font-medium mb-4">{error}</p>
           <Link to="/events" className="btn-primary text-sm">
             Browse Events
           </Link>
@@ -216,22 +286,24 @@ export default function TicketPage() {
   const formatTime = (dateStr) => formatEventTime(dateStr, event?.timezone)
 
   const statusConfig = {
+    access_paused: { label: 'Access paused', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500' },
     issued: { label: 'Valid', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
     checked_in: { label: 'Used', bg: 'bg-neutral-100', text: 'text-neutral-600', border: 'border-neutral-200', dot: 'bg-neutral-400' },
     cancelled: { label: 'Cancelled', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
     transferred: { label: 'Transferred', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500' },
   }
 
-  const status = statusConfig[ticket.status] || statusConfig.issued
+  const accessPaused = ticket.status === 'issued' && (ticket.admission_allowed === false || Boolean(ticket.admission_block_reason))
+  const status = accessPaused ? statusConfig.access_paused : statusConfig[ticket.status] || statusConfig.issued
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center px-3 sm:px-4 py-8">
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
-        initial={{ opacity: 0, y: 20 }}
+        initial={reducedMotion ? false : { opacity: 1, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0, 0, 0.2, 1] }}
       >
         {['postponed', 'cancelled'].includes(event.status) && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
@@ -260,7 +332,7 @@ export default function TicketPage() {
           {/* Status Badge */}
           <div className={`px-4 py-2.5 ${status.bg} ${status.border} border-b text-center`}>
             <span className={`inline-flex items-center gap-2 text-sm font-semibold ${status.text}`}>
-              <span className={`w-2 h-2 rounded-full ${status.dot} ${ticket.status === 'issued' ? 'animate-pulse' : ''}`} />
+              <span className={`w-2 h-2 rounded-full ${status.dot} ${ticket.status === 'issued' && !accessPaused ? 'animate-pulse motion-reduce:animate-none' : ''}`} />
               {status.label}
             </span>
             {ticket.status === 'checked_in' && ticket.checked_in_at && (
@@ -273,14 +345,14 @@ export default function TicketPage() {
           {/* QR Code Section */}
           {showCredential ? <motion.div
             className="px-4 sm:px-6 pt-6 pb-4 flex flex-col items-center"
-            initial={{ scale: 0.9, opacity: 0 }}
+            initial={false}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
+            transition={{ duration: 0 }}
           >
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
               <QRCode value={ticket.scan_credential} size={220} />
             </div>
-            <p className="mt-2 text-[10px] sm:text-xs text-neutral-400 font-mono break-all text-center select-all">
+            <p className="mt-2 text-[10px] sm:text-xs text-content-muted font-mono break-all text-center select-all">
               Ticket HP-T{ticket.id}
             </p>
           </motion.div> : (
@@ -301,8 +373,8 @@ export default function TicketPage() {
           {/* Event Details */}
           <div className="px-4 sm:px-6 py-5 space-y-3">
             <div>
-              <h2 className="font-display text-lg font-bold text-neutral-900">{event.title}</h2>
-              <p className="text-sm text-accent-600 font-semibold font-sans">{ticket_type.name}</p>
+              <h1 className="font-display text-lg font-bold text-neutral-900">{event.title}</h1>
+              <p className="text-sm text-action font-semibold font-sans">{ticket_type.name}</p>
               {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
               {ticket.seat?.obstructed_view && <p className="mt-1 text-xs text-amber-700">Obstructed view{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
             </div>
@@ -345,7 +417,7 @@ export default function TicketPage() {
             <button
               onClick={handleDownload}
               disabled={downloading || !showCredential}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-colors disabled:opacity-60"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl min-h-11 bg-action-teal hover:bg-action-teal-hover text-content-inverse text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
             >
               {downloading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -384,7 +456,7 @@ export default function TicketPage() {
 
           {/* Footer */}
           <div className="px-4 sm:px-6 py-3 bg-neutral-50 text-center border-t border-neutral-100">
-            <p className="text-xs text-neutral-400 font-sans">
+            <p className="text-xs text-content-muted font-sans">
               {showCredential ? 'Present this QR code at the door' : 'This ticket has no active entry code'}
             </p>
           </div>

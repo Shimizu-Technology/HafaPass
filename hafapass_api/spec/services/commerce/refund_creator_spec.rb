@@ -41,6 +41,76 @@ RSpec.describe Commerce::RefundCreator do
     expect(payment.reload).to be_partially_refunded
   end
 
+  it "pauses cumulative full-value unknown refunds, recognizes returned money and retains only occupied capacity" do
+    used, unused = order.tickets.order(:id).to_a
+    used.check_in!
+    first = described_class.call(order: order, amount_cents: 1000, idempotency_key: "adjustment-before-full")
+    expect(first).to be_succeeded
+    expect(unused.reload).to be_admission_allowed
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError.new("Synthetic lost response"))
+    expect do
+      described_class.call(order: order, amount_cents: order.total_cents - 1000,
+        idempotency_key: "unknown-final-adjustment")
+    end.to raise_error(Commerce::RefundCreator::RefundError, /unknown/)
+    pending = order.refunds.find_by!(idempotency_key: "unknown-final-adjustment")
+    expect(pending).to be_pending
+    expect(pending.failure_code).to eq("provider_result_unknown")
+    expect(pending.refund_tickets).to be_empty
+    expect(unused.reload).not_to be_admission_allowed
+    expect(used.reload).to be_checked_in
+    response = OpenStruct.new(id: "sim_re_final_adjustment", status: "succeeded", amount: pending.amount_cents, currency: "usd")
+    described_class.reconcile_refund!(refund: pending, provider_refund: response)
+
+    expect(order.reload).to be_refunded
+    expect(order.refunded_cents).to eq(order.total_cents)
+    expect(payment.reload).to be_refunded
+    expect(used.reload).to be_checked_in
+    expect(used.inventory_retention.refund_id).to eq(pending.id)
+    expect(unused.reload).to be_cancelled
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(order.refunds.joins(:refund_items).sum("refund_items.amount_cents")).to eq(order.total_cents)
+    expect { described_class.reconcile_refund!(refund: pending, provider_refund: response) }
+      .not_to change(TicketInventoryRetention, :count)
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+  end
+
+  it "retains admitted legacy selected tickets when their existing refund succeeds" do
+    used = order.tickets.first
+    pending = create(:refund, order: order, payment: payment, amount_cents: used.refundable_cents,
+      status: :pending, succeeded_at: nil, provider_refund_id: nil)
+    pending.refund_tickets.create!(ticket: used, amount_cents: pending.amount_cents)
+    used.update!(status: :checked_in, checked_in_at: Time.current)
+    described_class.reconcile_refund!(refund: pending,
+      provider_refund: OpenStruct.new(id: "sim_re_legacy_selected_used", status: "succeeded", amount: pending.amount_cents, currency: "usd"))
+
+    expect(order.reload).to be_partially_refunded
+    expect(used.reload).to be_checked_in
+    expect(used.inventory_retention.refund_id).to eq(pending.id)
+    used.reverse_check_in!
+    expect(used.reload).not_to be_admission_allowed
+    expect(ticket_type.reload.quantity_sold).to eq(2)
+  end
+
+  it "retains the admitted ticket when an amount adjustment and selected refund cumulatively complete the order" do
+    used, unused = order.tickets.order(:id).to_a
+    used.check_in!
+    first = described_class.call(order: order, amount_cents: used.refundable_cents,
+      idempotency_key: "amount-before-selected-full")
+    expect(first).to be_succeeded
+    expect(used.reload).not_to be_inventory_retained
+    last = described_class.call(order: order, tickets: [unused], idempotency_key: "selected-completes-full")
+
+    expect(last).to be_succeeded
+    expect(order.reload).to be_refunded
+    expect(payment.reload).to be_refunded
+    expect(used.reload).to be_checked_in
+    expect(used.inventory_retention.refund_id).to eq(last.id)
+    expect(unused.reload).to be_cancelled
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(last.refund_tickets.pluck(:ticket_id)).to eq([unused.id])
+    expect(order.refunds.joins(:refund_items).sum("refund_items.amount_cents")).to eq(order.total_cents)
+  end
+
   it "returns the original refund for a repeated idempotency key" do
     first = described_class.call(order: order, amount_cents: 1000, idempotency_key: "same-refund")
 
@@ -48,6 +118,15 @@ RSpec.describe Commerce::RefundCreator do
       second = described_class.call(order: order, amount_cents: 1000, idempotency_key: "same-refund")
       expect(second.id).to eq(first.id)
     end.not_to change(Refund, :count)
+  end
+
+  it "notifies the buyer once for an ordinary provider refund and its replay" do
+    refund = described_class.call(order: order, amount_cents: 1000, idempotency_key: "notified-refund")
+    expect(refund).to have_attributes(provider: "stripe", status: "succeeded")
+    expect(EmailService).to have_received(:send_refund_notification_async).with(order, refund: refund).once
+
+    expect(described_class.call(order: order, amount_cents: 1000, idempotency_key: "notified-refund")).to eq(refund)
+    expect(EmailService).to have_received(:send_refund_notification_async).with(order, refund: refund).once
   end
 
   it "finalizes an existing pending refund during provider reconciliation" do
@@ -98,7 +177,8 @@ RSpec.describe Commerce::RefundCreator do
       "pi_real_refund",
       amount_cents: 1000,
       reason: nil,
-      idempotency_key: "provider-refund-key"
+      idempotency_key: "provider-refund-key",
+      payment: payment
     )
   end
 
@@ -186,6 +266,23 @@ RSpec.describe Commerce::RefundCreator do
     expect(order.refunds).to be_empty
   end
 
+  it "keeps selected-ticket entry paused for an unknown refund without releasing inventory" do
+    selected = order.tickets.first
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError, "synthetic response lost")
+    expect { described_class.call(order: order, tickets: [selected], idempotency_key: "selected-unknown-entry") }
+      .to raise_error(described_class::RefundError, /unknown/)
+    refund = order.refunds.find_by!(idempotency_key: "selected-unknown-entry")
+    expect(refund).to have_attributes(status: "pending", failure_code: "provider_result_unknown")
+    expect(refund.refund_tickets.active.count).to eq(1)
+    expect(selected.reload).to be_issued
+    expect(selected).not_to be_admission_allowed
+    expect(order.tickets.where.not(id: selected.id).first).to be_admission_allowed
+    expect { selected.check_in! }.to raise_error(Ticket::AdmissionError, /refund is pending/)
+    expect(ticket_type.reload.quantity_sold).to eq(2)
+    expect(order.reload.refunded_cents).to eq(0)
+    expect(EmailService).not_to have_received(:send_refund_notification_async)
+  end
+
   it "keeps an uncertain submission reserved and retries the same operation identity" do
     allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError, "response lost")
     expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "uncertain") }.to raise_error(described_class::RefundError, /unknown/)
@@ -196,7 +293,7 @@ RSpec.describe Commerce::RefundCreator do
     allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_retry", status: "succeeded"))
     expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "uncertain") }.not_to change(Refund, :count)
     expect(pending.reload).to be_succeeded
-    expect(StripeService).to have_received(:find_refund).with(payment.provider_payment_id, idempotency_key: "uncertain")
+    expect(StripeService).to have_received(:find_refund).with(payment.provider_payment_id, idempotency_key: "uncertain", payment: payment)
   end
 
   it "recovers an old uncertain operation by metadata without creating another provider refund" do

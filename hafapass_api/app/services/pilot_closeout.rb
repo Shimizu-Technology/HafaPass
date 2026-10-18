@@ -6,7 +6,7 @@ class PilotCloseout
   class StateError < StandardError; end
 
   BLOCKING_ZERO_FIELDS = %w[
-    pending_payment_count pending_refund_count open_dispute_count open_reconciliation_exception_count
+    missing_processing_fee_evidence_count pending_payment_count pending_refund_count open_dispute_count open_reconciliation_exception_count
     unknown_card_payment_count active_inventory_hold_count active_catalog_hold_count active_seat_hold_count
     pending_catalog_fulfillment_count queued_or_delayed_message_count active_scanner_device_count
     effective_staff_assignment_count unresolved_incident_count payout_in_flight_count
@@ -172,6 +172,7 @@ class PilotCloseout
       "paid_payout_cents" => paid_payout_cents,
       "payout_variance_cents" => paid_payout_cents - expected_payout_cents,
       "financial_activity" => financial_activity,
+      "missing_processing_fee_evidence_count" => StripeProcessingFees.missing_count(orders.select(:id)),
       "pending_payment_count" => payments.pending.count,
       "pending_refund_count" => refunds.pending.count,
       "open_dispute_count" => disputes.open.count,

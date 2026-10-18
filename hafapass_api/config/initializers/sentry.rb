@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
 require Rails.root.join("lib/telemetry_privacy")
+require Rails.root.join("app/services/application_revision")
 
 Sentry.init do |config|
   config.dsn = ENV["SENTRY_DSN"]
   config.environment = ENV.fetch("SENTRY_ENVIRONMENT", Rails.env)
   config.enabled_environments = ENV.fetch("SENTRY_ENABLED_ENVIRONMENTS", "production,staging").split(",")
-  config.release = ENV["GIT_SHA"] || ENV["COMMIT_REF"]
+  config.release = ApplicationRevision.current
   config.send_default_pii = false
   config.sample_rate = 1.0
   config.traces_sample_rate = ENV.fetch("SENTRY_TRACES_SAMPLE_RATE", "0.1").to_f

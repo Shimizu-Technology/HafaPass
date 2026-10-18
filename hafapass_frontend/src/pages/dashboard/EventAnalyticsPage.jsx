@@ -1,5 +1,7 @@
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
+import EventWorkspace from '../../components/EventWorkspace'
 import { CheckCircle2, CircleAlert, Loader2, WalletCards } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 
@@ -21,6 +23,15 @@ function formatDate(isoString) {
 
 export default function EventAnalyticsPage() {
  const { id } = useParams()
+ const identity = useOrganizerIdentity()
+ const visit = useOrganizerPageVisit(`/dashboard/events/${id}/analytics`)
+ if (!visit.active) return null
+ if (!identity.ready) return <p role="status" className="p-6">Preparing your account…</p>
+ return <EventAnalyticsPageSession key={`${identity.accountKey}:${identity.organizationId}:${id}:${visit.generation}`} id={id} identity={identity} />
+}
+
+function EventAnalyticsPageSession({ id, identity }) {
+ const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/analytics`)
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
  const [stats, setStats] = useState(null)
@@ -30,95 +41,132 @@ export default function EventAnalyticsPage() {
  const [attendeesLoading, setAttendeesLoading] = useState(false)
  const [finance, setFinance] = useState(null)
  const [financeBusy, setFinanceBusy] = useState(false)
+ const [payoutNotice, setPayoutNotice] = useState('')
+ const loadGeneration = useRef(0)
+ const accessEpoch = useRef(0)
+ const verifiedRights = useRef(null)
+ const requests = useRef(new Set())
+ const permissions = event?.permissions || {}
+
+ const withdrawAccess = useCallback(message => {
+  ++accessEpoch.current
+  verifiedRights.current = null
+  requests.current.forEach(request => request.controller.abort())
+  setStats(null); setFinance(null); setAttendees(null); setShowAttendees(false); setEvent(null)
+  setFinanceBusy(false); setPayoutNotice(''); setAttendeesLoading(false); setLoading(false)
+  setError(message)
+ }, [])
+ const requestApi = useCallback(async (method, url, payload, options = {}) => {
+  const verifyingEvent = method === 'get' && url === `/organizer/events/${id}`
+  const permission = url.endsWith('/attendees') ? 'view_attendees' : url.endsWith('/finalize') ? 'manage_finance' : url.endsWith('/payout') ? 'payout' : 'view_finance'
+  if (!verifyingEvent && verifiedRights.current?.[permission] !== true) throw new DOMException('Analytics access is not verified', 'AbortError')
+  const request = beginRequest()
+  if (!request) throw new DOMException('Page context changed', 'AbortError')
+  const epoch = accessEpoch.current
+  requests.current.add(request)
+  try {
+   const response = method === 'get'
+    ? await apiClient.get(url, { ...payload, ...request.config })
+    : await apiClient[method](url, payload, { ...options, ...request.config })
+   if (!request.current() || epoch !== accessEpoch.current) throw new DOMException('Analytics access changed', 'AbortError')
+   return response
+  } catch (requestError) {
+   if (request.current() && epoch === accessEpoch.current && ([401, 403].includes(requestError.response?.status) || (verifyingEvent && requestError.response?.status === 404))) {
+    withdrawAccess(requestError.response.status === 401 ? 'Please sign in to verify your analytics access.'
+     : requestError.response.status === 404 ? 'Event not found.'
+      : 'Your event access changed. Analytics and finance actions are paused. Retry to verify your current permissions.')
+   }
+   throw requestError
+  } finally { requests.current.delete(request); request.release() }
+ }, [id, beginRequest, withdrawAccess])
 
  const fetchData = useCallback(async () => {
+  if (!current()) return
+  const generation = ++loadGeneration.current
+  withdrawAccess(null)
+  const epoch = accessEpoch.current
+  const canApply = () => current() && generation === loadGeneration.current && epoch === accessEpoch.current
   setLoading(true)
-  setError(null)
   try {
-   const [statsRes, eventRes, financeRes] = await Promise.all([
-    apiClient.get(`/organizer/events/${id}/stats`),
-    apiClient.get(`/organizer/events/${id}`),
-    apiClient.get(`/organizer/events/${id}/finance`)
-   ])
-   setStats(statsRes.data)
-   setEvent(eventRes.data)
-   setFinance(financeRes.data)
-  } catch (err) {
-   if (err.response?.status === 401) {
-    setError('Please sign in to access this page.')
-   } else if (err.response?.status === 404) {
-    setError('Event not found.')
-   } else {
-    setError('Failed to load analytics.')
+   // The event permission map is authoritative. Do not request private finance
+   // or buyer records until this exact event and organization are verified.
+   const eventRes = await requestApi('get', `/organizer/events/${id}`)
+   if (!canApply()) return
+   const saved = eventRes.data
+   if (String(saved.id) !== String(id) || saved.organization_id == null || (identity.organizationId != null && String(saved.organization_id) !== String(identity.organizationId))) {
+    withdrawAccess('The event context could not be verified. Return to your dashboard and select the event again.')
+    return
    }
-  } finally {
-   setLoading(false)
-  }
- }, [id])
-
- useEffect(() => {
-  fetchData()
- }, [fetchData])
+   if (saved.permissions?.view_finance !== true) {
+    withdrawAccess('Your event access does not include analytics and finances.')
+    return
+   }
+   verifiedRights.current = saved.permissions
+   const [statsRes, financeRes] = await Promise.all([
+    requestApi('get', `/organizer/events/${id}/stats`),
+    requestApi('get', `/organizer/events/${id}/finance`),
+   ])
+   if (!canApply()) return
+   setEvent(saved); setStats(statsRes.data); setFinance(financeRes.data)
+  } catch {
+   if (!canApply()) return
+   withdrawAccess('Failed to load analytics. Retry to verify access and load the current records.')
+  } finally { if (canApply()) setLoading(false) }
+ }, [id, identity.organizationId, requestApi, current, withdrawAccess])
+ useEffect(() => { fetchData() }, [fetchData])
 
  const fetchAttendees = async () => {
-  setError(null)
-  setAttendeesLoading(true)
+  if (!current() || verifiedRights.current?.view_attendees !== true) return
+  const epoch = accessEpoch.current
+  const canApply = () => current() && epoch === accessEpoch.current
+  setError(null); setAttendeesLoading(true)
   try {
-   const res = await apiClient.get(`/organizer/events/${id}/attendees`)
-   // Handle both paginated { attendees: [...], meta: {...} } and legacy array response
-   const attendeesData = res.data.attendees || res.data
-   setAttendees(Array.isArray(attendeesData) ? attendeesData : [])
-   setShowAttendees(true)
-  } catch {
-   setError('Failed to load attendees.')
-  } finally {
-   setAttendeesLoading(false)
-  }
+   const res = await requestApi('get', `/organizer/events/${id}/attendees`)
+   if (!canApply()) return
+   const rows = res.data.attendees || res.data
+   setAttendees(Array.isArray(rows) ? rows : []); setShowAttendees(true)
+  } catch { if (canApply()) setError('Failed to load attendees.') }
+  finally { if (canApply()) setAttendeesLoading(false) }
  }
-
  const handleToggleAttendees = () => {
-  if (showAttendees) {
-   setShowAttendees(false)
-  } else if (attendees) {
-   setShowAttendees(true)
-  } else {
-   fetchAttendees()
-  }
+  if (!current() || verifiedRights.current?.view_attendees !== true) return
+  if (showAttendees) setShowAttendees(false)
+  else if (attendees) setShowAttendees(true)
+  else fetchAttendees()
  }
-
  const refreshFinance = async () => {
-  const response = await apiClient.get(`/organizer/events/${id}/finance`)
-  setFinance(response.data)
+  const epoch = accessEpoch.current
+  const response = await requestApi('get', `/organizer/events/${id}/finance`)
+  if (current() && epoch === accessEpoch.current) setFinance(response.data)
  }
-
  const finalizeSettlement = async () => {
-  setFinanceBusy(true)
-  setError(null)
+  if (!current() || verifiedRights.current?.manage_finance !== true || financeBusy) return
+  const epoch = accessEpoch.current
+  const canApply = () => current() && epoch === accessEpoch.current
+  setFinanceBusy(true); setError(null); setPayoutNotice('')
   try {
-   await apiClient.post(`/organizer/events/${id}/finance/finalize`)
-   await refreshFinance()
-  } catch (requestError) {
-   setError(requestError.response?.data?.error || 'Could not finalize this statement.')
-  } finally {
-   setFinanceBusy(false)
-  }
+   await requestApi('post', `/organizer/events/${id}/finance/finalize`)
+   if (canApply()) await refreshFinance()
+  } catch (requestError) { if (canApply()) setError(requestError.response?.data?.error || 'Could not finalize this statement.') }
+  finally { if (canApply()) setFinanceBusy(false) }
  }
-
  const createPayout = async settlement => {
-  if (!window.confirm(`Send ${formatCents(settlement.available_to_payout_cents)} to the verified payout account?`)) return
-  setFinanceBusy(true)
-  setError(null)
+  if (!current() || verifiedRights.current?.payout !== true || financeBusy) return
+  if (!window.confirm(`Request a payout of ${formatCents(settlement.available_to_payout_cents)}? A processing request is not confirmation that money has been sent.`)) return
+  const epoch = accessEpoch.current
+  const canApply = () => current() && epoch === accessEpoch.current
+  setFinanceBusy(true); setError(null); setPayoutNotice('')
   try {
-   await apiClient.post(`/organizer/events/${id}/finance/payout`, {
+   const response = await requestApi('post', `/organizer/events/${id}/finance/payout`, {
     settlement_id: settlement.id,
-    amount_cents: settlement.available_to_payout_cents
+    amount_cents: settlement.available_to_payout_cents,
    }, { headers: { 'Idempotency-Key': crypto.randomUUID() } })
-   await refreshFinance()
-  } catch (requestError) {
-   setError(requestError.response?.data?.error || 'Could not create payout.')
-  } finally {
-   setFinanceBusy(false)
-  }
+   if (canApply()) {
+    setPayoutNotice(response.data?.status === 'paid' ? 'Payout recorded as paid.' : 'Payout requested. Processing does not confirm that money has been sent.')
+    await refreshFinance()
+   }
+  } catch (requestError) { if (canApply()) setError(requestError.response?.data?.error || 'Could not create payout.') }
+  finally { if (canApply()) setFinanceBusy(false) }
  }
 
  if (loading) {
@@ -131,9 +179,10 @@ export default function EventAnalyticsPage() {
 
  if (error && !stats) {
   return (
-   <div className="max-w-4xl mx-auto px-4 py-8">
-    <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+   <div className="max-w-4xl mx-auto">
+    <div role="alert" className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
      {error}
+     <button type="button" onClick={fetchData} className="ml-3 min-h-11 font-semibold underline">Retry analytics</button>
     </div>
     <Link to="/dashboard" className="mt-4 inline-block text-brand-500 hover:text-brand-700 text-sm font-medium">
      Back to Dashboard
@@ -149,18 +198,10 @@ export default function EventAnalyticsPage() {
  const latestSettlement = finance?.settlements?.[0]
 
  return (
-  <div className="max-w-4xl mx-auto px-4 py-8">
+  <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
    {/* Header */}
-   <div className="mb-6 flex items-center justify-between">
-    <Link to={`/dashboard/events/${id}/edit`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-     </svg>
-     Back to Event
-    </Link>
-   </div>
 
-   <h1 className="text-2xl font-bold text-neutral-900 mb-1">Event Analytics</h1>
+   <h2 className="text-2xl font-bold text-neutral-900 mb-1">Event Analytics</h2>
    {event && (
     <p className="text-neutral-600 mb-6">{event.title}</p>
    )}
@@ -168,6 +209,7 @@ export default function EventAnalyticsPage() {
    {error && (
     <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
      {error}
+     <button type="button" onClick={fetchData} className="ml-3 min-h-11 font-semibold underline">Retry analytics</button>
     </div>
    )}
 
@@ -243,10 +285,11 @@ export default function EventAnalyticsPage() {
      </div>
 
      {finance.preview.negative_balance_cents > 0 && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">A {formatCents(finance.preview.negative_balance_cents)} negative balance will be withheld from future organization payouts.</div>}
+     {payoutNotice && <p role="status" className="mt-4 rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700">{payoutNotice}</p>}
 
      <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-5">
-      {['completed', 'cancelled'].includes(event?.status) && <button disabled={financeBusy} onClick={finalizeSettlement} className="rounded-xl border border-brand-200 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50">{financeBusy ? 'Working…' : latestSettlement ? 'Finalize current version' : 'Finalize statement'}</button>}
-      {latestSettlement?.available_to_payout_cents > 0 && <button disabled={financeBusy || !finance.connected_account?.payout_ready} onClick={() => createPayout(latestSettlement)} className="btn-primary text-sm disabled:opacity-50">Pay {formatCents(latestSettlement.available_to_payout_cents)}</button>}
+      {permissions.manage_finance === true && ['completed', 'cancelled'].includes(event?.status) && <button disabled={financeBusy} onClick={finalizeSettlement} className="rounded-xl border border-brand-200 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50">{financeBusy ? 'Working…' : latestSettlement ? 'Finalize current version' : 'Finalize statement'}</button>}
+      {permissions.payout === true && latestSettlement?.available_to_payout_cents > 0 && <button disabled={financeBusy || !finance.connected_account?.payout_ready} onClick={() => createPayout(latestSettlement)} className="btn-primary text-sm disabled:opacity-50">Request payout {formatCents(latestSettlement.available_to_payout_cents)}</button>}
       {latestSettlement && <p className="text-xs text-neutral-500">Version {latestSettlement.version} · {latestSettlement.status} · {formatCents(latestSettlement.available_to_payout_cents)} available</p>}
      </div>
 
@@ -356,16 +399,16 @@ export default function EventAnalyticsPage() {
     <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
      <h2 className="text-lg font-semibold text-neutral-900">Attendees</h2>
      <div className="flex items-center gap-3">
-      <Link to={`/dashboard/events/${id}/attendees`} className="text-sm text-brand-500 hover:text-brand-700 font-medium">
+      {permissions.view_attendees === true && <Link to={`/dashboard/events/${id}/attendees`} className="text-sm text-brand-500 hover:text-brand-700 font-medium">
        Full List →
-      </Link>
-      <button
+      </Link>}
+      {permissions.view_attendees === true && <button
        onClick={handleToggleAttendees}
-       disabled={attendeesLoading}
+       disabled={attendeesLoading || permissions.view_attendees !== true}
        className="text-sm text-brand-500 hover:text-brand-700 font-medium disabled:opacity-50"
       >
        {attendeesLoading ? 'Loading...' : showAttendees ? 'Hide' : 'View All'}
-      </button>
+      </button>}
      </div>
     </div>
     {showAttendees && attendees && (
@@ -454,6 +497,6 @@ export default function EventAnalyticsPage() {
      </div>
     )}
    </div>
-  </div>
+  </div></EventWorkspace>
  )
 }

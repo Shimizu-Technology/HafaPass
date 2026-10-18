@@ -26,9 +26,14 @@ module Api
           entry = @event.guest_list_entries.build(entry_params)
           entry.added_by = current_user.email
 
-          if entry.save
+          saved = GuestListEntry.transaction do
+            if entry.save
+              EmailService.send_guest_list_notification_async(entry)
+              true
+            end
+          end
+          if saved
             # Send notification email asynchronously if guest has email
-            EmailService.send_guest_list_notification_async(entry)
 
             render json: entry_json(entry), status: :created
           else

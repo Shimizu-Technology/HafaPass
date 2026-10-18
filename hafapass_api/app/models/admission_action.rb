@@ -7,7 +7,7 @@ class AdmissionAction < ApplicationRecord
   belongs_to :scanner_device, optional: true
   belongs_to :actor_user, class_name: "User", optional: true
   belongs_to :reverses_action, class_name: "AdmissionAction", optional: true
-  has_one :reversal_action, class_name: "AdmissionAction", foreign_key: :reverses_action_id,
+  has_one :reversal_action, -> { result_accepted }, class_name: "AdmissionAction", foreign_key: :reverses_action_id,
     dependent: :restrict_with_error, inverse_of: :reverses_action
 
   enum :kind, { admit: 0, reverse: 1 }, prefix: true
@@ -19,7 +19,8 @@ class AdmissionAction < ApplicationRecord
   validates :action_uuid, length: { maximum: 128 }
   validates :sequence, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validates :manifest_version, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
-  validates :reverses_action_id, uniqueness: true, allow_nil: true
+  validates :reverses_action_id, uniqueness: { conditions: -> { result_accepted } }, allow_nil: true,
+    if: :result_accepted?
   validate :relationships_share_event
   validate :device_sequence_pair
   validate :reversal_shape
@@ -46,7 +47,7 @@ class AdmissionAction < ApplicationRecord
   end
 
   def reversal_shape
-    if kind_reverse? && reverses_action.nil?
+    if kind_reverse? && result_accepted? && reverses_action.nil?
       errors.add(:reverses_action, "is required for a reversal")
     elsif kind_admit? && reverses_action.present?
       errors.add(:reverses_action, "is only allowed for a reversal")

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useAuth } from '@clerk/clerk-react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Tag, X, Loader2, Calendar, MapPin, Timer } from 'lucide-react'
@@ -8,19 +9,64 @@ import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { clearActiveCheckout, getActiveCheckout, orderAccessHeaders, saveActiveCheckout, saveOrderAccess } from '../utils/orderAccess'
+import { CheckoutAttemptConflict, checkoutBuyerIdentity, checkoutBuyerMatches, checkoutAttemptCurrent, activeCheckoutBuyerBound, recordCheckoutOutcome, checkoutDefinitelyRejected, clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout } from '../utils/orderAccess'
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />
+}
+
+function selectedTicketType(event, ticketTypeId) {
+  return event?.ticket_types?.find(type => String(type.id) === String(ticketTypeId))
+}
+
+function selectionMatchesEvent(event, lineItems, slug) {
+  return event?.slug === slug && Array.isArray(lineItems) && lineItems.length > 0
+    && lineItems.every(item => Number.isInteger(item.quantity) && item.quantity > 0
+      && selectedTicketType(event, item.ticket_type_id))
+}
+
+function AuthenticatedCheckout() {
+  const { isLoaded, userId } = useAuth()
+  // ClerkProviderWrapper binds local recovery state after this identity settles.
+  // Its public children can otherwise mount while Clerk is still hydrating.
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  return <CheckoutContent key={userId || 'guest'} buyerId={userId || null} />
+}
+
+function CheckoutContent({ buyerId }) {
+  const { slug } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
 
+  const lifecycle = useRef({ active: false, generation: 0 })
+  const currentRoute = useRef(null)
+  const paymentContext = useRef(null)
+  const rejectionContext = useRef(null)
+  currentRoute.current = { slug, pathname: location.pathname, search: location.search, buyerId }
+  useLayoutEffect(() => {
+    const state = lifecycle.current
+    state.active = true
+    state.generation += 1
+    state.buyerId = buyerId
+    return () => { state.active = false; state.generation += 1 }
+  }, [buyerId])
+  const captureContext = useCallback(() => ({
+    ...currentRoute.current, generation: lifecycle.current.generation,
+  }), [])
+  const contextCurrent = useCallback(context => lifecycle.current.active
+    && lifecycle.current.generation === context.generation && lifecycle.current.buyerId === context.buyerId
+    && checkoutBuyerIdentity() === context.buyerId
+    && currentRoute.current.slug === context.slug && currentRoute.current.pathname === context.pathname
+    && currentRoute.current.search === context.search, [])
+
   const { t } = useTranslation()
-  const [event, setEvent] = useState(location.state?.event || null)
-  const [loading, setLoading] = useState(!location.state?.event)
+  const navigationMatches = !location.state?.event || location.state.event.slug === slug
+  const [event, setEvent] = useState(navigationMatches ? location.state?.event || null : null)
+  const [loading, setLoading] = useState(!navigationMatches || !location.state?.event)
   // Keep this checkout selection stable while a lazy confirmation route is loading.
-  const [lineItems] = useState(() => location.state?.lineItems || null)
+  const [lineItems] = useState(() => navigationMatches ? location.state?.lineItems || null : null)
   const waitlistOfferToken = location.state?.waitlistOfferToken || null
   const seatHoldToken = location.state?.seatHoldToken || null
   const seatHoldExpiresAt = location.state?.seatHoldExpiresAt || null
@@ -41,6 +87,10 @@ export default function CheckoutPage() {
   const [formErrors, setFormErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [cancelledCleanupRequired, setCancelledCleanupRequired] = useState(false)
+  const [canStartNewCheckout, setCanStartNewCheckout] = useState(false)
+  const [checkoutNeedsRecovery, setCheckoutNeedsRecovery] = useState(false)
+  const [recoveryVersion, setRecoveryVersion] = useState(0)
 
   // Promo code (HP-7)
   const [promoInput, setPromoInput] = useState('')
@@ -52,15 +102,118 @@ export default function CheckoutPage() {
   // Stripe
   const [clientSecret, setClientSecret] = useState(null)
   const [stripePublishableKey, setStripePublishableKey] = useState(null)
+  const [stripeAccount, setStripeAccount] = useState(null)
+  const [recovering, setRecovering] = useState(false)
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
+  const [checkoutRecovered, setCheckoutRecovered] = useState(false)
   const [step, setStep] = useState('info')
   const [secondsRemaining, setSecondsRemaining] = useState(null)
 
   useEffect(() => {
-    const activeOrderId = getActiveCheckout(slug)
-    if (activeOrderId) navigate(`/orders/${activeOrderId}/confirmation`, { replace: true })
-  }, [navigate, slug])
+    if (!location.pathname.startsWith('/checkout/')) return undefined
+    const context = captureContext()
+    if (!checkoutBuyerMatches(slug)) {
+      setError('Return to the account that started this saved checkout before recovering it.')
+      setLoading(false)
+      return undefined
+    }
+    const resumeId = new URLSearchParams(location.search).get('resume')
+    let expectedActiveId = getActiveCheckout(slug)
+    const activeOrderId = /^\d+$/.test(resumeId || '') ? resumeId : expectedActiveId
+    const attempt = getCheckoutAttempt(slug)
+    if (!activeOrderId && !attempt) return undefined
+    if (attempt && !checkoutAttemptCurrent(slug, attempt.payload.checkout_key, context.buyerId)) {
+      setError('Return to the account that started this saved checkout before recovering it.')
+      setLoading(false)
+      return undefined
+    }
+    if (expectedActiveId && activeOrderId !== expectedActiveId) {
+      setError('Another saved checkout is active. Recover it before opening a different order.')
+      setLoading(false)
+      return undefined
+    }
+    let cancelled = false
+    let pendingAttemptKey = !activeOrderId ? attempt?.payload.checkout_key : null
+    const current = () => !cancelled && contextCurrent(context)
+      && getActiveCheckout(slug) === expectedActiveId
+      && (pendingAttemptKey ? checkoutAttemptCurrent(slug, pendingAttemptKey, context.buyerId) : !getCheckoutAttempt(slug))
+    setRecovering(true)
+    const recover = async () => {
+      if (!current()) return
+      let id = activeOrderId
+      if (!id) {
+        let response
+        try {
+          response = await apiClient.post('/orders', attempt.payload)
+        } catch (err) {
+          if (current() && checkoutDefinitelyRejected(err)
+            && clearCheckoutAttempt(slug, pendingAttemptKey, context.buyerId)) {
+            pendingAttemptKey = null
+            rejectionContext.current = context
+            setCanStartNewCheckout(true)
+          }
+          throw err
+        }
+        if (!current()) return
+        id = response.data.id
+        if (!recordCheckoutOutcome(slug, pendingAttemptKey, context.buyerId, response.data)) {
+          if (current()) throw new Error('Checkout outcome is not confirmed')
+          return
+        }
+        expectedActiveId = String(id)
+        pendingAttemptKey = null
+      }
+      if (!current()) return
+      // A legacy cache entry is not proof that the signed-in buyer owns it.
+      // Automatic recovery must first pass the server's actual user check.
+      const headers = context.buyerId && !activeCheckoutBuyerBound(slug) && !resumeId ? {} : orderAccessHeaders(id)
+      const response = await apiClient.post(`/orders/${id}/payment_resume`, {}, { headers })
+      if (!current()) return
+      const order = response.data
+      if (!order.client_secret) {
+        navigate(`/orders/${id}/confirmation`, { replace: true })
+        return
+      }
+      saveActiveCheckout(slug, id)
+      expectedActiveId = String(id)
+      paymentContext.current = { ...context, orderId: String(id) }
+      setEvent(order.event)
+      setOrderData(order)
+      setCheckoutRecovered(true)
+      setOrderId(id)
+      setClientSecret(order.client_secret)
+      setStripePublishableKey(order.stripe_publishable_key)
+      setStripeAccount(order.stripe_account || null)
+      setStep('payment')
+      setLoading(false)
+    }
+    recover().catch(err => {
+      if (current()) {
+        setError(err.response?.data?.error || 'We could not restore your checkout. Retry this page before starting another order.')
+        setLoading(false)
+      }
+    }).finally(() => { if (!cancelled && contextCurrent(context)) setRecovering(false) })
+    return () => { cancelled = true }
+  }, [navigate, slug, location.pathname, location.search, recoveryVersion, captureContext, contextCurrent])
+
+  const retrySavedCheckout = () => {
+    setError(null)
+    setSubmitError(null)
+    setCheckoutNeedsRecovery(false)
+    setRecoveryVersion(previous => previous + 1)
+  }
+
+  const startNewCheckout = () => {
+    // The action is available only after a definitive no-order response.
+    if (!canStartNewCheckout || !rejectionContext.current || !contextCurrent(rejectionContext.current)
+      || !checkoutBuyerMatches(slug) || getActiveCheckout(slug) || getCheckoutAttempt(slug)) return
+    setCanStartNewCheckout(false)
+    setError(null)
+    setSubmitError(null)
+    // Re-select against current inventory and load fresh buyer terms/config.
+    navigate(`/events/${slug}`, { replace: true })
+  }
 
   useEffect(() => {
     apiClient.get('/config')
@@ -73,18 +226,39 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!location.pathname.startsWith('/checkout/')) return
+    // Recovery owns any earlier outcome, even a legacy attempt created with a
+    // mismatched navigation snapshot. Never replace its original payload/key.
+    if (getActiveCheckout(slug) || getCheckoutAttempt(slug) || new URLSearchParams(location.search).has('resume')
+      || canStartNewCheckout || checkoutNeedsRecovery) return
     if (!lineItems || lineItems.length === 0) {
       const activeOrderId = getActiveCheckout(slug)
-      navigate(activeOrderId ? `/orders/${activeOrderId}/confirmation` : `/events/${slug}`, { replace: true })
+      if (checkoutBuyerMatches(slug) && !activeOrderId && !getCheckoutAttempt(slug) && !new URLSearchParams(location.search).has('resume')) navigate(`/events/${slug}`, { replace: true })
+      return
+    }
+    if (event && !selectionMatchesEvent(event, lineItems, slug)) {
+      navigate(`/events/${slug}`, { replace: true })
       return
     }
     if (!event) {
+      let active = true
+      const context = captureContext()
+      const current = () => active && contextCurrent(context)
       setLoading(true)
       apiClient.get(`/events/${slug}`, { params: liveMoneyProof ? { live_money_proof: true } : {} })
-        .then(res => { setEvent(res.data); setLoading(false) })
-        .catch(() => { setError('Unable to load event details.'); setLoading(false) })
+        .then(res => {
+          if (!current()) return
+          if (!selectionMatchesEvent(res.data, lineItems, slug)) {
+            navigate(`/events/${slug}`, { replace: true })
+            return
+          }
+          setEvent(res.data)
+          setLoading(false)
+        })
+        .catch(() => { if (current()) { setError('Unable to load event details.'); setLoading(false) } })
+      return () => { active = false }
     }
-  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname])
+  }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname, location.search, recoveryVersion,
+    canStartNewCheckout, checkoutNeedsRecovery, captureContext, contextCurrent])
 
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
@@ -107,7 +281,7 @@ export default function CheckoutPage() {
     if (!promoInput.trim()) return
 
     const orderLines = lineItems?.map(item => {
-      const tt = event?.ticket_types?.find(t => t.id === item.ticket_type_id)
+      const tt = selectedTicketType(event, item.ticket_type_id)
       return tt ? (tt.current_price_cents ?? tt.price_cents) * item.quantity : 0
     }) || []
     const currentSubtotal = orderLines.reduce((s, l) => s + l, 0)
@@ -148,7 +322,7 @@ export default function CheckoutPage() {
     if (!termsAccepted) errors.terms = 'You must accept the buyer terms to continue'
     event?.registration_questions?.forEach(question => {
       const answer = registrationAnswers[question.id]
-      if (question.required && (answer === undefined || answer === null || answer === '')) errors[`question_${question.id}`] = 'This answer is required'
+      if (question.required && (answer === undefined || answer === null || (typeof answer === 'string' && !answer.trim()))) errors[`question_${question.id}`] = 'This answer is required'
     })
     event?.waivers?.forEach(waiver => {
       if (waiver.required && !acceptedWaivers[waiver.id]) errors[`waiver_${waiver.id}`] = 'You must accept this waiver'
@@ -158,14 +332,27 @@ export default function CheckoutPage() {
 
   const handleInfoSubmit = async (e) => {
     e.preventDefault()
+    if (!selectionMatchesEvent(event, lineItems, slug)) {
+      if (getActiveCheckout(slug) || getCheckoutAttempt(slug)) retrySavedCheckout()
+      else navigate(`/events/${slug}`, { replace: true })
+      return
+    }
     setSubmitError(null)
+    setCanStartNewCheckout(false)
+    setCheckoutNeedsRecovery(false)
     const errors = validateForm()
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
-      requestAnimationFrame(() => document.getElementById(Object.keys(errors)[0] === 'name' ? 'buyerName' : Object.keys(errors)[0] === 'email' ? 'buyerEmail' : 'termsAccepted')?.focus())
+      const firstError = Object.keys(errors)[0]
+      const target = { name: 'buyerName', email: 'buyerEmail', terms: 'termsAccepted' }[firstError]
+        || firstError.replace('question_', 'question-').replace('waiver_', 'waiver-')
+      requestAnimationFrame(() => document.getElementById(target)?.focus())
       return
     }
 
+    const context = captureContext()
+    let attempt
+    const current = () => contextCurrent(context) && (!attempt || checkoutAttemptCurrent(slug, attempt.payload.checkout_key, context.buyerId))
     setSubmitting(true)
     try {
       trackFunnel(apiClient, event.id, 'checkout_started')
@@ -198,14 +385,21 @@ export default function CheckoutPage() {
         terms_version: config.buyer_terms_version,
         live_money_proof: liveMoneyProof,
       }
-      const response = await apiClient.post('/orders', payload)
+      attempt = prepareCheckoutAttempt(slug, payload)
+      if (!current()) return
+      const response = await apiClient.post('/orders', attempt.payload)
+      if (!current()) return
       const order = response.data
-      saveOrderAccess(order.id, order.guest_access_token)
-      saveActiveCheckout(slug, order.id)
+      if (!recordCheckoutOutcome(slug, attempt.payload.checkout_key, context.buyerId, order)) {
+        if (current()) throw new Error('Checkout outcome is not confirmed')
+        return
+      }
 
       if (order.client_secret && order.stripe_publishable_key) {
+        paymentContext.current = { ...context, orderId: String(order.id) }
         setClientSecret(order.client_secret)
         setStripePublishableKey(order.stripe_publishable_key)
+        setStripeAccount(order.stripe_account || null)
         setOrderId(order.id)
         setOrderData(order)
         setStep('payment')
@@ -213,13 +407,23 @@ export default function CheckoutPage() {
         navigate(`/orders/${order.id}/confirmation`, { state: { order, event }, replace: true })
       }
     } catch (err) {
-      setSubmitError(err.response?.data?.error || 'Something went wrong.')
+      if (!current()) return
+      if (attempt && checkoutDefinitelyRejected(err) && clearCheckoutAttempt(slug, attempt.payload.checkout_key, context.buyerId)) {
+        rejectionContext.current = context
+        setCanStartNewCheckout(true)
+      } else if (err instanceof CheckoutAttemptConflict || getCheckoutAttempt(slug)) {
+        setCheckoutNeedsRecovery(true)
+      }
+      setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message : 'Something went wrong. Retry to recover the same checkout.'))
     } finally {
-      setSubmitting(false)
+      if (contextCurrent(context)) setSubmitting(false)
     }
   }
 
   const handlePaymentSuccess = (paymentIntent) => {
+    const context = paymentContext.current
+    if (!context || context.orderId !== String(orderId) || !contextCurrent(context)
+      || getActiveCheckout(slug) !== context.orderId || getCheckoutAttempt(slug)) return
     navigate(`/orders/${orderId}/confirmation`, { state: { order: orderData, event, paymentIntent }, replace: true })
   }
 
@@ -232,7 +436,7 @@ export default function CheckoutPage() {
     </div>
   )
 
-  if (loading) return (
+  if (loading || recovering) return (
     <div className="flex justify-center py-20">
       <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
     </div>
@@ -242,12 +446,17 @@ export default function CheckoutPage() {
     <div className="max-w-2xl mx-auto px-4 py-16">
       <div className="card p-8 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        <Link to={`/events/${slug}`} className="btn-primary">Back to Event</Link>
+        {cancelledCleanupRequired
+          ? <button type="button" onClick={() => window.location.reload()} className="btn-primary mb-3">Reload checkout</button>
+          : canStartNewCheckout
+          ? <button type="button" onClick={startNewCheckout} className="btn-primary mb-3">Start a new checkout</button>
+          : <button type="button" onClick={retrySavedCheckout} className="btn-primary mb-3">Retry saved checkout</button>}
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">Back to Event</Link>
       </div>
     </div>
   )
 
-  if (!event || !lineItems) return null
+  if (!event || (!lineItems && !orderData)) return null
 
   if (!config) return (
     <div className="flex justify-center py-20">
@@ -258,8 +467,10 @@ export default function CheckoutPage() {
   const feePercent = parseFloat(config.service_fee_percent) || 3.0
   const feeFlatCents = config ? config.service_fee_flat_cents : 50
 
-  const orderLines = lineItems.map(item => {
-    const tt = event.ticket_types.find(t => t.id === item.ticket_type_id)
+  const orderLines = orderData ? (orderData.order_items || []).map(item => ({
+    ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents,
+  })) : lineItems.map(item => {
+    const tt = selectedTicketType(event, item.ticket_type_id)
     if (!tt) return null
     const price = tt.current_price_cents ?? tt.price_cents
     return { ...item, name: tt.name, price_cents: price, lineTotal: price * item.quantity, active_tier: tt.active_tier }
@@ -285,7 +496,7 @@ export default function CheckoutPage() {
     ? null
     : `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, '0')}`
 
-  const paymentMode = config?.payment_mode || 'simulate'
+  const paymentMode = orderData?.payment_mode || config?.payment_mode || 'simulate'
   const isSimulate = paymentMode === 'simulate'
 
   return (
@@ -293,7 +504,7 @@ export default function CheckoutPage() {
       <SEO title={event ? `Checkout — ${event.title}` : 'Checkout'} noIndex={liveMoneyProof} />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
-        <Link to={`/events/${slug}`} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
           <ArrowLeft className="w-4 h-4" />
           {t('checkout.backToEvent')}
         </Link>
@@ -311,7 +522,7 @@ export default function CheckoutPage() {
             {t('checkout.yourInfo')}
           </div>
           <div className="w-8 h-px bg-neutral-200" />
-          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'payment' ? 'text-brand-500' : 'text-neutral-400'}`}>
+          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'payment' ? 'text-brand-500' : 'text-neutral-600'}`}>
             <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${step === 'payment' ? 'bg-brand-500 text-white' : 'bg-neutral-200 text-neutral-500'}`}>2</span>
             {t('checkout.payment')}
           </div>
@@ -347,7 +558,7 @@ export default function CheckoutPage() {
               <div key={line.ticket_type_id} className="flex justify-between items-center">
                 <div>
                   <span className="text-neutral-800 font-medium text-sm">{line.name}</span>
-                  <span className="text-neutral-400 ml-2 text-sm">&times; {line.quantity}</span>
+                  <span className="text-neutral-600 ml-2 text-sm">&times; {line.quantity}</span>
                 </div>
                 <span className="text-neutral-900 font-medium text-sm">{formatPrice(line.lineTotal)}</span>
               </div>
@@ -373,7 +584,7 @@ export default function CheckoutPage() {
             <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.serviceFee')}</span><span>{formatPrice(displayedFee)}</span></div>
             {displayedDiscount > 0 && (
               <div className="flex justify-between text-emerald-600">
-                <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {promoData.code}</span>
+                <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {orderData?.promo_code?.code || promoData?.code || 'Discount'}</span>
                 <span>-{formatPrice(displayedDiscount)}</span>
               </div>
             )}
@@ -414,12 +625,12 @@ export default function CheckoutPage() {
                   className="btn-secondary !py-2.5 text-sm disabled:opacity-50">
                   {promoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('checkout.apply')}
                 </button>
-                <button aria-label="Close promo code entry" onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-400 hover:text-neutral-600">
+                <button aria-label="Close promo code entry" onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-600 hover:text-neutral-600">
                   <X className="w-4 h-4" />
                 </button>
               </div>
             )}
-            {promoError && <p className="text-red-500 text-xs mt-1.5">{promoError}</p>}
+            {promoError && <p className="text-red-700 text-xs mt-1.5">{promoError}</p>}
           </div>
         )}
 
@@ -430,9 +641,24 @@ export default function CheckoutPage() {
             {submitError && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
                 <p className="text-red-700 text-sm">{submitError}</p>
+                {checkoutNeedsRecovery && <button type="button" onClick={retrySavedCheckout} className="mt-2 font-semibold underline">Recover earlier checkout</button>}
+                {canStartNewCheckout && <button type="button" onClick={startNewCheckout} className="mt-2 font-semibold underline">Start a new checkout</button>}
               </div>
             )}
             <form onSubmit={handleInfoSubmit} noValidate>
+              {Object.values(formErrors).some(Boolean) && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-semibold">Check your information before continuing.</p>
+                <ul className="mt-2 space-y-1">
+                  {Object.entries(formErrors).filter(([, message]) => message).map(([field, message]) => {
+                    const target = { name: 'buyerName', email: 'buyerEmail', terms: 'termsAccepted' }[field]
+                      || field.replace('question_', 'question-').replace('waiver_', 'waiver-')
+                    const label = field.startsWith('question_') ? event.registration_questions.find(question => String(question.id) === field.slice(9))?.prompt
+                      : field.startsWith('waiver_') ? event.waivers.find(waiver => String(waiver.id) === field.slice(7))?.title
+                        : { name: t('checkout.fullName'), email: t('checkout.emailAddress'), terms: 'Buyer terms' }[field]
+                    return <li key={field}><a href={`#${target}`} className="underline underline-offset-2" onClick={() => document.getElementById(target)?.focus()}>{label}: {message}</a></li>
+                  })}
+                </ul>
+              </div>}
               <div className="space-y-4">
                 <div>
                   <label htmlFor="buyerName" className="block text-sm font-medium text-neutral-700 mb-1.5">{t('checkout.fullName')}</label>
@@ -440,7 +666,7 @@ export default function CheckoutPage() {
                     onChange={(e) => { setBuyerName(e.target.value); setFormErrors(p => ({ ...p, name: null })) }}
                     className={`input ${formErrors.name ? 'input-error' : ''}`}
                     placeholder="Enter your full name" disabled={submitting} />
-                  {formErrors.name && <p id="buyer-name-error" role="alert" className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
+                  {formErrors.name && <p id="buyer-name-error" role="alert" className="text-red-700 text-xs mt-1">{formErrors.name}</p>}
                 </div>
                 <div>
                   <label htmlFor="buyerEmail" className="block text-sm font-medium text-neutral-700 mb-1.5">{t('checkout.emailAddress')}</label>
@@ -448,11 +674,11 @@ export default function CheckoutPage() {
                     onChange={(e) => { setBuyerEmail(e.target.value); setFormErrors(p => ({ ...p, email: null })) }}
                     className={`input ${formErrors.email ? 'input-error' : ''}`}
                     placeholder="you@example.com" disabled={submitting} />
-                  {formErrors.email && <p id="buyer-email-error" role="alert" className="text-red-500 text-xs mt-1">{formErrors.email}</p>}
+                  {formErrors.email && <p id="buyer-email-error" role="alert" className="text-red-700 text-xs mt-1">{formErrors.email}</p>}
                 </div>
                 <div>
                   <label htmlFor="buyerPhone" className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    {t('checkout.phone')} <span className="text-neutral-400 font-normal">({t('checkout.optional')})</span>
+                    {t('checkout.phone')} <span className="text-neutral-600 font-normal">({t('checkout.optional')})</span>
                   </label>
                   <input id="buyerPhone" type="tel" value={buyerPhone}
                     onChange={(e) => setBuyerPhone(e.target.value)}
@@ -464,8 +690,8 @@ export default function CheckoutPage() {
                     <div className="space-y-3">
                       {event.catalog_items.map(item => {
                         const selection = catalogSelections[item.id] || { quantity: 0, amount_cents: item.minimum_price_cents || item.price_cents }
-                        return <div key={item.id} className="flex items-center justify-between gap-3">
-                          <div><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-xs text-neutral-500">{item.description || (item.kind === 'donation' ? 'Support this event' : formatPrice(item.price_cents))}</p></div>
+                        return <div key={item.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0 break-words"><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-xs text-neutral-500">{item.description || (item.kind === 'donation' ? 'Support this event' : formatPrice(item.price_cents))}</p></div>
                           <div className="flex items-center gap-2">
                             {item.kind === 'donation' && selection.quantity > 0 && <label className="text-xs text-neutral-500">$<input aria-label={`${item.name} amount`} type="number" min={(item.minimum_price_cents || item.price_cents) / 100} max={item.maximum_price_cents ? item.maximum_price_cents / 100 : undefined} step="1" value={(selection.amount_cents || 0) / 100} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, amount_cents: Math.round(Number(e.target.value) * 100) } }))} className="ml-1 w-20 rounded-lg border border-neutral-300 px-2 py-1" /></label>}
                             <input aria-label={`${item.name} quantity`} type="number" min="0" max={item.quantity_remaining || 10} value={selection.quantity} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, quantity: Math.max(0, Number(e.target.value) || 0) } }))} className="w-16 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm" />
@@ -481,11 +707,11 @@ export default function CheckoutPage() {
                     <div className="space-y-4">
                       {event.registration_questions.map(question => <div key={question.id}>
                         <label className="mb-1 block text-sm font-medium text-neutral-700" htmlFor={`question-${question.id}`}>{question.prompt}{question.required && ' *'}</label>
-                        {question.kind === 'selection' ? <select id={`question-${question.id}`} className="input" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))}><option value="">Select one</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
-                          : question.kind === 'checkbox' ? <input id={`question-${question.id}`} type="checkbox" checked={Boolean(registrationAnswers[question.id])} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.checked }))} />
-                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))} />
-                              : <input id={`question-${question.id}`} className="input" value={registrationAnswers[question.id] || ''} onChange={e => setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value }))} />}
-                        {formErrors[`question_${question.id}`] && <p className="mt-1 text-xs text-red-500">{formErrors[`question_${question.id}`]}</p>}
+                        {question.kind === 'selection' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">Select one</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
+                          : question.kind === 'checkbox' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] == null ? '' : String(registrationAnswers[question.id])} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value === '' ? undefined : e.target.value === 'true' })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">Choose an answer</option><option value="true">Yes</option><option value="false">No</option></select>
+                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />
+                              : <input id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />}
+                        {formErrors[`question_${question.id}`] && <p id={`question-${question.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`question_${question.id}`]}</p>}
                       </div>)}
                     </div>
                   </fieldset>
@@ -494,14 +720,16 @@ export default function CheckoutPage() {
                   <div key={waiver.id} className="rounded-xl border border-neutral-200 p-4">
                     <p className="text-sm font-semibold text-neutral-900">{waiver.title}</p>
                     <div className="my-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-600">{waiver.body}</div>
-                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input type="checkbox" checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked }))} className="mt-0.5" />I accept version {waiver.version}{waiver.required && ' *'}</label>
-                    {formErrors[`waiver_${waiver.id}`] && <p className="mt-1 text-xs text-red-500">{formErrors[`waiver_${waiver.id}`]}</p>}
+                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input id={`waiver-${waiver.id}`} type="checkbox" required={waiver.required} aria-invalid={Boolean(formErrors[`waiver_${waiver.id}`])} aria-describedby={formErrors[`waiver_${waiver.id}`] ? `waiver-${waiver.id}-error` : undefined} disabled={submitting} checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => { setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked })); setFormErrors(previous => ({ ...previous, [`waiver_${waiver.id}`]: null })) }} className="mt-0.5" />I accept version {waiver.version}{waiver.required && ' *'}</label>
+                    {formErrors[`waiver_${waiver.id}`] && <p id={`waiver-${waiver.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`waiver_${waiver.id}`]}</p>}
                   </div>
                 ))}
                 <div>
                   <label className="flex items-start gap-3 text-sm text-neutral-600" htmlFor="termsAccepted">
                     <input
                       id="termsAccepted"
+                      aria-invalid={Boolean(formErrors.terms)}
+                      aria-describedby={formErrors.terms ? 'buyer-terms-error' : undefined}
                       type="checkbox"
                       checked={termsAccepted}
                       onChange={(event) => {
@@ -512,15 +740,15 @@ export default function CheckoutPage() {
                       disabled={submitting}
                     />
                     <span>
-                      I agree to the <Link className="text-brand-600 underline" to="/policies/buyer-terms" target="_blank">Buyer Terms</Link>,{' '}
-                      <Link className="text-brand-600 underline" to="/policies/refunds" target="_blank">refund and cancellation policy</Link>, and{' '}
-                      <Link className="text-brand-600 underline" to="/policies/privacy" target="_blank">Privacy Policy</Link>.
+                      I agree to the <Link className="text-brand-700 underline" to="/policies/buyer-terms" target="_blank">Buyer Terms</Link>,{' '}
+                      <Link className="text-brand-700 underline" to="/policies/refunds" target="_blank">refund and cancellation policy</Link>, and{' '}
+                      <Link className="text-brand-700 underline" to="/policies/privacy" target="_blank">Privacy Policy</Link>.
                     </span>
                   </label>
-                  {formErrors.terms && <p className="text-red-500 text-xs mt-1" role="alert">{formErrors.terms}</p>}
+                  {formErrors.terms && <p id="buyer-terms-error" className="text-red-700 text-xs mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
               </div>
-              <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/25 active:translate-y-0 transition-all duration-200">
+              <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
                 {submitting
                   ? (isSimulate ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
                   : (isSimulate ? `${t('checkout.placeOrder')} \u2014 ${formatPrice(displayedTotal)}` : `${t('checkout.continueToPayment')} \u2014 ${formatPrice(displayedTotal)}`)}
@@ -535,25 +763,57 @@ export default function CheckoutPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-semibold text-neutral-900">Payment</h2>
               <button disabled={submitting} onClick={async () => {
+                const context = captureContext()
+                const cancellingOrderId = orderId
+                const viewCurrent = () => lifecycle.current.active && lifecycle.current.generation === context.generation
+                  && lifecycle.current.buyerId === context.buyerId && currentRoute.current.buyerId === context.buyerId
+                  && currentRoute.current.slug === context.slug && currentRoute.current.pathname === context.pathname
+                  && currentRoute.current.search === context.search
+                const current = () => {
+                  try { return contextCurrent(context) && getActiveCheckout(slug) === String(cancellingOrderId) && !getCheckoutAttempt(slug) }
+                  catch { return false }
+                }
+                if (!current() || !paymentContext.current || !contextCurrent(paymentContext.current)
+                  || paymentContext.current.orderId !== String(cancellingOrderId)) return
                 setSubmitting(true)
                 setSubmitError(null)
                 try {
-                  if (orderId) await apiClient.post(`/orders/${orderId}/cancel`, {}, { headers: orderAccessHeaders(orderId) })
-                  clearActiveCheckout(slug)
+                  const response = await apiClient.post(`/orders/${cancellingOrderId}/cancel`, {}, { headers: orderAccessHeaders(cancellingOrderId) })
+                  if (response.data?.status !== 'cancelled') throw new Error('Cancellation outcome is not confirmed')
+                  if (!viewCurrent()) return
+                  // Server cancellation is authoritative for this rendered order.
+                  // Stop payment even when browser storage cannot be read/cleared;
+                  // preserve any newer saved checkout rather than overwriting it.
+                  paymentContext.current = null
+                  setClientSecret(null)
+                  setStripePublishableKey(null)
+                  let cleared = false
+                  try { cleared = current() && clearActiveCheckout(slug, cancellingOrderId) } catch { /* Preserve surviving recovery data. */ }
+                  if (!cleared) {
+                    setCancelledCleanupRequired(true)
+                    setError('Your order was cancelled, but this page could not reset its saved checkout. Reload the page to verify its current state before starting again.')
+                    return
+                  }
+                  if (checkoutRecovered) {
+                    // Recovery has the server order, not the original editable
+                    // selection and buyer form. Re-select against fresh inventory.
+                    navigate(`/events/${slug}`, { replace: true, state: { browseFrom: location.state?.browseFrom } })
+                    return
+                  }
                   setStep('info')
                   setClientSecret(null)
                   setStripePublishableKey(null)
                   setOrderId(null)
                   setOrderData(null)
                 } catch (err) {
-                  setSubmitError(err.response?.data?.error || 'We could not confirm cancellation. Please refresh this order before starting another checkout.')
-                } finally { setSubmitting(false) }
+                  if (current()) setSubmitError(err.response?.data?.error || 'We could not confirm cancellation. Please refresh this order before starting another checkout.')
+                } finally { if (viewCurrent()) setSubmitting(false) }
               }}
                 className="text-sm text-brand-500 hover:text-brand-600 font-medium">{t('checkout.editInfo')}</button>
             </div>
             {submitError && <p role="alert" className="mb-4 text-sm text-red-700">{submitError}</p>}
             <div className="bg-neutral-50 rounded-xl p-3 mb-4 text-sm text-neutral-600">
-              <span className="font-medium">{buyerName}</span> &middot; {buyerEmail}
+              <span className="font-medium">{orderData?.buyer_name}</span> &middot; {orderData?.buyer_email}
             </div>
             {countdownLabel && (
               <div className={`mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${checkoutExpired ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
@@ -563,7 +823,7 @@ export default function CheckoutPage() {
             )}
             <PaymentModeBanner mode={paymentMode} />
             <div className="relative z-[60]">
-              <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret}>
+              <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret} stripeAccount={stripeAccount}>
                 {!checkoutExpired && (
                   <PaymentForm
                     totalCents={displayedTotal}
@@ -578,7 +838,7 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        <p className="text-xs text-neutral-400 text-center">
+        <p className="text-xs text-neutral-600 text-center">
           {t('checkout.termsNotice')}
         </p>
       </div>

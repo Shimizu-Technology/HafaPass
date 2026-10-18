@@ -64,12 +64,53 @@ RSpec.describe Ticket, type: :model do
       expect(admission_ticket.reload).to be_issued
     end
 
+    it "rechecks a selected refund reservation after stale eligibility was loaded" do
+      stale = Ticket.find(admission_ticket.id)
+      stale.pending_refund_tickets.load
+      expect(stale).to be_admission_allowed
+      refund = create(:refund, order: admission_order, status: :pending, provider_refund_id: nil,
+        succeeded_at: nil, failure_code: "provider_result_unknown")
+      refund.refund_tickets.create!(ticket: admission_ticket, amount_cents: refund.amount_cents)
+
+      expect { stale.check_in! }.to raise_error(Ticket::AdmissionError, /refund is pending/)
+      expect(admission_ticket.reload).to be_issued
+      expect(admission_ticket).not_to be_admission_allowed
+    end
+
     it "checks the current event status" do
       admission_ticket.event
       admission_event.update!(status: :cancelled)
 
       expect { admission_ticket.check_in! }.to raise_error(Ticket::AdmissionError, /Event is cancelled/)
       expect(admission_ticket.reload).to be_issued
+    end
+
+    it "rechecks cumulative full-value legacy reservations without selected ticket rows" do
+      stale = Ticket.find(admission_ticket.id)
+      stale.order.refunds.load
+      first = create(:refund, order: admission_order, status: :pending, succeeded_at: nil,
+        provider_refund_id: nil, amount_cents: 1000, failure_code: "provider_result_unknown")
+      expect(admission_ticket.reload).to be_admission_allowed
+      last = create(:refund, order: admission_order, status: :pending, succeeded_at: nil,
+        provider_refund_id: nil, amount_cents: admission_order.total_cents - first.amount_cents)
+
+      expect { stale.check_in! }.to raise_error(Ticket::AdmissionError, /refund is pending/)
+      expect(admission_ticket.reload).to be_issued
+      last.update!(status: :failed, failed_at: Time.current)
+      expect(admission_ticket.reload).to be_admission_allowed
+      first.update!(status: :cancelled)
+      expect(admission_order.reload).not_to be_full_refund_pending
+    end
+
+    it "keeps original admission history through Undo and later admission" do
+      admission_ticket.check_in!
+      first = admission_ticket.reload.first_admitted_at
+      admission_ticket.reverse_check_in!
+      expect(admission_ticket.reload.checked_in_at).to be_nil
+      expect(admission_ticket.first_admitted_at).to eq(first)
+      admission_ticket.check_in!
+      expect(admission_ticket.reload.first_admitted_at).to eq(first)
+      expect { admission_ticket.update!(first_admitted_at: nil) }.to raise_error(ActiveRecord::RecordInvalid)
     end
 
     it "updates status to checked_in" do

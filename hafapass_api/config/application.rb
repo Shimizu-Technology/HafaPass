@@ -9,6 +9,7 @@ require "action_mailer/railtie"
 require "action_view/railtie"
 
 Bundler.require(*Rails.groups)
+require_relative "runtime_configuration"
 
 module HafapassApi
   class Application < Rails::Application
@@ -21,6 +22,8 @@ module HafapassApi
     # intentionally absent; tests configure Active Job's test adapter.
     config.active_job.queue_adapter = if Rails.env.test?
       :test
+    elsif RuntimeConfiguration.solid_queue?
+      :solid_queue
     elsif Rails.env.development? && ENV["REDIS_URL"].blank?
       :async
     else

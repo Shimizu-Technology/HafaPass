@@ -2,12 +2,16 @@
 
 class OrganizationPayoutBalance
   def self.available_cents(organization)
+    return 0 if organization.payouts.exists?(failure_code: "provider_result_conflict")
+
     order_ids = Order.where(event_id: organization.events.select(:id)).select(:id)
     # Cash release requires every reconciliation item to be resolved, including
     # new/uncatalogued codes. RefundSafety's narrower list governs buyer refund
     # attempts; it is not the event closeout or organization payout policy.
     return 0 if ReconciliationException.open.where(order_id: order_ids).exists? ||
       ReconciliationException.open.joins(:payment).where(payments: { order_id: order_ids }).exists?
+
+    return 0 if StripeProcessingFees.missing_count(order_ids).positive?
 
     latest_settlements = organization.settlements.status_finalized
       .select("DISTINCT ON (event_id) settlements.*")

@@ -31,7 +31,7 @@ Do not open paid pilot inventory until every item has dated evidence and an owne
 
 ## Production configuration checklist
 
-Core: `DATABASE_URL`, `REDIS_URL`, Clerk keys, HTTPS-only `ALLOWED_ORIGINS`, `FRONTEND_URL`, `PUBLIC_WEB_URL`, `GIT_SHA`, and independently supervised web, worker, and singleton commerce-clock processes. Follow the evidence contract in [Gate C Production Environment](GATE_C_PRODUCTION_ENVIRONMENT.md).
+Core: `DATABASE_URL`, explicit `HAFAPASS_RUNTIME`, persistent signing secrets, matching direct `DATABASE_MIGRATION_URL`, Clerk keys and explicit production `CLERK_AUTHORIZED_PARTIES`, exact HTTPS `ALLOWED_ORIGINS`/public URLs, and the authoritative deployed commit digest. The initial embedded profile runs one Puma process with three request threads, one Solid Queue job thread and `DB_POOL=10`; PostgreSQL persists jobs and throttles. It needs no Redis or separate worker/clock. The separate SQL and Sidekiq profiles require their own documented supervised actors; only Sidekiq requires Redis and a singleton commerce clock. Never run both scheduling authorities. Follow the evidence contract in [Gate C Production Environment](GATE_C_PRODUCTION_ENVIRONMENT.md).
 
 Communication: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, verified `MAILER_FROM_EMAIL`, production webhook URL `/webhooks/resend`, and subscriptions for sent, delivered, delayed, failed, bounced, complained, and suppressed events. Resend requests use the persisted delivery idempotency key; webhook deduplication uses `svix-id` and the raw signed body.
 

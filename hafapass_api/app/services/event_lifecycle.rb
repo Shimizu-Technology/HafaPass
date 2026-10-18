@@ -55,9 +55,8 @@ class EventLifecycle
         occurred_at: at
       )
       buyer_change = record_buyer_change!(before_data) if %i[postpone cancel].include?(action)
+      EmailService.send_event_change_notifications_async(buyer_change) if buyer_change
     end
-
-    EmailService.send_event_change_notifications_async(buyer_change) if buyer_change
 
     event
   rescue ActiveRecord::RecordInvalid => e

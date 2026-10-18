@@ -1,0 +1,6 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../config/environment"
+abort("Select HAFAPASS_RUNTIME=solid_queue for a separated SQL worker") unless RuntimeConfiguration.profile == "solid_queue"
+SolidQueue::Supervisor.start(mode: :async)

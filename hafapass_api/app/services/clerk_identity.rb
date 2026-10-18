@@ -9,12 +9,12 @@ class ClerkIdentity
   class LookupUnavailable < StandardError; end
 
   class RequestCache < ActiveSupport::CurrentAttributes
-    attribute :verified_emails
+    attribute :verified_emails, :profiles
   end
 
   class << self
     def with_request_cache(&block)
-      RequestCache.set(verified_emails: {}, &block)
+      RequestCache.set(verified_emails: {}, profiles: {}, &block)
     end
 
     def verified_email_addresses(clerk_id, require_available: false)
@@ -31,6 +31,15 @@ class ClerkIdentity
       addresses || []
     end
 
+    # Display/contact data only. Never use persisted profile fields as proof of
+    # email ownership or authorization; those checks still refetch each request.
+    def profile(clerk_id)
+      cache = RequestCache.profiles
+      return fetch_profile(clerk_id) unless cache
+
+      cache.fetch(clerk_id) { cache[clerk_id] = fetch_profile(clerk_id) }
+    end
+
     def email_matches?(user:, email:)
       target = email.to_s.strip.downcase
       target.present? && verified_email_addresses(user.clerk_id).include?(target)
@@ -39,6 +48,10 @@ class ClerkIdentity
     private
 
     def fetch_verified_email_addresses(clerk_id)
+      profile(clerk_id)&.fetch(:verified_emails)
+    end
+
+    def fetch_profile(clerk_id)
       return nil if clerk_id.blank? || ENV["CLERK_SECRET_KEY"].blank?
 
       uri = URI("https://api.clerk.com/v1/users/#{ERB::Util.url_encode(clerk_id)}")
@@ -53,11 +66,19 @@ class ClerkIdentity
       user = JSON.parse(response.body)
       return nil unless user["id"] == clerk_id && user["email_addresses"].is_a?(Array)
 
-      Array(user["email_addresses"]).filter_map do |address|
-        next unless address.dig("verification", "status") == "verified"
-
-        address["email_address"].to_s.strip.downcase.presence
-      end.uniq
+      return nil unless user["email_addresses"].all? { |address| address.is_a?(Hash) }
+      verified_addresses = user["email_addresses"].select do |address|
+        address["verification"].is_a?(Hash) && address.dig("verification", "status") == "verified"
+      end
+      return nil unless verified_addresses.all? { |address| address["email_address"].is_a?(String) }
+      emails = verified_addresses.filter_map { |address| address["email_address"].strip.downcase.presence }.uniq.freeze
+      primary = verified_addresses.find { |address| address["id"] == user["primary_email_address_id"] }
+      {
+        verified_emails: emails,
+        email: primary&.fetch("email_address", nil)&.strip&.downcase.presence || emails.first,
+        first_name: user["first_name"].is_a?(String) ? user["first_name"].strip.presence : nil,
+        last_name: user["last_name"].is_a?(String) ? user["last_name"].strip.presence : nil
+      }.freeze
     rescue StandardError => error
       Rails.logger.warn("Clerk identity verification unavailable (#{error.class})")
       nil

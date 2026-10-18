@@ -38,8 +38,8 @@ module WaitlistOffers
           expires_at: OFFER_DURATION.from_now
         )
         entry.update!(status: :offered, notified_at: Time.current, expires_at: offer.expires_at)
+        EmailService.send_waitlist_offer_async(offer)
       end
-      EmailService.send_waitlist_offer_async(offer)
       offer
     rescue ActiveRecord::RecordNotUnique
       raise OfferError, "This waitlist entry already has an active offer"

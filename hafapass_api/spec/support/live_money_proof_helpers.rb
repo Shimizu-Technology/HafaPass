@@ -29,10 +29,11 @@ module LiveMoneyProofHelpers
       buyer_email: "finance-proof@example.com", buyer_name: "Finance proof operator")
     item = create(:order_item, order: order, ticket_type: ticket_type, unit_price_cents: 100,
       subtotal_cents: 100, fee_cents: 0, organizer_fee_cents: 0, organizer_proceeds_cents: 100)
-    create(:fee_component, order: order, order_item: item, kind: "processing", amount_cents: 5,
-      estimated: false)
+    processing_component = create(:fee_component, order: order, order_item: item, kind: "processing", amount_cents: 5,
+      estimated: false, provider_reference: "txn_gate_h_fee")
     payment = create(:payment, order: order, provider: "stripe", provider_payment_id: "pi_live_gate_h",
-      amount_cents: 100, status: :succeeded, succeeded_at: 6.minutes.ago)
+      amount_cents: 100, status: :succeeded, succeeded_at: 6.minutes.ago, provider_environment: "live")
+    create(:stripe_fee_evidence, :verified, payment: payment, fee_component: processing_component, provider_balance_transaction_id: processing_component.provider_reference)
     LiveMoneyProofAuthorizations::Manager.claim!(
       authorization: authorization, order: order, amount_cents: order.total_cents,
       user: requester, buyer_email: order.buyer_email
@@ -48,10 +49,13 @@ module LiveMoneyProofHelpers
 
     initial_settlement = Settlements::Finalizer.call(event: event, actor: requester)
     initial_settlement.update_columns(calculated_at: 4.minutes.ago, finalized_at: 4.minutes.ago)
-    payout = PayoutCreator.call(settlement: initial_settlement, actor: requester,
-      idempotency_key: "gate-h-live-payout")
-    payout.update!(provider_payout_id: "bank_live_gate_h")
-    payout.update_columns(initiated_at: 3.minutes.ago, paid_at: 3.minutes.ago)
+    # This is a historical evidence fixture, not an executed live transfer.
+    # Runtime simulation must reject payments carrying live provenance.
+    account = profile.organization.payout_account
+    payout = initial_settlement.payouts.create!(organization: profile.organization, event: event,
+      connected_account: account, provider: account.provider, idempotency_key: "gate-h-live-payout",
+      amount_cents: initial_settlement.available_to_payout_cents, currency: initial_settlement.currency,
+      status: :paid, provider_payout_id: "bank_live_gate_h", initiated_at: 3.minutes.ago, paid_at: 3.minutes.ago)
 
     final_refund = create(:refund, order: order, payment: payment, provider_refund_id: "re_live_final",
       amount_cents: 80, status: :succeeded, succeeded_at: 2.minutes.ago)

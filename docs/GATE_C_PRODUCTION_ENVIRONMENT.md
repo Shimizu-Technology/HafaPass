@@ -10,29 +10,22 @@ Never paste environment values, database URLs, signing keys, provider payloads, 
 
 ## Required topology
 
-Provision and supervise these independently:
+Select and supervise one supported runtime profile. The initial `embedded` profile runs one Rails/Puma service with Solid Queue's native async worker, dispatcher and scheduler; PostgreSQL persists the queue and rate limits. The later `solid_queue` profile adds a separate SQL worker using the same queue. The legacy `sidekiq` profile requires separate web, Sidekiq, singleton commerce-clock and persistent Redis services. Do not combine queue or scheduler authorities. See [Single-service runtime](SINGLE_SERVICE_RUNTIME.md).
 
-1. Rails web process;
-2. Sidekiq worker process;
-3. singleton commerce-clock process;
-4. PostgreSQL with encrypted automated backups;
-5. Redis with authentication, encryption, persistence policy, and eviction policy reviewed for queues/rate limits;
-6. static frontend/CDN with DNS and TLS;
-7. private object-storage bucket;
-8. Sentry plus an external uptime monitor; and
-9. Resend domain and signed webhook path.
-
-The commerce clock now owns a renewable Redis lease. A second clock exits instead of becoming another inventory-expiry authority. `/api/v1/readiness` fails in production if the lease heartbeat is absent, the worker is absent, Redis or PostgreSQL is unavailable, or the redacted production configuration is incomplete.
+All profiles require isolated PostgreSQL with encrypted automated backups, static frontend/CDN with DNS and TLS, private object storage, Sentry plus an external uptime monitor, and the configured Resend domain and signed webhook path. Readiness fails on unavailable dependencies or missing actors. SQL readiness additionally requires recent successful critical ticks and bounded due/claimed work; these checks fail closed when the one job thread stalls.
 
 ## Runtime configuration contract
 
-The readiness configuration check requires the following groups without returning their values:
+Configure the following groups without exposing their values in diagnostics. Runtime readiness checks the application/provider configuration; the direct migration connection is required only by the release command:
 
 - database: `DATABASE_URL`;
-- queue/lease: `REDIS_URL`;
-- authentication: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`;
-- public routing: HTTPS `FRONTEND_URL`, HTTPS `PUBLIC_WEB_URL`, and HTTPS-only `ALLOWED_ORIGINS` containing the frontend origin;
-- release correlation: `GIT_SHA` or an explicitly configured `COMMIT_REF` containing the full 40- or 64-hex commit digest—not a branch name;
+- runtime: explicit `HAFAPASS_RUNTIME`; `REDIS_URL` for the Sidekiq queue/lease only;
+- release migrations: direct `DATABASE_MIGRATION_URL`, run once through `bin/release-migrate` from the web release/pre-deploy hook;
+- capacity: embedded uses one Puma process, `RAILS_MAX_THREADS=3`, one job thread and `DB_POOL=10`; account for dispatcher, polling and heartbeat threads as well as requests/jobs. Separate SQL and Sidekiq profiles must meet their own enforced pool budgets;
+- persistent application signing: dedicated `SECRET_KEY_BASE`;
+- authentication: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, explicit production `CLERK_AUTHORIZED_PARTIES` containing the exact trusted HTTPS frontend origins; the issuer/JWKS must match the selected Clerk instance;
+- public routing: HTTPS `FRONTEND_URL`, HTTPS `PUBLIC_WEB_URL`, exact HTTPS `PUBLIC_API_URL`, and HTTPS-only `ALLOWED_ORIGINS` containing the frontend origin;
+- release correlation: Render's authoritative `RENDER_GIT_COMMIT`, or `GIT_SHA`/`COMMIT_REF` on other platforms, containing the full 40- or 64-hex commit digest—not a branch name; a present invalid Render value blocks readiness instead of using a fallback;
 - monitoring: `SENTRY_DSN`;
 - mail: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `MAILER_FROM_EMAIL`;
 - provider evidence binding: non-secret `PROVIDER_CONFIGURATION_REVISION`, incremented for every provider-side configuration change;
@@ -48,9 +41,9 @@ Payment, wallet, and card-present credentials remain feature-specific gates. Do 
 
 For the exact candidate commit:
 
-1. confirm protected-main CI and the source PR, including a completed current-head CodeRabbit review, are green;
-2. confirm web, worker, and clock are separate supervised services using the same release;
-3. capture redacted `/api/v1/health` and `/api/v1/readiness` responses;
+1. confirm protected-main CI and the source PR, including completed current-head review provenance under [the release review contract](INDEPENDENT_REVIEW_EVIDENCE.md), are green;
+2. confirm the selected runtime topology, a single scheduling authority and the exact same release across its services;
+3. confirm `/up` succeeds without querying dependencies and capture redacted `/api/v1/health` and `/api/v1/readiness` responses;
 4. confirm readiness reports database connected, queue connected, worker active, commerce clock active, and configuration configured;
 5. confirm TLS, HSTS/cache behavior, allowed origins, private-route cache headers, webhook signature rejection, and rate limits;
 6. trigger controlled non-PII web and job exceptions and acknowledge both primary and backup routes;
@@ -64,7 +57,7 @@ For the exact candidate commit:
 3. Verify schema version, table/row-count manifest, sampled referential integrity, orders, tickets, immutable ledger entries, audits, admissions, delivery events, and policy snapshots.
 4. Run safe application smoke tests against the restored environment.
 5. Deploy the current candidate, then roll application code back to the reviewed compatible release. Do not reverse destructive migrations after real records exist.
-6. Re-deploy the candidate and reverify readiness, worker/clock heartbeats, queue processing, and provider disablement.
+6. Re-deploy the candidate and reverify readiness, selected-runtime actors and successful critical ticks, queue processing, and provider disablement.
 7. Record RPO, RTO, discrepancies, independent verifier, and secure destruction date for the isolated environment.
 
 ## Exit evidence

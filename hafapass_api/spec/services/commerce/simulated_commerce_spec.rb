@@ -43,7 +43,7 @@ RSpec.describe "Safe simulated commerce" do
     order = create(:order, event: event, total_cents: 1000, subtotal_cents: 1000, service_fee_cents: 0)
     allow(Rails.env).to receive(:production?).and_return(true)
     expect(order).not_to be_ticket_fulfilled
-    create(:payment, :succeeded, order: order, amount_cents: 1000, provider_payment_id: "pi_verified_capture")
+    create(:payment, :succeeded, order: order, amount_cents: 1000, provider_payment_id: "pi_verified_capture", provider_environment: "live")
     expect(order).to be_ticket_fulfilled
   end
 
@@ -54,5 +54,11 @@ RSpec.describe "Safe simulated commerce" do
       Commerce::RefundCreator.call(order: result.order, amount_cents: 100, idempotency_key: "ambiguous")
     end.to raise_error(Commerce::RefundCreator::RefundError, /Multiple captured payments/)
     expect(result.order.refunds).to be_empty
+  end
+  it "does not grant production admission from a captured Stripe sandbox payment" do
+    order = create(:order, event: event, total_cents: 1000, subtotal_cents: 1000, service_fee_cents: 0)
+    create(:payment, :succeeded, order: order, amount_cents: 1000, provider_environment: "test")
+    allow(Rails.env).to receive(:production?).and_return(true)
+    expect(order).not_to be_ticket_fulfilled
   end
 end

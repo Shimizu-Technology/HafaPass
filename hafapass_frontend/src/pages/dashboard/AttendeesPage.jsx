@@ -1,6 +1,8 @@
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
+import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 
 const STATUS_STYLES = {
@@ -15,76 +17,123 @@ function formatDate(iso) {
 }
 
 export default function AttendeesPage() {
-  const { id } = useParams()
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [attendees, setAttendees] = useState([])
-  const [meta, setMeta] = useState(null)
-  const [event, setEvent] = useState(null)
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [ticketTypeFilter, setTicketTypeFilter] = useState('')
+ const { id } = useParams()
+ const identity = useOrganizerIdentity()
+ const visit = useOrganizerPageVisit(`/dashboard/events/${id}/attendees`)
+ if (!visit.active) return null
+ if (!identity.ready) return <p role="status" className="p-6">Preparing your account…</p>
+ return <AttendeesPageSession key={`${identity.accountKey}:${identity.organizationId}:${id}:${visit.generation}`} id={id} identity={identity} />
+}
 
-  useEffect(() => {
-    let active = true
-
-    apiClient.get(`/organizer/events/${id}`)
-      .then((response) => {
-        if (active) setEvent(response.data)
-      })
-      .catch((err) => {
-        if (!active) return
-        if (err.response?.status === 401) setError('Please sign in.')
-        else if (err.response?.status === 404) setError('Event not found.')
-        else setError('Failed to load event details.')
-      })
-
-    return () => { active = false }
-  }, [id])
+function AttendeesPageSession({ id, identity }) {
+ const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/attendees`)
+ const accessEpoch = useRef(0)
+ const accessDenied = useRef(false)
+ const requests = useRef(new Set())
+ const [loading, setLoading] = useState(true)
+ const [error, setError] = useState(null)
+ const [detailError, setDetailError] = useState(null)
+ const [loadAttempt, setLoadAttempt] = useState(0)
+ const [attendees, setAttendees] = useState([])
+ const [meta, setMeta] = useState(null)
+ const [event, setEvent] = useState(null)
+ const [page, setPage] = useState(1)
+ const listGeneration = useRef(0)
+ const [search, setSearch] = useState('')
+ const [statusFilter, setStatusFilter] = useState('')
+ const [ticketTypeFilter, setTicketTypeFilter] = useState('')
+ const withdrawAccess = useCallback(message => {
+  accessDenied.current = true
+  ++accessEpoch.current
+  requests.current.forEach(request => request.controller.abort())
+  setAttendees([]); setMeta(null); setEvent(null)
+  setDetailError(null); setError(message); setLoading(false)
+ }, [])
+ const requestApi = useCallback(async (method, url, payload, options = {}) => {
+  const request = beginRequest()
+  if (!request) throw new DOMException('Page context changed', 'AbortError')
+  const epoch = accessEpoch.current
+  requests.current.add(request)
+  try {
+   const response = method === 'get' || method === 'delete'
+    ? await apiClient[method](url, { ...payload, ...request.config })
+    : await apiClient[method](url, payload, { ...options, ...request.config })
+   if (!request.current() || epoch !== accessEpoch.current) throw new DOMException('Page context changed', 'AbortError')
+   return response
+  } catch (requestError) {
+   if (request.current() && epoch === accessEpoch.current && [401, 403, 404].includes(requestError.response?.status)) {
+    withdrawAccess(requestError.response.status === 401 ? 'Please sign in.'
+     : requestError.response.status === 404 ? 'Event not found.' : 'Your attendee access changed. Retry to verify access before viewing this list.')
+   }
+   throw requestError
+  } finally { requests.current.delete(request); request.release() }
+ }, [beginRequest, withdrawAccess])
 
   const fetchAttendees = useCallback(async () => {
+    const generation = ++listGeneration.current
+    if (!current()) return
+    const epoch = ++accessEpoch.current
+    requests.current.forEach(request => request.controller.abort())
+    const canApply = () => current() && generation === listGeneration.current && epoch === accessEpoch.current
     setLoading(true)
     setError(null)
     try {
+      try {
+        const response = await requestApi('get', `/organizer/events/${id}`)
+        if (!canApply()) return
+        const saved = response.data
+        if (String(saved.id) !== String(id) || saved.organization_id == null || (identity.organizationId != null && String(saved.organization_id) !== String(identity.organizationId))) {
+          withdrawAccess('The event context could not be verified. Return to your dashboard and select the event again.')
+          return
+        }
+        if (saved.permissions?.view_attendees !== true) {
+          withdrawAccess('Your event access does not include viewing attendees.')
+          return
+        }
+        accessDenied.current = false
+        setEvent(saved); setDetailError(null)
+      } catch {
+        if (!canApply()) return
+        setDetailError('Failed to load event details.')
+        // A list endpoint can independently authorize a normal metadata outage.
+        // After a known denial, only fresh event permission verification restores it.
+        if (accessDenied.current) return
+      }
       const params = new URLSearchParams({ page: String(page), per_page: '25' })
       if (search.trim()) params.set('search', search.trim())
       if (statusFilter) params.set('status', statusFilter)
       if (ticketTypeFilter) params.set('ticket_type', ticketTypeFilter)
 
-      const attRes = await apiClient.get(`/organizer/events/${id}/attendees?${params}`)
+      const attRes = await requestApi('get', `/organizer/events/${id}/attendees?${params}`)
+      if (!canApply()) return
 
       const data = attRes.data.attendees || attRes.data
       setAttendees(Array.isArray(data) ? data : [])
       setMeta(attRes.data.meta || null)
     } catch (err) {
+      if (!canApply()) return
       if (err.response?.status === 401) setError('Please sign in.')
       else if (err.response?.status === 404) setError('Event not found.')
       else setError('Failed to load attendees.')
     } finally {
-      setLoading(false)
+      if (canApply()) setLoading(false)
     }
-  }, [id, page, search, statusFilter, ticketTypeFilter])
+  }, [id, page, search, statusFilter, ticketTypeFilter, requestApi, current, identity.organizationId, withdrawAccess])
 
-  useEffect(() => { fetchAttendees() }, [fetchAttendees])
+  useEffect(() => { fetchAttendees() }, [fetchAttendees, loadAttempt])
 
+  const visibleError = detailError || error
   const ticketTypes = event?.ticket_types || []
   const totalPages = meta?.total_pages || 1
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <Link to={`/dashboard/events/${id}/edit`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-          <ChevronLeft className="w-4 h-4" /> Back to Event
-        </Link>
-        <Link to={`/dashboard/events/${id}/analytics`} className="text-brand-500 hover:text-brand-700 text-sm font-medium">Analytics</Link>
-      </div>
+    <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
 
-      <h1 className="text-2xl font-bold text-neutral-900 mb-1">Attendees</h1>
+      <h2 className="text-2xl font-bold text-neutral-900 mb-1">Attendees</h2>
       {event && <p className="text-neutral-600 mb-6">{event.title}</p>}
 
-      {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>
+      {visibleError && (
+        <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"><p>{visibleError}</p><button type="button" className="min-h-11 font-semibold underline" onClick={() => setLoadAttempt(value => value + 1)}>Retry attendee list</button></div>
       )}
 
       {/* Filters */}
@@ -96,17 +145,18 @@ export default function AttendeesPage() {
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             placeholder="Search by name or email..."
+            aria-label="Search attendees by name or email"
             className="input pl-9"
           />
         </div>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="input w-auto">
+        <select aria-label="Filter attendees by status" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="input w-auto">
           <option value="">All Statuses</option>
           <option value="issued">Valid</option>
           <option value="checked_in">Checked In</option>
           <option value="cancelled">Cancelled</option>
         </select>
         {ticketTypes.length > 0 && (
-          <select value={ticketTypeFilter} onChange={(e) => { setTicketTypeFilter(e.target.value); setPage(1) }} className="input w-auto">
+          <select aria-label="Filter attendees by ticket type" value={ticketTypeFilter} onChange={(e) => { setTicketTypeFilter(e.target.value); setPage(1) }} className="input w-auto">
             <option value="">All Ticket Types</option>
             {ticketTypes.map(tt => <option key={tt.id} value={tt.name}>{tt.name}</option>)}
           </select>
@@ -115,7 +165,7 @@ export default function AttendeesPage() {
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
-      ) : attendees.length === 0 ? (
+      ) : visibleError && attendees.length === 0 ? null : attendees.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-12 text-center">
           <p className="text-neutral-500">No attendees found.</p>
         </div>
@@ -184,6 +234,6 @@ export default function AttendeesPage() {
           )}
         </>
       )}
-    </div>
+    </div></EventWorkspace>
   )
 }

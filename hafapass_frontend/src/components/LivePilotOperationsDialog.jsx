@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import AdminAccessRecovery from './AdminAccessRecovery'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, Check, CirclePause, CirclePlay, Loader2, ShieldAlert, X } from 'lucide-react'
-import apiClient from '../api/client'
+import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/useCapturedPlatformDialog'
 
 const assignmentFields = [
   ['incident_commander', 'Incident commander'], ['business_owner', 'Business owner'],
@@ -123,8 +124,12 @@ function ReviewSummary({ review }) {
   </div>
 }
 
-export default function LivePilotOperationsDialog({ event, onComplete }) {
+function LivePilotOperationsDialogSession({ event, onComplete }) {
   const [open, setOpen] = useState(false)
+  const dialog = useCapturedPlatformDialog(open)
+  const { canClose } = dialog
+  const closeCaptured = useCallback(() => { if (canClose()) setOpen(false) }, [canClose])
+
   const [details, setDetails] = useState(null)
   const [plan, setPlan] = useState(() => initialPlan(event))
   const [checkpoint, setCheckpoint] = useState(initialCheckpoint)
@@ -145,29 +150,34 @@ export default function LivePilotOperationsDialog({ event, onComplete }) {
 
   useEffect(() => {
     if (!open) return undefined
-    const close = keyEvent => { if (keyEvent.key === 'Escape' && !busy) setOpen(false) }
+    const close = keyEvent => { if (keyEvent.key === 'Escape') closeCaptured() }
     document.addEventListener('keydown', close); closeRef.current?.focus()
     return () => document.removeEventListener('keydown', close)
-  }, [open, busy])
-  useEffect(() => { if (!open) triggerRef.current?.focus() }, [open])
+  }, [open, closeCaptured])
+  useEffect(() => { if (!open) triggerRef.current?.focus() }, [open, closeCaptured])
 
   const load = async () => {
+    const scope = dialog.begin()
+    if (!scope) return
     setLoading(true); setError('')
     try {
-      const response = await apiClient.get(`/admin/events/${event.id}/live_pilot`)
+      const response = await scope.api.get(`/admin/events/${event.id}/live_pilot`)
+      if (!scope.current()) return
       setDetails(response.data)
       if (!response.data.live_pilot?.pending_submission && !response.data.live_pilot?.latest_approval) {
         setPlan(initialPlan(response.data.event))
       }
-    } catch (requestError) { setError(requestError.response?.data?.error || 'Gate I operations could not be loaded.') }
-    finally { setLoading(false) }
+    } catch (requestError) { if (!scope.current()) return; setError(requestError.response?.data?.error || 'Gate I operations could not be loaded.') }
+    finally { if (scope.current()) setLoading(false) }
   }
-  const openDialog = () => { setOpen(true); load() }
+  const openDialog = () => { if (!dialog.capture()) return; setBusy(false); setOpen(true); load() }
   const request = async action => {
+    const scope = dialog.begin('mutation')
+    if (!scope) return false
     setBusy(true); setError('')
-    try { await action(); setReason(''); await load(); onComplete?.(); return true }
-    catch (requestError) { setError(requestError.response?.data?.error || 'The Gate I action could not be recorded.'); return false }
-    finally { setBusy(false) }
+    try { await action(scope.api); if (!scope.current()) return false; setReason(''); await load(); if (!scope.current()) return false; onComplete?.(); return true }
+    catch (requestError) { if (!scope.current()) return false; setError(requestError.response?.data?.error || 'The Gate I action could not be recorded.'); return false }
+    finally { if (scope.current()) setBusy(false); scope.finish() }
   }
   const updateNested = (setter, section, key, field, value) => setter(current => ({
     ...current, [section]: { ...current[section], [key]: { ...current[section][key], [field]: value } },
@@ -181,7 +191,7 @@ export default function LivePilotOperationsDialog({ event, onComplete }) {
         [key, { ...value, starts_at: iso(value.starts_at), ends_at: iso(value.ends_at) }])),
       thresholds: Object.fromEntries(Object.entries(plan.thresholds).map(([key, value]) => [key, Number(value)])),
     }
-    request(() => apiClient.post(`/admin/events/${event.id}/live_pilot_reviews`, payload))
+    request(api => api.post(`/admin/events/${event.id}/live_pilot_reviews`, payload))
   }
   const recordCheckpoint = submitEvent => {
     submitEvent.preventDefault()
@@ -190,17 +200,17 @@ export default function LivePilotOperationsDialog({ event, onComplete }) {
     ;['checkout_p95_ms', 'scanner_sync_lag_seconds', 'support_contacts_count', 'refund_request_count'].forEach(key => {
       external_metrics[key] = Number(external_metrics[key])
     })
-    request(() => apiClient.post(`/admin/live_pilot_runs/${run.id}/checkpoint`, {
+    request(api => api.post(`/admin/live_pilot_runs/${run.id}/checkpoint`, {
       evidence_reference: checkpoint.evidence_reference, evidence_digest: checkpoint.evidence_digest, external_metrics,
     }))
   }
   const reportIncident = submitEvent => {
     submitEvent.preventDefault()
-    request(() => apiClient.post(`/admin/live_pilot_runs/${run.id}/incidents`, incident))
+    request(api => api.post(`/admin/live_pilot_runs/${run.id}/incidents`, incident))
   }
   const resolveIncident = async submitEvent => {
     submitEvent.preventDefault()
-    const recorded = await request(() => apiClient.post(`/admin/live_pilot_incidents/${resolution.incidentId}/resolve`, {
+    const recorded = await request(api => api.post(`/admin/live_pilot_incidents/${resolution.incidentId}/resolve`, {
       summary: resolution.summary, evidence_reference: resolution.evidence_reference,
       evidence_digest: resolution.evidence_digest,
     }))
@@ -208,7 +218,7 @@ export default function LivePilotOperationsDialog({ event, onComplete }) {
   }
   const completeRun = submitEvent => {
     submitEvent.preventDefault()
-    request(() => apiClient.post(`/admin/live_pilot_runs/${run.id}/complete`, {
+    request(api => api.post(`/admin/live_pilot_runs/${run.id}/complete`, {
       completion_evidence_reference: completion.completion_evidence_reference,
       completion_evidence_digest: completion.completion_evidence_digest,
       completion_results: {
@@ -224,9 +234,9 @@ export default function LivePilotOperationsDialog({ event, onComplete }) {
 
   return <>
     <button ref={triggerRef} type="button" onClick={openDialog} className="min-h-11 text-left text-xs font-semibold text-sky-800 underline decoration-sky-300 underline-offset-4 hover:text-sky-950">{triggerLabel}</button>
-    {open && <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-neutral-950/55 px-3 py-4 sm:px-6 sm:py-8" role="presentation" onMouseDown={eventValue => { if (eventValue.target === eventValue.currentTarget && !busy) setOpen(false) }}>
+    {open && <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-neutral-950/55 px-3 py-4 sm:px-6 sm:py-8" role="presentation" onMouseDown={eventValue => { if (eventValue.target === eventValue.currentTarget && !busy) closeCaptured() }}>
       <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="live-pilot-title" className="w-full max-w-7xl overflow-hidden rounded-2xl bg-stone-50 shadow-2xl">
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-800">Gate I · bounded live pilot</p><h2 id="live-pilot-title" className="mt-1 text-2xl font-bold tracking-tight">{details?.event?.title || event.title}</h2><p className="mt-1 max-w-4xl text-sm text-neutral-600">Authorize a small Guam event, watch real commerce and entry operations, pause on uncertainty, and close only after every system is reconciled.</p></div><button ref={closeRef} type="button" aria-label="Close Gate I pilot operations" disabled={busy} onClick={() => setOpen(false)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-stone-200 focus-visible:ring-2 focus-visible:ring-sky-700"><X className="h-5 w-5" /></button></header>
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-800">Gate I · bounded live pilot</p><h2 id="live-pilot-title" className="mt-1 text-2xl font-bold tracking-tight">{details?.event?.title || event.title}</h2><p className="mt-1 max-w-4xl text-sm text-neutral-600">Authorize a small Guam event, watch real commerce and entry operations, pause on uncertainty, and close only after every system is reconciled.</p></div><button ref={closeRef} type="button" aria-label="Close Gate I pilot operations" disabled={busy} onClick={closeCaptured} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-stone-200 focus-visible:ring-2 focus-visible:ring-sky-700"><X className="h-5 w-5" /></button></header>
         <div className="px-6 py-6 sm:px-8 sm:py-8">
           {error && <div role="alert" className="mb-6 flex gap-3 border-l-4 border-red-600 bg-red-50 p-4 text-sm text-red-900"><ShieldAlert className="h-5 w-5 shrink-0" /><p>{error}</p></div>}
           {loading && !details ? <div className="flex justify-center py-16"><Loader2 aria-label="Loading Gate I operations" className="h-8 w-8 animate-spin text-sky-700" /></div> : <>
@@ -240,11 +250,11 @@ export default function LivePilotOperationsDialog({ event, onComplete }) {
               <fieldset><legend className="font-bold">Go/no-go controls</legend><div className="mt-3 grid gap-2 sm:grid-cols-2">{controlFields.map(([key, label]) => <label key={key} className="flex min-h-12 items-start gap-3 border-l-2 border-stone-300 bg-white px-4 py-3 text-sm"><input type="checkbox" checked={plan.controls[key]} onChange={change => setPlan(current => ({ ...current, controls: { ...current.controls, [key]: change.target.checked } }))} className="mt-0.5 h-5 w-5" />{label}</label>)}</div></fieldset>
               <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-neutral-500">A different administrator must approve this exact append-only plan.</p><button disabled={busy || !pilot.prerequisite_ready || !planComplete} className="btn-primary min-h-11 disabled:opacity-50"><Activity className="h-4 w-4" /> Submit Gate I plan</button></div>
             </form>}
-            {mode === 'pending' && <div className="space-y-7"><div className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950"><strong>Independent decision required.</strong> Admin #{pending.actor_user_id} submitted this plan and cannot approve it.</div><ReviewSummary review={pending} /><label className="block text-sm font-semibold">Rejection reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex flex-wrap justify-end gap-3 border-t pt-6"><button disabled={busy || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/live_pilot_reviews/${pending.id}/reject`, { reason }))} className="min-h-11 rounded-full border border-red-300 px-5 font-semibold text-red-800 disabled:opacity-50">Reject plan</button><button disabled={busy} onClick={() => request(() => apiClient.post(`/admin/live_pilot_reviews/${pending.id}/approve`))} className="btn-primary min-h-11"><Check className="h-4 w-4" /> Approve exact Gate I plan</button></div></div>}
-            {mode === 'approved' && <div className="space-y-7"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-4 text-sm text-emerald-950"><strong>Gate I plan approved.</strong> Publish the event, confirm the private operating channel, then start the bounded sales window.</div><ReviewSummary review={approval} /><label className="block text-sm font-semibold">Revocation reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex flex-wrap justify-end gap-3 border-t pt-6"><button disabled={busy || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/live_pilot_reviews/${approval.id}/revoke`, { reason }))} className="min-h-11 rounded-full border border-red-300 px-5 font-semibold text-red-800 disabled:opacity-50">Revoke approval</button><button disabled={busy || details?.event?.status !== 'published'} onClick={() => request(() => apiClient.post(`/admin/live_pilot_reviews/${approval.id}/start`))} className="btn-primary min-h-11 disabled:opacity-50"><CirclePlay className="h-4 w-4" /> Start bounded pilot</button></div></div>}
-            {mode === 'aborted' && <div className="space-y-7"><div className="border-l-4 border-red-600 bg-red-50 p-5 text-red-950"><strong>Gate I run aborted; sales remain suspended.</strong><p className="mt-1 text-sm">{run.abort_reason && `Aborted ${formatDate(run.aborted_at)}: ${run.abort_reason}. `}Revoke the old approval with a specific reason before submitting a separately reviewed recovery plan.</p></div><ReviewSummary review={approval} /><label className="block text-sm font-semibold">Revocation and recovery reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex justify-end"><button disabled={busy || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/live_pilot_reviews/${approval.id}/revoke`, { reason }))} className="min-h-11 rounded-full bg-red-700 px-5 font-semibold text-white disabled:opacity-50">Revoke aborted plan approval</button></div></div>}
+            {mode === 'pending' && <div className="space-y-7"><div className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950"><strong>Independent decision required.</strong> Admin #{pending.actor_user_id} submitted this plan and cannot approve it.</div><ReviewSummary review={pending} /><label className="block text-sm font-semibold">Rejection reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex flex-wrap justify-end gap-3 border-t pt-6"><button disabled={busy || !reason.trim()} onClick={() => request(api => api.post(`/admin/live_pilot_reviews/${pending.id}/reject`, { reason }))} className="min-h-11 rounded-full border border-red-300 px-5 font-semibold text-red-800 disabled:opacity-50">Reject plan</button><button disabled={busy} onClick={() => request(api => api.post(`/admin/live_pilot_reviews/${pending.id}/approve`))} className="btn-primary min-h-11"><Check className="h-4 w-4" /> Approve exact Gate I plan</button></div></div>}
+            {mode === 'approved' && <div className="space-y-7"><div className="border-l-4 border-emerald-600 bg-emerald-50 p-4 text-sm text-emerald-950"><strong>Gate I plan approved.</strong> Publish the event, confirm the private operating channel, then start the bounded sales window.</div><ReviewSummary review={approval} /><label className="block text-sm font-semibold">Revocation reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex flex-wrap justify-end gap-3 border-t pt-6"><button disabled={busy || !reason.trim()} onClick={() => request(api => api.post(`/admin/live_pilot_reviews/${approval.id}/revoke`, { reason }))} className="min-h-11 rounded-full border border-red-300 px-5 font-semibold text-red-800 disabled:opacity-50">Revoke approval</button><button disabled={busy || details?.event?.status !== 'published'} onClick={() => request(api => api.post(`/admin/live_pilot_reviews/${approval.id}/start`))} className="btn-primary min-h-11 disabled:opacity-50"><CirclePlay className="h-4 w-4" /> Start bounded pilot</button></div></div>}
+            {mode === 'aborted' && <div className="space-y-7"><div className="border-l-4 border-red-600 bg-red-50 p-5 text-red-950"><strong>Gate I run aborted; sales remain suspended.</strong><p className="mt-1 text-sm">{run.abort_reason && `Aborted ${formatDate(run.aborted_at)}: ${run.abort_reason}. `}Revoke the old approval with a specific reason before submitting a separately reviewed recovery plan.</p></div><ReviewSummary review={approval} /><label className="block text-sm font-semibold">Revocation and recovery reason<input value={reason} onChange={change => setReason(change.target.value)} className="input mt-2" /></label><div className="flex justify-end"><button disabled={busy || !reason.trim()} onClick={() => request(api => api.post(`/admin/live_pilot_reviews/${approval.id}/revoke`, { reason }))} className="min-h-11 rounded-full bg-red-700 px-5 font-semibold text-white disabled:opacity-50">Revoke aborted plan approval</button></div></div>}
             {mode === 'operate' && <div className="space-y-10">
-              <section className="space-y-5"><div className={`border-l-4 p-4 ${run.status === 'active' ? 'border-emerald-600 bg-emerald-50 text-emerald-950' : run.status === 'paused' ? 'border-amber-500 bg-amber-50 text-amber-950' : 'border-neutral-500 bg-neutral-100'}`}><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide">Pilot run #{run.id} · {run.status}</p><p className="mt-1 text-sm">{run.committed_ticket_quantity} of {run.inventory_cap} tickets committed</p>{run.pause_reason && <p className="mt-1 text-sm">Reason: {run.pause_reason}</p>}</div>{['active', 'paused'].includes(run.status) && <div className="flex flex-wrap gap-2"><button disabled={busy || run.status !== 'active' || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/live_pilot_runs/${run.id}/pause`, { reason }))} className="min-h-11 rounded-full border border-amber-400 px-4 text-sm font-semibold disabled:opacity-50"><CirclePause className="mr-2 inline h-4 w-4" />Pause</button><button disabled={busy || run.status !== 'paused' || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/live_pilot_runs/${run.id}/resume`, { reason }))} className="min-h-11 rounded-full border border-emerald-500 px-4 text-sm font-semibold disabled:opacity-50"><CirclePlay className="mr-2 inline h-4 w-4" />Resume after safe checkpoint</button><button disabled={busy || !reason.trim()} onClick={() => request(() => apiClient.post(`/admin/live_pilot_runs/${run.id}/abort`, { reason }))} className="min-h-11 rounded-full bg-red-700 px-4 text-sm font-semibold text-white disabled:opacity-50">Abort</button></div>}</div></div>{['active', 'paused'].includes(run.status) && <label className="block text-sm font-semibold">Action reason<input value={reason} onChange={change => setReason(change.target.value)} placeholder="Required for pause, resume, or abort" className="input mt-2" /></label>}</section>
+              <section className="space-y-5"><div className={`border-l-4 p-4 ${run.status === 'active' ? 'border-emerald-600 bg-emerald-50 text-emerald-950' : run.status === 'paused' ? 'border-amber-500 bg-amber-50 text-amber-950' : 'border-neutral-500 bg-neutral-100'}`}><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide">Pilot run #{run.id} · {run.status}</p><p className="mt-1 text-sm">{run.committed_ticket_quantity} of {run.inventory_cap} tickets committed</p>{run.pause_reason && <p className="mt-1 text-sm">Reason: {run.pause_reason}</p>}</div>{['active', 'paused'].includes(run.status) && <div className="flex flex-wrap gap-2"><button disabled={busy || run.status !== 'active' || !reason.trim()} onClick={() => request(api => api.post(`/admin/live_pilot_runs/${run.id}/pause`, { reason }))} className="min-h-11 rounded-full border border-amber-400 px-4 text-sm font-semibold disabled:opacity-50"><CirclePause className="mr-2 inline h-4 w-4" />Pause</button><button disabled={busy || run.status !== 'paused' || !reason.trim()} onClick={() => request(api => api.post(`/admin/live_pilot_runs/${run.id}/resume`, { reason }))} className="min-h-11 rounded-full border border-emerald-500 px-4 text-sm font-semibold disabled:opacity-50"><CirclePlay className="mr-2 inline h-4 w-4" />Resume after safe checkpoint</button><button disabled={busy || !reason.trim()} onClick={() => request(api => api.post(`/admin/live_pilot_runs/${run.id}/abort`, { reason }))} className="min-h-11 rounded-full bg-red-700 px-4 text-sm font-semibold text-white disabled:opacity-50">Abort</button></div>}</div></div>{['active', 'paused'].includes(run.status) && <label className="block text-sm font-semibold">Action reason<input value={reason} onChange={change => setReason(change.target.value)} placeholder="Required for pause, resume, or abort" className="input mt-2" /></label>}</section>
               {['active', 'paused'].includes(run.status) && <div className="grid gap-8 xl:grid-cols-2"><form onSubmit={recordCheckpoint} className="space-y-5 bg-white p-5"><div><h3 className="font-bold">Monitoring checkpoint</h3><p className="mt-1 text-sm text-neutral-600">Local metrics are calculated by HafaPass. Enter the provider, latency, scanner, support, and communications observations.</p></div><div className="grid gap-3 sm:grid-cols-2">{[['evidence_reference', 'Checkpoint evidence reference', 'text'], ['evidence_digest', 'Evidence SHA-256', 'text'], ['provider_status_reference', 'Provider status reference', 'text'], ['checkout_p95_ms', 'Checkout p95 (ms)', 'number'], ['scanner_sync_lag_seconds', 'Scanner sync lag (seconds)', 'number'], ['support_contacts_count', 'Support contacts', 'number'], ['refund_request_count', 'Refund requests', 'number']].map(([key, label, type]) => <label key={key} className="text-xs font-semibold">{label}<input required type={type} min={type === 'number' ? 0 : undefined} pattern={key === 'evidence_digest' ? '[0-9a-f]{64}' : undefined} value={checkpoint[key]} onChange={change => setCheckpoint(current => ({ ...current, [key]: change.target.value }))} className="input mt-1" /></label>)}</div>{[['provider_healthy', 'Payment/delivery providers healthy'], ['support_coverage_confirmed', 'Support coverage present now'], ['guam_communications_current', 'Guam-facing schedule and policy communications current']].map(([key, label]) => <label key={key} className="flex gap-3 text-sm"><input type="checkbox" checked={checkpoint[key]} onChange={change => setCheckpoint(current => ({ ...current, [key]: change.target.checked }))} className="h-5 w-5" />{label}</label>)}<button disabled={busy} className="btn-primary min-h-11">Record checkpoint</button></form>
                 <form onSubmit={reportIncident} className="space-y-5 bg-white p-5"><div><h3 className="font-bold">Report operational incident</h3><p className="mt-1 text-sm text-neutral-600">P0/P1 and mandatory safety categories immediately pause an active run.</p></div><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold">Severity<select aria-label="Incident severity" value={incident.severity} onChange={change => setIncident(current => ({ ...current, severity: change.target.value }))} className="input mt-1"><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option><option value="p3">P3</option></select></label><label className="text-xs font-semibold">Category<select aria-label="Incident category" value={incident.category} onChange={change => setIncident(current => ({ ...current, category: change.target.value }))} className="input mt-1">{incidentCategories.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label className="text-xs font-semibold sm:col-span-2">Summary<textarea required value={incident.summary} onChange={change => setIncident(current => ({ ...current, summary: change.target.value }))} className="input mt-1 min-h-24" /></label><label className="text-xs font-semibold">Evidence reference<input required value={incident.evidence_reference} onChange={change => setIncident(current => ({ ...current, evidence_reference: change.target.value }))} className="input mt-1" /></label><label className="text-xs font-semibold">Evidence SHA-256<input required pattern="[0-9a-f]{64}" value={incident.evidence_digest} onChange={change => setIncident(current => ({ ...current, evidence_digest: change.target.value.trim().toLowerCase() }))} className="input mt-1" /></label></div><button disabled={busy} className="min-h-11 rounded-full bg-red-700 px-5 font-semibold text-white">Report incident</button></form></div>}
               <section><h3 className="font-bold">Incident ledger</h3>{run.incidents?.length ? <div className="mt-3 space-y-3">{run.incidents.filter(item => item.action === 'report').map(item => <div key={item.id} className="border-l-4 border-neutral-300 bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold">{item.severity.toUpperCase()} · {item.category.replaceAll('_', ' ')}</p><p className="mt-1 text-sm">{item.summary}</p><p className="mt-1 text-xs text-neutral-500">{formatDate(item.occurred_at)} · {item.resolved ? 'Resolved' : 'Open'}</p></div>{!item.resolved && ['active', 'paused'].includes(run.status) && <button onClick={() => setResolution(current => ({ ...current, incidentId: item.id }))} className="min-h-11 rounded-full border px-4 text-sm font-semibold">Resolve with evidence</button>}</div>{resolution.incidentId === item.id && <form onSubmit={resolveIncident} className="mt-4 grid gap-3 border-t pt-4 sm:grid-cols-2"><label className="text-xs font-semibold sm:col-span-2">Resolution summary<textarea required value={resolution.summary} onChange={change => setResolution(current => ({ ...current, summary: change.target.value }))} className="input mt-1" /></label><label className="text-xs font-semibold">Evidence reference<input required value={resolution.evidence_reference} onChange={change => setResolution(current => ({ ...current, evidence_reference: change.target.value }))} className="input mt-1" /></label><label className="text-xs font-semibold">Evidence SHA-256<input required pattern="[0-9a-f]{64}" value={resolution.evidence_digest} onChange={change => setResolution(current => ({ ...current, evidence_digest: change.target.value.trim().toLowerCase() }))} className="input mt-1" /></label><button disabled={busy} className="btn-primary min-h-11 sm:col-span-2 sm:justify-self-end">Record resolution</button></form>}</div>)}</div> : <p className="mt-2 text-sm text-neutral-500">No incidents recorded.</p>}</section>
@@ -257,4 +267,11 @@ export default function LivePilotOperationsDialog({ event, onComplete }) {
       </section>
     </div>}
   </>
+}
+
+export default function LivePilotOperationsDialog(props) {
+  const identity = useCapturedDialogIdentity()
+  if (identity.authorityDenied) return <AdminAccessRecovery key={identity.key} identity={identity} />
+  if (!identity.ready) return <p role="status">Checking account access…</p>
+  return <LivePilotOperationsDialogSession key={`${identity.key}:${props.event.id}`} {...props} />
 }

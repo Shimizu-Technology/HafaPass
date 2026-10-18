@@ -31,7 +31,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
         return_url: returnUrl,
       },
       redirect: 'if_required',
-    })
+    }).catch(() => ({ error: { type: 'connection_error' } }))
 
     if (error) {
       if (error.type === 'card_error' || error.type === 'validation_error') {
@@ -53,14 +53,14 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} aria-busy={submitting}>
       {paymentError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+        <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
           <p className="text-red-700 text-sm">{paymentError}</p>
         </div>
       )}
       {statusMessage && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
+        <div role="status" className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
           <p className="text-blue-700 text-sm">{statusMessage}</p>
         </div>
       )}
@@ -72,6 +72,8 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
             wallets: {
               applePay: 'auto',
               googlePay: 'auto',
+              // Disable Link only in this form; it can offer non-card funding.
+              link: 'never',
             },
           }}
         />
@@ -80,11 +82,11 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       <button
         type="submit"
         disabled={!stripe || !elements || submitting}
-        className="w-full bg-accent-500 hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-xl text-lg transition-colors duration-200"
+        className="w-full min-h-11 bg-action hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed text-content-inverse font-bold py-4 px-6 rounded-xl text-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
       >
         {submitting ? (
           <span className="flex items-center justify-center gap-2">
-            <Loader2 className="animate-spin h-5 w-5" />
+            <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none h-5 w-5" />
             Processing Payment...
           </span>
         ) : (
@@ -92,8 +94,8 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
         )}
       </button>
 
-      <div className="mt-3 flex items-center justify-center gap-2 text-xs text-neutral-400">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="mt-3 flex items-start justify-center gap-2 text-xs text-content-muted">
+        <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
         <span>Secured by Stripe. Your payment info never touches our servers.</span>

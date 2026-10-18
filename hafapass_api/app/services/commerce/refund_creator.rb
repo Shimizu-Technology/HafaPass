@@ -41,7 +41,7 @@ module Commerce
     end
 
     def initialize(order:, amount_cents: nil, reason: nil, requested_by: nil, idempotency_key: nil,
-      provider_refund: nil, tickets: nil, payment: nil)
+      provider_refund: nil, tickets: nil, payment: nil, cash_return: nil)
       @order = order
       @requested_amount_cents = amount_cents&.to_i
       @reason = reason
@@ -50,9 +50,12 @@ module Commerce
       @provider_refund = provider_refund
       @tickets = tickets.nil? ? nil : Array(tickets).compact
       @captured_payment = payment
+      @cash_return = cash_return
     end
 
     def call
+      return record_cash_return! if cash_return
+
       refund = reserve_refund!
       return refund unless refund.pending?
       return refund if refund.provider_refund_id.present? && !provider_refund
@@ -76,7 +79,41 @@ module Commerce
 
     private
 
-    attr_reader :order, :requested_amount_cents, :reason, :requested_by, :idempotency_key, :provider_refund, :tickets, :captured_payment
+    attr_reader :order, :requested_amount_cents, :reason, :requested_by, :idempotency_key, :provider_refund, :tickets, :captured_payment, :cash_return
+
+    # This records an organizer's attestation that physical cash was already
+    # returned. It never sends money or represents a provider refund. Keep the
+    # evidence, allocations and ticket changes in one recoverable transaction.
+    def record_cash_return!
+      validate_cash_return!
+      Order.transaction do
+        refund = reserve_refund!
+        next refund unless refund.pending?
+
+        response = OpenStruct.new(id: "cash_return_#{refund.id}", status: "succeeded",
+          amount: refund.amount_cents, currency: refund.currency)
+        finalize_refund!(refund, response)
+      end
+    end
+
+    def validate_cash_return!
+      unless cash_return.is_a?(Hash) && requested_by&.persisted? && reason.present? && provider_refund.nil?
+        raise RefundError, "Cash return requires an actor, reason, reference and returned_at timestamp"
+      end
+      evidence = cash_return.stringify_keys
+      reference = evidence["reference"].to_s.strip
+      timestamp = evidence["returned_at"].to_s
+      raise ArgumentError unless timestamp.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
+
+      returned_at = Time.iso8601(timestamp)
+      unless reference.present? && reference.length <= 255 && returned_at <= Time.current && returned_at >= order.created_at
+        raise RefundError, "Cash return reference or timestamp is invalid"
+      end
+      @cash_return_evidence = { "reference" => reference, "returned_at" => returned_at.utc.iso8601(6),
+        "recorded_by_user_id" => requested_by.id, "cash_custodian" => "organizer" }
+    rescue ArgumentError
+      raise RefundError, "Cash return timestamp must be ISO 8601 with an offset"
+    end
 
     def reserve_refund!
       existing = order.refunds.find_by(idempotency_key: idempotency_key)
@@ -102,10 +139,14 @@ module Commerce
         unless payment && payment.order_id == order.id && (payment.succeeded? || payment.partially_refunded?)
           raise RefundError, "A captured payment is required for a refund"
         end
-        unless payment.provider == "stripe" && payment.provider_payment_id.present?
+        if cash_return
+          unless payment.provider == "door_cash" && order.payment_method == "door_cash"
+            raise RefundError, "Cash return recording requires an organizer-collected cash payment"
+          end
+        elsif payment.provider != "stripe" || payment.provider_payment_id.blank?
           raise RefundError, "Automated refunds are not supported for this payment provider"
         end
-        if Rails.env.production? && (payment.provider_payment_id.start_with?("sim_") || payment.provider_payload["simulated"] == true)
+        if Rails.env.production? && (payment.provider_payment_id.to_s.start_with?("sim_") || payment.provider_payload["simulated"] == true)
           raise RefundError, "Simulated payments cannot be refunded in production"
         end
         payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
@@ -126,7 +167,8 @@ module Commerce
           amount_cents: amount,
           currency: order.currency,
           status: :pending,
-          reason: reason
+          reason: reason,
+          provider_payload: cash_return ? { cash_return: @cash_return_evidence, manual_record: true } : {}
         )
         selected_tickets&.each do |ticket|
           refund.refund_tickets.create!(ticket: ticket, amount_cents: ticket.refundable_cents)
@@ -206,7 +248,8 @@ module Commerce
         payment.provider_payment_id,
         amount_cents: refund.amount_cents,
         reason: refund.reason,
-        idempotency_key: refund.idempotency_key
+        idempotency_key: refund.idempotency_key,
+        payment: payment
       )
     rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError
       raise
@@ -217,7 +260,7 @@ module Commerce
     end
 
     def recover_provider_refund(refund)
-      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key)
+      response = StripeService.find_refund(refund.payment.provider_payment_id, idempotency_key: refund.idempotency_key, payment: refund.payment)
       return response if response
       return if refund.created_at > PROVIDER_REPLAY_WINDOW.ago
 
@@ -232,7 +275,8 @@ module Commerce
 
     def validate_replay!(refund)
       unless (requested_amount_cents.nil? || requested_amount_cents == refund.amount_cents) &&
-          (tickets.nil? || tickets.map(&:id).sort == refund.refund_tickets.pluck(:ticket_id).sort)
+          (tickets.nil? || tickets.map(&:id).sort == refund.refund_tickets.pluck(:ticket_id).sort) &&
+          (!cash_return || (refund.provider == "door_cash" && refund.provider_payload["cash_return"] == @cash_return_evidence))
         raise RefundError, "Idempotency-Key was already used for a different refund request"
       end
       @replayed_refund = true
@@ -288,7 +332,7 @@ module Commerce
 
         refund.update!(
           provider_refund_id: provider_refund.id,
-          provider_payload: { status: provider_refund.respond_to?(:status) ? provider_refund.status : nil }.compact,
+          provider_payload: refund.provider_payload.merge("status" => provider_status),
           failure_code: nil,
           failure_message: nil,
           status: :pending
@@ -311,19 +355,22 @@ module Commerce
           refund_amount_cents: succeeded_total,
           refund_reason: reason,
           refunded_at: Time.current,
-          stripe_refund_id: provider_refund.id
+          stripe_refund_id: refund.provider == "stripe" ? provider_refund.id : refund.order.stripe_refund_id
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
-        if refund.refund_tickets.any?
+        StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
+        if full_refund
+          release_fully_refunded_inventory!(refund)
+        elsif refund.refund_tickets.any?
           release_refunded_tickets!(refund)
-        elsif full_refund
-          release_fully_refunded_inventory!(refund.order)
+        end
+        unless refund.provider == "door_cash" && refund.provider_payload["manual_record"] == true
+          EmailService.send_refund_notification_async(refund.order, refund: refund)
         end
       end
 
       raise RefundError, validation_error if validation_error
 
-      EmailService.send_refund_notification_async(refund.order)
       refund.order.event.notify_waitlist_if_available if full_refund || refund.refund_tickets.any?
       refund.reload
     end
@@ -393,10 +440,10 @@ module Commerce
       payment.update!(status: succeeded_total >= payment.amount_cents ? :refunded : :partially_refunded)
     end
 
-    def release_fully_refunded_inventory!(refunded_order)
+    def release_fully_refunded_inventory!(refund)
+      refunded_order = refund.order
       refunded_order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
-        ticket.release_inventory!
-        cancel_ticket!(ticket)
+        FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end
       refunded_order.order_items.where.not(item_kind: OrderItem.item_kinds[:ticket]).find_each do |item|
         next if item.catalog_fulfillment&.fulfilled?
@@ -409,18 +456,8 @@ module Commerce
 
     def release_refunded_tickets!(refund)
       refund.tickets.includes(:ticket_type, :pricing_tier).order(:id).lock.each do |ticket|
-        ticket.release_inventory!
-        cancel_ticket!(ticket)
+        FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end
-    end
-
-    def cancel_ticket!(ticket)
-      ticket.update!(
-        status: :cancelled,
-        cancelled_at: Time.current,
-        cancellation_reason: reason,
-        scan_credential_version: ticket.scan_credential_version + 1
-      )
     end
 
     def record_promoter_commission_reversal!(refund)

@@ -20,6 +20,7 @@ class ApplicationJob < ActiveJob::Base
         queue: job.queue_name
       )
       block.call
+      RuntimeExecution.record!(job)
     end
   end
 end

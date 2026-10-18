@@ -149,9 +149,9 @@ Follow the shared Shimizu PR workflow and the repository's actual required check
 5. Fix valid material issues, add meaningful regression coverage, and rerun the affected checks and full gate. Respond to false positives with evidence rather than changing correct code to satisfy a bot.
 6. Push fixes and verify review coverage of the changed code on the new head. CodeRabbit's incremental review is acceptable; a stale review of an earlier head is not.
 7. Aim for about two substantive fix/review rounds. Continue for new correctness, security, data-integrity, acceptance, or deployment blockers. Stop repetitive cosmetic feedback, record the remaining nonblocking items, and make a readiness decision.
-8. Mark ready and merge only when the full local gate, relevant runtime checks, required GitHub checks, current-head CodeRabbit review, and conversation-resolution contract pass. Do not bypass protection or merge unresolved material findings.
+8. Mark ready and merge only when the full local gate, relevant runtime checks, required GitHub checks, current-head review provenance, and conversation-resolution contract pass. Do not bypass protection or merge unresolved material findings.
 
-An unavailable, skipped, rate-limited, or incomplete review is an external blocker. Continue local verification and retain the tested PR, but do not describe it as reviewed or approved. Green CI and review completion do not replace a working user flow or independent assessment of material findings.
+An unavailable, skipped, rate-limited, or incomplete bot run is not a completed review. When the user explicitly authorizes independent review, use [the independent evidence contract](INDEPENDENT_REVIEW_EVIDENCE.md) with actual reviewers, exact source/scope/report bindings, resolved material findings, and a trusted maintainer attestation. Without complete authorized review provenance, retain the tested PR and report the review blocker. Green CI and review completion do not replace a working user flow or independent assessment of material findings.
 
 ## 6. Phase plan
 
@@ -178,7 +178,7 @@ Verification:
 
 Exit:
 
-- Documentation PR has a completed current-head CodeRabbit review, green required checks, resolved conversations, and is merged.
+- Documentation PR has completed current-head review provenance, green required checks, resolved conversations, and is merged.
 
 ### Phase 1 — Engineering safety and production visibility
 
@@ -515,7 +515,7 @@ Acceptance:
 - [ ] Documentation and runbooks reflect behavior.
 - [ ] PR targets current `main` and contains only phase changes.
 - [ ] GitHub CI is green.
-- [ ] CodeRabbit completed a review on the current PR head; a skipped success status does not qualify.
+- [ ] Completed current-head review provenance is recorded (GitHub CodeRabbit or explicitly authorized independent evidence); a skipped success status alone does not qualify.
 - [ ] No unresolved material finding remains, and required review conversations are resolved; nonblocking residuals are documented.
 - [ ] Migration, rollback, security, privacy, and operations impacts are understood.
 - [ ] PR is merged.

@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { Accessibility, AlertTriangle, ArrowLeft, Loader2, PauseCircle, PlayCircle } from 'lucide-react'
+import EventWorkspace from '../../components/EventWorkspace'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams } from 'react-router-dom'
+import { Accessibility, AlertTriangle, Loader2, PauseCircle, PlayCircle } from 'lucide-react'
 import apiClient from '../../api/client'
+import EventAccessNotice from '../../components/EventAccessNotice'
+import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 
 const rowLabel = (index) => {
   let value = index + 1
@@ -14,12 +18,28 @@ const rowLabel = (index) => {
   return label
 }
 
-export default function SeatingManagementPage() {
-  const { id } = useParams()
+function SeatingSession({ id, identity }) {
+  const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/seating`)
+  const capabilities = useLaunchCapabilities()
+  const loadState = useRef({ generation: 0, request: null })
+  const layoutState = useRef({ generation: 0, request: null })
+  const initialized = useRef(false)
+  const busyRef = useRef(false)
+  const storageKey = `hafapass:seating-outcome:${identity.owner}:${identity.organizationId}:${id}`
+  const [pending, setPending] = useState(() => { try { const raw = window.sessionStorage.getItem(storageKey); if (raw === null) return null; const value = JSON.parse(raw); return value && typeof value.label === 'string' ? value : { label: 'A previous seating change' } } catch { return { label: 'A previous seating change' } } })
+  const pendingRef = useRef(pending)
+  const [reviewed, setReviewed] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [layoutBusy, setLayoutBusy] = useState(false)
+  const [layoutReady, setLayoutReady] = useState(false)
+  const [layoutAttempt, setLayoutAttempt] = useState(0)
+  const [layoutError, setLayoutError] = useState(null)
   const [event, setEvent] = useState(null)
   const [seating, setSeating] = useState(null)
   const [layouts, setLayouts] = useState([])
   const [selectedLayoutId, setSelectedLayoutId] = useState('')
+  const selectedLayoutRef = useRef(selectedLayoutId)
+  selectedLayoutRef.current = selectedLayoutId
   const [zoneMappings, setZoneMappings] = useState({})
   const [selectedSeatIds, setSelectedSeatIds] = useState([])
   const [reason, setReason] = useState('')
@@ -31,25 +51,43 @@ export default function SeatingManagementPage() {
   const [seatsPerRow, setSeatsPerRow] = useState(12)
   const [accessiblePairs, setAccessiblePairs] = useState(1)
 
+  const clearPending = () => {
+    try { window.sessionStorage.removeItem(storageKey); pendingRef.current = null; setPending(null); return true }
+    catch { setError('The saved recovery record could not be cleared. Check browser storage before another change.'); return false }
+  }
   const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    const request = beginRequest()
+    if (!request) return
+    loadState.current.request?.controller.abort()
+    const generation = ++loadState.current.generation
+    loadState.current.request = request
+    const canApply = () => request.current() && generation === loadState.current.generation
+    if (!initialized.current) setLoading(true)
+    setRefreshing(true); setError(null)
+    if (pendingRef.current) setReviewed(false)
     try {
-      const [eventResponse, seatingResponse, layoutsResponse] = await Promise.all([
-        apiClient.get(`/organizer/events/${id}`),
-        apiClient.get(`/organizer/events/${id}/seating`),
-        apiClient.get('/organizer/venue_layouts'),
-      ])
-      setEvent(eventResponse.data)
-      setSeating(seatingResponse.data)
-      setLayouts(layoutsResponse.data.venue_layouts || [])
-    } catch (err) {
-      setError(err.response?.data?.error || 'Unable to load seating operations.')
+      const eventResponse = await apiClient.get(`/organizer/events/${id}`, request.config)
+      if (!canApply()) return
+      const saved = eventResponse.data
+      if (String(saved.id) !== String(id) || (identity.organizationId != null && saved.organization_id != null && String(saved.organization_id) !== String(identity.organizationId))) throw new Error('Wrong event context')
+      if (saved.permissions?.manage_inventory !== true) { setEvent(saved); setSeating(null); setLayouts([]); return }
+      const seatingResponse = await apiClient.get(`/organizer/events/${id}/seating`, request.config)
+      if (!canApply()) return
+      const layoutsResponse = seatingResponse.data.assigned_seating || capabilities.assigned_seating !== true ? null : await apiClient.get('/organizer/venue_layouts', request.config)
+      if (!canApply()) return
+      setEvent(saved); setSeating(seatingResponse.data)
+      setLayouts(layoutsResponse?.data.venue_layouts || [])
+      initialized.current = true
+      setReviewed(Boolean(pendingRef.current))
+    } catch (requestError) {
+      if (!canApply()) return
+      if ([401, 403, 404].includes(requestError.response?.status)) setEvent(null)
+      setError(requestError.response?.data?.error || 'Unable to load seating operations. Your layout and operational drafts are retained.')
     } finally {
-      setLoading(false)
+      if (canApply()) { setLoading(false); setRefreshing(false) }
+      request.release()
     }
-  }, [id])
-
+  }, [id, beginRequest, identity.organizationId, capabilities.assigned_seating])
   useEffect(() => { load() }, [load])
 
   const selectedLayout = useMemo(
@@ -58,106 +96,102 @@ export default function SeatingManagementPage() {
   )
 
   useEffect(() => {
-    if (!selectedLayoutId) return
-    apiClient.get(`/organizer/venue_layouts/${selectedLayoutId}`).then(response => {
-      setLayouts(current => current.map(layout => layout.id === response.data.id ? response.data : layout))
-      const initial = {}
-      response.data.price_zones.forEach(zone => { initial[zone.id] = event?.ticket_types?.[0]?.id || '' })
-      setZoneMappings(initial)
-    }).catch(() => setError('Unable to load that venue layout.'))
-  }, [selectedLayoutId, event?.ticket_types])
+    setLayoutReady(false); setLayoutBusy(false)
+    if (!selectedLayoutId || seating?.assigned_seating || capabilities.assigned_seating !== true || event?.permissions?.manage_inventory !== true) return
+    const request = beginRequest()
+    if (!request) return
+    layoutState.current.request?.controller.abort()
+    const generation = ++layoutState.current.generation
+    layoutState.current.request = request
+    const canApply = () => request.current() && generation === layoutState.current.generation && selectedLayoutRef.current === selectedLayoutId
+    setLayoutBusy(true); setLayoutError(null)
+    apiClient.get(`/organizer/venue_layouts/${selectedLayoutId}`, request.config).then(response => {
+      if (!canApply() || String(response.data.id) !== String(selectedLayoutId)) return
+      setLayouts(items => items.map(layout => layout.id === response.data.id ? response.data : layout))
+      setZoneMappings(existing => Object.fromEntries((response.data.price_zones || []).map(zone => [zone.id, existing[zone.id] || event.ticket_types?.[0]?.id || ''])))
+      setLayoutReady(true)
+    }).catch(() => { if (canApply()) setLayoutError('Unable to load that venue layout. Your selection is retained; retry before activating it.') })
+      .finally(() => { if (canApply()) setLayoutBusy(false); request.release() })
+    return () => request.controller.abort()
+  }, [selectedLayoutId, event?.ticket_types, event?.permissions?.manage_inventory, seating?.assigned_seating, capabilities.assigned_seating, beginRequest, layoutAttempt])
 
-  const createSimpleLayout = async () => {
-    if (!event?.venue_id) {
-      setError('Choose a verified venue on the event before creating a seat layout.')
-      return
-    }
-    setSaving(true)
-    setError(null)
+  const mutate = async (label, send, apply = () => {}) => {
+    if (!current() || busyRef.current || pendingRef.current || event?.permissions?.manage_inventory !== true) return
+    const request = beginRequest()
+    if (!request) return
+    const record = { label, started_at: new Date().toISOString() }
+    try { window.sessionStorage.setItem(storageKey, JSON.stringify(record)) }
+    catch { setError('The recovery record could not be saved. Enable browser storage before changing seating.'); request.release(); return }
+    pendingRef.current = record; setPending(record); setReviewed(false)
+    busyRef.current = true; setSaving(true); setError(null)
     try {
-      const rows = Array.from({ length: Number(rowCount) }, (_, rowIndex) => ({
-        label: rowLabel(rowIndex),
-        seats: Array.from({ length: Number(seatsPerRow) }, (_, seatIndex) => {
-          const pairIndex = Math.floor(seatIndex / 2)
-          const protectedSeat = rowIndex === 0 && pairIndex < Number(accessiblePairs) * 1 && seatIndex < Number(accessiblePairs) * 2
-          return {
-            label: String(seatIndex + 1),
-            position: seatIndex,
-            price_zone_code: 'MAIN',
-            accessibility_kind: protectedSeat ? (seatIndex % 2 === 0 ? 'wheelchair' : 'companion') : 'standard',
-            companion_group: protectedSeat ? `front-${pairIndex + 1}` : null,
-          }
-        }),
-      }))
-      const response = await apiClient.post('/organizer/venue_layouts', {
-        venue_id: event.venue_id,
-        name: layoutName,
-        publish: true,
-        price_zones: [{ name: 'Main price', code: 'MAIN', color: '#2563EB' }],
-        sections: [{ name: 'Main floor', code: 'MAIN', rows }],
-      })
+      const response = await send(request.config)
+      if (!request.current()) return
+      if (!clearPending()) return
+      apply(response)
       await load()
-      setSelectedLayoutId(String(response.data.id))
-    } catch (err) {
-      setError(err.response?.data?.errors?.join(', ') || err.response?.data?.error || 'Could not create the layout.')
+    } catch (requestError) {
+      if (!request.current()) return
+      const uncertain = !requestError.response || requestError.response.status >= 500 || [408, 409, 429].includes(requestError.response.status)
+      if (!uncertain) clearPending()
+      if ([401, 403, 404].includes(requestError.response?.status)) setEvent(null)
+      setError(uncertain ? 'The seating response was not confirmed. Refresh saved seating and verify the outcome before another change.' : requestError.response?.data?.errors?.join(', ') || requestError.response?.data?.error || 'The seating change failed. Your draft is retained.')
     } finally {
-      setSaving(false)
+      if (request.current()) { busyRef.current = false; setSaving(false) }
+      request.release()
     }
   }
-
-  const activateLayout = async () => {
-    setSaving(true)
-    setError(null)
-    try {
-      await apiClient.post(`/organizer/events/${id}/seating`, {
-        venue_layout_id: Number(selectedLayoutId),
-        zone_ticket_types: zoneMappings,
-      })
-      await load()
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not activate assigned seating.')
-    } finally {
-      setSaving(false)
+  const createSimpleLayout = () => {
+    if (capabilities.assigned_seating !== true) return
+    if (!event?.venue_id) { setError('Choose a verified venue on the event before creating a seat layout.'); return }
+    const rowTotal = Number(rowCount), width = Number(seatsPerRow), pairs = Number(accessiblePairs)
+    if (!layoutName.trim() || !Number.isInteger(rowTotal) || rowTotal < 1 || rowTotal > 50 || !Number.isInteger(width) || width < 2 || width > 100 || !Number.isInteger(pairs) || pairs < 0 || pairs > Math.min(3, Math.floor(width / 2))) {
+      setError('Enter a layout name, 1–50 rows, 2–100 seats per row, and up to three accessible pairs that fit the front row.'); return
     }
+    const rows = Array.from({ length: rowTotal }, (_, rowIndex) => ({ label: rowLabel(rowIndex), seats: Array.from({ length: width }, (_, seatIndex) => {
+      const pairIndex = Math.floor(seatIndex / 2)
+      const protectedSeat = rowIndex === 0 && seatIndex < pairs * 2
+      return { label: String(seatIndex + 1), position: seatIndex, price_zone_code: 'MAIN', accessibility_kind: protectedSeat ? (seatIndex % 2 === 0 ? 'wheelchair' : 'companion') : 'standard', companion_group: protectedSeat ? `front-${pairIndex + 1}` : null }
+    }) }))
+    return mutate('Create venue layout', config => apiClient.post('/organizer/venue_layouts', { venue_id: event.venue_id, name: layoutName, publish: true, price_zones: [{ name: 'Main price', code: 'MAIN', color: '#2563EB' }], sections: [{ name: 'Main floor', code: 'MAIN', rows }] }, config), response => { selectedLayoutRef.current = String(response.data.id); setSelectedLayoutId(String(response.data.id)); setZoneMappings({}); setLayoutReady(false) })
   }
-
-  const operation = async (action, payload = {}) => {
-    setSaving(true)
-    setError(null)
-    try {
-      await apiClient.post(`/organizer/events/${id}/seating/${action}`, payload)
-      setSelectedSeatIds([])
-      setReason('')
-      await load()
-    } catch (err) {
-      setError(err.response?.data?.error || 'The seating operation failed.')
-    } finally {
-      setSaving(false)
-    }
+  const mapped = layoutReady && selectedLayout?.price_zones?.length > 0 && selectedLayout.price_zones.every(zone => event?.ticket_types?.some(type => Number(type.id) === Number(zoneMappings[zone.id])))
+  const activateLayout = () => {
+    if (capabilities.assigned_seating !== true || !mapped) return
+    return mutate('Activate assigned seating', config => apiClient.post(`/organizer/events/${id}/seating`, { venue_layout_id: Number(selectedLayoutId), zone_ticket_types: zoneMappings }, config))
+  }
+  const operation = (action, payload = {}) => mutate('Update seating operations', config => apiClient.post(`/organizer/events/${id}/seating/${action}`, payload, config), () => { setSelectedSeatIds([]); setReason('') })
+  const acknowledge = () => {
+    if (!current() || busyRef.current || !reviewed) return
+    if (clearPending()) setError(null)
   }
 
   const toggleSeat = (seatId) => setSelectedSeatIds(current => current.includes(seatId)
     ? current.filter(idValue => idValue !== seatId)
     : [...current, seatId])
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+  if (loading) return <div role="status" aria-label="Loading seating operations" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
 
+  if (!event) return <div className="mx-auto max-w-3xl p-6"><p role="alert" className="text-red-700">{error || 'Seating operations could not be loaded.'}</p><button disabled={refreshing} onClick={load} className="btn-secondary mt-4">Retry seating operations</button></div>
+  if (event.permissions?.manage_inventory !== true) return <EventAccessNotice event={event} message="Your event access does not include seating management." />
+  if (!seating?.assigned_seating && capabilities.assigned_seating !== true) return <EventAccessNotice event={event} message="Assigned seating is not enabled for this platform." />
+  const locked = saving || Boolean(pending)
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <Link to={`/dashboard/events/${id}/edit`} className="mb-6 inline-flex items-center gap-1 text-sm font-medium text-brand-600">
-        <ArrowLeft className="h-4 w-4" /> Back to event
-      </Link>
+    <EventWorkspace eventId={id} event={event}><div className="mx-auto max-w-6xl">
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold text-neutral-950">Assigned seating</h1>
+        <h2 className="font-display text-3xl font-bold text-neutral-950">Assigned seating</h2>
         <p className="mt-1 text-neutral-600">{event?.title} · reusable layouts, accessible inventory, and live seat controls</p>
       </div>
       {error && <p className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">{error}</p>}
 
+      <button disabled={saving || refreshing} onClick={load} className="btn-secondary mb-4">{refreshing ? 'Refreshing seating…' : 'Refresh saved seating'}</button>
+      {pending && <div role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{pending.label} may have completed. Check the saved layout and seat state before another change.</p><button disabled={saving || refreshing || !reviewed} onClick={acknowledge} className="btn-secondary mt-3">I verified the saved seating</button></div>}
+      <fieldset disabled={locked} className="min-w-0"><legend className="sr-only">Seating management controls</legend>
       {!seating?.assigned_seating ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="card p-6">
             <h2 className="text-lg font-semibold text-neutral-900">Create a pilot layout</h2>
-            <p className="mt-1 text-sm text-neutral-600">Generate a clean section-and-row map. Arena-grade diagrams can use the provider adapter later.</p>
+            <p className="mt-1 text-sm text-neutral-600">Generate a clean section-and-row map. Protected wheelchair and companion seats remain paired.</p>
             <div className="mt-5 space-y-4">
               <label className="block text-sm font-medium text-neutral-700">Layout name<input className="input mt-1" value={layoutName} onChange={eventValue => setLayoutName(eventValue.target.value)} /></label>
               <div className="grid grid-cols-3 gap-3">
@@ -165,18 +199,20 @@ export default function SeatingManagementPage() {
                 <label className="text-sm font-medium text-neutral-700">Seats / row<input className="input mt-1" type="number" min="2" max="100" value={seatsPerRow} onChange={eventValue => setSeatsPerRow(eventValue.target.value)} /></label>
                 <label className="text-sm font-medium text-neutral-700">Accessible pairs<input className="input mt-1" type="number" min="0" max="3" value={accessiblePairs} onChange={eventValue => setAccessiblePairs(eventValue.target.value)} /></label>
               </div>
-              <button className="btn-secondary w-full" disabled={saving} onClick={createSimpleLayout}>Create reusable layout</button>
+              <button className="btn-secondary w-full" disabled={locked} onClick={createSimpleLayout}>Create reusable layout</button>
             </div>
           </section>
 
           <section className="card p-6">
             <h2 className="text-lg font-semibold text-neutral-900">Activate for this event</h2>
             <label className="mt-5 block text-sm font-medium text-neutral-700">Published venue layout
-              <select className="input mt-1" value={selectedLayoutId} onChange={eventValue => setSelectedLayoutId(eventValue.target.value)}>
+              <select className="input mt-1" value={selectedLayoutId} onChange={eventValue => { selectedLayoutRef.current = eventValue.target.value; setSelectedLayoutId(eventValue.target.value); setZoneMappings({}); setLayoutReady(false) }}>
                 <option value="">Choose a layout</option>
                 {layouts.filter(layout => layout.status === 'published').map(layout => <option key={layout.id} value={layout.id}>{layout.name} · {layout.seat_count} seats</option>)}
               </select>
             </label>
+            {layoutBusy && <p role="status" className="mt-3 text-sm text-neutral-600">Loading layout details…</p>}
+            {layoutError && <p role="alert" className="mt-3 text-sm text-red-700">{layoutError} <button type="button" onClick={() => setLayoutAttempt(value => value + 1)} className="min-h-11 font-semibold underline">Retry layout details</button></p>}
             {selectedLayout?.price_zones?.map(zone => (
               <label key={zone.id} className="mt-4 block text-sm font-medium text-neutral-700">{zone.name} ticket type
                 <select className="input mt-1" value={zoneMappings[zone.id] || ''} onChange={eventValue => setZoneMappings(current => ({ ...current, [zone.id]: Number(eventValue.target.value) }))}>
@@ -185,7 +221,7 @@ export default function SeatingManagementPage() {
                 </select>
               </label>
             ))}
-            <button className="btn-primary mt-5 w-full" disabled={saving || !selectedLayoutId || Object.values(zoneMappings).some(value => !value)} onClick={activateLayout}>Activate assigned seating</button>
+            <button className="btn-primary mt-5 w-full" disabled={locked || layoutBusy || !mapped} onClick={activateLayout}>Activate assigned seating</button>
           </section>
         </div>
       ) : (
@@ -210,16 +246,16 @@ export default function SeatingManagementPage() {
             <section className="card p-5">
               <h2 className="font-semibold text-neutral-900">Emergency sales control</h2>
               <label className="mt-3 block text-sm font-medium text-neutral-700">Operational reason<textarea className="input mt-1" rows="3" value={reason} onChange={eventValue => setReason(eventValue.target.value)} /></label>
-              {seating.suspended ? <button className="btn-primary mt-3 flex w-full items-center justify-center gap-2" disabled={saving} onClick={() => operation('resume')}><PlayCircle className="h-4 w-4" />Resume sales</button>
-                : <button className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 font-semibold text-amber-900" disabled={saving || !reason.trim()} onClick={() => operation('suspend', { reason })}><PauseCircle className="h-4 w-4" />Pause all sales</button>}
+              {seating.suspended ? <button className="btn-primary mt-3 flex w-full items-center justify-center gap-2" disabled={locked} onClick={() => operation('resume')}><PlayCircle className="h-4 w-4" />Resume sales</button>
+                : <button className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 font-semibold text-amber-900" disabled={locked || !reason.trim()} onClick={() => operation('suspend', { reason })}><PauseCircle className="h-4 w-4" />Pause all sales</button>}
             </section>
             <section className="card p-5">
               <h2 className="font-semibold text-neutral-900">Selected seats</h2>
               <p className="mt-1 text-sm text-neutral-600">{selectedSeatIds.length} selected. Sold and actively held seats cannot be blocked.</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                {['available', 'blocked', 'house_hold'].map(status => <button key={status} className="btn-secondary !px-2 !py-2 text-xs" disabled={saving || !reason.trim() || selectedSeatIds.length === 0} onClick={() => operation('update_seat_statuses', { event_seat_ids: selectedSeatIds, operational_status: status, reason })}>{status.replace('_', ' ')}</button>)}
+                {['available', 'blocked', 'house_hold'].map(status => <button key={status} className="btn-secondary !px-2 !py-2 text-xs" disabled={locked || !reason.trim() || selectedSeatIds.length === 0} onClick={() => operation('update_seat_statuses', { event_seat_ids: selectedSeatIds, operational_status: status, reason })}>{status.replace('_', ' ')}</button>)}
               </div>
-              <button className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-900" disabled={saving || !reason.trim() || selectedSeatIds.length === 0} onClick={() => operation('release_accessible', { event_seat_ids: selectedSeatIds, reason })}><Accessibility className="h-4 w-4" />Controlled accessible release</button>
+              <button className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-900" disabled={locked || !reason.trim() || selectedSeatIds.length === 0} onClick={() => operation('release_accessible', { event_seat_ids: selectedSeatIds, reason })}><Accessibility className="h-4 w-4" />Controlled accessible release</button>
               <p className="mt-2 text-xs text-neutral-500">Release is allowed only when standard seats are sold out in the same section, price zone, or venue.</p>
             </section>
             <section className="card p-5">
@@ -232,10 +268,20 @@ export default function SeatingManagementPage() {
         </div>
       )}
 
+      </fieldset>
       <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
         <p className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Accessibility and provider boundary</p>
         <p className="mt-1">Do not ask buyers for medical documentation. This native map remains the accessible purchasing path even when a visual chart provider is enabled.</p>
       </div>
-    </div>
+    </div></EventWorkspace>
   )
+}
+
+export default function SeatingManagementPage() {
+  const { id } = useParams()
+  const identity = useOrganizerIdentity()
+  const visit = useOrganizerPageVisit(`/dashboard/events/${id}/seating`)
+  if (!visit.active) return null
+  if (!identity.ready) return <p role="status" className="p-6">Preparing your account…</p>
+  return <SeatingSession key={`${identity.accountKey}:${identity.organizationId}:${id}:${visit.generation}`} id={id} identity={identity} />
 }

@@ -5,12 +5,13 @@ import { useMemo } from 'react'
 // Cache loaded Stripe instances by publishable key to avoid re-loading
 const stripeCache = {}
 
-function getStripe(publishableKey) {
+function getStripe(publishableKey, stripeAccount) {
   if (!publishableKey) return null
-  if (!stripeCache[publishableKey]) {
-    stripeCache[publishableKey] = loadStripe(publishableKey)
+  const cacheKey = `${publishableKey}:${stripeAccount || 'platform'}`
+  if (!stripeCache[cacheKey]) {
+    stripeCache[cacheKey] = loadStripe(publishableKey, stripeAccount ? { stripeAccount } : undefined)
   }
-  return stripeCache[publishableKey]
+  return stripeCache[cacheKey]
 }
 
 /**
@@ -18,8 +19,8 @@ function getStripe(publishableKey) {
  * - publishableKey: from config API or order response (dynamic, not env var)
  * - clientSecret: from the PaymentIntent created by the backend
  */
-export default function StripeProvider({ publishableKey, clientSecret, children }) {
-  const stripePromise = useMemo(() => getStripe(publishableKey), [publishableKey])
+export default function StripeProvider({ publishableKey, clientSecret, stripeAccount, children }) {
+  const stripePromise = useMemo(() => getStripe(publishableKey, stripeAccount), [publishableKey, stripeAccount])
 
   if (!stripePromise || !clientSecret) {
     return children

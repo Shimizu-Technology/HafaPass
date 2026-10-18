@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import EventDayRehearsalReviewDialog from './EventDayRehearsalReviewDialog'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn() } }))
 
 const event = { id: 42, title: 'Guam Community Night', event_day_rehearsal: { approval_recorded: false } }
 const pending = {
@@ -42,6 +42,8 @@ describe('EventDayRehearsalReviewDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review rehearsal evidence' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Approve exact rehearsal' }))
 
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/event_day_rehearsal_reviews/81/approve'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/event_day_rehearsal_reviews/81/approve',
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 })

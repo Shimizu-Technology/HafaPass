@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { useParams, useNavigate, useSearchParams, useMatch, useLocation, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
@@ -9,46 +9,91 @@ import SeatSelector from '../components/SeatSelector'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
 import { FadeUp } from '../components/ui/ScrollReveal'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
+import { eventBrowseReturn } from '../utils/browseReturn'
+import { isTicketPurchasable, ticketPriceCents } from '../utils/ticketPricing'
 import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 export default function EventDetailPage() {
   const { slug } = useParams()
+  const [params] = useSearchParams()
+  // Public pages can reuse their outlet when reduced motion is enabled.
+  // Event inventory and offer selections belong to this specific route/context.
+  return <EventDetailContent key={JSON.stringify([slug, params.get('preview') === 'true',
+    params.get('live_money_proof') === 'true', params.get('waitlist_offer')])} />
+}
+
+function EventDetailContent() {
+  const { slug } = useParams()
+  const reducedMotion = useReducedMotion()
   const navigate = useNavigate()
+  const location = useLocation()
+  const browseFrom = eventBrowseReturn(location.state?.browseFrom)
+  const match = useMatch('/events/:slug')
+  const liveRoute = useRef(null)
+  const mounted = useRef(false)
+  liveRoute.current = { slug: match?.params.slug }
+  useLayoutEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const [searchParams] = useSearchParams()
   const isPreview = searchParams.get('preview') === 'true'
   const isLiveMoneyProof = searchParams.get('live_money_proof') === 'true'
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [copied, setCopied] = useState(false)
   const [waitlistOffer, setWaitlistOffer] = useState(null)
   const waitlistOfferToken = searchParams.get('waitlist_offer')
 
   useEffect(() => {
+    let active = true
+    const current = () => active && liveRoute.current.slug === slug
+    if (!current()) return undefined
+    setLoading(true)
+    setEvent(null)
+    setError(null)
     captureQueryAttribution(window.location.search)
     const url = isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
       (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
     apiClient.get(url)
-      .then(res => { setEvent(res.data); trackFunnel(apiClient, res.data.id, 'event_view'); setLoading(false) })
-      .catch(() => { setError('Event not found.'); setLoading(false) })
-  }, [slug, isPreview, isLiveMoneyProof])
+      .then(res => {
+        if (!current()) return
+        if (res.data.slug !== slug) throw new Error('Event response does not match its route')
+        setEvent(res.data)
+        trackFunnel(apiClient, res.data.id, 'event_view')
+        setLoading(false)
+      })
+      .catch(error => { if (current()) {
+        setError(error.response?.status === 404
+          ? { message: 'Event not found.', retryable: false }
+          : { message: 'This event couldn’t load. Please try again.', retryable: true })
+        setLoading(false)
+      } })
+    return () => { active = false }
+  }, [slug, isPreview, isLiveMoneyProof, loadAttempt])
 
   useEffect(() => {
-    if (!waitlistOfferToken) return
+    if (!waitlistOfferToken) return undefined
+    let active = true
     apiClient.get(`/waitlist_offers/${encodeURIComponent(waitlistOfferToken)}`)
-      .then(res => setWaitlistOffer(res.data))
-      .catch(() => setWaitlistOffer({ error: 'This waitlist offer is no longer available.' }))
-  }, [waitlistOfferToken])
+      .then(res => { if (active && liveRoute.current.slug === slug) setWaitlistOffer(res.data) })
+      .catch(() => { if (active && liveRoute.current.slug === slug) setWaitlistOffer({ error: 'This waitlist offer is no longer available.' }) })
+    return () => { active = false }
+  }, [waitlistOfferToken, slug])
 
   const handleCheckout = (lineItems) => {
-    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof } })
+    if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
+    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof, browseFrom } })
   }
 
   const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {
+    if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
     navigate(`/checkout/${slug}`, {
-      state: { event, lineItems, seatHoldToken, seatHoldExpiresAt, selectedSeats: seats },
+      state: { event, lineItems, seatHoldToken, seatHoldExpiresAt, selectedSeats: seats, browseFrom },
     })
   }
 
@@ -117,8 +162,9 @@ export default function EventDetailPage() {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
   if (error) return (
     <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-      <p className="text-neutral-500 text-lg mb-4">{error}</p>
-      <Link to="/events" className="btn-primary">Browse Events</Link>
+      <p role="alert" className="text-neutral-700 text-lg mb-4">{error.message}</p>
+      {error.retryable && <button type="button" className="btn-primary mb-4" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry event</button>}
+      <Link to={browseFrom} className="btn-primary">Browse Events</Link>
     </div>
   )
   if (!event) return null
@@ -128,7 +174,7 @@ export default function EventDetailPage() {
 
   // Build JSON-LD structured data for the event
   const ticketTypes = event.ticket_types || []
-  const prices = ticketTypes.map(t => (t.current_price_cents ?? t.price_cents) / 100).filter(p => Number.isFinite(p) && p >= 0)
+  const prices = ticketTypes.filter(isTicketPurchasable).map(ticketPriceCents).filter(price => price !== null).map(price => price / 100)
   const eventJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Event',
@@ -174,7 +220,7 @@ export default function EventDetailPage() {
         noIndex={isLiveMoneyProof}
       />
       {/* Hero Section — full-width cover image with dark overlay */}
-      <div className="relative w-full h-[50vh] sm:h-[55vh] lg:h-[60vh] min-h-[340px] max-h-[600px] overflow-hidden bg-neutral-950">
+      <div className={`relative w-full overflow-hidden bg-neutral-950 ${event.cover_image_url ? 'min-h-[340px] sm:min-h-[400px]' : 'min-h-[260px]'}`}>
         {event.cover_image_url ? (
           <img
             src={event.cover_image_url}
@@ -188,10 +234,10 @@ export default function EventDetailPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/60 to-neutral-950/30" />
 
         {/* Content overlaid on hero */}
-        <div className="absolute inset-0 flex flex-col justify-end">
+        <div className="relative flex min-h-[inherit] flex-col justify-end pt-16 sm:pt-24">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 sm:pb-10 w-full">
             {/* Back link */}
-            <Link to="/events" className="inline-flex items-center gap-1.5 text-neutral-400 hover:text-white mb-4 text-sm font-medium transition-colors">
+            <Link to={browseFrom} className="inline-flex items-center gap-1.5 text-neutral-200 hover:text-white mb-4 text-sm font-medium transition-colors">
               <ArrowLeft className="w-4 h-4" /> All Events
             </Link>
 
@@ -200,25 +246,26 @@ export default function EventDetailPage() {
                 {event.category_label || event.category}
               </span>
             )}
-            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3">{event.title}</h1>
+            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3 break-words">{event.title}</h1>
 
             {/* Date & Venue on hero */}
-            <div className="flex flex-wrap items-center gap-4 text-neutral-300 text-sm">
+            <div className="flex flex-wrap items-center gap-4 text-neutral-200 text-sm">
               {event.starts_at && (
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Calendar className="w-4 h-4 text-brand-400" />
                   <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
                   <span className="text-neutral-500">·</span>
-                  <span>{formatEventTime(event.starts_at, event.timezone)}{event.ends_at && ` – ${formatEventTime(event.ends_at, event.timezone)}`}</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
                 </div>
               )}
               {event.venue_name && (
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <MapPin className="w-4 h-4 text-brand-400" />
                   <span>{event.venue_name}</span>
                 </div>
               )}
             </div>
+            <a href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">Choose tickets</a>
           </div>
         </div>
       </div>
@@ -230,15 +277,52 @@ export default function EventDetailPage() {
       <div className="bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Sidebar - Tickets */}
+            <motion.div
+              id="tickets"
+              className="order-1 min-w-0 scroll-mt-24 lg:order-2 lg:col-span-1"
+              initial={false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: reducedMotion ? 0 : 0.3 }}
+            >
+              <div className="lg:sticky lg:top-24">
+                {waitlistOffer && !waitlistOffer.error && (
+                  <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                    <p className="text-sm font-semibold text-emerald-900">Your tickets are reserved</p>
+                    <p className="mt-1 text-sm text-emerald-800">{waitlistOffer.quantity} × {waitlistOffer.ticket_type_name} until {new Date(waitlistOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>
+                    <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>Claim waitlist offer</button>
+                  </div>
+                )}
+                {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
+                <div className="card p-3 sm:p-5">
+                  {event.assigned_seating ? (
+                    <SeatSelector event={event} onReserved={handleSeatCheckout} />
+                  ) : event.ticket_types && event.ticket_types.length > 0 ? (
+                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />
+                  ) : (
+                    <p className="text-neutral-500 text-center py-4">No tickets available</p>
+                  )}
+                </div>
+                {/* Waitlist form when all ticket types are sold out */}
+                {event.ticket_types?.length > 0 &&
+                  event.status === 'published' &&
+                  event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
+                  <div className="mt-4">
+                    <WaitlistForm event={event} ticketTypes={event.ticket_types} />
+                  </div>
+                )}
+              </div>
+            </motion.div>
+
             {/* Main content */}
             <motion.div
-              className="lg:col-span-2"
-              initial={{ opacity: 0, y: 20 }}
+              className="order-2 min-w-0 lg:order-1 lg:col-span-2"
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
+              transition={{ duration: reducedMotion ? 0 : 0.3 }}
             >
               {/* Action buttons */}
-              <div className="flex items-center gap-2 mb-6">
+              <div className="flex flex-wrap items-center gap-2 mb-6">
                 {event.starts_at && (
                   <a
                     href={buildGoogleCalendarUrl(event)}
@@ -258,10 +342,10 @@ export default function EventDetailPage() {
                   {copied ? 'Copied!' : 'Share'}
                 </button>
                 <button onClick={() => marketplaceAction('favorite')} aria-pressed={event.favorited} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
-                  <Heart className={`h-4 w-4 ${event.favorited ? 'fill-coral-500 text-coral-500' : ''}`} />{event.favorited ? 'Saved' : 'Save'}
+                  <Heart className={`h-4 w-4 ${event.favorited ? 'fill-accent-700 text-accent-700' : ''}`} />{event.favorited ? 'Saved' : 'Save'}
                 </button>
                 <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
-                  <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-500' : ''}`} />{event.reminder ? 'Reminder set' : 'Remind me'}
+                  <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-700' : ''}`} />{event.reminder ? 'Reminder set' : 'Remind me'}
                 </button>
               </div>
 
@@ -296,7 +380,7 @@ export default function EventDetailPage() {
                 </div></FadeUp>
               )}
 
-              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Organizer</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-600">Verified</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? 'Following' : 'Follow'}</button></div></div></FadeUp>}
+              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Organizer</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">Verified</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? 'Following' : 'Follow'}</button></div></div></FadeUp>}
 
               {/* Venue Location Section */}
               {event.venue_address && (
@@ -310,10 +394,10 @@ export default function EventDetailPage() {
                   >
                     <div className="aspect-[3/1] bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center">
                       <div className="text-center">
-                        <MapPin className="w-8 h-8 text-brand-400 mx-auto mb-2" />
+                        <MapPin className="w-8 h-8 text-brand-700 mx-auto mb-2" />
                         <p className="text-sm font-medium text-brand-700">{event.venue_name}</p>
-                        <p className="text-xs text-brand-500 mt-0.5">{event.venue_address}</p>
-                        <p className="text-xs text-brand-400 mt-2 group-hover:underline">{event.venue?.slug ? 'View venue details' : 'Open in Google Maps'}</p>
+                        <p className="text-xs text-brand-700 mt-0.5">{event.venue_address}</p>
+                        <p className="text-xs text-brand-700 mt-2 group-hover:underline">{event.venue?.slug ? 'View venue details' : 'Open in Google Maps'}</p>
                       </div>
                     </div>
                   </Link>
@@ -321,41 +405,7 @@ export default function EventDetailPage() {
               )}
             </motion.div>
 
-            {/* Sidebar - Tickets */}
-            <motion.div
-              className="lg:col-span-1"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.15 }}
-            >
-              <div className="lg:sticky lg:top-24">
-                {waitlistOffer && !waitlistOffer.error && (
-                  <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                    <p className="text-sm font-semibold text-emerald-900">Your tickets are reserved</p>
-                    <p className="mt-1 text-sm text-emerald-800">{waitlistOffer.quantity} × {waitlistOffer.ticket_type_name} until {new Date(waitlistOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>
-                    <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>Claim waitlist offer</button>
-                  </div>
-                )}
-                {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
-                <div className="card p-5">
-                  {event.assigned_seating ? (
-                    <SeatSelector event={event} onReserved={handleSeatCheckout} />
-                  ) : event.ticket_types && event.ticket_types.length > 0 ? (
-                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />
-                  ) : (
-                    <p className="text-neutral-500 text-center py-4">No tickets available</p>
-                  )}
-                </div>
-                {/* Waitlist form when all ticket types are sold out */}
-                {event.ticket_types?.length > 0 &&
-                  event.status === 'published' &&
-                  event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
-                  <div className="mt-4">
-                    <WaitlistForm event={event} ticketTypes={event.ticket_types} />
-                  </div>
-                )}
-              </div>
-            </motion.div>
+
           </div>
         </div>
       </div>

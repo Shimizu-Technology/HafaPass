@@ -1,6 +1,63 @@
 require "rails_helper"
 
 RSpec.describe EmailService do
+  it "rejects an unprepared direct delivery before networking" do
+    order = create(:order, user: nil)
+    delivery = create(:message_delivery, order: order)
+    original = order.attributes
+    allow(described_class).to receive(:configured?).and_return(true)
+    allow(Resend::Emails).to receive(:send)
+    expect { described_class.send_order_confirmation(delivery.order, delivery: delivery) }
+      .to raise_error(described_class::TransportContextChanged)
+    expect(Resend::Emails).not_to have_received(:send)
+    expect(delivery.reload).to have_attributes(attempts: 0, outbound_wire_body: nil, provider_id: nil)
+    expect(order.reload.attributes).to eq(original)
+  end
+
+  it "rejects real transport without a journal" do
+    allow(described_class).to receive(:configured?).and_return(true)
+    allow(Resend::Emails).to receive(:send)
+    expect { described_class.send_order_confirmation(create(:order)) }
+      .to raise_error(MessageWirePayload::Unavailable, /durable MessageDelivery/)
+    expect(Resend::Emails).not_to have_received(:send)
+  end
+
+  it "freezes the configured reply mailbox with the original provider payload across a lost response" do
+    delivery = create(:message_delivery)
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("MAILER_REPLY_TO").and_return(" operator@example.test ")
+    allow(described_class).to receive(:configured?).and_return(true)
+    captured = []
+    allow(Resend::Emails).to receive(:send) do |params, options:|
+      captured << [params.deep_dup, options.deep_dup]
+      raise "provider response lost" if captured.length == 1
+
+      { id: "synthetic-provider-email" }
+    end
+
+    expect { MessageDeliveryJob.new.perform(delivery.id) }.to raise_error("provider response lost")
+    original = delivery.reload.outbound_payload.deep_dup
+    original_digest = delivery.payload_digest
+    expect(original.fetch("reply_to")).to eq("operator@example.test")
+    allow(ENV).to receive(:[]).with("MAILER_REPLY_TO").and_return("new-operator@example.test")
+    MessageDeliveryJob.new.perform(delivery.id)
+
+    expect(captured[0]).to eq(captured[1])
+    expect(captured[1][0].fetch("reply_to")).to eq("operator@example.test")
+    expect(captured[1][1]).to eq(idempotency_key: delivery.idempotency_key)
+    expect(delivery.reload.outbound_payload).to eq(original)
+    expect(delivery.payload_digest).to eq(original_digest)
+  end
+
+  [nil, "", "   "].each do |value|
+    it "omits optional reply-to when configured as #{value.inspect}" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("MAILER_REPLY_TO").and_return(value)
+      payload = described_class.prepare_delivery_payload(create(:message_delivery))
+      expect(payload).not_to have_key("reply_to")
+    end
+  end
+
   it "fails closed in production instead of recording a simulated customer delivery" do
     order = create(:order)
     allow(Rails.env).to receive(:production?).and_return(true)
@@ -36,12 +93,12 @@ RSpec.describe EmailService do
       { id: "provider-email" }
     end
 
-    described_class.send_order_confirmation(order, delivery: delivery)
+    MessageDeliveryJob.new.perform(delivery.id)
 
     params, options = captured
     expect(options).to eq(idempotency_key: delivery.idempotency_key)
-    expect(params[:html]).to include("&lt;script&gt;buyer()&lt;/script&gt;", "&lt;img src=x onerror=alert(1)&gt;",
+    expect(params["html"]).to include("&lt;script&gt;buyer()&lt;/script&gt;", "&lt;img src=x onerror=alert(1)&gt;",
       "&lt;b&gt;Venue&lt;/b&gt;", "&lt;svg onload=alert(2)&gt;", "&lt;em&gt;Attendee&lt;/em&gt;")
-    expect(params[:html]).not_to include("<script>buyer()", "<img src=x", "<svg onload")
+    expect(params["html"]).not_to include("<script>buyer()", "<img src=x", "<svg onload")
   end
 end

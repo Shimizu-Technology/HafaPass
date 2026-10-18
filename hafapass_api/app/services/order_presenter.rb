@@ -32,8 +32,12 @@ class OrderPresenter
       wallet_type: order.wallet_type,
       guest_access_token: guest_access_token,
       payment_status: latest_payment&.status,
+      payment_state: latest_payment&.provider_payload.to_h["status"],
+      payment_resumable: order.pending? && latest_payment&.provider == "stripe" &&
+        latest_payment&.provider_payment_id.present? && latest_payment&.pending? &&
+        order.expires_at&.future? && latest_payment&.provider_payload.to_h["status"] != "processing",
       confirmation_delivery: confirmation_delivery,
-      ticket_access_blocked: order.ticket_access_blocked?,
+      ticket_access_blocked: order.ticket_access_blocked? || order.full_refund_pending?,
       promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,
       event: event_json,
       latest_event_change: latest_event_change_json,
@@ -115,6 +119,9 @@ class OrderPresenter
       display_credential: transferred_away ? nil : ticket.display_credential,
       scan_credential: !transferred_away && ticket.admission_allowed? ? ticket.scan_credential : nil,
       status: transferred_away ? "transferred" : ticket.status,
+      admission_allowed: !transferred_away && ticket.admission_allowed?,
+      admission_block_reason: ticket.inventory_retained? ? "Refunded or disputed admission requires organizer review" :
+        (ticket.refund_pending? ? "Ticket access is paused while its refund is pending" : nil),
       attendee_name: transferred_away ? nil : ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
       refundable_cents: !transferred_away && ticket.issued? ? ticket_refundable_amounts.fetch(ticket.id, 0) : 0,
@@ -153,15 +160,21 @@ class OrderPresenter
 
   def confirmation_delivery
     deliveries = order.message_deliveries
-    templates = %w[order_confirmation fulfillment_resend]
-    delivery = if deliveries.loaded?
-      deliveries.select { |item| templates.include?(item.template) }.max_by(&:id)
+    if deliveries.loaded?
+      relevant = deliveries.select(&:ticket_email?)
+      delivery = relevant.max_by(&:id)
+      unknown = relevant.any?(&:unconfirmed_provider_result?)
     else
-      deliveries.where(template: templates).order(id: :desc).first
+      relevant = deliveries.ticket_email
+      delivery = relevant.order(id: :desc).first
+      unknown = relevant.unconfirmed_provider_result.exists?
     end
     return unless delivery
 
-    { status: delivery.status, simulated: delivery.provider == "simulated", updated_at: delivery.updated_at }
+    # The status describes the latest email; reconciliation includes any older
+    # confirmation/fulfillment attempt whose provider outcome is still unknown.
+    { status: delivery.status, simulated: delivery.provider == "simulated", updated_at: delivery.updated_at,
+      reconciliation_required: unknown }
   end
 
   def ordered_order_items
@@ -174,7 +187,7 @@ class OrderPresenter
   def presented_tickets
     @presented_tickets ||= begin
       tickets = order.tickets
-      tickets = tickets.includes(:ticket_type, :order_item,
+      tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets,
         event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
       tickets.to_a.sort_by(&:id)
     end

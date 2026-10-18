@@ -209,6 +209,7 @@ Query params: `?page=2&per_page=10`
 | `RESEND_API_KEY` | Production | Resend email API key |
 | `RESEND_WEBHOOK_SECRET` | Production email | Resend/Svix webhook signing secret |
 | `MAILER_FROM_EMAIL` | Production | Verified from address for emails |
+| `MAILER_REPLY_TO` | Support deployment | Receiving operator mailbox for customer replies; optional in code, captured in each saved outbound payload |
 | `PROVIDER_CONFIGURATION_REVISION` | Production | Non-secret revision bumped for any provider-side account/domain/webhook/issuer configuration change |
 | `FRONTEND_URL` | Production | HTTPS frontend URL for email links and CORS validation |
 | `PUBLIC_WEB_URL` | Production | HTTPS canonical public site URL for SEO and sitemaps |
@@ -222,10 +223,15 @@ Query params: `?page=2&per_page=10`
 |----------|----------|-------------|
 | `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
 | `VITE_API_URL` | No | API base URL (default: http://localhost:3000/api/v1) |
-| `VITE_PUBLIC_WEB_URL` | No | Canonical public site URL (default: https://hafapass.com) |
+| `VITE_PUBLIC_WEB_URL` | Deployment | Canonical public site URL; set to the selected Netlify URL or an owned custom domain |
+| `VITE_SUPPORT_EMAIL` | Support deployment | Receiving operator mailbox used by support links; defaults to the existing public Shimizu Technology inbox |
 | `VITE_SENTRY_DSN` | Production | Frontend error-monitoring DSN |
 | `VITE_SENTRY_ENVIRONMENT` | No | Frontend monitoring environment label |
 | `VITE_SENTRY_RELEASE` | Production | Release identifier shared with source-map upload |
+
+Set `VITE_SUPPORT_EMAIL` and `MAILER_REPLY_TO` to a mailbox the operator can actually receive and monitor before deploying customer recovery flows. Sender-domain verification for `MAILER_FROM_EMAIL` proves permission to send; it does not create a receiving inbox. These support settings do not create mailboxes or confirm delivery. Email retries retain the reply address saved with the original provider request even after configuration changes. Rebuild the frontend after changing a `VITE_` setting.
+
+The initial deployment may use the selected free Netlify domain. Set `VITE_PUBLIC_WEB_URL`, backend `PUBLIC_WEB_URL`, and `FRONTEND_URL` to that actual HTTPS URL; the compatibility default `https://hafapass.com` does not establish ownership or deployment there.
 
 ## Seed Data
 

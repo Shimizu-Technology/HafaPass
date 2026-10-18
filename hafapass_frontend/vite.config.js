@@ -2,6 +2,13 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
+import runtimeCaching from './src/config/pwaRuntimeCaching.js'
+import { execFileSync } from 'node:child_process'
+import { releaseMetadataPlugin, resolveRevision } from './config/releaseMetadata.js'
+
+let gitRevision = null
+try { gitRevision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() } catch { /* Source archives may have no Git metadata. */ }
+const applicationRevision = resolveRevision(process.env, gitRevision)
 
 const hasSentryUploadConfig = Boolean(
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT,
@@ -25,8 +32,10 @@ function manualChunks(id) {
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: { 'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(applicationRevision || '') },
   plugins: [
     react(),
+    releaseMetadataPlugin(applicationRevision),
     VitePWA({
       registerType: 'autoUpdate',
       // Use the existing manifest.json in public/ — don't generate a new one
@@ -35,43 +44,7 @@ export default defineConfig({
         // Precache app shell assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         // Runtime caching strategies
-        runtimeCaching: [
-          {
-            // Public events listing
-            urlPattern: /^https:\/\/hafapass-api\.onrender\.com\/api\/v1\/events$/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'events-list',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 }, // 1 day
-            },
-          },
-          {
-            // Images — CacheFirst with 30 day expiry
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'images',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 }, // 30 days
-            },
-          },
-          {
-            // Google Fonts stylesheets
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'google-fonts-stylesheets',
-            },
-          },
-          {
-            // Google Fonts webfont files
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-webfonts',
-              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 }, // 1 year
-            },
-          },
-        ],
+        runtimeCaching,
         // Don't cache POST, auth, admin, or organizer endpoints
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /^\/robots\.txt$/, /^\/sitemap\.xml$/],
@@ -81,7 +54,7 @@ export default defineConfig({
       authToken: process.env.SENTRY_AUTH_TOKEN,
       org: process.env.SENTRY_ORG,
       project: process.env.SENTRY_PROJECT,
-      release: { name: process.env.VITE_SENTRY_RELEASE || process.env.COMMIT_REF },
+      release: { name: applicationRevision || undefined },
       sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
     }),
   ],
@@ -94,6 +67,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Bound jsdom/crypto contention on machines running parallel project sessions.
+    maxWorkers: 2,
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.test.{js,jsx}'],

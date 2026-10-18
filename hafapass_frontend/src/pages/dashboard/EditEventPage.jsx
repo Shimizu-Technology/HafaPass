@@ -1,15 +1,20 @@
+import { validEventCapacity } from '../../utils/eventCapacity'
+import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2 } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Trash2, XCircle, CheckCircle2, Users, Eye, ShoppingCart, Copy, RefreshCw, ClipboardList, PauseCircle, Archive } from 'lucide-react'
+import { AlertTriangle, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive } from 'lucide-react'
+import EventAccessNotice from '../../components/EventAccessNotice'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
+import FormErrorSummary from '../../components/FormErrorSummary'
 import { organizerChecklist } from '../../utils/organizerChecklist'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
+import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 
 const AGE_RESTRICTIONS = [
   { value: 'all_ages', label: 'All Ages' },
@@ -17,14 +22,24 @@ const AGE_RESTRICTIONS = [
   { value: 'twenty_one_plus', label: '21+' }
 ]
 
-const STATUS_BADGES = {
-  draft: { label: 'Draft', className: 'bg-yellow-100 text-yellow-800' },
-  published: { label: 'Published', className: 'bg-green-100 text-green-800' },
-  cancelled: { label: 'Cancelled', className: 'bg-red-100 text-red-800' },
-  completed: { label: 'Completed', className: 'bg-neutral-100 text-neutral-800' },
-  postponed: { label: 'Postponed', className: 'bg-orange-100 text-orange-800' },
-  archived: { label: 'Archived', className: 'bg-neutral-200 text-neutral-700' }
-}
+const eventForm = e => ({
+  title: e.title || '',
+  short_description: e.short_description || '',
+  description: e.description || '',
+  category: e.category || 'other',
+  age_restriction: e.age_restriction || 'all_ages',
+  venue_name: e.venue_name || '',
+  venue_address: e.venue_address || '',
+  venue_city: e.venue_city || 'Guam',
+  starts_at: toEventLocalInput(e.starts_at, e.timezone),
+  ends_at: toEventLocalInput(e.ends_at, e.timezone),
+  doors_open_at: toEventLocalInput(e.doors_open_at, e.timezone),
+  max_capacity: e.max_capacity ? String(e.max_capacity) : '',
+  cover_image_url: e.cover_image_url || '',
+  recurrence_rule: e.recurrence_rule || '',
+  recurrence_end_date: e.recurrence_end_date || '',
+  show_attendees: e.show_attendees !== false
+})
 
 function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading, reason, onReasonChange, requireReason = false }) {
   return (
@@ -39,7 +54,7 @@ function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, o
         )}
         <div className="flex gap-3 justify-end">
           <button onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-neutral-700 hover:text-neutral-900 disabled:opacity-50">Cancel</button>
-          <button onClick={onConfirm} disabled={loading || (requireReason && !reason?.trim())} className={`px-4 py-2 text-sm font-medium rounded-xl text-white ${confirmClass || 'bg-red-600 hover:bg-red-700'} disabled:opacity-50`}>
+          <button onClick={onConfirm} disabled={loading || (requireReason && !reason?.trim())} className={`px-4 py-2 text-sm font-medium rounded-xl text-white ${confirmClass || 'bg-action-danger hover:bg-action-danger-hover'} disabled:opacity-50`}>
             {loading ? 'Processing...' : confirmLabel}
           </button>
         </div>
@@ -47,14 +62,23 @@ function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, o
   )
 }
 
-export default function EditEventPage() {
-  const { id } = useParams()
+function EditEventSession({ id, identity }) {
+  const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/edit`)
+  const loadGeneration = useRef(0)
+  const pendingLoad = useRef(null)
+  const inventoryGeneration = useRef(0)
+  const eventSaveGeneration = useRef(0)
+  const pendingInventoryLoad = useRef(null)
+  const [inventoryRefreshing, setInventoryRefreshing] = useState(false)
+  const [inventoryError, setInventoryError] = useState(null)
   const navigate = useNavigate()
   const categories = useEventCategories()
   const capabilities = useLaunchCapabilities()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [event, setEvent] = useState(null)
+  const permissions = event?.permissions || {}
+  const canManage = permissions.manage_events === true
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [successMessage, setSuccessMessage] = useState(null)
@@ -94,32 +118,31 @@ export default function EditEventPage() {
     show_attendees: true
   })
 
+  const savedForm = eventForm(event || {})
+  const hasUnsavedChanges = Object.keys(form).some(field => {
+    const value = typeof form[field] === 'string' ? form[field].trim() : form[field]
+    const savedValue = typeof savedForm[field] === 'string' ? savedForm[field].trim() : savedForm[field]
+    return value !== savedValue
+  })
+
+
   const fetchEvent = useCallback(async () => {
+    const request = beginRequest()
+    if (!request) return
+    pendingLoad.current?.controller.abort()
+    pendingLoad.current = request
+    const generation = ++loadGeneration.current
+    const canApply = () => request.current() && generation === loadGeneration.current
     setLoading(true)
     setError(null)
     try {
-      const res = await apiClient.get(`/organizer/events/${id}`)
+      const res = await apiClient.get(`/organizer/events/${id}`, request.config)
+      if (!canApply()) return
       const e = res.data
       setEvent(e)
-      setForm({
-        title: e.title || '',
-        short_description: e.short_description || '',
-        description: e.description || '',
-        category: e.category || 'other',
-        age_restriction: e.age_restriction || 'all_ages',
-        venue_name: e.venue_name || '',
-        venue_address: e.venue_address || '',
-        venue_city: e.venue_city || 'Guam',
-        starts_at: toEventLocalInput(e.starts_at, e.timezone),
-        ends_at: toEventLocalInput(e.ends_at, e.timezone),
-        doors_open_at: toEventLocalInput(e.doors_open_at, e.timezone),
-        max_capacity: e.max_capacity ? String(e.max_capacity) : '',
-        cover_image_url: e.cover_image_url || '',
-        recurrence_rule: e.recurrence_rule || '',
-        recurrence_end_date: e.recurrence_end_date || '',
-        show_attendees: e.show_attendees !== false
-      })
+      setForm(eventForm(e))
     } catch (err) {
+      if (!canApply()) return
       if (err.response?.status === 401) {
         setError('Please sign in to access this page.')
       } else if (err.response?.status === 404) {
@@ -128,15 +151,47 @@ export default function EditEventPage() {
         setError('Failed to load event.')
       }
     } finally {
-      setLoading(false)
+      request.release()
+      if (canApply()) setLoading(false)
     }
-  }, [id])
+  }, [id, beginRequest])
+
+  // Ticket mutations refresh saved inventory, not the event draft or its
+  // schedule baseline. Keep the editor mounted while this request is pending.
+  const refreshInventory = useCallback(async () => {
+    const request = beginRequest()
+    if (!request) return
+    pendingInventoryLoad.current?.controller.abort()
+    pendingInventoryLoad.current = request
+    const generation = ++inventoryGeneration.current
+    const savedGeneration = eventSaveGeneration.current
+    const canApply = () => request.current() && generation === inventoryGeneration.current
+    setInventoryRefreshing(true)
+    setInventoryError(null)
+    try {
+      const res = await apiClient.get(`/organizer/events/${id}`, request.config)
+      if (!canApply()) return
+      setEvent(saved => ({ ...saved, ticket_types: res.data.ticket_types || [],
+        // A successful event save owns newer readiness and access metadata.
+        // Still apply ticket data without reviving its pre-save checklist.
+        ...(savedGeneration === eventSaveGeneration.current ? {
+          publish_checklist: res.data.publish_checklist || [],
+          permissions: res.data.permissions || saved.permissions,
+        } : {}) }))
+    } catch {
+      if (canApply()) setInventoryError('Ticket changes were saved, but the latest ticket list could not be loaded. Retry to update the list. Your event draft is still here.')
+    } finally {
+      if (canApply()) setInventoryRefreshing(false)
+      request.release()
+    }
+  }, [id, beginRequest])
 
   useEffect(() => {
     fetchEvent()
   }, [fetchEvent])
 
   const updateField = (field, value) => {
+    if (!current()) return
     setForm(prev => ({ ...prev, [field]: value }))
     if (formErrors[field]) {
       setFormErrors(prev => ({ ...prev, [field]: null }))
@@ -144,43 +199,51 @@ export default function EditEventPage() {
     setSuccessMessage(null)
   }
 
-  const scheduleChanged = Boolean(event) && (
-    form.starts_at !== toEventLocalInput(event.starts_at, event.timezone) ||
-    form.ends_at !== toEventLocalInput(event.ends_at, event.timezone) ||
-    form.doors_open_at !== toEventLocalInput(event.doors_open_at, event.timezone)
+  // Keep seconds in untouched API timestamps instead of rewriting them from
+  // minute-precision inputs. Null explicitly clears an edited optional time.
+  const scheduleChanges = Object.fromEntries(
+    ['starts_at', 'ends_at', 'doors_open_at']
+      .filter(field => event && form[field] !== toEventLocalInput(event[field], event.timezone))
+      .map(field => [field, form[field] || null]),
   )
+  const scheduleChanged = Object.keys(scheduleChanges).length > 0
 
   const validate = () => {
     const errors = {}
     if (!form.title.trim()) errors.title = 'Title is required'
-    if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
-    if (!form.starts_at) errors.starts_at = 'Start date/time is required'
-    if (form.ends_at && form.starts_at) {
-      if (compareLocalDateTimes(form.ends_at, form.starts_at) <= 0) {
-        errors.ends_at = 'End time must be after the start time'
+    if (canManage) {
+      if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
+      if (!form.starts_at) errors.starts_at = 'Start date/time is required'
+      if (form.ends_at && form.starts_at) {
+        if (compareLocalDateTimes(form.ends_at, form.starts_at) <= 0) {
+          errors.ends_at = 'End time must be after the start time'
+        }
       }
-    }
-    if (form.doors_open_at && form.starts_at) {
-      if (compareLocalDateTimes(form.doors_open_at, form.starts_at) > 0) {
-        errors.doors_open_at = 'Doors open time must be before the start time'
+      if (form.doors_open_at && form.starts_at) {
+        if (compareLocalDateTimes(form.doors_open_at, form.starts_at) > 0) {
+          errors.doors_open_at = 'Doors open time must be before the start time'
+        }
       }
-    }
-    if (form.max_capacity) {
-      const cap = Number(form.max_capacity)
-      if (!Number.isInteger(cap) || cap < 1) {
-        errors.max_capacity = 'Max capacity must be a positive integer'
+      if (form.max_capacity) {
+        if (!validEventCapacity(form.max_capacity)) {
+          errors.max_capacity = 'Max capacity must be a positive integer'
+        }
       }
-    }
-    if (scheduleChanged && ['published', 'postponed'].includes(event?.status) && !changeReason.trim()) {
-      errors.change_reason = 'Explain the schedule change for ticket holders'
+      if (scheduleChanged && ['published', 'postponed'].includes(event?.status) && !changeReason.trim()) {
+        errors.change_reason = 'Explain the schedule change for ticket holders'
+      }
     }
     setFormErrors(errors)
+    if (Object.keys(errors).length) requestAnimationFrame(() => { if (current()) document.getElementById(Object.keys(errors)[0])?.focus() })
     return Object.keys(errors).length === 0
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!validate()) return
+    if (!current() || submitting || !permissions.edit_event_content || !validate()) return
+    const request = beginRequest()
+    if (!request) return
+    const submittedForm = form
     setSubmitting(true)
     setSubmitError(null)
     setSuccessMessage(null)
@@ -195,76 +258,106 @@ export default function EditEventPage() {
         venue_address: form.venue_address.trim() || null,
         venue_city: form.venue_city.trim() || 'Guam',
         timezone: event?.timezone || 'Pacific/Guam',
-        starts_at: form.starts_at || undefined,
-        ends_at: form.ends_at || undefined,
-        doors_open_at: form.doors_open_at || undefined,
-        max_capacity: form.max_capacity ? parseInt(form.max_capacity, 10) : null,
+        ...scheduleChanges,
+        max_capacity: form.max_capacity ? Number(form.max_capacity) : null,
         cover_image_url: form.cover_image_url.trim() || null,
         recurrence_rule: form.recurrence_rule || null,
         recurrence_end_date: form.recurrence_end_date || null,
         show_attendees: form.show_attendees
       }
-      if (scheduleChanged) payload.change_reason = changeReason.trim() || undefined
-      const res = await apiClient.put(`/organizer/events/${id}`, payload)
-      setEvent(res.data)
+      if (!canManage) {
+        const presentationFields = ['title', 'short_description', 'description', 'category', 'cover_image_url']
+        Object.keys(payload).forEach(key => { if (!presentationFields.includes(key)) delete payload[key] })
+      }
+      if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
+      const res = await apiClient.put(`/organizer/events/${id}`, payload, request.config)
+      if (!request.current()) return
+      eventSaveGeneration.current += 1
+      setEvent(current => ({ ...current, ...res.data }))
+      const canonicalForm = eventForm({ ...event, ...res.data })
+      // Reconcile only fields the server returned, and only if they still
+      // match the submitted snapshot. Partial responses and a later upload
+      // callback must not erase the organizer's remaining draft.
+      setForm(latest => Object.fromEntries(Object.entries(latest).map(([field, value]) => [field,
+        Object.hasOwn(res.data, field) && value === submittedForm[field] ? canonicalForm[field] : value,
+      ])))
       setChangeReason('')
       setSuccessMessage('Event updated successfully.')
     } catch (err) {
+      if (!request.current()) return
       const msg = err.response?.data?.errors?.join(', ') || err.response?.data?.error || 'Failed to update event'
       setSubmitError(msg)
     } finally {
-      setSubmitting(false)
+      request.release()
+      if (request.current()) setSubmitting(false)
     }
   }
 
   const handlePublish = async () => {
+    if (!current() || publishing || submitting || hasUnsavedChanges || !canManage) return
+    const request = beginRequest()
+    if (!request) return
     setPublishing(true)
     setSubmitError(null)
     try {
-      const res = await apiClient.post(`/organizer/events/${id}/publish`)
-      setEvent(res.data)
+      const res = await apiClient.post(`/organizer/events/${id}/publish`, {}, request.config)
+      if (!request.current()) return
+      setEvent(current => ({ ...current, ...res.data }))
       setShowPublishConfirm(false)
       setSuccessMessage('Event published successfully!')
     } catch (err) {
+      if (!request.current()) return
       const msg = err.response?.data?.error || 'Failed to publish event'
       setSubmitError(msg)
       setShowPublishConfirm(false)
     } finally {
-      setPublishing(false)
+      request.release()
+      if (request.current()) setPublishing(false)
     }
   }
 
   // Danger zone actions
   const handleLifecycle = async (action, success) => {
+    if (dangerLoading) return
+    const request = beginRequest()
+    if (!request) return
     setDangerLoading(true)
     try {
-      const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined })
-      setEvent(res.data)
+      const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined }, request.config)
+      if (!request.current()) return
+      setEvent(current => ({ ...current, ...res.data }))
       setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
       setLifecycleReason('')
       setSuccessMessage(success)
     } catch (err) {
+      if (!request.current()) return
       setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
       setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
     } finally {
-      setDangerLoading(false)
+      request.release()
+      if (request.current()) setDangerLoading(false)
     }
   }
 
   const handleDeleteEvent = async () => {
+    if (dangerLoading) return
+    const request = beginRequest()
+    if (!request) return
     setDangerLoading(true)
     try {
-      await apiClient.delete(`/organizer/events/${id}`)
-      navigate('/dashboard')
+      await apiClient.delete(`/organizer/events/${id}`, request.config)
+      if (request.current()) navigate('/dashboard')
     } catch (err) {
+      if (!request.current()) return
       setSubmitError(err.response?.data?.error || 'Failed to delete event')
       setShowDeleteConfirm(false)
     } finally {
-      setDangerLoading(false)
+      request.release()
+      if (request.current()) setDangerLoading(false)
     }
   }
 
@@ -287,96 +380,68 @@ export default function EditEventPage() {
     return (
       <div className="max-w-2xl mx-auto px-4 py-8">
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>
-        <Link to="/dashboard" className="mt-4 inline-block text-brand-500 hover:text-brand-700 text-sm font-medium">Back to Dashboard</Link>
+        <Link to="/dashboard" className="mt-4 inline-block text-action-teal hover:text-action-teal-hover text-sm font-medium">Back to Dashboard</Link>
       </div>
     )
   }
 
-  const statusBadge = STATUS_BADGES[event?.status] || STATUS_BADGES.draft
+  if (!permissions.edit_event_content) return <EventWorkspace eventId={id} event={event}><EventAccessNotice event={{ ...event, title: 'Your event tools' }} /></EventWorkspace>
+
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
+    <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges}><div className="mx-auto max-w-3xl">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <Link to="/dashboard" className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Dashboard
-        </Link>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
           {event?.slug && (
             <a
               href={`/events/${event.slug}${event.status === 'published' || event.status === 'completed' ? '' : '?preview=true'}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1"
+              className="text-action-teal hover:text-action-teal-hover text-sm font-medium flex items-center gap-1"
             >
-              <Eye className="w-4 h-4" /> Preview
+              <Eye className="w-4 h-4" /> Preview saved event
             </a>
           )}
-          <button
+          {canManage && <button
             onClick={async () => {
+              if (cloning) return
+              const request = beginRequest()
+              if (!request) return
               setCloning(true)
               try {
-                const res = await apiClient.post(`/organizer/events/${id}/clone`)
+                const res = await apiClient.post(`/organizer/events/${id}/clone`, {}, request.config)
+                if (!request.current()) return
                 setSuccessMessage('Event cloned! Update the details and publish when ready.')
                 navigate(`/dashboard/events/${res.data.id}/edit`)
               } catch (err) {
+                if (!request.current()) return
                 setSubmitError(err.response?.data?.errors?.join(', ') || 'Failed to clone event')
               } finally {
-                setCloning(false)
+                request.release()
+                if (request.current()) setCloning(false)
               }
             }}
             disabled={cloning}
-            className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1 disabled:opacity-50"
+            className="text-action-teal hover:text-action-teal-hover text-sm font-medium flex items-center gap-1 disabled:opacity-50"
           >
             <Copy className="w-4 h-4" /> {cloning ? 'Cloning...' : 'Clone'}
-          </button>
-          <Link to={`/dashboard/events/${id}/box-office`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <ShoppingCart className="w-4 h-4" /> Box Office
-          </Link>
-          {capabilities.assigned_seating && <Link to={`/dashboard/events/${id}/seating`} className="text-brand-500 hover:text-brand-700 text-sm font-medium">
-            Assigned Seating
-          </Link>}
-          <Link to={`/dashboard/events/${id}/attendees`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <Users className="w-4 h-4" /> Attendees
-          </Link>
-          <Link to={`/dashboard/events/${id}/team`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <Users className="w-4 h-4" /> Team
-          </Link>
-          <Link to={`/dashboard/events/${id}/waitlist`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <ClipboardList className="w-4 h-4" /> Waitlist
-          </Link>
-          {capabilities.advanced_sales_tools && <Link to={`/dashboard/events/${id}/sales-tools`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-            <ShoppingCart className="w-4 h-4" /> Sales tools
-          </Link>}
-          {['published', 'completed', 'cancelled'].includes(event?.status) && (
-            <Link to={`/dashboard/events/${id}/analytics`} className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-              View Analytics
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-              </svg>
-            </Link>
-          )}
+          </button>}
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900">Edit Event</h1>
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadge.className}`}>
-          {statusBadge.label}
-        </span>
-      </div>
+      <h2 className="mb-6 text-xl font-semibold text-neutral-950">Event details</h2>
+
+      {hasUnsavedChanges && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">You have unsaved changes. Save Changes before publishing. Preview shows the last saved event.</p>}
 
       {/* Publish Button for Draft Events */}
-      {event?.status === 'draft' && (
+      {canManage && event?.status === 'draft' && (
         <div className="mb-6 p-4 bg-brand-50 border border-brand-200 rounded-xl">
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <div>
               <p className="text-sm font-medium text-brand-800">Prepare your event for publishing</p>
               <p className="text-xs text-brand-600 mt-0.5">Complete the steps below, save your changes, and preview your event before publishing.</p>
             </div>
-            <button onClick={() => setShowPublishConfirm(true)} disabled={!readyToPublish} className="btn-primary text-sm px-4 py-2 disabled:opacity-50">Publish Event</button>
+            <button onClick={() => setShowPublishConfirm(true)} disabled={!readyToPublish || hasUnsavedChanges || submitting || publishing} className="btn-primary text-sm px-4 py-2 disabled:opacity-50">Publish Event</button>
           </div>
           <ul className="grid sm:grid-cols-2 gap-2 mt-4" aria-label="Publishing checklist">
             {organizerSteps.map(item => (
@@ -395,9 +460,9 @@ export default function EditEventPage() {
       {showPublishConfirm && (
         <ConfirmModal
           title="Publish Event?"
-          message="This will make your event visible to the public. Attendees will be able to browse and purchase tickets."
+          message={`Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
           confirmLabel={publishing ? 'Publishing...' : 'Yes, Publish'}
-          confirmClass="bg-brand-500 hover:bg-brand-600"
+          confirmClass="bg-action-teal hover:bg-action-teal-hover"
           onConfirm={handlePublish}
           onCancel={() => setShowPublishConfirm(false)}
           loading={publishing}
@@ -444,7 +509,7 @@ export default function EditEventPage() {
           title="Postpone Event?"
           message="Ticket sales will stop immediately. Update the schedule before resuming the event."
           confirmLabel="Yes, Postpone"
-          confirmClass="bg-orange-600 hover:bg-orange-700"
+          confirmClass="bg-action-danger hover:bg-action-danger-hover"
           onConfirm={() => handleLifecycle('postpone', 'Event has been postponed and sales are paused.')}
           onCancel={() => { setShowPostponeConfirm(false); setLifecycleReason('') }}
           loading={dangerLoading}
@@ -462,7 +527,8 @@ export default function EditEventPage() {
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm" role="alert">{submitError}</div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <FormErrorSummary errors={formErrors} />
+      <form noValidate onSubmit={handleSubmit} className="space-y-8">
         {/* Cover Image Upload */}
         <section>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Cover Image</h2>
@@ -482,8 +548,8 @@ export default function EditEventPage() {
               <label htmlFor="title" className="block text-sm font-medium text-neutral-700 mb-1">
                 Event Title <span className="text-red-500">*</span>
               </label>
-              <input id="title" type="text" value={form.title} onChange={(e) => updateField('title', e.target.value)} className={`input ${formErrors.title ? 'input-error' : ''}`} placeholder="e.g., Full Moon Beach Party" disabled={submitting} />
-              {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
+              <input id="title" aria-invalid={Boolean(formErrors.title)} aria-describedby={formErrors.title ? 'title-error' : undefined} required type="text" value={form.title} onChange={(e) => updateField('title', e.target.value)} className={`input ${formErrors.title ? 'input-error' : ''}`} placeholder="e.g., Full Moon Beach Party" disabled={submitting} />
+              {formErrors.title && <p id="title-error" className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
             </div>
             <div>
               <label htmlFor="short_description" className="block text-sm font-medium text-neutral-700 mb-1">Short Description</label>
@@ -500,16 +566,17 @@ export default function EditEventPage() {
                   {categories.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
                 </select>
               </div>
-              <div>
+              {canManage && <div>
                 <label htmlFor="age_restriction" className="block text-sm font-medium text-neutral-700 mb-1">Age Restriction</label>
                 <select id="age_restriction" value={form.age_restriction} onChange={(e) => updateField('age_restriction', e.target.value)} className="input" disabled={submitting}>
                   {AGE_RESTRICTIONS.map(ar => <option key={ar.value} value={ar.value}>{ar.label}</option>)}
                 </select>
-              </div>
+              </div>}
             </div>
           </div>
         </section>
 
+        {canManage && <>
         {/* Venue Section */}
         <section>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Venue</h2>
@@ -518,8 +585,8 @@ export default function EditEventPage() {
               <label htmlFor="venue_name" className="block text-sm font-medium text-neutral-700 mb-1">
                 Venue Name <span className="text-red-500">*</span>
               </label>
-              <input id="venue_name" type="text" value={form.venue_name} onChange={(e) => updateField('venue_name', e.target.value)} className={`input ${formErrors.venue_name ? 'input-error' : ''}`} placeholder="e.g., Tumon Beach Club" disabled={submitting} />
-              {formErrors.venue_name && <p className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
+              <input id="venue_name" aria-invalid={Boolean(formErrors.venue_name)} aria-describedby={formErrors.venue_name ? 'venue_name-error' : undefined} required type="text" value={form.venue_name} onChange={(e) => updateField('venue_name', e.target.value)} className={`input ${formErrors.venue_name ? 'input-error' : ''}`} placeholder="e.g., Tumon Beach Club" disabled={submitting} />
+              {formErrors.venue_name && <p id="venue_name-error" className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
             </div>
             <div>
               <label htmlFor="venue_address" className="block text-sm font-medium text-neutral-700 mb-1">Venue Address</label>
@@ -541,25 +608,25 @@ export default function EditEventPage() {
               <label htmlFor="starts_at" className="block text-sm font-medium text-neutral-700 mb-1">
                 Start Date & Time <span className="text-red-500">*</span>
               </label>
-              <input id="starts_at" type="datetime-local" value={form.starts_at} onChange={(e) => updateField('starts_at', e.target.value)} className={`input ${formErrors.starts_at ? 'input-error' : ''}`} disabled={submitting} />
-              {formErrors.starts_at && <p className="mt-1 text-sm text-red-600">{formErrors.starts_at}</p>}
+              <input id="starts_at" aria-invalid={Boolean(formErrors.starts_at)} aria-describedby={formErrors.starts_at ? 'starts_at-error' : undefined} required type="datetime-local" value={form.starts_at} onChange={(e) => updateField('starts_at', e.target.value)} className={`input ${formErrors.starts_at ? 'input-error' : ''}`} disabled={submitting} />
+              {formErrors.starts_at && <p id="starts_at-error" className="mt-1 text-sm text-red-600">{formErrors.starts_at}</p>}
             </div>
             <div>
               <label htmlFor="ends_at" className="block text-sm font-medium text-neutral-700 mb-1">End Date & Time</label>
-              <input id="ends_at" type="datetime-local" value={form.ends_at} onChange={(e) => updateField('ends_at', e.target.value)} className={`input ${formErrors.ends_at ? 'input-error' : ''}`} disabled={submitting} />
-              {formErrors.ends_at && <p className="mt-1 text-sm text-red-600">{formErrors.ends_at}</p>}
+              <input id="ends_at" aria-invalid={Boolean(formErrors.ends_at)} aria-describedby={formErrors.ends_at ? 'ends_at-error' : undefined} type="datetime-local" value={form.ends_at} onChange={(e) => updateField('ends_at', e.target.value)} className={`input ${formErrors.ends_at ? 'input-error' : ''}`} disabled={submitting} />
+              {formErrors.ends_at && <p id="ends_at-error" className="mt-1 text-sm text-red-600">{formErrors.ends_at}</p>}
             </div>
             <div>
               <label htmlFor="doors_open_at" className="block text-sm font-medium text-neutral-700 mb-1">Doors Open At</label>
-              <input id="doors_open_at" type="datetime-local" value={form.doors_open_at} onChange={(e) => updateField('doors_open_at', e.target.value)} className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`} disabled={submitting} />
-              {formErrors.doors_open_at && <p className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
+              <input id="doors_open_at" aria-invalid={Boolean(formErrors.doors_open_at)} aria-describedby={formErrors.doors_open_at ? 'doors_open_at-error' : undefined} type="datetime-local" value={form.doors_open_at} onChange={(e) => updateField('doors_open_at', e.target.value)} className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`} disabled={submitting} />
+              {formErrors.doors_open_at && <p id="doors_open_at-error" className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
             </div>
             {scheduleChanged && ['published', 'postponed'].includes(event?.status) && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
                 <label htmlFor="change_reason" className="block text-sm font-semibold text-amber-950">Reason for schedule change <span className="text-red-500">*</span></label>
                 <p className="mb-2 mt-1 text-xs text-amber-800">Ticket holders will see this explanation and can keep their tickets or request a refund.</p>
-                <textarea id="change_reason" rows="3" value={changeReason} onChange={(e) => { setChangeReason(e.target.value); setFormErrors(prev => ({ ...prev, change_reason: null })) }} className={`input ${formErrors.change_reason ? 'input-error' : ''}`} placeholder="Explain what changed and why" disabled={submitting} />
-                {formErrors.change_reason && <p className="mt-1 text-sm text-red-600">{formErrors.change_reason}</p>}
+                <textarea id="change_reason" aria-invalid={Boolean(formErrors.change_reason)} aria-describedby={formErrors.change_reason ? 'change_reason-error' : undefined} rows="3" value={changeReason} onChange={(e) => { setChangeReason(e.target.value); setFormErrors(prev => ({ ...prev, change_reason: null })) }} className={`input ${formErrors.change_reason ? 'input-error' : ''}`} placeholder="Explain what changed and why" disabled={submitting} />
+                {formErrors.change_reason && <p id="change_reason-error" className="mt-1 text-sm text-red-600">{formErrors.change_reason}</p>}
               </div>
             )}
           </div>
@@ -571,8 +638,8 @@ export default function EditEventPage() {
           <div className="space-y-4">
             <div>
               <label htmlFor="max_capacity" className="block text-sm font-medium text-neutral-700 mb-1">Max Capacity</label>
-              <input id="max_capacity" type="number" min="1" value={form.max_capacity} onChange={(e) => updateField('max_capacity', e.target.value)} className={`input ${formErrors.max_capacity ? 'input-error' : ''}`} placeholder="Leave blank for unlimited" disabled={submitting} />
-              {formErrors.max_capacity && <p className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
+              <input id="max_capacity" aria-invalid={Boolean(formErrors.max_capacity)} aria-describedby={formErrors.max_capacity ? 'max_capacity-error' : undefined} type="number" min="1" value={form.max_capacity} onChange={(e) => updateField('max_capacity', e.target.value)} className={`input ${formErrors.max_capacity ? 'input-error' : ''}`} placeholder="Leave blank for unlimited" disabled={submitting} />
+              {formErrors.max_capacity && <p id="max_capacity-error" className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
             </div>
             <div className="flex items-center gap-3">
               <input
@@ -616,16 +683,22 @@ export default function EditEventPage() {
                 <button
                   type="button"
                   onClick={async () => {
+                    if (generatingRecurrences) return
+                    const request = beginRequest()
+                    if (!request) return
                     setGeneratingRecurrences(true)
                     setSubmitError(null)
                     try {
-                      const res = await apiClient.post(`/organizer/events/${id}/generate_recurrences`, { count: recurrenceCount })
+                      const res = await apiClient.post(`/organizer/events/${id}/generate_recurrences`, { count: recurrenceCount }, request.config)
+                      if (!request.current()) return
                       setSuccessMessage(`Generated ${res.data.generated_count} recurring event(s).`)
                       setRecurrenceChildren(res.data.events || [])
                     } catch (err) {
+                      if (!request.current()) return
                       setSubmitError(err.response?.data?.error || 'Failed to generate recurring events')
                     } finally {
-                      setGeneratingRecurrences(false)
+                      request.release()
+                      if (request.current()) setGeneratingRecurrences(false)
                     }
                   }}
                   disabled={generatingRecurrences || !form.starts_at}
@@ -645,7 +718,7 @@ export default function EditEventPage() {
                 <h3 className="text-sm font-medium text-neutral-700 mb-2">Linked Recurring Events</h3>
                 <div className="space-y-2">
                   {event?.recurrence_parent_id && (
-                    <Link to={`/dashboard/events/${event.recurrence_parent_id}/edit`} className="block text-sm text-brand-500 hover:text-brand-700">
+                    <Link to={`/dashboard/events/${event.recurrence_parent_id}/edit`} className="block text-sm text-action-teal hover:text-action-teal-hover">
                       ← View Parent Event
                     </Link>
                   )}
@@ -660,6 +733,8 @@ export default function EditEventPage() {
           </div>
         </section>
 
+        </>}
+
         {/* Submit */}
         <div className="pt-4 border-t border-neutral-200">
           <button type="submit" disabled={submitting} className="btn-primary w-full sm:w-auto">
@@ -669,10 +744,17 @@ export default function EditEventPage() {
       </form>
 
       {/* Ticket Types CRUD */}
-      <section id="ticket-types" className="scroll-mt-24"><TicketTypeCRUD remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={fetchEvent} eventTimezone={event?.timezone} /></section>
+      {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="scroll-mt-24 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>
+        {inventoryRefreshing && <p role="status" className="mt-6 text-sm text-neutral-600">Updating ticket list…</p>}
+        {inventoryError && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p>{inventoryError}</p>
+          <button type="button" onClick={refreshInventory} className="mt-2 min-h-11 font-semibold underline underline-offset-2">Retry ticket list</button>
+        </div>}
+        <TicketTypeCRUD beginRequest={beginRequest} remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={refreshInventory} eventTimezone={event?.timezone} />
+      </section>}
 
       {/* Danger Zone — HP-28 */}
-      {event && event.status !== 'archived' && (
+      {canManage && event && event.status !== 'archived' && (
         <div className="mt-8 border border-neutral-200 rounded-xl p-5 sm:p-6">
           <h2 className="text-lg font-semibold text-red-700 mb-1 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5" /> Event actions
@@ -746,6 +828,15 @@ export default function EditEventPage() {
           </div>
         </div>
       )}
-    </div>
+    </div></EventWorkspace>
   )
+}
+
+export default function EditEventPage() {
+  const { id } = useParams()
+  const identity = useOrganizerIdentity()
+  const visit = useOrganizerPageVisit(`/dashboard/events/${id}/edit`)
+  if (!visit.active) return null
+  if (!identity.ready) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  return <EditEventSession key={`${identity.accountKey}:${identity.organizationId}:${id}:${visit.generation}`} id={id} identity={identity} />
 }
