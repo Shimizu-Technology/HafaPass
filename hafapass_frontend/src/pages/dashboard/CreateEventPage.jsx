@@ -1,3 +1,4 @@
+import { validEventCapacity } from '../../utils/eventCapacity'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -104,8 +105,7 @@ function CreateEventSession({ identity }) {
 
   // Max capacity must be a positive integer
   if (form.max_capacity) {
-   const cap = Number(form.max_capacity)
-   if (!Number.isInteger(cap) || cap < 1) {
+   if (!validEventCapacity(form.max_capacity)) {
     errors.max_capacity = 'Max capacity must be a positive integer'
    }
   }

@@ -39,8 +39,8 @@ export default function ServiceCheck() {
   const cachedDoor = location.pathname === '/dashboard/scanner' && cachedScanner?.route === scannerRoute ? <main className="min-h-screen bg-neutral-50">
       <EnvironmentBanner offlineOnly />
       <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
-        Using this device’s saved event access. Scans stay on this device until services reconnect.
-        <button className="ml-3 min-h-11 font-semibold underline" onClick={retry}>Check connection</button>
+        Using this device’s saved event access. Saved scans stay on this device. When services return, reload to reconnect.
+        <a className="ml-3 inline-flex min-h-11 items-center font-semibold underline" href={`${location.pathname}${location.search}${location.hash}`}>Reload to reconnect</a>
       </div>
       <Suspense fallback={<p className="px-4 py-8" role="status">Opening the saved scanner…</p>}><ScannerPage offlineOnly offlineEventId={cachedScanner.eventId} /></Suspense>
     </main> : null

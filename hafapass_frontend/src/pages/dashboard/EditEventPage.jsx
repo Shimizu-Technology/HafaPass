@@ -1,3 +1,4 @@
+import { validEventCapacity } from '../../utils/eventCapacity'
 import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -224,8 +225,7 @@ function EditEventSession({ id, identity }) {
         }
       }
       if (form.max_capacity) {
-        const cap = Number(form.max_capacity)
-        if (!Number.isInteger(cap) || cap < 1) {
+        if (!validEventCapacity(form.max_capacity)) {
           errors.max_capacity = 'Max capacity must be a positive integer'
         }
       }

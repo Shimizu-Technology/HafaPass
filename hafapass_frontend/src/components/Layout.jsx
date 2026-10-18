@@ -33,7 +33,14 @@ export default function Layout() {
       const target = anchor || heading
       if (!target) return false
       if (document.activeElement === content) {
-        target.setAttribute('tabindex', '-1')
+        const needsFocusTarget = !target.hasAttribute('tabindex') && target.tabIndex < 0
+          && !target.matches('[contenteditable="true"], [contenteditable=""]')
+        if (needsFocusTarget) {
+          target.setAttribute('tabindex', '-1')
+          target.addEventListener('blur', () => {
+            if (target.getAttribute('tabindex') === '-1') target.removeAttribute('tabindex')
+          }, { once: true })
+        }
         target.focus({ preventScroll: !anchor })
       }
       setAnnouncement(heading?.textContent?.trim() || 'Page loaded')

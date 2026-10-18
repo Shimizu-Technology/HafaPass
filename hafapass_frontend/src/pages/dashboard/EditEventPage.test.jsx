@@ -199,6 +199,13 @@ describe('canonical saved event form', () => {
     await screen.findByRole('link', { name: 'Max capacity must be a positive integer' })
     expect(apiClient.put).not.toHaveBeenCalled()
     expect(capacity.value).toBe('1.2')
+    for (const value of ['2147483648', '9007199254740992']) {
+      fireEvent.change(capacity, { target: { value } })
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+      expect(apiClient.put).not.toHaveBeenCalled()
+      expect(capacity).toHaveAttribute('aria-invalid', 'true')
+      expect(capacity.value).toBe(value)
+    }
     fireEvent.change(capacity, { target: { value: '1e2' } })
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
     await screen.findByText('Event updated successfully.')

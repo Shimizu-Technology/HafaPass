@@ -14,6 +14,16 @@ vi.mock('../components/QRCode', () => ({ default: () => <div>Entry QR</div> }))
 describe('ticket download recovery', () => {
   beforeEach(() => { vi.clearAllMocks(); motionPreference.reduced = false; window.sessionStorage.clear() })
 
+  it.each([404, 503])('orients a failed ticket load with a heading and alert (HTTP %s)', async status => {
+    api.get.mockRejectedValue({ response: { status } })
+    render(<MemoryRouter initialEntries={['/tickets/synthetic-display?order=2']}><Routes>
+      <Route path="/tickets/:credential" element={<TicketPage />} />
+    </Routes></MemoryRouter>)
+    expect(await screen.findByRole('heading', { name: 'Ticket unavailable', level: 1 })).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(status === 404 ? 'Ticket not found' : 'Failed to load ticket')
+    expect(screen.queryByText('Entry QR')).not.toBeInTheDocument()
+  })
+
   for (const reason of ['Ticket access is paused while its refund is pending', 'Payment dispute under review']) {
     it(`shows access paused rather than valid for an issued ticket: ${reason}`, async () => {
       api.get.mockResolvedValue({ data: {

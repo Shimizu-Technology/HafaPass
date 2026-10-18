@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "set"
 
 module Settlements
   class Calculator
@@ -85,8 +86,8 @@ module Settlements
     def cash_order_ids
       # Payment.provider is immutable; a later edit to the order's display
       # method must not turn already-collected physical cash into a payable.
-      @cash_order_ids ||= (orders.select { |order| order.payment_method == "door_cash" }.map(&:id) +
-        Payment.where(order_id: order_ids, provider: "door_cash").pluck(:order_id)).uniq
+      @cash_order_ids ||= Set.new(orders.select { |order| order.payment_method == "door_cash" }.map(&:id) +
+        Payment.where(order_id: order_ids, provider: "door_cash").pluck(:order_id))
     end
 
     def cash_proceeds
@@ -94,7 +95,12 @@ module Settlements
     end
 
     def cash_refunded_proceeds
-      refund_items.select { |item| cash_order_ids.include?(item.order_item.order_id) }.sum(&:organizer_proceeds_cents)
+      refund_items.select { |item| cash_refund_item?(item) }.sum(&:organizer_proceeds_cents)
+    end
+
+    def cash_refund_item?(item)
+      @refund_order_ids ||= succeeded_refunds.to_h { |refund| [refund.id, refund.order_id] }
+      cash_order_ids.include?(@refund_order_ids.fetch(item.refund_id))
     end
 
     def platform_fee_components
@@ -132,7 +138,7 @@ module Settlements
           description: "Cash retained by organizer; excluded from platform payable", occurred_at: item.created_at,
           metadata: { order_id: item.order_id, adjustment_kind: "organizer_retained_cash", cash_custodian: "organizer" })
       end
-      returns = refund_items.select { |item| cash_order_ids.include?(item.order_item.order_id) }.map do |item|
+      returns = refund_items.select { |item| cash_refund_item?(item) }.map do |item|
         statement_item(kind: "adjustment", amount_cents: item.organizer_proceeds_cents, source: item,
           description: "Cash returned by organizer; retained cash offset reduced",
           occurred_at: item.refund.succeeded_at || item.created_at,

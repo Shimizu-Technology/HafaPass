@@ -78,7 +78,7 @@ class Event < ApplicationRecord
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
-  validates :max_capacity, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
+  validates :max_capacity, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 2_147_483_647 }, allow_nil: true
   validates :buyer_fee_percent, numericality: { only_integer: true, in: 0..100 }
   validate :capacity_covers_committed_inventory
   validate :fee_policy_matches_percent

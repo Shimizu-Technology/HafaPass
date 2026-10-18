@@ -107,6 +107,13 @@ it('rejects fractional capacity and sends valid exponential notation as the vali
   await screen.findByRole('link', { name: 'Max capacity must be a positive integer' })
   expect(apiClient.post).not.toHaveBeenCalled()
   expect(capacity.value).toBe('1.2')
+  for (const value of ['2147483648', '9007199254740992']) {
+    fireEvent.change(capacity, { target: { value } })
+    await user.click(screen.getByRole('button', { name: 'Create Event' }))
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(capacity).toHaveAttribute('aria-invalid', 'true')
+    expect(capacity.value).toBe(value)
+  }
   fireEvent.change(capacity, { target: { value: '1e2' } })
   await user.click(screen.getByRole('button', { name: 'Create Event' }))
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events', expect.objectContaining({ max_capacity: 100 }), expect.objectContaining({ signal: expect.any(AbortSignal) })))
