@@ -96,7 +96,7 @@ module Commerce
             failed_at: Time.current,
             failure_code: failure_code,
             failure_message: failure_message
-          ) unless payment&.succeeded?
+          ) unless payment && (payment.succeeded? || payment.partially_refunded? || payment.refunded?)
           release_locked_order!(order, reason: reason) if order.pending?
         end
       end
@@ -155,7 +155,11 @@ module Commerce
       def mark_payment_succeeded!(payment)
         return unless payment
 
-        payment.update!(status: :succeeded, succeeded_at: payment.succeeded_at || Time.current)
+        # Capture success predates any refund. A delayed or duplicate capture
+        # notification must not erase the later financial outcome.
+        unless payment.partially_refunded? || payment.refunded?
+          payment.update!(status: :succeeded, succeeded_at: payment.succeeded_at || Time.current)
+        end
         StripeProcessingFees.request!(payment)
       end
 

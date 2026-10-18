@@ -29,6 +29,10 @@ module Settlements
       reserve_effect = posted_adjustments.select { |adjustment| reserve_kind?(adjustment) }.sum(&:amount_cents)
       reserves = [-reserve_effect, 0].max
       adjustment_total = posted_adjustments.select { |adjustment| general_adjustment?(adjustment) }.sum(&:amount_cents)
+      # Door cash stays with the organizer. It is earned revenue, but it is
+      # not platform-held money available for a second payment to them.
+      cash_retained = cash_proceeds - cash_refunded_proceeds
+      adjustment_total -= cash_retained
       balance_before_payout = organizer_proceeds - processing_fees - dispute_losses - reserves + adjustment_total
       paid = event.payouts.status_paid.sum(:amount_cents)
 
@@ -78,6 +82,21 @@ module Settlements
       @refund_items ||= RefundItem.where(refund_id: succeeded_refunds.map(&:id)).order(:id).to_a
     end
 
+    def cash_order_ids
+      # Payment.provider is immutable; a later edit to the order's display
+      # method must not turn already-collected physical cash into a payable.
+      @cash_order_ids ||= (orders.select { |order| order.payment_method == "door_cash" }.map(&:id) +
+        Payment.where(order_id: order_ids, provider: "door_cash").pluck(:order_id)).uniq
+    end
+
+    def cash_proceeds
+      order_items.select { |item| cash_order_ids.include?(item.order_id) }.sum(&:organizer_proceeds_cents)
+    end
+
+    def cash_refunded_proceeds
+      refund_items.select { |item| cash_order_ids.include?(item.order_item.order_id) }.sum(&:organizer_proceeds_cents)
+    end
+
     def platform_fee_components
       @platform_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "platform").order(:id).to_a
     end
@@ -104,7 +123,22 @@ module Settlements
 
     def statement_items
       sale_items + platform_fee_items + refund_statement_items + processing_items + dispute_items + adjustment_items +
-        payout_items
+        payout_items + cash_custody_items
+    end
+
+    def cash_custody_items
+      sales = order_items.select { |item| cash_order_ids.include?(item.order_id) }.map do |item|
+        statement_item(kind: "adjustment", amount_cents: -item.organizer_proceeds_cents, source: item,
+          description: "Cash retained by organizer; excluded from platform payable", occurred_at: item.created_at,
+          metadata: { order_id: item.order_id, adjustment_kind: "organizer_retained_cash", cash_custodian: "organizer" })
+      end
+      returns = refund_items.select { |item| cash_order_ids.include?(item.order_item.order_id) }.map do |item|
+        statement_item(kind: "adjustment", amount_cents: item.organizer_proceeds_cents, source: item,
+          description: "Cash returned by organizer; retained cash offset reduced",
+          occurred_at: item.refund.succeeded_at || item.created_at,
+          metadata: { refund_id: item.refund_id, adjustment_kind: "organizer_cash_return", cash_custodian: "organizer" })
+      end
+      sales + returns
     end
 
     def sale_items
