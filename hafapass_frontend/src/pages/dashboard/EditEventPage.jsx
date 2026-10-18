@@ -322,6 +322,7 @@ function EditEventSession({ id, identity }) {
     const request = beginRequest()
     if (!request) return
     setDangerLoading(true)
+    setSubmitError(null)
     try {
       const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined }, request.config)
       if (!request.current()) return
