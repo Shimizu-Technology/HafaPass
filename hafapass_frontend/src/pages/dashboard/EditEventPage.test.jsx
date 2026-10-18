@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -137,4 +137,73 @@ it('requires saving before publishing, names the saved preview and confirms the 
   await user.click(screen.getByRole('button', { name: 'Yes, Publish' }))
   await screen.findByText('Event published successfully!')
   expect(apiClient.post).toHaveBeenCalledTimes(1)
+})
+
+
+describe('canonical saved event form', () => {
+  const readyDraft = { ...event, status: 'draft', venue_city: 'Tamuning', max_capacity: 300,
+    description: 'Keep this event description', ticket_types: [{ id: 4, name: 'Saved admission' }],
+    publish_checklist: [{ code: 'event_details', label: 'Details', complete: true }] }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiClient.get.mockResolvedValue({ data: readyDraft })
+  })
+
+  it.each(['full', 'partial'])('clears saved default-city and leading-zero edits from a %s response', async response => {
+    const normalized = { id: readyDraft.id, venue_city: 'Guam', max_capacity: 200 }
+    apiClient.put.mockResolvedValue({ data: response === 'full' ? { ...readyDraft, ...normalized } : normalized })
+    const user = userEvent.setup()
+    mount()
+    const city = await screen.findByLabelText('City')
+    const capacity = screen.getByLabelText('Max Capacity')
+    await user.clear(city)
+    fireEvent.change(capacity, { target: { value: '0200' } })
+    expect(capacity.value).toBe('0200')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ venue_city: 'Guam', max_capacity: 200 })
+    expect(city).toHaveValue('Guam')
+    expect(capacity.value).toBe('200')
+    expect(screen.getByLabelText('Description')).toHaveValue('Keep this event description')
+    expect(screen.getByText('Saved admission')).toBeInTheDocument()
+    expect(screen.queryByText(/Preview shows the last saved event/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
+  })
+
+  it('retains raw city/capacity edits and blocks publishing after a failed save', async () => {
+    apiClient.put.mockRejectedValue(new Error('Synthetic failure'))
+    const user = userEvent.setup()
+    mount()
+    await user.clear(await screen.findByLabelText('City'))
+    const capacity = screen.getByLabelText('Max Capacity')
+    fireEvent.change(capacity, { target: { value: '0200' } })
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Failed to update event')
+    expect(screen.getByLabelText('City')).toHaveValue('')
+    expect(capacity.value).toBe('0200')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
+  })
+
+  it('keeps a decimal capacity dirty and sends valid exponential notation as the validated number', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...readyDraft, max_capacity: 1 } })
+    apiClient.put.mockResolvedValue({ data: { ...readyDraft, max_capacity: 100 } })
+    const user = userEvent.setup()
+    mount()
+    const capacity = await screen.findByLabelText('Max Capacity')
+    fireEvent.change(capacity, { target: { value: '1.2' } })
+    expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByRole('link', { name: 'Max capacity must be a positive integer' })
+    expect(apiClient.put).not.toHaveBeenCalled()
+    expect(capacity.value).toBe('1.2')
+    fireEvent.change(capacity, { target: { value: '1e2' } })
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1].max_capacity).toBe(100)
+    expect(capacity.value).toBe('100')
+    expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
+  })
 })

@@ -243,6 +243,7 @@ function EditEventSession({ id, identity }) {
     if (!current() || submitting || !permissions.edit_event_content || !validate()) return
     const request = beginRequest()
     if (!request) return
+    const submittedForm = form
     setSubmitting(true)
     setSubmitError(null)
     setSuccessMessage(null)
@@ -258,7 +259,7 @@ function EditEventSession({ id, identity }) {
         venue_city: form.venue_city.trim() || 'Guam',
         timezone: event?.timezone || 'Pacific/Guam',
         ...scheduleChanges,
-        max_capacity: form.max_capacity ? parseInt(form.max_capacity, 10) : null,
+        max_capacity: form.max_capacity ? Number(form.max_capacity) : null,
         cover_image_url: form.cover_image_url.trim() || null,
         recurrence_rule: form.recurrence_rule || null,
         recurrence_end_date: form.recurrence_end_date || null,
@@ -273,6 +274,13 @@ function EditEventSession({ id, identity }) {
       if (!request.current()) return
       eventSaveGeneration.current += 1
       setEvent(current => ({ ...current, ...res.data }))
+      const canonicalForm = eventForm({ ...event, ...res.data })
+      // Reconcile only fields the server returned, and only if they still
+      // match the submitted snapshot. Partial responses and a later upload
+      // callback must not erase the organizer's remaining draft.
+      setForm(latest => Object.fromEntries(Object.entries(latest).map(([field, value]) => [field,
+        Object.hasOwn(res.data, field) && value === submittedForm[field] ? canonicalForm[field] : value,
+      ])))
       setChangeReason('')
       setSuccessMessage('Event updated successfully.')
     } catch (err) {

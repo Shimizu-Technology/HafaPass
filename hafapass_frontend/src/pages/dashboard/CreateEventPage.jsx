@@ -138,7 +138,7 @@ function CreateEventSession({ identity }) {
     starts_at: form.starts_at || undefined,
     ends_at: form.ends_at || undefined,
     doors_open_at: form.doors_open_at || undefined,
-    max_capacity: form.max_capacity ? parseInt(form.max_capacity, 10) : undefined,
+    max_capacity: form.max_capacity ? Number(form.max_capacity) : undefined,
     cover_image_url: form.cover_image_url.trim() || undefined
    }
 
