@@ -28,10 +28,25 @@ module CardPresentPayments
     end
 
     def call
+      @new_attempt = false
       attempt = find_or_create_attempt!
       validate_replay!(attempt)
       return attempt if attempt.status_succeeded?
       raise ProcessingError.new(attempt.failure_message.presence || "Card payment failed", attempt: attempt) if attempt.status_failed?
+      unless @new_attempt
+        # Even the same key is unsafe after a provider's replay window. An
+        # initiated attempt may also have reached the terminal before a crash.
+        # Until an approved lookup/reconciliation flow exists, never resubmit.
+        attempt.with_lock do
+          return attempt if attempt.status_succeeded?
+          raise ProcessingError.new(attempt.failure_message.presence || "Card payment failed", attempt: attempt) if attempt.status_failed?
+
+          ReconciliationException.find_or_create_by!(order: order, payment: payment, code: "card_present_result_unknown") do |exception|
+            exception.details = { card_present_payment_attempt_id: attempt.id, external_payment_id: attempt.external_payment_id }
+          end
+        end
+        raise ProcessingError.new("Card payment requires reconciliation before another submission", attempt: attempt)
+      end
 
       result = gateway.charge(
         account: attempt.card_present_account,
@@ -63,20 +78,29 @@ module CardPresentPayments
     def find_or_create_attempt!
       raise ProcessingError.new("Idempotency-Key is required", attempt: nil) if idempotency_key.blank?
 
-      CardPresentPaymentAttempt.create!(
-        organization: order.event.organization,
-        event: order.event,
-        order: order,
-        payment: payment,
-        card_present_account: account,
-        initiated_by_user: user,
-        provider: account.provider,
-        idempotency_key: idempotency_key,
-        external_payment_id: external_payment_id,
-        amount_cents: payment.amount_cents,
-        currency: payment.currency,
-        initiated_at: Time.current
-      )
+      attempt = payment.with_lock do
+        prior = payment.card_present_payment_attempts.order(:id).first
+        if prior && prior.idempotency_key != idempotency_key
+          raise ProcessingError.new("This payment already has a terminal attempt; use the original Idempotency-Key and reconcile it", attempt: prior)
+        end
+
+        CardPresentPaymentAttempt.create!(
+          organization: order.event.organization,
+          event: order.event,
+          order: order,
+          payment: payment,
+          card_present_account: account,
+          initiated_by_user: user,
+          provider: account.provider,
+          idempotency_key: idempotency_key,
+          external_payment_id: external_payment_id,
+          amount_cents: payment.amount_cents,
+          currency: payment.currency,
+          initiated_at: Time.current
+        )
+      end
+      @new_attempt = true
+      attempt
     rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
       existing = CardPresentPaymentAttempt.find_by(idempotency_key: idempotency_key)
       raise e unless existing
@@ -132,6 +156,7 @@ module CardPresentPayments
             failure_message: nil
           )
           account.update!(last_seen_at: Time.current)
+          ReconciliationException.open.where(order: order, payment: payment, code: "card_present_result_unknown").find_each(&:resolve!)
         end
       end
 

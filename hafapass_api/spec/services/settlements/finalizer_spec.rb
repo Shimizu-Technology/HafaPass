@@ -134,6 +134,38 @@ RSpec.describe Settlements::Finalizer do
     expect(OrganizationPayoutBalance.available_cents(organization)).to eq(9534)
   end
 
+  it "cannot clear an existing liability with a simulated production payout after a mode change" do
+    record_sale!(event)
+    create(:connected_account, organization: organization)
+    settlement = described_class.call(event: event, actor: actor)
+    SiteSetting.instance.update!(payment_mode: "simulate")
+    allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+
+    expect do
+      PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "production-simulation")
+    end.to raise_error(PayoutCreator::PayoutError, /Simulated payouts are disabled in production/)
+
+    payout = Payout.find_by!(idempotency_key: "production-simulation")
+    expect(payout).to have_attributes(status: "failed", provider_payout_id: nil, paid_at: nil)
+    expect(settlement.available_to_payout_cents).to eq(4817)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(4817)
+    expect(event.payouts.status_paid).to be_empty
+  end
+
+  it "binds local simulation to the original money context rather than a changed global mode" do
+    order, = record_sale!(event)
+    order.payments.update_all(provider_environment: "live")
+    create(:connected_account, organization: organization)
+    settlement = described_class.call(event: event, actor: actor)
+    SiteSetting.instance.update!(payment_mode: "simulate")
+
+    expect do
+      PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "live-context-simulation")
+    end.to raise_error(PayoutCreator::PayoutError, /Live payment proceeds cannot be paid through simulation/)
+    expect(event.payouts.status_paid).to be_empty
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(4817)
+  end
+
   it "keeps an unexpectedly ambiguous provider result committed for reconciliation" do
     record_sale!(event)
     create(:connected_account, organization: organization)

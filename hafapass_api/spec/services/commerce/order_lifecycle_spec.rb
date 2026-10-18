@@ -102,6 +102,33 @@ RSpec.describe "Commerce order lifecycle" do
     expect(ticket_type.reload.quantity_sold).to eq(0)
   end
 
+  [:partial, :full].each do |refund_kind|
+    it "preserves a #{refund_kind} refund when delayed capture success and failure arrive" do
+      result = create_pending_order
+      refund_amount = refund_kind == :full ? result.payment.amount_cents : 1000
+      Commerce::OrderLifecycle.complete!(result.order, payment: result.payment)
+      allow(StripeService).to receive(:refund_payment).and_return(
+        OpenStruct.new(id: "re_late_capture_#{refund_amount}", status: "succeeded", amount: refund_amount, currency: "usd")
+      )
+      Commerce::RefundCreator.call(order: result.order, amount_cents: refund_amount,
+        idempotency_key: "refund-before-late-capture")
+      expected_status = refund_amount == result.payment.amount_cents ? "refunded" : "partially_refunded"
+      succeeded_at = result.payment.reload.succeeded_at
+      tickets = result.order.tickets.pluck(:id, :status)
+      quantity_sold = ticket_type.reload.quantity_sold
+
+      expect(Commerce::OrderLifecycle.complete!(result.order, payment: result.payment,
+        provider_amount_cents: result.payment.amount_cents, provider_currency: "usd")).to eq(:unchanged)
+      Commerce::OrderLifecycle.fail!(result.order, payment: result.payment, failure_code: "delayed_failure")
+
+      expect(result.payment.reload).to have_attributes(status: expected_status, succeeded_at: succeeded_at,
+        failed_at: nil, refunded_cents: refund_amount)
+      expect(result.order.reload).to have_attributes(status: expected_status, refunded_cents: refund_amount)
+      expect(result.order.tickets.pluck(:id, :status)).to eq(tickets)
+      expect(ticket_type.reload.quantity_sold).to eq(quantity_sold)
+    end
+  end
+
   it "records late payment success after an expired hold instead of overselling" do
     result = create_pending_order
     allow(StripeService).to receive(:cancel_payment_intent).and_return(
