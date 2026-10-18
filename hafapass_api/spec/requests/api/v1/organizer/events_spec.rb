@@ -281,6 +281,30 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(response).to have_http_status(:not_found)
       expect(Event.exists?(other_event.id)).to be true
     end
+
+    it "preserves a draft's scanner history and explains how to archive it instead" do
+      event = create(:event, organizer_profile: organizer_profile)
+      device = create(:scanner_device, event: event, user: user)
+      expect(event.orders).to be_empty
+      expect(event.tickets).to be_empty
+
+      expect {
+        delete "/api/v1/organizer/events/#{event.id}", headers: headers
+      }.not_to change(Event, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq(
+        "This event has saved history or related records and cannot be deleted. Archive it instead to keep those records."
+      )
+      expect(event.reload).to be_draft
+      expect(device.reload.event_id).to eq(event.id)
+
+      post "/api/v1/organizer/events/#{event.id}/archive", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(event.reload).to be_archived
+      expect(device.reload.event_id).to eq(event.id)
+    end
   end
 
   describe "POST /api/v1/organizer/events/:id/publish" do

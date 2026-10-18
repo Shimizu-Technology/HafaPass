@@ -102,7 +102,7 @@ module Api
           if @event.destroy
             head :no_content
           else
-            render json: { error: "Events with financial or ticket history cannot be deleted" }, status: :unprocessable_entity
+            render json: { error: "This event has saved history or related records and cannot be deleted. Archive it instead to keep those records." }, status: :unprocessable_entity
           end
         end
 
