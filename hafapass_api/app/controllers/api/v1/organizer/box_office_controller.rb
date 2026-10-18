@@ -43,12 +43,13 @@ module Api
           render json: { error: e.message }, status: :unprocessable_entity
         rescue CardPresentPayments::Processor::ProcessingError => e
           attempt = e.attempt
-          status = attempt&.status_result_unknown? ? :bad_gateway : :unprocessable_entity
+          reconciliation_required = attempt && (attempt.status_initiated? || attempt.status_result_unknown?)
+          status = reconciliation_required ? :bad_gateway : :unprocessable_entity
           render json: {
             error: e.message,
             payment_status: attempt&.status,
             order_id: attempt&.order_id,
-            reconciliation_required: attempt&.status_result_unknown? || false
+            reconciliation_required: reconciliation_required || false
           }, status: status
         end
 
@@ -163,7 +164,7 @@ module Api
               {
                 status: attempt.status,
                 provider: attempt.provider,
-                reconciliation_required: attempt.status_result_unknown?
+                reconciliation_required: attempt.status_initiated? || attempt.status_result_unknown?
               }
             },
             tickets: order.tickets.includes(:ticket_type,
