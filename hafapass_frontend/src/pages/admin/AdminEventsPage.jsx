@@ -1,7 +1,7 @@
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Search, Star, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Loader2, Search, Star, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
@@ -11,9 +11,35 @@ import EventDayRehearsalReviewDialog from '../../components/EventDayRehearsalRev
 import LiveMoneyProofReviewDialog from '../../components/LiveMoneyProofReviewDialog'
 import LivePilotOperationsDialog from '../../components/LivePilotOperationsDialog'
 import PilotCloseoutDialog from '../../components/PilotCloseoutDialog'
+import { adminLabel } from './adminLabels'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
 const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 'other']
+
+// One compact per-row disclosure keeps the table scannable. The gate dialogs stay
+// mounted while it is open, because each dialog lives inside its own trigger.
+function ReleaseGatesControl({ event, onComplete, toggleProofCandidate }) {
+  const [open, setOpen] = useState(false)
+  const panelId = `release-gates-${event.id}`
+  return (
+    <div className="min-w-40">
+      <button type="button" aria-expanded={open} aria-controls={panelId} aria-label={`Release gates for ${event.title}`} onClick={() => setOpen(value => !value)}
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 transition-[background-color,transform] duration-150 ease-out hover:bg-neutral-100 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
+        Release gates
+        <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 transition-transform duration-150 ease-out motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div id={panelId} role="group" aria-label={`Release gate actions for ${event.title}`} className="mt-2 flex flex-col items-start gap-1 border-l-2 border-neutral-200 pl-3">
+        <PilotReadinessReviewDialog event={event} onComplete={onComplete} />
+        <PilotValidationReviewDialog event={event} onComplete={onComplete} />
+        <EventDayRehearsalReviewDialog event={event} onComplete={onComplete} />
+        <LiveMoneyProofReviewDialog event={event} onComplete={onComplete} />
+        {!event.live_money_proof_candidate && <LivePilotOperationsDialog event={event} onComplete={onComplete} />}
+        {!event.live_money_proof_candidate && <PilotCloseoutDialog event={event} onComplete={onComplete} />}
+        {event.status === 'draft' && <button type="button" onClick={() => toggleProofCandidate(event)} className="min-h-11 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">{event.live_money_proof_candidate ? 'Remove proof-candidate flag' : 'Mark as hidden proof candidate'}</button>}
+      </div>}
+    </div>
+  )
+}
 
 function AdminEventsPageSession({ identity, resourcePath }) {
   const { beginRequest } = usePlatformRequests(identity, resourcePath)
@@ -102,17 +128,18 @@ function AdminEventsPageSession({ identity, resourcePath }) {
         </div>
         <select aria-label="Filter events by status" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
           <option value="">All Statuses</option>
-          {statuses.filter(Boolean).map(s => <option key={s} value={s}>{s}</option>)}
+          {statuses.filter(Boolean).map(s => <option key={s} value={s}>{adminLabel(s)}</option>)}
         </select>
         <select aria-label="Filter events by category" value={category} onChange={e => { setCategory(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
           <option value="">All Categories</option>
-          {categories.filter(Boolean).map(c => <option key={c} value={c}>{c}</option>)}
+          {categories.filter(Boolean).map(c => <option key={c} value={c}>{adminLabel(c)}</option>)}
         </select>
       </div>
 
       {actionError && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
 
-      <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
+      {/* No backdrop-filter here: it would trap the gate dialogs' fixed overlays inside this card. */}
+      <div className="bg-white rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-brand-500 animate-spin" /></div>
         ) : loadError ? (
@@ -145,20 +172,12 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                         event.status === 'draft' ? 'bg-neutral-100 text-neutral-600' :
                         event.status === 'completed' ? 'bg-violet-50 text-violet-800' :
                         'bg-red-50 text-red-800'
-                      }`}>{event.status}</span>
+                      }`}>{adminLabel(event.status)}</span>
                     </td>
                     <td className="px-4 py-3 text-neutral-500 hidden md:table-cell capitalize">{event.category}</td>
                     <td className="px-4 py-3 text-right text-neutral-700">{event.tickets_sold}</td>
                     <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
-                    <td className="px-4 py-3"><div className="flex min-w-48 flex-col items-start gap-2">
-                      <PilotReadinessReviewDialog event={event} onComplete={fetchEvents} />
-                      <PilotValidationReviewDialog event={event} onComplete={fetchEvents} />
-                      <EventDayRehearsalReviewDialog event={event} onComplete={fetchEvents} />
-                      <LiveMoneyProofReviewDialog event={event} onComplete={fetchEvents} />
-                      {!event.live_money_proof_candidate && <LivePilotOperationsDialog event={event} onComplete={fetchEvents} />}
-                      {!event.live_money_proof_candidate && <PilotCloseoutDialog event={event} onComplete={fetchEvents} />}
-                      {event.status === 'draft' && <button type="button" onClick={() => toggleProofCandidate(event)} className="min-h-11 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">{event.live_money_proof_candidate ? 'Remove proof-candidate flag' : 'Mark as hidden proof candidate'}</button>}
-                    </div></td>
+                    <td className="px-4 py-3"><ReleaseGatesControl event={event} onComplete={fetchEvents} toggleProofCandidate={toggleProofCandidate} /></td>
                     <td className="px-4 py-3 text-center">
                       <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
                         <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-400 text-amber-400' : 'text-neutral-300'}`} />

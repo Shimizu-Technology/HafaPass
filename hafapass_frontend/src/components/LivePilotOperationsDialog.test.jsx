@@ -20,6 +20,11 @@ const pending = {
 describe('LivePilotOperationsDialog', () => {
   beforeEach(() => { apiClient.get.mockReset(); apiClient.post.mockReset() })
 
+  it('does not take focus when its trigger first renders', () => {
+    render(<LivePilotOperationsDialog event={event} />)
+    expect(document.activeElement).toBe(document.body)
+  })
+
   it('fails closed in the UI when Gate G or applicable Gate H is not current', async () => {
     apiClient.get.mockResolvedValue({ data: {
       event, live_pilot: { prerequisite_ready: false, approved: false, maximum_inventory_cap: 250 },

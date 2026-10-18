@@ -122,7 +122,9 @@ function PilotCloseoutDialogSession({ event, onComplete }) {
     document.addEventListener('keydown', handler); closeRef.current?.focus()
     return () => document.removeEventListener('keydown', handler)
   }, [open, closeCaptured])
-  useEffect(() => { if (!open) triggerRef.current?.focus() }, [open, closeCaptured])
+  // Return focus only after the dialog closes; focusing on mount scrolled admin lists to the last row.
+  const wasOpen = useRef(false)
+  useEffect(() => { if (wasOpen.current && !open) triggerRef.current?.focus(); wasOpen.current = open }, [open])
 
   const load = async () => {
     const scope = dialog.begin()

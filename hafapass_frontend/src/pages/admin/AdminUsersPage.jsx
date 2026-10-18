@@ -5,11 +5,46 @@ import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 import PaymentReadinessReviewDialog from '../../components/PaymentReadinessReviewDialog'
+import Dialog from '../../components/Dialog'
+import { adminLabel } from './adminLabels'
 
 const roles = ['', 'attendee', 'organizer', 'support', 'admin']
 const userEmail = (user, fallback = 'Email unavailable') => user.email?.trim() || fallback
 const userLabel = user => userEmail(user, `User #${user.id}`)
 const userName = user => [user.first_name, user.last_name].filter(name => name?.trim()).join(' ') || `User #${user.id}`
+const verificationStatuses = ['unverified', 'pending', 'verified', 'rejected', 'suspended']
+const needsReviewNote = status => ['rejected', 'suspended'].includes(status)
+
+// Every role or verification change is confirmed here. The selects stay bound to the
+// saved value, so cancelling leaves them showing what the server last confirmed.
+function ConfirmChangeDialog({ change, onCancel, onConfirm }) {
+  const [note, setNote] = useState(change.note || '')
+  const subject = change.kind === 'role' ? userLabel(change.user) : change.user.organizer_profile?.business_name || userLabel(change.user)
+  return (
+    <Dialog labelledBy="confirm-change-title" onClose={onCancel} className="max-w-md">
+      <h2 id="confirm-change-title" className="text-lg font-semibold text-neutral-900">{change.kind === 'role' ? 'Change platform role?' : 'Change verification status?'}</h2>
+      <p className="mt-2 break-words text-sm text-content-muted">{subject}</p>
+      <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-neutral-800">
+        <span className="rounded-full bg-neutral-100 px-2.5 py-1 font-medium">{adminLabel(change.from)}</span>
+        <span aria-hidden="true">→</span>
+        <span className="sr-only">to</span>
+        <span className="rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-800">{adminLabel(change.to)}</span>
+      </p>
+      {change.kind === 'role' && change.to === 'admin' && <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">This grants full platform access.</p>}
+      {change.kind === 'verification' && needsReviewNote(change.to) && (
+        <label className="mt-4 block text-sm font-medium text-neutral-800">
+          Review note
+          <span className="block font-normal text-content-muted">Explain what the organizer must address.</span>
+          <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} className="input mt-1 !text-sm" />
+        </label>
+      )}
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button type="button" onClick={onCancel} className="btn-secondary min-h-11">Cancel</button>
+        <button type="button" onClick={() => onConfirm(note)} className="btn-primary min-h-11">{change.kind === 'role' ? 'Change role' : 'Change status'}</button>
+      </div>
+    </Dialog>
+  )
+}
 
 function OrganizerReadiness({ user, reviewOrganizer, syncConnectedAccount, fetchUsers }) {
   const profile = user.organizer_profile
@@ -21,7 +56,7 @@ function OrganizerReadiness({ user, reviewOrganizer, syncConnectedAccount, fetch
       <p className="break-words font-medium text-neutral-800">{profile.business_name}</p>
       <select value={profile.verification_status} onChange={event => reviewOrganizer(user, event.target.value)}
         aria-label={`Verification status for ${profile.business_name || userLabel(user)}`} className="input min-h-11 !text-sm">
-        {['unverified', 'pending', 'verified', 'rejected', 'suspended'].map(status => <option key={status} value={status}>{status}</option>)}
+        {verificationStatuses.map(status => <option key={status} value={status}>{adminLabel(status)}</option>)}
       </select>
       {account ? (
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm">
@@ -57,6 +92,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [page, setPage] = useState(1)
+  const [pendingChange, setPendingChange] = useState(null)
 
   const fetchUsers = useCallback(() => {
     const request = beginRequest()
@@ -78,8 +114,12 @@ function AdminUsersPageSession({ identity, resourcePath }) {
 
   useEffect(() => { fetchUsers(); return () => pendingLoad.current?.abort() }, [fetchUsers])
 
+  const requestRoleChange = (user, newRole) => {
+    if (newRole === user.role) return
+    setPendingChange({ kind: 'role', user, from: user.role, to: newRole })
+  }
+
   const changeRole = async (user, newRole) => {
-    if (newRole === 'admin' && !window.confirm(`Promote ${userLabel(user)} to admin? This grants full platform access.`)) return
     if (mutationBusy.current) return
     const request = beginRequest()
     if (!request) return
@@ -114,13 +154,18 @@ function AdminUsersPageSession({ identity, resourcePath }) {
   }
 
   const reviewOrganizer = (user, verificationStatus) => {
-    let verificationNotes = user.organizer_profile?.verification_notes || ''
-    if (['rejected', 'suspended'].includes(verificationStatus)) {
-      const note = window.prompt('Add a review note explaining what the organizer must address:', verificationNotes)
-      if (note === null) return
-      verificationNotes = note
-    }
-    updateOrganizer(user, { verification_status: verificationStatus, verification_notes: verificationNotes })
+    const profile = user.organizer_profile
+    if (!profile || verificationStatus === profile.verification_status) return
+    setPendingChange({ kind: 'verification', user, from: profile.verification_status, to: verificationStatus, note: profile.verification_notes || '' })
+  }
+
+  const confirmChange = note => {
+    const change = pendingChange
+    setPendingChange(null)
+    if (!change) return
+    if (change.kind === 'role') return changeRole(change.user, change.to)
+    const verificationNotes = needsReviewNote(change.to) ? note : change.note
+    updateOrganizer(change.user, { verification_status: change.to, verification_notes: verificationNotes })
   }
 
   const syncConnectedAccount = async (user, updates) => {
@@ -174,7 +219,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
         </div>
         <select aria-label="Filter users by role" value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1) }} className="input min-h-11 !text-sm sm:w-auto">
           <option value="">All Roles</option>
-          {roles.filter(Boolean).map(r => <option key={r} value={r}>{r}</option>)}
+          {roles.filter(Boolean).map(r => <option key={r} value={r}>{adminLabel(r)}</option>)}
         </select>
       </div>
 
@@ -207,10 +252,10 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                         <select
                           value={user.role}
                           aria-label={`Role for ${userLabel(user)}`}
-                          onChange={e => changeRole(user, e.target.value)}
+                          onChange={e => requestRoleChange(user, e.target.value)}
                           className={`min-h-11 text-sm px-2 py-1 rounded-lg font-medium border border-neutral-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${roleBadge(user.role)}`}
                         >
-                          {roles.filter(Boolean).map(r => <option key={r} value={r}>{r}</option>)}
+                          {roles.filter(Boolean).map(r => <option key={r} value={r}>{adminLabel(r)}</option>)}
                         </select>
                       </td>
                       <td className="px-4 py-3 text-content-muted">
@@ -230,8 +275,8 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                   <p className="mt-1 break-all text-sm text-content-muted">{userEmail(user)}</p>
                   <label className="mt-4 block text-sm font-medium text-neutral-800">
                     Platform role
-                    <select value={user.role} aria-label={`Role for ${userLabel(user)}`} onChange={event => changeRole(user, event.target.value)} className={`input mt-1 min-h-11 ${roleBadge(user.role)}`}>
-                      {roles.filter(Boolean).map(role => <option key={role} value={role}>{role}</option>)}
+                    <select value={user.role} aria-label={`Role for ${userLabel(user)}`} onChange={event => requestRoleChange(user, event.target.value)} className={`input mt-1 min-h-11 ${roleBadge(user.role)}`}>
+                      {roles.filter(Boolean).map(role => <option key={role} value={role}>{adminLabel(role)}</option>)}
                     </select>
                   </label>
                   <section aria-label={`Organizer readiness for ${userLabel(user)}`} className="mt-4 border-t border-neutral-200 pt-4">
@@ -261,6 +306,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
           </button>
         </div>
       )}
+      {pendingChange && <ConfirmChangeDialog change={pendingChange} onCancel={() => setPendingChange(null)} onConfirm={confirmChange} />}
     </AdminLayout>
   )
 }

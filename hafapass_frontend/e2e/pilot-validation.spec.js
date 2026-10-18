@@ -26,6 +26,7 @@ test('admin records complete Gate F device, accessibility, and load evidence', a
   })
 
   await page.goto('/admin/events')
+  await page.getByRole('button', { name: /^Release gates for / }).click()
   await page.getByRole('button', { name: 'Prepare Gate F evidence' }).click()
   await page.getByLabel('Restricted evidence reference').fill('private-qa/gate-f/guam-community-night')
   await page.getByLabel('Evidence SHA-256').fill('b'.repeat(64))

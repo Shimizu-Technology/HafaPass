@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -13,11 +13,12 @@ vi.mock('./AdminLayout', () => ({
   default: ({ children }) => <div>{children}</div>,
 }))
 
-vi.mock('../../components/PilotReadinessReviewDialog', () => ({ default: () => null }))
-vi.mock('../../components/PilotValidationReviewDialog', () => ({ default: () => null }))
-vi.mock('../../components/EventDayRehearsalReviewDialog', () => ({ default: () => null }))
-vi.mock('../../components/LiveMoneyProofReviewDialog', () => ({ default: () => null }))
-vi.mock('../../components/LivePilotOperationsDialog', () => ({ default: () => null }))
+vi.mock('../../components/PilotReadinessReviewDialog', () => ({ default: () => <button type="button">Prepare pilot readiness</button> }))
+vi.mock('../../components/PilotValidationReviewDialog', () => ({ default: () => <button type="button">Prepare Gate F evidence</button> }))
+vi.mock('../../components/EventDayRehearsalReviewDialog', () => ({ default: () => <button type="button">Prepare Gate G rehearsal</button> }))
+vi.mock('../../components/LiveMoneyProofReviewDialog', () => ({ default: () => <button type="button">Prepare Gate H live-money proof</button> }))
+vi.mock('../../components/LivePilotOperationsDialog', () => ({ default: () => <button type="button">Prepare Gate I bounded pilot</button> }))
+vi.mock('../../components/PilotCloseoutDialog', () => ({ default: () => <button type="button">Prepare Gate J closeout</button> }))
 
 const proofEvent = {
   id: 42,
@@ -42,11 +43,39 @@ describe('AdminEventsPage', () => {
     apiClient.patch.mockRejectedValue({ response: { data: { errors: ['Candidate cannot change after orders exist.'] } } })
     render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Mark as hidden proof candidate' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as hidden proof candidate' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Candidate cannot change after orders exist.')
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/events/42', {
       live_money_proof_candidate: true,
     }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
+  })
+  it('collapses every release gate action behind one per-row control', async () => {
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+
+    const toggle = await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'Prepare pilot readiness' })).not.toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Draft' })).toBeInTheDocument()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const actions = within(screen.getByRole('group', { name: 'Release gate actions for [LIVE MONEY TEST] Proof' }))
+    for (const name of ['Prepare pilot readiness', 'Prepare Gate F evidence', 'Prepare Gate G rehearsal', 'Prepare Gate H live-money proof',
+      'Prepare Gate I bounded pilot', 'Prepare Gate J closeout', 'Mark as hidden proof candidate']) {
+      expect(actions.getByRole('button', { name })).toBeInTheDocument()
+    }
+  })
+
+  it('keeps hiding Gate I and J actions for proof candidates', async () => {
+    apiClient.get.mockResolvedValue({ data: { events: [{ ...proofEvent, live_money_proof_candidate: true }], meta: { page: 1, total_pages: 1 } } })
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' }))
+    expect(screen.getByRole('button', { name: 'Prepare Gate H live-money proof' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Prepare Gate I bounded pilot' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Prepare Gate J closeout' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove proof-candidate flag' })).toBeInTheDocument()
   })
 })
