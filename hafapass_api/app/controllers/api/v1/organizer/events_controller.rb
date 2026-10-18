@@ -41,25 +41,29 @@ module Api
         end
 
         def update
-          attributes = parsed_event_params
-          can_manage = OrganizationAuthorization.allowed?(
-            user: current_user, organization: current_organization, permission: :manage_events, event: @event
-          )
-          unless can_manage
-            attributes.slice!("title", "description", "short_description", "cover_image_url", "category")
-          end
-          attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
-          reschedule = reschedule?(attributes)
-          change_reason = params[:change_reason].to_s.strip.presence
-          if reschedule && change_reason.blank?
-            return render json: { error: "A reason is required when changing the schedule of a published or postponed event" },
-              status: :unprocessable_entity
-          end
-
-          before_data = event_change_snapshot(@event) if reschedule
           updated = false
-          event_change = nil
           Event.transaction do
+            # Checkout takes the event before ticket types. NO KEY UPDATE also
+            # permits foreign-key checks from payment finalization while it
+            # finishes consuming a hold under the ticket-type lock.
+            @event.lock!("FOR NO KEY UPDATE")
+            @event.ticket_types.order(:id).lock.load
+            attributes = parsed_event_params
+            can_manage = OrganizationAuthorization.allowed?(
+              user: current_user, organization: current_organization, permission: :manage_events, event: @event
+            )
+            unless can_manage
+              attributes.slice!("title", "description", "short_description", "cover_image_url", "category")
+            end
+            attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
+            reschedule = reschedule?(attributes)
+            change_reason = params[:change_reason].to_s.strip.presence
+            if reschedule && change_reason.blank?
+              return render json: { error: "A reason is required when changing the schedule of a published or postponed event" },
+                status: :unprocessable_entity
+            end
+
+            before_data = event_change_snapshot(@event) if reschedule
             updated = @event.update(attributes)
             if updated && reschedule
               event_change = @event.event_changes.create!(

@@ -411,7 +411,7 @@ class Event < ApplicationRecord
     return if max_capacity.blank? || !persisted?
 
     committed = ticket_types.sum(:quantity_sold) + inventory_holds.current.sum(:quantity) +
-      waitlist_offers.holding_inventory.sum(:quantity)
+      waitlist_offers.holding_inventory.sum(:quantity) + active_seat_holds_count(at: Time.current)
     errors.add(:max_capacity, "cannot be less than sold and actively held inventory") if max_capacity < committed
   end
 

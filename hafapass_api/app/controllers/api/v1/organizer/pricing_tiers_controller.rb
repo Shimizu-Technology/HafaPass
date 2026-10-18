@@ -13,7 +13,8 @@ module Api
 
         def create
           tier = @ticket_type.pricing_tiers.build(parsed_tier_params)
-          if tier.save
+          saved = with_inventory_lock { tier.save }
+          if saved
             render json: tier_json(tier), status: :created
           else
             render json: { errors: tier.errors.full_messages }, status: :unprocessable_entity
@@ -21,7 +22,11 @@ module Api
         end
 
         def update
-          if @tier.update(parsed_tier_params)
+          updated = with_inventory_lock do
+            @tier.lock!
+            @tier.update(parsed_tier_params)
+          end
+          if updated
             render json: tier_json(@tier)
           else
             render json: { errors: @tier.errors.full_messages }, status: :unprocessable_entity
@@ -29,7 +34,11 @@ module Api
         end
 
         def destroy
-          if @tier.destroy
+          destroyed = with_inventory_lock do
+            @tier.lock!
+            @tier.destroy
+          end
+          if destroyed
             head :no_content
           else
             render json: { error: "Pricing tiers with inventory or financial history cannot be deleted" },
@@ -38,6 +47,13 @@ module Api
         end
 
         private
+
+        def with_inventory_lock(&block)
+          @event.with_lock("FOR NO KEY UPDATE") do
+            @ticket_type.lock!
+            block.call
+          end
+        end
 
         def set_event
           @event = find_organization_event(params[:event_id])
