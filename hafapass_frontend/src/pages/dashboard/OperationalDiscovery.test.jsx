@@ -25,9 +25,15 @@ const deferred = () => {
 // peer renewal is allowed to supersede a refusal of an older grant.
 async function concurrentScannerReads() {
   const manifest = await signedManifest(1, [])
-  const direct = deferred(), dashboard = deferred(), renewal = deferred()
+  const direct = deferred(), dashboard = deferred(), renewal = deferred(), renewalSaved = deferred()
   let holding = false, directConfig, dashboardConfig, initialSummaryReturned = false, startupSyncStarted = false
   const startupSync = deferred()
+  const saveManifest = admissionStore.saveVerifiedManifest
+  vi.spyOn(admissionStore, 'saveVerifiedManifest').mockImplementation(async (...args) => {
+    const saved = await saveManifest(...args)
+    if (holding) renewalSaved.resolve(saved)
+    return saved
+  })
   const capture = admissionStore.captureAdmissionAccessContext
   vi.spyOn(admissionStore, 'captureAdmissionAccessContext').mockImplementation(async (...args) => {
     const context = await capture(...args)
@@ -54,7 +60,7 @@ async function concurrentScannerReads() {
   await act(async () => startupSync.resolve())
   await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
   holding = true
-  return { direct, dashboard, renewal, mounted, manifest,
+  return { direct, dashboard, renewal, renewalSaved: renewalSaved.promise, mounted, manifest,
     directConfig: () => directConfig, dashboardConfig: () => dashboardConfig,
     startDirect: async () => {
       await userEvent.click(screen.getByRole('button', { name: 'Next', exact: true }))
@@ -349,12 +355,23 @@ describe('complete operational discovery', () => {
     expect(reads.directConfig().signal.aborted).toBe(status === 403)
     await act(async () => {
       reads.direct.resolve({ data: event(1) })
-      reads.renewal.resolve({ data: reads.manifest })
     })
     if (status === 403) {
       expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+      await waitFor(async () => expect(await loadAuthorizedScanner(1)).toBeNull())
+      await act(async () => reads.renewal.resolve({ data: reads.manifest }))
+      expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
       expect(await loadAuthorizedScanner(1)).toBeNull()
     } else {
+      // A 503 must retain the original grant while renewal is still pending.
+      // After releasing renewal, wait for its real crypto/IDB write: a read
+      // racing that write correctly refuses its superseded access snapshot.
+      expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
+      expect(await loadAuthorizedScanner(1)).not.toBeNull()
+      await act(async () => {
+        reads.renewal.resolve({ data: reads.manifest })
+        await reads.renewalSaved
+      })
       expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
       expect(await loadAuthorizedScanner(1)).not.toBeNull()
     }
