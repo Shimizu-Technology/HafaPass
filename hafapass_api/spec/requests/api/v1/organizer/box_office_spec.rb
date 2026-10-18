@@ -205,6 +205,42 @@ RSpec.describe "Api::V1::Organizer::BoxOffice", type: :request do
 
       expect(response).to have_http_status(:conflict)
     end
+
+    it "keeps an interrupted initiated card request uncertain and replays only the original order and key" do
+      account = create(:card_present_account, :verified, organization: event.organization)
+      sale = Commerce::OrderCreator.call(event: event, user: user,
+        line_items: valid_params[:line_items], buyer_email: valid_params[:buyer_email], buyer_name: valid_params[:buyer_name],
+        payment_required: true, payment_provider: account.provider, service_fee: false,
+        source: "box_office", payment_method: "door_card")
+      original_expiry = sale.order.expires_at
+      attempt = CardPresentPaymentAttempt.create!(organization: event.organization, event: event,
+        order: sale.order, payment: sale.payment, card_present_account: account, initiated_by_user: user,
+        provider: account.provider, idempotency_key: "interrupted-door-request", external_payment_id: "hp-interrupted",
+        amount_cents: sale.payment.amount_cents, currency: "usd", initiated_at: 1.minute.ago)
+      gateway = instance_double(CardPresentGateway)
+      allow(CardPresentGateway).to receive(:new).and_return(gateway)
+      expect(gateway).not_to receive(:charge)
+
+      2.times do
+        expect do
+          post "/api/v1/organizer/events/#{event.id}/box_office", params: valid_params.merge(payment_method: "door_card"),
+            headers: headers.merge("Idempotency-Key" => "interrupted-door-request")
+        end.not_to change(Order, :count)
+        expect(response).to have_http_status(:bad_gateway)
+        expect(response.parsed_body).to include("payment_status" => "result_unknown", "reconciliation_required" => true,
+          "order_id" => sale.order.id)
+      end
+
+      expect(attempt.reload).to be_status_result_unknown
+      expect(sale.order.reload).to be_pending
+      expect(sale.order.expires_at).to be > original_expiry
+      expect(sale.order.inventory_holds).to all(be_active)
+      expect(sale.order.inventory_holds.minimum(:expires_at)).to eq(sale.order.expires_at)
+      expect(sale.order.tickets).to be_empty
+      expect(ticket_type.reload.quantity_sold).to eq(0)
+      expect(CardPresentPaymentAttempt.where(order: sale.order).count).to eq(1)
+      expect(ReconciliationException.open).to exist(order: sale.order, code: "card_present_result_unknown")
+    end
   end
 
   describe "GET /api/v1/organizer/events/:event_id/box_office/summary" do

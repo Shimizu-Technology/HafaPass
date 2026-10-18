@@ -62,4 +62,42 @@ describe('uncertain box office sale', () => {
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
     expect(window.sessionStorage.getItem('hafapass:pending-box-office:v2:local-preview:default:37')).toBeNull()
   })
+
+  it('retains the original card key and locks new sales when an initiated replay requires reconciliation', async () => {
+    apiClient.post.mockRejectedValueOnce(new Error('original response interrupted'))
+    const first = mountBoxOffice()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
+    await user.click(screen.getByRole('button', { name: 'Card at Door' }))
+    await user.type(screen.getByLabelText('Buyer name'), 'Interrupted Buyer')
+    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    await screen.findByText('Do not charge the card again')
+    const original = apiClient.post.mock.calls[0]
+    const storageKey = 'hafapass:pending-box-office:v2:local-preview:default:37'
+    const saved = window.sessionStorage.getItem(storageKey)
+    first.unmount()
+
+    // Exact backend contract for a persisted initiated attempt's replay.
+    apiClient.post.mockRejectedValue({ response: { status: 502, data: {
+      error: 'Card payment requires reconciliation before another submission',
+      payment_status: 'result_unknown', reconciliation_required: true, order_id: 922,
+    } } })
+    const second = mountBoxOffice()
+    await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
+    await screen.findByText('Card payment requires reconciliation before another submission')
+    expect(window.sessionStorage.getItem(storageKey)).toBe(saved)
+    expect(screen.getByLabelText('Buyer name')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add Admission' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Process Sale/ })).not.toBeInTheDocument()
+    second.unmount()
+
+    mountBoxOffice()
+    await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
+    await screen.findByText('Card payment requires reconciliation before another submission')
+    expect(apiClient.post).toHaveBeenCalledTimes(3)
+    for (const call of apiClient.post.mock.calls) expect(operation(call)).toEqual(operation(original))
+    expect(window.sessionStorage.getItem(storageKey)).toBe(saved)
+    expect(screen.queryByText('Sale Complete!')).not.toBeInTheDocument()
+  })
 })
