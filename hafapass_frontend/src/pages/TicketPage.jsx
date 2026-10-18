@@ -270,7 +270,8 @@ function TicketContent({ authContext }) {
       <div className="max-w-md mx-auto px-4 py-12 text-center">
         <div className="card p-8">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-          <p className="text-red-700 font-medium mb-4">{error}</p>
+          <h1 className="text-xl font-bold text-neutral-950 mb-3">Ticket unavailable</h1>
+          <p role="alert" className="text-red-700 font-medium mb-4">{error}</p>
           <Link to="/events" className="btn-primary text-sm">
             Browse Events
           </Link>

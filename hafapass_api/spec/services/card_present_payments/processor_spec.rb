@@ -85,10 +85,16 @@ RSpec.describe CardPresentPayments::Processor do
         idempotency_key: "unknown-replay", gateway: gateway }
       expect { described_class.call(**arguments) }.to raise_error(described_class::ProcessingError, /network timeout/)
       attempt = CardPresentPaymentAttempt.find_by!(idempotency_key: "unknown-replay")
+      original_context = attempt.attributes.slice("failure_code", "failure_message", "provider_response", "updated_at")
+      original_expiry = sale.order.reload.expires_at
+      original_audits = AuditLog.where(auditable: attempt, action: "card_present.payment_result_unknown").count
       travel age do
         expect { described_class.call(**arguments) }.to raise_error(described_class::ProcessingError, /requires reconciliation/)
       end
       expect(attempt.reload).to be_status_result_unknown
+      expect(attempt.attributes.slice(*original_context.keys)).to eq(original_context)
+      expect(sale.order.reload.expires_at).to eq(original_expiry)
+      expect(AuditLog.where(auditable: attempt, action: "card_present.payment_result_unknown").count).to eq(original_audits)
       expect(sale.payment.reload).to be_pending
       expect(sale.order.reload).to be_pending
       expect(sale.order.tickets).to be_empty
@@ -150,6 +156,30 @@ RSpec.describe CardPresentPayments::Processor do
     expect(sale.order.tickets.count).to eq(1)
     expect(ReconciliationException.open.where(order: sale.order, code: "card_present_result_unknown")).not_to exist
     expect(ReconciliationException.resolved.where(order: sale.order, code: "card_present_result_unknown")).to exist
+  end
+
+  it "retains new provider evidence after an overlapping retry and a ticket issuance rollback" do
+    sale = pending_sale
+    arguments = { order: sale.order, payment: sale.payment, account: account, user: user,
+      idempotency_key: "overlapping-issuance-error", gateway: gateway }
+    result = CardPresentGateway::Result.new(provider_payment_id: "clover-captured", amount_cents: sale.order.total_cents,
+      currency: "usd", state: "CLOSED", result: "SUCCESS", provider_response: { "id" => "clover-captured" })
+    allow(gateway).to receive(:charge).once do
+      expect { described_class.call(**arguments) }.to raise_error(described_class::ProcessingError, /requires reconciliation/)
+      result
+    end
+    allow(Commerce::OrderLifecycle).to receive(:complete!).and_raise(ActiveRecord::StatementInvalid, "Ticket storage interrupted")
+    allow(Sentry).to receive(:capture_exception)
+
+    expect { described_class.call(**arguments) }.to raise_error(described_class::ProcessingError, /terminal succeeded/)
+    attempt = CardPresentPaymentAttempt.find_by!(idempotency_key: "overlapping-issuance-error")
+    expect(attempt).to have_attributes(status: "result_unknown", provider_payment_id: "clover-captured",
+      provider_response: { "id" => "clover-captured" }, failure_message: "Ticket storage interrupted")
+    expect(sale.order.reload).to be_pending
+    expect(sale.order.inventory_holds).to all(be_active)
+    expect(sale.order.tickets).to be_empty
+    expect(sale.payment.reload.provider_payment_id).not_to eq("clover-captured")
+    expect(ReconciliationException.open).to exist(order: sale.order, code: "card_present_result_unknown")
   end
 
   it "replays a succeeded idempotency key without charging twice" do

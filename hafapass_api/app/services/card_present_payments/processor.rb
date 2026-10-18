@@ -37,7 +37,7 @@ module CardPresentPayments
         # An interrupted/in-flight POST may already have reached the terminal.
         # Persist uncertainty so every caller, including the UI, retains the
         # original operation identity until its outcome is reconciled.
-        record_unknown!(attempt, CardPresentGateway::ResultUnknown.new("Card payment requires reconciliation before another submission"))
+        record_unknown!(attempt, CardPresentGateway::ResultUnknown.new("Card payment requires reconciliation before another submission"), replay: true)
         return attempt if attempt.status_succeeded?
 
         message = attempt.status_failed? ? attempt.failure_message : "Card payment requires reconciliation before another submission"
@@ -204,12 +204,13 @@ module CardPresentPayments
       audit!("card_present.payment_failed", attempt, error_class: error.class.name) if changed
     end
 
-    def record_unknown!(attempt, error, provider_response: nil, provider_payment_id: nil)
+    def record_unknown!(attempt, error, provider_response: nil, provider_payment_id: nil, replay: false)
       return unless attempt
 
       changed = false
       with_locked_sale(attempt) do
         next if attempt.status_succeeded? || attempt.status_failed?
+        next if replay && attempt.status_result_unknown?
 
         attempt.update!(
           status: :result_unknown,

@@ -102,14 +102,17 @@ module Commerce
       end
       evidence = cash_return.stringify_keys
       reference = evidence["reference"].to_s.strip
-      returned_at = Time.iso8601(evidence["returned_at"].to_s)
+      timestamp = evidence["returned_at"].to_s
+      raise ArgumentError unless timestamp.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
+
+      returned_at = Time.iso8601(timestamp)
       unless reference.present? && reference.length <= 255 && returned_at <= Time.current && returned_at >= order.created_at
         raise RefundError, "Cash return reference or timestamp is invalid"
       end
       @cash_return_evidence = { "reference" => reference, "returned_at" => returned_at.utc.iso8601(6),
         "recorded_by_user_id" => requested_by.id, "cash_custodian" => "organizer" }
     rescue ArgumentError
-      raise RefundError, "Cash return timestamp must be ISO 8601"
+      raise RefundError, "Cash return timestamp must be ISO 8601 with an offset"
     end
 
     def reserve_refund!

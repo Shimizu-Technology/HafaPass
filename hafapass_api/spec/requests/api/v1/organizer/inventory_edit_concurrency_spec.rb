@@ -158,6 +158,10 @@ RSpec.describe "Organizer inventory edit concurrency", type: :request, non_trans
   end
 
   def clean_test_data
+    unless Rails.env.test? && ActiveRecord::Base.connection_db_config.database.end_with?("_test")
+      raise "Isolated test database required"
+    end
+
     ActiveRecord::Base.connection.execute(<<~SQL)
       TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
       RESTART IDENTITY CASCADE

@@ -129,6 +129,7 @@ RSpec.describe "Organizer retained cash accounting" do
       { cash_return: evidence.merge(reference: "x" * 256) },
       { cash_return: evidence.merge(returned_at: 1.day.from_now.iso8601) },
       { cash_return: evidence.merge(returned_at: 1.day.ago.iso8601) },
+      { cash_return: evidence.merge(returned_at: Time.current.strftime("%Y-%m-%dT%H:%M:%S")) },
       { cash_return: evidence.merge(returned_at: "unknown") }
     ]
     invalid.each do |arguments|
