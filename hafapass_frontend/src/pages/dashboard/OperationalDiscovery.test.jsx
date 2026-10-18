@@ -4,6 +4,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, Link, useNavigate } from 'react-router-dom'
 import apiClient from '../../api/client'
+import * as admissionStore from '../../utils/admissionStore'
 import { clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, queueAdmission, queuedActions, saveDevice, saveVerifiedManifest } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import DashboardPage from './DashboardPage'
@@ -130,6 +131,12 @@ describe('complete operational discovery', () => {
     const device = { id: 91, organization_id: '1', effective: true, authorization_expires_at: new Date(Date.now() + 600000).toISOString() }
     await saveDevice(1, device)
     await saveVerifiedManifest(await signedManifest(1, []))
+    const purge = admissionStore.purgeExpiredAdmissionAccess
+    let finishRefusal
+    vi.spyOn(admissionStore, 'purgeExpiredAdmissionAccess').mockImplementation(async (...args) => {
+      await new Promise(resolve => { finishRefusal = resolve })
+      return purge(...args)
+    })
     let rejectOld
     apiClient.get.mockImplementation(() => new Promise((_resolve, reject) => { rejectOld = reject }))
     const mounted = view(ScannerPage, '/dashboard/scanner?event=1')
@@ -138,7 +145,20 @@ describe('complete operational discovery', () => {
     await saveVerifiedManifest(await signedManifest(1, [], { version: 2 }))
     await act(async () => rejectOld({ response: { status: 403 } }))
     await screen.findByText(/Scanner access was refused. Sign in and verify/)
-    await waitFor(async () => expect((await loadAuthorizedScanner(1)).manifest.payload.version).toBe(2))
+    await waitFor(() => expect(finishRefusal).toBeDefined())
+    // The peer cache already exists while the refusal still has persistent
+    // safety locks. Its presence alone does not mean refusal handling finished.
+    expect((await loadAuthorizedScanner(1)).manifest.payload.version).toBe(2)
+    const refusalKey = `hafapass:scanner-refusal:v1:${encodeURIComponent(admissionStore.currentScannerOwner())}:1`
+    for (const storage of [window.localStorage, window.sessionStorage]) expect(storage.getItem(refusalKey)).not.toBeNull()
+    expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
+    await act(async () => finishRefusal())
+    // Remount only after the handler recognizes the newer grant and clears
+    // its own locks. Unmounting earlier must leave entry safely paused.
+    await waitFor(() => {
+      for (const storage of [window.localStorage, window.sessionStorage]) expect(storage.getItem(refusalKey)).toBeNull()
+    })
+    expect((await loadAuthorizedScanner(1)).manifest.payload.version).toBe(2)
     mounted.unmount()
     render(<MemoryRouter initialEntries={['/dashboard/scanner?event=1']}><ScannerPage offlineOnly /></MemoryRouter>)
     await screen.findByText('Ticket list ready · 0 tickets')
