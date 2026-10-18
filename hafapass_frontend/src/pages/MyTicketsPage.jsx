@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight, Download } from 'lucide-react'
 import apiClient from '../api/client'
@@ -7,8 +7,11 @@ import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { signInDestination } from '../utils/authDestination'
 
 export default function MyTicketsPage() {
+  const location = useLocation()
+  const [signedOut, setSignedOut] = useState(false)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -31,6 +34,7 @@ export default function MyTicketsPage() {
 
   const fetchOrders = useCallback(async () => {
     setError(null)
+    setSignedOut(false)
     try {
       const response = await apiClient.get('/me/tickets')
       const tickets = response.data.tickets || []
@@ -39,7 +43,8 @@ export default function MyTicketsPage() {
       await recoverGuestPurchases()
     } catch (err) {
       if (err.response?.status === 401) {
-        setError('Please sign in to view your tickets.')
+        // An expired or missing session is not a failure; invite the visitor to sign in.
+        setSignedOut(true)
       } else {
         setError('Failed to load your tickets. Please try again.')
       }
@@ -70,16 +75,27 @@ export default function MyTicketsPage() {
     )
   }
 
+  if (signedOut) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-12">
+        <SEO title="My Tickets" />
+        <div className="card p-6 sm:p-8 text-center">
+          <Ticket aria-hidden="true" className="mx-auto h-10 w-10 text-brand-700" />
+          <h1 className="mt-4 text-xl font-semibold text-neutral-900">Sign in to see your tickets</h1>
+          <p className="mt-2 text-neutral-600">Your passes and QR codes are saved to your account.</p>
+          <Link to={signInDestination(location)} className="btn-primary mt-6 w-full sm:w-auto">Sign in</Link>
+        </div>
+      </div>
+    )
+  }
+
   if (error) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-12">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+        <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
           <p className="text-red-700">{error}</p>
-          <button
-            onClick={fetchOrders}
-            className="mt-4 text-sm font-medium text-red-600 hover:text-red-800 underline"
-          >
-            Try Again
+          <button type="button" onClick={fetchOrders} className="btn-secondary mt-4">
+            Try again
           </button>
         </div>
       </div>

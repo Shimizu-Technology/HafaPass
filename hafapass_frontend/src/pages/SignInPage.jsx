@@ -1,4 +1,3 @@
-import HafaPassMark from '../components/HafaPassMark'
 import useAuthReturnPath from '../hooks/useAuthReturnPath'
 import { SignIn } from '@clerk/clerk-react'
 
@@ -22,13 +21,7 @@ export default function SignInPage() {
 function SignInJourney() {
   const returnTo = useAuthReturnPath('/sign-in')
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-surface px-4 py-8">
-      <div className="flex items-center gap-2 mb-6">
-        <div className="w-9 h-9 rounded-xl bg-brand-700 flex items-center justify-center shadow-md">
-          <HafaPassMark className="h-5 w-5 text-white" />
-        </div>
-        <span className="text-xl font-bold text-neutral-800">HafaPass</span>
-      </div>
+    <div className="min-h-[calc(100dvh-4rem)] flex flex-col items-center justify-center bg-surface px-4 py-8">
       <SignIn
         routing="path"
         path="/sign-in"

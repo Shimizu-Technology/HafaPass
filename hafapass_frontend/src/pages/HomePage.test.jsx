@@ -171,6 +171,10 @@ describe('hosting entry navigation', () => {
     const image = within(featured).getByRole('img', { name: 'Artwork for Organizer poster event' })
     expect(image).toHaveAttribute('src', artwork)
     expect(image).toHaveAttribute('loading', 'eager')
+    // Fills its 16:9 frame without relying on percentage heights; a blurred copy fills behind portrait posters.
+    expect(image).toHaveClass('absolute', 'inset-0', 'object-contain')
+    expect(image.parentElement).toHaveClass('relative', 'aspect-[16/9]')
+    expect(within(featured).getByTestId('artwork-backdrop')).toHaveAttribute('src', artwork)
     fireEvent.error(image)
     expect(within(featured).queryByRole('img')).not.toBeInTheDocument()
     expect(within(featured).getByText('Event artwork unavailable')).toBeInTheDocument()

@@ -61,3 +61,24 @@ describe('MyTicketsPage guest recovery', () => {
     expect(screen.getByText('Island workshop')).toBeInTheDocument()
   })
 })
+
+describe('MyTicketsPage signed-out state', () => {
+  beforeEach(() => { apiClient.get.mockReset(); apiClient.post.mockReset() })
+
+  it('invites a signed-out visitor to sign in instead of showing an error', async () => {
+    apiClient.get.mockRejectedValue({ response: { status: 401 } })
+    render(<HelmetProvider><MemoryRouter initialEntries={['/my-tickets']}><MyTicketsPage /></MemoryRouter></HelmetProvider>)
+    expect(await screen.findByRole('heading', { name: 'Sign in to see your tickets' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in?returnTo=%2Fmy-tickets')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('keeps real load failures as a retryable error', async () => {
+    apiClient.get.mockRejectedValueOnce({ response: { status: 500 } }).mockResolvedValue({ data: { tickets: [ticket] } })
+    apiClient.post.mockResolvedValue({ data: {} })
+    renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load your tickets')
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Island workshop')).toBeInTheDocument()
+  })
+})
