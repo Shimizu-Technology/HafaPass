@@ -19,21 +19,15 @@ class PayoutCreator
     existing = Payout.find_by(idempotency_key: idempotency_key)
     return validate_idempotent_replay!(existing) if existing
 
-    payout = reserve!
+    payout, reserved = reserve!
+    return payout unless reserved
+
     result = submit_payout!(payout)
-    payout.update!(
+    record_submission_outcome!(payout,
       provider_payout_id: result.provider_payout_id,
       status: result.status,
       initiated_at: Time.current,
-      paid_at: result.status == :paid ? Time.current : nil
-    )
-    AuditLogger.record!(
-      action: "payout.#{payout.status}",
-      auditable: payout,
-      actor: actor,
-      organization: payout.organization,
-      metadata: { amount_cents: payout.amount_cents, settlement_id: settlement.id },
-      request: request
+      paid_at: result.status.to_s == "paid" ? Time.current : nil
     )
     payout
   rescue ActiveRecord::RecordInvalid => e
@@ -69,30 +63,47 @@ class PayoutCreator
   end
 
   def record_submission_error!(payout, status:, failure_code:, failure_message:)
-    payout.update!(
-      status: status,
-      initiated_at: Time.current,
-      failure_code: failure_code,
-      failure_message: failure_message
-    )
-    AuditLogger.record!(
-      action: "payout.#{status}",
-      auditable: payout,
-      actor: actor,
-      organization: payout.organization,
-      metadata: {
-        amount_cents: payout.amount_cents,
-        settlement_id: settlement.id,
-        failure_code: failure_code
-      },
-      request: request
-    )
+    record_submission_outcome!(payout, status: status, initiated_at: Time.current,
+      failure_code: failure_code, failure_message: failure_message)
+  end
+
+  def record_submission_outcome!(payout, **attributes)
+    Payout.transaction do
+      payout.organization.lock!
+      payout.lock!
+      before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
+      terminal = payout.status_paid? || payout.status_failed? || payout.status_reversed?
+      incoming_paid = attributes[:status].to_s == "paid"
+      same_transfer = payout.provider_payout_id == attributes[:provider_payout_id]
+      conflict = terminal && incoming_paid && (payout.status_failed? || !same_transfer)
+      action = "payout.#{attributes.fetch(:status)}"
+      if conflict
+        # Conflicting transfer evidence cannot silently release funds or erase
+        # the operator's evidence. Reopen review, retaining the old identity in
+        # the row and both outcomes in the immutable audit trail.
+        payout.update!(status: :processing, failure_code: "provider_result_conflict",
+          failure_message: "Late provider payment conflicts with a recorded outcome; reconcile before retrying")
+        action = "payout.provider_result_conflict"
+      elsif terminal
+        action = "payout.late_result_ignored"
+      else
+        payout.update!(attributes)
+      end
+      AuditLogger.record!(action: action, auditable: payout, actor: actor,
+        organization: payout.organization, before_data: before_data,
+        after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
+        metadata: { amount_cents: payout.amount_cents, settlement_id: settlement.id,
+          failure_code: attributes[:failure_code], provider_result: attributes }, request: request)
+    end
   end
 
   def reserve!
     Payout.transaction do
       settlement.organization.lock!
       settlement.lock!
+      existing = Payout.find_by(idempotency_key: idempotency_key)
+      return [validate_idempotent_replay!(existing), false] if existing
+
       raise PayoutError, "Settlement must be finalized" unless settlement.status_finalized?
       current_digest = Settlements::Calculator.call(settlement.event).attributes[:source_digest]
       if current_digest != settlement.source_digest
@@ -110,7 +121,7 @@ class PayoutCreator
       raise PayoutError, "Payout amount must be positive" unless amount.positive?
       raise PayoutError, "Payout amount exceeds the available balance" if amount > available
 
-      settlement.payouts.create!(
+      payout = settlement.payouts.create!(
         organization: settlement.organization,
         event: settlement.event,
         connected_account: account,
@@ -120,9 +131,10 @@ class PayoutCreator
         currency: settlement.currency,
         status: :pending
       )
+      [payout, true]
     end
   rescue ActiveRecord::RecordNotUnique
-    validate_idempotent_replay!(Payout.find_by!(idempotency_key: idempotency_key))
+    [validate_idempotent_replay!(Payout.find_by!(idempotency_key: idempotency_key)), false]
   end
 
   def validate_idempotent_replay!(payout)

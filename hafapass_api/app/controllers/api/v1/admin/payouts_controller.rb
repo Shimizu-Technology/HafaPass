@@ -6,7 +6,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -16,6 +16,6 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Payout not found" }, status: :not_found
   rescue PayoutReconciler::ReconciliationError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message, conflict_audit_id: e.conflict_audit_id }.compact, status: :unprocessable_entity
   end
 end

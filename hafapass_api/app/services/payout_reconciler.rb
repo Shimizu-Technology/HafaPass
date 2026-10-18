@@ -1,7 +1,14 @@
 # frozen_string_literal: true
 
 class PayoutReconciler
-  class ReconciliationError < StandardError; end
+  class ReconciliationError < StandardError
+    attr_reader :conflict_audit_id
+
+    def initialize(message, conflict_audit_id: nil)
+      super(message)
+      @conflict_audit_id = conflict_audit_id
+    end
+  end
 
   def self.call(payout:, actor:, status:, evidence:, provider_payout_id: nil, request: nil)
     raise ReconciliationError, "Administrator access is required" unless actor&.persisted? && actor.admin?
@@ -13,6 +20,13 @@ class PayoutReconciler
       # reservation and reserving a new payout cannot use competing snapshots.
       payout.organization.lock!
       payout.lock!
+      if payout.failure_code == "provider_result_conflict"
+        conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
+        unless conflict && normalized["conflict_audit_id"] == conflict.id
+          raise ReconciliationError.new("Review and acknowledge the latest provider conflict audit before recording an outcome",
+            conflict_audit_id: conflict&.id)
+        end
+      end
       unless provider_payout_id.nil? || provider_payout_id.is_a?(String)
         raise ReconciliationError, "Transfer identifier must be text"
       end
@@ -68,7 +82,14 @@ class PayoutReconciler
     raise ArgumentError unless timestamp.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
 
     confirmed_at = Time.iso8601(timestamp)
-    { "reference" => reference, "reason" => reason, "confirmed_at" => confirmed_at.utc.iso8601(6) }
+    normalized = { "reference" => reference, "reason" => reason, "confirmed_at" => confirmed_at.utc.iso8601(6) }
+    if values.key?("conflict_audit_id")
+      conflict_id = values["conflict_audit_id"].to_s
+      raise ReconciliationError, "Conflict audit identifier must be a positive integer" unless conflict_id.match?(/\A[1-9]\d*\z/)
+
+      normalized["conflict_audit_id"] = conflict_id.to_i
+    end
+    normalized
   rescue ArgumentError
     raise ReconciliationError, "Confirmation time must be an ISO8601 timestamp with an offset"
   end
