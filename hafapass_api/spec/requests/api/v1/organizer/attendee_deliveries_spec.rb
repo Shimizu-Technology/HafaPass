@@ -49,6 +49,27 @@ RSpec.describe "Organizer attendee ticket resend", type: :request do
     expect(EmailService).not_to have_received(:send_order_confirmation_async)
   end
 
+  it "refuses a member of another organization" do
+    outsider = create(:organizer_profile).user
+
+    post path, headers: headers_for(outsider)
+
+    expect(response).to have_http_status(:forbidden)
+    expect(EmailService).not_to have_received(:send_order_confirmation_async)
+  end
+
+  { box_office: :accepted, scanner: :forbidden }.each do |role, status|
+    it "follows manage_attendees for an event-assigned #{role} (#{status})" do
+      staff = create(:user)
+      create(:organization_membership, organization: organization, user: staff, role: role)
+      create(:event_staff_assignment, event: event, user: staff, role: role)
+
+      post path, headers: headers_for(staff)
+
+      expect(response).to have_http_status(status)
+    end
+  end
+
   it "does not reach tickets from another event" do
     other_event = create(:event, :published, organizer_profile: profile)
 

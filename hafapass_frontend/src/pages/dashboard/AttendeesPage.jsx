@@ -87,7 +87,9 @@ function AttendeesPageSession({ id, identity }) {
    throw requestError
   } finally { requests.current.delete(request); request.release() }
  }, [beginRequest, withdrawForDenial])
- const requestOutsideList = useCallback(async send => {
+ // A row action's 403/404 concerns that ticket, so only a lost sign-in (401)
+ // withdraws the page; the list read already re-verifies event permissions.
+ const requestOutsideList = useCallback(async (send, { withdrawOnlyForSignIn = false } = {}) => {
   const request = beginRequest()
   if (!request) throw new DOMException('Page context changed', 'AbortError')
   const withdrawal = accessWithdrawals.current
@@ -97,7 +99,8 @@ function AttendeesPageSession({ id, identity }) {
    if (!request.current() || withdrawal !== accessWithdrawals.current) throw new DOMException('Page context changed', 'AbortError')
    return response
   } catch (requestError) {
-   if (request.current() && withdrawal === accessWithdrawals.current) withdrawForDenial(requestError)
+   const pageDenial = !withdrawOnlyForSignIn || requestError.response?.status === 401
+   if (pageDenial && request.current() && withdrawal === accessWithdrawals.current) withdrawForDenial(requestError)
    throw requestError
   } finally { exportRequests.current.delete(request); request.release() }
  }, [beginRequest, withdrawForDenial])
@@ -177,14 +180,16 @@ function AttendeesPageSession({ id, identity }) {
     if (!resendTarget || resending) return
     setResending(true); setResendError(null)
     try {
-      const response = await requestOutsideList(config => apiClient.post(`/organizer/events/${id}/attendees/${resendTarget.id}/resend`, {}, config))
+      const response = await requestOutsideList(config => apiClient.post(`/organizer/events/${id}/attendees/${resendTarget.id}/resend`, {}, config), { withdrawOnlyForSignIn: true })
       if (!current()) return
       setActionNotice(`Ticket email for ${resendTarget.attendee_name || 'this attendee'} is on its way to ${response.data?.recipient || 'the buyer'}.`)
       setResendTarget(null)
     } catch (resendFailure) {
       if (resendFailure?.name === 'AbortError' || !current()) return
-      if ([401, 403, 404].includes(resendFailure.response?.status)) { setResendTarget(null); return }
-      setResendError(resendFailure.response?.data?.error || 'The ticket email could not be resent. Check your connection and try again.')
+      if (resendFailure.response?.status === 401) { setResendTarget(null); return }
+      const status = resendFailure.response?.status
+      setResendError(resendFailure.response?.data?.error || (status === 403 ? 'Your access no longer includes resending tickets for this event.'
+        : status === 404 ? 'This attendee was not found. Refresh the list and try again.' : 'The ticket email could not be resent. Check your connection and try again.'))
     } finally { if (current()) setResending(false) }
   }
   const openResend = attendee => { setActionNotice(null); setResendError(null); setResendTarget(attendee) }
@@ -198,11 +203,11 @@ function AttendeesPageSession({ id, identity }) {
   // offline-safe queue and Undo, exactly like a scanned QR code.
   const checkInPath = attendee => `/dashboard/scanner?event=${encodeURIComponent(id)}&lookup=HP-T${attendee.id}`
   const rowActions = (attendee, size) => {
-    const buttonSize = size === 'phone' ? 'min-h-11 flex-1 justify-center' : 'min-h-9'
+    const buttonSize = size === 'phone' ? 'min-h-11 flex-1 justify-center !px-3 !py-2' : 'min-h-9 !px-2.5 !py-1.5'
     const name = attendee.attendee_name || 'attendee'
     return <>
-      {canCheckIn(attendee) && <Link to={checkInPath(attendee)} aria-label={`Check in ${name}`} className={`btn-secondary gap-1.5 !px-3 !py-1.5 text-sm ${buttonSize}`}><ScanLine aria-hidden="true" className="h-4 w-4" /> Check in</Link>}
-      {canResend(attendee) && <button type="button" onClick={() => openResend(attendee)} disabled={resending} aria-label={`Resend ticket to ${name}`} className={`btn-ghost gap-1.5 !px-3 !py-1.5 text-sm ${buttonSize}`}><Mail aria-hidden="true" className="h-4 w-4" /> Resend</button>}
+      {canCheckIn(attendee) && <Link to={checkInPath(attendee)} aria-label={`Check in ${name}`} className={`btn-secondary gap-1.5 whitespace-nowrap text-sm ${buttonSize}`}><ScanLine aria-hidden="true" className="h-4 w-4" /> Check in</Link>}
+      {canResend(attendee) && <button type="button" onClick={() => openResend(attendee)} disabled={resending} aria-label={`Resend ticket to ${name}`} className={`btn-ghost gap-1.5 whitespace-nowrap text-sm ${buttonSize}`}><Mail aria-hidden="true" className="h-4 w-4" /> Resend</button>}
     </>
   }
 
@@ -279,7 +284,7 @@ function AttendeesPageSession({ id, identity }) {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden sm:block bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+          <div className="hidden sm:block bg-white rounded-xl shadow-sm border border-neutral-200 overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-neutral-50">
@@ -296,12 +301,12 @@ function AttendeesPageSession({ id, identity }) {
                   const style = STATUS_STYLES[att.status] || { label: att.status, className: 'bg-neutral-100 text-neutral-800' }
                   return (
                     <tr key={att.id}>
-                      <td className="px-5 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</td>
-                      <td className="px-5 py-3 text-sm text-neutral-600">{att.attendee_email || '—'}</td>
+                      <td className="min-w-32 px-5 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</td>
+                      <td className="max-w-56 break-words px-5 py-3 text-sm text-neutral-600">{att.attendee_email || '—'}</td>
                       <td className="px-5 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
                       <td className="px-5 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span></td>
                       <td className="px-5 py-3 text-sm text-neutral-500">{formatDate(att.checked_in_at)}</td>
-                      {showActions && <td className="px-5 py-3"><div className="flex justify-end gap-2">{rowActions(att, 'desktop')}</div></td>}
+                      {showActions && <td className="px-4 py-3"><div className="flex justify-end gap-1.5">{rowActions(att, 'desktop')}</div></td>}
                     </tr>
                   )
                 })}

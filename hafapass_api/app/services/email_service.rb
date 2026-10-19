@@ -187,7 +187,7 @@ class EmailService
       return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
 
       event = order.event
-      tickets = order.tickets.includes(:ticket_type)
+      tickets = order.tickets.includes(:ticket_type).reject { |ticket| ticket.transferred_away_from?(order) }
       html = build_order_confirmation_html(order, event, tickets)
       subject = safe_subject("Your HafaPass Tickets - #{event.title}")
 

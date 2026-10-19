@@ -101,4 +101,19 @@ RSpec.describe EmailService do
       "&lt;b&gt;Venue&lt;/b&gt;", "&lt;svg onload=alert(2)&gt;", "&lt;em&gt;Attendee&lt;/em&gt;")
     expect(params["html"]).not_to include("<script>buyer()", "<img src=x", "<svg onload")
   end
+
+  it "leaves tickets transferred to another account out of the buyer's order email" do
+    buyer = create(:user)
+    order = create(:order, user: buyer)
+    ticket_type = create(:ticket_type, event: order.event)
+    held = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, attendee_name: "Held Guest")
+    moved = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, attendee_name: "Transferee Guest")
+    moved.update!(holder_user: create(:user))
+    expect([held, moved].map(&:display_credential)).to all(be_present)
+
+    html = described_class.prepare_delivery_payload(create(:message_delivery, order: order)).fetch("html")
+
+    expect(html).to include("Held Guest", "/tickets/#{held.display_credential}")
+    expect(html).not_to include("Transferee Guest", moved.display_credential)
+  end
 end

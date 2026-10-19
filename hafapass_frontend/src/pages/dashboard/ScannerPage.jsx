@@ -1201,6 +1201,14 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     handedOffLookupRef.current = routeScope
     setSearchQuery(requestedLookup)
     searchAttendeesRef.current(requestedLookup)
+    // One-shot: drop the hand-off from the address bar so a reload, Back or a
+    // copied link does not repeat it. Rewriting history directly keeps the
+    // router location (and with it this device's setup) unchanged.
+    const address = new URL(window.location.href)
+    if (address.searchParams.has('lookup')) {
+      address.searchParams.delete('lookup')
+      window.history.replaceState(window.history.state, '', address)
+    }
     document.getElementById('attendee-lookup')?.scrollIntoView?.({ block: 'start' })
   }, [eventId, online, ready, requestedEventId, requestedLookup, routeScope])
   const expiresAt = Math.min(Date.parse(device?.authorization_expires_at || ''), Date.parse(manifest?.payload.expires_at || ''))
@@ -1224,7 +1232,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         {!offlineOnly && eventListLoading && <p role="status" className="mb-2 text-sm">Loading events…</p>}
         {!offlineOnly && eventListError && <p role="alert" className="mb-2 text-sm text-red-800">{eventListError} <button type="button" className="min-h-11 underline" onClick={() => setEventListRetry(value => value + 1)}>Retry event search</button></p>}
         <label htmlFor="scanner-event" className="mb-1 block text-sm font-medium text-neutral-800">Event to scan</label>
-        <select id="scanner-event" disabled={eventListLoading} value={eventId} onChange={event => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('event', event.target.value); return next })} className="input w-full">
+        <select id="scanner-event" disabled={eventListLoading} value={eventId} onChange={event => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('event', event.target.value); next.delete('lookup'); return next })} className="input w-full">
           {!eventId && <option value="">{events.length ? 'Choose an assigned event' : 'No assigned events'}</option>}
           {selectedEvent && !events.some(event => String(event.id) === eventId) && <option value={eventId}>{selectedEvent.title} (selected)</option>}
           {events.map(event => <option key={event.id} value={event.id}>{event.title}</option>)}

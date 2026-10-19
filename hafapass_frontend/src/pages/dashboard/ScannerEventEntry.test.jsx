@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, useNavigate } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import { clearAllAdmissionData, queueAdmission, queuedActions, saveDevice, saveVerifiedManifest } from '../../utils/admissionStore'
@@ -254,4 +254,32 @@ it('runs an Attendees page lookup hand-off but leaves the admission to staff', a
   expect(screen.getByRole('button', { name: 'Admit' })).toBeEnabled()
   expect(apiClient.post.mock.calls.some(([path]) => path.endsWith('/sync'))).toBe(false)
   expect(await queuedActions(92002, 92)).toHaveLength(0)
+})
+
+it('drops the lookup hand-off after it runs and when staff switch events', async () => {
+  const manifests = { 92001: await signedManifest(92001), 92002: await signedManifest(92002, [{ ticket_id: 501, state: 'valid', attendee_name: 'Mina Cruz', credential_hash: 'handoff-switch-hash' }]) }
+  apiClient.get.mockImplementation(path => {
+    if (path === '/organizer/events') return Promise.resolve({ data: { events: [{ id: 92001, title: 'Other event', status: 'published' }, { id: 92002, title: 'Clicked event', status: 'published' }] } })
+    if (path.endsWith('/manifest')) return Promise.resolve({ data: manifests[path.split('/')[3]] })
+    if (path === '/me') return Promise.resolve({ data: { id: 7 } })
+    if (path.endsWith('/admissions/search')) return Promise.resolve({ data: [{ id: 501, code: 'HP-T501', attendee_name: 'Mina Cruz', ticket_type: 'Entry', status: 'issued', admission_allowed: true }] })
+    return Promise.resolve({ data: { counts: {} } })
+  })
+  apiClient.post.mockImplementation(path => Promise.resolve({ data: { id: path.includes('92001') ? 91 : 92, identifier: 'switch-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() } }))
+  window.history.replaceState(null, '', '/dashboard/scanner?event=92002&lookup=HP-T501')
+  let location
+  function LocationProbe() { location = useLocation(); return null }
+  render(<MemoryRouter initialEntries={['/dashboard/scanner?event=92002&lookup=HP-T501']}><ScannerPage /><LocationProbe /></MemoryRouter>)
+  await screen.findByText('Mina Cruz · HP-T501')
+  expect(window.location.search).toBe('?event=92002')
+  const searches = () => apiClient.get.mock.calls.filter(([path]) => path.endsWith('/admissions/search'))
+  expect(searches()).toHaveLength(1)
+
+  await userEvent.selectOptions(screen.getByLabelText('Event to scan'), '92001')
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/organizer/events/92001/scanner_devices/91/manifest'))
+  expect(new URLSearchParams(location.search).get('lookup')).toBeNull()
+  expect(new URLSearchParams(location.search).get('event')).toBe('92001')
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+  expect(searches()).toHaveLength(1)
+  window.history.replaceState(null, '', '/')
 })

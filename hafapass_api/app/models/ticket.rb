@@ -71,6 +71,12 @@ class Ticket < ApplicationRecord
     checked_in? || first_admitted_at.present? || inventory_retained? || admission_actions.kind_admit.result_accepted.exists?
   end
 
+  # A ticket accepted by someone other than the order's account belongs to its
+  # new holder: buyer-facing views and emails must not show its details or links.
+  def transferred_away_from?(order)
+    holder_user_id.present? && holder_user_id != order.user_id
+  end
+
   def held_by?(user)
     user.present? && holder_user_id == user.id
   end

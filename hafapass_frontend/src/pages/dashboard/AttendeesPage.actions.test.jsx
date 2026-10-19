@@ -103,4 +103,27 @@ describe('attendee row actions', () => {
     expect(within(dialog).getByRole('button', { name: 'Resend ticket' })).toBeEnabled()
     expect(screen.getAllByText('Mina Cruz').length).toBeGreaterThan(0)
   })
+
+  it.each([403, 404])('keeps the attendee list and explains a resend %s inside the dialog', async status => {
+    apiClient.post.mockRejectedValue({ response: { status, data: { error: status === 404 ? 'Attendee not found' : 'You do not have permission to perform this action' } } })
+    mount({ manage_attendees: true })
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Resend ticket to Mina Cruz' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Resend ticket email?' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Resend ticket' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(status === 404 ? 'Attendee not found' : 'do not have permission')
+    expect(screen.getAllByText('Jose Santos').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/attendee access changed|Event not found/)).not.toBeInTheDocument()
+  })
+
+  it('withdraws the page when a resend reports the sign-in expired', async () => {
+    apiClient.post.mockRejectedValue({ response: { status: 401, data: { error: 'Unauthorized' } } })
+    mount({ manage_attendees: true })
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Resend ticket to Mina Cruz' })[0])
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Resend ticket' }))
+    expect(await screen.findByText('Please sign in.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('Mina Cruz')).not.toBeInTheDocument()
+  })
 })

@@ -15,7 +15,7 @@ class Api::V1::Organizer::AttendeeDeliveriesController < Api::V1::Organizer::Bas
     unless ticket.issued? || ticket.checked_in?
       return render json: { error: "Only active tickets can be resent" }, status: :unprocessable_entity
     end
-    if ticket.holder_user_id.present? && ticket.holder_user_id != order.user_id
+    if ticket.transferred_away_from?(order)
       return render json: { error: "This ticket was transferred. Its new holder can open it from My Tickets." },
         status: :unprocessable_entity
     end

@@ -63,7 +63,7 @@ RSpec.describe "Api::V1::Users", type: :request do
       allow(ENV).to receive(:fetch).and_call_original
       allow(ENV).to receive(:fetch).with("ADMIN_EMAILS", "").and_return("ADMIN@example.com")
       allow(ClerkIdentity).to receive(:verified_email_addresses).with("clerk_verified_admin", require_available: true).and_return(["admin@example.com"])
-      allow(ClerkIdentity).to receive(:profile).with("clerk_verified_admin").and_return(nil)
+      allow(ClerkIdentity).to receive(:profile).with("clerk_verified_admin", timeout: anything).and_return(nil)
       allow(ClerkAuthenticator).to receive(:verify).with("verified_admin").and_return({ "sub" => "clerk_verified_admin" })
       post "/api/v1/users/sync", params: { email: "contact@example.com" },
         headers: { "Authorization" => "Bearer verified_admin" }, as: :json
@@ -178,7 +178,7 @@ RSpec.describe "Api::V1::Users", type: :request do
     end
 
     it "fetches the primary email from Clerk when the session token has none" do
-      allow(ClerkIdentity).to receive(:profile).with("clerk_first_sign_in")
+      allow(ClerkIdentity).to receive(:profile).with("clerk_first_sign_in", timeout: ClerkIdentity::SIGN_IN_TIMEOUT)
         .and_return({ email: "fetched@example.com", first_name: "Ana", last_name: "Cruz", verified_emails: ["fetched@example.com"] })
       user = sign_in_with({})
       expect(user).to have_attributes(email: "fetched@example.com", first_name: "Ana", last_name: "Cruz")
@@ -195,6 +195,18 @@ RSpec.describe "Api::V1::Users", type: :request do
       allow(http).to receive(:request).and_raise(Net::ReadTimeout)
       expect(sign_in_with({})).to have_attributes(email: nil, role: "admin")
       expect(http).to have_received(:request).once
+      expect(Net::HTTP).to have_received(:start)
+        .with("api.clerk.com", 443, hash_including(open_timeout: ClerkIdentity::SIGN_IN_TIMEOUT, read_timeout: ClerkIdentity::SIGN_IN_TIMEOUT))
+    end
+
+    it "re-reads the account when a parallel first request inserts it first" do
+      winner = create(:user, clerk_id: "clerk_first_sign_in", email: "winner@example.com")
+      allow(User).to receive(:find_by).and_call_original
+      allow(User).to receive(:find_by).with(clerk_id: "clerk_first_sign_in").and_return(nil, winner)
+      allow(ClerkIdentity).to receive(:profile).and_return({ email: "winner@example.com" })
+      allow_any_instance_of(User).to receive(:save!).and_raise(ActiveRecord::RecordNotUnique) # rubocop:disable RSpec/AnyInstance
+
+      expect { expect(sign_in_with({})).to eq(winner) }.not_to change(User, :count)
     end
 
     it "bootstraps an allowlisted admin from the fetched email with a single Clerk lookup" do

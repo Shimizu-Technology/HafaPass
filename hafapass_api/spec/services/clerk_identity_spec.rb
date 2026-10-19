@@ -25,6 +25,12 @@ RSpec.describe ClerkIdentity do
     expect(http).to have_received(:request).with(have_attributes(path: "/v1/users/user_recipient"))
   end
 
+  it "keeps the default lookup timeout for identity checks outside sign-in" do
+    described_class.profile("user_recipient")
+    expect(Net::HTTP).to have_received(:start)
+      .with("api.clerk.com", 443, hash_including(open_timeout: described_class::DEFAULT_TIMEOUT, read_timeout: described_class::DEFAULT_TIMEOUT))
+  end
+
   it "fails closed when the response subject does not match" do
     expect(described_class.verified_email_addresses("user_other")).to eq([])
   end
