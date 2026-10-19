@@ -19,6 +19,14 @@ RSpec.describe IndexAccentFoldedVillageFilters, :non_transactional do
     connection.indexes(table).find { |entry| entry.name == name }
   end
 
+  it "keeps its frozen fold lists identical to the search concern" do
+    expect(described_class::ACCENTED).to be_frozen
+    expect(described_class::ACCENTED).to eq(AccentInsensitiveSearch::ACCENTED),
+      "AccentInsensitiveSearch lists changed: add a new migration that rebuilds the folded indexes"
+    expect(described_class::PLAIN).to eq(AccentInsensitiveSearch::PLAIN)
+    expect(described_class.folded("venue_city")).to eq(AccentInsensitiveSearch.fold("venue_city"))
+  end
+
   it "indexes exactly the folded expression the village filters query and retires LOWER(venue_city)" do
     migration.up
 
