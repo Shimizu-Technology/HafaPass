@@ -8,8 +8,8 @@ describe('Clerk appearance', () => {
     expect(clerkAppearance.variables).toMatchObject({
       colorPrimary: colors.action.DEFAULT,
       colorDanger: colors.action.danger,
-      colorText: colors.content.DEFAULT,
-      colorTextSecondary: colors.content.muted,
+      colorForeground: colors.content.DEFAULT,
+      colorMutedForeground: colors.content.muted,
       borderRadius: '0.75rem',
     })
     expect(clerkAppearance.variables.fontFamily).toContain('Plus Jakarta Sans Variable')

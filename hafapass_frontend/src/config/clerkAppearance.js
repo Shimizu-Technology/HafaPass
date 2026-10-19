@@ -5,10 +5,10 @@ export const clerkAppearance = {
   variables: {
     colorPrimary: '#c9362e', // action
     colorDanger: '#b91c1c', // action-danger
-    colorText: '#0f172a', // content
-    colorTextSecondary: '#475569', // content-muted
-    colorInputText: '#0f172a',
-    colorInputBackground: '#ffffff',
+    colorForeground: '#0f172a', // content
+    colorMutedForeground: '#475569', // content-muted
+    colorInputForeground: '#0f172a',
+    colorInput: '#ffffff',
     colorBackground: '#ffffff',
     fontFamily: '"Plus Jakarta Sans Variable", system-ui, -apple-system, sans-serif',
     borderRadius: '0.75rem',

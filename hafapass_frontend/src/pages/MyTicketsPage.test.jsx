@@ -2,11 +2,13 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import MyTicketsPage from './MyTicketsPage'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+const clerk = vi.hoisted(() => ({ getToken: vi.fn(), signOut: vi.fn() }))
+vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ getToken: clerk.getToken }), useClerk: () => ({ signOut: clerk.signOut }) }))
 vi.mock('../components/ui/ScrollReveal', () => ({
   StaggerContainer: ({ children }) => <div>{children}</div>,
   StaggerItem: ({ children }) => <div>{children}</div>,
@@ -62,15 +64,42 @@ describe('MyTicketsPage guest recovery', () => {
   })
 })
 
-describe('MyTicketsPage signed-out state', () => {
-  beforeEach(() => { apiClient.get.mockReset(); apiClient.post.mockReset() })
+describe('MyTicketsPage expired session', () => {
+  beforeEach(() => {
+    apiClient.get.mockReset(); apiClient.post.mockReset()
+    clerk.getToken.mockReset().mockResolvedValue('fresh-token'); clerk.signOut.mockReset()
+  })
+  afterEach(() => vi.unstubAllEnvs())
+  const renderAt = () => render(<HelmetProvider><MemoryRouter initialEntries={['/my-tickets']}><MyTicketsPage /></MemoryRouter></HelmetProvider>)
 
-  it('invites a signed-out visitor to sign in instead of showing an error', async () => {
+  it('retries once with a fresh token before showing any sign-in prompt', async () => {
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
+    apiClient.get.mockRejectedValueOnce({ response: { status: 401 } }).mockResolvedValue({ data: { tickets: [ticket] } })
+    apiClient.post.mockResolvedValue({ data: {} })
+    renderAt()
+    expect(await screen.findByText('Island workshop')).toBeInTheDocument()
+    expect(clerk.getToken).toHaveBeenCalledWith({ skipCache: true })
+    expect(screen.queryByRole('heading', { name: 'Your session expired' })).not.toBeInTheDocument()
+  })
+
+  it('signs out the stale session and returns here after sign-in when the refreshed token is still rejected', async () => {
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
     apiClient.get.mockRejectedValue({ response: { status: 401 } })
-    render(<HelmetProvider><MemoryRouter initialEntries={['/my-tickets']}><MyTicketsPage /></MemoryRouter></HelmetProvider>)
-    expect(await screen.findByRole('heading', { name: 'Sign in to see your tickets' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in?returnTo=%2Fmy-tickets')
+    renderAt()
+    expect(await screen.findByRole('heading', { name: 'Your session expired' })).toBeInTheDocument()
+    expect(clerk.getToken).toHaveBeenCalledTimes(1)
+    expect(apiClient.get).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in again' }))
+    expect(clerk.signOut).toHaveBeenCalledWith({ redirectUrl: '/sign-in?returnTo=%2Fmy-tickets' })
+  })
+
+  it('links to sign-in when Clerk is not configured', async () => {
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
+    apiClient.get.mockRejectedValue({ response: { status: 401 } })
+    renderAt()
+    expect(await screen.findByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/sign-in?returnTo=%2Fmy-tickets')
+    expect(apiClient.get).toHaveBeenCalledTimes(1)
   })
 
   it('keeps real load failures as a retryable error', async () => {

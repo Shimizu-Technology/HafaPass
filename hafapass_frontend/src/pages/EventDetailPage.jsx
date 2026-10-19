@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
 import { useParams, useNavigate, useSearchParams, useMatch, useLocation, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
@@ -14,6 +14,10 @@ import { PUBLIC_WEB_URL } from '../utils/site'
 import { eventBrowseReturn } from '../utils/browseReturn'
 import { formatTicketPrice, isTicketPurchasable, lowestPurchasablePrice, ticketPriceCents } from '../utils/ticketPricing'
 import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
+
+// React 18 does not know `inert` and only renders it from a string (''), while React 19
+// treats it as a boolean and drops ''. Emit the value each version needs.
+const INERT_VALUE = Number(reactVersion.split('.')[0]) >= 19 ? true : ''
 
 // Phones see the ticket panel once near the top; this bar keeps the purchase one tap
 // away while the hero button and the panel are out of view. It also stays hidden once
@@ -50,7 +54,7 @@ function MobileBuyBar({ priceLabel, targets, endMarker }) {
       data-testid="mobile-buy-bar"
       data-visible={visible}
       aria-hidden={!visible}
-      inert={visible ? undefined : ''}
+      inert={visible ? undefined : INERT_VALUE}
       className={`fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-float backdrop-blur transition-[transform,opacity] duration-200 ease-out-strong lg:hidden ${visible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-full opacity-0'}`}
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">

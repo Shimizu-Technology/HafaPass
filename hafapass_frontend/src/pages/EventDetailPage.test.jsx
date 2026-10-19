@@ -74,6 +74,22 @@ describe('EventDetailPage buyer polish', () => {
     expect(panel).toHaveFocus()
   })
 
+  it('keeps the buy bar hidden while only the ticket panel is in view', async () => {
+    mount(baseEvent)
+    await screen.findByRole('heading', { name: 'Reef Night' })
+    const panel = document.getElementById('tickets')
+    act(() => observers.forEach(observer => observer.callback(observer.elements.map(target =>
+      ({ target, isIntersecting: target === panel, boundingClientRect: { top: target === panel ? 100 : 900 } })))))
+    expect(screen.getByTestId('mobile-buy-bar')).toHaveAttribute('data-visible', 'false')
+  })
+
+  it('does not render the buy bar when no ticket type is on sale and seating is not assigned', async () => {
+    mount({ ...baseEvent, purchasable: true, assigned_seating: false,
+      ticket_types: baseEvent.ticket_types.map(ticket => ({ ...ticket, on_sale: false })) })
+    await screen.findByRole('heading', { name: 'Reef Night' })
+    expect(screen.queryByTestId('mobile-buy-bar')).not.toBeInTheDocument()
+  })
+
   it('hides the buy bar after the visitor scrolls past the end of the event content', async () => {
     mount(baseEvent)
     await screen.findByRole('heading', { name: 'Reef Night' })
