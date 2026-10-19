@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
@@ -17,12 +17,12 @@ const event = (id, status, startOffset, title = `Event ${id}`) => ({
 })
 
 beforeEach(async () => { vi.clearAllMocks(); window.localStorage.clear(); await clearAllAdmissionData() })
-afterEach(async () => { vi.restoreAllMocks(); await clearAllAdmissionData(); window.localStorage.clear() })
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await clearAllAdmissionData(); window.localStorage.clear() })
 
 async function mount(events, path = '/dashboard/scanner', { lookups = null, details = {} } = {}) {
   apiClient.get.mockImplementation(async (requested, config) => {
     if (requested === '/organizer/events') {
-      if (lookups && config?.params?.status === 'published') return { data: { events: lookups(config.params) } }
+      if (lookups && config?.params?.status === 'published') return { data: { events: await lookups(config.params) } }
       return { data: { events, meta: { current_page: 1, total_pages: lookups ? 2 : 1 } } }
     }
     const detail = requested.match(/^\/organizer\/events\/(\d+)$/)
@@ -158,4 +158,40 @@ it('keeps the DOM in phone reading order instead of reordering focusable content
   })
   const reordered = [...container.querySelectorAll('[class]')].filter(element => /(^|\s)(order-|contents(\s|$)|flex-row-reverse)/.test(element.className))
   expect(reordered).toEqual([])
+})
+
+it('falls back to the visible page when the cross-page lookup hangs past its deadline', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+  const lookups = vi.fn(() => new Promise(() => {}))
+  await mount([event(93131, 'draft', 2 * HOUR, 'Draft'), event(93132, 'published', 48 * HOUR, 'Visible published')], '/dashboard/scanner', { lookups })
+  await waitFor(() => expect(lookups).toHaveBeenCalled())
+  expect(screen.getByLabelText('Event to scan')).toHaveValue('')
+  expect(apiClient.post).not.toHaveBeenCalled()
+  await act(() => vi.advanceTimersByTimeAsync(4000))
+  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('93132'))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/93132/scanner_devices', expect.anything()))
+  const lookupSignal = apiClient.get.mock.calls.find(([, config]) => config?.params?.status === 'published')[1].signal
+  expect(lookupSignal.aborted).toBe(true)
+})
+
+it('uses a prompt cross-page lookup without waiting for or later applying the deadline', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+  const lookups = vi.fn(async params => params.order === 'starts_at' ? [event(93142, 'published', -1 * HOUR, 'Tonight on page 2')] : [])
+  await mount([event(93141, 'published', 48 * HOUR, 'Visible published')], '/dashboard/scanner', { lookups })
+  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('93142'))
+  const lookupSignal = apiClient.get.mock.calls.find(([, config]) => config?.params?.status === 'published')[1].signal
+  await act(() => vi.advanceTimersByTimeAsync(4000))
+  expect(lookupSignal.aborted).toBe(false)
+  expect(screen.getByLabelText('Event to scan')).toHaveValue('93142')
+  expect(apiClient.post).not.toHaveBeenCalledWith('/organizer/events/93141/scanner_devices', expect.anything())
+})
+
+it('aborts a pending cross-page lookup when the page unmounts', async () => {
+  const lookups = vi.fn(() => new Promise(() => {}))
+  const { unmount } = await mount([event(93151, 'published', 48 * HOUR)], '/dashboard/scanner', { lookups })
+  await waitFor(() => expect(lookups).toHaveBeenCalled())
+  const lookupSignal = apiClient.get.mock.calls.find(([, config]) => config?.params?.status === 'published')[1].signal
+  unmount()
+  expect(lookupSignal.aborted).toBe(true)
+  expect(apiClient.post).not.toHaveBeenCalled()
 })

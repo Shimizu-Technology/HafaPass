@@ -129,19 +129,41 @@ function defaultScannerEvent(events, now = Date.now()) {
 
 // Bounded lookups through the same scan-scoped list: everything published that
 // ended within the last day or is still to come (soonest first), and only if
-// none exists, the latest published events. A failed lookup falls back to the
-// visible page; it never blocks or widens event selection.
+// none exists, the latest published events. A failed or slow lookup falls back
+// to the visible page after the deadline; it never blocks device preparation or
+// widens event selection. Abandoning the page aborts it immediately.
+const SCANNER_DEFAULT_LOOKUP_DEADLINE_MS = 4000
+
 async function scannerDefaultCandidates(config, q) {
+  const parent = config.signal
+  if (parent?.aborted) throw new DOMException('Scanner context changed', 'AbortError')
+  const controller = new AbortController()
+  let timer
+  let abandon
+  const deadline = new Promise((resolve, reject) => {
+    timer = window.setTimeout(() => { controller.abort(); resolve([]) }, SCANNER_DEFAULT_LOOKUP_DEADLINE_MS)
+    abandon = () => { controller.abort(); reject(new DOMException('Scanner context changed', 'AbortError')) }
+  })
+  parent?.addEventListener('abort', abandon, { once: true })
   const lookup = async params => {
-    const response = await apiClient.get('/organizer/events', { ...config, params: { purpose: 'scan', status: 'published', q, ...params } })
+    const response = await apiClient.get('/organizer/events', { ...config, signal: controller.signal, params: { purpose: 'scan', status: 'published', q, ...params } })
     return (response.data.events || []).filter(event => event.permissions?.scan !== false)
   }
-  try {
+  const candidates = (async () => {
     const current = await lookup({ ends_after: new Date(Date.now() - 86_400_000).toISOString(), order: 'starts_at', per_page: 50 })
     return current.length ? current : await lookup({ order: '-starts_at', per_page: 20 })
+  })()
+  // Whichever promise loses the race must not surface as an unhandled rejection.
+  candidates.catch(() => {})
+  deadline.catch(() => {})
+  try {
+    return await Promise.race([candidates, deadline])
   } catch (lookupError) {
-    if (lookupError?.name === 'AbortError' || lookupError?.name === 'CanceledError') throw lookupError
+    if (parent?.aborted) throw lookupError
     return []
+  } finally {
+    window.clearTimeout(timer)
+    parent?.removeEventListener('abort', abandon)
   }
 }
 
