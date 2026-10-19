@@ -77,6 +77,21 @@ describe('AdminEventsPage', () => {
     await act(async () => finish({ data: { events: [proofEvent], meta: { page: 1, total_pages: 1 } } }))
     expect(screen.getByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })).toHaveAttribute('aria-expanded', 'true')
   })
+  it('keeps the rows and focused trigger when the post-action refresh fails, with a retry', async () => {
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' }))
+    apiClient.get.mockRejectedValueOnce(new Error('network down'))
+    const trigger = screen.getByRole('button', { name: 'Prepare Gate J closeout' })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not refresh events after that action.')
+    expect(screen.getByRole('button', { name: 'Prepare Gate J closeout' })).toBe(trigger)
+    expect(trigger).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh list' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })).toHaveAttribute('aria-expanded', 'true')
+  })
   it('collapses every release gate action behind one per-row control', async () => {
     render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
 

@@ -56,6 +56,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
   const [category, setCategory] = useState('')
   const [page, setPage] = useState(1)
   const [actionError, setActionError] = useState('')
+  const [refreshError, setRefreshError] = useState('')
   const [openGates, setOpenGates] = useState(() => new Set())
   const toggleGates = useCallback(eventId => setOpenGates(previous => {
     const next = new Set(previous)
@@ -79,13 +80,20 @@ function AdminEventsPageSession({ identity, resourcePath }) {
     const active = () => request.current() && generation === loadGeneration.current
     if (!keepRows) setLoading(true)
     setLoadError('')
+    setRefreshError('')
     const params = { page, per_page: 20 }
     if (search) params.search = search
     if (status) params.status = status
     if (category) params.category = category
     apiClient.get('/admin/events', { ...request.config, params })
       .then(res => { if (active()) { setEvents(res.data.events); setMeta(res.data.meta); } })
-      .catch(error => { if (active() && !request.handleError(error)) setLoadError('Could not load events. Your filters have been kept.') })
+      .catch(error => {
+        if (!active() || request.handleError(error)) return
+        // A failed refresh after a gate action leaves the rows (and the focused
+        // trigger) in place; only a full load replaces the table with the error.
+        if (keepRows) setRefreshError('Could not refresh events after that action. The list below may be out of date.')
+        else setLoadError('Could not load events. Your filters have been kept.')
+      })
       .finally(() => { request.release(); if (active()) setLoading(false) })
   }, [page, search, status, category, beginRequest])
   const refreshAfterAction = useCallback(() => fetchEvents({ keepRows: true }), [fetchEvents])
@@ -151,6 +159,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
         </select>
       </div>
 
+      {refreshError && <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{refreshError} <button type="button" onClick={refreshAfterAction} className="min-h-11 rounded px-3 font-semibold underline focus-visible:ring-2 focus-visible:ring-focus">Refresh list</button></div>}
       {actionError && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
 
       {/* No backdrop-filter here: it would trap the gate dialogs' fixed overlays inside this card. */}
