@@ -7,7 +7,12 @@
     "admin": "Admin",
     "signIn": "Hålum",
     "getStarted": "Tutuhon",
-    "search": "Aligao aktibidat..."
+    "search": "Aligao aktibidat...",
+    "settings": "Settings",
+    "support": "Support",
+    "viewPublicSite": "View public site",
+    "workspace": "Workspace",
+    "workspaceHome": "HafaPass workspace home"
   },
   "home": {
     "hero": "Pass-mu Para Todu Aktibidat Giya Guåhan",
