@@ -47,6 +47,34 @@ RSpec.describe "Organizer operational discovery", type: :request do
       expect(response).to have_http_status(:forbidden)
     end
 
+    it "narrows by status and end time and orders by start for the scanner default without widening access" do
+      now = Time.current.change(usec: 0)
+      soon = create(:event, :published, organizer_profile: profile, starts_at: now + 2.days, ends_at: now + 2.days + 4.hours)
+      live = create(:event, :published, organizer_profile: profile, starts_at: now - 1.hour, ends_at: now + 3.hours)
+      past = create(:event, :published, organizer_profile: profile, starts_at: now - 5.days, ends_at: now - 5.days + 4.hours)
+      create(:event, organizer_profile: profile, status: :draft, starts_at: now + 1.day, ends_at: now + 1.day + 4.hours)
+      create(:event, :published, starts_at: now + 1.day, ends_at: now + 1.day + 4.hours)
+      params = { purpose: "scan", status: "published", ends_after: (now - 1.day).iso8601, order: "starts_at" }
+      get "/api/v1/organizer/events", params: params, headers: headers
+      expect(response.parsed_body["events"].map { |e| e["id"] }).to eq([live.id, soon.id])
+      get "/api/v1/organizer/events", params: { purpose: "scan", status: "published", order: "-starts_at", per_page: 1 }, headers: headers
+      expect(response.parsed_body["events"].map { |e| e["id"] }).to eq([soon.id])
+      get "/api/v1/organizer/events", params: { status: "bogus", ends_after: "not a time", order: "bogus" }, headers: headers
+      expect(response.parsed_body["meta"]["total_count"]).to eq(4)
+      expect(response.parsed_body["events"].map { |e| e["id"] }).to include(past.id)
+    end
+
+    it "keeps scanner assignment scoping when narrowing by status" do
+      scanner = create(:user)
+      create(:organization_membership, organization: organization, user: scanner, role: :scanner)
+      assigned = create(:event, :published, organizer_profile: profile)
+      create(:event, :published, organizer_profile: profile)
+      create(:event_staff_assignment, event: assigned, user: scanner)
+      scoped_headers = auth_headers(scanner).merge("X-Organization-Id" => organization.id.to_s)
+      get "/api/v1/organizer/events", params: { purpose: "scan", status: "published", order: "starts_at" }, headers: scoped_headers
+      expect(response.parsed_body["events"].map { |e| e["id"] }).to eq([assigned.id])
+    end
+
     it "filters non-scanning roles before pagination while honoring event-specific scanner grants" do
       finance = create(:user)
       create(:organization_membership, organization: organization, user: finance, role: :finance)

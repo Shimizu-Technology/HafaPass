@@ -13,15 +13,23 @@ vi.mock('@zxing/browser', () => ({ BrowserQRCodeReader: class {} }))
 const HOUR = 3_600_000
 const at = offset => new Date(Date.now() + offset).toISOString()
 const event = (id, status, startOffset, title = `Event ${id}`) => ({
-  id, title, status, timezone: 'Pacific/Guam', starts_at: at(startOffset), ends_at: at(startOffset + 4 * HOUR),
+  id, title, status, permissions: { scan: true }, timezone: 'Pacific/Guam', starts_at: at(startOffset), ends_at: at(startOffset + 4 * HOUR),
 })
 
 beforeEach(async () => { vi.clearAllMocks(); window.localStorage.clear(); await clearAllAdmissionData() })
 afterEach(async () => { vi.restoreAllMocks(); await clearAllAdmissionData(); window.localStorage.clear() })
 
-async function mount(events, path = '/dashboard/scanner') {
-  apiClient.get.mockImplementation(async requested => {
-    if (requested === '/organizer/events') return { data: { events } }
+async function mount(events, path = '/dashboard/scanner', { lookups = null, details = {} } = {}) {
+  apiClient.get.mockImplementation(async (requested, config) => {
+    if (requested === '/organizer/events') {
+      if (lookups && config?.params?.status === 'published') return { data: { events: lookups(config.params) } }
+      return { data: { events, meta: { current_page: 1, total_pages: lookups ? 2 : 1 } } }
+    }
+    const detail = requested.match(/^\/organizer\/events\/(\d+)$/)
+    if (detail) {
+      if (details[detail[1]]) return { data: details[detail[1]] }
+      throw Object.assign(new Error('Not found'), { response: { status: 404 } })
+    }
     const manifestFor = requested.match(/events\/(\d+)\/scanner_devices\/\d+\/manifest$/)
     if (manifestFor) return { data: await signedManifest(Number(manifestFor[1])) }
     if (requested === '/me') return { data: { id: 7 } }
@@ -83,4 +91,71 @@ it('never auto-selects a draft when no published event is listed', async () => {
   await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue(''))
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(apiClient.post).not.toHaveBeenCalled()
+})
+
+it('ignores a saved draft that is only found through the off-page detail lookup', async () => {
+  window.localStorage.setItem('hafapass_scanner_event_id', '93081')
+  await mount([event(93082, 'published', 48 * HOUR, 'Published')], '/dashboard/scanner',
+    { details: { 93081: { ...event(93081, 'draft', 2 * HOUR, 'Off-page draft'), organization_id: null } } })
+  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('93082'))
+  expect(apiClient.get).toHaveBeenCalledWith('/organizer/events/93081', expect.anything())
+  expect(apiClient.post).not.toHaveBeenCalledWith('/organizer/events/93081/scanner_devices', expect.anything())
+  expect(screen.queryByRole('option', { name: /Off-page draft/ })).not.toBeInTheDocument()
+})
+
+it('never auto-selects a cancelled event, but an explicit or saved cancelled choice still opens', async () => {
+  const { unmount } = await mount([event(93091, 'cancelled', -1 * HOUR, 'Cancelled tonight')])
+  await waitFor(() => expect(screen.getByRole('option', { name: 'Cancelled tonight' })).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue(''))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(apiClient.post).not.toHaveBeenCalled()
+  unmount()
+
+  for (const [path, saved] of [['/dashboard/scanner?event=93091', null], ['/dashboard/scanner', '93091']]) {
+    vi.clearAllMocks()
+    await clearAllAdmissionData()
+    window.localStorage.clear()
+    if (saved) window.localStorage.setItem('hafapass_scanner_event_id', saved)
+    const view = await mount([event(93091, 'cancelled', -1 * HOUR, 'Cancelled tonight')], path)
+    await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('93091'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/93091/scanner_devices', expect.anything()))
+    view.unmount()
+  }
+})
+
+it('finds the best published event on a later page without changing the visible page', async () => {
+  const lookups = vi.fn(params => params.order === 'starts_at' ? [event(93102, 'published', -1 * HOUR, 'Tonight on page 2')] : [])
+  await mount([event(93101, 'published', -240 * HOUR, 'Old page 1 event')], '/dashboard/scanner', { lookups })
+  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('93102'))
+  expect(lookups).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'scan', status: 'published', order: 'starts_at', per_page: 50, ends_after: expect.any(String) }))
+  expect(screen.getByRole('option', { name: 'Old page 1 event' })).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: 'Tonight on page 2 (selected)' })).toBeInTheDocument()
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/93102/scanner_devices', expect.anything()))
+})
+
+it('falls back to the latest published event across pages when none is current or upcoming', async () => {
+  const lookups = vi.fn(params => params.order === '-starts_at' ? [event(93112, 'published', -48 * HOUR, 'Last weekend')] : [])
+  await mount([event(93111, 'published', -720 * HOUR, 'Last month'), event(93113, 'draft', 48 * HOUR)], '/dashboard/scanner', { lookups })
+  await waitFor(() => expect(screen.getByLabelText('Event to scan')).toHaveValue('93112'))
+  expect(lookups).toHaveBeenCalledWith(expect.objectContaining({ status: 'published', order: '-starts_at', per_page: 20 }))
+})
+
+it('keeps the DOM in phone reading order instead of reordering focusable content with CSS', async () => {
+  const { container } = await mount([event(93121, 'published', -1 * HOUR, 'Tonight')])
+  await screen.findByRole('heading', { name: 'Door totals' })
+  const sequence = [
+    screen.getByLabelText('Event to scan'),
+    screen.getByRole('button', { name: 'Sync now' }),
+    screen.getByRole('button', { name: 'Start camera' }),
+    screen.getByRole('button', { name: 'Download emergency door list' }),
+    screen.getByRole('link', { name: 'Use camera' }),
+    screen.getByLabelText('Ticket QR code'),
+    screen.getByLabelText('Find an event'),
+    screen.getByText('Device details'),
+  ]
+  sequence.slice(1).forEach((element, index) => {
+    expect(sequence[index].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+  const reordered = [...container.querySelectorAll('[class]')].filter(element => /(^|\s)(order-|contents(\s|$)|flex-row-reverse)/.test(element.className))
+  expect(reordered).toEqual([])
 })
