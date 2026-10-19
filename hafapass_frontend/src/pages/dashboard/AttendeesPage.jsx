@@ -31,6 +31,9 @@ function AttendeesPageSession({ id, identity }) {
  const accessEpoch = useRef(0)
  const accessDenied = useRef(false)
  const requests = useRef(new Set())
+ // Exports outlive list refreshes (filters, paging) and stop only when access is withdrawn.
+ const exportRequests = useRef(new Set())
+ const accessWithdrawals = useRef(0)
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
  const [detailError, setDetailError] = useState(null)
@@ -48,10 +51,18 @@ function AttendeesPageSession({ id, identity }) {
  const withdrawAccess = useCallback(message => {
   accessDenied.current = true
   ++accessEpoch.current
+  ++accessWithdrawals.current
   requests.current.forEach(request => request.controller.abort())
+  exportRequests.current.forEach(request => request.controller.abort())
   setAttendees([]); setMeta(null); setEvent(null)
   setDetailError(null); setError(message); setLoading(false)
  }, [])
+ const withdrawForDenial = useCallback(requestError => {
+  const status = requestError.response?.status
+  if (![401, 403, 404].includes(status)) return
+  withdrawAccess(status === 401 ? 'Please sign in.'
+   : status === 404 ? 'Event not found.' : 'Your attendee access changed. Retry to verify access before viewing this list.')
+ }, [withdrawAccess])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
   const request = beginRequest()
   if (!request) throw new DOMException('Page context changed', 'AbortError')
@@ -64,13 +75,24 @@ function AttendeesPageSession({ id, identity }) {
    if (!request.current() || epoch !== accessEpoch.current) throw new DOMException('Page context changed', 'AbortError')
    return response
   } catch (requestError) {
-   if (request.current() && epoch === accessEpoch.current && [401, 403, 404].includes(requestError.response?.status)) {
-    withdrawAccess(requestError.response.status === 401 ? 'Please sign in.'
-     : requestError.response.status === 404 ? 'Event not found.' : 'Your attendee access changed. Retry to verify access before viewing this list.')
-   }
+   if (request.current() && epoch === accessEpoch.current) withdrawForDenial(requestError)
    throw requestError
   } finally { requests.current.delete(request); request.release() }
- }, [beginRequest, withdrawAccess])
+ }, [beginRequest, withdrawForDenial])
+ const requestExport = useCallback(async () => {
+  const request = beginRequest()
+  if (!request) throw new DOMException('Page context changed', 'AbortError')
+  const withdrawal = accessWithdrawals.current
+  exportRequests.current.add(request)
+  try {
+   const response = await apiClient.get(`/organizer/events/${id}/crm/export`, { responseType: 'blob', ...request.config })
+   if (!request.current() || withdrawal !== accessWithdrawals.current) throw new DOMException('Page context changed', 'AbortError')
+   return response
+  } catch (requestError) {
+   if (request.current() && withdrawal === accessWithdrawals.current) withdrawForDenial(requestError)
+   throw requestError
+  } finally { exportRequests.current.delete(request); request.release() }
+ }, [beginRequest, id, withdrawForDenial])
 
   const fetchAttendees = useCallback(async () => {
     const generation = ++listGeneration.current
@@ -131,7 +153,7 @@ function AttendeesPageSession({ id, identity }) {
     if (exporting) return
     setExporting(true); setExportError(null)
     try {
-      const response = await requestApi('get', `/organizer/events/${id}/crm/export`, { responseType: 'blob' })
+      const response = await requestExport()
       const url = window.URL.createObjectURL(response.data)
       try { const link = document.createElement('a'); link.href = url; link.download = `${event?.slug || `event-${id}`}-attendees.csv`; link.click() }
       finally { window.URL.revokeObjectURL(url) }

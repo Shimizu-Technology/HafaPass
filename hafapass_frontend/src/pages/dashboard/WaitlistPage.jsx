@@ -245,7 +245,7 @@ function WaitlistSession({ eventId, identity }) {
             }`}
           >
             {s ? statusLabel(s) : 'All'}
-            {s && Number.isInteger(stats[FILTER_COUNT_KEYS[s]]) && <span className="ml-1 tabular-nums">({stats[FILTER_COUNT_KEYS[s]]})</span>}
+            {s && Number.isInteger(stats[FILTER_COUNT_KEYS[s]]) && <>{' '}<span className="tabular-nums">({stats[FILTER_COUNT_KEYS[s]]})</span></>}
           </button>
         ))}
       </div>

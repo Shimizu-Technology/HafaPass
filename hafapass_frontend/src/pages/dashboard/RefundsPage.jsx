@@ -8,7 +8,7 @@ import { useParams } from 'react-router-dom'
 import { RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
 import { supportMailto } from '../../utils/supportContact'
-import { refundConfirmLabel, ticketCountLabel } from '../../utils/eventToolFormat'
+import { partialRefundCents, refundConfirmLabel, ticketCountLabel } from '../../utils/eventToolFormat'
 
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
 const needsFinanceReview = (data, request) => data?.finance_review_required === true || (request?.financeReview && data?.finance_review_required !== false)
@@ -161,6 +161,7 @@ function RefundsPageSession({ eventId, identity }) {
 
  useEffect(() => { fetchOrders() }, [fetchOrders])
 
+ const partialAmountError = order => !pendingRequest && refundForm.type === 'partial' ? partialRefundCents(refundForm.amount, order.refundable_cents).error : null
  const handleRefund = async (orderId) => {
     if (!current() || !authorizedEvent.current || pendingRequest?.recoveryRequired || (pendingRequest && pendingRequest.orderId !== orderId)) return
   if (processing || accessRefreshing) return
@@ -189,14 +190,14 @@ function RefundsPageSession({ eventId, identity }) {
     }
     payload.cash_return = { reference: refundForm.cashReference.trim(), returned_at: returnedAt.toISOString() }
    }
-   if (refundForm.type === 'partial' && refundForm.amount) {
-    const parsed = parseFloat(refundForm.amount)
-    if (Number.isNaN(parsed) || parsed <= 0) {
-     setNotice('Please enter a valid refund amount.')
+   if (!pendingRequest && refundForm.type === 'partial') {
+    const { cents, error: amountError } = partialRefundCents(refundForm.amount, orders.find(order => order.id === orderId)?.refundable_cents)
+    if (amountError) {
+     setNotice(amountError)
      setProcessing(false)
      return
     }
-    payload.amount_cents = Math.round(parsed * 100)
+    payload.amount_cents = cents
    }
    request ||= { orderId, key: refundRequestKey || newRefundRequestKey(), payload }
    window.sessionStorage.setItem(storageKey, JSON.stringify(request))
@@ -332,6 +333,7 @@ function RefundsPageSession({ eventId, identity }) {
             <label htmlFor={`refund-amount-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">Amount ($)</label>
             <input id={`refund-amount-${order.id}`} disabled={processing || accessRefreshing || Boolean(pendingRequest)} type="number" step="0.01" min="0.01" max={(order.refundable_cents / 100).toFixed(2)}
              value={refundForm.amount} onChange={e => setRefundForm({...refundForm, amount: e.target.value})}
+             aria-invalid={(Boolean(partialAmountError(order)) && Boolean(refundForm.amount)) || undefined} aria-describedby={partialAmountError(order) ? `refund-amount-error-${order.id}` : undefined}
              className="input !py-2 text-sm w-28" placeholder="0.00" />
            </div>
           )}
@@ -340,12 +342,13 @@ function RefundsPageSession({ eventId, identity }) {
            <input id={`refund-reason-${order.id}`} aria-invalid={cashInvalidField === `refund-reason-${order.id}` || undefined} aria-describedby={cashInvalidField === `refund-reason-${order.id}` ? 'refund-notice' : undefined} disabled={processing || accessRefreshing || Boolean(pendingRequest)} value={refundForm.reason} onChange={e => setRefundForm({...refundForm, reason: e.target.value})}
             className="input !py-2 text-sm" placeholder="Customer request, event cancelled..." />
           </div>
-          <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || (refundForm.type === 'partial' && !refundForm.amount)}
+          <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || Boolean(partialAmountError(order))} aria-describedby={partialAmountError(order) ? `refund-amount-error-${order.id}` : undefined}
            className="btn-primary text-sm !py-2.5 !bg-action-danger hover:!bg-action-danger-hover gap-1 disabled:opacity-50">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
            {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund' : isCashOrder(order) ? 'Record cash already returned' : refundConfirmLabel(order, refundForm)}
           </button>
          </div>
+         {partialAmountError(order) && <p id={`refund-amount-error-${order.id}`} className={`mt-2 text-sm ${refundForm.amount ? 'text-red-700' : 'text-neutral-600'}`}>{partialAmountError(order)}</p>}
         </div>
        )}
       </div>

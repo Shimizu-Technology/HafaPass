@@ -370,4 +370,36 @@ describe('attendee list totals and export', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:attendees')
     vi.unstubAllGlobals()
   })
+
+  it('keeps a pending export alive across a filter change but cancels it when access is withdrawn', async () => {
+    const blob = new Blob(['name,email\n'], { type: 'text/csv' })
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: vi.fn(() => 'blob:attendees'), revokeObjectURL: vi.fn() }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    let exportRead = deferred()
+    let denyList = false
+    apiClient.get.mockImplementation((url, config) => url.endsWith('/crm/export') ? exportRead.promise
+      : denyList && url.includes('/attendees?') ? Promise.reject({ response: { status: 403 } })
+      : Promise.resolve({ data: fixtures(url, config) }))
+    mount(AttendeesPage, 'attendees')
+    await screen.findAllByText('Attendee 37')
+    await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+    fireEvent.change(screen.getByLabelText('Filter attendees by status'), { target: { value: 'checked_in' } })
+    await waitFor(() => expect(apiClient.get.mock.calls.some(([url]) => url.includes('status=checked_in'))).toBe(true))
+    await screen.findAllByText('Attendee 37')
+    const firstExport = apiClient.get.mock.calls.filter(([url]) => url.endsWith('/crm/export'))[0][1]
+    expect(firstExport.signal.aborted).toBe(false)
+    await act(async () => exportRead.resolve({ data: blob }))
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+
+    exportRead = deferred()
+    await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+    const secondExport = apiClient.get.mock.calls.filter(([url]) => url.endsWith('/crm/export'))[1][1]
+    denyList = true
+    fireEvent.change(screen.getByLabelText('Filter attendees by status'), { target: { value: 'issued' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your attendee access changed')
+    expect(secondExport.signal.aborted).toBe(true)
+    await act(async () => exportRead.resolve({ data: blob }))
+    expect(click).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
 })
