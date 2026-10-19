@@ -57,7 +57,9 @@ test('admin monitors an active Gate I pilot and reports a mandatory-pause incide
     support_coverage_confirmed: true, guam_communications_current: true,
   })
 
-  await page.getByRole('button', { name: 'Gate I pilot · active' }).click()
+  // The dialog stays open after a checkpoint (the list refresh keeps the row
+  // mounted), so the operator continues straight to the incident report.
+  await expect(page.getByRole('dialog')).toBeVisible()
   await page.getByLabel('Incident severity').waitFor()
   await page.getByLabel('Incident severity').selectOption('p1')
   await page.getByLabel('Incident category').selectOption('uncertain_payment')
