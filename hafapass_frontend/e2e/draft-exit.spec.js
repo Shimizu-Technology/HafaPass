@@ -26,7 +26,7 @@ for (const width of [390, 1440]) {
       const menu = page.getByRole('button', { name: 'Toggle menu', exact: true })
       if (await menu.getAttribute('aria-expanded') === 'false') await menu.click()
     }
-    await page.getByRole('link', { name: 'Events', exact: true }).click()
+    await page.getByRole('link', { name: 'View public site', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Leave unsaved event changes?' })).toBeVisible()
     await expect(page).toHaveURL(/\/dashboard\/events\/601\/edit$/)
     await page.getByRole('button', { name: 'Stay and save', exact: true }).click()
@@ -35,11 +35,11 @@ for (const width of [390, 1440]) {
       const menu = page.getByRole('button', { name: 'Toggle menu', exact: true })
       if (await menu.getAttribute('aria-expanded') === 'false') await menu.click()
     }
-    await page.getByRole('link', { name: 'Events', exact: true }).click()
+    await page.getByRole('link', { name: 'View public site', exact: true }).click()
     await expect(page.getByRole('dialog')).toHaveCount(1)
     await page.getByRole('button', { name: 'Leave without saving', exact: true }).click()
-    await expect(page).toHaveURL(/\/events$/)
-    await expect(page.getByRole('heading', { name: 'Events', exact: true })).toBeVisible()
+    await expect(page).toHaveURL(/^https?:\/\/[^/]+\/$/)
+    await expect(title).toHaveCount(0)
   })
 }
 

@@ -1,7 +1,7 @@
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import { CheckCircle2, CircleAlert, Copy, Loader2, ShieldCheck, Trash2, UserPlus, Users, WalletCards } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
 import apiClient from '../../api/client'
 import { supportMailto } from '../../utils/supportContact'
 
@@ -196,27 +196,25 @@ function SettingsPageSession({ identity }) {
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
   if (!organization && error) return (
-    <section className="mx-auto max-w-2xl px-4 py-8 sm:px-6" aria-labelledby="organization-recovery-heading">
-      <Link to="/dashboard" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-700">← Back to dashboard</Link>
-      <h1 id="organization-recovery-heading" className="mt-4 text-2xl font-bold text-neutral-950">Verify organization access</h1>
+    <WorkspacePage as="section" width="form" aria-labelledby="organization-recovery-heading">
+      <PageHeader back={<BackLink />} title="Verify organization access" titleId="organization-recovery-heading" className="!mb-0" />
       <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
         <p>{error}</p>
         <button type="button" onClick={load} className="mt-3 min-h-11 font-semibold underline">Retry organization settings</button>
       </div>
-    </section>
+    </WorkspacePage>
   )
 
   return (
-    <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6" aria-label="Organization settings">
-      <Link to="/dashboard" className="text-sm font-medium text-brand-600 hover:text-brand-700">← Back to dashboard</Link>
-      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">Organization</p>
-          <h1 className="mt-1 text-3xl font-bold text-neutral-950">{organization?.name}</h1>
-          <p className="mt-1 text-sm text-neutral-500">Team access, event staffing, and payout readiness for {organization?.timezone}.</p>
-        </div>
-        <StatusPill ready={organization?.payout_ready}>{organization?.payout_ready ? 'Paid events ready' : 'Payout setup incomplete'}</StatusPill>
-      </div>
+    <WorkspacePage as="section" aria-label="Organization settings">
+      <PageHeader
+        back={<BackLink />}
+        eyebrow="Organization"
+        title={organization?.name}
+        description={`Team access, event staffing, and payout readiness${organization?.timezone ? ` for ${organization.timezone}` : ''}.`}
+        actions={<StatusPill ready={organization?.payout_ready}>{organization?.payout_ready ? 'Paid events ready' : 'Payout setup incomplete'}</StatusPill>}
+        className="!mb-0"
+      />
 
       {error && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p>{error}</p><button type="button" onClick={load} className="min-h-11 font-semibold underline">Retry organization settings</button></div>}
       {notice && <div className="mt-6 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-800">{notice}</div>}
@@ -319,6 +317,6 @@ function SettingsPageSession({ identity }) {
           </section>
         </>
       )}
-    </section>
+    </WorkspacePage>
   )
 }
