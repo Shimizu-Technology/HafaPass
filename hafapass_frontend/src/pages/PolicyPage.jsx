@@ -40,7 +40,7 @@ export default function PolicyPage() {
 
   return (
     <main className="min-h-screen bg-neutral-50 px-4 py-12">
-      <SEO title={`${content.title} — HafaPass`} description={content.summary} />
+      <SEO title={`${content.title} — HåfaPass`} description={content.summary} />
       <article className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-800">Pilot policy · version {registry.version}</p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-neutral-950">{content.title}</h1>

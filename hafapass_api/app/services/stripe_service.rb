@@ -38,7 +38,7 @@ class StripeService
               hafapass: "true"
             },
             receipt_email: order.buyer_email,
-            description: "HafaPass tickets for #{order.event.title}"
+            description: "HåfaPass tickets for #{order.event.title}"
           },
           options.merge(idempotency_key: idempotency_key)
         )

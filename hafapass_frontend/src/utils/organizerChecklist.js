@@ -21,9 +21,9 @@ export function organizerChecklist(checklist) {
   const reviews = checklist.filter(item => !organizerSteps[item.code])
   if (reviews.length) steps.push({
     code: 'launch_review',
-    label: 'HafaPass launch review',
+    label: 'HåfaPass launch review',
     complete: reviews.every(item => item.complete),
-    detail: reviews.every(item => item.complete) ? 'Launch checks are complete.' : 'Your HafaPass launch coordinator will confirm testing and event-day preparations before publishing.',
+    detail: reviews.every(item => item.complete) ? 'Launch checks are complete.' : 'Your HåfaPass launch coordinator will confirm testing and event-day preparations before publishing.',
   })
   return steps
 }

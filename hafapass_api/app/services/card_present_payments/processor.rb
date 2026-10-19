@@ -57,7 +57,7 @@ module CardPresentPayments
         record_unknown!(attempt, e, provider_response: result.provider_response,
           provider_payment_id: result.provider_payment_id)
         Sentry.capture_exception(e)
-        raise ProcessingError.new("The terminal succeeded but HafaPass requires reconciliation", attempt: attempt)
+        raise ProcessingError.new("The terminal succeeded but HåfaPass requires reconciliation", attempt: attempt)
       end
     rescue CardPresentGateway::PaymentError => e
       record_failure!(attempt, e)

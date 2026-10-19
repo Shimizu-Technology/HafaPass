@@ -6,7 +6,7 @@ class Api::V1::VenuesController < ApplicationController
 
   def index
     venues = Venue.published.joins(:events).merge(Event.discoverable).distinct.order(:name)
-    venues = venues.where("venues.village ILIKE ?", params[:village].to_s.strip) if params[:village].present?
+    venues = venues.accent_insensitive_equals("venues.village", params[:village]) if params[:village].present?
     pagy, records = paginate(venues)
     render json: { venues: records.map { |venue| venue_json(venue) }, meta: pagination_meta(pagy) }
   end

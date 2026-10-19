@@ -17,7 +17,7 @@ export default function TicketTransferAcceptPage() {
     }
 
     apiClient.post('/me/ticket_transfers/accept', { token })
-      .then(() => { setStatus('accepted'); setMessage('The ticket is now in your HafaPass account. The previous entry code has been disabled.') })
+      .then(() => { setStatus('accepted'); setMessage('The ticket is now in your HåfaPass account. The previous entry code has been disabled.') })
       .catch(err => { setStatus('error'); setMessage(err.response?.data?.error || 'This transfer could not be accepted.') })
   }, [searchParams])
 

@@ -1,9 +1,9 @@
 import { Helmet } from 'react-helmet-async'
 import { PUBLIC_WEB_URL } from '../utils/site'
 
-const SITE_NAME = 'HafaPass'
-const DEFAULT_TITLE = 'HafaPass — Your Pass to Every Event on Guam'
-const DEFAULT_DESCRIPTION = 'Discover and book tickets for the best events on Guam. Nightlife, concerts, festivals, dining, sports, and more.'
+const SITE_NAME = 'HåfaPass'
+const DEFAULT_TITLE = 'HåfaPass — Your Pass to Every Event on Guam'
+const DEFAULT_DESCRIPTION = 'HåfaPass (HafaPass) — discover and book tickets for the best events on Guam. Nightlife, concerts, festivals, dining, sports, and more.'
 const DEFAULT_IMAGE = `${PUBLIC_WEB_URL}/og-default.jpg`
 const SITE_URL = PUBLIC_WEB_URL
 

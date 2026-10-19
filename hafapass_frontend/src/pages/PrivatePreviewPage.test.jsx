@@ -8,5 +8,5 @@ afterEach(() => vi.unstubAllEnvs())
 it('uses the same configured support mailbox while application services are unavailable', () => {
   vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
   render(<PrivatePreviewPage />)
-  expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=HafaPass%20Support')
+  expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=H%C3%A5faPass%20Support')
 })

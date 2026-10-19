@@ -1,6 +1,6 @@
 {
-  "name": "HafaPass",
-  "short_name": "HafaPass",
+  "name": "HåfaPass",
+  "short_name": "HåfaPass",
   "description": "Discover and purchase tickets for events across Guam",
   "start_url": "/",
   "display": "standalone",

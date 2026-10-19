@@ -215,7 +215,7 @@ function RefundsPageSession({ eventId, identity }) {
    } else if (status === 'pending') {
     setNotice('Refund pending — waiting for the payment provider. Retry this saved request to check its status; do not create another refund.')
    } else if (['succeeded', 'failed', 'cancelled'].includes(status)) {
-    setNotice(status === 'succeeded' ? response.data.manual_record && response.data.provider === 'door_cash' ? 'Cash return recorded. The organizer returned physical cash; HafaPass did not transfer money.' : response.data.refund_simulated ? 'Test refund complete. No real money was returned.' : 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
+    setNotice(status === 'succeeded' ? response.data.manual_record && response.data.provider === 'door_cash' ? 'Cash return recorded. The organizer returned physical cash; HåfaPass did not transfer money.' : response.data.refund_simulated ? 'Test refund complete. No real money was returned.' : 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
     window.sessionStorage.removeItem(storageKey)
     if (importedLegacyKey.current === request.key) window.sessionStorage.removeItem(legacyStorageKey)
     setPendingRequest(null)
@@ -307,12 +307,12 @@ function RefundsPageSession({ eventId, identity }) {
         )}
        </div>
 
-       {order.refunds?.filter(refund => refund.manual_record && refund.provider === 'door_cash').map(refund => <p key={refund.id} className="mt-3 break-words text-sm text-neutral-700">Cash return recorded: ${(refund.amount_cents / 100).toFixed(2)} · {refund.cash_return?.reference} · Returned {refund.cash_return?.returned_at} · Recorded {refund.recorded_at} · Organizer custody. No money transferred by HafaPass.</p>)}
+       {order.refunds?.filter(refund => refund.manual_record && refund.provider === 'door_cash').map(refund => <p key={refund.id} className="mt-3 break-words text-sm text-neutral-700">Cash return recorded: ${(refund.amount_cents / 100).toFixed(2)} · {refund.cash_return?.reference} · Returned {refund.cash_return?.returned_at} · Recorded {refund.recorded_at} · Organizer custody. No money transferred by HåfaPass.</p>)}
        {refundingId === order.id && (
         <div className="mt-4 pt-4 border-t border-neutral-100">
          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-          <p className="text-sm text-amber-700">{isCashOrder(order) ? 'The organizer holds door cash and must return it to the buyer first. This records physical cash already returned. HafaPass does not send money. Enter the receipt or repayment reference, when the cash was returned, and why.' : 'The original payment provider determines the outcome. Pending requests are not completed refunds. Unsupported terminal payments need a manager to arrange repayment.'}</p>
+          <p className="text-sm text-amber-700">{isCashOrder(order) ? 'The organizer holds door cash and must return it to the buyer first. This records physical cash already returned. HåfaPass does not send money. Enter the receipt or repayment reference, when the cash was returned, and why.' : 'The original payment provider determines the outcome. Pending requests are not completed refunds. Unsupported terminal payments need a manager to arrange repayment.'}</p>
          </div>
          {isCashOrder(order) && <div className="mb-4 grid gap-3 sm:grid-cols-2">
           <div><label htmlFor={`cash-reference-${order.id}`} className="mb-1 block text-sm font-medium">Cash return reference</label>

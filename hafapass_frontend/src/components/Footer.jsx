@@ -16,7 +16,7 @@ export default function Footer() {
               <div className="w-8 h-8 rounded-lg bg-brand-500/20 flex items-center justify-center">
                 <HafaPassMark className="h-5 w-5 text-brand-300" />
               </div>
-              <span className="text-base font-bold text-neutral-200 tracking-tight">HafaPass</span>
+              <span className="text-base font-bold text-neutral-200 tracking-tight">HåfaPass</span>
             </div>
             <p className="text-sm text-content-inverse-muted leading-relaxed">
               {t('footer.tagline')}

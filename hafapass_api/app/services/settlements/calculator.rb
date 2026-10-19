@@ -180,7 +180,7 @@ module Settlements
           kind: "platform_fee",
           amount_cents: component.amount_cents,
           source: component,
-          description: "Buyer-paid HafaPass service fee",
+          description: "Buyer-paid HåfaPass service fee",
           occurred_at: component.created_at,
           metadata: { order_id: component.order_id, estimated: component.estimated? }
         )

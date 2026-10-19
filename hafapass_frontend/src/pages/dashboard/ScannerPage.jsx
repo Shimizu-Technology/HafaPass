@@ -1286,7 +1286,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
 
         <section id="attendee-lookup" className="scroll-mt-24 rounded-2xl border border-neutral-200 bg-white p-5">
           <h2 className="font-semibold text-neutral-950">Find an attendee</h2>
-          <p id="attendee-lookup-help" className="mb-3 text-sm text-neutral-700">Search online by name or HafaPass ticket number. Email addresses stay private.{!online && ' Reconnect to use this search.'}</p>
+          <p id="attendee-lookup-help" className="mb-3 text-sm text-neutral-700">Search online by name or HåfaPass ticket number. Email addresses stay private.{!online && ' Reconnect to use this search.'}</p>
           <label htmlFor="attendee-query" className="mb-1 block text-sm font-medium text-neutral-800">Attendee name or ticket number</label>
           <form onSubmit={runSearch} className="flex flex-col gap-2 sm:flex-row">
             <input value={searchQuery} onChange={event => setSearchQuery(event.target.value)} id="attendee-query" className="input min-w-0 flex-1" aria-describedby="attendee-lookup-help" placeholder="Name or HP-T123" disabled={!online} />
