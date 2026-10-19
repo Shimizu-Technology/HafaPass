@@ -28,7 +28,7 @@ beforeEach(() => {
   vi.clearAllMocks(); window.localStorage.clear()
   window.localStorage.setItem('hafapass_organization_id', '1')
   launch.assigned_seating = true; launch.advanced_sales_tools = true
-  apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer' }] : dto() }))
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer', role: 'owner' }] : dto() }))
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function () { this.open = true; this.querySelector('button')?.focus() } })
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function () { this.open = false } })
 })
@@ -48,7 +48,8 @@ describe('connected event workspace', () => {
     expect(screen.getByText('Synthetic Guam venue')).toBeInTheDocument()
     expect(screen.getByText(/Pacific\/Guam/)).toHaveTextContent('7:00 PM')
     expect(screen.getByText('Published', { exact: true })).toBeInTheDocument()
-    expect(screen.getByText(/^Your access:/)).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
+    expect(screen.getByText('Your role: Owner')).toBeInTheDocument()
+    expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
     expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Edit event' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Refunds' })).toHaveAttribute('href', '/dashboard/events/37/refunds')
@@ -62,7 +63,8 @@ describe('connected event workspace', () => {
     expect(links[0]).toHaveTextContent('Overview')
     expect(links[0]).toHaveAttribute('href', '/dashboard/events/37')
     expect(links[0]).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByText(/^Your access:/)).not.toHaveTextContent('Overview')
+    expect(screen.getByText('You can work on parts of this event')).toBeInTheDocument()
+    expect(screen.getByText('What you can do').closest('details')).not.toHaveTextContent('Overview')
     expect(screen.getByText('Overview body')).toBeInTheDocument()
   })
 

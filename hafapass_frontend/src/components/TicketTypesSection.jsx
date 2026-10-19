@@ -51,7 +51,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
           const hasDiscount = tt.active_tier && currentPrice < tt.price_cents
 
           return (
-            <div key={tt.id} className={`card p-4 transition-all duration-200 ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
+            <div key={tt.id} className={`card p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">

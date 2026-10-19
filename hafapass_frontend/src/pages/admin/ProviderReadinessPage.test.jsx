@@ -29,12 +29,12 @@ describe('ProviderReadinessPage', () => {
     render(<MemoryRouter initialEntries={['/admin/provider-readiness']}><ProviderReadinessPage /></MemoryRouter>)
     await screen.findByText('Production policy register')
 
-    expect(screen.getByText('Disabled Pending Approval')).toBeInTheDocument()
+    expect(screen.getByText('Off until approved')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Evidence reference'), { target: { value: 'legal-register-17' } })
     fireEvent.change(screen.getByLabelText('SHA-256 evidence digest'), { target: { value: 'a'.repeat(64) } })
-    fireEvent.click(screen.getByText('Counsel Approved'))
-    fireEvent.click(screen.getByText('Privacy Approved'))
-    fireEvent.click(screen.getByRole('button', { name: 'Submit immutable evidence' }))
+    fireEvent.click(screen.getByText('Legal counsel approved'))
+    fireEvent.click(screen.getByText('Privacy review approved'))
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evidence (can’t be edited later)' }))
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
       '/admin/platform_capabilities/policy_register/reviews',

@@ -246,7 +246,7 @@ function EventAnalyticsPageSession({ id, identity }) {
      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-3">
        <div className="rounded-xl bg-emerald-50 p-2.5"><WalletCards className="h-5 w-5 text-emerald-700" /></div>
-       <div><h2 id="finance-heading" className="text-lg font-semibold text-neutral-900">Settlement and payout</h2><p className="mt-1 text-sm text-neutral-500">Versioned from immutable sales, refunds, processing costs, disputes, reserves, adjustments, and payouts.</p></div>
+       <div><h2 id="finance-heading" className="text-lg font-semibold text-neutral-900">Settlement and payout</h2><p className="mt-1 text-sm text-neutral-500">Built from recorded sales, refunds, processing costs, disputes, reserves, adjustments, and payouts. Past records are never changed.</p></div>
       </div>
       {finance.connected_account?.payout_ready ? (
        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> {finance.connected_account.provider} ready</span>

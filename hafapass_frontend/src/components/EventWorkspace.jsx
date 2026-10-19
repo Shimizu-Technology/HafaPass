@@ -13,6 +13,7 @@ import { navigationFor } from '../utils/eventWorkspaceNavigation'
 
 const preferenceKey = 'hafapass:event-workspace:collapsed'
 const readPreference = () => { try { return window.localStorage.getItem(preferenceKey) === 'true' } catch { return false } }
+const roleLabels = { owner: 'Owner', manager: 'Manager', finance: 'Finance', marketer: 'Marketing', box_office: 'Box office', scanner: 'Door scanner' }
 const statusLabels = { draft: 'Draft', published: 'Published', postponed: 'Postponed', cancelled: 'Cancelled', completed: 'Completed', archived: 'Archived' }
 
 function WorkspaceLinks({ groups, collapsed = false, onNavigate, location }) {
@@ -135,7 +136,11 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
           {event.venue_name && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span className="break-words">{event.venue_name}</span></p>}
         </div>
         <p className="mt-3 text-sm text-neutral-700">{organization?.name || event.organization_name || (event.organization_id != null ? `Organization ${event.organization_id}` : 'Event workspace')}</p>
-        <p className="mt-1 text-sm text-neutral-600">Your access: {toolGroups.length ? toolGroups.map(group => group.label).join(', ') : 'No event tools available'}</p>
+        <p className="mt-1 text-sm text-neutral-600">{roleLabels[organization?.role] ? `Your role: ${roleLabels[organization.role]}` : toolGroups.length ? 'You can work on parts of this event' : 'No event tools available'}</p>
+        {toolGroups.length > 0 && <details className="mt-1 text-sm text-neutral-600">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-brand-800">What you can do</summary>
+          <p className="pb-1">{toolGroups.map(group => group.label).join(', ')}</p>
+        </details>}
       </> : <p className="mt-2 text-sm text-neutral-600">{error ? 'Event context unavailable' : 'Loading event context…'}</p>}
       {error && <div className="mt-3 text-sm text-red-700" role="alert"><p>{error}</p><button type="button" className="min-h-11 font-semibold underline" onClick={() => setAttempt(value => value + 1)}>Retry event navigation</button></div>}
       {groups.length > 0 && <button type="button" className="mt-4 flex min-h-11 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-semibold text-neutral-800 lg:hidden" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><Menu className="h-4 w-4" aria-hidden="true" />Event navigation</button>}

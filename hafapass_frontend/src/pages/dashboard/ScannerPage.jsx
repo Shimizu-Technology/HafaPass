@@ -7,6 +7,7 @@ import {
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
 } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { WORKSPACE_WIDTHS } from '../../utils/workspace'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../../api/client'
 import { DEFAULT_EVENT_TIME_ZONE, formatEventDateTime } from '../../utils/eventTime'
 import {
@@ -1193,7 +1194,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   // restores the two-column desktop arrangement (rows 1-3 header, 4-6 status,
   // notices and tool links, 7-10 the camera and side column).
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] sm:gap-x-4 sm:gap-y-0 sm:py-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,.65fr)] lg:grid-rows-[repeat(8,auto)_1fr_auto] lg:gap-x-6">
+    <div className={`mx-auto flex w-full min-w-0 ${WORKSPACE_WIDTHS.standard} flex-col gap-3 px-4 py-4 sm:grid sm:px-6 lg:px-8 sm:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] sm:gap-x-4 sm:gap-y-0 sm:py-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,.65fr)] lg:grid-rows-[repeat(8,auto)_1fr_auto] lg:gap-x-6`}>
       <div className="sm:col-start-1 sm:row-start-1 sm:min-w-0 sm:max-w-2xl sm:self-end">
         <div className="flex items-center justify-between gap-3 sm:flex-col-reverse sm:items-start sm:gap-0">
           <h1 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl">Check-in</h1>

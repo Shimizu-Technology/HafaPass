@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { BarChart3, Calendar, Users, ShoppingCart, Shield, LifeBuoy, Compass, ShieldCheck, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import AdminNavigationDrawer from './AdminNavigationDrawer'
+import { WORKSPACE_WIDTHS } from '../../utils/workspace'
 
 const preferenceKey = 'hafapass_admin_sidebar_collapsed'
 const navItems = [
@@ -56,7 +57,7 @@ export default function AdminLayout({ children }) {
   const current = navItems.find(item => matches(location.pathname, item))
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className={`mx-auto w-full min-w-0 ${WORKSPACE_WIDTHS.standard} px-4 py-6 sm:px-6 lg:px-8`}>
       <header className="mb-6 flex items-center gap-3 border-b border-neutral-200 pb-5">
         <button type="button" onClick={() => setMobileOpen(true)} aria-label="Open admin navigation" aria-controls={drawerId} aria-expanded={mobileOpen}
           className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 lg:hidden">

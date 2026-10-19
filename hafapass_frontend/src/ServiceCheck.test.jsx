@@ -1,9 +1,9 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBackendAvailability } from './hooks/useBackendAvailability'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
-import ServiceCheck from './ServiceCheck'
+import ServiceCheck, { GATE_DELAY_MS, HEALTH_CACHE_KEY, HEALTH_CACHE_TTL_MS } from './ServiceCheck'
 import { loadAuthorizedScanner } from './utils/admissionStore'
 import { currentScannerOwner } from './utils/scannerAccountBinding'
 
@@ -36,15 +36,75 @@ describe('ServiceCheck', () => {
     retry.mockReset()
     loadAuthorizedScanner.mockReset()
     window.localStorage.clear()
+    window.sessionStorage.clear()
     loadAuthorizedScanner.mockResolvedValue(null)
   })
 
-  it('shows a service check while availability is unknown', () => {
-    useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+  describe('loading gate', () => {
+    afterEach(() => vi.useRealTimers())
 
-    render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+    it('never shows the gate when the check finishes quickly', () => {
+      vi.useFakeTimers()
+      useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+      const { rerender } = render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      act(() => { vi.advanceTimersByTime(GATE_DELAY_MS - 50) })
+      expect(screen.queryByText(/Checking HåfaPass services/)).not.toBeInTheDocument()
+      useBackendAvailability.mockReturnValue({ status: 'available', retry })
+      rerender(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      act(() => { vi.advanceTimersByTime(GATE_DELAY_MS) })
+      expect(screen.queryByText(/Checking HåfaPass services/)).not.toBeInTheDocument()
+      expect(screen.getByText('Public application')).toBeInTheDocument()
+    })
 
-    expect(screen.getByRole('status')).toHaveTextContent('Checking HåfaPass services')
+    it('shows a light, motion-safe gate when the check is slow', () => {
+      vi.useFakeTimers()
+      useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+      render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      act(() => { vi.advanceTimersByTime(GATE_DELAY_MS) })
+      const gate = screen.getByRole('status')
+      expect(gate).toHaveTextContent('Checking HåfaPass services')
+      expect(gate).toHaveClass('bg-neutral-50')
+      expect(gate).not.toHaveClass('bg-neutral-950')
+      // Reduced motion: the spinner only rotates under prefers-reduced-motion: no-preference.
+      const spinner = gate.querySelector('[aria-hidden="true"]')
+      expect(spinner).toHaveClass('motion-safe:animate-spin')
+      expect(spinner).not.toHaveClass('animate-spin')
+    })
+
+    it('renders immediately after a recent successful check in this session', () => {
+      window.sessionStorage.setItem(HEALTH_CACHE_KEY, String(Date.now()))
+      useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+      render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      expect(screen.getByText('Public application')).toBeInTheDocument()
+    })
+
+    it('ignores an expired success and remembers a new one', () => {
+      vi.useFakeTimers()
+      window.sessionStorage.setItem(HEALTH_CACHE_KEY, String(Date.now() - HEALTH_CACHE_TTL_MS - 1))
+      useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+      const { rerender } = render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      act(() => { vi.advanceTimersByTime(GATE_DELAY_MS) })
+      expect(screen.getByRole('status')).toHaveTextContent('Checking HåfaPass services')
+      useBackendAvailability.mockReturnValue({ status: 'available', retry })
+      rerender(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      expect(Number(window.sessionStorage.getItem(HEALTH_CACHE_KEY))).toBeGreaterThan(Date.now() - 1000)
+    })
+
+    it('switches to the outage page when the background check fails', () => {
+      window.sessionStorage.setItem(HEALTH_CACHE_KEY, String(Date.now()))
+      useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+      const { rerender } = render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      expect(screen.getByText('Public application')).toBeInTheDocument()
+      useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
+      rerender(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      expect(screen.getByRole('button', { name: /check services again/i })).toBeInTheDocument()
+      expect(screen.queryByText('Public application')).not.toBeInTheDocument()
+      expect(window.sessionStorage.getItem(HEALTH_CACHE_KEY)).toBeNull()
+      // A retry after the failure must not reuse the withdrawn success.
+      useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+      rerender(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      expect(screen.queryByText('Public application')).not.toBeInTheDocument()
+    })
   })
 
   it('shows the private preview and can retry when services are unavailable', async () => {

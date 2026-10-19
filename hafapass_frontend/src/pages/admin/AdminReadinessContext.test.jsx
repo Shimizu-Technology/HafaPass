@@ -126,7 +126,7 @@ describe('provider readiness captured mutations', () => {
       fireEvent.change(screen.getByLabelText('Evidence reference'), { target: { value: 'restricted/test-evidence' } })
       fireEvent.change(screen.getByLabelText('SHA-256 evidence digest'), { target: { value: 'a'.repeat(64) } })
       fireEvent.click(screen.getByRole('checkbox'))
-      fireEvent.click(screen.getByRole('button', { name: 'Submit immutable evidence' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Submit evidence (can’t be edited later)' }))
     } else {
       fireEvent.change(screen.getByLabelText('Revocation reason'), { target: { value: 'Synthetic correction' } })
       fireEvent.click(screen.getByRole('button', { name: 'Revoke approval' }))
