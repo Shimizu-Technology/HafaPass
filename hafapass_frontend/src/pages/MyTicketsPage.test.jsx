@@ -94,6 +94,20 @@ describe('MyTicketsPage expired session', () => {
     expect(clerk.signOut).toHaveBeenCalledWith({ redirectUrl: '/sign-in?returnTo=%2Fmy-tickets' })
   })
 
+  it('treats a failed token refresh as a retryable load error, not an expired session', async () => {
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
+    clerk.getToken.mockRejectedValueOnce(new Error('Clerk offline'))
+    apiClient.get.mockRejectedValueOnce({ response: { status: 401 } }).mockResolvedValue({ data: { tickets: [ticket] } })
+    apiClient.post.mockResolvedValue({ data: {} })
+    renderAt()
+    expect(await screen.findByRole('alert')).toHaveTextContent('We couldn’t load your tickets. Try again.')
+    expect(screen.queryByRole('heading', { name: 'Your session expired' })).not.toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledTimes(1)
+    expect(clerk.signOut).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Island workshop')).toBeInTheDocument()
+  })
+
   it('links to sign-in when Clerk is not configured', async () => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
     apiClient.get.mockRejectedValue({ response: { status: 401 } })
@@ -106,7 +120,7 @@ describe('MyTicketsPage expired session', () => {
     apiClient.get.mockRejectedValueOnce({ response: { status: 500 } }).mockResolvedValue({ data: { tickets: [ticket] } })
     apiClient.post.mockResolvedValue({ data: {} })
     renderPage()
-    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load your tickets')
+    expect(await screen.findByRole('alert')).toHaveTextContent('We couldn’t load your tickets. Try again.')
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('Island workshop')).toBeInTheDocument()
   })

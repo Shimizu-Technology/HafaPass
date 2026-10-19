@@ -72,6 +72,9 @@ describe('EventDetailPage buyer polish', () => {
     link.click()
     expect(panel.scrollIntoView).toHaveBeenCalled()
     expect(panel).toHaveFocus()
+    // Programmatic focus after keyboard activation keeps a visible indicator.
+    expect(panel).not.toHaveClass('focus-visible:outline-none')
+    expect(panel).toHaveClass('focus-visible:outline', 'focus-visible:outline-2', 'focus-visible:outline-focus')
   })
 
   it('keeps the buy bar hidden while only the ticket panel is in view', async () => {

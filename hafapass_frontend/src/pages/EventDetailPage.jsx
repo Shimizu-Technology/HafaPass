@@ -341,7 +341,7 @@ function EventDetailContent() {
               ref={ticketPanel}
               id="tickets"
               tabIndex={-1}
-              className="order-1 min-w-0 scroll-mt-24 focus:outline-none lg:order-2 lg:col-span-1"
+              className="order-1 min-w-0 scroll-mt-24 rounded-2xl focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus lg:order-2 lg:col-span-1"
               initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: reducedMotion ? 0 : 0.3 }}

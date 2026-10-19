@@ -55,7 +55,13 @@ function MyTicketsContent({ refreshSession, signOut }) {
         return await apiClient.get('/me/tickets')
       } catch (err) {
         if (err.response?.status !== 401 || !refreshSession) throw err
-        await refreshSession().catch(() => null)
+        // If Clerk cannot refresh (offline, temporarily unavailable) the session may
+        // still be fine, so this is a retryable load error rather than an expiry.
+        try {
+          await refreshSession()
+        } catch {
+          throw new Error('Session refresh failed')
+        }
         return apiClient.get('/me/tickets')
       }
     }
@@ -70,7 +76,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
         // An expired session is not a failure; invite the visitor to sign in again.
         setSignedOut(true)
       } else {
-        setError('Failed to load your tickets. Please try again.')
+        setError('We couldn’t load your tickets. Try again.')
       }
     } finally {
       setLoading(false)
