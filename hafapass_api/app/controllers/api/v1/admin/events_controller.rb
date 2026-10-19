@@ -8,7 +8,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       :pilot_closeout_reviews,
       organization: :live_money_proof_reviews)
 
-    events = events.accent_insensitive_search(params[:search], "events.title") if params[:search].present?
+    events = events.accent_insensitive_search(params[:search], :title) if params[:search].present?
     events = events.where(status: params[:status]) if params[:status].present?
     events = events.where(category: params[:category]) if params[:category].present?
 

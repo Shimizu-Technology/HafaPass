@@ -18,9 +18,8 @@ module Api
           end
           query = params[:q].to_s.strip.first(200)
           if query.present?
-            text_match = AccentInsensitiveSearch.contains_any_sql("events.title", "events.venue_name", "events.slug")
-            events = events.where("#{text_match} OR CAST(events.id AS TEXT) = :id",
-              search_pattern: AccentInsensitiveSearch.contains_pattern(query), id: query)
+            matches = events.accent_insensitive_search(query, :title, :venue_name, :slug)
+            events = query.match?(/\A\d+\z/) ? matches.or(events.where(id: query.to_i)) : matches
           end
           events = filter_and_order_index(events)
           pagy, paginated_events = paginate(events, items: params.fetch(:per_page, 20).to_i.clamp(1, 100))

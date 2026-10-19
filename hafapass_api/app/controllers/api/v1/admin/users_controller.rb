@@ -6,7 +6,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
     users = User.includes(:organizer_profile, :orders)
 
     if params[:search].present?
-      users = users.accent_insensitive_search(params[:search], "users.email", "users.first_name", "users.last_name")
+      users = users.accent_insensitive_search(params[:search], :email, :first_name, :last_name)
     end
     users = users.where(role: params[:role]) if params[:role].present?
 
