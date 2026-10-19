@@ -6,7 +6,8 @@ import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Searc
 import { useTranslation } from 'react-i18next'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import LanguageSwitcher from './LanguageSwitcher'
-import { isWorkspacePath, publishAccountRole, useCanManageOrganizationSettings } from '../utils/workspace'
+import { isWorkspacePath, publishAccountRole } from '../utils/workspace'
+import { useCanManageOrganizationSettings } from '../utils/organizerOrganizations'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -64,6 +65,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   if (isWorkspacePath(location.pathname)) {
     return <WorkspaceNav
+      authContext={accountReady ? authContext : null}
       role={loadedRole}
       isSignedIn={isSignedIn}
       clerkEnabled={clerkEnabled}
@@ -289,11 +291,11 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
 // Organizer, admin and support routes use a workspace header: workspace links,
 // a clear way back to the public site, language and account controls.
-function WorkspaceNav({ role, isSignedIn, clerkEnabled, roleAlert, onRetryRole, mobileMenuOpen, setMobileMenuOpen, menuTrigger }) {
+function WorkspaceNav({ authContext, role, isSignedIn, clerkEnabled, roleAlert, onRetryRole, mobileMenuOpen, setMobileMenuOpen, menuTrigger }) {
   const location = useLocation()
   const { t } = useTranslation()
   const { pathname } = location
-  const canManageSettings = useCanManageOrganizationSettings()
+  const canManageSettings = useCanManageOrganizationSettings(authContext, Boolean(authContext))
   const links = [
     { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard,
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/events') },

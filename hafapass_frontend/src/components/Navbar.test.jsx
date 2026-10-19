@@ -148,16 +148,19 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     expect(screen.queryByRole('link', { name: /nav.viewPublicSite/ })).not.toBeInTheDocument()
   })
 
-  // Settings follows the dashboard's own capability for the selected organization.
-  const allowSettings = (allowed = true) => act(() => {
-    window.localStorage.setItem('hafapass_organization_id', '7')
-    workspace.publishOrganizationAccess(workspace.getAccountRole().authContext, 7, allowed)
-  })
+  // Settings follows the same organization permissions the dashboard uses.
+  const owner = { id: 7, name: 'Island Nights', role: 'owner', permissions: { manage_members: true, manage_payout_settings: true } }
+  const scanner = { id: 8, name: 'Door team', role: 'scanner', permissions: { scan: true } }
+  const serve = (organizations, role = 'admin') => apiClient.defaults.adapter.mockImplementation(config => Promise.resolve(
+    config.url === '/organizer/organizations' ? { config, data: organizations, status: 200, statusText: 'OK', headers: {} } : response(config, 'buyer-a', role)))
+  const organizationCalls = () => apiClient.defaults.adapter.mock.calls.filter(([config]) => config.url === '/organizer/organizations')
+  const allowSettings = () => serve([owner])
 
   it.each(['/dashboard', '/dashboard/events/6/edit', '/admin/users', '/support'])('switches %s to workspace navigation', async path => {
+    allowSettings()
     render(view(true, path))
     const admin = await screen.findByRole('link', { name: 'Admin' })
-    await allowSettings()
+    await screen.findByRole('link', { name: 'nav.settings' })
     expect(admin).toHaveAttribute('href', '/admin')
     const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
     expect(within(primary).getByRole('link', { name: 'nav.dashboard' })).toHaveAttribute('href', '/dashboard')
@@ -178,25 +181,70 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
   })
 
-  it('shows Settings only when the dashboard granted it for the current account and organization', async () => {
-    render(view(true, '/dashboard'))
-    await screen.findByRole('link', { name: 'Admin' })
+  it('shows Settings on an event workspace deep link for an owner without visiting the dashboard', async () => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    serve([owner, scanner], 'attendee')
+    render(view(true, '/dashboard/events/6/edit'))
+    expect(await screen.findByRole('link', { name: 'nav.settings' })).toHaveAttribute('href', '/dashboard/settings')
+    expect(organizationCalls()).toHaveLength(1)
+    expect(organizationCalls()[0][0].headers.get('Authorization')).toBe('Bearer token-a')
+  })
+
+  it('hides Settings for a scanner and updates when the selected organization changes', async () => {
+    window.localStorage.setItem('hafapass_organization_id', '8')
+    serve([owner, scanner], 'attendee')
+    render(view(true, '/dashboard/events/6'))
+    await waitFor(() => expect(organizationCalls()).toHaveLength(1))
+    await waitFor(() => expect(workspace.getAccountRole().role).toBe('attendee'))
     expect(screen.queryByRole('link', { name: 'nav.settings' })).not.toBeInTheDocument()
-    await allowSettings(false)
-    expect(screen.queryByRole('link', { name: 'nav.settings' })).not.toBeInTheDocument()
-    await allowSettings(true)
-    expect(screen.getByRole('link', { name: 'nav.settings' })).toBeInTheDocument()
     await act(() => {
-      window.localStorage.setItem('hafapass_organization_id', '8')
+      window.localStorage.setItem('hafapass_organization_id', '7')
       window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_organization_id' }))
     })
+    expect(screen.getByRole('link', { name: 'nav.settings' })).toBeInTheDocument()
+    expect(organizationCalls()).toHaveLength(1)
+  })
+
+  it('drops Settings on sign-out and reloads it for the next account', async () => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    serve([owner])
+    bind()
+    const { rerender } = render(view(false, '/dashboard'))
+    await screen.findByRole('link', { name: 'nav.settings' })
+    Object.assign(auth, { isSignedIn: false, userId: null, sessionId: null, user: null })
+    bind()
+    rerender(view(false, '/dashboard'))
+    expect(screen.queryByRole('link', { name: 'nav.settings' })).not.toBeInTheDocument()
+    Object.assign(auth, { isSignedIn: true, userId: 'buyer-b', sessionId: 'session-b', user: { id: 'buyer-b' }, getToken: vi.fn().mockResolvedValue('token-b') })
+    serve([scanner])
+    bind()
+    rerender(view(false, '/dashboard'))
+    await waitFor(() => expect(organizationCalls()).toHaveLength(2))
+    expect(organizationCalls()[1][0].headers.get('Authorization')).toBe('Bearer token-b')
     expect(screen.queryByRole('link', { name: 'nav.settings' })).not.toBeInTheDocument()
   })
 
+  it('shares one organization lookup with a dashboard load that starts at the same time', async () => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    let finish
+    apiClient.defaults.adapter.mockImplementation(config => config.url === '/organizer/organizations'
+      ? new Promise(resolve => { finish = () => resolve({ config, data: [owner], status: 200, statusText: 'OK', headers: {} }) })
+      : Promise.resolve(response(config)))
+    const { loadOrganizerOrganizations } = await import('../utils/organizerOrganizations')
+    const { getApiAuthContext } = await import('../api/client')
+    render(view(true, '/dashboard'))
+    await waitFor(() => expect(organizationCalls()).toHaveLength(1))
+    const dashboardLoad = loadOrganizerOrganizations(getApiAuthContext())
+    await act(async () => finish())
+    expect((await dashboardLoad).data).toEqual([owner])
+    expect(await screen.findByRole('link', { name: 'nav.settings' })).toBeInTheDocument()
+    expect(organizationCalls()).toHaveLength(1)
+  })
+
   it('opens and closes the workspace mobile menu', async () => {
+    allowSettings()
     render(view(true, '/dashboard/settings'))
-    await screen.findByRole('link', { name: 'Admin' })
-    await allowSettings()
+    await screen.findByRole('link', { name: 'nav.settings' })
     const user = userEvent.setup()
     const toggle = screen.getByRole('button', { name: 'Toggle menu' })
     await user.click(toggle)
