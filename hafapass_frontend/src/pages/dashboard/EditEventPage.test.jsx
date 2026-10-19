@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -28,6 +28,33 @@ describe('published event content and schedule edits', () => {
     expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Cancel Event/ })).not.toBeInTheDocument()
     expect(apiClient.put).not.toHaveBeenCalled()
+  })
+
+  it('keeps Save Changes in a sticky bar that reports unsaved details and still submits', async () => {
+    const user = userEvent.setup()
+    mount()
+    const title = await screen.findByLabelText(/Event Title/)
+    const bar = screen.getByTestId('event-details-save-bar')
+    expect(bar).toHaveClass('sticky', 'bottom-0')
+    expect(bar.closest('form')).not.toBeNull()
+    const save = within(bar).getByRole('button', { name: 'Save Changes' })
+    expect(save).toHaveAccessibleDescription('Event details are saved')
+    await user.type(title, ' Live')
+    expect(save).toHaveAccessibleDescription('Unsaved event detail changes')
+    expect(screen.getByText('Saved separately.')).toBeInTheDocument()
+    let finishSave
+    apiClient.put.mockReturnValueOnce(new Promise(resolve => { finishSave = resolve }))
+    await user.click(save)
+    expect(apiClient.put).toHaveBeenCalledTimes(1)
+    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ title: 'Published Workshop Live' })
+    const pending = within(bar).getByRole('button', { name: 'Saving...' })
+    expect(pending).toBeDisabled()
+    expect(pending).toHaveAccessibleDescription('Saving event details…')
+    await act(async () => finishSave({ data: { ...event, title: 'Published Workshop Live' } }))
+    await screen.findByText('Event updated successfully.')
+    expect(title).toHaveValue('Published Workshop Live')
+    expect(within(bar).getByRole('button', { name: 'Save Changes' })).toHaveAccessibleDescription('Event details are saved')
+    expect(within(bar).getByText('Event details are saved')).toBeInTheDocument()
   })
 
   it('limits presentation editors to content fields and sends no discarded operation edits', async () => {

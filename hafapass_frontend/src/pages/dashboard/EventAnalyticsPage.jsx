@@ -36,9 +36,6 @@ function EventAnalyticsPageSession({ id, identity }) {
  const [error, setError] = useState(null)
  const [stats, setStats] = useState(null)
  const [event, setEvent] = useState(null)
- const [attendees, setAttendees] = useState(null)
- const [showAttendees, setShowAttendees] = useState(false)
- const [attendeesLoading, setAttendeesLoading] = useState(false)
  const [finance, setFinance] = useState(null)
  const [financeBusy, setFinanceBusy] = useState(false)
  const [payoutNotice, setPayoutNotice] = useState('')
@@ -52,13 +49,13 @@ function EventAnalyticsPageSession({ id, identity }) {
   ++accessEpoch.current
   verifiedRights.current = null
   requests.current.forEach(request => request.controller.abort())
-  setStats(null); setFinance(null); setAttendees(null); setShowAttendees(false); setEvent(null)
-  setFinanceBusy(false); setPayoutNotice(''); setAttendeesLoading(false); setLoading(false)
+  setStats(null); setFinance(null); setEvent(null)
+  setFinanceBusy(false); setPayoutNotice(''); setLoading(false)
   setError(message)
  }, [])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
   const verifyingEvent = method === 'get' && url === `/organizer/events/${id}`
-  const permission = url.endsWith('/attendees') ? 'view_attendees' : url.endsWith('/finalize') ? 'manage_finance' : url.endsWith('/payout') ? 'payout' : 'view_finance'
+  const permission = url.endsWith('/finalize') ? 'manage_finance' : url.endsWith('/payout') ? 'payout' : 'view_finance'
   if (!verifyingEvent && verifiedRights.current?.[permission] !== true) throw new DOMException('Analytics access is not verified', 'AbortError')
   const request = beginRequest()
   if (!request) throw new DOMException('Page context changed', 'AbortError')
@@ -115,25 +112,6 @@ function EventAnalyticsPageSession({ id, identity }) {
  }, [id, identity.organizationId, requestApi, current, withdrawAccess])
  useEffect(() => { fetchData() }, [fetchData])
 
- const fetchAttendees = async () => {
-  if (!current() || verifiedRights.current?.view_attendees !== true) return
-  const epoch = accessEpoch.current
-  const canApply = () => current() && epoch === accessEpoch.current
-  setError(null); setAttendeesLoading(true)
-  try {
-   const res = await requestApi('get', `/organizer/events/${id}/attendees`)
-   if (!canApply()) return
-   const rows = res.data.attendees || res.data
-   setAttendees(Array.isArray(rows) ? rows : []); setShowAttendees(true)
-  } catch { if (canApply()) setError('Failed to load attendees.') }
-  finally { if (canApply()) setAttendeesLoading(false) }
- }
- const handleToggleAttendees = () => {
-  if (!current() || verifiedRights.current?.view_attendees !== true) return
-  if (showAttendees) setShowAttendees(false)
-  else if (attendees) setShowAttendees(true)
-  else fetchAttendees()
- }
  const refreshFinance = async () => {
   const epoch = accessEpoch.current
   const response = await requestApi('get', `/organizer/events/${id}/finance`)
@@ -394,109 +372,16 @@ function EventAnalyticsPageSession({ id, identity }) {
     )}
    </div>
 
-   {/* Attendees Section */}
-   <div className="bg-white rounded-xl shadow-sm border border-neutral-200">
-    <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
-     <h2 className="text-lg font-semibold text-neutral-900">Attendees</h2>
-     <div className="flex items-center gap-3">
-      {permissions.view_attendees === true && <Link to={`/dashboard/events/${id}/attendees`} className="text-sm text-brand-500 hover:text-brand-700 font-medium">
-       Full List →
-      </Link>}
-      {permissions.view_attendees === true && <button
-       onClick={handleToggleAttendees}
-       disabled={attendeesLoading || permissions.view_attendees !== true}
-       className="text-sm text-brand-500 hover:text-brand-700 font-medium disabled:opacity-50"
-      >
-       {attendeesLoading ? 'Loading...' : showAttendees ? 'Hide' : 'View All'}
-      </button>}
-     </div>
+   {/* Attendees: one link to the full, searchable list instead of a second inline copy. */}
+   <section aria-labelledby="analytics-attendees-heading" className="bg-white rounded-xl shadow-sm border border-neutral-200 px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-w-0">
+     <h2 id="analytics-attendees-heading" className="text-lg font-semibold text-neutral-900">Attendees</h2>
+     <p className="mt-1 text-sm text-neutral-600">{permissions.view_attendees === true ? 'Search, filter, check status and export everyone holding a ticket.' : 'Your event access does not include the attendee list.'}</p>
     </div>
-    {showAttendees && attendees && (
-     attendees.length > 0 ? (
-      <>
-       {/* Desktop table */}
-       <div className="hidden sm:block overflow-x-auto">
-        <table className="w-full">
-         <thead>
-          <tr className="bg-neutral-50">
-           <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Name</th>
-           <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Email</th>
-           <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Ticket Type</th>
-           <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Status</th>
-          </tr>
-         </thead>
-         <tbody className="divide-y divide-neutral-200">
-          {attendees.map((att) => (
-           <tr key={att.id}>
-            <td className="px-5 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</td>
-            <td className="px-5 py-3 text-sm text-neutral-600">{att.attendee_email || '—'}</td>
-            <td className="px-5 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
-            <td className="px-5 py-3">
-             {att.status === 'checked_in' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-               Checked In
-              </span>
-             ) : att.status === 'issued' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-700">
-               Valid
-              </span>
-             ) : att.status === 'cancelled' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-               Cancelled
-              </span>
-             ) : (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-800">
-               {att.status}
-              </span>
-             )}
-            </td>
-           </tr>
-          ))}
-         </tbody>
-        </table>
-       </div>
-       {/* Mobile card layout */}
-       <div className="sm:hidden divide-y divide-neutral-200">
-        {attendees.map((att) => (
-         <div key={att.id} className="px-4 py-3">
-          <div className="flex items-center justify-between">
-           <span className="text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</span>
-           {att.status === 'checked_in' ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-             Checked In
-            </span>
-           ) : att.status === 'issued' ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-700">
-             Valid
-            </span>
-           ) : att.status === 'cancelled' ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-             Cancelled
-            </span>
-           ) : (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-800">
-             {att.status}
-            </span>
-           )}
-          </div>
-          <p className="text-xs text-neutral-500 mt-1">{att.attendee_email || '—'}</p>
-          <p className="text-xs text-neutral-400 mt-0.5">{att.ticket_type}</p>
-         </div>
-        ))}
-       </div>
-      </>
-     ) : (
-      <div className="px-5 py-8 text-center">
-       <p className="text-sm text-neutral-500">No attendees yet.</p>
-      </div>
-     )
-    )}
-    {!showAttendees && !attendeesLoading && (
-     <div className="px-5 py-6 text-center">
-      <p className="text-sm text-neutral-500">Click &quot;View All&quot; to see the full attendee list with check-in status.</p>
-     </div>
-    )}
-   </div>
+    {permissions.view_attendees === true && <Link to={`/dashboard/events/${id}/attendees`} className="btn-secondary min-h-11 shrink-0 self-start !px-4 !py-2.5 text-sm sm:self-auto">
+     View attendee list
+    </Link>}
+   </section>
   </div></EventWorkspace>
  )
 }

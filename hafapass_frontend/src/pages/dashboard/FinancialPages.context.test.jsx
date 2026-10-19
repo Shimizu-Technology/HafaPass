@@ -132,8 +132,7 @@ describe('private event records', () => {
     await screen.findByText('Event 37')
     expect(screen.queryByRole('button', { name: /Finalize/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Pay / })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /Full List/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'View All' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View attendee list' })).not.toBeInTheDocument()
   })
 })
 
@@ -341,3 +340,66 @@ for (const [Page, tool, kind] of [[BoxOfficePage, 'box-office', 'box-office'], [
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 }
+
+describe('attendee list totals and export', () => {
+  it('shows the API total count and notes when filters narrow it', async () => {
+    apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: url.includes('/attendees?')
+      ? { attendees: [{ id: 1, attendee_name: 'Attendee one', status: 'issued', ticket_type: 'Entry' }], meta: { total_pages: 1, total_count: url.includes('status=checked_in') ? 1 : 17 } }
+      : fixtures(url, config) }))
+    mount(AttendeesPage, 'attendees')
+    expect(await screen.findByText('17 attendees')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Filter attendees by status'), { target: { value: 'checked_in' } })
+    expect(await screen.findByText('1 attendee match these filters')).toBeInTheDocument()
+  })
+
+  it('downloads the API attendee CSV export with scoped ownership', async () => {
+    const blob = new Blob(['name,email\n'], { type: 'text/csv' })
+    const createObjectURL = vi.fn(() => 'blob:attendees'); const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL, revokeObjectURL }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: url.endsWith('/crm/export') ? blob : fixtures(url, config) }))
+    mount(AttendeesPage, 'attendees')
+    await screen.findAllByText('Attendee 37')
+    const exportButton = screen.getByRole('button', { name: 'Export CSV' })
+    expect(exportButton).toHaveAccessibleDescription('Includes every active attendee, not only these filters.')
+    await userEvent.click(exportButton)
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+    const call = apiClient.get.mock.calls.find(([url]) => url === '/organizer/events/37/crm/export')
+    expect(call[1]).toMatchObject({ responseType: 'blob', organizationId: '1', authContext: { userId: 'actor-a' } })
+    expect(createObjectURL).toHaveBeenCalledWith(blob)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:attendees')
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a pending export alive across a filter change but cancels it when access is withdrawn', async () => {
+    const blob = new Blob(['name,email\n'], { type: 'text/csv' })
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: vi.fn(() => 'blob:attendees'), revokeObjectURL: vi.fn() }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    let exportRead = deferred()
+    let denyList = false
+    apiClient.get.mockImplementation((url, config) => url.endsWith('/crm/export') ? exportRead.promise
+      : denyList && url.includes('/attendees?') ? Promise.reject({ response: { status: 403 } })
+      : Promise.resolve({ data: fixtures(url, config) }))
+    mount(AttendeesPage, 'attendees')
+    await screen.findAllByText('Attendee 37')
+    await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+    fireEvent.change(screen.getByLabelText('Filter attendees by status'), { target: { value: 'checked_in' } })
+    await waitFor(() => expect(apiClient.get.mock.calls.some(([url]) => url.includes('status=checked_in'))).toBe(true))
+    await screen.findAllByText('Attendee 37')
+    const firstExport = apiClient.get.mock.calls.filter(([url]) => url.endsWith('/crm/export'))[0][1]
+    expect(firstExport.signal.aborted).toBe(false)
+    await act(async () => exportRead.resolve({ data: blob }))
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+
+    exportRead = deferred()
+    await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+    const secondExport = apiClient.get.mock.calls.filter(([url]) => url.endsWith('/crm/export'))[1][1]
+    denyList = true
+    fireEvent.change(screen.getByLabelText('Filter attendees by status'), { target: { value: 'issued' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your attendee access changed')
+    expect(secondExport.signal.aborted).toBe(true)
+    await act(async () => exportRead.resolve({ data: blob }))
+    expect(click).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+})
