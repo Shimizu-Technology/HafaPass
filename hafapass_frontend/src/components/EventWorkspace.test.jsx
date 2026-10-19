@@ -55,18 +55,20 @@ describe('connected event workspace', () => {
     expect(screen.getByRole('link', { name: 'Refunds' })).toHaveAttribute('href', '/dashboard/events/37/refunds')
   })
 
-  it('names event access when an event assignment grants more than the organization role', async () => {
+  it('shows the organization role and lists the event tools the permissions actually grant', async () => {
     apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer', role: 'scanner' }] : dto() }))
-    const managerPermissions = Object.fromEntries(['view_events', 'manage_events', 'edit_event_content', 'manage_inventory', 'manage_staff', 'view_attendees', 'view_finance', 'manage_attendees', 'manage_marketing', 'box_office', 'scan'].map(key => [key, true]))
-    mount({ event: { ...dto(), permissions: { ...managerPermissions, refund: false, manage_finance: false } } })
-    expect(await screen.findByText('Event access: Manager')).toBeInTheDocument()
-    expect(screen.queryByText(/Organization role/)).not.toBeInTheDocument()
+    mount()
+    expect(await screen.findByText('Organization role: Door scanner')).toBeInTheDocument()
+    expect(screen.queryByText(/Event access/)).not.toBeInTheDocument()
+    expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
   })
 
-  it('shows the organization role when the event grants nothing beyond it', async () => {
-    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer', role: 'scanner' }] : dto() }))
-    mount({ event: { ...dto(), permissions: { view_events: true, scan: true, refund: false } }, path: '/dashboard/events/37/scanner' })
-    expect(await screen.findByText('Organization role: Door scanner')).toBeInTheDocument()
+  it('falls back to plain wording when the organization role is unknown', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer' }] : dto() }))
+    mount({ event: { ...dto(), permissions: { scan: true } } })
+    expect(await screen.findByText('Synthetic organizer')).toBeInTheDocument()
+    expect(screen.getByText('You can work on parts of this event')).toBeInTheDocument()
+    expect(screen.getByText('What you can do').closest('details')).not.toHaveTextContent('Finances')
   })
 
   it('leads with the event overview for members who can view the event', () => {

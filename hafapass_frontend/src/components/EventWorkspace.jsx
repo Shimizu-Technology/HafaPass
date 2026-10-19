@@ -14,25 +14,10 @@ import { navigationFor } from '../utils/eventWorkspaceNavigation'
 const preferenceKey = 'hafapass:event-workspace:collapsed'
 const readPreference = () => { try { return window.localStorage.getItem(preferenceKey) === 'true' } catch { return false } }
 const roleLabels = { owner: 'Owner', manager: 'Manager', finance: 'Finance', marketer: 'Marketing', box_office: 'Box office', scanner: 'Door scanner' }
-// Mirrors OrganizationAuthorization::PERMISSIONS (hafapass_api/app/services). Event staff assignments can grant more than the
-// organization role; then the header names the event access instead.
-const eventRolePermissions = {
-  owner: ['manage_organization', 'manage_members', 'manage_payout_settings', 'view_events', 'manage_events', 'edit_event_content', 'manage_inventory', 'manage_staff', 'view_attendees', 'manage_attendees', 'manage_marketing', 'box_office', 'scan', 'view_finance', 'manage_finance', 'refund', 'payout'],
-  manager: ['view_events', 'manage_events', 'edit_event_content', 'manage_inventory', 'manage_staff', 'view_attendees', 'view_finance', 'manage_attendees', 'manage_marketing', 'box_office', 'scan'],
-  finance: ['view_events', 'view_finance', 'manage_finance', 'refund', 'payout'],
-  marketer: ['view_events', 'edit_event_content', 'manage_marketing'],
-  box_office: ['view_events', 'view_attendees', 'manage_attendees', 'box_office', 'scan'],
-  scanner: ['view_events', 'scan'],
-}
-const assignmentRoles = ['manager', 'box_office', 'scanner']
-function accessSummary(role, permissions = {}, hasTools) {
-  const granted = Object.keys(permissions).filter(key => permissions[key] === true)
-  const roleGrants = eventRolePermissions[role]
-  if (!roleGrants) return hasTools ? 'You can work on parts of this event' : 'No event tools available'
-  if (granted.every(key => roleGrants.includes(key))) return `Organization role: ${roleLabels[role]}`
-  // Only an assignment can add access beyond the role; name the broadest one granted.
-  const assigned = assignmentRoles.find(candidate => eventRolePermissions[candidate].every(key => permissions[key] === true))
-  if (assigned) return `Event access: ${roleLabels[assigned]}`
+// Display only: the organization role, never inferred from permissions. The
+// "What you can do" list below reflects this event's actual permissions.
+function accessSummary(role, hasTools) {
+  if (roleLabels[role]) return `Organization role: ${roleLabels[role]}`
   return hasTools ? 'You can work on parts of this event' : 'No event tools available'
 }
 const statusLabels = { draft: 'Draft', published: 'Published', postponed: 'Postponed', cancelled: 'Cancelled', completed: 'Completed', archived: 'Archived' }
@@ -157,7 +142,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
           {event.venue_name && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span className="break-words">{event.venue_name}</span></p>}
         </div>
         <p className="mt-3 text-sm text-neutral-700">{organization?.name || event.organization_name || (event.organization_id != null ? `Organization ${event.organization_id}` : 'Event workspace')}</p>
-        <p className="mt-1 text-sm text-neutral-600">{accessSummary(organization?.role, event.permissions, toolGroups.length > 0)}</p>
+        <p className="mt-1 text-sm text-neutral-600">{accessSummary(organization?.role, toolGroups.length > 0)}</p>
         {toolGroups.length > 0 && <details className="mt-1 text-sm text-neutral-600">
           <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-brand-800">What you can do</summary>
           <p className="pb-1">{toolGroups.map(group => group.label).join(', ')}</p>
