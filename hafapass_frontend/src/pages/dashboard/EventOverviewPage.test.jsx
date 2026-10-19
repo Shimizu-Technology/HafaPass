@@ -1,11 +1,13 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import EventOverviewPage from './EventOverviewPage'
 
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+const launch = vi.hoisted(() => ({}))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => launch }))
 
 const manager = { view_events: true, manage_events: true, edit_event_content: true, manage_inventory: true, view_attendees: true,
   manage_attendees: true, manage_marketing: true, manage_staff: true, scan: true, box_office: true, view_finance: true }
@@ -13,11 +15,11 @@ const base = { id: 37, organization_id: 1, organization_name: 'Island events', t
   starts_at: '2026-11-20T09:00:00Z', timezone: 'Pacific/Guam', venue_name: 'Tumon pavilion', status: 'published',
   ticket_types: [{ id: 1, quantity_available: 100, quantity_sold: 40 }], publish_checklist: [], permissions: manager }
 
-function mount(event, extra = {}) {
+function mount(event, extra = {}, organization = { id: 1, name: 'Island events' }) {
   apiClient.get.mockImplementation(path => {
-    if (path === '/organizer/organizations') return Promise.resolve({ data: [{ id: 1, name: 'Island events' }] })
+    if (path === '/organizer/organizations') return Promise.resolve({ data: [organization] })
     if (path === '/organizer/events/37') return Promise.resolve({ data: event })
-    if (path in extra) return Promise.resolve({ data: extra[path] })
+    if (path in extra) return typeof extra[path] === 'function' ? extra[path]() : Promise.resolve({ data: extra[path] })
     return Promise.reject(new Error(`Unexpected ${path}`))
   })
   return render(<MemoryRouter initialEntries={['/dashboard/events/37']}><Routes>
@@ -27,7 +29,17 @@ function mount(event, extra = {}) {
 const requested = path => apiClient.get.mock.calls.some(([url]) => url === path)
 const tools = () => within(screen.getByRole('region', { name: 'Event tools' })).getAllByRole('link').map(link => [link.textContent, link.getAttribute('href')])
 
-beforeEach(() => { vi.clearAllMocks(); window.localStorage.clear(); window.localStorage.setItem('hafapass_organization_id', '1') })
+const sidebarTools = () => within(screen.getByRole('navigation', { name: 'Event workspace' })).getAllByRole('link')
+  .map(link => [link.textContent, link.getAttribute('href')]).filter(([label]) => label !== 'Overview')
+const clipboard = Object.getOwnPropertyDescriptor(window.navigator, 'clipboard')
+const setClipboard = value => Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value })
+
+beforeEach(() => {
+  vi.clearAllMocks(); window.localStorage.clear(); window.localStorage.setItem('hafapass_organization_id', '1')
+  for (const key of Object.keys(launch)) delete launch[key]
+  if (clipboard) Object.defineProperty(window.navigator, 'clipboard', clipboard)
+  else delete window.navigator.clipboard
+})
 
 describe('event overview', () => {
   it('shows live sales, check-ins, sharing and every manager tool for a published event', async () => {
@@ -39,7 +51,7 @@ describe('event overview', () => {
     expect(screen.getByRole('link', { name: 'View public page' })).toHaveAttribute('href', '/events/synthetic-reef-night')
     expect(screen.getByRole('button', { name: 'Copy event link' })).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Next steps' })).getByRole('link', { name: 'Scan tickets' })).toHaveAttribute('href', '/dashboard/scanner?event=37')
-    expect(tools().map(([label]) => label)).toEqual(['Edit event', 'Ticket types', 'Attendee list', 'Scan tickets', 'Box office', 'Promo codes', 'Event team', 'Sales & finances'])
+    expect(tools().map(([label]) => label)).toEqual(['Edit event', 'Ticket types', 'Attendee list', 'Guest list', 'Waitlist', 'Scan tickets', 'Box office', 'Promo codes', 'Event team', 'Sales & finances'])
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText('Island events')).toBeInTheDocument()
     expect(requested('/organizer/events/37/admissions')).toBe(false)
@@ -79,5 +91,58 @@ describe('event overview', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Event not found.')
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'All events' })).toHaveAttribute('href', '/dashboard')
+  })
+
+  it('offers exactly the workspace tools, including refunds and sales tools when granted', async () => {
+    launch.advanced_sales_tools = true; launch.assigned_seating = true
+    mount({ ...base, permissions: { ...manager, refund: true } }, { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
+    await screen.findByRole('region', { name: 'Event tools' })
+    const labels = tools().map(([label]) => label)
+    expect(labels).toEqual(expect.arrayContaining(['Refunds', 'Sales tools & messages', 'Assigned seating']))
+    expect(tools()).toEqual(sidebarTools())
+  })
+
+  it('formats revenue in the organization currency', async () => {
+    mount(base, { '/organizer/events/37/stats': { total_tickets_sold: 1, total_revenue_cents: 105000, tickets_checked_in: 0 } }, { id: 1, name: 'Island events', currency: 'eur' })
+    expect(await screen.findByText('€1,050.00')).toBeInTheDocument()
+  })
+
+  it('shows placeholders while sales figures load and a retry when they fail', async () => {
+    let attempt = 0, resolveSecond
+    mount(base, { '/organizer/events/37/stats': () => ++attempt === 1 ? Promise.reject(new Error('Synthetic outage'))
+      : new Promise(resolve => { resolveSecond = resolve }) })
+    const sales = await screen.findByRole('region', { name: 'Sales so far' })
+    expect(await within(sales).findByRole('alert')).toHaveTextContent('Sales figures unavailable.')
+    await userEvent.setup().click(within(sales).getByRole('button', { name: 'Retry' }))
+    expect(within(sales).getByText('Loading sales figures…')).toBeInTheDocument()
+    expect(within(sales).queryByRole('alert')).not.toBeInTheDocument()
+    resolveSecond({ data: { total_tickets_sold: 2, total_revenue_cents: 5000, tickets_checked_in: 1 } })
+    expect(await within(sales).findByText('$50.00')).toBeInTheDocument()
+    expect(within(sales).queryByText('Loading sales figures…')).not.toBeInTheDocument()
+  })
+
+  it('confirms a copied event link', async () => {
+    // user-event installs its own clipboard on setup, so replace it afterwards.
+    const user = userEvent.setup()
+    const writeText = vi.fn(() => Promise.resolve())
+    setClipboard({ writeText })
+    mount(base, { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
+    await user.click(await screen.findByRole('button', { name: 'Copy event link' }))
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\/events\/synthetic-reef-night$/))
+    expect(await screen.findByRole('button', { name: 'Link copied' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['writeText rejects', () => setClipboard({ writeText: vi.fn(() => Promise.reject(new Error('Denied'))) })],
+    ['the clipboard is unavailable', () => setClipboard(undefined)],
+  ])('falls back to a selectable link when %s', async (_case, prepare) => {
+    const user = userEvent.setup()
+    prepare()
+    mount(base, { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
+    await user.click(await screen.findByRole('button', { name: 'Copy event link' }))
+    expect(await screen.findByText("Couldn't copy. Select the link below.")).toBeInTheDocument()
+    const input = screen.getByRole('textbox', { name: 'Event link' })
+    expect(input).toHaveAttribute('readonly')
+    await waitFor(() => expect(input.value).toMatch(/\/events\/synthetic-reef-night$/))
   })
 })

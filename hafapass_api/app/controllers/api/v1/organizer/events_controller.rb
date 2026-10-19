@@ -40,7 +40,9 @@ module Api
         # Money stays hidden unless the membership itself grants view_finance.
         def summary
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-          upcoming = events.published.upcoming
+          # An event that has started but not ended still counts, so it stays
+          # on the home summary through show night.
+          upcoming = events.published.where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current)
           next_event = upcoming.order(:starts_at, :id).first
           json = {
             upcoming_events_count: upcoming.count,

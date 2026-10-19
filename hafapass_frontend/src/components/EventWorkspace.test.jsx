@@ -4,6 +4,7 @@ import { Link, MemoryRouter, Route, Routes, useLocation, useParams } from 'react
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { setAuthTokenGetter } from '../api/client'
 import EventWorkspace from './EventWorkspace'
+import { loadOrganizerOrganizations } from '../utils/organizerOrganizations'
 
 const launch = vi.hoisted(() => ({ assigned_seating: true, advanced_sales_tools: true }))
 vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
@@ -63,6 +64,14 @@ describe('connected event workspace', () => {
     expect(links[0]).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText(/^Your access:/)).not.toHaveTextContent('Overview')
     expect(screen.getByText('Overview body')).toBeInTheDocument()
+  })
+
+  it('shares one organization lookup with the workspace navbar', async () => {
+    const navbarLookup = loadOrganizerOrganizations(null)
+    mount()
+    expect(await screen.findByText('Synthetic organizer')).toBeInTheDocument()
+    await navbarLookup
+    expect(apiClient.get.mock.calls.filter(([path]) => path === '/organizer/organizations')).toHaveLength(1)
   })
 
   it('shares the workspace navbar container so the left edge stays put', () => {

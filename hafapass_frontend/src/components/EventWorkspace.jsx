@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, MapPin, LayoutDashboard, FilePenLine, Ticket, Users, ScanLine, Megaphone, UserRoundCog, WalletCards, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
+import { CalendarDays, MapPin, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
 import apiClient from '../api/client'
 import Dialog from './Dialog'
 import useDraftProtection from '../hooks/useDraftProtection'
@@ -8,42 +8,12 @@ import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import { useOrganizerIdentity, useOrganizerRequests } from '../hooks/useOrganizerContext'
 import { formatEventDateTime } from '../utils/eventTime'
 import { WORKSPACE_WIDTHS } from '../utils/workspace'
+import { loadOrganizerOrganizations } from '../utils/organizerOrganizations'
+import { navigationFor } from '../utils/eventWorkspaceNavigation'
 
 const preferenceKey = 'hafapass:event-workspace:collapsed'
 const readPreference = () => { try { return window.localStorage.getItem(preferenceKey) === 'true' } catch { return false } }
 const statusLabels = { draft: 'Draft', published: 'Published', postponed: 'Postponed', cancelled: 'Cancelled', completed: 'Completed', archived: 'Archived' }
-
-function navigationFor(event, capabilities) {
-  const p = event?.permissions || {}
-  const has = key => p[key] === true
-  const base = `/dashboard/events/${event.id}`
-  return [
-    { label: 'Overview', icon: LayoutDashboard, links: [{ label: 'Overview', to: base, allowed: has('view_events') }] },
-    { label: 'Event details', icon: FilePenLine, links: [{ label: 'Edit event', to: `${base}/edit`, allowed: has('edit_event_content') }] },
-    { label: 'Tickets & seating', icon: Ticket, links: [
-      { label: 'Ticket types', to: `${base}/edit#ticket-types`, allowed: has('manage_inventory') && has('edit_event_content') },
-      { label: 'Assigned seating', to: `${base}/seating`, allowed: has('manage_inventory') && (capabilities.assigned_seating === true || event.assigned_seating === true) },
-    ] },
-    { label: 'Attendees', icon: Users, links: [
-      { label: 'Attendee list', to: `${base}/attendees`, allowed: has('view_attendees') },
-      { label: 'Guest list', to: `${base}/guest-list`, allowed: has('manage_attendees') },
-      { label: 'Waitlist', to: `${base}/waitlist`, allowed: has('manage_attendees') },
-    ] },
-    { label: 'Event day', icon: ScanLine, links: [
-      { label: 'Scan tickets', to: `/dashboard/scanner?event=${event.id}`, allowed: has('scan') },
-      { label: 'Box office', to: `${base}/box-office`, allowed: has('box_office') },
-    ] },
-    { label: 'Sales & messages', icon: Megaphone, links: [
-      { label: 'Promo codes', to: `${base}/promo-codes`, allowed: has('manage_marketing') },
-      { label: 'Sales tools & messages', to: `${base}/sales-tools`, allowed: has('manage_marketing') && capabilities.advanced_sales_tools === true },
-    ] },
-    { label: 'Team', icon: UserRoundCog, links: [{ label: 'Event team', to: `${base}/team`, allowed: has('manage_staff') }] },
-    { label: 'Finances', icon: WalletCards, links: [
-      { label: 'Sales & finances', to: `${base}/analytics`, allowed: has('view_finance') },
-      { label: 'Refunds', to: `${base}/refunds`, allowed: has('refund') && has('view_finance') },
-    ] },
-  ].map(group => ({ ...group, links: group.links.filter(link => link.allowed === true) })).filter(group => group.links.length)
-}
 
 function WorkspaceLinks({ groups, collapsed = false, onNavigate, location }) {
   return <nav aria-label="Event workspace">
@@ -112,7 +82,8 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
     setError(null)
     Promise.all([
       loadEvent ? apiClient.get(`/organizer/events/${eventId}`, request.config) : Promise.resolve(null),
-      apiClient.get('/organizer/organizations', request.config),
+      // Shared with the workspace navbar so an event page sends one lookup.
+      loadOrganizerOrganizations(identity.authContext),
     ]).then(([eventResponse, organizationsResponse]) => {
       if (!request.current()) return
       if (eventResponse) setLoadedEvent(eventResponse.data)
@@ -121,7 +92,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
     }).catch(() => { if (request.current()) setError('Event navigation could not be loaded. Your work below is still available.') })
       .finally(() => request.release())
     return () => request.controller.abort()
-  }, [beginRequest, eventId, identity.organizationId, loadEvent, attempt])
+  }, [beginRequest, eventId, identity.authContext, identity.organizationId, loadEvent, attempt])
 
   const correctEvent = event && String(event.id) === String(eventId)
     && (event.organization_id == null || identity.organizationId == null || String(event.organization_id) === String(identity.organizationId))

@@ -91,46 +91,102 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
   describe "GET /api/v1/organizer/events/summary" do
     let(:organization) { organizer_profile.organization }
     let(:org_headers) { headers.merge("X-Organization-Id" => organization.id.to_s) }
+    let!(:live) do
+      create(:event, :published, organizer_profile: organizer_profile, title: "Live now",
+        starts_at: 1.hour.ago, ends_at: 3.hours.from_now, doors_open_at: 2.hours.ago)
+    end
     let!(:soon) { create(:event, :published, organizer_profile: organizer_profile, title: "Soon", starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours) }
     let!(:later) { create(:event, :published, organizer_profile: organizer_profile, title: "Later", starts_at: 10.days.from_now, ends_at: 10.days.from_now + 2.hours) }
 
+    def member_headers(role)
+      member = create(:user)
+      create(:organization_membership, organization: organization, user: member, role: role)
+      [member, auth_headers(member).merge("X-Organization-Id" => organization.id.to_s)]
+    end
+
+    def sell_ticket(event)
+      ticket_type = create(:ticket_type, event: event, price_cents: 2500)
+      order = create(:order, event: event, subtotal_cents: 2500, service_fee_cents: 0, total_cents: 2500)
+      item = create(:order_item, order: order, ticket_type: ticket_type, unit_price_cents: 2500,
+        subtotal_cents: 2500, fee_cents: 0, organizer_proceeds_cents: 2500)
+      create(:ticket, order: order, order_item: item, ticket_type: ticket_type, event: event)
+      create(:ticket, :cancelled, order: order, order_item: item, ticket_type: ticket_type, event: event)
+      [order, item]
+    end
+
     before do
       create(:event, organizer_profile: organizer_profile, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 2.hours)
-      [soon, later].each do |event|
-        ticket_type = create(:ticket_type, event: event, price_cents: 2500)
-        order = create(:order, event: event, subtotal_cents: 2500, service_fee_cents: 0, total_cents: 2500)
-        item = create(:order_item, order: order, ticket_type: ticket_type, unit_price_cents: 2500,
-          subtotal_cents: 2500, fee_cents: 0, organizer_proceeds_cents: 2500)
-        create(:ticket, order: order, order_item: item, ticket_type: ticket_type, event: event)
-        create(:ticket, :cancelled, order: order, order_item: item, ticket_type: ticket_type, event: event)
-      end
+      create(:event, organizer_profile: organizer_profile, status: :postponed, starts_at: 6.days.from_now, ends_at: 6.days.from_now + 2.hours)
+      create(:event, :past, :published, organizer_profile: organizer_profile)
+      order, item = sell_ticket(soon)
+      refund = create(:refund, order: order, amount_cents: 1000)
+      create(:refund_item, refund: refund, order_item: item, amount_cents: 1000, organizer_proceeds_cents: 1000)
+      order.update!(status: :partially_refunded, refund_amount_cents: 1000)
+      sell_ticket(later)
       other_event = create(:event, :published, organizer_profile: create(:organizer_profile), starts_at: 1.day.from_now, ends_at: 1.day.from_now + 2.hours)
       create(:ticket, event: other_event, ticket_type: create(:ticket_type, event: other_event))
     end
 
-    it "totals the organization's upcoming events, tickets and revenue" do
+    it "totals published events that have not ended, tickets, and revenue net of refunds" do
       get "/api/v1/organizer/events/summary", headers: org_headers
 
       expect(response).to have_http_status(:ok)
+      # Live, Soon and Later; the draft, postponed and finished events are excluded.
       expect(response.parsed_body).to include(
-        "upcoming_events_count" => 2,
+        "upcoming_events_count" => 3,
         "tickets_sold" => 2,
-        "revenue_cents" => 5000
+        "revenue_cents" => 4000
       )
-      expect(response.parsed_body["next_event"]).to include("id" => soon.id, "title" => "Soon", "timezone" => soon.timezone)
+      expect(response.parsed_body["next_event"]).to include("id" => live.id, "title" => "Live now", "timezone" => live.timezone)
+    end
+
+    it "gives finance members organization-wide revenue and counts" do
+      _member, finance_headers = member_headers(:finance)
+
+      get "/api/v1/organizer/events/summary", headers: finance_headers
+
+      expect(response.parsed_body).to include("upcoming_events_count" => 3, "tickets_sold" => 2, "revenue_cents" => 4000)
+    end
+
+    it "hides revenue from marketers" do
+      _member, marketer_headers = member_headers(:marketer)
+
+      get "/api/v1/organizer/events/summary", headers: marketer_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("tickets_sold" => 2)
+      expect(response.parsed_body).not_to have_key("revenue_cents")
     end
 
     it "limits assigned staff to their events and hides money without view_finance" do
-      scanner = create(:user)
-      create(:organization_membership, organization: organization, user: scanner, role: :scanner)
+      scanner, scanner_headers = member_headers(:scanner)
       create(:event_staff_assignment, organization: organization, event: later, user: scanner, role: :scanner)
 
-      get "/api/v1/organizer/events/summary", headers: auth_headers(scanner).merge("X-Organization-Id" => organization.id.to_s)
+      get "/api/v1/organizer/events/summary", headers: scanner_headers
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("upcoming_events_count" => 1, "tickets_sold" => 1)
       expect(response.parsed_body["next_event"]).to include("id" => later.id)
       expect(response.parsed_body).not_to have_key("revenue_cents")
+    end
+
+    it "does not reveal revenue through an event-level manager assignment" do
+      staff, staff_headers = member_headers(:box_office)
+      create(:event_staff_assignment, organization: organization, event: soon, user: staff, role: :manager)
+
+      get "/api/v1/organizer/events/summary", headers: staff_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("upcoming_events_count" => 1, "tickets_sold" => 1)
+      expect(response.parsed_body).not_to have_key("revenue_cents")
+    end
+
+    it "rejects a member of another organization naming this one" do
+      outsider = create(:organizer_profile).user
+
+      get "/api/v1/organizer/events/summary", headers: auth_headers(outsider).merge("X-Organization-Id" => organization.id.to_s)
+
+      expect(response).to have_http_status(:forbidden)
     end
 
     it "requires organization membership" do
