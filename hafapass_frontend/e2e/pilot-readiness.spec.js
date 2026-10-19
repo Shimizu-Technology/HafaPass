@@ -42,6 +42,7 @@ test('admin records named Gate E ownership and complete event-bound evidence', a
   })
 
   await page.goto('/admin/events')
+  await page.getByRole('button', { name: /^Release gates for / }).click()
   await page.getByRole('button', { name: 'Prepare pilot readiness' }).click()
   await page.getByLabel('Restricted evidence reference').fill('private/pilot/guam-community-night')
   await page.getByLabel(/^Evidence SHA-256/).fill('a'.repeat(64))

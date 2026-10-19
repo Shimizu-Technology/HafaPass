@@ -66,7 +66,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                   <div className="mt-1">
                     {tt.active_tier ? (
                       <div>
-                        <p className="text-sm font-semibold text-accent-600">
+                        <p className="text-sm font-semibold text-neutral-900">
                           {tt.active_tier.name} — {formatPrice(currentPrice)}
                         </p>
                         {hasDiscount && (
@@ -74,7 +74,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm font-semibold text-accent-600">{formatPrice(currentPrice)}</p>
+                      <p className="text-sm font-semibold text-neutral-900">{formatPrice(currentPrice)}</p>
                     )}
                   </div>
 

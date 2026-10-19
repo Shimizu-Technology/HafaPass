@@ -18,6 +18,7 @@ beforeEach(() => { vi.clearAllMocks(); apiClient.get.mockReset(); apiClient.patc
 afterEach(() => { cleanup(); clearAuth?.() })
 const showUsers = () => render(<MemoryRouter initialEntries={['/admin/users']}><AdminUsersPage /></MemoryRouter>)
 const role = () => screen.getAllByRole('combobox', { name: 'Role for private@example.invalid' })[0]
+const changeRole = () => { fireEvent.change(role(), { target: { value: 'organizer' } }); fireEvent.click(screen.getByRole('button', { name: 'Change role' })) }
 
 describe('administrator role withdrawal and authoritative recovery', () => {
   it.each([401, 403])('purges private users after current role-update denial %s and only reloads after verified admin retry', async status => {
@@ -25,7 +26,7 @@ describe('administrator role withdrawal and authoritative recovery', () => {
       ? { role: 'admin', clerk_id: 'admin-a' } : { users: [user], meta: {} } }))
     apiClient.patch.mockRejectedValue(denial(status))
     showUsers(); await screen.findAllByText('private@example.invalid')
-    fireEvent.change(role(), { target: { value: 'organizer' } })
+    changeRole()
     await screen.findByRole('button', { name: 'Retry administrator access' })
     expect(screen.queryByText('private@example.invalid')).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
@@ -38,7 +39,7 @@ describe('administrator role withdrawal and authoritative recovery', () => {
     apiClient.get.mockResolvedValueOnce({ data: { users: [user], meta: {} } }).mockResolvedValue({ data: { role: verifiedRole, clerk_id } })
     apiClient.patch.mockRejectedValue(denial(403))
     showUsers(); await screen.findAllByText('private@example.invalid')
-    fireEvent.change(role(), { target: { value: 'organizer' } })
+    changeRole()
     fireEvent.click(await screen.findByRole('button', { name: 'Retry administrator access' }))
     await screen.findByText(/Administrator access has not been restored/)
     expect(screen.queryByText('private@example.invalid')).not.toBeInTheDocument()
@@ -48,7 +49,7 @@ describe('administrator role withdrawal and authoritative recovery', () => {
     apiClient.get.mockResolvedValue({ data: { users: [user], meta: {} } })
     apiClient.patch.mockRejectedValue({ response: { status, data: { error: status === 403 ? 'Cannot modify your own role' : 'Temporary outage' } } })
     showUsers(); await screen.findAllByText('private@example.invalid')
-    fireEvent.change(role(), { target: { value: 'organizer' } })
+    changeRole()
     await screen.findByRole('alert')
     expect(screen.getAllByText('private@example.invalid').length).toBeGreaterThan(0)
     expect(role()).toBeEnabled()
@@ -58,7 +59,7 @@ describe('administrator role withdrawal and authoritative recovery', () => {
     const old = deferred()
     apiClient.get.mockResolvedValue({ data: { users: [user], meta: {} } }); apiClient.patch.mockReturnValue(old.promise)
     showUsers(); await screen.findAllByText('private@example.invalid')
-    fireEvent.change(role(), { target: { value: 'organizer' } })
+    changeRole()
     const config = apiClient.patch.mock.calls[0][2]
     await act(async () => bind('session-b'))
     await screen.findAllByText('private@example.invalid')
