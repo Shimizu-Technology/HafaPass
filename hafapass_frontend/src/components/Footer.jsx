@@ -68,3 +68,16 @@ export default function Footer() {
     </footer>
   )
 }
+
+// Workspace pages keep a single quiet line instead of the marketing footer.
+export function WorkspaceFooter() {
+  const { t } = useTranslation()
+  return (
+    <footer className="border-t border-neutral-200 bg-white">
+      <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-4 text-xs text-neutral-500 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+        <p>&copy; {new Date().getFullYear()} {t('footer.copyright')}</p>
+        <a href={supportMailto()} className="inline-flex min-h-11 items-center self-start font-medium text-neutral-600 hover:text-neutral-900 sm:self-auto">{t('footer.contactSupport')}</a>
+      </div>
+    </footer>
+  )
+}

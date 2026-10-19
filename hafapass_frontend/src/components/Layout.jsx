@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useOutlet } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 import Navbar from './Navbar'
-import Footer from './Footer'
+import Footer, { WorkspaceFooter } from './Footer'
 import EnvironmentBanner from './EnvironmentBanner'
+import { isWorkspacePath } from '../utils/workspace'
 
 export default function Layout() {
   const location = useLocation()
@@ -14,6 +15,7 @@ export default function Layout() {
   const reducedMotion = useReducedMotion()
   const operational = /^\/(dashboard|admin|support|checkout|orders|tickets|sign-in|sign-up)(?:\/|$)/.test(location.pathname)
   const isHomePage = location.pathname === '/'
+  const workspace = isWorkspacePath(location.pathname)
 
   useEffect(() => {
     if (previousPath.current === location.pathname) return undefined
@@ -72,8 +74,8 @@ export default function Layout() {
           </motion.div>
         }
       </main>
-      {/* HomePage renders its own footer */}
-      {!isHomePage && <Footer />}
+      {/* HomePage renders its own footer; workspace pages keep a slim one. */}
+      {workspace ? <WorkspaceFooter /> : !isHomePage && <Footer />}
     </div>
   )
 }

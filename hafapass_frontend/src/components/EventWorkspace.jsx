@@ -1,53 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, MapPin, FilePenLine, Ticket, Users, ScanLine, Megaphone, UserRoundCog, WalletCards, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
+import { CalendarDays, MapPin, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
 import apiClient from '../api/client'
 import Dialog from './Dialog'
 import useDraftProtection from '../hooks/useDraftProtection'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import { useOrganizerIdentity, useOrganizerRequests } from '../hooks/useOrganizerContext'
 import { formatEventDateTime } from '../utils/eventTime'
+import { WORKSPACE_WIDTHS } from '../utils/workspace'
+import { loadOrganizerOrganizations } from '../utils/organizerOrganizations'
+import { navigationFor } from '../utils/eventWorkspaceNavigation'
 
 const preferenceKey = 'hafapass:event-workspace:collapsed'
 const readPreference = () => { try { return window.localStorage.getItem(preferenceKey) === 'true' } catch { return false } }
 const statusLabels = { draft: 'Draft', published: 'Published', postponed: 'Postponed', cancelled: 'Cancelled', completed: 'Completed', archived: 'Archived' }
 
-function navigationFor(event, capabilities) {
-  const p = event?.permissions || {}
-  const has = key => p[key] === true
-  const base = `/dashboard/events/${event.id}`
-  return [
-    { label: 'Event details', icon: FilePenLine, links: [{ label: 'Edit event', to: `${base}/edit`, allowed: has('edit_event_content') }] },
-    { label: 'Tickets & seating', icon: Ticket, links: [
-      { label: 'Ticket types', to: `${base}/edit#ticket-types`, allowed: has('manage_inventory') && has('edit_event_content') },
-      { label: 'Assigned seating', to: `${base}/seating`, allowed: has('manage_inventory') && (capabilities.assigned_seating === true || event.assigned_seating === true) },
-    ] },
-    { label: 'Attendees', icon: Users, links: [
-      { label: 'Attendee list', to: `${base}/attendees`, allowed: has('view_attendees') },
-      { label: 'Guest list', to: `${base}/guest-list`, allowed: has('manage_attendees') },
-      { label: 'Waitlist', to: `${base}/waitlist`, allowed: has('manage_attendees') },
-    ] },
-    { label: 'Event day', icon: ScanLine, links: [
-      { label: 'Scan tickets', to: `/dashboard/scanner?event=${event.id}`, allowed: has('scan') },
-      { label: 'Box office', to: `${base}/box-office`, allowed: has('box_office') },
-    ] },
-    { label: 'Sales & messages', icon: Megaphone, links: [
-      { label: 'Promo codes', to: `${base}/promo-codes`, allowed: has('manage_marketing') },
-      { label: 'Sales tools & messages', to: `${base}/sales-tools`, allowed: has('manage_marketing') && capabilities.advanced_sales_tools === true },
-    ] },
-    { label: 'Team', icon: UserRoundCog, links: [{ label: 'Event team', to: `${base}/team`, allowed: has('manage_staff') }] },
-    { label: 'Finances', icon: WalletCards, links: [
-      { label: 'Sales & finances', to: `${base}/analytics`, allowed: has('view_finance') },
-      { label: 'Refunds', to: `${base}/refunds`, allowed: has('refund') && has('view_finance') },
-    ] },
-  ].map(group => ({ ...group, links: group.links.filter(link => link.allowed === true) })).filter(group => group.links.length)
-}
-
 function WorkspaceLinks({ groups, collapsed = false, onNavigate, location }) {
   return <nav aria-label="Event workspace">
     <div className="space-y-5">
       {groups.map(group => <div key={group.label}>
-        {!collapsed && <p className="mb-1 px-3 text-xs font-semibold text-neutral-600">{group.label}</p>}
+        {!collapsed && group.label !== group.links[0].label && <p className="mb-1 px-3 text-xs font-semibold text-neutral-600">{group.label}</p>}
         <ul className="space-y-1">
           {group.links.map(link => {
             const target = new URL(link.to, 'https://hafapass.invalid')
@@ -110,7 +82,8 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
     setError(null)
     Promise.all([
       loadEvent ? apiClient.get(`/organizer/events/${eventId}`, request.config) : Promise.resolve(null),
-      apiClient.get('/organizer/organizations', request.config),
+      // Shared with the workspace navbar so an event page sends one lookup.
+      loadOrganizerOrganizations(identity.authContext),
     ]).then(([eventResponse, organizationsResponse]) => {
       if (!request.current()) return
       if (eventResponse) setLoadedEvent(eventResponse.data)
@@ -119,11 +92,12 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
     }).catch(() => { if (request.current()) setError('Event navigation could not be loaded. Your work below is still available.') })
       .finally(() => request.release())
     return () => request.controller.abort()
-  }, [beginRequest, eventId, identity.organizationId, loadEvent, attempt])
+  }, [beginRequest, eventId, identity.authContext, identity.organizationId, loadEvent, attempt])
 
   const correctEvent = event && String(event.id) === String(eventId)
     && (event.organization_id == null || identity.organizationId == null || String(event.organization_id) === String(identity.organizationId))
   const groups = correctEvent ? navigationFor(event, capabilities) : []
+  const toolGroups = groups.filter(group => group.label !== 'Overview')
   useEffect(() => {
     if (location.hash !== '#ticket-types' || !correctEvent || !current()) return
     const target = document.getElementById('ticket-types')
@@ -146,7 +120,9 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
     try { window.localStorage.setItem(preferenceKey, String(next)) } catch { /* Navigation remains usable when storage is unavailable. */ }
   }
 
-  return <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+  // Same container as the workspace navbar so pages keep their left edge
+  // when moving between the dashboard and an event.
+  return <div className={`mx-auto w-full min-w-0 ${WORKSPACE_WIDTHS.standard} px-4 py-6 sm:px-6 lg:px-8`}>
     <header className="mb-6 border-b border-neutral-200 pb-5">
       <Link to="/dashboard" onClick={event => navigateTo(event, '/dashboard')} className="inline-flex min-h-11 items-center text-sm font-medium text-brand-800">All events</Link>
       {correctEvent ? <>
@@ -159,7 +135,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
           {event.venue_name && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span className="break-words">{event.venue_name}</span></p>}
         </div>
         <p className="mt-3 text-sm text-neutral-700">{organization?.name || event.organization_name || (event.organization_id != null ? `Organization ${event.organization_id}` : 'Event workspace')}</p>
-        <p className="mt-1 text-sm text-neutral-600">Your access: {groups.length ? groups.map(group => group.label).join(', ') : 'No event tools available'}</p>
+        <p className="mt-1 text-sm text-neutral-600">Your access: {toolGroups.length ? toolGroups.map(group => group.label).join(', ') : 'No event tools available'}</p>
       </> : <p className="mt-2 text-sm text-neutral-600">{error ? 'Event context unavailable' : 'Loading event context…'}</p>}
       {error && <div className="mt-3 text-sm text-red-700" role="alert"><p>{error}</p><button type="button" className="min-h-11 font-semibold underline" onClick={() => setAttempt(value => value + 1)}>Retry event navigation</button></div>}
       {groups.length > 0 && <button type="button" className="mt-4 flex min-h-11 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-semibold text-neutral-800 lg:hidden" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><Menu className="h-4 w-4" aria-hidden="true" />Event navigation</button>}
@@ -188,7 +164,8 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
 export default function EventWorkspace({ event, eventId, children, hasUnsavedChanges = false }) {
   const identity = useOrganizerIdentity()
   const location = useLocation()
-  if (!location.pathname.startsWith(`/dashboard/events/${eventId}/`)) return null
+  const base = `/dashboard/events/${eventId}`
+  if (location.pathname !== base && !location.pathname.startsWith(`${base}/`)) return null
   if (!identity.ready) return <p className="p-6" role="status">Preparing your account…</p>
   return <WorkspaceSession key={`${identity.accountKey}:${identity.organizationId}:${eventId}:${location.pathname}`} suppliedEvent={event} eventId={eventId} identity={identity} location={location} hasUnsavedChanges={hasUnsavedChanges}>{children}</WorkspaceSession>
 }

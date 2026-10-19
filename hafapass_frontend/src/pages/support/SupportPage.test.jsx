@@ -1,14 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
 import SupportPage from './SupportPage'
+import { getApiAuthContext, setAuthTokenGetter } from '../../api/client'
+import { publishAccountRole } from '../../utils/workspace'
 
 vi.mock('../../api/client', async importOriginal => ({ ...await importOriginal(), default: { get: vi.fn(), post: vi.fn() } }))
 
+let uninstallAuth = null
+
 describe('support record lookup', () => {
   beforeEach(() => vi.clearAllMocks())
+  afterEach(() => {
+    publishAccountRole(null, null)
+    uninstallAuth?.()
+    uninstallAuth = null
+  })
 
   it('shows order, ticket, and event API matches and resends the matched ticket’s original order', async () => {
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url.includes('/search') ? {
@@ -26,5 +35,18 @@ describe('support record lookup', () => {
     expect(screen.getByRole('link', { name: 'Open event page' })).toHaveAttribute('href', '/events/published-event')
     await user.click(screen.getByRole('button', { name: 'Resend order tickets' }))
     expect(apiClient.post).toHaveBeenCalledWith('/support/message_deliveries/orders/923/fulfill', {}, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
+
+  it('offers a way back to the admin panel only to an admin of the current account', async () => {
+    apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
+    uninstallAuth = setAuthTokenGetter(async () => 'token', { userId: 'admin-a', sessionId: 'session-a', ready: true })
+    publishAccountRole(getApiAuthContext(), 'support')
+    const view = render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    expect(await screen.findByRole('heading', { name: 'Support console' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Back to admin panel' })).not.toBeInTheDocument()
+    view.unmount()
+    publishAccountRole(getApiAuthContext(), 'admin')
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    expect(await screen.findByRole('link', { name: 'Back to admin panel' })).toHaveAttribute('href', '/admin')
   })
 })

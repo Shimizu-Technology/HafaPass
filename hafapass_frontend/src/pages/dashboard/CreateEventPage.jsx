@@ -1,8 +1,9 @@
 import { validEventCapacity } from '../../utils/eventCapacity'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import apiClient from '../../api/client'
 import EventAccessNotice from '../../components/EventAccessNotice'
+import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import { ClipboardList } from 'lucide-react'
 import useEventCategories from '../../hooks/useEventCategories'
@@ -158,21 +159,12 @@ function CreateEventSession({ identity }) {
  }
 
  if (accessError) return <EventAccessNotice message={accessError} />
- if (access === null) return <p className="mx-auto max-w-2xl px-4 py-8" role="status">Checking event creation access…</p>
+ if (access === null) return <p className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8" role="status">Checking event creation access…</p>
  if (!access) return <EventAccessNotice message="Your organization access does not include creating events. Open your assigned tasks from the dashboard." />
 
  return (
-  <div className="max-w-2xl mx-auto px-4 py-8">
-   <div className="mb-6">
-    <Link to="/dashboard" className="text-brand-500 hover:text-brand-700 text-sm font-medium flex items-center gap-1">
-     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-     </svg>
-     Back to Dashboard
-    </Link>
-   </div>
-
-   <h1 className="text-2xl font-bold text-neutral-900 mb-6">Create New Event</h1>
+  <WorkspacePage width="form">
+   <PageHeader back={<BackLink />} title="Create New Event" className="!mb-6" />
 
    {error && (
     <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -440,6 +432,6 @@ function CreateEventSession({ identity }) {
      </div>
     </div>
    </form>
-  </div>
+  </WorkspacePage>
  )
 }

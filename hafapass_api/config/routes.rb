@@ -110,6 +110,9 @@ Rails.application.routes.draw do
         resources :venue_layouts, only: [:index, :show, :create, :update]
         resource :card_present_account, only: [:show]
         resources :events, only: [:index, :show, :create, :update, :destroy] do
+          collection do
+            get :summary
+          end
           member do
             post :publish
             post :postpone
