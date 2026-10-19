@@ -1,14 +1,17 @@
 import useOperationalListing from '../../hooks/useOperationalListing'
 import OperationalSearch from '../../components/OperationalSearch'
 import OperationalPagination from '../../components/OperationalPagination'
+import { PageHeader, WorkspacePage } from '../../components/WorkspacePage'
+import { canManageOrganizationSettings, loadOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import { uploadImage } from '../../utils/uploads'
-import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck } from 'lucide-react'
+import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck, Plus, ScanLine, Settings } from 'lucide-react'
 import { useState, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient, { getApiAuthContext } from '../../api/client'
 import { formatEventDate } from '../../utils/eventTime'
 import { currentScannerOwner } from '../../utils/admissionStore'
 import { useOrganizerIdentity, useOrganizerPageVisit } from '../../hooks/useOrganizerContext'
+import DashboardSummary from './DashboardSummary'
 
 function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  const [businessName, setBusinessName] = useState('')
@@ -117,10 +120,12 @@ function StatusBadge({ status }) {
  )
 }
 
+// Event managers land on the event overview. Other staff keep their direct
+// route to the one tool they were given.
 function EventListCard({ event }) {
  const permissions = event.permissions || {}
- const destination = permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
- const actionLabel = permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"
+ const destination = permissions.manage_events ? `/dashboard/events/${event.id}` : permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
+ const actionLabel = permissions.manage_events ? "Open event" : permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"
  const ticketsSold = event.ticket_types
   ? event.ticket_types.reduce((sum, tt) => sum + (tt.quantity_sold || 0), 0)
   : 0
@@ -264,6 +269,8 @@ function DashboardSession({ authContext }) {
  const [selectedOrganizationId, setSelectedOrganizationId] = useState(window.localStorage.getItem('hafapass_organization_id') || '')
  const listing = useOperationalListing(`events:${authContext?.userId || currentScannerOwner()}:${selectedOrganizationId}`)
  const [eventMeta, setEventMeta] = useState(null)
+ const [summary, setSummary] = useState(null)
+ const summaryRequest = useRef(null)
  const [listLoading, setListLoading] = useState(false)
  const loadGeneration = useRef(0)
  const loadingOrganization = useRef(null)
@@ -275,7 +282,7 @@ function DashboardSession({ authContext }) {
  const canManageProfile = permissions.manage_organization === true
  const canCreate = permissions.manage_events === true
  const canScan = permissions.scan === true || events.some(event => event.permissions?.scan)
- const canManageSettings = permissions.manage_members || permissions.manage_payout_settings
+ const canManageSettings = canManageOrganizationSettings(organization)
 
  const contextCurrent = context => Boolean(context && mounted.current && context.generation === loadGeneration.current
   && context.authContext === getApiAuthContext() && context.owner === currentScannerOwner()
@@ -362,6 +369,26 @@ function DashboardSession({ authContext }) {
  const fetchEventsRef = useRef(fetchEvents)
  fetchEventsRef.current = fetchEvents
 
+ // Totals cover the whole organization, so search and paging do not refetch them.
+ const fetchSummary = async (context = profileContext) => {
+  const request = beginRequest(context)
+  if (!request) return
+  summaryRequest.current?.controller.abort()
+  summaryRequest.current = request
+  const current = () => request.current() && summaryRequest.current === request
+  setSummary({ status: 'loading' })
+  try {
+   const response = await apiClient.get('/organizer/events/summary', request.config)
+   if (current()) setSummary({ status: 'ready', data: response.data || {} })
+  } catch {
+   if (current()) setSummary({ status: 'error' })
+  } finally {
+   request.release()
+  }
+ }
+ const fetchSummaryRef = useRef(fetchSummary)
+ fetchSummaryRef.current = fetchSummary
+
  const fetchDashboard = async () => {
   if (!mounted.current) return
   const generation = ++loadGeneration.current
@@ -377,6 +404,7 @@ function DashboardSession({ authContext }) {
    setProfileContext(null)
    setEvents([])
    setEventMeta(null)
+   setSummary(null)
   }
   let context = { generation, authContext, owner: currentScannerOwner(), organizationId: window.localStorage.getItem('hafapass_organization_id') }
   const current = () => contextCurrent(context)
@@ -386,7 +414,7 @@ function DashboardSession({ authContext }) {
   setError(null)
   let eventsStarted = false
   try {
-   const organizationsRes = await apiClient.get('/organizer/organizations', request.config)
+   const organizationsRes = await loadOrganizerOrganizations(authContext)
    if (!current()) return
    const availableOrganizations = Array.isArray(organizationsRes.data) ? organizationsRes.data : []
    setOrganizations(availableOrganizations)
@@ -410,6 +438,7 @@ function DashboardSession({ authContext }) {
 
    eventsStarted = true
    void fetchEventsRef.current(context)
+   void fetchSummaryRef.current(context)
   } catch (err) {
    if (!current()) return
    if (err.response?.status === 404) {
@@ -500,59 +529,40 @@ function DashboardSession({ authContext }) {
  }
 
  return (
-  <div className="max-w-4xl mx-auto px-4 py-8">
-   <div className="flex min-w-0 flex-col gap-4 mb-8 lg:flex-row lg:items-start lg:justify-between">
-   <div className="min-w-0 flex-1">
-     <div className="flex items-center gap-2">
-      <h1 className="min-w-0 flex-1 break-words text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
-      {canManageProfile && <button onClick={openEditor} className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center p-2.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
-       <Pencil className="w-4 h-4" />
-      </button>}
-     </div>
-     <p className="text-neutral-600 mt-1">{canCreate ? 'Manage your events and track ticket sales' : 'Open your assigned event tasks'}</p>
-     {organizations.length > 1 && (
-      <label className="mt-3 flex min-w-0 flex-col gap-2 text-sm text-neutral-600 sm:flex-row sm:items-center">
-       Organization
-       <select value={selectedOrganizationId} onChange={event => {
-        window.localStorage.setItem('hafapass_organization_id', event.target.value)
-        setSelectedOrganizationId(event.target.value)
-       }} className="input min-h-[44px] min-w-0 max-w-full !w-full !py-2 text-sm sm:flex-1 sm:max-w-sm">
-        {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {(organization.role || 'staff').replaceAll('_', ' ')}</option>)}
-       </select>
-      </label>
-     )}
-    </div>
-    <div className="flex min-w-0 flex-wrap items-center gap-3 lg:justify-end">
-     {canScan && <Link
-      to="/dashboard/scanner"
-      className="inline-flex items-center justify-center gap-2 bg-action-teal text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-action-teal-hover transition-colors text-sm"
-     >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-      </svg>
-      Scan Tickets
+  <WorkspacePage>
+   <PageHeader
+    title={`Welcome, ${profile.business_name}`}
+    titleAccessory={canManageProfile && <button onClick={openEditor} className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center p-2.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
+     <Pencil className="w-4 h-4" />
+    </button>}
+    description={canCreate ? 'Manage your events and track ticket sales' : 'Open your assigned event tasks'}
+    actions={(canScan || canCreate || canManageSettings) && <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-nowrap sm:items-center">
+     {canCreate && <Link to="/dashboard/events/new" className="btn-primary col-span-2 order-first gap-2 whitespace-nowrap !px-5 !py-2.5 text-sm sm:order-last">
+      <Plus aria-hidden="true" className="h-4 w-4" />
+      Create event
      </Link>}
-     {canCreate && <Link
-      to="/dashboard/events/new"
-      className="inline-flex items-center justify-center gap-2 bg-action text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-action-hover transition-colors text-sm"
-     >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-      </svg>
-      Create Event
+     {canScan && <Link to="/dashboard/scanner" className={`btn-secondary gap-2 whitespace-nowrap !px-4 !py-2.5 text-sm ${canManageSettings ? '' : 'col-span-2'}`}>
+      <ScanLine aria-hidden="true" className="h-4 w-4" />
+      Scan tickets
      </Link>}
-     {canManageSettings && <Link
-      to="/dashboard/settings"
-      className="inline-flex items-center justify-center gap-2 bg-neutral-100 text-neutral-700 px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-neutral-200 transition-colors text-sm border border-neutral-300"
-     >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
+     {canManageSettings && <Link to="/dashboard/settings" className={`btn-secondary gap-2 whitespace-nowrap !px-4 !py-2.5 text-sm ${canScan ? '' : 'col-span-2'}`}>
+      <Settings aria-hidden="true" className="h-4 w-4" />
       Settings
      </Link>}
-    </div>
-   </div>
+    </div>}
+   >
+    {organizations.length > 1 && (
+     <label className="mt-3 flex min-w-0 flex-col gap-2 text-sm text-neutral-600 sm:flex-row sm:items-center">
+      Organization
+      <select value={selectedOrganizationId} onChange={event => {
+       window.localStorage.setItem('hafapass_organization_id', event.target.value)
+       setSelectedOrganizationId(event.target.value)
+      }} className="input min-h-[44px] min-w-0 max-w-full !w-full !py-2 text-sm sm:flex-1 sm:max-w-sm">
+       {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {(organization.role || 'staff').replaceAll('_', ' ')}</option>)}
+      </select>
+     </label>
+    )}
+   </PageHeader>
 
    {canManageProfile && editor && (
     <EditProfileModal
@@ -588,6 +598,7 @@ function DashboardSession({ authContext }) {
     </div>
    </section>}
 
+   <DashboardSummary state={summary} currency={organization?.currency || 'USD'} onRetry={() => fetchSummary()} />
    <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue, link name or event ID." query={listing.q} onSearch={listing.search} busy={listLoading} />
    {listLoading && <p role="status" className="mb-3 text-sm text-neutral-700">Loading events…</p>}
    <div aria-busy={listLoading}>
@@ -617,7 +628,7 @@ function DashboardSession({ authContext }) {
    )}
    </div>
    <OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={listLoading} label="Event pages" />
-  </div>
+  </WorkspacePage>
  )
 }
 

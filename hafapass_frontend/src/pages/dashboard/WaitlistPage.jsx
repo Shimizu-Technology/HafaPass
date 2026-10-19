@@ -16,6 +16,17 @@ const STATUS_COLORS = {
   cancelled: 'bg-red-50 text-red-600',
 }
 
+const STATUS_LABELS = {
+  waiting: 'Waiting',
+  notified: 'Notified',
+  offered: 'Offered',
+  converted: 'Converted',
+  expired: 'Expired',
+  cancelled: 'Cancelled',
+}
+const statusLabel = status => STATUS_LABELS[status] || (status ? status.charAt(0).toUpperCase() + status.slice(1).replaceAll('_', ' ') : '')
+const FILTER_COUNT_KEYS = { waiting: 'total_waiting', notified: 'total_notified', expired: 'total_expired', converted: 'total_converted' }
+
 const readPendingOperation = key => {
   try {
     const raw = window.sessionStorage.getItem(key)
@@ -52,6 +63,7 @@ function WaitlistSession({ eventId, identity }) {
   const validNotifyCount = notifyCount !== '' && Number.isInteger(Number(notifyCount))
     && Number(notifyCount) >= 1 && Number(notifyCount) <= 50
   const notifying = activeMutation === 'notify_next'
+  const nobodyWaiting = !(Number(stats.total_waiting) > 0)
   const clearPrivateState = useCallback(() => {
     setConfirmation(null); setEvent(null); setEntries([]); setStats({}); setNotifyCount(1)
   }, [])
@@ -197,7 +209,7 @@ function WaitlistSession({ eventId, identity }) {
               aria-describedby="waitlist-notify-count-help"
               className="input !w-20 min-h-11 shrink-0 text-center text-base"
             />
-            <button onClick={handleNotifyNext} disabled={mutationsLocked || !validNotifyCount} className="btn-primary min-w-0 flex-1 text-sm !px-3 !py-2.5 gap-1.5 sm:flex-none">
+            <button onClick={handleNotifyNext} disabled={mutationsLocked || !validNotifyCount || nobodyWaiting} aria-describedby={nobodyWaiting ? 'waitlist-notify-empty' : undefined} className="btn-primary min-w-0 flex-1 text-sm !px-3 !py-2.5 gap-1.5 sm:flex-none">
               {notifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               Notify Next
             </button>
@@ -205,6 +217,7 @@ function WaitlistSession({ eventId, identity }) {
           <p id="waitlist-notify-count-help" className={`mt-1.5 text-sm ${validNotifyCount ? 'text-content-muted' : 'text-red-700'}`}>
             {validNotifyCount ? '1–50 people' : 'Enter a whole number from 1 to 50.'}
           </p>
+          {nobodyWaiting && <p id="waitlist-notify-empty" className="mt-1 text-sm text-content-muted">No one is waiting to be notified.</p>}
         </div>
       </div>
 
@@ -221,7 +234,7 @@ function WaitlistSession({ eventId, identity }) {
    {notice && <p role="status" className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">{notice}</p>}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="mb-4 flex min-w-0 max-w-full flex-wrap gap-2" role="group" aria-label="Filter by status">
         {['', 'waiting', 'notified', 'expired', 'converted'].map(s => (
           <button
             key={s}
@@ -231,7 +244,8 @@ function WaitlistSession({ eventId, identity }) {
               filter === s ? 'bg-brand-700 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
             }`}
           >
-            {s || 'All'}
+            {s ? statusLabel(s) : 'All'}
+            {s && Number.isInteger(stats[FILTER_COUNT_KEYS[s]]) && <>{' '}<span className="tabular-nums">({stats[FILTER_COUNT_KEYS[s]]})</span></>}
           </button>
         ))}
       </div>
@@ -264,7 +278,7 @@ function WaitlistSession({ eventId, identity }) {
                   <td className="py-3 text-neutral-600">{entry.quantity}</td>
                   <td className="py-3">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[entry.status] || ''}`}>
-                      {entry.status}
+                      {statusLabel(entry.status)}
                     </span>
                   </td>
                   <td className="py-3 text-content-muted text-xs">{formatDate(entry.created_at)}</td>

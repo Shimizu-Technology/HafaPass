@@ -736,16 +736,24 @@ function EditEventSession({ id, identity }) {
 
         </>}
 
-        {/* Submit */}
-        <div className="pt-4 border-t border-neutral-200">
-          <button type="submit" disabled={submitting} className="btn-primary w-full sm:w-auto">
-            {submitting ? 'Saving...' : 'Save Changes'}
-          </button>
+        {/* Event-details save bar: sticks to the viewport bottom while the long
+            form scrolls and stops at the form's end, above independently saved
+            ticket types. */}
+        <div data-testid="event-details-save-bar" className="sticky bottom-0 z-20 rounded-t-xl border border-b-0 border-neutral-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgba(0,0,0,0.06)] sm:px-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p id="event-details-save-state" className={`text-sm ${hasUnsavedChanges ? 'font-medium text-amber-800' : 'text-neutral-500'}`} aria-live="polite">
+              {submitting ? 'Saving event details…' : hasUnsavedChanges ? 'Unsaved event detail changes' : 'Event details are saved'}
+            </p>
+            <button type="submit" disabled={submitting} aria-describedby="event-details-save-state" className="btn-primary w-full sm:w-auto">
+              {submitting ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
         </div>
       </form>
 
       {/* Ticket Types CRUD */}
-      {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="scroll-mt-24 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>
+      {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="mt-10 scroll-mt-24 border-t border-neutral-200 pt-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>
+        <p className="rounded-xl bg-neutral-50 px-4 py-3 text-sm text-neutral-600"><span className="font-semibold text-neutral-800">Saved separately.</span> Ticket type changes save as soon as you add, edit or remove one. They are not part of Save Changes above.</p>
         {inventoryRefreshing && <p role="status" className="mt-6 text-sm text-neutral-600">Updating ticket list…</p>}
         {inventoryError && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p>{inventoryError}</p>

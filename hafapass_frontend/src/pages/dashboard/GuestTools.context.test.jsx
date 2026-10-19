@@ -332,9 +332,9 @@ describe('draft retention and current waitlist view', () => {
     expect(entries).toHaveFocus()
     await userEvent.click(screen.getByRole('button', { name: /Notify actor-a private attendee/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Send notification' }))
-    await userEvent.click(screen.getByRole('button', { name: 'notified', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: /^Notified/ }))
     await screen.findByText('notified private attendee')
-    expect(screen.getByRole('button', { name: 'notified', pressed: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Notified/, pressed: true })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'All', pressed: false })).toBeInTheDocument()
     await act(async () => write.resolve({ data: {} }))
     await screen.findByText(activeTool.notice)
@@ -382,6 +382,31 @@ describe('draft retention and current waitlist view', () => {
     expect(count).toHaveValue(50)
     expect(count).toHaveAttribute('aria-invalid', 'false')
     expect(notifyNext).toBeEnabled()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+})
+
+describe('waitlist readable statuses', () => {
+  it('labels filters and rows in plain words with the counts the API reports', async () => {
+    activeTool = { ...tools[2], result: rows => ({ waitlist: rows, stats: { total_waiting: 3, total_notified: 2, total_expired: 0, total_converted: 1 } }) }
+    mount(activeTool)
+    await screen.findByText('actor-a private attendee')
+    const filters = screen.getByRole('group', { name: 'Filter by status' })
+    expect(within(filters).getAllByRole('button').map(button => button.textContent)).toEqual(['All', 'Waiting (3)', 'Notified (2)', 'Expired (0)', 'Converted (1)'])
+    for (const name of ['Waiting (3)', 'Notified (2)', 'Expired (0)', 'Converted (1)']) expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Waitlist entries' })).getByText('Waiting')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Notify Next' })).toBeEnabled()
+  })
+
+  it('disables notify-next with a reason when nobody is waiting', async () => {
+    activeTool = { ...tools[2], result: () => ({ waitlist: [], stats: { total_waiting: 0, total_notified: 1 } }) }
+    mount(activeTool)
+    await screen.findByText('No waitlist entries found.')
+    const notifyNext = screen.getByRole('button', { name: 'Notify Next' })
+    expect(notifyNext).toBeDisabled()
+    expect(notifyNext).toHaveAccessibleDescription('No one is waiting to be notified.')
+    await userEvent.click(notifyNext)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 })

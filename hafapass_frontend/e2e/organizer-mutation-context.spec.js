@@ -9,6 +9,7 @@ async function dashboardFixtures(page, profiles) {
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
   await page.route('**/api/v1/organizer/organizations', route => json(route, organizations))
   await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [] }))
+  await page.route('**/api/v1/organizer/events/summary', route => json(route, { upcoming_events_count: 0, tickets_sold: 0, next_event: null }))
   await page.route('**/api/v1/organizer_profile', route => json(route, profiles[route.request().headers()['x-organization-id']]))
 }
 
