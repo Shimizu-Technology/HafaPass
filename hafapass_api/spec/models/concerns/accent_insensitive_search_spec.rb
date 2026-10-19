@@ -24,6 +24,14 @@ RSpec.describe AccentInsensitiveSearch do
     expect(Event.accent_insensitive_equals(:venue_city, "Humatak")).to contain_exactly(humatak, shouting)
   end
 
+  it "matches characters outside the fold list identically on both sides" do
+    nordic = create(:event, organizer_profile: organizer_profile, title: "Østergaard Çafe Łódź", venue_city: "Østergaard")
+
+    expect(Event.accent_insensitive_search("Østergaard", :title)).to contain_exactly(nordic)
+    expect(Event.accent_insensitive_search("Çafe Ł", :title)).to contain_exactly(nordic)
+    expect(Event.accent_insensitive_equals(:venue_city, "Østergaard")).to contain_exactly(nordic)
+  end
+
   it "compares whole values for exact filters" do
     expect(Event.accent_insensitive_equals(:venue_city, " humatak ")).to contain_exactly(humatak)
     expect(Event.accent_insensitive_equals(:venue_city, "huma")).to be_empty
@@ -43,14 +51,20 @@ RSpec.describe AccentInsensitiveSearch do
       expect(described_class::ACCENTED).to include("Å", "å", "Ñ", "ñ")
     end
 
-    it "translates before lowercasing in SQL and quotes input" do
+    it "applies the same SQL fold to the column and the bound input" do
       fold = described_class.fold("venue_city")
       expect(fold).to eq("lower(translate(venue_city, '#{described_class::ACCENTED}', '#{described_class::PLAIN}'))")
-      sql = Event.accent_insensitive_search("Hå'fa", :title, :venue_city).to_sql
-      expect(sql).to include(described_class.fold('"events"."title"') + " LIKE '%ha''fa%'")
-      expect(sql).to include(described_class.fold('"events"."venue_city"') + " LIKE '%ha''fa%'")
-      expect(Event.accent_insensitive_equals(:venue_city, "HUMÅTAK").to_sql)
-        .to include(described_class.fold('"events"."venue_city"') + " = 'humatak'")
+
+      relation = Event.accent_insensitive_search("Hå'fa", :title, :venue_city)
+      sql, binds = Event.connection.send(:to_sql_and_binds, relation.arel)
+      expect(sql).to include(described_class.fold('"events"."title"') + " LIKE " + described_class.fold("$1"))
+      expect(sql).to include(described_class.fold('"events"."venue_city"') + " LIKE " + described_class.fold("$2"))
+      expect(sql).not_to include("Hå'fa")
+      expect(binds.map(&:value)).to eq(["%Hå'fa%", "%Hå'fa%"])
+
+      sql, binds = Event.connection.send(:to_sql_and_binds, Event.accent_insensitive_equals(:venue_city, " HUMÅTAK ").arel)
+      expect(sql).to include(described_class.fold('"events"."venue_city"') + " = " + described_class.fold("$1"))
+      expect(binds.map(&:value)).to eq(["HUMÅTAK"])
     end
 
     it "rejects anything that is not one of the model's columns" do
@@ -58,9 +72,8 @@ RSpec.describe AccentInsensitiveSearch do
       expect { Event.accent_insensitive_equals(:no_such_column, "x") }.to raise_error(ArgumentError)
     end
 
-    it "folds input the same way in Ruby" do
-      expect(described_class.fold_value(" HÅFA Humåtak Señor ")).to eq("hafa humatak senor")
-      expect(described_class.contains_pattern("Hå%fa_")).to eq("%ha\\%fa\\_%")
+    it "escapes LIKE wildcards in the raw input" do
+      expect(described_class.contains_pattern(" Hå%fa_ ")).to eq("%Hå\\%fa\\_%")
     end
   end
 end

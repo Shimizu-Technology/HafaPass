@@ -25,4 +25,21 @@ RSpec.describe Settlements::Calculator do
   ensure
     ActiveSupport::Notifications.unsubscribe(subscription) if subscription
   end
+
+  it "keeps the legacy platform fee description inside the settlement source digest" do
+    # Settlement items are financial records: changing their text would change
+    # source_digest for existing activity and force new settlement versions.
+    event = create(:event, :published)
+    order = create(:order, event: event)
+    create(:fee_component, order: order, amount_cents: 250, kind: "platform")
+
+    result = described_class.call(event)
+    fee_item = result.items.find { |item| item[:kind] == "platform_fee" }
+    canonical = result.items.map do |item|
+      item.slice(:kind, :amount_cents, :currency, :source_type, :source_id, :description, :metadata)
+    end
+
+    expect(fee_item[:description]).to eq("Buyer-paid HafaPass service fee")
+    expect(result.attributes[:source_digest]).to eq(Digest::SHA256.hexdigest(JSON.generate(canonical)))
+  end
 end
