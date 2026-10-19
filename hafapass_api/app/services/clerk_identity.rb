@@ -55,8 +55,9 @@ class ClerkIdentity
       return nil if clerk_id.blank? || ENV["CLERK_SECRET_KEY"].blank?
 
       uri = URI("https://api.clerk.com/v1/users/#{ERB::Util.url_encode(clerk_id)}")
+      # Kept short: sign-in (new-account email) waits on this lookup.
       response = Net::HTTP.start(uri.host, uri.port, use_ssl: true,
-        open_timeout: 5, read_timeout: 5) do |http|
+        open_timeout: 1.5, read_timeout: 1.5) do |http|
         request = Net::HTTP::Get.new(uri)
         request["Authorization"] = "Bearer #{ENV.fetch('CLERK_SECRET_KEY')}"
         http.request(request)

@@ -234,3 +234,24 @@ it('ignores an obsolete assigned-list response after a query change', async () =
   expect(screen.queryByRole('option', { name: 'Obsolete requested event' })).not.toBeInTheDocument()
   expect(apiClient.post.mock.calls.some(([path]) => path.includes('/92001/'))).toBe(false)
 })
+
+it('runs an Attendees page lookup hand-off but leaves the admission to staff', async () => {
+  const ticket = { ticket_id: 501, state: 'valid', attendee_name: 'Mina Cruz', credential_hash: 'handoff-credential-hash' }
+  const manifest = await signedManifest(92002, [ticket])
+  apiClient.get.mockImplementation((path, config) => {
+    if (path === '/organizer/events') return Promise.resolve({ data: { events: [{ id: 92002, title: 'Clicked event', status: 'published' }] } })
+    if (path.endsWith('/manifest')) return Promise.resolve({ data: manifest })
+    if (path === '/me') return Promise.resolve({ data: { id: 7 } })
+    if (path.endsWith('/admissions/search')) return Promise.resolve({ data: config?.params?.q === 'HP-T501'
+      ? [{ id: 501, code: 'HP-T501', attendee_name: 'Mina Cruz', ticket_type: 'Entry', status: 'issued', admission_allowed: true }] : [] })
+    return Promise.resolve({ data: { counts: {} } })
+  })
+  apiClient.post.mockResolvedValue({ data: { id: 92, identifier: 'handoff-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() } })
+  render(<MemoryRouter initialEntries={['/dashboard/scanner?event=92002&lookup=HP-T501']}><ScannerPage /></MemoryRouter>)
+  expect(await screen.findByText('Mina Cruz · HP-T501')).toBeInTheDocument()
+  expect(screen.getByLabelText('Attendee name or ticket number')).toHaveValue('HP-T501')
+  expect(apiClient.get.mock.calls.filter(([path]) => path.endsWith('/admissions/search'))).toHaveLength(1)
+  expect(screen.getByRole('button', { name: 'Admit' })).toBeEnabled()
+  expect(apiClient.post.mock.calls.some(([path]) => path.endsWith('/sync'))).toBe(false)
+  expect(await queuedActions(92002, 92)).toHaveLength(0)
+})

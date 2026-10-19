@@ -63,6 +63,7 @@ RSpec.describe "Api::V1::Users", type: :request do
       allow(ENV).to receive(:fetch).and_call_original
       allow(ENV).to receive(:fetch).with("ADMIN_EMAILS", "").and_return("ADMIN@example.com")
       allow(ClerkIdentity).to receive(:verified_email_addresses).with("clerk_verified_admin", require_available: true).and_return(["admin@example.com"])
+      allow(ClerkIdentity).to receive(:profile).with("clerk_verified_admin").and_return(nil)
       allow(ClerkAuthenticator).to receive(:verify).with("verified_admin").and_return({ "sub" => "clerk_verified_admin" })
       post "/api/v1/users/sync", params: { email: "contact@example.com" },
         headers: { "Authorization" => "Bearer verified_admin" }, as: :json
@@ -152,6 +153,75 @@ RSpec.describe "Api::V1::Users", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(User.find_by(clerk_id: "regular_clerk_id")).to be_attendee
+    end
+  end
+
+  describe "account email on first sign-in" do
+    let(:headers) { { "Authorization" => "Bearer first_sign_in" } }
+
+    before do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("ADMIN_EMAILS", "").and_return("")
+    end
+
+    def sign_in_with(claims)
+      allow(ClerkAuthenticator).to receive(:verify).with("first_sign_in").and_return({ "sub" => "clerk_first_sign_in" }.merge(claims))
+      get "/api/v1/me/tickets", headers: headers
+      expect(response).to have_http_status(:ok)
+      User.find_by!(clerk_id: "clerk_first_sign_in")
+    end
+
+    it "uses the token's email claim without calling Clerk" do
+      allow(ClerkIdentity).to receive(:profile)
+      expect(sign_in_with("email" => "claim@example.com").email).to eq("claim@example.com")
+      expect(ClerkIdentity).not_to have_received(:profile)
+    end
+
+    it "fetches the primary email from Clerk when the session token has none" do
+      allow(ClerkIdentity).to receive(:profile).with("clerk_first_sign_in")
+        .and_return({ email: "fetched@example.com", first_name: "Ana", last_name: "Cruz", verified_emails: ["fetched@example.com"] })
+      user = sign_in_with({})
+      expect(user).to have_attributes(email: "fetched@example.com", first_name: "Ana", last_name: "Cruz")
+      get "/api/v1/me/tickets", headers: headers
+      expect(ClerkIdentity).to have_received(:profile).once
+    end
+
+    it "still creates the account with a blank email when Clerk is unavailable" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("CLERK_SECRET_KEY").and_return("sk_test_identity_fixture")
+      allow(ENV).to receive(:fetch).with("CLERK_SECRET_KEY").and_return("sk_test_identity_fixture")
+      http = instance_double(Net::HTTP)
+      allow(Net::HTTP).to receive(:start).and_yield(http)
+      allow(http).to receive(:request).and_raise(Net::ReadTimeout)
+      expect(sign_in_with({})).to have_attributes(email: nil, role: "admin")
+      expect(http).to have_received(:request).once
+    end
+
+    it "bootstraps an allowlisted admin from the fetched email with a single Clerk lookup" do
+      allow(Rails.env).to receive(:development?).and_return(false)
+      allow(Rails.env).to receive(:test?).and_return(false)
+      allow(ENV).to receive(:fetch).with("ADMIN_EMAILS", "").and_return("boss@example.com")
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("CLERK_SECRET_KEY").and_return("sk_test_identity_fixture")
+      allow(ENV).to receive(:fetch).with("CLERK_SECRET_KEY").and_return("sk_test_identity_fixture")
+      http = instance_double(Net::HTTP)
+      allow(Net::HTTP).to receive(:start).and_yield(http)
+      allow(http).to receive(:request).and_return(double(code: "200", body: {
+        id: "clerk_first_sign_in", primary_email_address_id: "idn_primary", email_addresses: [
+          { id: "idn_other", email_address: "other@example.com", verification: { status: "verified" } },
+          { id: "idn_primary", email_address: "Boss@example.com", verification: { status: "verified" } }
+        ]
+      }.to_json))
+      expect(sign_in_with({})).to have_attributes(email: "boss@example.com", role: "admin")
+      expect(http).to have_received(:request).once
+    end
+
+    it "refills a previously created blank email through the leased profile sync" do
+      create(:user, clerk_id: "clerk_first_sign_in", email: nil, role: :attendee)
+      allow(ClerkIdentity).to receive(:profile).with("clerk_first_sign_in").and_return({ email: "later@example.com" })
+      expect(sign_in_with({}).email).to eq("later@example.com")
+      get "/api/v1/me/tickets", headers: headers
+      expect(ClerkIdentity).to have_received(:profile).once
     end
   end
 end

@@ -1,8 +1,9 @@
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
-import { Loader2, Search, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import Dialog from '../../components/Dialog'
+import { Loader2, Search, ChevronLeft, ChevronRight, Download, Mail, ScanLine } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 import { pluralize } from '../../utils/eventToolFormat'
 
@@ -11,6 +12,8 @@ const STATUS_STYLES = {
   issued: { label: 'Valid', className: 'bg-brand-100 text-brand-700' },
   cancelled: { label: 'Cancelled', className: 'bg-red-100 text-red-800' }
 }
+
+const RESENDABLE_STATUSES = new Set(['issued', 'checked_in'])
 
 function formatDate(iso) {
   if (!iso) return '—'
@@ -31,7 +34,8 @@ function AttendeesPageSession({ id, identity }) {
  const accessEpoch = useRef(0)
  const accessDenied = useRef(false)
  const requests = useRef(new Set())
- // Exports outlive list refreshes (filters, paging) and stop only when access is withdrawn.
+ // Exports and row actions outlive list refreshes (filters, paging) and stop
+ // only when access is withdrawn, so a resend is never silently abandoned.
  const exportRequests = useRef(new Set())
  const accessWithdrawals = useRef(0)
  const [loading, setLoading] = useState(true)
@@ -48,6 +52,10 @@ function AttendeesPageSession({ id, identity }) {
  const [ticketTypeFilter, setTicketTypeFilter] = useState('')
  const [exporting, setExporting] = useState(false)
  const [exportError, setExportError] = useState(null)
+ const [resendTarget, setResendTarget] = useState(null)
+ const [resending, setResending] = useState(false)
+ const [resendError, setResendError] = useState(null)
+ const [actionNotice, setActionNotice] = useState(null)
  const withdrawAccess = useCallback(message => {
   accessDenied.current = true
   ++accessEpoch.current
@@ -79,20 +87,21 @@ function AttendeesPageSession({ id, identity }) {
    throw requestError
   } finally { requests.current.delete(request); request.release() }
  }, [beginRequest, withdrawForDenial])
- const requestExport = useCallback(async () => {
+ const requestOutsideList = useCallback(async send => {
   const request = beginRequest()
   if (!request) throw new DOMException('Page context changed', 'AbortError')
   const withdrawal = accessWithdrawals.current
   exportRequests.current.add(request)
   try {
-   const response = await apiClient.get(`/organizer/events/${id}/crm/export`, { responseType: 'blob', ...request.config })
+   const response = await send(request.config)
    if (!request.current() || withdrawal !== accessWithdrawals.current) throw new DOMException('Page context changed', 'AbortError')
    return response
   } catch (requestError) {
    if (request.current() && withdrawal === accessWithdrawals.current) withdrawForDenial(requestError)
    throw requestError
   } finally { exportRequests.current.delete(request); request.release() }
- }, [beginRequest, id, withdrawForDenial])
+ }, [beginRequest, withdrawForDenial])
+ const requestExport = useCallback(() => requestOutsideList(config => apiClient.get(`/organizer/events/${id}/crm/export`, { responseType: 'blob', ...config })), [id, requestOutsideList])
 
   const fetchAttendees = useCallback(async () => {
     const generation = ++listGeneration.current
@@ -162,6 +171,41 @@ function AttendeesPageSession({ id, identity }) {
     } finally { if (current()) setExporting(false) }
   }
 
+  // Resend reuses the shared fulfillment resender: the order's ticket email goes
+  // to the buyer, with the same two-minute cooldown buyers get.
+  const confirmResend = async () => {
+    if (!resendTarget || resending) return
+    setResending(true); setResendError(null)
+    try {
+      const response = await requestOutsideList(config => apiClient.post(`/organizer/events/${id}/attendees/${resendTarget.id}/resend`, {}, config))
+      if (!current()) return
+      setActionNotice(`Ticket email for ${resendTarget.attendee_name || 'this attendee'} is on its way to ${response.data?.recipient || 'the buyer'}.`)
+      setResendTarget(null)
+    } catch (resendFailure) {
+      if (resendFailure?.name === 'AbortError' || !current()) return
+      if ([401, 403, 404].includes(resendFailure.response?.status)) { setResendTarget(null); return }
+      setResendError(resendFailure.response?.data?.error || 'The ticket email could not be resent. Check your connection and try again.')
+    } finally { if (current()) setResending(false) }
+  }
+  const openResend = attendee => { setActionNotice(null); setResendError(null); setResendTarget(attendee) }
+
+  const permissions = event?.permissions || {}
+  const canCheckIn = attendee => permissions.scan === true && event?.status === 'published' && attendee.status === 'issued'
+  const canResend = attendee => permissions.manage_attendees === true && RESENDABLE_STATUSES.has(attendee.status)
+  const showActions = permissions.scan === true || permissions.manage_attendees === true
+  // Check-in hands off to the scanner, which runs the ticket lookup but leaves
+  // Admit to staff so the admission uses the device's signed ticket list, the
+  // offline-safe queue and Undo, exactly like a scanned QR code.
+  const checkInPath = attendee => `/dashboard/scanner?event=${encodeURIComponent(id)}&lookup=HP-T${attendee.id}`
+  const rowActions = (attendee, size) => {
+    const buttonSize = size === 'phone' ? 'min-h-11 flex-1 justify-center' : 'min-h-9'
+    const name = attendee.attendee_name || 'attendee'
+    return <>
+      {canCheckIn(attendee) && <Link to={checkInPath(attendee)} aria-label={`Check in ${name}`} className={`btn-secondary gap-1.5 !px-3 !py-1.5 text-sm ${buttonSize}`}><ScanLine aria-hidden="true" className="h-4 w-4" /> Check in</Link>}
+      {canResend(attendee) && <button type="button" onClick={() => openResend(attendee)} disabled={resending} aria-label={`Resend ticket to ${name}`} className={`btn-ghost gap-1.5 !px-3 !py-1.5 text-sm ${buttonSize}`}><Mail aria-hidden="true" className="h-4 w-4" /> Resend</button>}
+    </>
+  }
+
   const visibleError = detailError || error
   const totalCount = Number.isInteger(meta?.total_count) ? meta.total_count : attendees.length
   const ticketTypes = event?.ticket_types || []
@@ -184,6 +228,16 @@ function AttendeesPageSession({ id, identity }) {
         </div>}
       </div>
       {exportError && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}</p>}
+      {actionNotice && <p role="status" className="mb-4 break-words rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900">{actionNotice}</p>}
+      {resendTarget && <Dialog labelledBy="attendee-resend-title" onClose={() => setResendTarget(null)} busy={resending} className="max-w-md">
+        <h3 id="attendee-resend-title" className="text-lg font-semibold text-neutral-950">Resend ticket email?</h3>
+        <p className="mt-3 break-words text-sm text-neutral-700">We'll email the tickets on {resendTarget.attendee_name || 'this attendee'}'s order again, to the buyer's email address on that order. Each order can be resent once every two minutes.</p>
+        {resendError && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{resendError}</p>}
+        <div className="mt-5 flex flex-wrap justify-end gap-3">
+          <button type="button" className="btn-secondary" disabled={resending} onClick={() => setResendTarget(null)}>Cancel</button>
+          <button type="button" className="btn-primary gap-1.5" disabled={resending} onClick={confirmResend}>{resending ? <><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> Sending…</> : 'Resend ticket'}</button>
+        </div>
+      </Dialog>}
 
       {visibleError && (
         <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"><p>{visibleError}</p><button type="button" className="min-h-11 font-semibold underline" onClick={() => setLoadAttempt(value => value + 1)}>Retry attendee list</button></div>
@@ -234,6 +288,7 @@ function AttendeesPageSession({ id, identity }) {
                   <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Ticket Type</th>
                   <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Checked In</th>
+                  {showActions && <th className="text-right px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200">
@@ -246,6 +301,7 @@ function AttendeesPageSession({ id, identity }) {
                       <td className="px-5 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
                       <td className="px-5 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span></td>
                       <td className="px-5 py-3 text-sm text-neutral-500">{formatDate(att.checked_in_at)}</td>
+                      {showActions && <td className="px-5 py-3"><div className="flex justify-end gap-2">{rowActions(att, 'desktop')}</div></td>}
                     </tr>
                   )
                 })}
@@ -268,6 +324,7 @@ function AttendeesPageSession({ id, identity }) {
                     <span className="text-xs text-neutral-400">{att.ticket_type}</span>
                     {att.checked_in_at && <span className="text-xs text-neutral-400">{formatDate(att.checked_in_at)}</span>}
                   </div>
+                  {(canCheckIn(att) || canResend(att)) && <div className="mt-3 flex gap-2">{rowActions(att, 'phone')}</div>}
                 </div>
               )
             })}

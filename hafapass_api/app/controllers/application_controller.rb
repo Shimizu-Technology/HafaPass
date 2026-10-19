@@ -80,15 +80,33 @@ class ApplicationController < ActionController::API
     return nil if clerk_id.blank?
 
     @current_user = User.find_or_create_by!(clerk_id: clerk_id) do |user|
-      user.email = clerk_email
-      user.first_name = @clerk_payload["first_name"]
-      user.last_name = @clerk_payload["last_name"]
+      profile = new_account_profile(clerk_id) if clerk_email.blank?
+      user.email = clerk_email.presence || profile&.fetch(:email, nil)
+      user.first_name = @clerk_payload["first_name"].presence || profile&.fetch(:first_name, nil)
+      user.last_name = @clerk_payload["last_name"].presence || profile&.fetch(:last_name, nil)
       user.role = initial_role_for(user)
     end
+    # Accounts created before this lookup (or during a Clerk outage) refill
+    # through the leased profile sync, which bounds provider calls to one per
+    # account every few minutes instead of one per request.
+    return @current_user if @current_user.email.present? || @current_user.previously_new_record?
+
+    @current_user = ClerkProfileSync.call(@current_user)
   end
 
   def clerk_email
     @clerk_payload["email"] || @clerk_payload.dig("email_addresses", 0, "email_address")
+  end
+
+  # Standard Clerk session tokens carry no email claim, so a new account would
+  # otherwise wait for a later profile sync to learn its contact address.
+  # ClerkIdentity caches the lookup (including failures) for this request, so
+  # initial_role_for's verified-address check reuses it. A failure still
+  # creates the account; the email stays blank until the next sync.
+  def new_account_profile(clerk_id)
+    profile = ClerkIdentity.profile(clerk_id)
+    Rails.logger.info("Clerk profile unavailable for a new account; email will sync later") unless profile&.dig(:email)
+    profile
   end
 
   def initial_role_for(user)
