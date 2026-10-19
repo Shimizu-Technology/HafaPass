@@ -88,4 +88,16 @@ describe('AdminEventsPage', () => {
     expect(screen.queryByRole('button', { name: 'Prepare Gate J closeout' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove proof-candidate flag' })).toBeInTheDocument()
   })
+
+  it('closes expanded release gates when the listing filters change', async () => {
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' }))
+    expect(screen.getByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter events by status' }), { target: { value: 'draft' } })
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/events', expect.objectContaining({ params: expect.objectContaining({ status: 'draft' }) })))
+    expect(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'Prepare Gate J closeout' })).not.toBeInTheDocument()
+  })
 })

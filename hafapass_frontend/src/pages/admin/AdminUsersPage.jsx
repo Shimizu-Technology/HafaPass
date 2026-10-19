@@ -17,11 +17,15 @@ const needsReviewNote = status => ['rejected', 'suspended'].includes(status)
 
 // Every role or verification change is confirmed here. The selects stay bound to the
 // saved value, so cancelling leaves them showing what the server last confirmed.
-function ConfirmChangeDialog({ change, onCancel, onConfirm }) {
-  const [note, setNote] = useState(change.note || '')
+// Rejected and suspended need a fresh note (the backend requires one), so the field
+// starts empty rather than carrying an earlier review's wording into the new status.
+function ConfirmChangeDialog({ change, busy, onCancel, onConfirm }) {
+  const [note, setNote] = useState('')
+  const noteRequired = change.kind === 'verification' && needsReviewNote(change.to)
+  const noteMissing = noteRequired && !note.trim()
   const subject = change.kind === 'role' ? userLabel(change.user) : change.user.organizer_profile?.business_name || userLabel(change.user)
   return (
-    <Dialog labelledBy="confirm-change-title" onClose={onCancel} className="max-w-md">
+    <Dialog labelledBy="confirm-change-title" onClose={onCancel} busy={busy} className="max-w-md">
       <h2 id="confirm-change-title" className="text-lg font-semibold text-neutral-900">{change.kind === 'role' ? 'Change platform role?' : 'Change verification status?'}</h2>
       <p className="mt-2 break-words text-sm text-content-muted">{subject}</p>
       <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-neutral-800">
@@ -31,22 +35,24 @@ function ConfirmChangeDialog({ change, onCancel, onConfirm }) {
         <span className="rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-800">{adminLabel(change.to)}</span>
       </p>
       {change.kind === 'role' && change.to === 'admin' && <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">This grants full platform access.</p>}
-      {change.kind === 'verification' && needsReviewNote(change.to) && (
+      {noteRequired && (
         <label className="mt-4 block text-sm font-medium text-neutral-800">
           Review note
-          <span className="block font-normal text-content-muted">Explain what the organizer must address.</span>
-          <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} className="input mt-1 !text-sm" />
+          <span id="review-note-help" className="block font-normal text-content-muted">Required. Explain what the organizer must address.</span>
+          <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} required aria-required="true" aria-describedby="review-note-help" disabled={busy} className="input mt-1 !text-sm" />
         </label>
       )}
       <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <button type="button" onClick={onCancel} className="btn-secondary min-h-11">Cancel</button>
-        <button type="button" onClick={() => onConfirm(note)} className="btn-primary min-h-11">{change.kind === 'role' ? 'Change role' : 'Change status'}</button>
+        <button type="button" onClick={onCancel} disabled={busy} className="btn-secondary min-h-11">Cancel</button>
+        <button type="button" onClick={() => onConfirm(note.trim())} disabled={busy || noteMissing} className="btn-primary min-h-11 disabled:opacity-50">
+          {busy ? 'Saving…' : change.kind === 'role' ? 'Change role' : 'Change status'}
+        </button>
       </div>
     </Dialog>
   )
 }
 
-function OrganizerReadiness({ user, reviewOrganizer, syncConnectedAccount, fetchUsers }) {
+function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount, fetchUsers }) {
   const profile = user.organizer_profile
   if (!profile) return <p className="text-sm text-content-muted">No organizer profile.</p>
   const account = profile.connected_account
@@ -54,7 +60,7 @@ function OrganizerReadiness({ user, reviewOrganizer, syncConnectedAccount, fetch
   return (
     <div className="min-w-0 space-y-2 lg:min-w-[13rem]">
       <p className="break-words font-medium text-neutral-800">{profile.business_name}</p>
-      <select value={profile.verification_status} onChange={event => reviewOrganizer(user, event.target.value)}
+      <select value={profile.verification_status} disabled={busy} onChange={event => reviewOrganizer(user, event.target.value)}
         aria-label={`Verification status for ${profile.business_name || userLabel(user)}`} className="input min-h-11 !text-sm">
         {verificationStatuses.map(status => <option key={status} value={status}>{adminLabel(status)}</option>)}
       </select>
@@ -93,6 +99,16 @@ function AdminUsersPageSession({ identity, resourcePath }) {
   const [roleFilter, setRoleFilter] = useState('')
   const [page, setPage] = useState(1)
   const [pendingChange, setPendingChange] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  // One saved change at a time. A refused second change says so instead of vanishing.
+  const mutationAvailable = () => {
+    if (!mutationBusy.current) return true
+    setActionError('Another change is still saving. Wait for it to finish, then try again.')
+    return false
+  }
+  const startMutation = () => { mutationBusy.current = true; setBusy(true); setActionError('') }
+  const endMutation = () => { mutationBusy.current = false; setBusy(false) }
 
   const fetchUsers = useCallback(() => {
     const request = beginRequest()
@@ -115,16 +131,15 @@ function AdminUsersPageSession({ identity, resourcePath }) {
   useEffect(() => { fetchUsers(); return () => pendingLoad.current?.abort() }, [fetchUsers])
 
   const requestRoleChange = (user, newRole) => {
-    if (newRole === user.role) return
+    if (newRole === user.role || !mutationAvailable()) return
     setPendingChange({ kind: 'role', user, from: user.role, to: newRole })
   }
 
   const changeRole = async (user, newRole) => {
-    if (mutationBusy.current) return
+    if (!mutationAvailable()) return
     const request = beginRequest()
     if (!request) return
-    mutationBusy.current = true
-    setActionError('')
+    startMutation()
     try {
       const res = await apiClient.patch(`/admin/users/${user.id}`, { role: newRole }, request.config)
       if (!request.current()) return
@@ -132,17 +147,16 @@ function AdminUsersPageSession({ identity, resourcePath }) {
     } catch (err) {
       if (request.handleError(err)) return
       if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
-    } finally { request.release(); mutationBusy.current = false }
+    } finally { request.release(); endMutation() }
   }
 
   const updateOrganizer = async (user, updates) => {
     const profile = user.organizer_profile
     if (!profile) return
-    if (mutationBusy.current) return
+    if (!mutationAvailable()) return
     const request = beginRequest()
     if (!request) return
-    mutationBusy.current = true
-    setActionError('')
+    startMutation()
     try {
       const response = await apiClient.patch(`/admin/organizer_profiles/${profile.id}`, updates, request.config)
       if (!request.current()) return
@@ -150,32 +164,36 @@ function AdminUsersPageSession({ identity, resourcePath }) {
     } catch (err) {
       if (request.handleError(err)) return
       if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
-    } finally { request.release(); mutationBusy.current = false }
+    } finally { request.release(); endMutation() }
   }
 
   const reviewOrganizer = (user, verificationStatus) => {
     const profile = user.organizer_profile
-    if (!profile || verificationStatus === profile.verification_status) return
+    if (!profile || verificationStatus === profile.verification_status || !mutationAvailable()) return
     setPendingChange({ kind: 'verification', user, from: profile.verification_status, to: verificationStatus, note: profile.verification_notes || '' })
   }
 
-  const confirmChange = note => {
+  // The dialog stays open (and busy) until the server answers, then closes either way;
+  // a failure is reported in the page alert.
+  const confirmChange = async note => {
     const change = pendingChange
-    setPendingChange(null)
     if (!change) return
-    if (change.kind === 'role') return changeRole(change.user, change.to)
-    const verificationNotes = needsReviewNote(change.to) ? note : change.note
-    updateOrganizer(change.user, { verification_status: change.to, verification_notes: verificationNotes })
+    if (change.kind === 'role') await changeRole(change.user, change.to)
+    else {
+      const verificationNotes = needsReviewNote(change.to) ? note : change.note
+      if (needsReviewNote(change.to) && !verificationNotes) return
+      await updateOrganizer(change.user, { verification_status: change.to, verification_notes: verificationNotes })
+    }
+    setPendingChange(null)
   }
 
   const syncConnectedAccount = async (user, updates) => {
     const account = user.organizer_profile?.connected_account
     if (!account) return
-    if (mutationBusy.current) return
+    if (!mutationAvailable()) return
     const request = beginRequest()
     if (!request) return
-    mutationBusy.current = true
-    setActionError('')
+    startMutation()
     try {
       const response = await apiClient.patch(`/admin/connected_accounts/${account.id}`, updates, request.config)
       if (!request.current()) return
@@ -190,7 +208,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
     } catch (err) {
       if (request.handleError(err)) return
       if (request.current()) setActionError(err.response?.data?.error || 'The update was not confirmed. Review the saved user before trying again.')
-    } finally { request.release(); mutationBusy.current = false }
+    } finally { request.release(); endMutation() }
   }
 
   const roleBadge = (role) => {
@@ -251,6 +269,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                       <td className="px-4 py-3">
                         <select
                           value={user.role}
+                          disabled={busy}
                           aria-label={`Role for ${userLabel(user)}`}
                           onChange={e => requestRoleChange(user, e.target.value)}
                           className={`min-h-11 text-sm px-2 py-1 rounded-lg font-medium border border-neutral-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${roleBadge(user.role)}`}
@@ -259,7 +278,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                         </select>
                       </td>
                       <td className="px-4 py-3 text-content-muted">
-                        <OrganizerReadiness user={user} reviewOrganizer={reviewOrganizer} syncConnectedAccount={syncConnectedAccount} fetchUsers={fetchUsers} />
+                        <OrganizerReadiness user={user} busy={busy} reviewOrganizer={reviewOrganizer} syncConnectedAccount={syncConnectedAccount} fetchUsers={fetchUsers} />
                       </td>
                       <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">{user.orders_count}</td>
                       <td className="px-4 py-3 text-neutral-500 hidden md:table-cell">{new Date(user.created_at).toLocaleDateString()}</td>
@@ -275,13 +294,13 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                   <p className="mt-1 break-all text-sm text-content-muted">{userEmail(user)}</p>
                   <label className="mt-4 block text-sm font-medium text-neutral-800">
                     Platform role
-                    <select value={user.role} aria-label={`Role for ${userLabel(user)}`} onChange={event => requestRoleChange(user, event.target.value)} className={`input mt-1 min-h-11 ${roleBadge(user.role)}`}>
+                    <select value={user.role} disabled={busy} aria-label={`Role for ${userLabel(user)}`} onChange={event => requestRoleChange(user, event.target.value)} className={`input mt-1 min-h-11 ${roleBadge(user.role)}`}>
                       {roles.filter(Boolean).map(role => <option key={role} value={role}>{adminLabel(role)}</option>)}
                     </select>
                   </label>
                   <section aria-label={`Organizer readiness for ${userLabel(user)}`} className="mt-4 border-t border-neutral-200 pt-4">
                     <h3 className="mb-2 text-sm font-semibold text-neutral-900">Organizer readiness</h3>
-                    <OrganizerReadiness user={user} reviewOrganizer={reviewOrganizer} syncConnectedAccount={syncConnectedAccount} fetchUsers={fetchUsers} />
+                    <OrganizerReadiness user={user} busy={busy} reviewOrganizer={reviewOrganizer} syncConnectedAccount={syncConnectedAccount} fetchUsers={fetchUsers} />
                   </section>
                   <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-content-muted">
                     <div><dt className="inline">Orders: </dt><dd className="inline font-medium text-neutral-800">{user.orders_count}</dd></div>
@@ -306,7 +325,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
           </button>
         </div>
       )}
-      {pendingChange && <ConfirmChangeDialog change={pendingChange} onCancel={() => setPendingChange(null)} onConfirm={confirmChange} />}
+      {pendingChange && <ConfirmChangeDialog change={pendingChange} busy={busy} onCancel={() => setPendingChange(null)} onConfirm={confirmChange} />}
     </AdminLayout>
   )
 }

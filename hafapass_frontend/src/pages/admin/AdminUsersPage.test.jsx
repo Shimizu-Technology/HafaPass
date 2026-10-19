@@ -1,4 +1,4 @@
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -79,14 +79,62 @@ describe('mobile administrator user controls', () => {
     expect(apiClient.patch).toHaveBeenCalledWith('/admin/users/7', { role: 'admin' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await waitFor(() => expect(mobile.getByRole('combobox', { name: 'Role for organizer@example.test' })).toHaveValue('admin'))
   })
-  it('collects the review note in the dialog before rejecting an organizer', async () => {
-    apiClient.patch.mockResolvedValue({ data: { verification_status: 'rejected', verification_notes: 'Add a venue contract.' } })
+  it('requires a fresh, non-blank review note before rejecting an organizer', async () => {
+    apiClient.get.mockResolvedValue({ data: { users: [{ ...structuredClone(organizer), organizer_profile: { ...organizer.organizer_profile, verification_notes: 'Old rejection wording.' } }], meta: {} } })
+    apiClient.patch.mockResolvedValue({ data: { verification_status: 'suspended', verification_notes: 'Refund disputes open.' } })
     show(); const mobile = await card()
-    await userEvent.selectOptions(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' }), 'rejected')
+    await userEvent.selectOptions(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' }), 'suspended')
     const dialog = within(screen.getByRole('dialog', { name: 'Change verification status?' }))
-    await userEvent.type(dialog.getByRole('textbox', { name: /Review note/ }), 'Add a venue contract.')
+    const note = dialog.getByRole('textbox', { name: /Review note/ })
+    expect(note).toHaveValue('')
+    expect(note).toBeRequired()
+    expect(note).toHaveAttribute('aria-required', 'true')
+    expect(dialog.getByRole('button', { name: 'Change status' })).toBeDisabled()
+    await userEvent.type(note, '   ')
+    expect(dialog.getByRole('button', { name: 'Change status' })).toBeDisabled()
+    await userEvent.type(note, 'Refund disputes open.  ')
     await userEvent.click(dialog.getByRole('button', { name: 'Change status' }))
-    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'rejected', verification_notes: 'Add a venue contract.' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'suspended', verification_notes: 'Refund disputes open.' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
+  it('sends the saved notes unchanged when moving a rejected organizer to verified', async () => {
+    apiClient.get.mockResolvedValue({ data: { users: [{ ...structuredClone(organizer), organizer_profile: { ...organizer.organizer_profile, verification_status: 'rejected', verification_notes: 'Needed a venue contract.' } }], meta: {} } })
+    apiClient.patch.mockResolvedValue({ data: { verification_status: 'verified', verification_notes: 'Needed a venue contract.' } })
+    show(); const mobile = await card()
+    await userEvent.selectOptions(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' }), 'verified')
+    const dialog = within(screen.getByRole('dialog', { name: 'Change verification status?' }))
+    expect(dialog.queryByRole('textbox')).not.toBeInTheDocument()
+    await userEvent.click(dialog.getByRole('button', { name: 'Change status' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'verified', verification_notes: 'Needed a venue contract.' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
+  it('restores the verification select and sends nothing when the change is cancelled or escaped', async () => {
+    show(); const mobile = await card()
+    const select = mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })
+    await userEvent.selectOptions(select, 'verified')
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(select).toHaveValue('pending')
+    await userEvent.selectOptions(select, 'rejected')
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(select).toHaveValue('pending')
+    expect(apiClient.patch).not.toHaveBeenCalled()
+  })
+  it('blocks and explains a second change while one is saving', async () => {
+    let finish
+    apiClient.patch.mockReturnValue(new Promise(resolve => { finish = resolve }))
+    show(); const mobile = await card()
+    await userEvent.selectOptions(mobile.getByRole('combobox', { name: 'Role for organizer@example.test' }), 'support')
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Change role' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Change platform role?' }))
+    expect(dialog.getByRole('button', { name: 'Saving…' })).toBeDisabled()
+    expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    for (const select of screen.getAllByRole('combobox', { name: /^(Role|Verification status) for / })) expect(select).toBeDisabled()
+    fireEvent.change(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' }), { target: { value: 'verified' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Another change is still saving. Wait for it to finish, then try again.')
+    expect(apiClient.patch).toHaveBeenCalledTimes(1)
+    await act(async () => finish({ data: { ...organizer, role: 'support' } }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(mobile.getByRole('combobox', { name: 'Role for organizer@example.test' })).toBeEnabled()
   })
 })
 
