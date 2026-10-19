@@ -216,4 +216,40 @@ RSpec.describe "Assigned seating lifecycle" do
     expect(event).not_to be_sales_open
     expect(event).not_to be_has_available_inventory
   end
+  describe "wheelchair and companion pairing on activation" do
+    it "activates a generated layout whose wheelchair spaces share a group with a companion seat" do
+      second_wheelchair = create(:venue_seat, seating_row: row, seating_price_zone: zone, label: "W2", position: 5,
+        accessibility_kind: :wheelchair, companion_group: "front-2")
+      create(:venue_seat, seating_row: row, seating_price_zone: zone, label: "C2", position: 6,
+        accessibility_kind: :companion, companion_group: "front-2")
+
+      configuration = activate!
+
+      expect(configuration).to be_status_active
+      expect(configuration.event_seats.find_by!(venue_seat: second_wheelchair)).to be_present
+    end
+
+    it "refuses a published layout with an unpaired wheelchair space and changes nothing" do
+      companion.update!(companion_group: "other-group")
+      create(:venue_seat, seating_row: row, seating_price_zone: zone, label: "W2", position: 5,
+        accessibility_kind: :wheelchair, companion_group: nil)
+
+      expect { activate! }.to raise_error(Seating::ConfigurationActivator::ConfigurationError,
+        /2 wheelchair spaces without a companion seat: Main floor · Row A · Seat W1; Main floor · Row A · Seat W2/)
+      expect(event.reload.event_seating_configuration).to be_nil
+      expect(ticket_type.reload.quantity_available).to eq(6)
+      expect(EventSeat.count).to eq(0)
+      expect(SeatAuditEvent.where(event: event)).to be_empty
+    end
+
+    it "ignores inactive companions and keeps an existing configuration when the replacement is refused" do
+      existing = activate!
+      companion.update!(active: false)
+
+      expect { activate! }.to raise_error(Seating::ConfigurationActivator::ConfigurationError, /without a companion seat/)
+      expect(event.reload.event_seating_configuration).to eq(existing)
+      expect(existing.event_seats.count).to eq(4)
+      expect(ticket_type.reload.quantity_available).to eq(4)
+    end
+  end
 end

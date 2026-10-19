@@ -121,6 +121,44 @@ RSpec.describe "Assigned seating APIs", type: :request do
     expect(event.reload.sales_suspended_at).to be_nil
   end
 
+  def create_accessible_layout(companion_group:)
+    post "/api/v1/organizer/venue_layouts", headers: headers, params: {
+      venue_id: venue.id, name: "Accessible hall", publish: true,
+      price_zones: [{ name: "Main", code: "MAIN", color: "#2563EB" }],
+      sections: [{ name: "Main floor", code: "MAIN", rows: [{ label: "A", seats: [
+        { label: "1", position: 0, price_zone_code: "MAIN", accessibility_kind: "wheelchair", companion_group: "front-1" },
+        { label: "2", position: 1, price_zone_code: "MAIN", accessibility_kind: "companion", companion_group: companion_group }
+      ] }] }]
+    }
+    expect(response).to have_http_status(:created)
+    response.parsed_body
+  end
+
+  it "activates a generated layout whose wheelchair space has a companion seat" do
+    layout = create_accessible_layout(companion_group: "front-1")
+
+    post "/api/v1/organizer/events/#{event.id}/seating", headers: headers, params: {
+      venue_layout_id: layout.fetch("id"), zone_ticket_types: { layout.dig("price_zones", 0, "id") => ticket_type.id }
+    }
+
+    expect(response).to have_http_status(:created)
+  end
+
+  it "refuses a published layout whose wheelchair space has no companion seat" do
+    layout = create_accessible_layout(companion_group: "front-9")
+
+    post "/api/v1/organizer/events/#{event.id}/seating", headers: headers, params: {
+      venue_layout_id: layout.fetch("id"), zone_ticket_types: { layout.dig("price_zones", 0, "id") => ticket_type.id }
+    }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error"))
+      .to eq("This layout has 1 wheelchair space without a companion seat: Main floor · Row A · Seat 1. " \
+        "Give each wheelchair space a companion seat in the same companion group, then publish the layout again.")
+    expect(event.reload.event_seating_configuration).to be_nil
+    expect(ticket_type.reload.quantity_available).to eq(4)
+  end
+
   it "rejects malformed zone mappings before they reach seating configuration" do
     layout = create_layout
 
