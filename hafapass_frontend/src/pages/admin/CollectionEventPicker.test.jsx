@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import CollectionEventPicker from './CollectionEventPicker'
@@ -83,5 +83,16 @@ describe('CollectionEventPicker', () => {
     await userEvent.type(searchbox(), '{Enter}')
     expect(onChange).toHaveBeenLastCalledWith([9])
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('ignores Enter while an input method is composing', async () => {
+    const onChange = vi.fn()
+    render(<Harness onChange={onChange} />)
+    await userEvent.type(searchbox(), 'jazz')
+    await screen.findByRole('button', { name: 'Add Sunset Jazz' })
+    fireEvent.keyDown(searchbox(), { key: 'Enter', isComposing: true })
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.keyDown(searchbox(), { key: 'Enter' })
+    expect(onChange).toHaveBeenLastCalledWith([9])
   })
 })

@@ -72,7 +72,7 @@ export default function CollectionEventPicker({ events, value, onChange, searchE
         <label htmlFor={searchId} className="block text-sm font-medium">Search events to add</label>
         <input id={searchId} type="search" className="input mt-1" value={query} placeholder="Event title"
           onChange={event => setQuery(event.target.value)}
-          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (matches[0]) add(matches[0]) } }} />
+          onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); if (matches[0]) add(matches[0]) } }} />
       </div>
       <ul aria-label="Events available to add" aria-busy={searching} className="max-h-56 space-y-1 overflow-auto">
         {matches.slice(0, resultLimit).map(event => (

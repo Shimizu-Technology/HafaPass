@@ -71,8 +71,8 @@ function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount,
           <div className="mt-2 flex flex-wrap gap-2">
             {!profile.payout_ready && <button onClick={() => {
               if (window.confirm('Record the provider capability sync? Independent Gate B evidence approval will still be required.')) syncConnectedAccount(user, { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] })
-            }} className="min-h-11 rounded px-2 font-semibold text-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Record provider status</button>}
-            {account.status !== 'disabled' && <button onClick={() => syncConnectedAccount(user, { disabled: true })} className="min-h-11 rounded px-2 font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Disable</button>}
+            }} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Record provider status</button>}
+            {account.status !== 'disabled' && <button onClick={() => syncConnectedAccount(user, { disabled: true })} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Disable</button>}
           </div>
           {(account.requirements_due?.includes('independent_readiness_approval') || account.readiness_submission || account.readiness_approval) && (
             <div className="mt-3 border-t border-neutral-200 pt-3">

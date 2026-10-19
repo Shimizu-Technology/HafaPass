@@ -67,14 +67,17 @@ function AdminEventsPageSession({ identity, resourcePath }) {
   // The post-action refresh goes through fetchEvents directly and keeps them open.
   const changeListing = update => { update(); setOpenGates(new Set()) }
 
-  const fetchEvents = useCallback(() => {
+  // A refresh after a gate action keeps the current rows mounted so the open
+  // disclosure and the trigger that holds keyboard focus stay in place.
+  const fetchEvents = useCallback(options => {
+    const keepRows = options?.keepRows === true
     const request = beginRequest()
     if (!request) return
     pendingLoad.current?.abort()
     pendingLoad.current = request
     const generation = ++loadGeneration.current
     const active = () => request.current() && generation === loadGeneration.current
-    setLoading(true)
+    if (!keepRows) setLoading(true)
     setLoadError('')
     const params = { page, per_page: 20 }
     if (search) params.search = search
@@ -85,6 +88,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
       .catch(error => { if (active() && !request.handleError(error)) setLoadError('Could not load events. Your filters have been kept.') })
       .finally(() => { request.release(); if (active()) setLoading(false) })
   }, [page, search, status, category, beginRequest])
+  const refreshAfterAction = useCallback(() => fetchEvents({ keepRows: true }), [fetchEvents])
 
   useEffect(() => { fetchEvents(); return () => pendingLoad.current?.abort() }, [fetchEvents])
 
@@ -188,7 +192,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                     <td className="px-4 py-3 text-neutral-500 hidden md:table-cell capitalize">{event.category}</td>
                     <td className="px-4 py-3 text-right text-neutral-700">{event.tickets_sold}</td>
                     <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
-                    <td className="px-4 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={fetchEvents} toggleProofCandidate={toggleProofCandidate} /></td>
+                    <td className="px-4 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={refreshAfterAction} toggleProofCandidate={toggleProofCandidate} /></td>
                     <td className="px-4 py-3 text-center">
                       <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
                         <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-400 text-amber-400' : 'text-neutral-300'}`} />

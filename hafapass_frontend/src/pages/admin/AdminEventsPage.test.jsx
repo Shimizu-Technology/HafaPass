@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -60,6 +60,22 @@ describe('AdminEventsPage', () => {
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2))
     expect(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: 'Prepare Gate J closeout' })).toBeInTheDocument()
+  })
+  it('keeps the row, panel and focused trigger mounted while a gate action refresh is pending', async () => {
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' }))
+    let finish
+    apiClient.get.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const trigger = screen.getByRole('button', { name: 'Prepare Gate J closeout' })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Prepare Gate J closeout' })).toBe(trigger)
+    expect(trigger).toHaveFocus()
+    await act(async () => finish({ data: { events: [proofEvent], meta: { page: 1, total_pages: 1 } } }))
+    expect(screen.getByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })).toHaveAttribute('aria-expanded', 'true')
   })
   it('collapses every release gate action behind one per-row control', async () => {
     render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
