@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, MapPin, FilePenLine, Ticket, Users, ScanLine, Megaphone, UserRoundCog, WalletCards, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
+import { CalendarDays, MapPin, LayoutDashboard, FilePenLine, Ticket, Users, ScanLine, Megaphone, UserRoundCog, WalletCards, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
 import apiClient from '../api/client'
 import Dialog from './Dialog'
 import useDraftProtection from '../hooks/useDraftProtection'
@@ -17,6 +17,7 @@ function navigationFor(event, capabilities) {
   const has = key => p[key] === true
   const base = `/dashboard/events/${event.id}`
   return [
+    { label: 'Overview', icon: LayoutDashboard, links: [{ label: 'Overview', to: base, allowed: has('view_events') }] },
     { label: 'Event details', icon: FilePenLine, links: [{ label: 'Edit event', to: `${base}/edit`, allowed: has('edit_event_content') }] },
     { label: 'Tickets & seating', icon: Ticket, links: [
       { label: 'Ticket types', to: `${base}/edit#ticket-types`, allowed: has('manage_inventory') && has('edit_event_content') },
@@ -47,7 +48,7 @@ function WorkspaceLinks({ groups, collapsed = false, onNavigate, location }) {
   return <nav aria-label="Event workspace">
     <div className="space-y-5">
       {groups.map(group => <div key={group.label}>
-        {!collapsed && <p className="mb-1 px-3 text-xs font-semibold text-neutral-600">{group.label}</p>}
+        {!collapsed && group.label !== group.links[0].label && <p className="mb-1 px-3 text-xs font-semibold text-neutral-600">{group.label}</p>}
         <ul className="space-y-1">
           {group.links.map(link => {
             const target = new URL(link.to, 'https://hafapass.invalid')
@@ -124,6 +125,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
   const correctEvent = event && String(event.id) === String(eventId)
     && (event.organization_id == null || identity.organizationId == null || String(event.organization_id) === String(identity.organizationId))
   const groups = correctEvent ? navigationFor(event, capabilities) : []
+  const toolGroups = groups.filter(group => group.label !== 'Overview')
   useEffect(() => {
     if (location.hash !== '#ticket-types' || !correctEvent || !current()) return
     const target = document.getElementById('ticket-types')
@@ -159,7 +161,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
           {event.venue_name && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span className="break-words">{event.venue_name}</span></p>}
         </div>
         <p className="mt-3 text-sm text-neutral-700">{organization?.name || event.organization_name || (event.organization_id != null ? `Organization ${event.organization_id}` : 'Event workspace')}</p>
-        <p className="mt-1 text-sm text-neutral-600">Your access: {groups.length ? groups.map(group => group.label).join(', ') : 'No event tools available'}</p>
+        <p className="mt-1 text-sm text-neutral-600">Your access: {toolGroups.length ? toolGroups.map(group => group.label).join(', ') : 'No event tools available'}</p>
       </> : <p className="mt-2 text-sm text-neutral-600">{error ? 'Event context unavailable' : 'Loading event context…'}</p>}
       {error && <div className="mt-3 text-sm text-red-700" role="alert"><p>{error}</p><button type="button" className="min-h-11 font-semibold underline" onClick={() => setAttempt(value => value + 1)}>Retry event navigation</button></div>}
       {groups.length > 0 && <button type="button" className="mt-4 flex min-h-11 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-semibold text-neutral-800 lg:hidden" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><Menu className="h-4 w-4" aria-hidden="true" />Event navigation</button>}
@@ -188,7 +190,8 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
 export default function EventWorkspace({ event, eventId, children, hasUnsavedChanges = false }) {
   const identity = useOrganizerIdentity()
   const location = useLocation()
-  if (!location.pathname.startsWith(`/dashboard/events/${eventId}/`)) return null
+  const base = `/dashboard/events/${eventId}`
+  if (location.pathname !== base && !location.pathname.startsWith(`${base}/`)) return null
   if (!identity.ready) return <p className="p-6" role="status">Preparing your account…</p>
   return <WorkspaceSession key={`${identity.accountKey}:${identity.organizationId}:${eventId}:${location.pathname}`} suppliedEvent={event} eventId={eventId} identity={identity} location={location} hasUnsavedChanges={hasUnsavedChanges}>{children}</WorkspaceSession>
 }

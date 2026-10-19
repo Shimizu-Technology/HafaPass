@@ -11,6 +11,7 @@ import apiClient, { getApiAuthContext } from '../../api/client'
 import { formatEventDate } from '../../utils/eventTime'
 import { currentScannerOwner } from '../../utils/admissionStore'
 import { useOrganizerIdentity, useOrganizerPageVisit } from '../../hooks/useOrganizerContext'
+import DashboardSummary from './DashboardSummary'
 
 function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  const [businessName, setBusinessName] = useState('')
@@ -119,10 +120,12 @@ function StatusBadge({ status }) {
  )
 }
 
+// Event managers land on the event overview. Other staff keep their direct
+// route to the one tool they were given.
 function EventListCard({ event }) {
  const permissions = event.permissions || {}
- const destination = permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
- const actionLabel = permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"
+ const destination = permissions.manage_events ? `/dashboard/events/${event.id}` : permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
+ const actionLabel = permissions.manage_events ? "Open event" : permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"
  const ticketsSold = event.ticket_types
   ? event.ticket_types.reduce((sum, tt) => sum + (tt.quantity_sold || 0), 0)
   : 0
@@ -266,6 +269,8 @@ function DashboardSession({ authContext }) {
  const [selectedOrganizationId, setSelectedOrganizationId] = useState(window.localStorage.getItem('hafapass_organization_id') || '')
  const listing = useOperationalListing(`events:${authContext?.userId || currentScannerOwner()}:${selectedOrganizationId}`)
  const [eventMeta, setEventMeta] = useState(null)
+ const [summary, setSummary] = useState(null)
+ const summaryRequest = useRef(null)
  const [listLoading, setListLoading] = useState(false)
  const loadGeneration = useRef(0)
  const loadingOrganization = useRef(null)
@@ -364,6 +369,26 @@ function DashboardSession({ authContext }) {
  const fetchEventsRef = useRef(fetchEvents)
  fetchEventsRef.current = fetchEvents
 
+ // Totals cover the whole organization, so search and paging do not refetch them.
+ const fetchSummary = async (context = profileContext) => {
+  const request = beginRequest(context)
+  if (!request) return
+  summaryRequest.current?.controller.abort()
+  summaryRequest.current = request
+  const current = () => request.current() && summaryRequest.current === request
+  setSummary({ status: 'loading' })
+  try {
+   const response = await apiClient.get('/organizer/events/summary', request.config)
+   if (current()) setSummary({ status: 'ready', data: response.data || {} })
+  } catch {
+   if (current()) setSummary({ status: 'error' })
+  } finally {
+   request.release()
+  }
+ }
+ const fetchSummaryRef = useRef(fetchSummary)
+ fetchSummaryRef.current = fetchSummary
+
  const fetchDashboard = async () => {
   if (!mounted.current) return
   const generation = ++loadGeneration.current
@@ -379,6 +404,7 @@ function DashboardSession({ authContext }) {
    setProfileContext(null)
    setEvents([])
    setEventMeta(null)
+   setSummary(null)
   }
   let context = { generation, authContext, owner: currentScannerOwner(), organizationId: window.localStorage.getItem('hafapass_organization_id') }
   const current = () => contextCurrent(context)
@@ -412,6 +438,7 @@ function DashboardSession({ authContext }) {
 
    eventsStarted = true
    void fetchEventsRef.current(context)
+   void fetchSummaryRef.current(context)
   } catch (err) {
    if (!current()) return
    if (err.response?.status === 404) {
@@ -571,6 +598,7 @@ function DashboardSession({ authContext }) {
     </div>
    </section>}
 
+   <DashboardSummary state={summary} currency={organization?.currency || 'USD'} onRetry={() => fetchSummary()} />
    <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue, link name or event ID." query={listing.q} onSearch={listing.search} busy={listLoading} />
    {listLoading && <p role="status" className="mb-3 text-sm text-neutral-700">Loading events…</p>}
    <div aria-busy={listLoading}>

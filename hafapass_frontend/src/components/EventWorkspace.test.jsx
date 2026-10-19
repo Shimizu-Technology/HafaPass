@@ -53,6 +53,18 @@ describe('connected event workspace', () => {
     expect(screen.getByRole('link', { name: 'Refunds' })).toHaveAttribute('href', '/dashboard/events/37/refunds')
   })
 
+  it('leads with the event overview for members who can view the event', () => {
+    render(<MemoryRouter initialEntries={['/dashboard/events/37']}><Routes>
+      <Route path="/dashboard/events/:id" element={<EventWorkspace eventId={37} event={{ ...dto(), permissions: { ...permissions, view_events: true } }}><p>Overview body</p></EventWorkspace>} />
+    </Routes></MemoryRouter>)
+    const links = within(screen.getByRole('navigation', { name: 'Event workspace' })).getAllByRole('link')
+    expect(links[0]).toHaveTextContent('Overview')
+    expect(links[0]).toHaveAttribute('href', '/dashboard/events/37')
+    expect(links[0]).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByText(/^Your access:/)).not.toHaveTextContent('Overview')
+    expect(screen.getByText('Overview body')).toBeInTheDocument()
+  })
+
   it.each([
     ['marketer', { edit_event_content: true, manage_marketing: true }, ['Edit event', 'Promo codes', 'Sales tools & messages']],
     ['finance', { view_finance: true, refund: true }, ['Sales & finances', 'Refunds']],

@@ -11,7 +11,7 @@ module Api
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(:event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc, id: :desc)
+            .includes(:organization, :event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc, id: :desc)
           if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
             assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner]).select(:event_id)
             events = events.where(id: assigned_ids)
@@ -34,6 +34,25 @@ module Api
 
         def show
           render json: event_json(@event, include_ticket_types: true)
+        end
+
+        # Organization-wide home totals, scoped to the events this user may see.
+        # Money stays hidden unless the membership itself grants view_finance.
+        def summary
+          events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
+          upcoming = events.published.upcoming
+          next_event = upcoming.order(:starts_at, :id).first
+          json = {
+            upcoming_events_count: upcoming.count,
+            tickets_sold: Ticket.where(event_id: events.select(:id)).where.not(status: :cancelled).count,
+            next_event: next_event && {
+              id: next_event.id, title: next_event.title, starts_at: next_event.starts_at, timezone: next_event.timezone
+            }
+          }
+          if OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :view_finance)
+            json[:revenue_cents] = Commerce::LedgerTotals.call(Order.where(event_id: events.select(:id)))[:net_cents]
+          end
+          render json: json
         end
 
         def create
@@ -402,6 +421,7 @@ module Api
           json = {
             id: event.id,
             organization_id: event.organization_id,
+            organization_name: event.organization&.name,
             permissions: @event_permission_maps&.fetch(event.id) || OrganizationAuthorization.permissions_for(
               user: current_user, organization: current_organization, event: event
             ),

@@ -33,4 +33,14 @@ describe('ticket selection with changing availability', () => {
     rerender(<TicketTypesSection ticketTypes={[{ ...ticket, quantity_remaining: 0 }]} onCheckout={checkout} />)
     expect(screen.queryByRole('button', { name: /eventDetail.buyTickets/ })).not.toBeInTheDocument()
   })
+  it('shows ticket prices in neutral text rather than an alert color', () => {
+    render(<TicketTypesSection ticketTypes={[
+      { id: 1, name: 'Entry', price_cents: 1250, quantity_remaining: 3, on_sale: true },
+      { id: 2, name: 'Early bird', price_cents: 2000, current_price_cents: 1500, active_tier: { name: 'Early' }, quantity_remaining: 3, on_sale: true },
+    ]} onCheckout={vi.fn()} />)
+    for (const price of [screen.getByText('$12.50'), screen.getByText('Early — $15.00')]) {
+      expect(price).toHaveClass('text-neutral-900', 'font-semibold')
+      expect(price.className).not.toMatch(/accent|red|action/)
+    }
+  })
 })

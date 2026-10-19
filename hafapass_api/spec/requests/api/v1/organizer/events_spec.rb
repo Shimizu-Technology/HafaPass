@@ -18,6 +18,7 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(events.length).to eq(2)
       titles = events.map { |e| e["title"] }
       expect(titles).to include("Event 1", "Event 2")
+      expect(events.pluck("organization_name").uniq).to eq([organizer_profile.organization.name])
     end
 
     it "does not return other organizers' events" do
@@ -74,6 +75,7 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       json = JSON.parse(response.body)
       expect(json["id"]).to eq(event.id)
       expect(json["ticket_types"].length).to eq(2)
+      expect(json["organization_name"]).to eq(organizer_profile.organization.name)
     end
 
     it "returns 404 for another organizer's event" do
@@ -83,6 +85,58 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       get "/api/v1/organizer/events/#{other_event.id}", headers: headers
 
       expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe "GET /api/v1/organizer/events/summary" do
+    let(:organization) { organizer_profile.organization }
+    let(:org_headers) { headers.merge("X-Organization-Id" => organization.id.to_s) }
+    let!(:soon) { create(:event, :published, organizer_profile: organizer_profile, title: "Soon", starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours) }
+    let!(:later) { create(:event, :published, organizer_profile: organizer_profile, title: "Later", starts_at: 10.days.from_now, ends_at: 10.days.from_now + 2.hours) }
+
+    before do
+      create(:event, organizer_profile: organizer_profile, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 2.hours)
+      [soon, later].each do |event|
+        ticket_type = create(:ticket_type, event: event, price_cents: 2500)
+        order = create(:order, event: event, subtotal_cents: 2500, service_fee_cents: 0, total_cents: 2500)
+        item = create(:order_item, order: order, ticket_type: ticket_type, unit_price_cents: 2500,
+          subtotal_cents: 2500, fee_cents: 0, organizer_proceeds_cents: 2500)
+        create(:ticket, order: order, order_item: item, ticket_type: ticket_type, event: event)
+        create(:ticket, :cancelled, order: order, order_item: item, ticket_type: ticket_type, event: event)
+      end
+      other_event = create(:event, :published, organizer_profile: create(:organizer_profile), starts_at: 1.day.from_now, ends_at: 1.day.from_now + 2.hours)
+      create(:ticket, event: other_event, ticket_type: create(:ticket_type, event: other_event))
+    end
+
+    it "totals the organization's upcoming events, tickets and revenue" do
+      get "/api/v1/organizer/events/summary", headers: org_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "upcoming_events_count" => 2,
+        "tickets_sold" => 2,
+        "revenue_cents" => 5000
+      )
+      expect(response.parsed_body["next_event"]).to include("id" => soon.id, "title" => "Soon", "timezone" => soon.timezone)
+    end
+
+    it "limits assigned staff to their events and hides money without view_finance" do
+      scanner = create(:user)
+      create(:organization_membership, organization: organization, user: scanner, role: :scanner)
+      create(:event_staff_assignment, organization: organization, event: later, user: scanner, role: :scanner)
+
+      get "/api/v1/organizer/events/summary", headers: auth_headers(scanner).merge("X-Organization-Id" => organization.id.to_s)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("upcoming_events_count" => 1, "tickets_sold" => 1)
+      expect(response.parsed_body["next_event"]).to include("id" => later.id)
+      expect(response.parsed_body).not_to have_key("revenue_cents")
+    end
+
+    it "requires organization membership" do
+      get "/api/v1/organizer/events/summary", headers: auth_headers(create(:user))
+
+      expect(response).to have_http_status(:forbidden)
     end
   end
 

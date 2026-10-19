@@ -22,6 +22,7 @@ const MyTicketsPage = lazy(() => import('./pages/MyTicketsPage'))
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
 const CreateEventPage = lazy(() => import('./pages/dashboard/CreateEventPage'))
 const EditEventPage = lazy(() => import('./pages/dashboard/EditEventPage'))
+const EventOverviewPage = lazy(() => import('./pages/dashboard/EventOverviewPage'))
 const EventAnalyticsPage = lazy(() => import('./pages/dashboard/EventAnalyticsPage'))
 const ScannerPage = lazy(() => import('./pages/dashboard/ScannerPage'))
 const SettingsPage = lazy(() => import('./pages/dashboard/SettingsPage'))
@@ -85,6 +86,7 @@ function App() {
           <Route path="/ticket-transfers/accept" element={<ProtectedRoute><TicketTransferAcceptPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id" element={<ProtectedRoute><EventOverviewPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/analytics" element={<ProtectedRoute><EventAnalyticsPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/promo-codes" element={<ProtectedRoute><PromoCodesPage /></ProtectedRoute>} />
