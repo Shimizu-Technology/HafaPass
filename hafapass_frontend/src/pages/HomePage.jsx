@@ -1,21 +1,22 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Calendar, MapPin, ArrowRight, Clock, Search, Music, UtensilsCrossed, Trophy, Users, Moon, GraduationCap } from 'lucide-react'
+import { Calendar, MapPin, ArrowRight, Clock, Search } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatTicketPrice, lowestPurchasablePrice } from '../utils/ticketPricing'
+import { categoryIcon } from '../utils/categoryIcons'
 
 const categories = [
-  { name: 'Nightlife', slug: 'nightlife', icon: Moon },
-  { name: 'Food & Drink', slug: 'dining', icon: UtensilsCrossed },
-  { name: 'Music & Concerts', slug: 'concert', icon: Music },
-  { name: 'Sports', slug: 'sports', icon: Trophy },
-  { name: 'Festivals & Culture', slug: 'festival', icon: Users },
-  { name: 'Classes & Workshops', slug: 'workshop', icon: GraduationCap },
-]
+  { name: 'Nightlife', slug: 'nightlife' },
+  { name: 'Food & Drink', slug: 'dining' },
+  { name: 'Music & Concerts', slug: 'concert' },
+  { name: 'Sports', slug: 'sports' },
+  { name: 'Festivals & Culture', slug: 'festival' },
+  { name: 'Classes & Workshops', slug: 'workshop' },
+].map(category => ({ ...category, icon: categoryIcon(category.slug) }))
 
 function priceLabel(ticketTypes, t) {
   const cents = lowestPurchasablePrice(ticketTypes)
@@ -23,15 +24,23 @@ function priceLabel(ticketTypes, t) {
   return cents === 0 ? price : price ? `${t('events.from')} ${price}` : ''
 }
 
-function EventArtwork({ event, className, priority = false }) {
+// Images are absolutely positioned inside the sized frame so they never depend on
+// percentage heights resolving against an aspect-ratio box. With `backdrop`, a
+// blurred copy fills the frame behind the full poster, so portrait flyers in a
+// wide frame fill the card without cropping their dates or text.
+function EventArtwork({ event, className, priority = false, backdrop = false }) {
   const [failed, setFailed] = useState(false)
   return (
-    <div className={`overflow-hidden rounded-lg bg-neutral-100 ${className}`}>
+    <div className={`relative overflow-hidden rounded-lg bg-neutral-100 ${className}`}>
       {event.cover_image_url && !failed ? (
-        <img src={event.cover_image_url} alt={`Artwork for ${event.title}`} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
-          onError={() => setFailed(true)} className="h-full w-full object-contain" />
+        <>
+          {backdrop && <img src={event.cover_image_url} alt="" aria-hidden="true" data-testid="artwork-backdrop"
+            className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl" />}
+          <img src={event.cover_image_url} alt={`Artwork for ${event.title}`} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
+            onError={() => setFailed(true)} className="absolute inset-0 h-full w-full object-contain" />
+        </>
       ) : (
-        <div className="flex h-full w-full items-center justify-center text-brand-700">
+        <div className="absolute inset-0 flex items-center justify-center text-brand-700">
           <Calendar aria-hidden="true" className="h-7 w-7" />
           <span className="sr-only">Event artwork unavailable</span>
         </div>
@@ -116,7 +125,7 @@ export default function HomePage() {
 
           {showFeatured && (
             <article aria-label="Featured event" className="min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-              {featuredEvent.cover_image_url && <EventArtwork key={featuredEvent.cover_image_url} event={featuredEvent} priority className="aspect-[16/9] !rounded-none" />}
+              {featuredEvent.cover_image_url && <EventArtwork key={featuredEvent.cover_image_url} event={featuredEvent} priority backdrop className="aspect-[16/9] w-full !rounded-none" />}
               <div className="p-5 sm:p-6">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-800">Featured event</p>
                 <h2 className="break-words font-display text-2xl font-bold text-neutral-950">{featuredEvent.title}</h2>

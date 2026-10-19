@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams, useMatch } from 'react-router-dom'
-import { Search, Music, UtensilsCrossed, Trophy, Users, Sparkles, Moon, CalendarPlus, Ticket } from 'lucide-react'
+import { Search, CalendarPlus, Ticket } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
@@ -9,8 +9,8 @@ import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
 import useEventCategories from '../hooks/useEventCategories'
 import { PUBLIC_WEB_URL } from '../utils/site'
+import { categoryIcon } from '../utils/categoryIcons'
 
-const CATEGORY_ICONS = { concert: Music, dining: UtensilsCrossed, sports: Trophy, festival: Users, nightlife: Moon }
 const GUAM_VILLAGES = ['Agana Heights','Asan-Maina','Barrigada','Chalan Pago-Ordot','Dededo','Hagåtña','Humåtak','Inalåhan','Mangilao','Malesso’','Mongmong-Toto-Maite','Piti','Sånta Rita-Sumai','Sinajana','Talo’fo’fo','Tamuning-Tumon-Harmon','Yigo','Yona']
 
 function guamDate(offsetDays = 0) {
@@ -140,7 +140,7 @@ export default function EventsPage() {
           <div className="flex flex-col gap-4 mb-8">
            <div className="hidden sm:flex sm:flex-wrap gap-2">
             {[{ value: 'all', label: 'All Events' }, ...categories].map(({ value, label }) => {
-              const Icon = value === 'all' ? Ticket : (CATEGORY_ICONS[value] || Sparkles)
+              const Icon = value === 'all' ? Ticket : categoryIcon(value)
               return (
               <button
                 key={value}

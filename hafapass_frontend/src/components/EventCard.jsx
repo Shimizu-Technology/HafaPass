@@ -115,7 +115,7 @@ export default function EventCard({ event }) {
               </>
             )}
           </div>
-          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 group-hover:text-brand-700 transition-all duration-200 group-hover:translate-x-0.5">
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 group-hover:text-brand-700 transition-[color,transform] duration-200 ease-out-strong group-hover:translate-x-0.5">
             {t('common.view')}
             <ArrowRight className="w-3.5 h-3.5" />
           </span>

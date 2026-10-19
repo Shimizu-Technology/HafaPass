@@ -1,6 +1,6 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
 import { useParams, useNavigate, useSearchParams, useMatch, useLocation, Link } from 'react-router-dom'
-import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus } from 'lucide-react'
+import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import WhosGoing from '../components/WhosGoing'
@@ -12,8 +12,60 @@ import { FadeUp } from '../components/ui/ScrollReveal'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { eventBrowseReturn } from '../utils/browseReturn'
-import { isTicketPurchasable, ticketPriceCents } from '../utils/ticketPricing'
+import { formatTicketPrice, isTicketPurchasable, lowestPurchasablePrice, ticketPriceCents } from '../utils/ticketPricing'
 import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
+
+// React 18 does not know `inert` and only renders it from a string (''), while React 19
+// treats it as a boolean and drops ''. Emit the value each version needs.
+const INERT_VALUE = Number(reactVersion.split('.')[0]) >= 19 ? true : ''
+
+// Phones see the ticket panel once near the top; this bar keeps the purchase one tap
+// away while the hero button and the panel are out of view. It also stays hidden once
+// the visitor reaches (or scrolls past) the end of the event content, so it never
+// covers the footer.
+function MobileBuyBar({ priceLabel, targets, endMarker }) {
+  const reducedMotion = useReducedMotion()
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const end = endMarker.current
+    const elements = [...targets.map(target => target.current), end].filter(Boolean)
+    if (!elements.length || typeof IntersectionObserver === 'undefined') return undefined
+    const blocking = new Map()
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => blocking.set(entry.target,
+        entry.isIntersecting || (entry.target === end && entry.boundingClientRect.top < 0)))
+      setVisible(elements.every(element => blocking.get(element) === false))
+    })
+    elements.forEach(element => observer.observe(element))
+    return () => observer.disconnect()
+  }, [targets, endMarker])
+
+  const openTickets = event => {
+    const panel = document.getElementById('tickets')
+    if (!panel) return
+    event.preventDefault()
+    panel.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
+    panel.focus({ preventScroll: true })
+  }
+
+  return (
+    <div
+      data-testid="mobile-buy-bar"
+      data-visible={visible}
+      aria-hidden={!visible}
+      inert={visible ? undefined : INERT_VALUE}
+      className={`fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-float backdrop-blur transition-[transform,opacity] duration-200 ease-out-strong lg:hidden ${visible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-full opacity-0'}`}
+    >
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+        <p className="min-w-0 truncate text-base font-semibold text-neutral-900">{priceLabel}</p>
+        <a href="#tickets" onClick={openTickets} className="btn-primary shrink-0 !px-5 !py-2.5">
+          Get tickets <ChevronRight aria-hidden="true" className="ml-1 h-4 w-4" />
+        </a>
+      </div>
+    </div>
+  )
+}
 
 export default function EventDetailPage() {
   const { slug } = useParams()
@@ -47,6 +99,10 @@ function EventDetailContent() {
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [copied, setCopied] = useState(false)
   const [waitlistOffer, setWaitlistOffer] = useState(null)
+  const heroTicketsLink = useRef(null)
+  const ticketPanel = useRef(null)
+  const pageEnd = useRef(null)
+  const [buyBarTargets] = useState(() => [heroTicketsLink, ticketPanel])
   const waitlistOfferToken = searchParams.get('waitlist_offer')
 
   useEffect(() => {
@@ -171,6 +227,9 @@ function EventDetailContent() {
 
   const truncatedDescription = (event.short_description || event.description || '').slice(0, 160)
   const eventUrl = `${PUBLIC_WEB_URL}/events/${event.slug}`
+  const lowestPrice = lowestPurchasablePrice(event.ticket_types || [])
+  const onSale = event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
+  const buyBarPrice = lowestPrice === 0 ? 'Free' : lowestPrice !== null ? `From ${formatTicketPrice(lowestPrice)}` : 'Tickets available'
 
   // Build JSON-LD structured data for the event
   const ticketTypes = event.ticket_types || []
@@ -237,12 +296,12 @@ function EventDetailContent() {
         <div className="relative flex min-h-[inherit] flex-col justify-end pt-16 sm:pt-24">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 sm:pb-10 w-full">
             {/* Back link */}
-            <Link to={browseFrom} className="inline-flex items-center gap-1.5 text-neutral-200 hover:text-white mb-4 text-sm font-medium transition-colors">
-              <ArrowLeft className="w-4 h-4" /> All Events
+            <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-neutral-200 transition-colors hover:text-white">
+              <ArrowLeft aria-hidden="true" className="w-4 h-4" /> All Events
             </Link>
 
             {event.category && event.category !== 'other' && (
-              <span className="inline-block text-xs font-medium text-brand-400 uppercase tracking-wider mb-2">
+              <span className="block text-xs font-medium text-brand-400 uppercase tracking-wider mb-2">
                 {event.category_label || event.category}
               </span>
             )}
@@ -265,7 +324,7 @@ function EventDetailContent() {
                 </div>
               )}
             </div>
-            <a href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">Choose tickets</a>
+            <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">Choose tickets</a>
           </div>
         </div>
       </div>
@@ -279,8 +338,10 @@ function EventDetailContent() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Sidebar - Tickets */}
             <motion.div
+              ref={ticketPanel}
               id="tickets"
-              className="order-1 min-w-0 scroll-mt-24 lg:order-2 lg:col-span-1"
+              tabIndex={-1}
+              className="order-1 min-w-0 scroll-mt-24 rounded-2xl focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus lg:order-2 lg:col-span-1"
               initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: reducedMotion ? 0 : 0.3 }}
@@ -384,24 +445,32 @@ function EventDetailContent() {
 
               {/* Venue Location Section */}
               {event.venue_address && (
-                <FadeUp delay={0.1}><div className="mb-8">
-                  <h2 className="text-lg font-semibold text-neutral-900 mb-3">Location</h2>
-                  <Link
-                    to={event.venue?.slug ? `/venues/${event.venue.slug}` : buildMapsUrl(event)}
-                    target={event.venue?.slug ? undefined : '_blank'}
-                    rel="noopener noreferrer"
-                    className="block rounded-2xl overflow-hidden border border-neutral-200 hover:border-brand-300 transition-colors group"
-                  >
-                    <div className="aspect-[3/1] bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center">
-                      <div className="text-center">
-                        <MapPin className="w-8 h-8 text-brand-700 mx-auto mb-2" />
-                        <p className="text-sm font-medium text-brand-700">{event.venue_name}</p>
-                        <p className="text-xs text-brand-700 mt-0.5">{event.venue_address}</p>
-                        <p className="text-xs text-brand-700 mt-2 group-hover:underline">{event.venue?.slug ? 'View venue details' : 'Open in Google Maps'}</p>
+                <FadeUp delay={0.1}><section aria-labelledby="event-location-heading" className="mb-8">
+                  <h2 id="event-location-heading" className="text-lg font-semibold text-neutral-900 mb-3">Location</h2>
+                  <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 p-4 sm:flex-row sm:items-center sm:p-5">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+                        <MapPin aria-hidden="true" className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        {event.venue_name && (event.venue?.slug
+                          ? <Link to={`/venues/${event.venue.slug}`} className="font-semibold text-neutral-900 break-words hover:text-brand-700 hover:underline">{event.venue_name}</Link>
+                          : <p className="font-semibold text-neutral-900 break-words">{event.venue_name}</p>)}
+                        <p className="mt-0.5 text-sm text-neutral-600 [overflow-wrap:anywhere]">{event.venue_address}</p>
                       </div>
                     </div>
-                  </Link>
-                </div></FadeUp>
+                    <a
+                      href={buildMapsUrl(event)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary shrink-0 gap-2 !px-4 !py-2.5 text-sm"
+                    >
+                      <Navigation aria-hidden="true" className="h-4 w-4" />
+                      Directions
+                      <span className="sr-only">(opens Google Maps in a new tab)</span>
+                    </a>
+                  </div>
+                </section></FadeUp>
               )}
             </motion.div>
 
@@ -409,6 +478,12 @@ function EventDetailContent() {
           </div>
         </div>
       </div>
+      {onSale && <>
+        {/* Room for the buy bar so the last content never sits underneath it. */}
+        <div aria-hidden="true" className="h-[calc(5.5rem+env(safe-area-inset-bottom,0px))] bg-white lg:hidden" />
+        <div ref={pageEnd} aria-hidden="true" className="h-px" />
+        <MobileBuyBar priceLabel={buyBarPrice} targets={buyBarTargets} endMarker={pageEnd} />
+      </>}
     </div>
   )
 }

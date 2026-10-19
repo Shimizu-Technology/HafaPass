@@ -1,14 +1,32 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight, Download } from 'lucide-react'
+import { useAuth, useClerk } from '@clerk/clerk-react'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { signInDestination } from '../utils/authDestination'
+
+// This route sits behind ProtectedRoute, so a 401 means Clerk still holds a session the
+// API no longer accepts. Refresh the token once; if that fails, end the stale Clerk
+// session so the sign-in page does not bounce the visitor straight back here.
+function ClerkMyTicketsPage() {
+  const { getToken } = useAuth()
+  const { signOut } = useClerk()
+  const refreshSession = useCallback(() => getToken({ skipCache: true }), [getToken])
+  return <MyTicketsContent refreshSession={refreshSession} signOut={signOut} />
+}
 
 export default function MyTicketsPage() {
+  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <ClerkMyTicketsPage /> : <MyTicketsContent />
+}
+
+function MyTicketsContent({ refreshSession, signOut }) {
+  const location = useLocation()
+  const [signedOut, setSignedOut] = useState(false)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -31,22 +49,39 @@ export default function MyTicketsPage() {
 
   const fetchOrders = useCallback(async () => {
     setError(null)
+    setSignedOut(false)
+    const loadTickets = async () => {
+      try {
+        return await apiClient.get('/me/tickets')
+      } catch (err) {
+        if (err.response?.status !== 401 || !refreshSession) throw err
+        // If Clerk cannot refresh (offline, temporarily unavailable) the session may
+        // still be fine, so this is a retryable load error rather than an expiry.
+        try {
+          await refreshSession()
+        } catch {
+          throw new Error('Session refresh failed')
+        }
+        return apiClient.get('/me/tickets')
+      }
+    }
     try {
-      const response = await apiClient.get('/me/tickets')
+      const response = await loadTickets()
       const tickets = response.data.tickets || []
       setOrders(tickets.map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
       setLoading(false)
       await recoverGuestPurchases()
     } catch (err) {
       if (err.response?.status === 401) {
-        setError('Please sign in to view your tickets.')
+        // An expired session is not a failure; invite the visitor to sign in again.
+        setSignedOut(true)
       } else {
-        setError('Failed to load your tickets. Please try again.')
+        setError('We couldn’t load your tickets. Try again.')
       }
     } finally {
       setLoading(false)
     }
-  }, [recoverGuestPurchases])
+  }, [recoverGuestPurchases, refreshSession])
 
   useEffect(() => {
     fetchOrders()
@@ -70,16 +105,29 @@ export default function MyTicketsPage() {
     )
   }
 
+  if (signedOut) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-12">
+        <SEO title="My Tickets" />
+        <div className="card p-6 sm:p-8 text-center">
+          <Ticket aria-hidden="true" className="mx-auto h-10 w-10 text-brand-700" />
+          <h1 className="mt-4 text-xl font-semibold text-neutral-900">Your session expired</h1>
+          <p className="mt-2 text-neutral-600">Sign in again to see your tickets.</p>
+          {signOut
+            ? <button type="button" onClick={() => signOut({ redirectUrl: signInDestination(location) })} className="btn-primary mt-6 w-full sm:w-auto">Sign in again</button>
+            : <Link to={signInDestination(location)} className="btn-primary mt-6 w-full sm:w-auto">Sign in again</Link>}
+        </div>
+      </div>
+    )
+  }
+
   if (error) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-12">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+        <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
           <p className="text-red-700">{error}</p>
-          <button
-            onClick={fetchOrders}
-            className="mt-4 text-sm font-medium text-red-600 hover:text-red-800 underline"
-          >
-            Try Again
+          <button type="button" onClick={fetchOrders} className="btn-secondary mt-4">
+            Try again
           </button>
         </div>
       </div>
