@@ -288,12 +288,12 @@ function AttendeesPageSession({ id, identity }) {
             <table className="w-full">
               <thead>
                 <tr className="bg-neutral-50">
-                  <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Name</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Email</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Ticket Type</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Checked In</th>
-                  {showActions && <th className="text-right px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Actions</th>}
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Email</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Ticket Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Checked In</th>
+                  {showActions && <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200">
@@ -301,11 +301,11 @@ function AttendeesPageSession({ id, identity }) {
                   const style = STATUS_STYLES[att.status] || { label: att.status, className: 'bg-neutral-100 text-neutral-800' }
                   return (
                     <tr key={att.id}>
-                      <td className="min-w-32 px-5 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</td>
-                      <td className="max-w-56 break-words px-5 py-3 text-sm text-neutral-600">{att.attendee_email || '—'}</td>
-                      <td className="px-5 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
-                      <td className="px-5 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span></td>
-                      <td className="px-5 py-3 text-sm text-neutral-500">{formatDate(att.checked_in_at)}</td>
+                      <td className="min-w-32 px-4 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</td>
+                      <td className="max-w-56 break-words px-4 py-3 text-sm text-neutral-600">{att.attendee_email || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
+                      <td className="px-4 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span></td>
+                      <td className="px-4 py-3 text-sm text-neutral-500">{formatDate(att.checked_in_at)}</td>
                       {showActions && <td className="px-4 py-3"><div className="flex justify-end gap-1.5">{rowActions(att, 'desktop')}</div></td>}
                     </tr>
                   )
