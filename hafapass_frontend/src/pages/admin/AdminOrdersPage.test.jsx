@@ -57,7 +57,7 @@ describe('AdminOrdersPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Order 42 details' }))
 
     expect(screen.getByText('Financial ledger')).toBeInTheDocument()
-    expect(screen.getByText('Immutable order items')).toBeInTheDocument()
+    expect(screen.getByText('Order items as purchased')).toBeInTheDocument()
     expect(screen.getByText(/General Admission/)).toBeInTheDocument()
     expect(screen.getByText(/pi_test/)).toBeInTheDocument()
     expect(screen.getByText(/payment amount mismatch/)).toBeInTheDocument()
