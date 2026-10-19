@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -9,8 +9,15 @@ import { publishAccountRole } from '../../utils/workspace'
 
 vi.mock('../../api/client', async importOriginal => ({ ...await importOriginal(), default: { get: vi.fn(), post: vi.fn() } }))
 
+let uninstallAuth = null
+
 describe('support record lookup', () => {
   beforeEach(() => vi.clearAllMocks())
+  afterEach(() => {
+    publishAccountRole(null, null)
+    uninstallAuth?.()
+    uninstallAuth = null
+  })
 
   it('shows order, ticket, and event API matches and resends the matched ticket’s original order', async () => {
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url.includes('/search') ? {
@@ -32,7 +39,7 @@ describe('support record lookup', () => {
 
   it('offers a way back to the admin panel only to an admin of the current account', async () => {
     apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
-    setAuthTokenGetter(async () => 'token', { userId: 'admin-a', sessionId: 'session-a', ready: true })
+    uninstallAuth = setAuthTokenGetter(async () => 'token', { userId: 'admin-a', sessionId: 'session-a', ready: true })
     publishAccountRole(getApiAuthContext(), 'support')
     const view = render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
     expect(await screen.findByRole('heading', { name: 'Support console' })).toBeInTheDocument()
@@ -41,6 +48,5 @@ describe('support record lookup', () => {
     publishAccountRole(getApiAuthContext(), 'admin')
     render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
     expect(await screen.findByRole('link', { name: 'Back to admin panel' })).toHaveAttribute('href', '/admin')
-    publishAccountRole(null, null)
   })
 })

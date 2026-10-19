@@ -211,7 +211,7 @@ function SettingsPageSession({ identity }) {
         back={<BackLink />}
         eyebrow="Organization"
         title={organization?.name}
-        description={`Team access, event staffing, and payout readiness for ${organization?.timezone ?? ''}.`}
+        description={`Team access, event staffing, and payout readiness${organization?.timezone ? ` for ${organization.timezone}` : ''}.`}
         actions={<StatusPill ready={organization?.payout_ready}>{organization?.payout_ready ? 'Paid events ready' : 'Payout setup incomplete'}</StatusPill>}
         className="!mb-0"
       />

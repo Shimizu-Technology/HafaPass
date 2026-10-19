@@ -6,7 +6,7 @@ import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Searc
 import { useTranslation } from 'react-i18next'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import LanguageSwitcher from './LanguageSwitcher'
-import { isWorkspacePath, publishAccountRole } from '../utils/workspace'
+import { isWorkspacePath, publishAccountRole, useCanManageOrganizationSettings } from '../utils/workspace'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -293,28 +293,29 @@ function WorkspaceNav({ role, isSignedIn, clerkEnabled, roleAlert, onRetryRole, 
   const location = useLocation()
   const { t } = useTranslation()
   const { pathname } = location
+  const canManageSettings = useCanManageOrganizationSettings()
   const links = [
     { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard,
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/events') },
     { to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine },
-    { to: '/dashboard/settings', label: 'Settings', icon: Settings },
-    ...(['support', 'admin'].includes(role) ? [{ to: '/support', label: 'Support', icon: LifeBuoy }] : []),
+    ...(canManageSettings ? [{ to: '/dashboard/settings', label: t('nav.settings'), icon: Settings }] : []),
+    ...(['support', 'admin'].includes(role) ? [{ to: '/support', label: t('nav.support'), icon: LifeBuoy }] : []),
     ...(role === 'admin' ? [{ to: '/admin', label: t('nav.admin'), icon: Shield }] : []),
   ].map(link => ({ ...link, active: link.active ?? (pathname === link.to || pathname.startsWith(link.to + '/')) }))
   const linkClass = active => `inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
     active ? 'bg-brand-50 text-brand-800' : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'}`
-  const publicSite = <><Globe aria-hidden="true" className="h-4 w-4" />View public site</>
+  const publicSite = <><Globe aria-hidden="true" className="h-4 w-4" />{t('nav.viewPublicSite')}</>
 
   return (
     <header className="app-nav sticky top-0 z-50 border-b border-neutral-200 bg-white">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between gap-4">
-          <Link to="/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" aria-label="HafaPass workspace home">
+          <Link to="/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" aria-label={t('nav.workspaceHome')}>
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-700">
               <HafaPassMark className="h-5 w-5 text-white" />
             </span>
             <span className="text-xl font-bold tracking-tight text-neutral-900">Hafa<span className="text-brand-500">Pass</span></span>
-            <span className="hidden rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-600 sm:inline">Workspace</span>
+            <span className="hidden rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-600 sm:inline">{t('nav.workspace')}</span>
           </Link>
 
           <nav aria-label="Primary navigation" className="hidden items-center gap-1 lg:flex">

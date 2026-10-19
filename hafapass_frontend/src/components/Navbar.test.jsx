@@ -17,7 +17,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key === 'na
 vi.mock('./LanguageSwitcher', () => ({ default: () => null }))
 vi.mock('../monitoring', () => ({ Sentry: { setUser: vi.fn(), captureException: vi.fn() } }))
 
-let Navbar, Wrapper, apiClient, setAuthTokenGetter
+let Navbar, Wrapper, apiClient, setAuthTokenGetter, workspace
 const response = (config, userId = 'buyer-a', role = 'admin') => ({ config, data: { clerk_id: userId, role }, status: 200, statusText: 'OK', headers: {} })
 const rejection = (config, status) => new AxiosError('Account lookup unavailable', undefined, config, null, { config, status, data: {} })
 const bind = () => setAuthTokenGetter(auth.getToken, { userId: auth.userId, sessionId: auth.sessionId, ready: auth.isLoaded && auth.isSignedIn })
@@ -32,6 +32,7 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     ;({ default: apiClient, setAuthTokenGetter } = await import('../api/client'))
     ;({ default: Wrapper } = await import('./ClerkProviderWrapper'))
     ;({ default: Navbar } = await import('./Navbar'))
+    workspace = await import('../utils/workspace')
     apiClient.defaults.adapter = vi.fn(config => Promise.resolve(response(config)))
   })
   afterEach(() => vi.unstubAllEnvs())
@@ -144,42 +145,65 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     for (const name of ['nav.events', 'Discover', 'nav.myTickets', 'Saved', 'nav.scanner', 'nav.dashboard']) {
       expect(within(primary).getByRole('link', { name })).toBeInTheDocument()
     }
-    expect(screen.queryByRole('link', { name: /View public site/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /nav.viewPublicSite/ })).not.toBeInTheDocument()
+  })
+
+  // Settings follows the dashboard's own capability for the selected organization.
+  const allowSettings = (allowed = true) => act(() => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    workspace.publishOrganizationAccess(workspace.getAccountRole().authContext, 7, allowed)
   })
 
   it.each(['/dashboard', '/dashboard/events/6/edit', '/admin/users', '/support'])('switches %s to workspace navigation', async path => {
     render(view(true, path))
     const admin = await screen.findByRole('link', { name: 'Admin' })
+    await allowSettings()
     expect(admin).toHaveAttribute('href', '/admin')
     const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
     expect(within(primary).getByRole('link', { name: 'nav.dashboard' })).toHaveAttribute('href', '/dashboard')
     expect(within(primary).getByRole('link', { name: 'nav.scanner' })).toHaveAttribute('href', '/dashboard/scanner')
-    expect(within(primary).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/dashboard/settings')
-    expect(within(primary).getByRole('link', { name: 'Support' })).toHaveAttribute('href', '/support')
+    expect(within(primary).getByRole('link', { name: 'nav.settings' })).toHaveAttribute('href', '/dashboard/settings')
+    expect(within(primary).getByRole('link', { name: 'nav.support' })).toHaveAttribute('href', '/support')
     for (const name of ['nav.events', 'Discover', 'nav.myTickets', 'Saved']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /View public site/ })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'nav.viewPublicSite' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'nav.workspaceHome' })).toHaveAttribute('href', '/dashboard')
     expect(screen.queryByRole('button', { name: 'Search events' })).not.toBeInTheDocument()
   })
 
-  it.each([['attendee', []], ['support', ['Support']]])('gates workspace platform links for the %s role', async (role, visible) => {
+  it.each([['attendee', false], ['support', true]])('gates workspace platform links for the %s role once the role has loaded', async (role, support) => {
     apiClient.defaults.adapter.mockImplementation(config => Promise.resolve(response(config, 'buyer-a', role)))
     render(view(true, '/dashboard'))
-    await waitFor(() => expect(apiClient.defaults.adapter).toHaveBeenCalled())
-    await waitFor(() => expect(Boolean(screen.queryByRole('link', { name: 'Support' }))).toBe(visible.includes('Support')))
+    await waitFor(() => expect(workspace.getAccountRole().role).toBe(role))
+    expect(Boolean(screen.queryByRole('link', { name: 'nav.support' }))).toBe(support)
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: 'Settings' })).toHaveLength(1)
+  })
+
+  it('shows Settings only when the dashboard granted it for the current account and organization', async () => {
+    render(view(true, '/dashboard'))
+    await screen.findByRole('link', { name: 'Admin' })
+    expect(screen.queryByRole('link', { name: 'nav.settings' })).not.toBeInTheDocument()
+    await allowSettings(false)
+    expect(screen.queryByRole('link', { name: 'nav.settings' })).not.toBeInTheDocument()
+    await allowSettings(true)
+    expect(screen.getByRole('link', { name: 'nav.settings' })).toBeInTheDocument()
+    await act(() => {
+      window.localStorage.setItem('hafapass_organization_id', '8')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_organization_id' }))
+    })
+    expect(screen.queryByRole('link', { name: 'nav.settings' })).not.toBeInTheDocument()
   })
 
   it('opens and closes the workspace mobile menu', async () => {
     render(view(true, '/dashboard/settings'))
     await screen.findByRole('link', { name: 'Admin' })
+    await allowSettings()
     const user = userEvent.setup()
     const toggle = screen.getByRole('button', { name: 'Toggle menu' })
     await user.click(toggle)
     const mobile = screen.getByRole('navigation', { name: 'Mobile navigation' })
-    expect(within(mobile).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
-    expect(within(mobile).getByRole('link', { name: /View public site/ })).toHaveAttribute('href', '/')
-    within(mobile).getByRole('link', { name: 'Settings' }).focus()
+    expect(within(mobile).getByRole('link', { name: 'nav.settings' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).getByRole('link', { name: 'nav.viewPublicSite' })).toHaveAttribute('href', '/')
+    within(mobile).getByRole('link', { name: 'nav.settings' }).focus()
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('navigation', { name: 'Mobile navigation' })).not.toBeInTheDocument()
     expect(toggle).toHaveFocus()

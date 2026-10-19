@@ -38,7 +38,7 @@ for (const width of [390, 1440]) {
     await page.getByRole('link', { name: 'View public site', exact: true }).click()
     await expect(page.getByRole('dialog')).toHaveCount(1)
     await page.getByRole('button', { name: 'Leave without saving', exact: true }).click()
-    await expect(page).toHaveURL(/\/$/)
+    await expect(page).toHaveURL(/^https?:\/\/[^/]+\/$/)
     await expect(title).toHaveCount(0)
   })
 }

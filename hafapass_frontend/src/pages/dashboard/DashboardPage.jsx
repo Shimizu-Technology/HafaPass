@@ -2,9 +2,10 @@ import useOperationalListing from '../../hooks/useOperationalListing'
 import OperationalSearch from '../../components/OperationalSearch'
 import OperationalPagination from '../../components/OperationalPagination'
 import { PageHeader, WorkspacePage } from '../../components/WorkspacePage'
+import { publishOrganizationAccess } from '../../utils/workspace'
 import { uploadImage } from '../../utils/uploads'
 import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck, Plus, ScanLine, Settings } from 'lucide-react'
-import { useState, useLayoutEffect, useRef } from 'react'
+import { useEffect, useState, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient, { getApiAuthContext } from '../../api/client'
 import { formatEventDate } from '../../utils/eventTime'
@@ -277,6 +278,10 @@ function DashboardSession({ authContext }) {
  const canCreate = permissions.manage_events === true
  const canScan = permissions.scan === true || events.some(event => event.permissions?.scan)
  const canManageSettings = permissions.manage_members || permissions.manage_payout_settings
+
+ useEffect(() => {
+  if (organization) publishOrganizationAccess(authContext, organization.id, canManageSettings)
+ }, [authContext, organization, canManageSettings])
 
  const contextCurrent = context => Boolean(context && mounted.current && context.generation === loadGeneration.current
   && context.authContext === getApiAuthContext() && context.owner === currentScannerOwner()
