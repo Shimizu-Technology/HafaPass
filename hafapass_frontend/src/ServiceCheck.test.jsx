@@ -22,7 +22,7 @@ vi.mock('./utils/admissionStore', () => ({ loadAuthorizedScanner: vi.fn() }))
 vi.mock('./pages/dashboard/ScannerPage', () => ({ default: ({ offlineOnly, offlineEventId }) => <p data-event-id={offlineEventId}>{offlineOnly ? 'Cached door scanner' : 'Online scanner'}</p> }))
 
 vi.mock('./App', () => ({
-  default: () => <div>Public application</div>,
+  default: () => <div>Public application<input aria-label="Draft note" /></div>,
 }))
 
 vi.mock('./pages/PrivatePreviewPage', () => ({
@@ -90,20 +90,73 @@ describe('ServiceCheck', () => {
       expect(Number(window.sessionStorage.getItem(HEALTH_CACHE_KEY))).toBeGreaterThan(Date.now() - 1000)
     })
 
-    it('switches to the outage page when the background check fails', () => {
+    it('keeps the rendered application and its typed state when the background check fails', async () => {
+      const user = userEvent.setup()
       window.sessionStorage.setItem(HEALTH_CACHE_KEY, String(Date.now()))
       useBackendAvailability.mockReturnValue({ status: 'checking', retry })
       const { rerender } = render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
-      expect(screen.getByText('Public application')).toBeInTheDocument()
+      await user.type(screen.getByRole('textbox', { name: 'Draft note' }), 'Table for six')
       useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
       rerender(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      expect(screen.getByRole('textbox', { name: 'Draft note' })).toHaveValue('Table for six')
+      expect(screen.getByRole('alert')).toHaveTextContent('We’re having trouble reaching HåfaPass')
+      expect(screen.queryByRole('button', { name: /check services again/i })).not.toBeInTheDocument()
+      expect(window.sessionStorage.getItem(HEALTH_CACHE_KEY)).toBeNull()
+      await user.click(screen.getByRole('button', { name: 'Try again' }))
+      expect(retry).toHaveBeenCalledOnce()
+      // Recovery clears the banner without remounting the application.
+      useBackendAvailability.mockReturnValue({ status: 'available', retry })
+      rerender(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: 'Draft note' })).toHaveValue('Table for six')
+    })
+
+    it('keeps the full outage page when nothing has rendered yet', () => {
+      useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
+      render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
       expect(screen.getByRole('button', { name: /check services again/i })).toBeInTheDocument()
       expect(screen.queryByText('Public application')).not.toBeInTheDocument()
-      expect(window.sessionStorage.getItem(HEALTH_CACHE_KEY)).toBeNull()
-      // A retry after the failure must not reuse the withdrawn success.
+    })
+
+    it('ignores the session shortcut on the door scanner so saved access opens first', async () => {
+      window.sessionStorage.setItem(HEALTH_CACHE_KEY, String(Date.now()))
+      window.localStorage.setItem('hafapass_scanner_event_id', '37')
+      loadAuthorizedScanner.mockResolvedValue({ device: { id: 9 }, manifest: { payload: { event: { id: 37 } } } })
       useBackendAvailability.mockReturnValue({ status: 'checking', retry })
-      rerender(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      render(<MemoryRouter initialEntries={['/dashboard/scanner']}><ServiceCheck /></MemoryRouter>)
       expect(screen.queryByText('Public application')).not.toBeInTheDocument()
+      expect(await screen.findByText('Cached door scanner')).toBeInTheDocument()
+      expect(screen.queryByText('Public application')).not.toBeInTheDocument()
+    })
+
+    it('does not trust a success timestamp from the future', () => {
+      vi.useFakeTimers()
+      window.sessionStorage.setItem(HEALTH_CACHE_KEY, String(Date.now() + 60_000))
+      useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+      render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+      expect(screen.queryByText('Public application')).not.toBeInTheDocument()
+      act(() => { vi.advanceTimersByTime(GATE_DELAY_MS) })
+      expect(screen.getByRole('status')).toHaveTextContent('Checking HåfaPass services')
+    })
+
+    it('still gates and renders when session storage throws', () => {
+      vi.useFakeTimers()
+      const fail = () => { throw new Error('SecurityError') }
+      const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(fail)
+      const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(fail)
+      const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(fail)
+      try {
+        useBackendAvailability.mockReturnValue({ status: 'checking', retry })
+        const { rerender } = render(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+        act(() => { vi.advanceTimersByTime(GATE_DELAY_MS) })
+        expect(screen.getByRole('status')).toHaveTextContent('Checking HåfaPass services')
+        useBackendAvailability.mockReturnValue({ status: 'available', retry })
+        rerender(<MemoryRouter><ServiceCheck /></MemoryRouter>)
+        expect(screen.getByText('Public application')).toBeInTheDocument()
+        expect(setItem).toHaveBeenCalled()
+      } finally {
+        getItem.mockRestore(); setItem.mockRestore(); removeItem.mockRestore()
+      }
     })
   })
 

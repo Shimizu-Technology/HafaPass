@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import ClerkProviderWrapper from './components/ClerkProviderWrapper'
 import App from './App'
@@ -22,7 +22,9 @@ export const HEALTH_CACHE_TTL_MS = 5 * 60_000
 function readRecentSuccess() {
   try {
     const checkedAt = Number(window.sessionStorage.getItem(HEALTH_CACHE_KEY))
-    return checkedAt > 0 && Date.now() - checkedAt < HEALTH_CACHE_TTL_MS
+    const age = Date.now() - checkedAt
+    // A future timestamp (clock moved back) is not trusted.
+    return checkedAt > 0 && age >= 0 && age < HEALTH_CACHE_TTL_MS
   } catch { return false }
 }
 
@@ -50,17 +52,37 @@ function ServiceGate() {
   )
 }
 
+// Once the application has rendered it is never unmounted for a later failed
+// check: typed checkout and form state must survive. A banner explains instead.
+function ConnectedApp({ owner, onMount, degraded, onRetry }) {
+  useEffect(() => { onMount(owner) }, [onMount, owner])
+  return <>
+    {degraded ? <div className="flex flex-wrap items-center justify-center gap-x-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950" role="alert">
+      <span>We’re having trouble reaching HåfaPass. Some actions may not work right now.</span>
+      <button type="button" onClick={onRetry} className="inline-flex min-h-11 items-center font-semibold underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Try again</button>
+    </div> : null}
+    <App />
+  </>
+}
+
 export default function ServiceCheck() {
   const { status: checkedStatus, retry } = useBackendAvailability(HEALTH_URL)
+  const location = useLocation()
   // Read once per mount: a failed check clears it, so retries show the gate again.
   const [recentSuccess, setRecentSuccess] = useState(readRecentSuccess)
-  const status = checkedStatus === 'checking' && recentSuccess ? 'available' : checkedStatus
+  // The scanner owner the application last rendered for. A confirmed account
+  // change during an outage falls back to the outage page instead.
+  const [appOwner, setAppOwner] = useState(undefined)
+  const markAppMounted = useCallback(owner => setAppOwner(owner), [])
+  // The door scanner never uses the session shortcut: while checking, saved
+  // door access must open first instead of being swapped in mid-scan.
+  const useRecentSuccess = recentSuccess && location.pathname !== '/dashboard/scanner'
+  const status = checkedStatus === 'checking' && useRecentSuccess ? 'available' : checkedStatus
   useEffect(() => {
     if (checkedStatus === 'checking') return
     rememberHealth(checkedStatus === 'available')
     if (checkedStatus === 'unavailable') setRecentSuccess(false)
   }, [checkedStatus])
-  const location = useLocation()
   const [cachedScanner, setCachedScanner] = useState(null)
   const scannerRoute = JSON.stringify([location.key, location.pathname, location.search])
 
@@ -91,10 +113,14 @@ export default function ServiceCheck() {
       <Suspense fallback={<p className="px-4 py-8" role="status">Opening the saved scanner…</p>}><ScannerPage offlineOnly offlineEventId={cachedScanner.eventId} /></Suspense>
     </main> : null
   const renderServices = ({ scannerOwner }) => {
+    const app = <ConnectedApp owner={scannerOwner} onMount={markAppMounted} degraded={status === 'unavailable'} onRetry={retry} />
+    // Door safety first: during an outage the verified saved scanner replaces
+    // the online one. Elsewhere a mounted application stays mounted for its owner.
     if (cachedDoor && cachedScanner.owner === scannerOwner && status !== 'available') return cachedDoor
+    if (appOwner !== undefined && appOwner === scannerOwner) return app
     if (status === 'checking') return <ServiceGate />
     if (status === 'unavailable') return <PrivatePreviewPage onRetry={retry} />
-    return <App />
+    return app
   }
   // Health transitions must not unmount the observer of definitive Clerk
   // sign-out/account changes, including while the saved scanner is open.

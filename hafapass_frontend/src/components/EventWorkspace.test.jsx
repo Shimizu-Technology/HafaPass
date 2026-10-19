@@ -48,11 +48,25 @@ describe('connected event workspace', () => {
     expect(screen.getByText('Synthetic Guam venue')).toBeInTheDocument()
     expect(screen.getByText(/Pacific\/Guam/)).toHaveTextContent('7:00 PM')
     expect(screen.getByText('Published', { exact: true })).toBeInTheDocument()
-    expect(screen.getByText('Your role: Owner')).toBeInTheDocument()
+    expect(screen.getByText('Organization role: Owner')).toBeInTheDocument()
     expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
     expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Edit event' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Refunds' })).toHaveAttribute('href', '/dashboard/events/37/refunds')
+  })
+
+  it('names event access when an event assignment grants more than the organization role', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer', role: 'scanner' }] : dto() }))
+    const managerPermissions = Object.fromEntries(['view_events', 'manage_events', 'edit_event_content', 'manage_inventory', 'manage_staff', 'view_attendees', 'view_finance', 'manage_attendees', 'manage_marketing', 'box_office', 'scan'].map(key => [key, true]))
+    mount({ event: { ...dto(), permissions: { ...managerPermissions, refund: false, manage_finance: false } } })
+    expect(await screen.findByText('Event access: Manager')).toBeInTheDocument()
+    expect(screen.queryByText(/Organization role/)).not.toBeInTheDocument()
+  })
+
+  it('shows the organization role when the event grants nothing beyond it', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer', role: 'scanner' }] : dto() }))
+    mount({ event: { ...dto(), permissions: { view_events: true, scan: true, refund: false } }, path: '/dashboard/events/37/scanner' })
+    expect(await screen.findByText('Organization role: Door scanner')).toBeInTheDocument()
   })
 
   it('leads with the event overview for members who can view the event', () => {
