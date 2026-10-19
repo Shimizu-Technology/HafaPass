@@ -6,6 +6,7 @@ import AdminLayout from './AdminLayout'
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 import { StaggerContainer, StaggerItem } from '../../components/ui/ScrollReveal'
+import { adminLabel } from './adminLabels'
 
 function StatCard({ label, value, icon: Icon, color }) {
   return (
@@ -78,7 +79,7 @@ function AdminDashboardSession({ identity }) {
         <StaggerItem><StatCard label="Total Events" value={totalEvents} icon={Calendar} color="bg-brand-500" /></StaggerItem>
         <StaggerItem><StatCard label="Total Users" value={totalUsers} icon={Users} color="bg-indigo-500" /></StaggerItem>
         <StaggerItem><StatCard label="Revenue" value={revenue} icon={DollarSign} color="bg-emerald-500" /></StaggerItem>
-        <StaggerItem><StatCard label="Tickets Sold" value={data.total_tickets_sold} icon={Ticket} color="bg-coral-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Tickets Sold" value={data.total_tickets_sold} icon={Ticket} color="bg-accent-500" /></StaggerItem>
       </StaggerContainer>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8" aria-label="Financial ledger summary">
@@ -129,7 +130,7 @@ function AdminDashboardSession({ identity }) {
                   event.status === 'published' ? 'bg-emerald-50 text-emerald-600' :
                   event.status === 'draft' ? 'bg-neutral-100 text-neutral-600' :
                   'bg-red-50 text-red-600'
-                }`}>{event.status}</span>
+                }`}>{adminLabel(event.status)}</span>
               </Link>
             ))}
             {data.recent_events.length === 0 && (
@@ -159,7 +160,7 @@ function AdminDashboardSession({ identity }) {
                     order.status === 'completed' ? 'text-emerald-600' :
                     order.status === 'pending' ? 'text-amber-600' :
                     'text-red-600'
-                  }`}>{order.status}</span>
+                  }`}>{adminLabel(order.status)}</span>
                 </div>
               </div>
             ))}

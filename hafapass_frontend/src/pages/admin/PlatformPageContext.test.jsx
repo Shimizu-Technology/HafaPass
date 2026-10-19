@@ -83,6 +83,7 @@ describe('platform list isolation and recovery', () => {
     render(<MemoryRouter initialEntries={['/admin/users']}><AdminUsersPage /></MemoryRouter>)
     await screen.findAllByText('Visible')
     fireEvent.change(screen.getAllByRole('combobox', { name: 'Role for Visible@example.invalid' })[0], { target: { value: 'organizer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Change role' }))
     expect(apiClient.patch.mock.calls[0][2].authContext.sessionId).toBe('a')
     await act(async () => { clearAuth = setAuthTokenGetter(() => Promise.resolve('b'), { userId: 'same-user', sessionId: 'b', ready: true }) })
     await screen.findAllByText('Visible')
