@@ -65,6 +65,12 @@ describe('connected event workspace', () => {
     expect(screen.getByText('Overview body')).toBeInTheDocument()
   })
 
+  it('shares the workspace navbar container so the left edge stays put', () => {
+    mount()
+    const shell = screen.getByRole('heading', { level: 1 }).closest('header').parentElement
+    expect(shell).toHaveClass('mx-auto', 'max-w-6xl', 'px-4', 'sm:px-6', 'lg:px-8')
+  })
+
   it.each([
     ['marketer', { edit_event_content: true, manage_marketing: true }, ['Edit event', 'Promo codes', 'Sales tools & messages']],
     ['finance', { view_finance: true, refund: true }, ['Sales & finances', 'Refunds']],

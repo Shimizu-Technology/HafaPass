@@ -7,6 +7,7 @@ import useDraftProtection from '../hooks/useDraftProtection'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import { useOrganizerIdentity, useOrganizerRequests } from '../hooks/useOrganizerContext'
 import { formatEventDateTime } from '../utils/eventTime'
+import { WORKSPACE_WIDTHS } from '../utils/workspace'
 
 const preferenceKey = 'hafapass:event-workspace:collapsed'
 const readPreference = () => { try { return window.localStorage.getItem(preferenceKey) === 'true' } catch { return false } }
@@ -148,7 +149,9 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
     try { window.localStorage.setItem(preferenceKey, String(next)) } catch { /* Navigation remains usable when storage is unavailable. */ }
   }
 
-  return <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+  // Same container as the workspace navbar so pages keep their left edge
+  // when moving between the dashboard and an event.
+  return <div className={`mx-auto w-full min-w-0 ${WORKSPACE_WIDTHS.standard} px-4 py-6 sm:px-6 lg:px-8`}>
     <header className="mb-6 border-b border-neutral-200 pb-5">
       <Link to="/dashboard" onClick={event => navigateTo(event, '/dashboard')} className="inline-flex min-h-11 items-center text-sm font-medium text-brand-800">All events</Link>
       {correctEvent ? <>
