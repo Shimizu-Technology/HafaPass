@@ -21,6 +21,7 @@ module Api
             pattern = "%#{Event.sanitize_sql_like(query)}%"
             events = events.where("events.title ILIKE :q OR events.venue_name ILIKE :q OR events.slug ILIKE :q OR CAST(events.id AS TEXT) = :id", q: pattern, id: query)
           end
+          events = filter_and_order_index(events)
           pagy, paginated_events = paginate(events, items: params.fetch(:per_page, 20).to_i.clamp(1, 100))
 
           @event_permission_maps = OrganizationAuthorization.permissions_for_events(
@@ -278,6 +279,26 @@ module Api
         end
 
         private
+
+        # Optional narrowing used by the door scanner to find its default event
+        # across pages. Filters apply after access scoping, so they never widen
+        # what the caller may see; unknown values are ignored.
+        def filter_and_order_index(events)
+          events = events.where(status: params[:status]) if Event.statuses.key?(params[:status].to_s)
+          ends_after = index_time_param(:ends_after)
+          events = events.where("COALESCE(events.ends_at, events.starts_at) >= ?", ends_after) if ends_after
+          case params[:order]
+          when "starts_at" then events.reorder(Arel.sql("events.starts_at ASC NULLS LAST, events.id ASC"))
+          when "-starts_at" then events.reorder(Arel.sql("events.starts_at DESC NULLS LAST, events.id DESC"))
+          else events
+          end
+        end
+
+        def index_time_param(key)
+          Time.zone.iso8601(params[key].to_s) if params[key].present?
+        rescue ArgumentError
+          nil
+        end
 
         def transition_event(action)
           EventLifecycle.call(event: @event, action: action, actor: current_user, reason: params[:reason])
