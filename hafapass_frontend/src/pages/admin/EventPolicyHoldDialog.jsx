@@ -45,6 +45,7 @@ export default function EventPolicyHoldDialog({ event, beginRequest, onClose, on
           <p className="mt-3 text-sm text-neutral-700">Restoring lets ticket sales resume{hold.scope === 'hidden' ? ' and puts the event page back' : ''}, as long as the event is otherwise on sale.</p>
         </> : <>
           <p className="mt-2 text-sm text-neutral-700">Nothing is deleted, cancelled or refunded. Existing tickets stay valid for entry, and you can restore the event later.</p>
+          <p className="mt-2 text-sm text-neutral-700">A buyer who already reached the card form can still finish paying in the next few minutes. Check the event’s orders afterwards and refund any you do not want to honor.</p>
           <fieldset className="mt-4">
             <legend className="text-sm font-medium text-neutral-900">What should happen?</legend>
             <div className="mt-2 space-y-2">

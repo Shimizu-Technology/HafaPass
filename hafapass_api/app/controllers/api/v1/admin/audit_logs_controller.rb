@@ -28,11 +28,23 @@ class Api::V1::Admin::AuditLogsController < Api::V1::Admin::BaseController
     render json: {
       audit_logs: entries.map { |entry| entry_json(entry) },
       meta: meta,
-      areas: AuditLog.distinct.pluck(Arel.sql("split_part(action, '.', 1)")).sort
+      areas: areas
     }
   end
 
   private
+
+  AREAS_CACHE_KEY = "admin/audit_log_areas"
+
+  # Several services build action names at runtime, so the area list comes
+  # from the data. Cache it rather than scanning the table on every request;
+  # a selected area always stays in the list.
+  def areas
+    known = Rails.cache.fetch(AREAS_CACHE_KEY, expires_in: 15.minutes) do
+      AuditLog.distinct.pluck(Arel.sql("split_part(action, '.', 1)"))
+    end
+    (known + [params[:area].presence].compact).uniq.sort
+  end
 
   # Dates are calendar days in the platform's home time zone.
   def parse_date(value)

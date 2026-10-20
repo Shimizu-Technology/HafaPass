@@ -22,8 +22,14 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
 
   def create
     sign = SIGNED_KINDS[params[:kind].to_s]
+    # Dispute, processing and payout-reversal kinds are posted by the system.
+    unless sign
+      return render json: { errors: ["Kind must be one of #{SIGNED_KINDS.keys.to_sentence(last_word_connector: ", or ")}"] },
+        status: :unprocessable_entity
+    end
+
     amount = params[:amount_cents].to_s
-    if sign && (!amount.match?(/\A-?\d+\z/) || (amount.to_i <=> 0) != sign)
+    if !amount.match?(/\A-?\d+\z/) || (amount.to_i <=> 0) != sign
       return render json: { errors: ["Amount must be #{sign.positive? ? "positive" : "negative"} for #{params[:kind].to_s.humanize.downcase}"] },
         status: :unprocessable_entity
     end
@@ -87,6 +93,8 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
       request: request
     )
     render json: adjustment_json(reversal), status: :created
+  rescue ActiveRecord::RecordNotUnique
+    render json: { error: "This adjustment was already reversed" }, status: :conflict
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Posted adjustment not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e

@@ -103,10 +103,43 @@ RSpec.describe "Admin operations screens", type: :request do
 
     it "cannot be lifted by the organizer's seating resume" do
       place
-      event.update!(sales_suspended_at: Time.current, sales_suspension_reason: "Venue evacuation")
-      event.update!(sales_suspended_at: nil, sales_suspension_reason: nil)
-      expect(event.reload.policy_hold?).to be(true)
+      organizer_headers = auth_headers(profile.user)
+      post "/api/v1/organizer/events/#{event.id}/seating/suspend", headers: organizer_headers, params: { reason: "Venue evacuation" }
+      expect(response).to have_http_status(:ok)
+      post "/api/v1/organizer/events/#{event.id}/seating/resume", headers: organizer_headers
+      expect(response).to have_http_status(:ok)
+
+      expect(event.reload.sales_suspended_at).to be_nil
+      expect(event.policy_hold?).to be(true)
       expect(event.sales_open?).to be(false)
+    end
+
+    it "refuses to copy or repeat a held event, which would drop the hold" do
+      event.update!(recurrence_rule: "weekly")
+      place
+      organizer_headers = auth_headers(profile.user)
+
+      post "/api/v1/organizer/events/#{event.id}/clone", headers: organizer_headers
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to include("policy hold", "cannot be copied")
+      post "/api/v1/organizer/events/#{event.id}/generate_recurrences", headers: organizer_headers, params: { count: 2 }
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to include("cannot be repeated")
+      expect(Event.where(organization: organization).count).to eq(1)
+    end
+
+    it "refuses to issue waitlist offers while held" do
+      allow(EmailService).to receive(:send_waitlist_offer_async)
+      entry = create(:waitlist_entry, event: event, ticket_type: ticket_type, quantity: 1)
+      place
+
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/offer", headers: auth_headers(profile.user)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to eq("This event is not currently on sale")
+      expect(entry.reload).to be_waiting
+      expect(WaitlistOffer.count).to eq(0)
+      expect(EmailService).not_to have_received(:send_waitlist_offer_async)
     end
 
     it "refuses a second hold and restores sales with an audited reason" do
@@ -215,6 +248,27 @@ RSpec.describe "Admin operations screens", type: :request do
       expect(original["event"]).to eq("id" => event.id, "title" => event.title)
     end
 
+    it "only accepts the four manual kinds; the rest are posted by the system" do
+      %w[dispute_loss dispute_recovery processing_fee payout_reversal bogus].each do |kind|
+        post "/api/v1/admin/balance_adjustments", headers: headers,
+          params: { organization_id: organization.id, kind: kind, amount_cents: -100, reason: "Fixture" }
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+      expect(BalanceAdjustment.count).to eq(0)
+    end
+
+    it "reports a concurrent reversal as a conflict" do
+      credit = create(:balance_adjustment, organization: organization, kind: "manual_credit", amount_cents: 500)
+      # The other request's reversal committed after this one read the adjustment as posted.
+      create(:balance_adjustment, organization: organization, kind: "manual_debit", amount_cents: -500, reversal_of: credit)
+
+      delete "/api/v1/admin/balance_adjustments/#{credit.id}", params: { reason: "Entered twice" }, headers: headers
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body["error"]).to eq("This adjustment was already reversed")
+      expect(credit.reload).to be_status_posted
+    end
+
     it "rejects a manual amount whose sign contradicts its kind" do
       {
         "manual_credit" => -500, "reserve_release" => -500, "manual_debit" => 500, "reserve_hold" => 500
@@ -287,6 +341,30 @@ RSpec.describe "Admin operations screens", type: :request do
       get "/api/v1/admin/audit_logs", params: { per_page: 2, page: 2 }, headers: headers
       expect(response.parsed_body["audit_logs"].pluck("id")).to eq([first.id])
       expect(response.parsed_body["meta"]).to include("page" => 2, "total_count" => 3, "total_pages" => 2)
+    end
+  end
+
+  describe "settings audit trail" do
+    it "audits every change, and fee terms and payment mode under their own actions" do
+      patch "/api/v1/admin/settings", params: { platform_email: "help@hafapass.test" }, headers: headers
+      expect(response).to have_http_status(:ok)
+      general = AuditLog.where(action: "site_settings.updated").sole
+      expect(general).to have_attributes(actor_user: admin)
+      expect(general.after_data).to eq("platform_email" => "help@hafapass.test")
+      expect(AuditLog.where(action: %w[site_settings.fee_terms_updated site_settings.payment_mode_changed])).not_to exist
+
+      patch "/api/v1/admin/settings", params: { payment_mode: "simulate", service_fee_flat_cents: 75 }, headers: headers
+      expect(AuditLog.where(action: "site_settings.updated").count).to eq(2)
+      expect(AuditLog.find_by!(action: "site_settings.fee_terms_updated").after_data).to eq("service_fee_flat_cents" => "75")
+      expect(AuditLog.where(action: "site_settings.payment_mode_changed")).not_to exist
+
+      allow_any_instance_of(SiteSetting).to receive(:can_enable_test?).and_return(true)
+      patch "/api/v1/admin/settings", params: { payment_mode: "test" }, headers: headers
+      mode = AuditLog.find_by!(action: "site_settings.payment_mode_changed")
+      expect([mode.before_data, mode.after_data]).to eq([{ "payment_mode" => "simulate" }, { "payment_mode" => "test" }])
+
+      patch "/api/v1/admin/settings", params: { platform_email: "help@hafapass.test" }, headers: headers
+      expect(AuditLog.where(action: "site_settings.updated").count).to eq(3)
     end
   end
 
