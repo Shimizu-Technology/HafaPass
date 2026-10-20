@@ -13,6 +13,7 @@ import { CheckoutAttemptConflict, checkoutBuyerIdentity, checkoutBuyerMatches, c
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 import { parseFeeTerms } from '../utils/feeTerms'
 import { SellerLine } from '../components/PriceDisclosure'
+import { estimateCheckoutLine } from '../utils/checkoutEstimate'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -70,6 +71,7 @@ function CheckoutContent({ buyerId }) {
   // Keep this checkout selection stable while a lazy confirmation route is loading.
   const [lineItems] = useState(() => navigationMatches ? location.state?.lineItems || null : null)
   const waitlistOfferToken = location.state?.waitlistOfferToken || null
+  const waitlistOffer = waitlistOfferToken ? location.state?.waitlistOffer || null : null
   const seatHoldToken = location.state?.seatHoldToken || null
   const seatHoldExpiresAt = location.state?.seatHoldExpiresAt || null
   const selectedSeats = location.state?.selectedSeats || []
@@ -290,11 +292,8 @@ function CheckoutContent({ buyerId }) {
   const handlePromoValidate = async () => {
     if (!promoInput.trim()) return
 
-    const orderLines = lineItems?.map(item => {
-      const tt = selectedTicketType(event, item.ticket_type_id)
-      return tt ? (tt.current_price_cents ?? tt.price_cents) * item.quantity : 0
-    }) || []
-    const currentSubtotal = orderLines.reduce((s, l) => s + l, 0)
+    const currentSubtotal = (lineItems || []).reduce((sum, item) =>
+      sum + (estimateCheckoutLine(event, item, { waitlistOffer, seats: selectedSeats })?.lineTotal || 0), 0)
 
     setPromoLoading(true)
     setPromoError(null)
@@ -481,14 +480,7 @@ function CheckoutContent({ buyerId }) {
   const feeTerms = parseFeeTerms(config)
   const orderLines = orderData ? (orderData.order_items || []).map(item => ({
     ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents,
-  })) : lineItems.map(item => {
-    const tt = selectedTicketType(event, item.ticket_type_id)
-    if (!tt) return null
-    const price = tt.current_price_cents ?? tt.price_cents
-    const feeCents = Number.isSafeInteger(tt.service_fee_cents) && tt.service_fee_cents >= 0 ? tt.service_fee_cents
-      : price === 0 || Number(event.buyer_fee_percent) === 0 ? 0 : null
-    return { ...item, name: tt.name, price_cents: price, feeCents, lineTotal: price * item.quantity, active_tier: tt.active_tier }
-  }).filter(Boolean)
+  })) : lineItems.map(item => estimateCheckoutLine(event, item, { waitlistOffer, seats: selectedSeats })).filter(Boolean)
   const feeDataMissing = !orderData && orderLines.some(line => line.feeCents === null)
 
   // A stale event snapshot without fee data is reloaded from the API.
@@ -513,7 +505,7 @@ function CheckoutContent({ buyerId }) {
     if (!item || !selection.quantity) return sum
     return sum + (item.kind === 'donation' ? (selection.amount_cents || 0) : item.price_cents) * selection.quantity
   }, 0)
-  const serviceFeeCents = orderData ? 0 : orderLines.reduce((sum, line) => sum + line.feeCents * line.quantity, 0)
+  const serviceFeeCents = orderData ? 0 : orderLines.reduce((sum, line) => sum + line.feeCents, 0)
   const discountCents = promoData?.discount_cents || 0
   const totalCents = Math.max(subtotalCents + catalogSubtotalCents + serviceFeeCents - discountCents, 0)
   const displayedSubtotal = orderData?.subtotal_cents ?? (subtotalCents + catalogSubtotalCents)
@@ -619,7 +611,8 @@ function CheckoutContent({ buyerId }) {
                 {t('checkout.serviceFee')}
                 {feeIncludesProcessing && <span className="block text-xs text-neutral-500">{t('checkout.serviceFeeIncludesProcessing')}</span>}
               </span>
-              <span>{formatPrice(displayedFee)}</span>
+              {/* A fee is an amount, never "Free": absorbed fees show $0.00. */}
+              <span>{`$${(displayedFee / 100).toFixed(2)}`}</span>
             </div>
             {displayedDiscount > 0 && (
               <div className="flex justify-between text-emerald-600">

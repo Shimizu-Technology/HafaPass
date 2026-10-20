@@ -520,7 +520,7 @@ function OrderConfirmationContent() {
             {order.order_items.map(item => (
               <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
             ))}
-            <div className="flex justify-between gap-4 border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">Includes card processing</span>}</span><span>{formatPrice(order.service_fee_cents)}</span></div>
+            <div className="flex justify-between gap-4 border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">Includes card processing</span>}</span><span>{`$${((order.service_fee_cents || 0) / 100).toFixed(2)}`}</span></div>
             {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
             <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>Total</span><span>{formatPrice(order.total_cents)}</span></div>
             {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>Refunded</span><span>−{formatPrice(order.refunded_cents)}</span></div>}

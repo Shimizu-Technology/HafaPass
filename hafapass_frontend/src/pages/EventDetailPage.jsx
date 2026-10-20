@@ -168,7 +168,8 @@ function EventDetailContent() {
 
   const handleCheckout = (lineItems) => {
     if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
-    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof, browseFrom } })
+    const offer = waitlistOfferToken && waitlistOffer && !waitlistOffer.error ? waitlistOffer : null
+    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, waitlistOffer: offer, liveMoneyProof: isLiveMoneyProof, browseFrom } })
   }
 
   const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {

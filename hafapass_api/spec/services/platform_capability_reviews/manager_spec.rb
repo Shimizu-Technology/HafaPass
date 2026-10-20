@@ -13,6 +13,19 @@ RSpec.describe PlatformCapabilityReviews::Manager do
     }
   end
 
+  # The served policy YAML is a draft; these examples model counsel-approved text.
+  before { allow(PolicyRegistry).to receive(:approval_blockers).and_return([]) }
+
+  it "refuses to approve the policy register while the text is a draft or has review notes" do
+    allow(PolicyRegistry).to receive(:approval_blockers).and_call_original
+    submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
+
+    expect do
+      described_class.approve!(submission: submission, actor: approver)
+    end.to raise_error(described_class::ReviewError, /not ready for approval: Policy text status is draft-pending-legal-review.*Unresolved review notes/)
+    expect(PlatformCapabilities.enabled?("policy_register")).to be(false)
+  end
+
   it "requires a second administrator before enabling an exact evidence snapshot" do
     submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
 

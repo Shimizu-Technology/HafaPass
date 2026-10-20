@@ -30,7 +30,11 @@ const validCents = value => Number.isSafeInteger(value) && value >= 0
 export function ticketAllInCents(ticket) {
   const base = ticketPriceCents(ticket)
   if (base === null) return null
-  return validCents(ticket.all_in_price_cents) ? ticket.all_in_price_cents : base
+  if (validCents(ticket.all_in_price_cents)) return ticket.all_in_price_cents
+  if (import.meta.env.DEV && base > 0) {
+    console.warn('ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price', ticket.id ?? ticket.name)
+  }
+  return base
 }
 
 export function ticketServiceFeeCents(ticket) {

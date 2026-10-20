@@ -26,7 +26,20 @@ RSpec.describe "Admin platform capabilities", type: :request do
     expect(response.body).not_to include("RESEND_API_KEY", "STRIPE_LIVE_SECRET_KEY")
   end
 
+  it "shows draft blockers on the policy register and refuses approval" do
+    get "/api/v1/admin/platform_capabilities", headers: auth_headers(submitter)
+    policy = response.parsed_body.fetch("capabilities").find { |item| item["capability"] == "policy_register" }
+    expect(policy.fetch("policy_documents")).to include("version" => "2026-10-launch-draft", "status" => "draft-pending-legal-review")
+    expect(policy.dig("policy_documents", "approval_blockers")).to include(a_string_matching(/not approved/))
+
+    post "/api/v1/admin/platform_capabilities/policy_register/reviews", params: payload, headers: auth_headers(submitter)
+    post "/api/v1/admin/platform_capability_reviews/#{response.parsed_body.fetch('id')}/approve", headers: auth_headers(approver)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.body).to include("not ready for approval")
+  end
+
   it "submits and independently approves capability evidence" do
+    allow(PolicyRegistry).to receive(:approval_blockers).and_return([])
     post "/api/v1/admin/platform_capabilities/policy_register/reviews", params: payload,
       headers: auth_headers(submitter)
 

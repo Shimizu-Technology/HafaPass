@@ -79,7 +79,6 @@
     "priceGoesUp": "Price goes up to {{price}} after {{date}}",
     "onlyLeft": "Only {{count}} left at this price!",
     "endsIn": "Ends in {{days}} days",
-    "includesFee": "Includes {{fee}} service fee",
     "ticketPlusFee": "{{price}} ticket + {{fee}} service fee",
     "allInNote": "Prices include all mandatory fees. The service fee pays for {{platform}} ticketing and card processing.",
     "allInNoteNoProcessing": "Prices include all mandatory fees. The service fee pays for {{platform}} ticketing.",

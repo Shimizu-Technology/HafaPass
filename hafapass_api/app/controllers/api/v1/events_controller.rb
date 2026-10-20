@@ -140,6 +140,18 @@ module Api
         end
       end
 
+      # The all-in price buyers see on cards: the effective ticket price plus
+      # the buyer's share of the service fee, with Commerce::ServiceFee's
+      # per-ticket half-up rounding (PostgreSQL ROUND on numeric rounds half
+      # away from zero, which is half up for these non-negative amounts).
+      ALL_IN_TICKET_PRICE_SQL = <<~SQL.squish.freeze
+        (SELECT effective.price_cents + CASE WHEN effective.price_cents > 0 THEN
+            ROUND((ROUND(effective.price_cents * CAST(:fee_percent AS numeric) / 100) + :fee_flat_cents)
+              * events.buyer_fee_percent / 100.0)
+          ELSE 0 END
+         FROM (SELECT #{EFFECTIVE_TICKET_PRICE_SQL} AS price_cents) effective)
+      SQL
+
       def filter_price(events)
         cents = case params[:price]
         when "free" then 0
@@ -147,11 +159,9 @@ module Api
         when "under_50" then 5000
         else return events
         end
-        if params[:price] == "free"
-          events.where("#{EFFECTIVE_TICKET_PRICE_SQL} = :price_cents", price_at: Time.current, price_cents: cents)
-        else
-          events.where("#{EFFECTIVE_TICKET_PRICE_SQL} <= :price_cents", price_at: Time.current, price_cents: cents)
-        end
+        operator = params[:price] == "free" ? "=" : "<="
+        events.where("#{ALL_IN_TICKET_PRICE_SQL} #{operator} :price_cents", price_at: Time.current, price_cents: cents,
+          fee_percent: listing_fee_terms.percent.to_s, fee_flat_cents: listing_fee_terms.flat_cents)
       end
 
       def parse_date_boundary(value, beginning:)

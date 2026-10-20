@@ -12,7 +12,7 @@ documents:
 
           The event organizer is the seller of your ticket. The organizer appoints {{operator_name}} as its limited agent to list the event, sell tickets, and collect payment on its behalf. When you pay {{platform_name}} for a ticket, that payment satisfies what you owe the organizer for it.
 
-          {{platform_name}} sells its own ticketing service separately and charges a service fee for it. Your receipt and ticket show both roles, for example "Sold by [organizer] · Tickets by {{platform_name}}".
+          {{platform_name}} sells its own ticketing service separately and charges a service fee for it. Your receipt and ticket show both roles, for example "Sold by Island Nights · Tickets by {{platform_name}}".
       - heading: Prices and the service fee
         body: |-
           The price we advertise for a ticket is the total you will pay for it, including the mandatory service fee. The checkout total matches the advertised price. If a government tax is ever charged, or you choose an optional add-on such as merchandise or a donation, we show that amount separately before you pay.
@@ -67,7 +67,7 @@ documents:
         body: |-
           We may update these terms. The version you accepted at checkout applies to that order, and we record which version that was.
 
-          For questions about an order, contact us at {{support_email}}.
+          For questions about an order, contact us {{support_contact}}.
   refunds:
     title: Refund & Cancellation Policy
     summary: |-
@@ -102,7 +102,7 @@ documents:
           Please contact us before disputing a charge with your bank. Filing a chargeback suspends the tickets on the order while the dispute is open.
       - heading: How to ask for a refund
         body: |-
-          Use the order page in your account or the link in your confirmation email, or contact us at {{support_email}} with your order number. Refund requests are subject to the event's rules and this policy.
+          Use the order page in your account or the link in your confirmation email, or contact us {{support_contact}} with your order number. Refund requests are subject to the event's rules and this policy.
   privacy:
     title: Privacy Policy
     summary: |-
@@ -159,7 +159,7 @@ documents:
           Order, payment, refund, payout, and audit records are kept for the periods needed for accounting, tax, and dispute purposes [Lawyer and accountant to confirm; at least 7 years proposed]. Marketplace analytics not tied to an order are deleted after 13 months. Other records are kept only as long as needed. Our Data Retention Schedule has the details.
       - heading: Your choices and rights
         body: |-
-          You can ask to access, correct, export, or delete your personal information by contacting us at {{support_email}}. We will verify your identity before acting. Some records, such as completed orders, must be kept for legal, tax, or dispute reasons; when that applies, we keep only what is required and tell you why.
+          You can ask to access, correct, export, or delete your personal information by contacting us {{support_contact}}. We will verify your identity before acting. Some records, such as completed orders, must be kept for legal, tax, or dispute reasons; when that applies, we keep only what is required and tell you why.
 
           If we send you marketing emails, you can unsubscribe at any time. Messages about tickets you bought, such as event changes, are part of the service and will still be sent.
       - heading: Security and breach notification
@@ -172,7 +172,7 @@ documents:
           {{platform_name}} is not directed to children under 13, and we do not knowingly collect personal information from them. A parent or guardian may buy tickets for a child. If you believe a child under 13 has given us personal information, contact us and we will delete it.
       - heading: Changes and contact
         body: |-
-          We will post changes to this policy here and update the version shown. For privacy questions or requests, contact us at {{support_email}}.
+          We will post changes to this policy here and update the version shown. For privacy questions or requests, contact us {{support_contact}}.
   organizer-agreement:
     title: Organizer Agreement
     summary: |-
@@ -192,7 +192,7 @@ documents:
         body: |-
           You are the seller of the tickets to your event. You appoint {{operator_name}} as your limited agent to market and sell tickets on {{platform_name}} and to collect payment from buyers on your behalf. A buyer's payment to {{platform_name}} satisfies the buyer's payment obligation to you for the ticket.
 
-          {{operator_name}} sells its ticketing service to buyers and to you, and charges the service fee for that service. Receipts and tickets will name you as the seller ("Sold by [organizer] · Tickets by {{platform_name}}").
+          {{operator_name}} sells its ticketing service to buyers and to you, and charges the service fee for that service. Receipts and tickets will name you as the seller ("Sold by" followed by your organizer name, then "Tickets by {{platform_name}}").
 
           Buyer card payments are processed through {{operator_name}}'s payment account and received into its business account. We record your ticket proceeds separately from our service fees. [Lawyer to confirm agency and funds-handling language.]
       - heading: Service fees
@@ -249,7 +249,7 @@ documents:
         body: |-
           This agreement is governed by the laws of Guam [Lawyer to confirm governing law and venue].
 
-          We may update this agreement. You must accept the current version before you publish a new event, and {{platform_name}} records which version you accepted and when. Questions can go to {{support_email}}.
+          We may update this agreement. You must accept the current version before you publish a new event, and {{platform_name}} records which version you accepted and when. For questions, contact us {{support_contact}}.
   acceptable-use:
     title: Acceptable Use Policy
     summary: |-
@@ -289,7 +289,7 @@ documents:
           If we believe this policy has been broken, we may investigate, keep records, remove content or listings, cancel tickets, pause sales or payouts, suspend or close accounts, and cooperate with affected parties and authorities where the law allows. Where appropriate, we will tell you what action we took and why.
       - heading: Reporting a problem
         body: |-
-          To report a listing, ticket, or user that may break this policy, contact us at {{support_email}}.
+          To report a listing, ticket, or user that may break this policy, contact us {{support_contact}}.
   retention:
     title: Data Retention Schedule
     summary: |-
@@ -309,7 +309,7 @@ documents:
           Event data stored on organizer devices for offline scanning should be removed after the event is closed out and any dispute window has passed. Lost or stolen devices must be revoked immediately.
       - heading: Deletion requests and holds
         body: |-
-          We honor deletion requests where we can. Legal holds, open disputes, fraud investigations, and legal or tax duties may require us to keep specific records; when they do, we keep only those records and delete the rest. To ask for deletion, contact us at {{support_email}}.
+          We honor deletion requests where we can. Legal holds, open disputes, fraud investigations, and legal or tax duties may require us to keep specific records; when they do, we keep only those records and delete the rest. To ask for deletion, contact us {{support_contact}}.
   cookies:
     title: Cookie Notice
     summary: |-
@@ -334,7 +334,7 @@ documents:
         body: |-
           You can block or delete cookies in your browser settings. If you block the cookies needed to run the service, sign-in, checkout, and some ticket features may not work.
 
-          Questions can go to {{support_email}}.
+          For questions, contact us {{support_contact}}.
   accessibility:
     title: Accessibility Statement
     summary: |-
@@ -356,4 +356,4 @@ documents:
           Each organizer is responsible for accessibility at its venue and event. Where the organizer provides it, accessibility information is shown on the event page. For events with assigned seating, organizers confirm whether accessible seating is available. For questions about a specific venue, contact the organizer or ask us to pass your question on.
       - heading: Get help or report a barrier
         body: |-
-          If something on {{platform_name}} is hard to use, or you need help buying tickets, contact us at {{support_email}}. Tell us the page and what happened. We aim to respond within 5 business days.
+          If something on {{platform_name}} is hard to use, or you need help buying tickets, contact us {{support_contact}}. Tell us the page and what happened. We aim to respond within 5 business days.

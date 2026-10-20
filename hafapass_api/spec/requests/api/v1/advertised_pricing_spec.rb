@@ -98,4 +98,52 @@ RSpec.describe "Advertised all-in pricing", type: :request do
     expect(order.fee_components.find_by!(kind: "platform").metadata).to include("rounding" => "per_ticket")
     expect(order.order_items.sole).to have_attributes(fee_cents: 600, subtotal_cents: 5997)
   end
+
+  it "charges a seated checkout exactly the all-in prices on the seat map" do
+    event.update!(fee_policy: :split_fees, buyer_fee_percent: 40, venue: create(:venue))
+    configuration = create(:event_seating_configuration, event: event)
+    seats = Array.new(2) { create(:event_seat, event_seating_configuration: configuration, ticket_type: vip) }
+
+    get "/api/v1/events/#{event.slug}/seating"
+    expect(response).to have_http_status(:ok)
+    map_seats = response.parsed_body.fetch("sections").flat_map { |section| section.fetch("rows") }.flat_map { |row| row.fetch("seats") }
+    advertised = map_seats.select { |seat| seats.map(&:id).include?(seat.fetch("id")) }
+    expect(advertised.map { |seat| seat.fetch("all_in_price_cents") }.uniq).to eq([vip.price_cents + advertised.first.fetch("service_fee_cents")])
+
+    hold = Seating::HoldAllocator.call(event: event, event_seat_ids: seats.map(&:id), accessibility_attested: false)
+    order = Commerce::OrderCreator.call(event: event.reload, line_items: [{ ticket_type_id: vip.id, quantity: 2 }],
+      buyer_email: "seat@example.com", buyer_name: "Seat Buyer", seat_hold_token: hold.token, payment_required: false).order
+    expect(order.total_cents).to eq(advertised.sum { |seat| seat.fetch("all_in_price_cents") })
+    expect(order.service_fee_cents).to eq(advertised.sum { |seat| seat.fetch("service_fee_cents") })
+  end
+
+  it "charges a waitlist claim exactly the all-in price on the offer" do
+    entry = create(:waitlist_entry, event: event, ticket_type: vip, email: "wait@example.com", quantity: 2)
+    offer = create(:waitlist_offer, waitlist_entry: entry, event: event, ticket_type: vip, quantity: 2, unit_price_cents: 3999)
+    token = WaitlistCredential.offer(offer)
+
+    get "/api/v1/waitlist_offers/#{token}"
+    expect(response).to have_http_status(:ok)
+    advertised = response.parsed_body
+    # 5% of $39.99 = 199.95 -> $2.00, plus $1.00 flat.
+    expect(advertised).to include("unit_price_cents" => 3999, "service_fee_cents" => 300, "all_in_price_cents" => 4299)
+
+    order = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: vip.id, quantity: 2 }],
+      buyer_email: "wait@example.com", buyer_name: "Waitlist Buyer", waitlist_offer_token: token, payment_required: false).order
+    expect(order.total_cents).to eq(2 * advertised.fetch("all_in_price_cents"))
+  end
+
+  it "applies a promo discount to the ticket price after the advertised all-in total" do
+    promo = create(:promo_code, event: event, discount_type: "percentage", discount_value: 10)
+    listing = advertised
+    advertised_total = 2 * listing.fetch(general.id).fetch("all_in_price_cents")
+
+    order = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: general.id, quantity: 2 }],
+      buyer_email: "promo@example.com", buyer_name: "Promo Buyer", promo_code_id: promo.id, payment_required: false).order
+
+    # The fee stays on the pre-discount price; the discount comes off the tickets.
+    expect(order.service_fee_cents).to eq(2 * listing.fetch(general.id).fetch("service_fee_cents"))
+    expect(order.discount_cents).to eq((2 * 1999 * 0.10).round)
+    expect(order.total_cents).to eq(advertised_total - order.discount_cents)
+  end
 end

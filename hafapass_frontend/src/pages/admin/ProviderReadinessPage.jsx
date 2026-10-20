@@ -115,6 +115,14 @@ function CapabilityCard({ item, refresh, identity }) {
                 {item.policy_documents.status === 'approved' ? '' : ' · Draft pending legal review (not approved by counsel)'}
               </p>
               <p className="mt-1 text-amber-900">{item.policy_documents.documents.map(document => document.title).join(', ')}</p>
+              {item.policy_documents.approval_blockers?.length > 0 && (
+                <div className="mt-2" data-testid="policy-register-blockers">
+                  <p className="font-semibold">Approval is blocked until counsel-approved text is in place:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                    {item.policy_documents.approval_blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>

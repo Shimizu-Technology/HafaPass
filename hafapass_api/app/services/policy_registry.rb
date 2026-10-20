@@ -8,11 +8,18 @@ class PolicyRegistry
   BUYER_DOCUMENT_KEYS = %w[buyer-terms privacy refunds acceptable-use retention].freeze
   # Policy text names the platform, operator, support contact and current fee
   # and payout terms through these placeholders, filled from SiteSetting when
-  # served. Digests cover the rendered text, so changing any of those settings
-  # changes the served documents and requires organizers to re-accept.
+  # served. Digests never hash the rendered text: they cover the unrendered
+  # templates plus a digest of the material terms only (MATERIAL_SETTINGS).
+  # Cosmetic settings (platform name, support email) therefore leave every
+  # digest and approval intact, while a fee or payout-timing change is a
+  # contract change: organizers re-accept and the policy register needs a new
+  # approval.
   PLACEHOLDER = /\{\{([a-z_]+)\}\}/
-  PLACEHOLDERS = %w[platform_name operator_name support_email fee_schedule payout_schedule].freeze
-  SUPPORT_FALLBACK = "the support address on our Help page"
+  PLACEHOLDERS = %w[platform_name operator_name support_contact fee_schedule payout_schedule].freeze
+  MATERIAL_SETTINGS = %w[service_fee_percent service_fee_flat_cents processing_fee_bearer payout_schedule_text].freeze
+  SUPPORT_FALLBACK = "through Find your tickets → Contact support (/orders/recover)"
+  # Unresolved drafting notes such as "[Lawyer to confirm]" block approval.
+  REVIEW_MARKER = /\[[^\]\n]+\]/
 
   class << self
     def version
@@ -26,18 +33,50 @@ class PolicyRegistry
     end
 
     # What the admin policy register shows next to the approval controls: the
-    # served version, its draft status and the documents it covers.
+    # served version, its draft status, the documents it covers and anything
+    # that still blocks approval.
     def review_summary
       {
         version: version,
         status: status,
         registry_digest: registry_digest,
+        approval_blockers: approval_blockers,
         documents: documents.map { |key, document| { key: key, title: document.fetch("title") } }
       }
     end
 
+    # Reasons the policy register cannot be approved yet. Approval needs
+    # counsel-approved text: the YAML status must say "approved" and no
+    # bracketed drafting notes may remain.
+    def approval_blockers
+      blockers = []
+      blockers << "Policy text status is #{status}, not approved" unless status == "approved"
+      marked = templates.select { |_key, document| JSON.generate(document).match?(REVIEW_MARKER) }
+      if marked.any?
+        titles = marked.map { |_key, document| document.fetch("title") }.join(", ")
+        blockers << "Unresolved review notes in brackets remain in: #{titles}"
+      end
+      blockers
+    end
+
+    # Only the settings that change what organizers and buyers agree to.
+    def material_terms
+      settings = SiteSetting.instance
+      {
+        "service_fee_percent" => settings.service_fee_percent.to_d.to_s,
+        "service_fee_flat_cents" => settings.service_fee_flat_cents.to_i,
+        "processing_fee_bearer" => settings.processing_fee_bearer.to_s,
+        "payout_schedule_text" => settings.payout_schedule_text.to_s
+      }
+    end
+
+    def material_terms_digest
+      Digest::SHA256.hexdigest(JSON.generate(material_terms))
+    end
+
     def registry_digest
-      Digest::SHA256.hexdigest(JSON.generate({ "version" => version, "documents" => documents }))
+      Digest::SHA256.hexdigest(JSON.generate({ "version" => version, "documents" => templates,
+        "material_terms_digest" => material_terms_digest }))
     end
 
     def production_approved?
@@ -59,8 +98,9 @@ class PolicyRegistry
     private
 
     def snapshot(keys)
-      content = keys.to_h { |key| [key, documents.fetch(key)] }
-      canonical = JSON.generate({ "version" => version, "documents" => content })
+      content = keys.to_h { |key| [key, templates.fetch(key)] }
+      canonical = JSON.generate({ "version" => version, "documents" => content,
+        "material_terms_digest" => material_terms_digest })
       { version: version, digest: Digest::SHA256.hexdigest(canonical) }
     end
 
@@ -68,9 +108,12 @@ class PolicyRegistry
       @registry ||= YAML.safe_load_file(DOCUMENT_PATH, permitted_classes: [], aliases: false).freeze
     end
 
+    def templates
+      registry.fetch("documents")
+    end
+
     def documents
-      values = placeholder_values
-      render(registry.fetch("documents"), values)
+      render(templates, placeholder_values)
     end
 
     def render(value, values)
@@ -88,7 +131,7 @@ class PolicyRegistry
       {
         "platform_name" => platform_name,
         "operator_name" => SellerIdentity::OPERATOR_NAME,
-        "support_email" => settings.platform_email.presence || SUPPORT_FALLBACK,
+        "support_contact" => settings.platform_email.present? ? "at #{settings.platform_email}" : SUPPORT_FALLBACK,
         "fee_schedule" => fee_schedule(settings, platform_name),
         "payout_schedule" => settings.payout_schedule_text
       }

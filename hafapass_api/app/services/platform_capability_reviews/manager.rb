@@ -39,6 +39,11 @@ module PlatformCapabilityReviews
         if PlatformCapabilities.active_approval(submission.capability)
           raise ReviewError, "Revoke the current approval before approving another"
         end
+        # Draft policy text (YAML status not "approved", or bracketed review
+        # notes still present) can never be approved for production.
+        if submission.capability == "policy_register" && (blockers = PolicyRegistry.approval_blockers).any?
+          raise ReviewError, "Policy text is not ready for approval: #{blockers.join('; ')}"
+        end
 
         review = PlatformCapabilityReview.create!(snapshot(submission).merge(
           decision: :approval, parent_review: submission, actor_user: actor

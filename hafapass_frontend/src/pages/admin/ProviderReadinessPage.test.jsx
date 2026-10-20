@@ -25,6 +25,17 @@ describe('ProviderReadinessPage', () => {
     apiClient.post.mockResolvedValue({ data: {} })
   })
 
+  it('marks the policy register as a draft and lists what blocks approval', async () => {
+    apiClient.get.mockResolvedValue({ data: { capabilities: [{ ...capability, policy_documents: {
+      version: '2026-10-launch-draft', status: 'draft-pending-legal-review', registry_digest: 'a'.repeat(64),
+      approval_blockers: ['Policy text status is draft-pending-legal-review, not approved', 'Unresolved review notes in brackets remain in: Buyer Terms'],
+      documents: [{ key: 'buyer-terms', title: 'Buyer Terms' }],
+    } }] } })
+    render(<MemoryRouter initialEntries={['/admin/provider-readiness']}><ProviderReadinessPage /></MemoryRouter>)
+    expect(await screen.findByTestId('policy-register-draft')).toHaveTextContent('Draft pending legal review (not approved by counsel)')
+    expect(screen.getByTestId('policy-register-blockers')).toHaveTextContent('Unresolved review notes in brackets remain in: Buyer Terms')
+  })
+
   it('distinguishes configuration from independent approval and submits the exact controls', async () => {
     render(<MemoryRouter initialEntries={['/admin/provider-readiness']}><ProviderReadinessPage /></MemoryRouter>)
     await screen.findByText('Production policy register')

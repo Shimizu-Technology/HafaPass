@@ -57,7 +57,7 @@ describe('ticket selection with changing availability', () => {
     await user.click(screen.getByRole('button', { name: 'Increase quantity for General' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Child' }))
     expect(screen.getByRole('button', { name: /eventDetail.buyTickets/ })).toHaveTextContent('$43.98')
-    expect(screen.getByTestId('buy-total-fee')).toHaveTextContent('"fee":"$4.00"')
+    expect(screen.queryByTestId('buy-total-fee')).not.toBeInTheDocument()
   })
   it('shows the ticket price alone, with no fee line, when the organizer absorbs the fee', () => {
     render(<TicketTypesSection ticketTypes={[
@@ -65,5 +65,12 @@ describe('ticket selection with changing availability', () => {
     ]} onCheckout={vi.fn()} />)
     expect(screen.getByText('$25.00')).toBeInTheDocument()
     expect(screen.queryByText(/pricing.ticketPlusFee/)).not.toBeInTheDocument()
+  })
+  it('does not repeat the regular price when the next tier returns to it', () => {
+    render(<TicketTypesSection ticketTypes={[{ id: 3, name: 'Early', price_cents: 2000, current_price_cents: 1500,
+      all_in_price_cents: 1675, service_fee_cents: 175, regular_all_in_price_cents: 2200, active_tier: { name: 'Early bird' },
+      next_tier: { name: 'Regular', price_cents: 2000, all_in_price_cents: 2200 }, quantity_remaining: 5, on_sale: true }]} onCheckout={vi.fn()} />)
+    expect(screen.getAllByText(/\$22\.00/)).toHaveLength(1)
+    expect(screen.queryByText(/pricing.regularPrice/)).not.toBeInTheDocument()
   })
 })
