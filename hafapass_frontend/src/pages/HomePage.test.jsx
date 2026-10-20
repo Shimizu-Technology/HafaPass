@@ -46,6 +46,7 @@ function mount() {
   return render(<MemoryRouter initialEntries={['/']}><Routes>
     <Route path='/' element={<HomePage />} />
     <Route path='/events' element={<BrowseDestination />} />
+    <Route path='/host' element={<h1>Host your event with HåfaPass</h1>} />
     <Route path='/dashboard' element={<ProtectedRoute><h1>Create your organizer profile</h1></ProtectedRoute>} />
     <Route path='/sign-in' element={<SignInPage />} />
     <Route path='/sign-up' element={<SignUpPage />} />
@@ -67,40 +68,23 @@ describe('hosting entry navigation', () => {
     apiClient.get.mockResolvedValue({ data: { events: [] } })
   })
 
-  it.each(['hero', 'bottom', 'footer'])('takes an already signed-in %s visitor directly into organizer setup', async entry => {
-    auth.isSignedIn = true
-    mount()
-    await userEvent.setup().click(await entryLink(entry))
-    expect(await screen.findByRole('heading', { name: 'Create your organizer profile' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Create an account' })).not.toBeInTheDocument()
-  })
-
-  it.each(['hero', 'bottom', 'footer'])('retains %s hosting intent through guest sign-in and signup', async entry => {
-    mount()
-    const user = userEvent.setup()
-    await user.click(await entryLink(entry))
-    expect(await screen.findByRole('heading', { name: 'Sign in to continue' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/sign-up?returnTo=%2Fdashboard')
-    await user.click(screen.getByRole('link', { name: 'Create an account' }))
-    expect(await screen.findByRole('heading', { name: 'Create an account' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Use an existing account' })).toHaveAttribute('href', '/sign-in?returnTo=%2Fdashboard')
-    await user.click(screen.getByRole('button', { name: 'Complete signup' }))
-    expect(await screen.findByRole('heading', { name: 'Create your organizer profile' })).toBeInTheDocument()
-  })
-
-  it('returns an existing guest account to organizer setup after sign in', async () => {
-    mount()
-    const user = userEvent.setup()
-    await user.click(await entryLink('footer'))
-    await user.click(await screen.findByRole('button', { name: 'Complete sign in' }))
-    expect(await screen.findByRole('heading', { name: 'Create your organizer profile' })).toBeInTheDocument()
+  // The organizer journey (signup/sign-in return to setup) is covered by HostPage.test.jsx.
+  it.each(['hero', 'bottom', 'footer'])('sends the %s hosting entry to the host landing page for every visitor', async entry => {
+    for (const signedIn of [false, true]) {
+      auth.isSignedIn = signedIn
+      const view = mount()
+      await userEvent.setup().click(await entryLink(entry))
+      expect(await screen.findByRole('heading', { name: 'Host your event with HåfaPass' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Sign in to continue' })).not.toBeInTheDocument()
+      view.unmount()
+    }
   })
 
   it('keeps event browsing separate while preserving the organizer call to action', async () => {
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 37, slug: 'workshop', title: 'Workshop', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     expect(await screen.findByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
-    screen.getAllByRole('link', { name: 'Start Hosting' }).forEach(link => expect(link).toHaveAttribute('href', '/dashboard'))
+    screen.getAllByRole('link', { name: 'Start Hosting' }).forEach(link => expect(link).toHaveAttribute('href', '/host'))
     expect(screen.getByRole('link', { name: 'footer.signIn' })).toHaveAttribute('href', '/sign-in')
   })
 

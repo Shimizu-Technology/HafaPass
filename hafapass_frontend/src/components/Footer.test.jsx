@@ -20,3 +20,8 @@ it('offers ticket recovery and support instead of unrelated social homepages', (
     expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
   }
 })
+
+it('points organizers to the host landing page with pricing', () => {
+  render(<MemoryRouter><Footer /></MemoryRouter>)
+  expect(screen.getByRole('link', { name: 'footer.forOrganizers' })).toHaveAttribute('href', '/host')
+})

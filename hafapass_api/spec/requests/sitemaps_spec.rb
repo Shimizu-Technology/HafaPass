@@ -9,6 +9,7 @@ RSpec.describe "Sitemaps", type: :request do
       expect(response.content_type).to include("xml")
       expect(response.body).to include("https://hafapass.com/")
       expect(response.body).to include("https://hafapass.com/events")
+      expect(response.body).to include("https://hafapass.com/host")
     end
 
     it "includes published events" do
