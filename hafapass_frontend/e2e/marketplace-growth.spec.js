@@ -291,7 +291,7 @@ test('reduced-motion event navigation retains B inventory through a late A respo
   let oldRoute
   let submitted
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
-  await page.route('**/api/v1/config', route => json(route, { payment_mode: 'simulate', buyer_terms_version: 'test-v1', service_fee_flat_cents: 0 }))
+  await page.route('**/api/v1/config', route => json(route, { payment_mode: 'simulate', buyer_terms_version: 'test-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 }))
   await page.route('**/api/v1/marketplace_funnel_events', route => json(route, {}, 201))
   await page.route('**/api/v1/events/event-a', route => { oldRoute = route })
   await page.route('**/api/v1/events/event-b', route => json(route, b))

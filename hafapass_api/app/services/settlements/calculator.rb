@@ -25,7 +25,11 @@ module Settlements
       refunded_proceeds = refund_items.sum(&:organizer_proceeds_cents)
       platform_fees = [platform_fee_components.sum(&:amount_cents) - refunded_fees, 0].max
       organizer_proceeds = [order_items.sum(&:organizer_proceeds_cents) - refunded_proceeds, 0].max
-      processing_fees = processing_fee_components.sum(&:amount_cents)
+      # Actual processing on an order whose bearer snapshot is "platform" is
+      # paid by HåfaPass out of its fee and never reduces organizer proceeds.
+      # Legacy (NULL) and "organizer" orders keep the original deduction.
+      processing_fees = organizer_processing_fee_components.sum(&:amount_cents)
+      platform_processing_fees = platform_processing_fee_components.sum(&:amount_cents)
       dispute_losses = lost_disputes.sum(&:amount_cents)
       reserve_effect = posted_adjustments.select { |adjustment| reserve_kind?(adjustment) }.sum(&:amount_cents)
       reserves = [-reserve_effect, 0].max
@@ -48,6 +52,7 @@ module Settlements
         net_cents: [charged - refunds, 0].max,
         platform_fee_cents: platform_fees,
         processing_fee_cents: processing_fees,
+        platform_processing_fee_cents: platform_processing_fees,
         organizer_proceeds_cents: organizer_proceeds,
         reserve_cents: reserves,
         adjustment_cents: adjustment_total - dispute_losses,
@@ -109,6 +114,20 @@ module Settlements
 
     def processing_fee_components
       @processing_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "processing", estimated: false).order(:id).to_a
+    end
+
+    # Bearer comes only from each order's creation-time snapshot, never from
+    # the live site setting, so a settings change cannot restate past orders.
+    def platform_processing_order_ids
+      @platform_processing_order_ids ||= Set.new(orders.select(&:platform_bears_processing?).map(&:id))
+    end
+
+    def platform_processing_fee_components
+      processing_fee_components.select { |component| platform_processing_order_ids.include?(component.order_id) }
+    end
+
+    def organizer_processing_fee_components
+      processing_fee_components.reject { |component| platform_processing_order_ids.include?(component.order_id) }
     end
 
     def lost_disputes
@@ -189,15 +208,35 @@ module Settlements
 
     def processing_items
       processing_fee_components.map do |component|
-        statement_item(
-          kind: "processing_fee",
-          amount_cents: -component.amount_cents,
-          source: component,
-          description: "Actual payment processing cost",
-          occurred_at: component.updated_at,
-          metadata: { order_id: component.order_id, provider_reference: component.provider_reference }
-        )
+        if platform_processing_order_ids.include?(component.order_id)
+          platform_processing_item(component)
+        else
+          # Legacy wording and metadata are part of existing source digests.
+          statement_item(
+            kind: "processing_fee",
+            amount_cents: -component.amount_cents,
+            source: component,
+            description: "Actual payment processing cost",
+            occurred_at: component.updated_at,
+            metadata: { order_id: component.order_id, provider_reference: component.provider_reference }
+          )
+        end
       end
+    end
+
+    # The statement still binds the actual cost into its digest, but with no
+    # effect on the organizer: the platform's fee revenue absorbs it, even when
+    # the cost exceeds the fee collected on that order.
+    def platform_processing_item(component)
+      statement_item(
+        kind: "processing_fee",
+        amount_cents: 0,
+        source: component,
+        description: "Card processing covered by HåfaPass",
+        occurred_at: component.updated_at,
+        metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
+          processing_fee_bearer: "platform", platform_cost_cents: component.amount_cents }
+      )
     end
 
     def dispute_items

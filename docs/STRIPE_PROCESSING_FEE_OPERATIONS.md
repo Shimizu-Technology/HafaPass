@@ -1,6 +1,34 @@
 # Stripe processing fee evidence
 
-HafaPass records the original capture's actual provider cost after Stripe supplies its balance transaction. This does not approve a charge architecture, assign fee liability, authorize a payout, or prove a bank deposit. Those decisions and proofs remain required before live sales.
+HafaPass records the original capture's actual provider cost after Stripe supplies its balance transaction. Who bears that cost is decided per order by the processing-fee bearer snapshot described below. Recording the cost does not approve a charge architecture, authorize a payout, or prove a bank deposit. Those decisions and proofs remain required before live sales.
+
+## Who bears the processing cost
+
+The default buyer fee is all-in: 5% of the paid ticket subtotal plus $1.00 per paid ticket. The fee includes card processing and HåfaPass pays Stripe out of it. When the buyer pays the fee, the organizer keeps 100% of the ticket price. Free tickets carry no fee, and there is no setup fee. Organizers can still choose to absorb or split the fee per event (`fee_policy`), and the fee itself stays admin-editable.
+
+`SiteSetting#processing_fee_bearer` holds the current rule:
+
+- `platform` (default): actual processing on the order is attributed to HåfaPass's fee revenue and never reduces organizer proceeds.
+- `organizer`: the legacy rule. Actual processing is deducted from organizer proceeds.
+
+Every new order copies the current value into `orders.processing_fee_bearer_snapshot` at creation, alongside its fee policy, buyer-fee share and fee rate (the platform `FeeComponent` metadata also records the bearer). The column is read-only after creation. Settlement calculations read only this snapshot, never the live setting, so an admin change affects new orders only.
+
+`NULL` marks an order created before the bearer was snapshotted. It is treated exactly like `organizer`, which was the behaviour at the time. Its settlement items, digests and totals are unchanged byte-for-byte. Migration `20261020120100` added the column without a default or backfill, so no existing order row or `updated_at` watermark changed.
+
+How settlements show the cost:
+
+| Order bearer | Statement item (`processing_fee`) | `processing_fee_cents` | `platform_processing_fee_cents` |
+| --- | --- | --- | --- |
+| `NULL` or `organizer` | `-cost`, "Actual payment processing cost" (legacy wording and metadata, part of existing digests) | includes the cost | unchanged |
+| `platform` | `0`, "Card processing covered by HåfaPass", metadata `processing_fee_bearer: "platform"` and `platform_cost_cents` | unchanged | includes the cost |
+
+`processing_fee_cents` keeps its meaning: the processing deducted from organizer proceeds. Payable amounts, the organization payout balance and payout eligibility all use it. `platform_processing_fee_cents` records what HåfaPass covered; `Settlement#net_platform_fee_cents` is `platform_fee_cents - platform_processing_fee_cents`. That number can be negative, for example when a fully refunded order returns the whole fee but Stripe keeps the capture cost, or when an admin sets a fee below the processing cost. The platform absorbs the difference. The organizer is never charged for it. Existing settlements have `platform_processing_fee_cents = 0`, which is correct because no platform-borne processing existed before this change.
+
+The platform-borne cost still appears as a zero-amount statement item, so a newly verified cost changes the source digest. A new version must still be finalized before payout, as for any other financial change.
+
+The bearer covers the original capture cost only. Refund and dispute fee adjustments still go through the finance review below. When finance records a balance adjustment for one of them, the adjustment itself decides who pays. For a `platform` order, do not post a `processing_fee` balance adjustment against the organizer for the original capture cost.
+
+Fee settings changes made through `PATCH /api/v1/admin/settings` are validated (percent 0–25, flat 0–1,000 cents per ticket, bearer `platform` or `organizer`, payout schedule text 1–200 characters) and audited as `site_settings.fee_terms_updated` with the before and after values. Migration `20261020120000` moved the singleton to 5% + 100 cents only when it still held the untouched 3% + 50 cents defaults. An admin-chosen fee was left alone. Rolling it back restores column defaults only and does not rewrite row values.
 
 ## Capture reconciliation
 

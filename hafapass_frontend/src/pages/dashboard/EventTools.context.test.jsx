@@ -10,6 +10,7 @@ import SeatingManagementPage from './SeatingManagementPage'
 const caps = vi.hoisted(() => ({ advanced_sales_tools: true, assigned_seating: true }))
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => caps }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children, event }) => <div><h1>{event?.title}</h1>{children}</div> }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const permissions = { manage_staff: true, manage_inventory: true, manage_events: true, manage_marketing: true, edit_event_content: true, view_attendees: true }
@@ -53,6 +54,16 @@ beforeEach(() => {
   apiClient.put.mockResolvedValue({ data: {} }); apiClient.delete.mockResolvedValue({ data: {} })
 })
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllGlobals() })
+
+it('explains the selected fee policy with the current card-processing bearer', async () => {
+  const user = userEvent.setup()
+  mount(tools[1]); await tools[1].ready()
+  const note = screen.getByTestId('fee-terms-note')
+  expect(note).toHaveTextContent('Buyers pay a service fee of 5% + $1.00 per paid ticket, which includes card processing. You receive the full ticket price.')
+  expect(note).toHaveTextContent('Payout timing: within 3 business days after your event.')
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Fee policy' }), 'organizer_absorbs')
+  expect(note).toHaveTextContent('You cover the service fee of 5% + $1.00 per paid ticket, so buyers pay only the ticket price. HåfaPass covers card processing out of this fee.')
+})
 
 describe.each(tools)('$name organizer tool ownership and recovery', tool => {
   it.each(['success', 'error'])('discards an old event load %s after opening another event', async outcome => {

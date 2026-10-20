@@ -3,8 +3,26 @@
 class SiteSetting < ApplicationRecord
   # Singleton pattern — only one record should ever exist
   PAYMENT_MODES = %w[simulate test live].freeze
+  # Who pays the actual card-processing cost of a paid order. "platform" means
+  # the buyer fee is all-in: HåfaPass pays Stripe out of it and the organizer
+  # keeps the ticket price. "organizer" is the legacy rule, where actual
+  # processing is deducted from organizer proceeds. Orders snapshot this value.
+  PROCESSING_FEE_BEARERS = %w[platform organizer].freeze
+  DEFAULT_SERVICE_FEE_PERCENT = 5.0
+  DEFAULT_SERVICE_FEE_FLAT_CENTS = 100
+  DEFAULT_PAYOUT_SCHEDULE_TEXT = "within 3 business days after your event"
+  MAX_SERVICE_FEE_PERCENT = 25
+  MAX_SERVICE_FEE_FLAT_CENTS = 1_000
+  MAX_PAYOUT_SCHEDULE_TEXT_LENGTH = 200
 
   validates :payment_mode, presence: true, inclusion: { in: PAYMENT_MODES }
+  validates :service_fee_percent, presence: true,
+    numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: MAX_SERVICE_FEE_PERCENT }
+  validates :service_fee_flat_cents, presence: true,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: MAX_SERVICE_FEE_FLAT_CENTS }
+  validates :processing_fee_bearer, inclusion: { in: PROCESSING_FEE_BEARERS }
+  validates :payout_schedule_text, presence: true, length: { maximum: MAX_PAYOUT_SCHEDULE_TEXT_LENGTH }
+  normalizes :payout_schedule_text, with: ->(text) { text.squish }
 
   # ── Singleton accessor ──────────────────────────────────────────────
   # Uses singleton_guard column with unique index to prevent duplicate records.
@@ -14,8 +32,10 @@ class SiteSetting < ApplicationRecord
       payment_mode: "simulate",
       platform_name: "HåfaPass",
       platform_email: "tickets@hafapass.com",
-      service_fee_percent: 3.0,
-      service_fee_flat_cents: 50
+      service_fee_percent: DEFAULT_SERVICE_FEE_PERCENT,
+      service_fee_flat_cents: DEFAULT_SERVICE_FEE_FLAT_CENTS,
+      processing_fee_bearer: "platform",
+      payout_schedule_text: DEFAULT_PAYOUT_SCHEDULE_TEXT
     )
   rescue ActiveRecord::RecordNotUnique
     # Another process beat us to it — just fetch the existing row
@@ -33,6 +53,10 @@ class SiteSetting < ApplicationRecord
 
   def live_mode?
     payment_mode == "live"
+  end
+
+  def platform_bears_processing?
+    processing_fee_bearer == "platform"
   end
 
   # True when Stripe API calls will actually be made (test or live)

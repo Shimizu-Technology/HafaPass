@@ -4,6 +4,8 @@ import { CheckCircle2, CircleAlert, Loader2, WalletCards } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
+import FeeTermsNote from '../../components/FeeTermsNote'
+import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
 
 function formatCents(cents) {
  const safe = Number.isFinite(cents) ? cents : 0
@@ -39,6 +41,7 @@ function EventAnalyticsPageSession({ id, identity }) {
  const [finance, setFinance] = useState(null)
  const [financeBusy, setFinanceBusy] = useState(false)
  const [payoutNotice, setPayoutNotice] = useState('')
+ const feeTerms = usePlatformFeeTerms()
  const loadGeneration = useRef(0)
  const accessEpoch = useRef(0)
  const verifiedRights = useRef(null)
@@ -258,9 +261,11 @@ function EventAnalyticsPageSession({ id, identity }) {
      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Gross ticket value</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.gross_cents)}</p></div>
       <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Refunds</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.refund_cents)}</p></div>
-      <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Processing costs</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.processing_fee_cents)}</p></div>
+      <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Processing costs to you</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.processing_fee_cents)}</p>{finance.preview.platform_processing_fee_cents > 0 && <p className="mt-0.5 text-xs text-emerald-700">HåfaPass covered {formatCents(finance.preview.platform_processing_fee_cents)}</p>}</div>
       <div className="rounded-xl bg-brand-50 p-3"><p className="text-xs text-brand-700">Organizer payable</p><p className="mt-1 font-bold text-brand-900">{formatCents(finance.preview.payable_cents)}</p></div>
      </div>
+
+     <FeeTermsNote className="mt-4" feeTerms={feeTerms} feePolicy={event?.fee_policy} buyerFeePercent={event?.buyer_fee_percent} />
 
      {finance.preview.negative_balance_cents > 0 && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">A {formatCents(finance.preview.negative_balance_cents)} negative balance will be withheld from future organization payouts.</div>}
      {payoutNotice && <p role="status" className="mt-4 rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700">{payoutNotice}</p>}

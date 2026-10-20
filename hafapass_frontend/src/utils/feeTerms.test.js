@@ -1,0 +1,34 @@
+import { describe, expect, it } from 'vitest'
+import { feeRateLabel, organizerFeeExplanation, parseFeeTerms, platformFeeCents } from './feeTerms'
+
+const allIn = { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
+
+describe('fee terms', () => {
+  it('parses server terms and refuses to guess missing or invalid values', () => {
+    expect(parseFeeTerms(allIn)).toEqual({ percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' })
+    expect(parseFeeTerms({ ...allIn, service_fee_percent: undefined })).toBeNull()
+    expect(parseFeeTerms({ ...allIn, service_fee_flat_cents: null })).toBeNull()
+    expect(parseFeeTerms({ ...allIn, service_fee_percent: 'abc' })).toBeNull()
+    expect(parseFeeTerms({ ...allIn, service_fee_flat_cents: 1.5 })).toBeNull()
+    expect(parseFeeTerms(null)).toBeNull()
+    expect(parseFeeTerms({ ...allIn, processing_fee_bearer: 'buyer' }).bearer).toBeNull()
+  })
+
+  it('matches the server fee formula and charges nothing on free tickets', () => {
+    const terms = parseFeeTerms(allIn)
+    expect(platformFeeCents(terms, 12500, 3)).toBe(925)
+    expect(platformFeeCents(terms, 0, 2)).toBe(0)
+    expect(feeRateLabel(terms)).toBe('5% + $1.00 per paid ticket')
+    expect(feeRateLabel(parseFeeTerms({ ...allIn, service_fee_percent: '3.5', service_fee_flat_cents: 0 }))).toBe('3.5% of paid ticket sales')
+  })
+
+  it('explains each policy for the platform and organizer bearer', () => {
+    const platform = parseFeeTerms(allIn)
+    const organizer = parseFeeTerms({ ...allIn, processing_fee_bearer: 'organizer' })
+    expect(organizerFeeExplanation(platform, 'buyer_pays', 100)).toBe('Buyers pay a service fee of 5% + $1.00 per paid ticket, which includes card processing. You receive the full ticket price. Free tickets have no fee.')
+    expect(organizerFeeExplanation(platform, 'organizer_absorbs', 0)).toContain('HåfaPass covers card processing out of this fee.')
+    expect(organizerFeeExplanation(platform, 'split_fees', 40)).toContain('Buyers pay 40% of the service fee (5% + $1.00 per paid ticket) and you cover the rest.')
+    expect(organizerFeeExplanation(organizer, 'buyer_pays', 100)).toBe('Buyers pay a service fee of 5% + $1.00 per paid ticket. Card processing costs are deducted from your proceeds. Free tickets have no fee.')
+    expect(organizerFeeExplanation(organizer, 'organizer_absorbs', 0)).not.toContain('HåfaPass covers')
+  })
+})

@@ -58,6 +58,7 @@ class Api::V1::Organizer::FinancesController < Api::V1::Organizer::BaseControlle
     settlement.attributes.slice(
       "id", "version", "status", "currency", "source_digest", "gross_cents", "discount_cents",
       "refund_cents", "net_cents", "platform_fee_cents", "processing_fee_cents",
+      "platform_processing_fee_cents",
       "organizer_proceeds_cents", "reserve_cents", "adjustment_cents", "payable_cents", "paid_cents",
       "negative_balance_cents", "calculated_at", "finalized_at"
     ).merge(available_to_payout_cents: settlement.available_to_payout_cents)

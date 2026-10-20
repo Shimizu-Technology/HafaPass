@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_090100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_20_120200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1115,6 +1115,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_090100) do
     t.string "checkout_key_digest"
     t.string "checkout_request_digest"
     t.datetime "checkout_recovery_expires_at"
+    t.string "processing_fee_bearer_snapshot"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
@@ -1132,6 +1133,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_090100) do
     t.check_constraint "fee_policy_snapshot = ANY (ARRAY[0, 1, 2])", name: "orders_fee_policy_snapshot_valid"
     t.check_constraint "guest_access_version > 0", name: "orders_guest_access_version_positive"
     t.check_constraint "organizer_fee_cents >= 0", name: "orders_organizer_fee_nonnegative"
+    t.check_constraint "processing_fee_bearer_snapshot IS NULL OR (processing_fee_bearer_snapshot::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying]::text[]))", name: "orders_processing_fee_bearer_snapshot_valid"
     t.check_constraint "refund_amount_cents <= total_cents", name: "orders_refund_within_total"
     t.check_constraint "refund_amount_cents >= 0", name: "orders_refund_nonnegative"
     t.check_constraint "service_fee_cents >= 0", name: "orders_service_fee_nonnegative"
@@ -1836,6 +1838,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_090100) do
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "version", null: false
+    t.integer "platform_processing_fee_cents", default: 0, null: false
     t.index ["event_id", "source_digest"], name: "index_settlements_on_event_id_and_source_digest", unique: true
     t.index ["event_id", "version"], name: "index_settlements_on_event_id_and_version", unique: true
     t.index ["event_id"], name: "index_settlements_on_event_id"
@@ -1849,6 +1852,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_090100) do
     t.check_constraint "paid_cents >= 0", name: "settlements_paid_nonnegative"
     t.check_constraint "payable_cents >= 0", name: "settlements_payable_nonnegative"
     t.check_constraint "platform_fee_cents >= 0", name: "settlements_platform_fee_nonnegative"
+    t.check_constraint "platform_processing_fee_cents >= 0", name: "settlements_platform_processing_fee_nonnegative"
     t.check_constraint "processing_fee_cents >= 0", name: "settlements_processing_fee_nonnegative"
     t.check_constraint "refund_cents >= 0", name: "settlements_refund_nonnegative"
     t.check_constraint "reserve_cents >= 0", name: "settlements_reserve_nonnegative"
@@ -1862,11 +1866,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_090100) do
     t.string "platform_email", default: "tickets@hafapass.com"
     t.string "platform_name", default: "HåfaPass"
     t.string "platform_phone"
-    t.integer "service_fee_flat_cents", default: 50
-    t.decimal "service_fee_percent", precision: 5, scale: 2, default: "3.0"
+    t.integer "service_fee_flat_cents", default: 100
+    t.decimal "service_fee_percent", precision: 5, scale: 2, default: "5.0"
     t.integer "singleton_guard", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.string "processing_fee_bearer", default: "platform", null: false
+    t.string "payout_schedule_text", default: "within 3 business days after your event", null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
+    t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying]::text[])", name: "site_settings_processing_fee_bearer_valid"
   end
 
   create_table "solid_queue_batch_executions", force: :cascade do |t|

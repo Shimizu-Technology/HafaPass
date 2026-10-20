@@ -4,6 +4,8 @@ import { useParams } from 'react-router-dom'
 import { Download, Loader2, Plus, Send, Trash2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import EventAccessNotice from '../../components/EventAccessNotice'
+import FeeTermsNote from '../../components/FeeTermsNote'
+import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 
@@ -27,6 +29,7 @@ const addButtonClass = 'btn-secondary min-h-11 gap-1.5 self-end whitespace-nowra
 function SalesToolsSession({ eventId, identity }) {
   const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${eventId}/sales-tools`)
   const capabilities = useLaunchCapabilities()
+  const feeTerms = usePlatformFeeTerms()
   const loadState = useRef({ generation: 0, request: null })
   const initialized = useRef(false)
   const busyRef = useRef(false)
@@ -180,6 +183,7 @@ function SalesToolsSession({ eventId, identity }) {
         <label className="text-sm">Buyer share (%)<input className="input mt-1" type="number" min="1" max="99" disabled={settings.fee_policy !== 'split_fees'} value={settings.fee_policy === 'buyer_pays' ? 100 : settings.fee_policy === 'organizer_absorbs' ? 0 : settings.buyer_fee_percent} onChange={e => setSettings({ ...settings, buyer_fee_percent: Number(e.target.value) })} /></label>
         <label className="mt-7 flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.transfers_enabled} onChange={e => setSettings({ ...settings, transfers_enabled: e.target.checked })} /> Allow secure ticket transfers</label>
       </div>
+      <FeeTermsNote className="mt-4" feeTerms={feeTerms} feePolicy={settings.fee_policy} buyerFeePercent={settings.buyer_fee_percent} />
       <div className="mt-4 flex gap-5 text-sm">{['ja', 'ch'].map(locale => <label key={locale} className="flex items-center gap-2"><input type="checkbox" checked={settings.supported_locales.includes(locale)} onChange={e => setSettings({ ...settings, supported_locales: e.target.checked ? [...settings.supported_locales, locale] : settings.supported_locales.filter(value => value !== locale) })} />{locale === 'ja' ? 'Japanese' : 'CHamoru'}</label>)}</div>
       {['ja', 'ch'].filter(locale => settings.supported_locales.includes(locale)).map(locale => <div key={locale} className="mt-4 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm font-semibold">{locale === 'ja' ? 'Japanese' : 'CHamoru'} public content</p><Field label="Translated title"><input className="input font-normal" value={settings.localized_content?.[locale]?.title || ''} onChange={e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [locale]: { ...settings.localized_content?.[locale], title: e.target.value } } })} /></Field><Field label="Translated description"><textarea className="input font-normal" value={settings.localized_content?.[locale]?.description || ''} onChange={e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [locale]: { ...settings.localized_content?.[locale], description: e.target.value } } })} /></Field></div>)}
       <button className="btn-primary mt-4" onClick={saveSettings}>Save sales settings</button>
