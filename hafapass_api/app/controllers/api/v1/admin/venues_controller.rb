@@ -33,6 +33,11 @@ class Api::V1::Admin::VenuesController < Api::V1::Admin::BaseController
     else
       render json: { errors: venue.errors.full_messages }, status: :unprocessable_entity
     end
+  rescue ActiveRecord::RecordNotUnique => e
+    # Two saves raced for the same link name and the unique index won.
+    raise unless PublicSlug.conflict?(e)
+
+    render json: { errors: [Venue.public_slug_taken_message] }, status: :unprocessable_entity
   end
 
   def serialize(venue)

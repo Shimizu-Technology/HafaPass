@@ -5,7 +5,8 @@ class Venue < ApplicationRecord
 
   has_many :events, dependent: :restrict_with_error
   has_many :venue_layouts, dependent: :restrict_with_error
-  has_many :slug_redirects, class_name: "VenueSlugRedirect", dependent: :restrict_with_error
+  # Retired links mean nothing once the venue itself is gone.
+  has_many :slug_redirects, class_name: "VenueSlugRedirect", dependent: :delete_all
   public_slug_redirects :slug_redirects
 
   validates :name, :slug, :address, :village, presence: true
@@ -31,6 +32,10 @@ class Venue < ApplicationRecord
 
   def slug_chosen?
     @slug_chosen == true
+  end
+
+  def generated_slug_source
+    [name, "venue"]
   end
 
   def chosen_slug_is_available

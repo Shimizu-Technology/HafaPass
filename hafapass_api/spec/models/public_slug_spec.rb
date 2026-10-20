@@ -131,6 +131,17 @@ RSpec.describe PublicSlug do
       expect(event.slug).to eq("still-a-draft")
     end
 
+    it "finds events by links typed in the wrong case, preferring an exact legacy match" do
+      event = create(:event, :published, title: "Summer Jam")
+      event.update!(slug: "summer-jam-2026")
+      legacy = create(:event, :published)
+      legacy.update_columns(slug: "Legacy_Link")
+
+      expect(Event.find_by_public_slug(" Summer-Jam-2026 ")).to eq(event)
+      expect(Event.find_by_public_slug("SUMMER-JAM")).to eq(event)
+      expect(Event.find_by_public_slug("Legacy_Link")).to eq(legacy)
+    end
+
     it "leaves legacy links that break the new rules alone until someone changes them" do
       event = create(:event, :published)
       event.update_columns(slug: "Legacy_Link")
@@ -158,6 +169,14 @@ RSpec.describe PublicSlug do
       expect(venue.slug_redirects.pluck(:slug)).to eq(["tumon-hall"])
       expect(Venue.find_by_public_slug("tumon-hall")).to eq(venue)
       expect(create(:venue, name: "Tumon Hall", slug: nil).slug).to match(/\Atumon-hall-[a-f0-9]{6}\z/)
+    end
+
+    it "deletes retired links along with the venue" do
+      venue = create(:venue, name: "Pop-up Hall", slug: nil)
+      venue.update!(slug: "pop-up-hall-2026")
+
+      expect { venue.destroy! }.to change(VenueSlugRedirect, :count).by(-1)
+      expect(Venue.find_by_public_slug("pop-up-hall")).to be_nil
     end
 
     it "rejects a link another venue used before" do

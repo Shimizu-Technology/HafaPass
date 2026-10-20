@@ -69,6 +69,8 @@ module Api
           else
             render json: { errors: event.errors.full_messages }, status: :unprocessable_entity
           end
+        rescue ActiveRecord::RecordNotUnique => e
+          render_link_conflict(e)
         end
 
         def update
@@ -113,6 +115,10 @@ module Api
           else
             render json: { errors: @event.errors.full_messages }, status: :unprocessable_entity
           end
+        rescue ActiveRecord::RecordNotUnique => e
+          # The rollback already happened; report the lost link race like the
+          # availability check would have, so the form shows it on the field.
+          render_link_conflict(e)
         end
 
         def destroy
@@ -318,6 +324,12 @@ module Api
           render json: event_json(@event.reload, include_ticket_types: true)
         rescue EventLifecycle::TransitionError => e
           render json: { error: e.message, publish_checklist: e.checklist }, status: :unprocessable_entity
+        end
+
+        def render_link_conflict(error)
+          raise error unless PublicSlug.conflict?(error)
+
+          render json: { errors: [Event.public_slug_taken_message] }, status: :unprocessable_entity
         end
 
         def set_event

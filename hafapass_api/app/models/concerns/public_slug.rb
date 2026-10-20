@@ -19,21 +19,38 @@ module PublicSlug
     signup sitemap staff support system team ticket tickets undefined venue venues verified www
   ].freeze
 
+  # True when a save lost a race for a link name: two saves both passed the
+  # availability check and the database's unique index rejected the second.
+  def self.conflict?(error)
+    error.message.match?(/index_(events|venues)_on_slug|index_(event|venue)_slug_redirects_on_slug/)
+  end
+
   class_methods do
     attr_reader :slug_redirect_association
 
     def public_slug_redirects(association)
       @slug_redirect_association = association
+      before_save :claim_slug_under_lock, if: :will_save_change_to_slug?
       after_save :retire_previous_slug, if: :saved_change_to_slug?
     end
 
-    # Finds a record by its current slug, falling back to a retired one.
+    # Finds a record by its current slug, falling back to a retired one. A
+    # hand-typed link in the wrong case or with stray spaces still resolves;
+    # an exact match wins so legacy mixed-case links keep working.
     def find_by_public_slug(slug, scope: all)
-      slug = slug.to_s
-      return if slug.blank?
+      candidates = [slug.to_s, normalize_public_slug(slug)].uniq.reject(&:blank?)
+      return if candidates.empty?
 
-      scope.find_by(slug: slug) ||
-        scope.joins(slug_redirect_association).find_by(slug_redirect_table => { slug: slug })
+      redirects = scope.joins(slug_redirect_association)
+      candidates.each do |candidate|
+        record = scope.find_by(slug: candidate)
+        return record if record
+      end
+      candidates.each do |candidate|
+        record = redirects.find_by(slug_redirect_table => { slug: candidate })
+        return record if record
+      end
+      nil
     end
 
     def find_by_public_slug!(slug, scope: all)
@@ -57,6 +74,10 @@ module PublicSlug
       return "is reserved. Choose a different link name" if RESERVED.include?(candidate)
 
       "is already used by another #{model_name.human.downcase}" if public_slug_taken?(candidate, record: record)
+    end
+
+    def public_slug_taken_message
+      "#{human_attribute_name(:slug)} is already used by another #{model_name.human.downcase}"
     end
 
     def public_slug_taken?(candidate, record: nil)
@@ -87,6 +108,31 @@ module PublicSlug
       candidate = "#{base}-#{SecureRandom.hex(3)}"
     end
     candidate
+  end
+
+  # Validation checks availability outside any lock, so two saves can both
+  # pass: one claiming a name while another retires it into the redirect
+  # table, which no unique index spans. Inside the save transaction, lock the
+  # name being claimed and the name being retired (one key space for live and
+  # retired links, sorted so concurrent saves lock in the same order), then
+  # check again. The locks are held until commit, after the redirect row is
+  # written.
+  def claim_slug_under_lock
+    loop do
+      [slug, slug_in_database].compact_blank.uniq.sort.each do |name|
+        self.class.connection.select_value(self.class.sanitize_sql_array(
+          ["SELECT 1 FROM pg_advisory_xact_lock(hashtext(?))", "#{self.class.table_name}_slug:#{name}"]
+        ))
+      end
+      break unless self.class.public_slug_taken?(slug, record: self)
+
+      if slug_chosen?
+        errors.add(:slug, "is already used by another #{model_name.human.downcase}")
+        throw :abort
+      end
+      source, fallback = generated_slug_source
+      self.slug = unique_generated_slug(source, fallback: fallback)
+    end
   end
 
   def retire_previous_slug

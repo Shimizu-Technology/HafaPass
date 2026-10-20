@@ -68,6 +68,31 @@ RSpec.describe "Event links", type: :request do
       expect(event.reload.slug).to eq("island-fest")
     end
 
+    context "when another save takes the link name between the check and the write" do
+      # Both saves passed the availability check; the unique index rejects the second.
+      before do
+        create(:event, :published, title: "Rival Fest").update_columns(slug: "island-fest-2026")
+        allow(Event).to receive(:public_slug_problem).and_return(nil)
+      end
+
+      it "returns the inline link error on update instead of a server error" do
+        put "/api/v1/organizer/events/#{event.id}", params: { slug: "island-fest-2026" }, headers: org_headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body).to eq("errors" => ["Event link is already used by another event"])
+        expect(event.reload.slug).to eq("island-fest")
+        expect(event.slug_redirects).to be_empty
+      end
+
+      it "returns the inline link error on create" do
+        post "/api/v1/organizer/events", params: { title: "New Fest", slug: "island-fest-2026", venue_name: "Hall",
+          starts_at: 9.days.from_now.iso8601 }, headers: org_headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body).to eq("errors" => ["Event link is already used by another event"])
+      end
+    end
+
     it "checks link availability with the same rules as saving" do
       other = create(:event, :published, title: "Other Fest")
       other.update!(slug: "other-fest-2026")
@@ -102,6 +127,20 @@ RSpec.describe "Event links", type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("id" => event.id, "slug" => "island-fest-2026",
         "redirected_from" => "island-fest")
+    end
+
+    it "resolves a hand-typed link in the wrong case and reports the canonical one" do
+      get "/api/v1/events/Island-Fest-2026"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("slug" => "island-fest-2026", "redirected_from" => "Island-Fest-2026")
+
+      get "/api/v1/events/ISLAND-FEST"
+      expect(response.parsed_body).to include("slug" => "island-fest-2026", "redirected_from" => "ISLAND-FEST")
+
+      get "/og/events/Island-Fest"
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('og:url" content="https://hafapass.com/events/island-fest-2026"')
     end
 
     it "does not mark a request with the current link as a redirect" do
@@ -165,6 +204,18 @@ RSpec.describe "Event links", type: :request do
   end
 
   describe "venue links" do
+    it "reports a lost race for a venue link name as a validation error" do
+      admin_headers = auth_headers(create(:user, role: :admin))
+      venue = create(:venue, name: "Tumon Hall", slug: nil)
+      create(:venue, slug: "tumon-grand-hall")
+      allow(Venue).to receive(:public_slug_problem).and_return(nil)
+
+      put "/api/v1/admin/venues/#{venue.id}", params: { slug: "tumon-grand-hall" }, headers: admin_headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to eq("errors" => ["Venue link is already used by another venue"])
+    end
+
     it "resolves a retired venue link and reports the current one" do
       venue = create(:venue, name: "Tumon Hall", slug: nil)
       venue.update!(slug: "tumon-grand-hall")

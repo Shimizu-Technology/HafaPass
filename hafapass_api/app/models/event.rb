@@ -454,6 +454,10 @@ class Event < ApplicationRecord
     @slug_chosen == true
   end
 
+  def generated_slug_source
+    [title, "event"]
+  end
+
   def chosen_slug_is_available
     problem = self.class.public_slug_problem(slug, record: self)
     errors.add(:slug, problem) if problem
