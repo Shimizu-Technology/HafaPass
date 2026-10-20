@@ -72,9 +72,12 @@ module Seating
     # must already have at least one active companion seat in its group.
     def validate_companion_pairs!
       seats = venue_layout.venue_seats.where(active: true)
-      companion_groups = seats.accessibility_kind_companion.where.not(companion_group: [nil, ""]).select(:companion_group)
-      wheelchair = seats.accessibility_kind_wheelchair
-      unpaired = wheelchair.where(companion_group: [nil, ""]).or(wheelchair.where.not(companion_group: companion_groups))
+      # Rows saved before VenueSeat normalized companion_group may still hold
+      # whitespace-only values; those never count as a group.
+      companion_groups = seats.accessibility_kind_companion.where("BTRIM(venue_seats.companion_group) <> ''").select(:companion_group)
+      unpaired = seats.accessibility_kind_wheelchair
+        .where("venue_seats.companion_group IS NULL OR BTRIM(venue_seats.companion_group) = '' OR venue_seats.companion_group NOT IN (?)",
+          companion_groups)
       count = unpaired.count
       return if count.zero?
 

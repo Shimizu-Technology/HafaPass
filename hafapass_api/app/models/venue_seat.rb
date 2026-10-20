@@ -7,6 +7,8 @@ class VenueSeat < ApplicationRecord
   has_many :event_seats, dependent: :restrict_with_error
 
   enum :accessibility_kind, { standard: 0, wheelchair: 1, companion: 2, limited_mobility: 3 }, prefix: true
+  # A whitespace-only companion group is no group; it must not pair seats.
+  normalizes :companion_group, with: ->(value) { value.strip.presence }
 
   validates :label, presence: true, uniqueness: { scope: :seating_row_id }
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 },

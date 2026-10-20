@@ -253,6 +253,16 @@ RSpec.describe "Assigned seating lifecycle" do
         /5 wheelchair spaces without a companion seat: Main floor · Row A · Seat W1; Main floor · Row A · Seat W2; Main floor · Row A · Seat W3 and 2 more\./)
     end
 
+    it "never pairs seats through a whitespace-only companion group, including rows saved before normalization" do
+      # Raw SQL: model normalization would otherwise turn the value into nil.
+      VenueSeat.where(id: [wheelchair.id, companion.id]).update_all("companion_group = ' '")
+
+      expect { activate! }.to raise_error(Seating::ConfigurationActivator::ConfigurationError,
+        /1 wheelchair space without a companion seat: Main floor · Row A · Seat W1/)
+      expect(VenueSeat.new(companion_group: "  ").companion_group).to be_nil
+      expect(VenueSeat.new(companion_group: " front-1 ").companion_group).to eq("front-1")
+    end
+
     it "ignores inactive companions and keeps an existing configuration when the replacement is refused" do
       existing = activate!
       companion.update!(active: false)
