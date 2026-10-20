@@ -63,9 +63,12 @@ describe('support contact configuration', () => {
     apiClient.get.mockReturnValueOnce(undefined).mockRejectedValueOnce(new Error('offline'))
     await loadSupportContact()
     await loadSupportContact()
+    vi.stubEnv('VITE_SUPPORT_EMAIL', '')
+    expect(supportMailto()).toBe('/orders/recover')
     apiClient.get.mockResolvedValue({ data: { support_email: 'help@example.test' } })
     await loadSupportContact()
     expect(apiClient.get).toHaveBeenCalledTimes(3)
+    expect(supportMailto()).toBe('mailto:help@example.test?subject=H%C3%A5faPass%20Support')
   })
 
   it('re-renders links once the configured contact arrives', async () => {

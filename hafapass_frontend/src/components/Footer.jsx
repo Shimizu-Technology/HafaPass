@@ -2,6 +2,7 @@ import HafaPassMark from './HafaPassMark'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useSupportContact } from '../utils/supportContact'
+import SupportLink from './SupportLink'
 
 export default function Footer() {
   const { t } = useTranslation()
@@ -72,14 +73,14 @@ export default function Footer() {
 }
 
 // Workspace pages keep a single quiet line instead of the marketing footer.
+// Organizer/admin screens never fall back to buyer ticket recovery.
 export function WorkspaceFooter() {
   const { t } = useTranslation()
-  const support = useSupportContact()
   return (
     <footer className="border-t border-neutral-200 bg-white">
       <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-4 text-xs text-neutral-500 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
         <p>&copy; {new Date().getFullYear()} {t('footer.copyright')}</p>
-        <a href={support.mailto()} className="inline-flex min-h-11 items-center self-start font-medium text-neutral-600 hover:text-neutral-900 sm:self-auto">{t('footer.contactSupport')}</a>
+        <SupportLink className="inline-flex min-h-11 items-center self-start font-medium text-neutral-600 hover:text-neutral-900 sm:self-auto">{t('footer.contactSupport')}</SupportLink>
       </div>
     </footer>
   )

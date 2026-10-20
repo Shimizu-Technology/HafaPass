@@ -4,7 +4,10 @@ import sitemap from '../../netlify/edge-functions/sitemap.js'
 import { apiOrigin } from '../../netlify/shared/apiOrigin.js'
 
 const env = value => ({ get: key => (key === 'HAFAPASS_API_ORIGIN' ? value : undefined) })
-const context = () => ({ next: vi.fn(() => 'spa') })
+const SPA_HTML = '<div id="root"></div>'
+const spaResponse = () => new Response(SPA_HTML, { headers: { 'content-type': 'text/html', 'cache-control': 'public, max-age=0, must-revalidate' } })
+const context = () => ({ next: vi.fn(async () => spaResponse()) })
+const isSpa = async response => (await response.text()) === SPA_HTML
 const crawl = (path, ua = 'facebookexternalhit/1.1') => new Request(`https://tickets.example.test${path}`, { headers: { 'user-agent': ua } })
 
 afterEach(() => {
@@ -34,6 +37,8 @@ describe('share preview edge function', () => {
     expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/og/events/beach-party')
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toContain('text/html')
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.get('vary')).toBe('User-Agent')
     expect(await response.text()).toContain('og:title')
   })
 
@@ -42,7 +47,7 @@ describe('share preview edge function', () => {
     vi.stubGlobal('fetch', vi.fn())
     const ctx = context()
 
-    expect(await ogRedirect(crawl('/events/beach-party'), ctx)).toBe('spa')
+    expect(await isSpa(await ogRedirect(crawl('/events/beach-party'), ctx))).toBe(true)
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -56,7 +61,7 @@ describe('share preview edge function', () => {
       crawl('/events'),
       crawl('/events/beach-party/checkout'),
     ]) {
-      expect(await ogRedirect(request, context())).toBe('spa')
+      expect(await isSpa(await ogRedirect(request, context()))).toBe(true)
     }
     expect(fetch).not.toHaveBeenCalled()
   })
@@ -70,7 +75,15 @@ describe('share preview edge function', () => {
   it('falls back to the SPA when the API is down', async () => {
     vi.stubGlobal('Netlify', { env: env('https://api.example.test') })
     vi.stubGlobal('fetch', vi.fn(async () => new Response('down', { status: 503 })))
-    expect(await ogRedirect(crawl('/events/beach-party'), context())).toBe('spa')
+    expect(await isSpa(await ogRedirect(crawl('/events/beach-party'), context()))).toBe(true)
+  })
+
+  it('marks the human event page as varying by User-Agent and keeps the SPA cache policy', async () => {
+    vi.stubGlobal('Netlify', { env: env('https://api.example.test') })
+    const response = await ogRedirect(crawl('/events/beach-party', 'Mozilla/5.0 (iPhone)'), context())
+    expect(response.headers.get('vary')).toBe('User-Agent')
+    expect(response.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate')
+    expect(await isSpa(response)).toBe(true)
   })
 })
 

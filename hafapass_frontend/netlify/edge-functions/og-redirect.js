@@ -22,24 +22,35 @@ export function isPreviewCrawler(userAgent) {
   return CRAWLER_USER_AGENTS.some(bot => ua.includes(bot.toLowerCase()))
 }
 
+// The same URL answers crawlers and people differently, so every response from
+// an event page varies on User-Agent and the crawler page is never stored by a
+// shared cache that could hand it to a person. The SPA keeps its own cache policy.
+async function spa(context) {
+  const response = await context.next()
+  const varied = new Response(response.body, response)
+  varied.headers.append('vary', 'User-Agent')
+  return varied
+}
+
 export default async (request, context) => {
   const match = new URL(request.url).pathname.match(/^\/events\/([^/]+)\/?$/)
-  if (!match || !isPreviewCrawler(request.headers.get('user-agent'))) return context.next()
+  if (!match) return context.next()
+  if (!isPreviewCrawler(request.headers.get('user-agent'))) return spa(context)
 
   // Without a configured API the crawler simply gets the SPA shell.
   const origin = apiOrigin()
-  if (!origin) return context.next()
+  if (!origin) return spa(context)
 
   try {
     const response = await fetch(`${origin}/og/events/${encodeURIComponent(decodeURIComponent(match[1]))}`)
     // A missing event still gets the API's 404 page; an API outage falls back to the SPA.
-    if (!response.ok && response.status !== 404) return context.next()
+    if (!response.ok && response.status !== 404) return spa(context)
     return new Response(await response.text(), {
       status: response.status,
-      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' },
+      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', vary: 'User-Agent' },
     })
   } catch {
-    return context.next()
+    return spa(context)
   }
 }
 

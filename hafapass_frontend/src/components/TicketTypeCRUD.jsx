@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, ChevronDown, Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
 import { useLocation } from 'react-router-dom'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../hooks/useOrganizerContext'
-import { supportMailto } from '../utils/supportContact'
+import SupportLink from './SupportLink'
 import PricingTiersCRUD from './PricingTiersCRUD'
 import { compareLocalDateTimes, formatEventDateTime, toEventLocalInput } from '../utils/eventTime'
 
@@ -236,7 +236,7 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
         <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>
       )}
 
-      {unconfirmed && <section aria-label="Unconfirmed ticket change" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>A previous ticket change is not confirmed. Changes are paused to prevent repetition.</p><button type="button" disabled={!onRefresh} onClick={refreshList} className="min-h-11 font-semibold underline">Refresh ticket list</button><a href={supportMailto('Verify an unconfirmed ticket change')} className="ml-3 inline-flex min-h-11 items-center font-semibold underline">Contact support</a></section>}
+      {unconfirmed && <section aria-label="Unconfirmed ticket change" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>A previous ticket change is not confirmed. Changes are paused to prevent repetition.</p><button type="button" disabled={!onRefresh} onClick={refreshList} className="min-h-11 font-semibold underline">Refresh ticket list</button><SupportLink subject="Verify an unconfirmed ticket change" className="ml-3 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></section>}
       {showForm && (
         <div className="mb-4">
           <TicketTypeForm onSave={handleCreate} onCancel={() => setShowForm(false)} saving={locked} eventTimezone={eventTimezone} defaultQuantity={remainingCapacity} />

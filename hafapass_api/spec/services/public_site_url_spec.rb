@@ -16,7 +16,7 @@ RSpec.describe PublicSiteUrl do
   end
 
   it "returns the configured URLs without a trailing slash" do
-    ENV["FRONTEND_URL"] = "https://tickets.example.test/"
+    ENV["FRONTEND_URL"] = "https://tickets.example.test///"
     ENV["PUBLIC_WEB_URL"] = " https://www.tickets.example.test/ "
 
     expect(described_class.frontend).to eq("https://tickets.example.test")

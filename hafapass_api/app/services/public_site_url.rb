@@ -40,7 +40,7 @@ module PublicSiteUrl
     private
 
     def configured(key)
-      ENV[key].to_s.strip.delete_suffix("/").presence
+      ENV[key].to_s.strip.sub(%r{/+\z}, "").presence
     end
 
     def local_fallback(key)
