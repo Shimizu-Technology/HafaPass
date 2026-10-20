@@ -6,7 +6,8 @@ import { organizerFeeExplanation } from '../utils/feeTerms'
 export default function FeeTermsNote({ feeTerms, feePolicy, buyerFeePercent, className = '' }) {
   if (feeTerms.status === 'loading') return <p role="status" className={`text-sm text-neutral-500 ${className}`}>Loading current fee terms…</p>
   if (feeTerms.status === 'error') return (
-    <div role="alert" className={`flex flex-wrap items-center gap-3 text-sm text-red-700 ${className}`}>
+    // Informational, not urgent: the rest of the editor stays usable.
+    <div role="status" className={`flex flex-wrap items-center gap-3 text-sm text-red-700 ${className}`}>
       <span>Current fee terms could not be loaded.</span>
       <button type="button" onClick={feeTerms.retry} className="btn-secondary min-h-11 px-4 py-2 text-sm">Retry fee terms</button>
     </div>

@@ -7,7 +7,7 @@ describe('FeeTermsNote', () => {
   it('offers a retry instead of guessing when fee terms fail to load', async () => {
     const retry = vi.fn()
     render(<FeeTermsNote feeTerms={{ status: 'error', terms: null, retry }} feePolicy="buyer_pays" />)
-    expect(screen.getByRole('alert')).toHaveTextContent('Current fee terms could not be loaded.')
+    expect(screen.getByRole('status')).toHaveTextContent('Current fee terms could not be loaded.')
     await userEvent.click(screen.getByRole('button', { name: 'Retry fee terms' }))
     expect(retry).toHaveBeenCalledTimes(1)
   })
