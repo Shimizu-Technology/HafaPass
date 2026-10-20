@@ -1,4 +1,6 @@
 class Event < ApplicationRecord
+  include PublicSlug
+
   has_many :message_deliveries, dependent: :restrict_with_error
   has_many :support_notes, dependent: :restrict_with_error
   belongs_to :organizer_profile
@@ -52,6 +54,10 @@ class Event < ApplicationRecord
   has_many :live_pilot_incidents, dependent: :restrict_with_error
   has_many :live_pilot_metric_snapshots, dependent: :restrict_with_error
   has_many :pilot_closeout_reviews, dependent: :restrict_with_error
+  # Only events that were once public keep retired links, and those events
+  # cannot be deleted; a draft's rows (from a reclaimed link) go with it.
+  has_many :slug_redirects, class_name: "EventSlugRedirect", dependent: :delete_all
+  public_slug_redirects :slug_redirects
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
   CATEGORY_LABELS = {
@@ -77,7 +83,9 @@ class Event < ApplicationRecord
   enum :fee_policy, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }
 
   validates :title, presence: true
-  validates :slug, presence: true, uniqueness: true
+  validates :slug, presence: true
+  validates :slug, uniqueness: { message: "is already used by another event" }, unless: :slug_chosen?
+  validate :chosen_slug_is_available, if: :slug_chosen?
   validates :max_capacity, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 2_147_483_647 }, allow_nil: true
   validates :buyer_fee_percent, numericality: { only_integer: true, in: 0..100 }
   validate :capacity_covers_committed_inventory
@@ -88,7 +96,7 @@ class Event < ApplicationRecord
   validate :chronological_event_times
   validate :live_money_candidate_flag_immutable_after_orders
 
-  before_validation :generate_slug, if: -> { slug.blank? || title_changed? }
+  before_validation :assign_slug
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
 
   scope :published, -> { where(status: :published) }
@@ -297,6 +305,19 @@ class Event < ApplicationRecord
     end
   end
 
+  # Published, postponed, cancelled and completed events were public at some
+  # point. Archived events count when their history shows a publish.
+  def ever_published?
+    return true if published_at.present? || %w[published postponed cancelled completed].include?(status_in_database)
+    return false if new_record?
+
+    event_state_changes.exists?(to_status: "published")
+  end
+
+  def slug_follows_title?
+    !custom_slug? && !ever_published?
+  end
+
   private
 
   def production_release_approvals(at:)
@@ -415,12 +436,34 @@ class Event < ApplicationRecord
     errors.add(:max_capacity, "cannot be less than sold and actively held inventory") if max_capacity < committed
   end
 
-  def generate_slug
-    base_slug = title.to_s.parameterize
-    self.slug = base_slug
-
-    if Event.where(slug: self.slug).where.not(id: self.id).exists?
-      self.slug = "#{base_slug}-#{SecureRandom.hex(3)}"
+  # Links are generated from the title. A draft's link follows title edits
+  # until the organizer picks a link name; once an event has ever been public,
+  # its link changes only when someone deliberately chooses a new one.
+  def assign_slug
+    @slug_chosen = slug_changed? && slug.present? && slug != @generated_slug
+    if @slug_chosen
+      self.slug = self.class.normalize_public_slug(slug)
+      self.custom_slug = true
+    elsif slug.blank? || (title_changed? && slug_follows_title? && @slug_generated_from != title)
+      @slug_generated_from = title
+      self.slug = @generated_slug = unique_generated_slug(title, fallback: "event")
     end
+  end
+
+  def slug_chosen?
+    @slug_chosen == true
+  end
+
+  def generated_slug_source
+    [title, "event"]
+  end
+
+  def chosen_slug_is_available
+    problem = self.class.public_slug_problem(slug, record: self)
+    errors.add(:slug, problem) if problem
+  end
+
+  def retain_previous_slug?
+    ever_published?
   end
 end

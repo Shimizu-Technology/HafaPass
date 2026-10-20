@@ -68,29 +68,38 @@ module Api
         }
       end
 
+      # A retired link name resolves to the event's current one. The JSON keeps
+      # the canonical `slug` and adds `redirected_from` so the SPA can replace
+      # the address bar without a second request.
       def show
         if params[:live_money_proof] == "true" && @current_user&.admin?
-          event = Event.where(live_money_proof_candidate: true).find_by!(slug: params[:slug])
-          render json: event_json(event, include_ticket_types: true)
+          event = Event.find_by_public_slug!(params[:slug], scope: Event.where(live_money_proof_candidate: true))
+          render json: show_json(event)
           return
         end
         # Allow organizers to preview their own draft events
         if params[:preview] == "true" && @current_user
-          event = Event.find_by!(slug: params[:slug])
+          event = Event.find_by_public_slug!(params[:slug])
           organizer_profile = @current_user.organizer_profile
           if organizer_profile && event.organizer_profile_id == organizer_profile.id
-            render json: event_json(event, include_ticket_types: true)
+            render json: show_json(event)
             return
           end
         end
 
-        event = Event.publicly_visible.find_by!(slug: params[:slug])
-        render json: event_json(event, include_ticket_types: true)
+        event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_visible)
+        render json: show_json(event)
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end
 
       private
+
+      def show_json(event)
+        json = event_json(event, include_ticket_types: true)
+        json[:redirected_from] = params[:slug] if event.slug != params[:slug]
+        json
+      end
 
       def filtered_events
         events = Event.discoverable

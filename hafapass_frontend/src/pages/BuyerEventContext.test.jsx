@@ -247,7 +247,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
   it('does not offer outage retry for a genuinely missing event', async () => {
     apiClient.get.mockRejectedValue({ response: { status: 404 } })
     render(view())
-    expect(await screen.findByRole('alert')).toHaveTextContent('Event not found.')
+    expect(await screen.findByRole('heading', { name: 'We couldn’t find that event' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry event' })).not.toBeInTheDocument()
   })
 

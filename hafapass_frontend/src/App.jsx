@@ -44,6 +44,7 @@ const HostPage = lazy(() => import('./pages/HostPage'))
 const DistributionRedirectPage = lazy(() => import('./pages/DistributionRedirectPage'))
 const SavedPage = lazy(() => import('./pages/SavedPage'))
 const SeatingManagementPage = lazy(() => import('./pages/dashboard/SeatingManagementPage'))
+const NotFound = lazy(() => import('./components/NotFound'))
 
 // Admin pages
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'))
@@ -114,6 +115,7 @@ function App() {
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </Suspense>
