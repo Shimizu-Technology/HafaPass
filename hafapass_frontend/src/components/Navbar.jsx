@@ -2,7 +2,7 @@ import HafaPassMark from './HafaPassMark'
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { UserButton, SignedIn, useAuth } from '@clerk/clerk-react'
-import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search, Compass, Heart, Settings, LifeBuoy, Globe } from 'lucide-react'
+import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search, Compass, Heart, Settings, LifeBuoy, Globe, CalendarPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import LanguageSwitcher from './LanguageSwitcher'
@@ -80,6 +80,8 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const navLinks = [
     { to: '/events', label: t('nav.events'), icon: CalendarDays },
     { to: '/discover', label: 'Discover', icon: Compass },
+    // Signed-in accounts already reach organizer tools through Dashboard.
+    ...(!isSignedIn ? [{ to: '/host', label: t('nav.hostEvent'), icon: CalendarPlus }] : []),
     ...(isSignedIn ? [
       { to: '/my-tickets', label: t('nav.myTickets'), icon: Ticket },
       { to: '/saved', label: 'Saved', icon: Heart },
