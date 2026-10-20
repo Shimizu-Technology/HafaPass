@@ -13,7 +13,16 @@ const settings = {
   service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform',
   payout_schedule_text: 'within 3 business days after your event',
   stripe_test_configured: true, stripe_live_configured: true, stripe_live_approved: false,
+  environment: 'production', payments_by_mode: { test: 12 },
+  payment_mode_readiness: {
+    test: { mode: 'test', ready: true, checks: [{ key: 'test_secret_key', label: 'Test secret key', met: true, help: null }] },
+    live: { mode: 'live', ready: false, checks: [
+      { key: 'live_secret_key', label: 'Live secret key', met: true, help: null },
+      { key: 'stripe_live_approved', label: 'Stripe live payments approved in Provider readiness', met: false, help: 'Open Provider readiness, submit the Stripe live payments evidence, then approve it. One admin can do both.' },
+    ] },
+  },
 }
+const liveReady = { ...settings.payment_mode_readiness.live, ready: true, checks: settings.payment_mode_readiness.live.checks.map(check => ({ ...check, met: true, help: null })) }
 const renderPage = () => render(<MemoryRouter initialEntries={['/admin/settings']}><AdminSettingsPage /></MemoryRouter>)
 
 describe('AdminSettingsPage', () => {
@@ -92,12 +101,53 @@ describe('AdminSettingsPage', () => {
     expect(await screen.findByText('Payout schedule text is too long', { selector: 'p' })).toBeInTheDocument()
   })
 
-  it('shows the payment mode read-only with the live gates and a link to provider readiness', async () => {
+  it('shows the current mode and explains what live payments still need', async () => {
     renderPage()
     const section = await screen.findByRole('region', { name: 'Payment mode' })
-    expect(section).toHaveTextContent('Test (Stripe sandbox)')
-    expect(section).toHaveTextContent('Live provider evidence independently approved: No')
-    expect(within(section).queryByRole('button')).not.toBeInTheDocument()
+    expect(section).toHaveTextContent('Test payments')
+    expect(section).toHaveTextContent('12 test, 0 live')
+    expect(section).toHaveTextContent('Stripe live payments approved in Provider readiness: missing')
+    expect(section).toHaveTextContent('One admin can do both.')
+    expect(within(section).getByRole('button', { name: 'Switch to live payments' })).toBeDisabled()
+    expect(within(section).queryByRole('button', { name: 'Switch to test mode' })).not.toBeInTheDocument()
     expect(within(section).getByRole('link', { name: 'Review provider readiness' })).toHaveAttribute('href', '/admin/provider-readiness')
+  })
+
+  it('switches to live payments only after confirming the effects', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockResolvedValue({ data: { ...settings, payment_mode_readiness: { ...settings.payment_mode_readiness, live: liveReady } } })
+    renderPage()
+    const section = await screen.findByRole('region', { name: 'Payment mode' })
+    await user.click(within(section).getByRole('button', { name: 'Switch to live payments' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Switch to live payments?' })
+    expect(dialog).toHaveTextContent('charged real money')
+    expect(dialog).toHaveTextContent('Orders already paid in test mode stay test orders')
+    expect(apiClient.patch).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Yes, take real payments' }))
+
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/settings', { payment_mode: 'live' }, expect.anything()))
+    expect(await within(section).findByRole('status')).toHaveTextContent('Payments are now live')
+    expect(section).toHaveTextContent('Live payments')
+    expect(within(section).getByRole('button', { name: 'Switch to test mode' })).toBeEnabled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps the dialog open with the server reason when a switch is refused', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockResolvedValue({ data: { ...settings, payment_mode: 'live', payment_mode_readiness: { ...settings.payment_mode_readiness, live: liveReady } } })
+    apiClient.patch.mockRejectedValue({ response: { status: 422, data: { error: 'Cannot switch to test payments yet. Still needed: Test webhook signing secret.' } } })
+    renderPage()
+    const section = await screen.findByRole('region', { name: 'Payment mode' })
+    expect(section).toHaveTextContent('Live payments')
+    await user.click(within(section).getByRole('button', { name: 'Switch to test mode' }))
+    const dialog = screen.getByRole('dialog', { name: 'Switch to test payments?' })
+    expect(dialog).toHaveTextContent('Orders already paid live stay live')
+    await user.click(within(dialog).getByRole('button', { name: 'Switch to test mode' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Still needed: Test webhook signing secret.')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(section).toHaveTextContent('Live payments')
   })
 })

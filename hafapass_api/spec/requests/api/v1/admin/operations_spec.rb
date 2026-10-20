@@ -335,7 +335,7 @@ RSpec.describe "Admin operations screens", type: :request do
       get "/api/v1/admin/audit_logs", params: { organization_id: organization.id }, headers: headers
       expect(response.parsed_body["audit_logs"].pluck("action")).to eq(["balance_adjustment.posted"])
 
-      get "/api/v1/admin/audit_logs", params: { from: 1.day.from_now.to_date.iso8601 }, headers: headers
+      get "/api/v1/admin/audit_logs", params: { from: 1.day.from_now.in_time_zone("Pacific/Guam").to_date.iso8601 }, headers: headers
       expect(response.parsed_body["audit_logs"]).to eq([])
 
       get "/api/v1/admin/audit_logs", params: { per_page: 2, page: 2 }, headers: headers
@@ -358,7 +358,9 @@ RSpec.describe "Admin operations screens", type: :request do
       expect(AuditLog.find_by!(action: "site_settings.fee_terms_updated").after_data).to eq("service_fee_flat_cents" => "75")
       expect(AuditLog.where(action: "site_settings.payment_mode_changed")).not_to exist
 
-      allow_any_instance_of(SiteSetting).to receive(:can_enable_test?).and_return(true)
+      allow(PaymentModeReadiness).to receive(:call).and_call_original
+      allow(PaymentModeReadiness).to receive(:call).with("test").and_return({ mode: "test", ready: true, checks: [] })
+      allow(StripeService).to receive(:verify_platform_credentials!).with("test").and_return(true)
       patch "/api/v1/admin/settings", params: { payment_mode: "test" }, headers: headers
       mode = AuditLog.find_by!(action: "site_settings.payment_mode_changed")
       expect([mode.before_data, mode.after_data]).to eq([{ "payment_mode" => "simulate" }, { "payment_mode" => "test" }])

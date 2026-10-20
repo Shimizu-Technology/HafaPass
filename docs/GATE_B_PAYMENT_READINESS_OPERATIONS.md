@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Gate B converts provider, legal, accounting, and bank decisions into a fail-closed application control. It does not make those decisions for HafaPass. Paid publishing and payouts remain unavailable until real evidence has been reviewed by two different administrators.
+Gate B converts provider, legal, accounting, and bank decisions into a fail-closed application control. It does not make those decisions for HafaPass. Paid publishing and payouts remain unavailable until real evidence has been reviewed and approved by an administrator. One administrator may submit and approve (decision of 2026-10-21); the audit trail records the submitter, approver, and timestamps. A two-person rule may return later as an optional setting.
 
 Never put contracts, bank details, identity documents, provider secrets, or unredacted transaction evidence in Git or API fields. Store those in the founder-approved restricted operations system. HafaPass retains only a stable reference, a SHA-256 digest of the approved redacted evidence bundle, decision references, control attestations, actors, and timestamps.
 
@@ -60,11 +60,11 @@ The submitter is the verifier of the source bundle, not the final approver. Hafa
 
 ### 3. Independently approve
 
-A different administrator reviews the restricted evidence and uses:
+An administrator (who may be the submitter) reviews the restricted evidence and uses:
 
 `PATCH /api/v1/admin/payment_readiness_reviews/:submission_id/approve`
 
-Self-approval, duplicate approval, a future or expired approval window, incomplete controls, and approving while another approval is active all fail closed. Approval appends a new immutable record and removes the local readiness requirement only when provider requirements are also complete.
+Duplicate approval, a future or expired approval window, incomplete controls, and approving while another approval is active all fail closed. Approval appends a new immutable record and removes the local readiness requirement only when provider requirements are also complete.
 
 Any later change to the provider account ID, territory, currency, capabilities, charge/payout flags, submitted-details state, requirements, or disabled state increments the readiness revision and invalidates that approval permanently. Restoring the same values does not revive old evidence.
 
@@ -80,7 +80,7 @@ Revoke immediately when provider permission, seller consent, bank details, entit
 
 `POST /api/v1/admin/payment_readiness_reviews/:approval_id/revoke`
 
-Include a specific `reason`. Revocation appends a record, restores `independent_readiness_approval`, and disables paid publishing and payouts. To replace evidence, revoke the current approval, create a new submission, and obtain a new independent approval. Never edit old evidence.
+Include a specific `reason`. Revocation appends a record, restores `independent_readiness_approval`, and disables paid publishing and payouts. To replace evidence, revoke the current approval, create a new submission, and obtain a new approval. Never edit old evidence.
 
 ## Provider-specific acceptance
 
@@ -90,7 +90,7 @@ Retain approved-partner confirmation, live app/BN code, enabled seller features,
 
 ### Manual local-bank pilot
 
-Retain bank/merchant underwriting, verified organizer bank instruction, out-of-band bank-detail confirmation, two-person payout authorization, immutable settlement digest, transfer confirmation, bank receipt, and cent-exact reconciliation owner. Manual means controlled bank execution—not an untracked spreadsheet or a fake automated payout.
+Retain bank/merchant underwriting, verified organizer bank instruction, out-of-band bank-detail confirmation, payout authorization, immutable settlement digest, transfer confirmation, bank receipt, and cent-exact reconciliation owner. Manual means controlled bank execution—not an untracked spreadsheet or a fake automated payout.
 
 ### Stripe
 
@@ -103,6 +103,6 @@ Gate B is complete only when:
 - signed merchant, tax/fee, and liability decisions exist in restricted storage;
 - written provider/bank approval covers Guam and the exact HafaPass model;
 - one real organizer and settlement account pass onboarding;
-- the app contains a current two-person readiness approval whose digest matches the retained bundle;
+- the app contains a current readiness approval whose digest matches the retained bundle;
 - paid publishing stays blocked when evidence is absent, incomplete, expired, or revoked; and
 - Gate H is still reserved for the later live low-value charge/refund/settlement/payout/bank-receipt loop.

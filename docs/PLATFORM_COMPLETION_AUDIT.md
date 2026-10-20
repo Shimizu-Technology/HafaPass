@@ -77,7 +77,7 @@ Sources: [Ticket Tailor features](https://www.tickettailor.com/en-us/features), 
 | Discovery and local distribution | Implemented with collections, windows, categories, prices, villages, venue/organizer pages, favorites, follows, reminders, tourism/hospitality/Ambros/promoter links, and privacy-safe attribution | Phase 9 request and E2E suites |
 | Local audience and marketing reach | Software exists; audience and partner execution are not software facts | Build opted-in supply/demand channels and measure first-touch-to-purchase conversion |
 | Local support/event staffing | Support console and staff roles exist; staffing coverage/SLA is not yet evidenced | Contract the operating model and staff the first event |
-| Production Guam payments/payouts | Provider-neutral ledger, onboarding states, and append-only two-person readiness evidence enforcement exist; live provider approval does not | Hard launch blocker; follow the Guam money decision and Gate B operations below |
+| Production Guam payments/payouts | Provider-neutral ledger, onboarding states, and append-only readiness evidence enforcement exist; live provider approval does not | Hard launch blocker; follow the Guam money decision and Gate B operations below |
 | Complex theater/arena visual charts and seat views | Deliberately deferred | Integrate a visual provider only when a signed venue cannot be represented safely by the native renderer |
 | High-demand waiting room/queue | Not required for the first controlled pilot | Add only after measured onsale load approaches tested database/web capacity |
 | Open resale/speculative tickets/opaque dynamic pricing | Deliberately excluded | Reconsider only after legal, consumer-protection, fraud, and market evidence; no launch dependency |
@@ -151,7 +151,7 @@ Actions:
 4. Approve BPT/tax, pricing, free-event policy, fee absorb/pass/split, refundability, payout timing, reserves, and chargeback responsibility.
 5. Keep production paid publishing blocked until connected-account readiness is supported by provider evidence.
 
-Application control: follow [Gate B Payment Readiness Operations](GATE_B_PAYMENT_READINESS_OPERATIONS.md). Provider capability flags alone cannot enable readiness; a different administrator must approve a complete, digest-bound, expiring evidence snapshot, and revocation is append-only.
+Application control: follow [Gate B Payment Readiness Operations](GATE_B_PAYMENT_READINESS_OPERATIONS.md). Provider capability flags alone cannot enable readiness; an administrator must approve a complete, digest-bound, expiring evidence snapshot, and revocation is append-only.
 
 Exit evidence: signed decisions, provider approval/contract, approved fee/tax schedule, and one real organizer/account path ready for controlled testing.
 
@@ -265,7 +265,7 @@ Actions:
 
 Exit evidence: event completed without unresolved P0/P1 incident and all operations reconciled.
 
-Application control: follow [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md). HafaPass now requires an append-only event plan bound to the exact current Gate G approval, applicable Gate H approval, event digest, and application revision; a different administrator must approve it. The plan caps inventory at 250 or less, requires before/during/after local support, eight named accountable roles, explicit pause thresholds, and response/go-no-go controls. Normal production checkout—including box office—remains closed until the approved run is active. Committed quantities are rechecked under the event lock. P0/P1 and mandatory safety incidents or monitoring breaches pause the run and suspend sales. Resume requires resolved incidents and a genuinely post-pause safe checkpoint; completion requires a genuinely post-event safe checkpoint, zero pending local operations or unknown card outcomes, zero unexplained variance/exceptions, complete attestations, and digest-bound evidence. These controls do not claim that a real event, provider observation, support shift, or physical entry operation occurred; those facts remain external evidence and must be inspected at Gate J.
+Application control: follow [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md). HafaPass now requires an append-only event plan bound to the exact current Gate G approval, applicable Gate H approval, event digest, and application revision; an administrator must approve it. The plan caps inventory at 250 or less, requires before/during/after local support, eight named accountable roles, explicit pause thresholds, and response/go-no-go controls. Normal production checkout—including box office—remains closed until the approved run is active. Committed quantities are rechecked under the event lock. P0/P1 and mandatory safety incidents or monitoring breaches pause the run and suspend sales. Resume requires resolved incidents and a genuinely post-pause safe checkpoint; completion requires a genuinely post-event safe checkpoint, zero pending local operations or unknown card outcomes, zero unexplained variance/exceptions, complete attestations, and digest-bound evidence. These controls do not claim that a real event, provider observation, support shift, or physical entry operation occurred; those facts remain external evidence and must be inspected at Gate J.
 
 ### Gate J — Close out before expanding
 

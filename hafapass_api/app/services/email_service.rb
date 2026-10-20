@@ -394,7 +394,7 @@ class EmailService
       end
       unless configured?
         if Rails.env.production? || (delivery&.provider == "resend" && delivery.outbound_payload.present?)
-          raise ProviderDisabled, "Production email is disabled until current Resend evidence is independently approved"
+          raise ProviderDisabled, "Production email is disabled until current Resend evidence is approved"
         end
         Rails.logger.info("[EmailService SIMULATE] delivery=#{delivery&.id} template=#{delivery&.template}")
         return { simulated: true }

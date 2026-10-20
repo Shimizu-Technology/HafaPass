@@ -37,7 +37,7 @@ describe('LivePilotOperationsDialog', () => {
     expect(screen.getByRole('button', { name: 'Submit Gate I plan' })).toBeDisabled()
   })
 
-  it('lets a second administrator approve the exact pending plan', async () => {
+  it('lets an administrator approve the exact pending plan', async () => {
     apiClient.get.mockResolvedValue({ data: {
       event, live_pilot: { prerequisite_ready: true, approved: false, pending_submission: pending },
     } })

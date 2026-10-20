@@ -261,17 +261,17 @@ class Event < ApplicationRecord
         !live_money_proof_candidate? || live_money_proof_candidate_configured?),
       checklist_item("payout", paid_event ? "Payout account ready for paid sales" : "No payout account needed for a free event",
         !paid_event || organization.payout_ready?),
-      checklist_item("pilot_readiness_approved", "Event-specific pilot readiness independently approved",
+      checklist_item("pilot_readiness_approved", "Event-specific pilot readiness approved",
         pilot_readiness_approved),
-      checklist_item("pilot_validation_approved", "Buyer, organizer, accessibility, and load validation independently approved",
+      checklist_item("pilot_validation_approved", "Buyer, organizer, accessibility, and load validation approved",
         pilot_validation_approved),
-      checklist_item("event_day_rehearsal_approved", "Physical event-day rehearsal independently approved",
+      checklist_item("event_day_rehearsal_approved", "Physical event-day rehearsal approved",
         event_day_rehearsal_approved),
       checklist_item("live_money_approved",
-        paid_event ? "Live charge, refund, settlement, payout, and bank receipt independently approved" :
+        paid_event ? "Live charge, refund, settlement, payout, and bank receipt approved" :
           "No live-money approval needed for a free event",
         !paid_event || live_money_approved),
-      checklist_item("live_pilot_approved", "Bounded live-pilot plan independently approved",
+      checklist_item("live_pilot_approved", "Bounded live-pilot plan approved",
         live_money_proof_candidate? || live_pilot_approved)
     ]
     checks

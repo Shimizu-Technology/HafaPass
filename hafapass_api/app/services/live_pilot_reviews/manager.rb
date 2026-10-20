@@ -40,7 +40,7 @@ module LivePilotReviews
       review = nil
       submission.event.with_lock do
         submission.reload
-        validate_open_submission!(submission, actor: actor, approving: true)
+        validate_open_submission!(submission)
         raise ReviewError, "The pilot authorization window is not yet effective" if submission.effective_at > Time.current
         raise ReviewError, "The pilot authorization window has expired" if submission.expires_at <= Time.current
         prerequisites = current_prerequisites(submission.event)
@@ -92,7 +92,7 @@ module LivePilotReviews
       review = nil
       submission.event.with_lock do
         submission.reload
-        validate_open_submission!(submission, actor: actor)
+        validate_open_submission!(submission)
         review = submission.event.live_pilot_reviews.create!(snapshot(submission).merge(
           decision: decision, parent_review: submission, actor_user: actor, reason: reason.to_s.strip
         ))
@@ -124,13 +124,10 @@ module LivePilotReviews
     end
     private_class_method :snapshot_current?
 
-    def self.validate_open_submission!(submission, actor:, approving: false)
+    def self.validate_open_submission!(submission)
       raise ReviewError, "Only a submission can be decided" unless submission.decision_submission?
       raise ReviewError, "This pilot-plan submission already has a decision" if
         submission.child_reviews.where(decision: [:approval, :rejection]).exists?
-      if approving && submission.actor_user_id == actor.id
-        raise ReviewError, "The submitter cannot approve their own pilot plan"
-      end
     end
     private_class_method :validate_open_submission!
 

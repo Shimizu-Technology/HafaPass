@@ -30,7 +30,7 @@ module PlatformCapabilityReviews
       review = nil
       SiteSetting.instance.with_lock do
         submission.reload
-        validate_open_submission!(submission, actor: actor, approving: true)
+        validate_open_submission!(submission)
         raise ReviewError, "The evidence approval window is not yet effective" if submission.effective_at > Time.current
         raise ReviewError, "The evidence approval window has expired" if submission.expires_at <= Time.current
         unless submission.configuration_digest == PlatformCapabilities.configuration_digest(submission.capability)
@@ -55,7 +55,7 @@ module PlatformCapabilityReviews
       review = nil
       SiteSetting.instance.with_lock do
         submission.reload
-        validate_open_submission!(submission, actor: actor)
+        validate_open_submission!(submission)
         review = PlatformCapabilityReview.create!(snapshot(submission).merge(
           decision: :rejection, parent_review: submission, actor_user: actor, reason: reason.to_s.strip
         ))
@@ -83,13 +83,10 @@ module PlatformCapabilityReviews
       raise ReviewError, error_message(e)
     end
 
-    def self.validate_open_submission!(submission, actor:, approving: false)
+    def self.validate_open_submission!(submission)
       raise ReviewError, "Only a submission can be decided" unless submission.decision_submission?
       if submission.child_reviews.where(decision: [:approval, :rejection]).exists?
         raise ReviewError, "This submission already has a decision"
-      end
-      if approving && submission.actor_user_id == actor.id
-        raise ReviewError, "The submitter cannot approve their own evidence"
       end
     end
     private_class_method :validate_open_submission!

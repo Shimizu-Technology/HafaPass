@@ -26,7 +26,7 @@ Required evidence affirms domain verification, signed webhooks, event deduplicat
 
 ### Apple and Google Wallet
 
-Wallet buttons are returned to the browser only for independently approved capabilities. Apple evidence covers issuer approval, signing, device installation, and invalidation behavior. Google additionally requires an approved event-ticket class. Configured-but-unapproved endpoints return `503`; no unsigned or placeholder credential is emitted.
+Wallet buttons are returned to the browser only for approved capabilities. Apple evidence covers issuer approval, signing, device installation, and invalidation behavior. Google additionally requires an approved event-ticket class. Configured-but-unapproved endpoints return `503`; no unsigned or placeholder credential is emitted.
 
 ### BOH/Clover card-present payments
 
@@ -48,7 +48,7 @@ Provider configuration requires a non-secret `PROVIDER_CONFIGURATION_REVISION`. 
 4. Reconcile every amount and state transition; unresolved variance means the control is false.
 5. Put the report and approvals in the controlled evidence system and calculate its SHA-256 digest.
 6. One administrator submits the exact capability snapshot.
-7. A different administrator independently compares the reference, digest, controls, configuration, effective time, and expiry, then approves or rejects it.
+7. An administrator (who may be the submitter) compares the reference, digest, controls, configuration, effective time, and expiry, then approves or rejects it.
 8. Verify `/api/v1/readiness` reports the intended capability as approved. Optional unapproved wallets remain explicitly disabled without making the whole service unavailable.
 9. Revoke immediately when an approval is withdrawn, a material incident occurs, or the approved operating facts are no longer true.
 

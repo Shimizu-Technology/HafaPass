@@ -20,7 +20,7 @@ class StripeService
       if environment == "simulate"
         simulate_payment_intent(order)
       else
-        raise PaymentError, "Live payments are disabled until current provider evidence is independently approved" if
+        raise PaymentError, "Live payments are disabled until current Stripe live evidence is approved" if
           environment == "live" && !settings.can_enable_live?
         client, options = operation_client(payment: payment, settings: settings)
         client.v1.payment_intents.create(
@@ -119,8 +119,25 @@ class StripeService
     end
 
     def platform_account_id(environment)
-      ENV[environment == "live" ? "STRIPE_LIVE_PLATFORM_ACCOUNT_ID" : "STRIPE_TEST_PLATFORM_ACCOUNT_ID"].presence if
-        %w[test live].include?(environment)
+      StripeCredentials.platform_account_id(environment)
+    end
+
+    # Confirms the mode's secret key belongs to the mode's platform account
+    # before an administrator switches payment mode. Raises PaymentError.
+    def verify_platform_credentials!(environment)
+      key = StripeCredentials.secret_key(environment)
+      expected = StripeCredentials.platform_account_id(environment)
+      raise PaymentError, "Stripe #{environment} credentials are incomplete" unless
+        StripeCredentials.secret_key_valid?(environment) && expected
+      actual = Stripe::StripeClient.new(key).v1.accounts.retrieve_current.id
+      unless actual == expected
+        raise PaymentError, "The Stripe #{environment} secret key belongs to a different account than " \
+          "#{StripeCredentials.env_name(environment, :platform_account_id)}"
+      end
+
+      true
+    rescue Stripe::StripeError => e
+      raise PaymentError, "Stripe could not confirm the #{environment} credentials (#{e.class.name.demodulize})"
     end
 
     def verify_payment_context!(payment)
@@ -149,7 +166,7 @@ class StripeService
       settings = SiteSetting.instance
       return false if Rails.env.staging? && !ProviderRehearsal.stripe_enabled?
       if settings.live_mode? && !settings.can_enable_live?
-        raise PaymentError, "Live payments are disabled until current provider evidence is independently approved"
+        raise PaymentError, "Live payments are disabled until current Stripe live evidence is approved"
       end
 
       settings.stripe_enabled?
@@ -158,11 +175,8 @@ class StripeService
     # Returns the publishable key the frontend should use.
     def publishable_key(payment: nil)
       return nil if Rails.env.staging? && !ProviderRehearsal.stripe_enabled?
-      if payment
-        return ENV["STRIPE_LIVE_PUBLISHABLE_KEY"] if payment.provider_environment == "live"
-        return ENV["STRIPE_TEST_PUBLISHABLE_KEY"].presence || ENV["STRIPE_PUBLISHABLE_KEY"] if payment.provider_environment == "test"
-        return nil
-      end
+      return StripeCredentials.publishable_key(payment.provider_environment) if payment
+
       SiteSetting.instance.stripe_publishable_key
     end
 
@@ -185,11 +199,7 @@ class StripeService
         end
 
         environment = payment.provider_environment
-        key = if environment == "live"
-          ENV["STRIPE_LIVE_SECRET_KEY"]
-        elsif environment == "test"
-          ENV["STRIPE_TEST_SECRET_KEY"].presence || ENV["STRIPE_SECRET_KEY"]
-        end
+        key = StripeCredentials.secret_key(environment)
         raise PaymentError, "Stripe #{environment} credentials are unavailable" if key.blank?
       else
         key = resolve_api_key!(settings)
@@ -219,7 +229,7 @@ class StripeService
       end
 
       if settings.live_mode? && !settings.can_enable_live?
-        raise PaymentError, "Live payments are disabled until current provider evidence is independently approved"
+        raise PaymentError, "Live payments are disabled until current Stripe live evidence is approved"
       end
       key = settings.stripe_secret_key
       if key.blank?

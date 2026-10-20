@@ -20,7 +20,7 @@ RSpec.describe PilotCloseoutReviews::Manager do
     end.to raise_error(described_class::ReviewError, /pending_payment_count/)
   end
 
-  it "records a signed metric report and requires an independent second administrator" do
+  it "records a signed metric report and lets the submitting administrator approve it" do
     run = create_completed_live_pilot_run
     submitter = create(:user, :admin)
     submission = described_class.submit!(
@@ -32,11 +32,8 @@ RSpec.describe PilotCloseoutReviews::Manager do
       "checkout_conversion_bps", "checkout_abandonment_bps", "no_show_rate_bps",
       "refund_average_seconds", "payout_variance_cents", "partner_attributed_order_count"
     )
-    expect do
-      described_class.approve!(submission: submission, actor: submitter)
-    end.to raise_error(described_class::ReviewError, /cannot approve their own/)
-
-    approval = described_class.approve!(submission: submission, actor: create(:user, :admin))
+    approval = described_class.approve!(submission: submission, actor: submitter)
+    expect(approval.actor_user).to eq(submitter)
     expect(approval).to be_decision_approval
     expect(PilotCloseout.active_approval(run)).to eq(approval)
     expect(PilotCloseout.metric_report(approval)).to include("support_contacts_per_100_orders" => 0)
@@ -174,7 +171,7 @@ RSpec.describe PilotCloseoutReviews::Manager do
     travel_to 2.minutes.from_now do
       expect do
         described_class.approve!(submission: submission, actor: create(:user, :admin))
-      end.to raise_error(described_class::ReviewError, /expired before independent approval/)
+      end.to raise_error(described_class::ReviewError, /expired before approval/)
       rejection = described_class.reject!(
         submission: submission, actor: create(:user, :admin), reason: "Expansion window expired"
       )

@@ -20,7 +20,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('mobile administrator user controls', () => {
-  it('exposes verification and independent readiness review in the phone card', async () => {
+  it('exposes verification and readiness review in the phone card', async () => {
     show(); const mobile = await card()
     expect(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })).toBeEnabled()
     expect(mobile.getByRole('button', { name: 'Record provider status' })).toBeEnabled()
@@ -43,11 +43,11 @@ describe('mobile administrator user controls', () => {
     expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'verified', verification_notes: '' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await waitFor(() => expect(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })).toHaveValue('verified'))
   })
-  it('keeps capability sync confirmation separate from independent approval', async () => {
+  it('keeps capability sync confirmation separate from evidence approval', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     show(); const mobile = await card()
     await userEvent.click(mobile.getByRole('button', { name: 'Record provider status' }))
-    expect(confirm).toHaveBeenCalledWith('Record the provider capability sync? Independent Gate B evidence approval will still be required.')
+    expect(confirm).toHaveBeenCalledWith('Record the provider capability sync? Gate B evidence approval will still be required.')
     expect(apiClient.patch).not.toHaveBeenCalled()
     confirm.mockReturnValue(true)
     apiClient.patch.mockResolvedValue({ data: { ...organizer.organizer_profile.connected_account, charges_enabled: true, payouts_enabled: true, details_submitted: true, payout_ready: false, requirements_due: ['independent_readiness_approval'] } })

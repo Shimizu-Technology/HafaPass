@@ -13,14 +13,11 @@ RSpec.describe PlatformCapabilityReviews::Manager do
     }
   end
 
-  it "requires a second administrator before enabling an exact evidence snapshot" do
+  it "lets the submitting administrator approve an exact evidence snapshot" do
     submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
 
-    expect do
-      described_class.approve!(submission: submission, actor: submitter)
-    end.to raise_error(described_class::ReviewError, /cannot approve their own/)
-
-    approval = described_class.approve!(submission: submission, actor: approver)
+    approval = described_class.approve!(submission: submission, actor: submitter)
+    expect(approval.actor_user).to eq(submitter)
 
     expect(approval).to be_active
     expect(PlatformCapabilities.enabled?("policy_register")).to be(true)

@@ -5,7 +5,7 @@ const json = (route, body, status = 200) => route.fulfill({
   status, contentType: 'application/json', body: JSON.stringify(body),
 })
 
-test('admin independently approves the exact Gate J closeout and Guam expansion decision', async ({ page }) => {
+test('admin approves the exact Gate J closeout and Guam expansion decision', async ({ page }) => {
   let approvalRequested = false
   const event = {
     id: 42, title: 'Guam Community Night', slug: 'guam-community-night', status: 'completed',

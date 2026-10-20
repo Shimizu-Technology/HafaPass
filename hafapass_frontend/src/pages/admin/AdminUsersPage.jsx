@@ -70,7 +70,7 @@ function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount,
           <p className="mt-1 [overflow-wrap:anywhere] text-content-muted">{account.requirements_due?.length ? `Due: ${account.requirements_due.join(', ')}` : 'No outstanding requirements'}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {!profile.payout_ready && <button onClick={() => {
-              if (window.confirm('Record the provider capability sync? Independent Gate B evidence approval will still be required.')) syncConnectedAccount(user, { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] })
+              if (window.confirm('Record the provider capability sync? Gate B evidence approval will still be required.')) syncConnectedAccount(user, { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] })
             }} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Record provider status</button>}
             {account.status !== 'disabled' && <button onClick={() => syncConnectedAccount(user, { disabled: true })} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Disable</button>}
           </div>

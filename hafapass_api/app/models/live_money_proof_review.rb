@@ -64,7 +64,6 @@ class LiveMoneyProofReview < ApplicationRecord
   validate :complete_controls
   validate :valid_record_chain, if: -> { decision_submission? || decision_approval? }
   validate :valid_parent_relationship
-  validate :independent_approver
   validate :parent_snapshot_matches
   validate :reason_present_for_negative_decision
   validate :valid_effective_window
@@ -282,12 +281,6 @@ class LiveMoneyProofReview < ApplicationRecord
     elsif parent_review.organization_id != organization_id
       errors.add(:parent_review, "must belong to the same organization")
     end
-  end
-
-  def independent_approver
-    return unless decision_approval? && parent_review && actor_user_id == parent_review.actor_user_id
-
-    errors.add(:actor_user, "must be independent from the evidence submitter")
   end
 
   def parent_snapshot_matches

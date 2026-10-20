@@ -68,7 +68,6 @@ class EventDayRehearsalReview < ApplicationRecord
   validate :complete_controls
   validate :valid_validation_relationship
   validate :valid_parent_relationship
-  validate :independent_approver
   validate :parent_snapshot_matches
   validate :reason_present_for_negative_decision
   validate :valid_effective_window
@@ -324,12 +323,6 @@ class EventDayRehearsalReview < ApplicationRecord
     elsif parent_review.event_id != event_id
       errors.add(:parent_review, "must belong to the same event")
     end
-  end
-
-  def independent_approver
-    return unless decision_approval? && parent_review && actor_user_id == parent_review.actor_user_id
-
-    errors.add(:actor_user, "must be independent from the rehearsal submitter")
   end
 
   def parent_snapshot_matches

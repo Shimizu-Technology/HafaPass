@@ -89,7 +89,7 @@ When evidence is mixed, choose the smaller authority. Expiry requires a new deci
 1. An administrator opens **Admin → Events → Gate J pilot closeout** for the completed event and confirms the displayed application revision and system metrics.
 2. The administrator enters the bundle reference/digest, external outcomes, eight evidence references, every reconciliation and cleanup affirmation, retrospective actions, and the explicit expansion decision/scope.
 3. HafaPass locks the event/run, recomputes blockers and metrics, captures a local-state digest, and creates an append-only submission.
-4. A different administrator retrieves the same submission, opens every restricted reference, validates the calculations and claims, and approves or rejects it. The submitter cannot self-approve.
+4. An administrator retrieves the same submission, opens every restricted reference, validates the calculations and claims, and approves or rejects it. One administrator may submit and approve (decision of 2026-10-21); the audit trail records the submitter, approver, and timestamps. A two-person rule may return later as an optional setting.
 5. Immediately before approval, HafaPass recalculates the local metrics, local-state digest, and application revision. Any change requires a new submission; decisions cannot silently bless a different snapshot.
 6. If later evidence invalidates an approval, an administrator records a specific append-only revocation reason. Correct the underlying issue and submit a new closeout rather than editing history.
 
@@ -112,7 +112,7 @@ All endpoints require an authenticated administrator:
 Gate J exits successfully only when the latest approval is not revoked, still matches the current application revision and local event-state digest, and any non-hold expansion window has not expired. Retain:
 
 - The completed Gate I run identifier and full append-only operating history.
-- The Gate J submission, independent approval, application revision, local-state digest, bundle digest, and eight restricted evidence references.
+- The Gate J submission, approval, application revision, local-state digest, bundle digest, and eight restricted evidence references.
 - The system/local metric report plus definitions, denominators, collection windows, and external outcomes.
 - Every reconciliation and cleanup attestation, with reviewer identity and timestamp.
 - Retrospective actions and proof that every expansion-blocking action was completed before a non-hold approval.

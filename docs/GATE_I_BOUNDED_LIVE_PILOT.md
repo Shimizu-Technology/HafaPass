@@ -13,7 +13,7 @@ Passing automated tests or clicking every control does not prove a real pilot ha
 - One event-specific plan is bound to the current event-state digest, application revision, Gate G approval, and—when the event has paid inventory—the exact current Gate H approval.
 - Inventory is capped at the lower of the approved value, configured event inventory/capacity, and 250 tickets.
 - A plan records support coverage before, during, and for at least two hours after the event; named primary/backup/channel acknowledgement references; eight accountable operating roles; measurable pause thresholds; and every required response/go-no-go control.
-- The plan submitter cannot approve the same plan. Submissions, decisions, incidents, checkpoints, and action records are append-only; revocation and incident resolution are new records.
+- One administrator may submit and approve (decision of 2026-10-21); the audit trail records the submitter, approver, and timestamps. A two-person rule may return later as an optional setting. Submissions, decisions, incidents, checkpoints, and action records are append-only; revocation and incident resolution are new records.
 - A normal production event cannot publish/resume or accept public, internal, or box-office checkout without a current Gate I approval. Checkout remains closed until the approved pilot run is active.
 - Order creation holds the event lock and rechecks committed ticket quantities against the Gate I cap before creating the order, so concurrent channels share one boundary.
 - A P0/P1 incident or any uncertain payment, duplicate charge, oversell, credential compromise, cross-tenant disclosure, or widespread entry failure pauses the run and suspends event sales.
@@ -40,7 +40,7 @@ The hidden Gate H proof candidate is excluded from Gate I. It is a one-transacti
    - venue contact.
 6. Record primary and backup support coverage before, during, and after the event. The public-facing path must give Guam buyers and organizers a usable local response channel.
 7. Choose thresholds from rehearsed capacity and provider evidence. Zero scanner conflicts is a valid threshold. Do not loosen a threshold during an incident to make the dashboard green.
-8. Prepare the restricted plan/evidence bundle, calculate its SHA-256, submit it in Admin → Events → Prepare Gate I bounded pilot, and have a different administrator inspect and approve it.
+8. Prepare the restricted plan/evidence bundle, calculate its SHA-256, submit it in Admin → Events → Prepare Gate I bounded pilot, and inspect and approve it (the submitting administrator may approve).
 
 Any material event, Gate G, Gate H, provider/configuration, or deployed application change invalidates the approval. Submit a new plan; do not edit old evidence.
 

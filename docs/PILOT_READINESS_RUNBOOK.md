@@ -8,11 +8,11 @@ The proposed primary event-day/on-call owner is **Leon Shimizu, Shimizu Technolo
 
 No one person may silently approve their own production payment configuration, payout evidence, or reconciliation exception. The existing role and audit controls remain authoritative.
 
-Record the event-specific owners, controls, evidence reference, and independent approval through [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Do not open production inventory merely because the generic checklist below is complete; the approval must match the current event-state digest.
+Record the event-specific owners, controls, evidence reference, and approval through [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Do not open production inventory merely because the generic checklist below is complete; the approval must match the current event-state digest.
 
 After Gates E–H are current, use [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md) to authorize the exact inventory cap, support windows, accountable owners, pause thresholds, live checkpoints, incident ledger, and post-event reconciliation. Production checkout remains closed unless that event has a current Gate I approval and an active run.
 
-After Gate I is completed, use [Gate J Pilot Closeout and Expansion Decision](GATE_J_PILOT_CLOSEOUT.md) to bind the exact run and current local state to the external evidence, outcome metrics, retrospective actions, cleanup, and a two-person hold/repeat/limited-Guam decision. Gate J never bypasses the next event's gates or authorizes a new region.
+After Gate I is completed, use [Gate J Pilot Closeout and Expansion Decision](GATE_J_PILOT_CLOSEOUT.md) to bind the exact run and current local state to the external evidence, outcome metrics, retrospective actions, cleanup, and an approved hold/repeat/limited-Guam decision. Gate J never bypasses the next event's gates or authorizes a new region.
 
 ## Hard production gates
 
@@ -125,5 +125,5 @@ Resume requires a separate resolution record and a new safe post-pause checkpoin
 4. Revoke temporary staff and scanner devices, sync and purge device-local data within the approved window, and retain cleanup proof under policy.
 5. Calculate the metric report with definitions and denominators; gather privacy-safe organizer/buyer feedback; hold the retrospective; and assign dated, evidence-backed actions.
 6. In **Admin → Events → Gate J pilot closeout**, enter the restricted bundle reference/digest, eight evidence references, external outcomes, reconciliation/cleanup affirmations, actions, and explicit decision.
-7. Have a different administrator inspect the artifacts and approve or reject the exact snapshot. If local state or the application changed, prepare a new submission.
+7. Have an administrator (the submitter may approve) inspect the artifacts and approve or reject the exact snapshot. If local state or the application changed, prepare a new submission.
 8. Expand only within a current Gate J approval: hold, one more bounded Guam pilot, or at most 10 Guam events/1,000 tickets per event for no more than 90 days. Every future event still completes its applicable Gates A–I.

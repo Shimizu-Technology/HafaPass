@@ -2,11 +2,11 @@
 
 Status: application controls implemented; real candidate evidence pending.
 
-Gate F prevents an event from being published, resumed, or sold in production until the exact Gate E candidate has independently approved proof of representative-user, device, accessibility, and load validation. It does not claim that CI used physical devices or that a qualified accessibility reviewer has signed off.
+Gate F prevents an event from being published, resumed, or sold in production until the exact Gate E candidate has approved proof of representative-user, device, accessibility, and load validation. It does not claim that CI used physical devices or that a qualified accessibility reviewer has signed off.
 
 ## What the application enforces
 
-An administrator submits one append-only evidence snapshot. A different administrator must approve it. The approval is valid only while all of the following remain true:
+An administrator submits one append-only evidence snapshot. An administrator, who may be the submitter, must approve it. One administrator may submit and approve (decision of 2026-10-21); the audit trail records the submitter, approver, and timestamps. A two-person rule may return later as an optional setting. The approval is valid only while all of the following remain true:
 
 - the linked Gate E approval is current and unrevoked;
 - the material event/organizer/venue/pricing/inventory/seating digest still matches;
@@ -66,7 +66,7 @@ The script's default technical thresholds are at most 1% unexpected checkout fai
 
 1. QA lead verifies the bundle came from the exact `GIT_SHA`, Gate E approval, event digest, and isolated environment.
 2. Submit the complete structured record in Admin → Events → Gate F.
-3. A different administrator opens the same record, checks the restricted artifacts and issue register, then approves or rejects with a specific reason.
+3. An administrator (the submitter may approve) opens the same record, checks the restricted artifacts and issue register, then approves or rejects with a specific reason.
 4. Revoke immediately after a material event/venue/provider change, a newly discovered release blocker, evidence integrity concern, or invalid accessibility/load assumption. Configuration and revision changes also invalidate automatically.
 
 Gate F approval is necessary but not sufficient to launch. Gate G is enforced through [Gate G Physical Event-Day Rehearsal Evidence](GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md); its real physical evidence is still pending. Gate H live-money proof and later launch/closeout gates remain separate.

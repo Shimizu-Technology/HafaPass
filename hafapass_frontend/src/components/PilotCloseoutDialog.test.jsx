@@ -100,7 +100,7 @@ describe('PilotCloseoutDialog', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
-  it('lets a second administrator approve the exact pending closeout', async () => {
+  it('lets an administrator approve the exact pending closeout', async () => {
     apiClient.get.mockResolvedValue({ data: {
       event, pilot_closeout: { eligible: true, approved: false, pending_submission: pending },
     } })

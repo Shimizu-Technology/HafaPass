@@ -19,7 +19,7 @@ Normal paid events fail closed on Gate H, but Gate H cannot exist until one genu
 - the final order total, including fees, must remain within the separately authorized maximum of at most 500 cents (at the default 5% + $1.00 buyer fee, a 100-cent proof ticket charges 205 cents, and the largest base price that fits is 380 cents);
 - proof candidates are excluded from marketplace results, public event detail, favorites/referrals, organizer/venue discovery, Open Graph pages, and the sitemap;
 - only a signed-in HafaPass administrator may open the explicit private proof view or submit the order;
-- a different administrator must approve an authorization locked to the candidate, current Gate G approval, buyer-email digest, connected account, provider configuration, deployed revision, maximum amount, and a maximum two-hour window; and
+- an administrator (the requester may approve) must approve an authorization locked to the candidate, current Gate G approval, buyer-email digest, connected account, provider configuration, deployed revision, maximum amount, and a maximum two-hour window; and
 - the authorization is consumed by one order. A failed or uncertain run requires finance review and a new authorization; it is never silently reused.
 
 The candidate must be configured before Gate E, then complete Gates E, F, and G like any production candidate. Do not mark a normal pilot event temporarily, publish a discoverable test event, share the private path, or edit the database to bypass these controls.
@@ -29,10 +29,10 @@ The candidate must be configured before Gate E, then complete Gates E, F, and G 
 Before requesting an authorization, verify all of the following:
 
 1. Gate A legal, tax, privacy, accessibility, insurance, and operational decisions are current.
-2. Gate B contains written Guam approval for the actual entity/model and a current independently approved connected account.
-3. The `stripe_live` platform capability is configured and independently approved for the exact production credential revision. HafaPass currently implements Stripe for browser live charges; a PayPal charge flow is not implemented and must not be represented as proven.
+2. Gate B contains written Guam approval for the actual entity/model and a current approved connected account.
+3. The `stripe_live` platform capability is configured and approved for the exact production credential revision. HafaPass currently implements Stripe for browser live charges; a PayPal charge flow is not implemented and must not be represented as proven.
 4. The proof event has current Gate E, Gate F, and Gate G approvals tied to its candidate flag and exact event configuration.
-5. The actual organizer, bank, production provider account, finance lead, independent approver, and restricted evidence location are named.
+5. The actual organizer, bank, production provider account, finance lead, approver, and restricted evidence location are named.
 6. Support can identify the proof order, payment, refunds, settlement, payout, and outbound messages without seeing bank/card secrets.
 
 ## Execution sequence
@@ -45,7 +45,7 @@ In Admin → Events → Gate H:
 2. set a final-order ceiling from 1–500 cents;
 3. set an expiry no more than two hours away;
 4. submit the authorization; and
-5. have a different administrator inspect the candidate, current Gate G approval, live provider/account state, amount, buyer, and expiry before approving.
+5. have an administrator (the requester may approve) inspect the candidate, current Gate G approval, live provider/account state, amount, buyer, and expiry before approving.
 
 The approved operator opens the private proof checkout from the Gate H dialog. Confirm the displayed event, quantity, total, live-mode banner, provider, and receipt email before submitting. Do not retry an ambiguous provider result with a new authorization or idempotency key until reconciliation determines whether a charge exists.
 
@@ -82,7 +82,7 @@ Before submitting Gate H, reconcile and enter all of these facts:
 
 The submission fails if any linked record crosses an event or organization, any provider reference is simulated, the authorization did not create the order, the two refunds do not equal the charge, the payout is not paid, the bank amount differs, the post-payout settlement is stale/non-negative, the chronology is wrong, an external fact differs from its local record, a required communication is missing, or any unexplained variance/count is nonzero.
 
-A different administrator must inspect the restricted source bundle and approve or reject the immutable submission. Self-approval and duplicate/conflicting decisions fail closed. Revoke immediately after a provider/account/entity/bank/configuration/revision change, an evidence-integrity concern, a newly discovered mismatch, or loss of approval. Provider state, platform credential revision, or application revision changes automatically make the old approval inactive.
+An administrator (the submitter may approve) must inspect the restricted source bundle and approve or reject the immutable submission. Duplicate/conflicting decisions fail closed. Revoke immediately after a provider/account/entity/bank/configuration/revision change, an evidence-integrity concern, a newly discovered mismatch, or loss of approval. Provider state, platform credential revision, or application revision changes automatically make the old approval inactive.
 
 ## Release effect
 

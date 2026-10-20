@@ -2,11 +2,11 @@
 
 Status: application controls implemented; real physical rehearsal evidence pending.
 
-Gate G prevents an event from being published, resumed, or sold in production until an independent administrator approves a complete physical event-day rehearsal for the exact current Gate F candidate. CI proves the scanner, signed-manifest, offline queue, conflict, door-sale, and reconciliation code paths; it does not prove real cameras, batteries, venue connectivity, staff behavior, alerts, payment terminals, or a printed emergency list.
+Gate G prevents an event from being published, resumed, or sold in production until an administrator approves a complete physical event-day rehearsal for the exact current Gate F candidate. CI proves the scanner, signed-manifest, offline queue, conflict, door-sale, and reconciliation code paths; it does not prove real cameras, batteries, venue connectivity, staff behavior, alerts, payment terminals, or a printed emergency list.
 
 ## What the application enforces
 
-The rehearsal record is append-only and bound to the active Gate F approval, material event digest, deployed `GIT_SHA`, effective time, and expiry. Any Gate E/F revocation, application revision change, material event/organizer/venue/inventory/seating change, expiry, or Gate G revocation makes the approval unusable. A different administrator must approve the submitted snapshot.
+The rehearsal record is append-only and bound to the active Gate F approval, material event digest, deployed `GIT_SHA`, effective time, and expiry. Any Gate E/F revocation, application revision change, material event/organizer/venue/inventory/seating change, expiry, or Gate G revocation makes the approval unusable. An administrator, who may be the submitter, must approve the submitted snapshot. One administrator may submit and approve (decision of 2026-10-21); the audit trail records the submitter, approver, and timestamps. A two-person rule may return later as an optional setting.
 
 Production publish/resume, public checkout, box office, and internal order creation fail closed while Gate G is absent or stale. Ordinary sales counters do not invalidate the event digest.
 
@@ -25,7 +25,7 @@ The submitted bundle must prove:
 7. Named event commander, technical lead, door lead, finance contact, venue safety contact, and support escalation owner with private contact and acknowledgement references.
 8. Stable signing-key, emergency-list privacy, spare-device/battery, venue-network fallback, cash/card policy, alert, issue-resolution, and explicit go-decision controls, with no open P0/P1 issue.
 
-The database validates consistency and thresholds. The independent approver remains responsible for opening the restricted artifacts and confirming they are genuine, complete, representative, and tied to the stated candidate.
+The database validates consistency and thresholds. The approver remains responsible for opening the restricted artifacts and confirming they are genuine, complete, representative, and tied to the stated candidate.
 
 ## Avoiding a circular publish dependency
 
@@ -38,6 +38,6 @@ Scanner manifests intentionally require a published event, while Gate G intentio
 3. Reconcile every device, admission, conflict, door order, cash amount, card attempt, and inventory movement. Any unexplained variance is a no-go.
 4. Store the privacy-safe bundle in restricted storage and calculate its SHA-256.
 5. Submit the complete structured Gate G record in Admin → Events.
-6. A different administrator verifies the bundle and records approval or rejection. Revoke immediately after an integrity concern, failed repeat drill, newly discovered blocker, or material candidate change.
+6. An administrator (the submitter may approve) verifies the bundle and records approval or rejection. Revoke immediately after an integrity concern, failed repeat drill, newly discovered blocker, or material candidate change.
 
 Gate G is necessary but not sufficient to launch. Follow [Gate H Low-Value Live-Money Proof](GATE_H_LIVE_MONEY_PROOF.md) for the separately authorized charge/refund/settlement/payout/bank loop; later gates govern the controlled pilot and closeout.

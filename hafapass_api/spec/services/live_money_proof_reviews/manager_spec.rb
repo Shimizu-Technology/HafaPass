@@ -10,18 +10,15 @@ RSpec.describe LiveMoneyProofReviews::Manager do
     end.to raise_error(described_class::ReviewError, /Only an administrator/)
   end
 
-  it "requires an independent decision and produces a current revocable Gate H approval" do
+  it "lets one administrator approve and produces a current revocable Gate H approval" do
     chain = create_live_money_proof_chain
     submitter = create(:user, :admin)
     submission = described_class.submit!(
       organization: chain[:organization], attributes: chain[:attributes], actor: submitter
     )
 
-    expect do
-      described_class.approve!(submission: submission, actor: submitter)
-    end.to raise_error(described_class::ReviewError, /cannot approve/)
-
-    approval = described_class.approve!(submission: submission, actor: create(:user, :admin))
+    approval = described_class.approve!(submission: submission, actor: submitter)
+    expect(approval.actor_user).to eq(submitter)
     expect(LiveMoneyProof.active_approval(chain[:organization])).to eq(approval)
 
     described_class.revoke!(approval: approval, actor: create(:user, :admin), reason: "Bank path changed")

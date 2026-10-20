@@ -92,26 +92,24 @@ class SiteSetting < ApplicationRecord
   end
 
   # ── Stripe key resolution ───────────────────────────────────────────
-  # Returns the correct secret key for the current mode.
-  # Falls back: STRIPE_TEST_SECRET_KEY → STRIPE_SECRET_KEY (for test mode)
+  # Keys for the current mode (see StripeCredentials). Work on an existing
+  # payment uses the environment recorded on that payment instead.
   def stripe_secret_key
-    case payment_mode
-    when "test"  then ENV["STRIPE_TEST_SECRET_KEY"].presence || ENV["STRIPE_SECRET_KEY"]
-    when "live"  then ENV["STRIPE_LIVE_SECRET_KEY"]
-    end
+    StripeCredentials.secret_key(payment_mode)
   end
 
   # Returns the correct publishable key for the current mode.
   def stripe_publishable_key
     case payment_mode
-    when "test"  then ENV["STRIPE_TEST_PUBLISHABLE_KEY"].presence || ENV["STRIPE_PUBLISHABLE_KEY"]
-    when "live"  then ENV["STRIPE_LIVE_PUBLISHABLE_KEY"] if can_enable_live?
+    when "test"  then StripeCredentials.publishable_key("test")
+    when "live"  then StripeCredentials.publishable_key("live") if can_enable_live?
     end
   end
 
   # ── Safety checks ───────────────────────────────────────────────────
+  # Every test credential is present (secret, publishable, account, webhook).
   def can_enable_test?
-    (ENV["STRIPE_TEST_SECRET_KEY"].presence || ENV["STRIPE_SECRET_KEY"]).present?
+    PaymentModeReadiness.ready?("test")
   end
 
   def can_enable_live?
