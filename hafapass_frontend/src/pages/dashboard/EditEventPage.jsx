@@ -40,7 +40,8 @@ const eventForm = e => ({
   cover_image_url: e.cover_image_url || '',
   recurrence_rule: e.recurrence_rule || '',
   recurrence_end_date: e.recurrence_end_date || '',
-  show_attendees: e.show_attendees !== false
+  show_attendees: e.show_attendees !== false,
+  transfers_enabled: e.transfers_enabled === true
 })
 
 function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading, reason, onReasonChange, requireReason = false }) {
@@ -118,7 +119,8 @@ function EditEventSession({ id, identity }) {
     cover_image_url: '',
     recurrence_rule: '',
     recurrence_end_date: '',
-    show_attendees: true
+    show_attendees: true,
+    transfers_enabled: false
   })
 
   const savedForm = eventForm(event || {})
@@ -297,7 +299,8 @@ function EditEventSession({ id, identity }) {
         cover_image_url: form.cover_image_url.trim() || null,
         recurrence_rule: form.recurrence_rule || null,
         recurrence_end_date: form.recurrence_end_date || null,
-        show_attendees: form.show_attendees
+        show_attendees: form.show_attendees,
+        ...(capabilities.ticket_transfers === true ? { transfers_enabled: form.transfers_enabled } : {})
       }
       if (!canManage) {
         const presentationFields = ['title', 'slug', 'short_description', 'description', 'category', 'cover_image_url']
@@ -741,6 +744,23 @@ function EditEventSession({ id, identity }) {
                 Show attendees on event page
               </label>
             </div>
+            {capabilities.ticket_transfers === true && (
+              <div className="flex items-start gap-3">
+                <input
+                  id="transfers_enabled"
+                  type="checkbox"
+                  checked={form.transfers_enabled}
+                  onChange={(e) => updateField('transfers_enabled', e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-neutral-300 text-brand-500 focus:ring-brand-500"
+                  aria-describedby="transfers_enabled-help"
+                  disabled={submitting}
+                />
+                <div>
+                  <label htmlFor="transfers_enabled" className="text-sm font-medium text-neutral-700">Allow ticket transfers</label>
+                  <p id="transfers_enabled-help" className="text-sm text-neutral-500">Ticket holders can send a ticket to someone else until the event starts. Accepting a transfer replaces the QR code, so the sender’s copy stops working.</p>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

@@ -8,6 +8,14 @@ Use synthetic information in an isolated environment. The first release supports
 
 Assigned seating, recurring-event generation, catalog/registration/waiver sales tools, ticket transfers, and door card payments are disabled in this scope. Pricing and ticket quantities remain available. Historical read and recovery operations remain available where needed. API guards enforce the same scope as the interface.
 
+### Enabling single capabilities
+
+`HAFAPASS_LAUNCH_CAPABILITIES` turns on named capabilities on top of the scope preset. It is a comma-separated list drawn from `assigned_seating`, `recurring_events`, `advanced_sales_tools`, `ticket_transfers` and `door_card`; for example, `HAFAPASS_LAUNCH_CAPABILITIES=ticket_transfers` keeps a general-admission launch but allows ticket transfers. Leave it unset to keep the preset unchanged. `full` already includes every capability.
+
+Production and staging refuse to boot when the list contains an unknown name, and readiness reports the launch scope as unconfigured. The list never half-applies: one unknown name disables every extra capability. `/api/v1/config` (`launch_capabilities`), the API guards, the publishing checklist and the interface all read the same per-capability result.
+
+With `ticket_transfers` on, organizers choose per event under **Edit event → Settings → Allow ticket transfers** (new events default to on). A holder sends the ticket from My Tickets or the order page; the recipient signs in with that email and accepts. Acceptance replaces both the ticket link and the QR code, so the sender's copy stops admitting. Transfers close when the event starts. With the capability off, the transfer actions are hidden, the API refuses them, and saving an event clears its transfer setting.
+
 For a shared testing site, follow [Private testing staging](PRIVATE_TESTING_STAGING.md). It requires an isolated database, Clerk test accounts, HTTPS origins, a selected durable runtime and persistent application and manifest signing secrets. The initial embedded SQL profile needs no Redis or separate worker/clock. Verify those resources belong to staging before injecting credentials. Staging runs production loading with simulation by default; controlled provider rehearsal requires the explicit test-mode configuration and allowlists in that guide. Production money and payouts remain disabled. Do not copy production attendee information or approval records.
 
 ## Rehearsal sequence

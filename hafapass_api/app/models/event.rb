@@ -179,6 +179,11 @@ class Event < ApplicationRecord
     published? && sales_suspended_at.nil? && (ends_at || starts_at).present? && (ends_at || starts_at) > at
   end
 
+  # The stored setting only takes effect while the platform allows transfers.
+  def transfers_available?
+    transfers_enabled? && LaunchCapabilities.enabled?(:ticket_transfers)
+  end
+
   def assigned_seating?
     event_seating_configuration&.status_active? || false
   end

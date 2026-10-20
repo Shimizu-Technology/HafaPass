@@ -28,6 +28,7 @@ Supply these variables from the deployment's secret/configuration store:
 | `ENABLE_FIRST_USER_ADMIN_BOOTSTRAP` | `false` |
 | `ADMIN_EMAILS` | Approved testers' verified Clerk email addresses for initial administrator access |
 | `HAFAPASS_LAUNCH_SCOPE` | Omit or set `general_admission` |
+| `HAFAPASS_LAUNCH_CAPABILITIES` | Optional comma list of capabilities enabled on top of the scope, such as `ticket_transfers`; unknown names stop boot. See [Enabling single capabilities](LAUNCH_TESTING_CANDIDATE.md#enabling-single-capabilities) |
 | `SECRET_KEY_BASE` | A separate random staging secret longer than 64 characters; retain it across restarts and deploys |
 | `RENDER_GIT_COMMIT` | Exact deployed commit supplied by Render; `GIT_SHA`/`COMMIT_REF` remain non-Render fallbacks |
 | `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` | A required RSA private staging signing key of at least 2048 bits; retain the same key across web/worker restarts and deploys |

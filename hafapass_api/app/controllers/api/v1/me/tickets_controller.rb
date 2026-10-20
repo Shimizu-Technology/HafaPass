@@ -34,7 +34,7 @@ class Api::V1::Me::TicketsController < ApplicationController
         starts_at: ticket.event.starts_at,
         ends_at: ticket.event.ends_at,
         timezone: ticket.event.timezone,
-        transfers_enabled: ticket.event.transfers_enabled,
+        transfers_enabled: ticket.event.transfers_available?,
         cover_image_url: ticket.event.cover_image_url
       },
       ticket_type: {

@@ -63,7 +63,7 @@ class OrderPresenter
       ends_at: event.ends_at,
       doors_open_at: event.doors_open_at,
       timezone: event.timezone,
-      transfers_enabled: event.transfers_enabled,
+      transfers_enabled: event.transfers_available?,
       assigned_seating: event.assigned_seating?,
       cover_image_url: event.cover_image_url
     }

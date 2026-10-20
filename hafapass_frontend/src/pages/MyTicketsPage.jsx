@@ -9,6 +9,8 @@ import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { signInDestination } from '../utils/authDestination'
+import TransferTicketDialog from '../components/TransferTicketDialog'
+import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 
 // This route sits behind ProtectedRoute, so a 401 means Clerk still holds a session the
 // API no longer accepts. Refresh the token once; if that fails, end the stale Clerk
@@ -32,6 +34,8 @@ function MyTicketsContent({ refreshSession, signOut }) {
   const [error, setError] = useState(null)
   const [recovering, setRecovering] = useState(false)
   const [recoveryError, setRecoveryError] = useState(null)
+  const [transferTarget, setTransferTarget] = useState(null)
+  const capabilities = useLaunchCapabilities()
 
   const recoverGuestPurchases = useCallback(async () => {
     setRecovering(true)
@@ -226,16 +230,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
     }
   }
 
-  async function transferTicket(ticket) {
-    const email = window.prompt('Enter the recipient email. They must sign in with this address to accept.')
-    if (!email) return
-    try {
-      await apiClient.post(`/me/tickets/${ticket.id}/transfer`, { recipient_email: email })
-      window.alert('Transfer invitation sent. Your ticket remains valid until it is accepted.')
-    } catch (err) {
-      window.alert(err.response?.data?.error || 'Unable to transfer this ticket.')
-    }
-  }
+  const sendTransfer = ticket => body => apiClient.post(`/me/tickets/${ticket.id}/transfer`, body)
 
   return (
     <div>
@@ -322,7 +317,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
                         </Link>
                         <div className="flex items-center space-x-2">
                           {getStatusBadge(ticket.status)}
-                          {ticket.status === 'issued' && event.transfers_enabled !== false && !isPast && <button onClick={() => transferTicket(ticket)} className="text-xs font-semibold text-brand-600">Transfer</button>}
+                          {ticket.status === 'issued' && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast && <button type="button" onClick={() => setTransferTarget({ ticket, event })} className="min-h-11 px-2 text-xs font-semibold text-brand-700 rounded-lg transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-brand-50">Transfer</button>}
                           <Link
                             to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
                             className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
@@ -345,6 +340,13 @@ function MyTicketsContent({ refreshSession, signOut }) {
           </StaggerContainer>
         </motion.div>
       </div>
+      {transferTarget && (
+        <TransferTicketDialog
+          ticketLabel={`your ${transferTarget.ticket.ticket_type.name} ticket for ${transferTarget.event.title}`}
+          onSend={sendTransfer(transferTarget.ticket)}
+          onClose={() => setTransferTarget(null)}
+        />
+      )}
     </div>
   )
 }
