@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  calculateHostPayout, describeFee, formatPercent, formatSignedMoney, parseHostPricing, parsePriceInput, parseQuantityInput, serviceFeeCents,
+  calculateHostPayout, describeFee, formatPercent, parseHostPricing, parsePriceInput, parseQuantityInput, serviceFeeCents,
 } from './hostPricing'
 
 const launch = { basisPoints: 500, flatCents: 100 }
@@ -58,6 +58,7 @@ describe('calculateHostPayout', () => {
       feeCents: 225,
       buyerPays: { buyerTotalCents: 2725, organizerReceivesCents: 2500 },
       organizerAbsorbs: { buyerTotalCents: 2500, organizerReceivesCents: 2275 },
+      feeExceedsPrice: false,
     })
   })
 
@@ -81,12 +82,15 @@ describe('calculateHostPayout', () => {
       feeCents: 0,
       buyerPays: { buyerTotalCents: 0, organizerReceivesCents: 0 },
       organizerAbsorbs: { buyerTotalCents: 0, organizerReceivesCents: 0 },
+      feeExceedsPrice: false,
     })
   })
 
-  it('shows an absorbed fee larger than a very cheap ticket honestly', () => {
+  it('floors absorbed proceeds at zero like checkout when the fee exceeds a cheap ticket', () => {
     const result = calculateHostPayout({ priceCents: 50, quantity: 1, pricing: launch })
-    expect(result.organizerAbsorbs.organizerReceivesCents).toBe(-53)
-    expect(formatSignedMoney(-53)).toBe('−$0.53')
+    expect(result.feeCents).toBe(103)
+    expect(result.organizerAbsorbs.organizerReceivesCents).toBe(0)
+    expect(result.feeExceedsPrice).toBe(true)
+    expect(result.buyerPays).toEqual({ buyerTotalCents: 153, organizerReceivesCents: 50 })
   })
 })

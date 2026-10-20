@@ -22,7 +22,10 @@ vi.mock('@clerk/clerk-react', () => ({
   },
 }))
 
-const launchConfig = { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
+// The fee fields the API sends today; the bearer and payout fields are optional.
+const feeOnlyConfig = { service_fee_percent: '5.0', service_fee_flat_cents: 100 }
+const platformConfig = { ...feeOnlyConfig, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
+const organizerConfig = { ...feeOnlyConfig, processing_fee_bearer: 'organizer', payout_schedule_text: 'within 3 business days after your event' }
 
 async function load({ clerkKey = 'pk_test_host_fixture' } = {}) {
   vi.resetModules()
@@ -42,68 +45,101 @@ const pricing = () => screen.getByRole('region', { name: 'Simple pricing. You on
 
 beforeEach(() => {
   apiClient.get.mockReset()
-  apiClient.get.mockResolvedValue({ data: launchConfig })
+  apiClient.get.mockResolvedValue({ data: feeOnlyConfig })
   Object.assign(auth, { isLoaded: true, isSignedIn: false })
   window.sessionStorage.clear()
 })
 afterEach(() => vi.unstubAllEnvs())
 
 describe('host page pricing', () => {
-  it('shows the configured fee, launch promises and a working calculator', async () => {
+  const user = () => userEvent.setup()
+  const setOrder = async (price, quantity) => {
+    const section = pricing()
+    await user().clear(within(section).getByLabelText('Ticket price'))
+    if (price) await user().type(within(section).getByLabelText('Ticket price'), price)
+    await user().clear(within(section).getByLabelText('Tickets'))
+    await user().type(within(section).getByLabelText('Tickets'), quantity)
+  }
+  const value = (card, label) => within(within(pricing()).getByRole('region', { name: card })).getByText(label).nextSibling
+
+  it('keeps the full ticket price for the organizer when HåfaPass covers card processing', async () => {
+    apiClient.get.mockResolvedValue({ data: platformConfig })
     await load()
     expect(await screen.findByTestId('host-fee-summary')).toHaveTextContent('5% + $1.00 per paid ticket')
     expect(apiClient.get).toHaveBeenCalledWith('/config')
     const section = pricing()
     expect(within(section).getByText('Card processing included')).toBeInTheDocument()
     expect(within(section).getByText('Payouts within 3 business days after your event')).toBeInTheDocument()
+    expect(within(section).getByLabelText('Ticket price')).toHaveAttribute('inputmode', 'decimal')
+    expect(within(section).getByText(/Card processing is included in the HåfaPass fee/)).toBeInTheDocument()
 
-    const price = within(section).getByLabelText('Ticket price')
-    expect(price).toHaveAttribute('inputmode', 'decimal')
-    const pass = within(section).getByRole('region', { name: 'Buyer pays the fee' })
-    const absorb = within(section).getByRole('region', { name: 'You absorb the fee' })
-    expect(within(pass).getByText('$27.25')).toBeInTheDocument()
-    expect(within(absorb).getByText('$22.75')).toBeInTheDocument()
+    // Default $25 x 1: fee $1.25 + $1.00.
+    expect(value('Buyer pays the fee', 'Buyer pays for 1 ticket')).toHaveTextContent('$27.25')
+    expect(value('Buyer pays the fee', 'You receive')).toHaveTextContent('$25.00')
+    expect(value('You absorb the fee', 'You receive')).toHaveTextContent('$22.75')
+    expect(within(section).getByRole('status')).toHaveTextContent('Buyer pays $27.25, you receive $25.00; if you absorb the fee, you receive $22.75.')
+    expect(section.querySelector('[aria-live]')).toBeNull()
 
-    const user = userEvent.setup()
-    await user.clear(price)
-    await user.type(price, '40')
-    await user.clear(within(section).getByLabelText('Tickets'))
-    await user.type(within(section).getByLabelText('Tickets'), '2')
+    await setOrder('40', '2')
     // 5% of $80 = $4.00 plus 2 x $1.00.
-    expect(within(pass).getByText('Buyer pays for 2 tickets').nextSibling).toHaveTextContent('$86.00')
-    expect(within(absorb).getByText('You receive').nextSibling).toHaveTextContent('$74.00')
-    expect(within(absorb).getByText('HåfaPass fee').nextSibling).toHaveTextContent('$6.00')
-
-    await user.clear(price)
-    await user.type(price, '0')
-    expect(within(section).getByText('Free tickets have no HåfaPass fee.')).toBeInTheDocument()
-    expect(within(absorb).getByText('You receive').nextSibling).toHaveTextContent('$0.00')
-
-    await user.clear(price)
-    await user.type(price, '12.345')
-    expect(price).toHaveAttribute('aria-invalid', 'true')
-    expect(price).toHaveAccessibleDescription(/Enter a ticket price like 25 or 12.50/)
-    expect(within(pass).getByText('You receive').nextSibling).toHaveTextContent('—')
-  })
-
-  it('answers FAQ questions with the configured fee and payout timing', async () => {
-    await load()
-    await screen.findByTestId('host-fee-summary')
+    expect(value('Buyer pays the fee', 'Buyer pays for 2 tickets')).toHaveTextContent('$86.00')
+    expect(value('You absorb the fee', 'HåfaPass fee')).toHaveTextContent('$6.00')
+    expect(value('You absorb the fee', 'You receive')).toHaveTextContent('$74.00')
     expect(screen.getByText(/HåfaPass charges 5% \+ \$1\.00 per paid ticket, with card processing included/)).toBeInTheDocument()
     expect(screen.getByText(/Payouts are sent within 3 business days after your event/)).toBeInTheDocument()
   })
 
-  it('hides optional claims the API does not confirm', async () => {
-    apiClient.get.mockResolvedValue({ data: { service_fee_percent: '5.0', service_fee_flat_cents: 100 } })
+  it.each([
+    ['the organizer bears card processing', organizerConfig],
+    ['the API does not say who bears card processing', feeOnlyConfig],
+  ])('labels proceeds as before card processing when %s', async (_case, config) => {
+    apiClient.get.mockResolvedValue({ data: config })
     await load()
     await screen.findByTestId('host-fee-summary')
-    expect(screen.queryByText('Card processing included')).not.toBeInTheDocument()
+    const section = pricing()
+    expect(within(section).queryByText('Card processing included')).not.toBeInTheDocument()
+    expect(within(section).queryByText('You receive')).not.toBeInTheDocument()
+    expect(value('Buyer pays the fee', 'You receive before card processing')).toHaveTextContent('$25.00')
+    expect(value('You absorb the fee', 'You receive before card processing')).toHaveTextContent('$22.75')
+    expect(within(section).getByText(/Card processing is deducted from your proceeds at settlement/)).toBeInTheDocument()
+    expect(within(section).getByRole('status')).toHaveTextContent('if you absorb the fee, you receive $22.75, before card processing.')
+    expect(screen.getByText(/HåfaPass charges 5% \+ \$1\.00 per paid ticket\. Card processing is deducted/)).toBeInTheDocument()
+  })
+
+  it('shows payout timing only when the API provides it', async () => {
+    apiClient.get.mockResolvedValue({ data: feeOnlyConfig })
+    await load()
+    await screen.findByTestId('host-fee-summary')
     expect(screen.queryByText(/Payouts within/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Card processing is/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Payouts are sent/)).not.toBeInTheDocument()
+    expect(screen.getByText(/your dashboard shows a settlement statement/)).toBeInTheDocument()
+  })
+
+  it('handles free tickets, a fee larger than the ticket and invalid prices', async () => {
+    apiClient.get.mockResolvedValue({ data: platformConfig })
+    await load()
+    await screen.findByTestId('host-fee-summary')
+    const section = pricing()
+    await setOrder('0', '3')
+    expect(within(section).getByText('Free tickets have no HåfaPass fee.')).toBeInTheDocument()
+    expect(value('You absorb the fee', 'HåfaPass fee')).toHaveTextContent('$0.00')
+
+    await setOrder('0.50', '1')
+    // 5% of $0.50 rounds to $0.03 plus $1.00: absorbed proceeds floor at $0.00, like checkout.
+    expect(value('You absorb the fee', 'HåfaPass fee')).toHaveTextContent('$1.03')
+    expect(value('You absorb the fee', 'You receive')).toHaveTextContent('$0.00')
+    expect(within(section).getByText(/the fee is more than the ticket price/)).toBeInTheDocument()
+
+    await setOrder('12.345', '1')
+    const price = within(section).getByLabelText('Ticket price')
+    expect(price).toHaveAttribute('aria-invalid', 'true')
+    expect(price).toHaveAccessibleDescription(/Enter a ticket price like 25 or 12.50/)
+    expect(value('Buyer pays the fee', 'You receive')).toHaveTextContent('—')
+    expect(within(section).getByRole('status')).toBeEmptyDOMElement()
   })
 
   it('shows a calm fallback without numbers when pricing is missing, then recovers on retry', async () => {
-    apiClient.get.mockResolvedValueOnce({ data: { payment_mode: 'test' } }).mockResolvedValueOnce({ data: launchConfig })
+    apiClient.get.mockResolvedValueOnce({ data: { payment_mode: 'test' } }).mockResolvedValueOnce({ data: platformConfig })
     await load()
     expect(await screen.findByText('Current rates aren’t available right now')).toBeInTheDocument()
     const section = pricing()

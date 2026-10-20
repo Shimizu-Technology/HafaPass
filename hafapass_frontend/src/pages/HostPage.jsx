@@ -7,10 +7,11 @@ import {
 } from 'lucide-react'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
+import { formatMoneyCents } from '../utils/money'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { supportMailto } from '../utils/supportContact'
 import {
-  calculateHostPayout, describeFee, formatSignedMoney, hostCtaTargets, MAX_QUANTITY, parseHostPricing, parsePriceInput, parseQuantityInput,
+  calculateHostPayout, describeFee, hostCtaTargets, MAX_QUANTITY, parseHostPricing, parsePriceInput, parseQuantityInput,
 } from '../utils/hostPricing'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
@@ -128,9 +129,14 @@ function FeeCalculator({ pricing }) {
   const quantityError = quantityInput.trim() && quantity === null ? `Enter a whole number from 1 to ${MAX_QUANTITY.toLocaleString('en-US')}.` : null
   const ready = priceCents !== null && quantity !== null
   const result = ready ? calculateHostPayout({ priceCents, quantity, pricing }) : null
-  const money = cents => (result ? formatSignedMoney(cents) : '—')
+  const money = cents => (result ? formatMoneyCents(cents) : '—')
   const ticketsLabel = quantity && quantity !== 1 ? `${quantity.toLocaleString('en-US')} tickets` : '1 ticket'
-  const absorbsMoreThanPrice = result && result.organizerAbsorbs.organizerReceivesCents < 0
+  const absorbsMoreThanPrice = Boolean(result?.feeExceedsPrice)
+  // Only a confirmed platform bearer means the organizer keeps the full price.
+  const receiveLabel = pricing.processingIncluded === true ? 'You receive' : 'You receive before card processing'
+  const summary = result
+    ? `Buyer pays ${money(result.buyerPays.buyerTotalCents)}, you receive ${money(result.buyerPays.organizerReceivesCents)}; if you absorb the fee, you receive ${money(result.organizerAbsorbs.organizerReceivesCents)}${pricing.processingIncluded === true ? '' : ', before card processing'}.`
+    : ''
 
   return (
     <div className="card p-5 sm:p-6">
@@ -158,7 +164,8 @@ function FeeCalculator({ pricing }) {
       {priceError && <p id={`${id}-price-error`} className="mt-2 text-sm text-red-700">{priceError}</p>}
       {quantityError && <p id={`${id}-quantity-error`} className="mt-2 text-sm text-red-700">{quantityError}</p>}
 
-      <div aria-live="polite" className="mt-5">
+      <p role="status" className="sr-only">{summary}</p>
+      <div className="mt-5">
         {result && result.subtotalCents === 0 && (
           <p className="mb-3 flex items-start gap-2 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-900"><Check aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />Free tickets have no HåfaPass fee.</p>
         )}
@@ -168,7 +175,7 @@ function FeeCalculator({ pricing }) {
             <dl className="mt-1 divide-y divide-neutral-100">
               <ResultRow label={`Buyer pays for ${ticketsLabel}`} value={money(result?.buyerPays.buyerTotalCents)} />
               <ResultRow label="HåfaPass fee" value={money(result?.feeCents)} />
-              <ResultRow label="You receive" value={money(result?.buyerPays.organizerReceivesCents)} strong />
+              <ResultRow label={receiveLabel} value={money(result?.buyerPays.organizerReceivesCents)} strong />
             </dl>
           </section>
           <section aria-labelledby={`${id}-absorb`} className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
@@ -176,19 +183,20 @@ function FeeCalculator({ pricing }) {
             <dl className="mt-1 divide-y divide-neutral-100">
               <ResultRow label={`Buyer pays for ${ticketsLabel}`} value={money(result?.organizerAbsorbs.buyerTotalCents)} />
               <ResultRow label="HåfaPass fee" value={money(result?.feeCents)} />
-              <ResultRow label="You receive" value={money(result?.organizerAbsorbs.organizerReceivesCents)} strong />
+              <ResultRow label={receiveLabel} value={money(result?.organizerAbsorbs.organizerReceivesCents)} strong />
             </dl>
           </section>
         </div>
         {absorbsMoreThanPrice && (
-          <p className="mt-3 text-sm text-content-muted">At this price the fee is more than the ticket. Let buyers pay the fee or raise the price.</p>
+          <p className="mt-3 text-sm text-content-muted">At this price the fee is more than the ticket price, so you would receive nothing if you absorb it. Let buyers pay the fee or raise the price.</p>
         )}
         {!ready && !priceError && !quantityError && <p className="mt-3 text-sm text-content-muted">Enter a ticket price and number of tickets to see the totals.</p>}
       </div>
       <p className="mt-4 text-xs leading-relaxed text-content-muted">
         Estimate for one order, before promo codes and refunds.
-        {pricing.processingIncluded === true && ' Card processing is included in the HåfaPass fee.'}
-        {pricing.processingIncluded === false && ' Card processing is charged separately from the HåfaPass fee.'}
+        {pricing.processingIncluded === true
+          ? ' Card processing is included in the HåfaPass fee.'
+          : ' Card processing is deducted from your proceeds at settlement.'}
         {' '}Your dashboard shows the exact amounts for every sale.
       </p>
     </div>
@@ -248,7 +256,7 @@ function PricingSection({ configState }) {
 
 function faqItems(pricing) {
   const feeAnswer = pricing
-    ? `HåfaPass charges ${describeFee(pricing)}${pricing.processingIncluded ? ', with card processing included' : ''}. There are no setup or monthly fees, and free tickets are free.`
+    ? `HåfaPass charges ${describeFee(pricing)}${pricing.processingIncluded ? ', with card processing included' : ''}.${pricing.processingIncluded ? '' : ' Card processing is deducted from your proceeds at settlement.'} There are no setup or monthly fees, and free tickets are free.`
     : 'Paid tickets carry a per-ticket HåfaPass fee. There are no setup or monthly fees, and free tickets are free. Buyers always see the full total before they pay.'
   const payoutAnswer = pricing?.payoutScheduleText
     ? `Payouts are sent ${pricing.payoutScheduleText}. Your dashboard shows a settlement statement for each event with sales, fees and refunds, so you can see exactly what you’re owed.`

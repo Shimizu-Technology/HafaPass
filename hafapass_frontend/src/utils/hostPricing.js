@@ -79,7 +79,8 @@ export function serviceFeeCents({ priceCents, quantity, pricing }) {
   return Math.floor((subtotal * pricing.basisPoints + 5000) / 10000) + quantity * pricing.flatCents
 }
 
-// Both ways an organizer can handle the fee, for one order.
+// Both ways an organizer can handle the fee, for one order, before any card
+// processing the organizer bears.
 export function calculateHostPayout({ priceCents, quantity, pricing }) {
   const subtotalCents = priceCents * quantity
   const feeCents = serviceFeeCents({ priceCents, quantity, pricing })
@@ -87,12 +88,10 @@ export function calculateHostPayout({ priceCents, quantity, pricing }) {
     subtotalCents,
     feeCents,
     buyerPays: { buyerTotalCents: subtotalCents + feeCents, organizerReceivesCents: subtotalCents },
-    organizerAbsorbs: { buyerTotalCents: subtotalCents, organizerReceivesCents: subtotalCents - feeCents },
+    // Checkout floors organizer proceeds at zero (OrderCreator#create_ledger!).
+    organizerAbsorbs: { buyerTotalCents: subtotalCents, organizerReceivesCents: Math.max(subtotalCents - feeCents, 0) },
+    feeExceedsPrice: feeCents > subtotalCents,
   }
-}
-
-export function formatSignedMoney(cents) {
-  return cents < 0 ? `−${formatMoneyCents(-cents)}` : formatMoneyCents(cents)
 }
 
 const ORGANIZER_HOME = '/dashboard'
