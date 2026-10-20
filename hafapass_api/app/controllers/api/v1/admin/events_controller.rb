@@ -36,6 +36,16 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
     end
   end
 
+  # POST /api/v1/admin/events/:id/retranslate
+  def retranslate
+    event = Event.find(params[:id])
+    unless Event.retranslate_with_ticket_types(event)
+      return render json: { error: "Automatic translation is not set up yet." }, status: :unprocessable_entity
+    end
+
+    render json: { translation_status: event.reload.translation_status }, status: :accepted
+  end
+
   private
 
   def event_params
@@ -50,6 +60,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       title: e.title,
       slug: e.slug,
       status: e.status,
+      translation_status: e.translation_status,
       category: e.category,
       is_featured: e.is_featured,
       starts_at: e.starts_at,

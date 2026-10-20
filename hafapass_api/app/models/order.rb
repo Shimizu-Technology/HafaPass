@@ -32,6 +32,7 @@ class Order < ApplicationRecord
   enum :status, { pending: 0, completed: 1, refunded: 2, cancelled: 3, partially_refunded: 4, expired: 5 }
   enum :fee_policy_snapshot, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }, prefix: :fee
 
+  validates :locale, inclusion: { in: AppLocale::SUPPORTED }
   validates :buyer_email, presence: true
   validates :buyer_name, presence: true
   validates :currency, presence: true, length: { is: 3 }

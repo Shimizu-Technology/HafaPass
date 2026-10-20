@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { getApiAuthContext, monitoringPath, setAuthTokenGetter, subscribeApiAuthContext } from './client'
+import { setActiveLanguage } from '../utils/locale'
 
 describe('monitoringPath', () => {
   it('removes query data and opaque identifiers from monitored paths', () => {
@@ -120,5 +121,28 @@ describe('session-bound API requests', () => {
     finishToken('original-token')
     await refused
     expect(adapter).not.toHaveBeenCalled()
+  })
+})
+
+describe('request language', () => {
+  const originalAdapter = apiClient.defaults.adapter
+  afterEach(() => {
+    apiClient.defaults.adapter = originalAdapter
+    setActiveLanguage('en')
+  })
+
+  it('tells the API which language the app is showing unless a caller sets one', async () => {
+    const adapter = vi.fn(config => Promise.resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config }))
+    apiClient.defaults.adapter = adapter
+
+    await apiClient.get('/events')
+    expect(adapter.mock.calls[0][0].headers['Accept-Language']).toBe('en')
+
+    setActiveLanguage('zh-Hant')
+    await apiClient.get('/events')
+    expect(adapter.mock.calls[1][0].headers['Accept-Language']).toBe('zh-Hant')
+
+    await apiClient.get('/events', { headers: { 'Accept-Language': 'ja' } })
+    expect(adapter.mock.calls[2][0].headers['Accept-Language']).toBe('ja')
   })
 })

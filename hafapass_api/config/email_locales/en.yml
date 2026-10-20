@@ -1,0 +1,81 @@
+# Buyer email copy in English (the source language). The other files in this
+# directory are generated from this one by the `gt` CLI; see docs/TRANSLATIONS.md.
+# Keep %{placeholders} unchanged. Text only: links and formatting are added by
+# EmailService, and every value is HTML-escaped.
+emails:
+  footer: "Powered by HåfaPass · Shimizu Technology"
+  my_tickets: "My Tickets"
+  formats:
+    event_datetime: "%{month_name} %{day}, %{year} at %{hour}:%{minute} %{meridiem}"
+    month_names:
+      - January
+      - February
+      - March
+      - April
+      - May
+      - June
+      - July
+      - August
+      - September
+      - October
+      - November
+      - December
+    am: "AM"
+    pm: "PM"
+  order_confirmation:
+    subject: "Your HåfaPass Tickets - %{event}"
+    title: "Order Confirmed"
+    heading: "Your tickets are confirmed!"
+    thanks: "Thank you for your purchase, %{name}."
+    summary: "Order Summary"
+    subtotal: "Subtotal: %{amount}"
+    discount: "Discount: -%{amount}"
+    service_fee: "Service Fee: %{amount}"
+    total: "Total: %{amount}"
+    tickets_heading: "Your Tickets"
+    type_column: "Type"
+    attendee_column: "Attendee"
+    ticket_column: "Ticket"
+    view_ticket: "View Ticket"
+    all_transferred: "All tickets on this order were transferred. Their new holders can open them from %{my_tickets_link}."
+    entry_instructions: "Present your QR code at the door for entry. You can access your tickets anytime at %{my_tickets_link}."
+  pdf_note:
+    single: "Your ticket is also attached as a PDF, so you can open it at the door without signal."
+    all: "All %{count} tickets are also attached as PDFs, so you can open them at the door without signal."
+    capped: "The first %{count} tickets are attached as PDFs, so you can open them at the door without signal. Open the rest from My Tickets."
+    partial: "%{count} of your %{total} tickets are attached as PDFs, so you can open them at the door without signal. The others can't be used for entry right now; check My Tickets for their status."
+  ticket:
+    subject: "Your Ticket - %{event}"
+    heading: "Your Ticket"
+    view: "View Your Ticket"
+    entry_instructions: "Present your QR code at the door for entry."
+  refund:
+    subject: "Refund Processed - %{event}"
+    heading: "Refund Processed"
+    body: "Your refund for %{event} has been processed."
+    full: "Full refund"
+    partial: "Partial refund (%{amount})"
+    returned: "%{amount} will be returned to your original payment method within 5-10 business days."
+    reason: "Reason:"
+    questions: "If you have any questions, please contact the event organizer."
+  transfer:
+    subject: "Ticket transfer: %{event}"
+    title: "Ticket transfer"
+    heading: "A HåfaPass ticket was sent to you"
+    accept: "Accept ticket"
+    sign_in: "Sign in using %{email}. This link expires %{expires_at}."
+  waitlist:
+    subject: "Tickets Available - %{event}"
+    title: "Tickets Available"
+    heading: "Tickets Are Available!"
+    greeting: "%{name}, great news — tickets are now available for:"
+    greeting_anonymous: "Hi there, great news — tickets are now available for:"
+    deadline: "You have 24 hours to purchase your tickets before your spot expires."
+    cta: "Get Your Tickets"
+  waitlist_offer:
+    subject: "Your waitlist offer: %{event}"
+    title: "Waitlist offer"
+    heading: "Your tickets are ready"
+    body: "%{count} %{ticket_type} ticket(s) for %{event} are reserved for you."
+    cta: "Claim tickets"
+    expires: "This offer expires %{expires_at}."

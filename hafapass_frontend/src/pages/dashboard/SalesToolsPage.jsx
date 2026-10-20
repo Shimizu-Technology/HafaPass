@@ -6,6 +6,7 @@ import apiClient from '../../api/client'
 import EventAccessNotice from '../../components/EventAccessNotice'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
+import { LANGUAGES } from '../../utils/locale'
 
 const emptyCatalog = { name: '', kind: 'add_on', price: '', inventory: '' }
 const emptyQuestion = { prompt: '', kind: 'short_text', required: false, options: '' }
@@ -20,6 +21,17 @@ function Section({ title, description, children }) {
 // Every input keeps a visible label; placeholders only show example values.
 function Field({ label, className = '', children }) {
   return <label className={`flex min-w-0 flex-col gap-1 text-sm font-medium text-neutral-700 ${className}`}>{label}{children}</label>
+}
+
+// Languages organizers can write their own wording for. CHamoru stays listed
+// only for events that already use it (human translation is planned).
+const CONTENT_LANGUAGES = LANGUAGES.filter(language => language.code !== 'en').map(({ code, englishName }) => ({ code, label: englishName }))
+const LEGACY_CONTENT_LANGUAGES = [{ code: 'ch', label: 'CHamoru' }]
+const TRANSLATION_STATUS = {
+  translated: 'Automatic translations are up to date.',
+  pending: 'Translating your latest changes. This usually takes under a minute.',
+  failed: 'Automatic translation did not finish. Try again.',
+  untranslated: 'Not translated yet.',
 }
 
 const addButtonClass = 'btn-secondary min-h-11 gap-1.5 self-end whitespace-nowrap px-4 py-2.5 text-sm'
@@ -140,6 +152,7 @@ function SalesToolsSession({ eventId, identity }) {
   const saveSettings = () => {
     return mutate('Sales settings', permission('edit_event_content'), config => apiClient.put(`/organizer/events/${eventId}`, settings, config), () => setSavedSettings(settings))
   }
+  const retranslate = () => mutate('Translation request', permission('edit_event_content'), config => apiClient.post(`/organizer/events/${eventId}/retranslate`, undefined, config))
   const sendCampaign = item => mutate('Campaign submission', permission('manage_marketing') && ['draft', 'scheduled'].includes(item.status), config => apiClient.post(`/organizer/events/${eventId}/communication_campaigns/${item.id}/send_now`, undefined, config))
   const downloadExport = async () => {
     if (!permission('view_attendees') || busyRef.current || !current()) return
@@ -163,6 +176,7 @@ function SalesToolsSession({ eventId, identity }) {
   if (capabilities.advanced_sales_tools !== true) return <EventAccessNotice event={event} message="Advanced sales tools are not enabled for this platform." />
   if (!['edit_event_content', 'manage_events', 'manage_inventory', 'manage_marketing', 'view_attendees'].some(permission)) return <EventAccessNotice event={event} message="Your event access does not include sales tools or attendee communication." />
   const locked = busy || Boolean(pending)
+  const contentLanguages = [...CONTENT_LANGUAGES, ...LEGACY_CONTENT_LANGUAGES.filter(({ code }) => savedSettings?.supported_locales?.includes(code))]
   const hasDraft = JSON.stringify(settings) !== JSON.stringify(savedSettings) || [catalogForm.name, questionForm.prompt, waiverForm.title, waiverForm.body, promoterForm.name, campaignForm.name, campaignForm.subject, campaignForm.body].some(Boolean)
 
   return <EventWorkspace eventId={eventId} event={event} hasUnsavedChanges={hasDraft || Boolean(pending)}><div className="mx-auto max-w-5xl space-y-6">
@@ -173,9 +187,13 @@ function SalesToolsSession({ eventId, identity }) {
     <button disabled={busy || refreshing} className="btn-secondary" onClick={load}>{refreshing ? 'Refreshing saved data…' : 'Refresh saved data'}</button>
     {pending && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{pending.label} may have completed. Review the saved configuration or campaign status before making another change.</p><button disabled={busy || refreshing || !reviewed} className="btn-secondary mt-3" onClick={acknowledge}>I verified the saved data</button></div>}
     <fieldset disabled={locked} className="min-w-0 space-y-6"><legend className="sr-only">Sales and audience tools</legend>
-    {(permission('edit_event_content')) && (<Section title="Public languages" description="Maintain public translations. Who pays the service fee and whether tickets can transfer are set on the event's edit page.">
-      <div className="mt-4 flex gap-5 text-sm">{['ja', 'ch'].map(locale => <label key={locale} className="flex items-center gap-2"><input type="checkbox" checked={settings.supported_locales.includes(locale)} onChange={e => setSettings({ ...settings, supported_locales: e.target.checked ? [...settings.supported_locales, locale] : settings.supported_locales.filter(value => value !== locale) })} />{locale === 'ja' ? 'Japanese' : 'CHamoru'}</label>)}</div>
-      {['ja', 'ch'].filter(locale => settings.supported_locales.includes(locale)).map(locale => <div key={locale} className="mt-4 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm font-semibold">{locale === 'ja' ? 'Japanese' : 'CHamoru'} public content</p><Field label="Translated title"><input className="input font-normal" value={settings.localized_content?.[locale]?.title || ''} onChange={e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [locale]: { ...settings.localized_content?.[locale], title: e.target.value } } })} /></Field><Field label="Translated description"><textarea className="input font-normal" value={settings.localized_content?.[locale]?.description || ''} onChange={e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [locale]: { ...settings.localized_content?.[locale], description: e.target.value } } })} /></Field></div>)}
+    {(permission('edit_event_content')) && (<Section title="Public languages" description="HåfaPass translates your title, descriptions and ticket names automatically for buyers using another language. To use your own wording in a language, turn it on below; anything left blank uses the automatic translation.">
+      <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl bg-neutral-50 p-4 text-sm text-neutral-700">
+        <p className="min-w-0 flex-1">{event.automatic_translation_available ? TRANSLATION_STATUS[event.translation_status] || TRANSLATION_STATUS.untranslated : 'Automatic translation is not set up yet, so buyers see your English text.'}</p>
+        {event.automatic_translation_available && <button type="button" className="btn-secondary min-h-11 px-4 py-2 text-sm" disabled={event.translation_status === 'pending'} onClick={retranslate}>Translate again</button>}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">{contentLanguages.map(({ code, label }) => <label key={code} className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={settings.supported_locales.includes(code)} onChange={e => setSettings({ ...settings, supported_locales: e.target.checked ? [...settings.supported_locales, code] : settings.supported_locales.filter(value => value !== code) })} />{label}</label>)}</div>
+      {contentLanguages.filter(({ code }) => settings.supported_locales.includes(code)).map(({ code, label }) => <div key={code} className="mt-4 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2"><p className="text-sm font-semibold sm:col-span-2">{label} public content</p>{[['title', 'Translated title', 'input'], ['short_description', 'Translated short description', 'input'], ['description', 'Translated description', 'textarea']].map(([field, fieldLabel, kind]) => { const props = { className: 'input font-normal', value: settings.localized_content?.[code]?.[field] || '', onChange: e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [code]: { ...settings.localized_content?.[code], [field]: e.target.value } } }) }; return <Field key={field} label={fieldLabel} className={kind === 'textarea' ? 'sm:col-span-2' : ''}>{kind === 'textarea' ? <textarea rows={4} {...props} /> : <input {...props} />}</Field> })}</div>)}
       <button className="btn-primary mt-4" onClick={saveSettings}>Save languages</button>
     </Section>)}
 

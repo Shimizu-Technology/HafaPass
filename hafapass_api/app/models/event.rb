@@ -1,5 +1,10 @@
 class Event < ApplicationRecord
   include PublicSlug
+  include Translatable
+
+  CONTENT_FIELDS = %w[title short_description description].freeze
+  translates(*CONTENT_FIELDS, context: "Public listing for an event sold on HåfaPass, a ticketing site in Guam. " \
+    "Keep names of people, performers, venues, villages, organizations and brands as written, and keep CHamoru words as written.")
 
   has_many :message_deliveries, dependent: :restrict_with_error
   has_many :support_notes, dependent: :restrict_with_error
@@ -209,14 +214,29 @@ class Event < ApplicationRecord
     event_seating_configuration&.status_active? || false
   end
 
+  # Queues a full machine re-translation of the event and its ticket types.
+  # False when General Translation is not configured.
+  def self.retranslate_with_ticket_types(event)
+    return false unless event.retranslate!
+
+    event.ticket_types.find_each(&:retranslate!)
+    true
+  end
+
+  # Public text in a buyer's language: the organizer's own translation first,
+  # then a current machine translation, then the English original.
   def content_for(locale)
-    code = locale.to_s.split(/[-_]/).first
-    translation = supported_locales.include?(code) ? localized_content.fetch(code, {}) : {}
-    {
-      title: translation["title"].presence || title,
-      description: translation["description"].presence || description,
-      short_description: translation["short_description"].presence || short_description
-    }
+    code = AppLocale.normalize(locale) || AppLocale::DEFAULT
+    provided = supported_locales.include?(code) ? localized_content.fetch(code, {}) : {}
+    machine_translated = false
+    content = CONTENT_FIELDS.to_h do |field|
+      next [field.to_sym, provided[field]] if provided[field].present?
+
+      value, machine = translated_value(field, code)
+      machine_translated ||= machine
+      [field.to_sym, value]
+    end
+    content.merge(locale: code, machine_translated: machine_translated)
   end
 
   def has_available_inventory?(at: Time.current)
@@ -408,17 +428,19 @@ class Event < ApplicationRecord
   def supported_locales_are_known
     values = Array(supported_locales)
     errors.add(:supported_locales, "must include English") unless values.include?("en")
-    errors.add(:supported_locales, "contains an unsupported locale") unless (values - %w[en ja ch]).empty?
+    unless (values - [AppLocale::DEFAULT] - AppLocale::ORGANIZER_CONTENT_LOCALES).empty?
+      errors.add(:supported_locales, "contains an unsupported locale")
+    end
   end
 
   def localized_content_is_valid
-    unless localized_content.is_a?(Hash) && localized_content.keys.all? { |key| %w[ja ch].include?(key) }
-      errors.add(:localized_content, "may only contain Japanese and CHamoru content")
+    unless localized_content.is_a?(Hash) && (localized_content.keys - AppLocale::ORGANIZER_CONTENT_LOCALES).empty?
+      errors.add(:localized_content, "may only contain supported languages")
       return
     end
 
     valid = localized_content.values.all? do |translation|
-      translation.is_a?(Hash) && (translation.keys - %w[title description short_description]).empty? &&
+      translation.is_a?(Hash) && (translation.keys - CONTENT_FIELDS).empty? &&
         translation.values.all? { |value| value.is_a?(String) }
     end
     errors.add(:localized_content, "has an invalid translation shape") unless valid

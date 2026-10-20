@@ -41,6 +41,8 @@ module Api
 
       skip_before_action :authenticate_user!
       before_action :optional_authenticate!, only: [:index, :show]
+      # Event text depends on the visitor's language.
+      after_action { response.headers["Vary"] = [response.headers["Vary"].presence, "Accept-Language"].compact.join(", ") }
 
       def index
         events = filtered_events.includes(
@@ -216,7 +218,7 @@ module Api
       end
 
       def event_json(event, include_ticket_types: false)
-        content = event.content_for(params[:locale].presence || request.headers["Accept-Language"])
+        content = event.content_for(request_locale)
         active_tickets = event.tickets.where.not(status: :cancelled)
         attendee_count = active_tickets.count
 
@@ -226,6 +228,9 @@ module Api
           slug: event.slug,
           description: content[:description],
           short_description: content[:short_description],
+          content_locale: content[:locale],
+          machine_translated: content[:machine_translated],
+          original_content: content[:locale] == AppLocale::DEFAULT ? nil : event.slice(*Event::CONTENT_FIELDS),
           cover_image_url: event.cover_image_url,
           venue_name: event.venue_name,
           venue_address: event.venue_address,
@@ -277,10 +282,14 @@ module Api
           json[:ticket_types] = event.ticket_types.includes(:pricing_tiers).order(:sort_order, :id).map do |tt|
             active_tier = tt.active_pricing_tier
             next_tier = tt.next_pricing_tier
+            tt_content = tt.content_for(request_locale)
             tt_json = {
               id: tt.id,
-              name: tt.name,
-              description: tt.description,
+              name: tt_content[:name],
+              description: tt_content[:description],
+              machine_translated: tt_content[:machine_translated],
+              original_name: tt.name,
+              original_description: tt.description,
               price_cents: tt.price_cents,
               current_price_cents: tt.current_price_cents,
               original_price_cents: tt.price_cents,

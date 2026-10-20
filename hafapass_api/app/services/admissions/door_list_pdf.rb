@@ -10,17 +10,19 @@ module Admissions
     end
 
     def generate
+      table_rows = rows
       Prawn::Document.new(page_size: "LETTER", margin: 36) do |pdf|
-        pdf.font "Helvetica"
+        # Attendee, event and ticket names can be in any supported language.
+        configure_fonts(pdf, table_rows)
         pdf.text "HåfaPass emergency door list", size: 18, style: :bold, color: "0D9488"
         pdf.move_down 6
-        pdf.text event.title, size: 14, style: :bold
-        pdf.text event_details, size: 9, color: "4B5563"
+        pdf.text @title || event.title, size: 14, style: :bold
+        pdf.text @details || event_details, size: 9, color: "4B5563"
         pdf.move_down 12
         pdf.text "Generated #{Time.current.in_time_zone(event.timezone).strftime("%Y-%m-%d %-I:%M %p %Z")}. " \
           "Use only during a scanner outage; record every admission and reconcile it afterward.", size: 8, color: "6B7280"
         pdf.move_down 12
-        pdf.table(rows, header: true, width: pdf.bounds.width, cell_style: { size: 8, padding: 5 }) do |table|
+        pdf.table(table_rows, header: true, width: pdf.bounds.width, cell_style: { size: 8, padding: 5 }) do |table|
           table.row(0).font_style = :bold
           table.row(0).background_color = "E5E7EB"
           table.columns(0).width = 72
@@ -38,19 +40,27 @@ module Admissions
       [["Ticket", "Attendee", "Type", "Status", "Door mark"]] +
         event.tickets.includes(:ticket_type,
           event_seat: { venue_seat: { seating_row: :seating_section } }).order(:attendee_name, :id).map do |ticket|
-          ["HP-T#{ticket.id}", safe_text(ticket.attendee_name.presence || "Guest"),
-            safe_text([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")),
+          ["HP-T#{ticket.id}", ticket.attendee_name.presence || "Guest",
+            [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
             ticket.status.humanize, "________"]
         end
+    end
+
+    # An emergency list must always print, so a character no bundled font can
+    # draw (a rare script) is shown as "?" instead of stopping the download.
+    def configure_fonts(pdf, table_rows)
+      unsupported = PdfFonts.configure(pdf, texts: [event.title, event_details, *table_rows.flatten], strict: false)
+      return if unsupported.empty?
+
+      pattern = Regexp.union(unsupported)
+      table_rows.each { |row| row.map! { |value| value.to_s.gsub(pattern, "?") } }
+      @title = event.title.to_s.gsub(pattern, "?")
+      @details = event_details.gsub(pattern, "?")
     end
 
     def event_details
       local_start = event.starts_at&.in_time_zone(event.timezone)
       [local_start&.strftime("%A, %B %-d, %Y %-I:%M %p %Z"), event.venue_name].compact.join(" · ")
-    end
-
-    def safe_text(value)
-      value.to_s.encode("Windows-1252", invalid: :replace, undef: :replace, replace: "?")
     end
   end
 end

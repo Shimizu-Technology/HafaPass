@@ -6,7 +6,7 @@ module Api
 
         before_action :set_event, only: [
           :show, :update, :destroy, :publish, :postpone, :resume, :cancel, :complete, :archive,
-          :clone, :generate_recurrences, :stats, :attendees, :slug_availability
+          :clone, :generate_recurrences, :stats, :attendees, :slug_availability, :retranslate
         ]
 
         def index
@@ -119,6 +119,16 @@ module Api
           # The rollback already happened; report the lost link race like the
           # availability check would have, so the form shows it on the field.
           render_link_conflict(e)
+        end
+
+        # Re-runs machine translation for the event and its ticket types, for
+        # example after General Translation was first configured.
+        def retranslate
+          unless Event.retranslate_with_ticket_types(@event)
+            return render json: { error: "Automatic translation is not set up yet." }, status: :unprocessable_entity
+          end
+
+          render json: { translation_status: @event.reload.translation_status }, status: :accepted
         end
 
         def destroy
@@ -349,7 +359,7 @@ module Api
           when "show" then :view_events
           when "stats" then :view_finance
           when "attendees" then :view_attendees
-          when "update", "slug_availability" then :edit_event_content
+          when "update", "slug_availability", "retranslate" then :edit_event_content
           else :manage_events
           end
         end
@@ -362,7 +372,7 @@ module Api
             :category, :age_restriction, :max_capacity,
             :recurrence_rule, :recurrence_end_date, :show_attendees,
             :fee_policy, :buyer_fee_percent, :transfers_enabled, supported_locales: [],
-            localized_content: { ja: [:title, :description, :short_description], ch: [:title, :description, :short_description] }
+            localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS }
           )
         end
 
@@ -520,6 +530,8 @@ module Api
             policy_hold: event.policy_hold_summary,
             supported_locales: event.supported_locales,
             localized_content: event.localized_content,
+            translation_status: event.translation_status,
+            automatic_translation_available: GtTranslationService.configured?,
             created_at: event.created_at,
             updated_at: event.updated_at
           }

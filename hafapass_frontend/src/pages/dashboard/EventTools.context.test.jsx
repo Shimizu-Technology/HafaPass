@@ -275,3 +275,38 @@ it('gives every sales tool input a visible label and keeps add actions secondary
     expect(button).not.toHaveClass('btn-primary')
   }
 })
+
+it('offers every buyer language for organizer wording and shows automatic translation status', async () => {
+  rows[11] = { ...rows[11], supported_locales: ['en', 'ch'], localized_content: { ch: { title: 'Fiestan Puesta' } },
+    automatic_translation_available: true, translation_status: 'failed' }
+  mount(tools[1]); await tools[1].ready()
+  const user = userEvent.setup()
+  const section = screen.getByRole('heading', { name: 'Public languages' }).closest('section')
+
+  for (const label of ['Korean', 'Japanese', 'Chinese (Traditional)', 'Chinese (Simplified)', 'Filipino', 'CHamoru']) {
+    expect(within(section).getByLabelText(label)).toBeInTheDocument()
+  }
+  expect(within(section).getByLabelText('CHamoru')).toBeChecked()
+  expect(within(section).getByRole('status')).toHaveTextContent('Automatic translation did not finish')
+
+  await user.click(within(section).getByLabelText('Chinese (Traditional)'))
+  const panel = within(section).getByText('Chinese (Traditional) public content').closest('div')
+  await user.type(within(panel).getByLabelText('Translated title'), '日落節')
+  await user.click(within(section).getByRole('button', { name: 'Save languages' }))
+  await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith('/organizer/events/11', {
+    supported_locales: ['en', 'ch', 'zh-Hant'],
+    localized_content: { ch: { title: 'Fiestan Puesta' }, 'zh-Hant': { title: '日落節' } },
+  }, expect.anything()))
+
+  await waitFor(() => expect(within(section).getByRole('button', { name: 'Translate again' })).toBeEnabled())
+  await user.click(within(section).getByRole('button', { name: 'Translate again' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/retranslate', undefined, expect.anything()))
+})
+
+it('hides CHamoru for events that never used it and explains when translation is not set up', async () => {
+  mount(tools[1]); await tools[1].ready()
+  const section = screen.getByRole('heading', { name: 'Public languages' }).closest('section')
+  expect(within(section).queryByLabelText('CHamoru')).not.toBeInTheDocument()
+  expect(within(section).getByRole('status')).toHaveTextContent('Automatic translation is not set up yet')
+  expect(within(section).queryByRole('button', { name: 'Translate again' })).not.toBeInTheDocument()
+})

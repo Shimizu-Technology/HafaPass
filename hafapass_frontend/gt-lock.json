@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "branchId": "brc_yb1vyu5cg0yzhdrskhdh9e0o",
+  "entries": [
+    {
+      "fileId": "609bb1d363d712d8d1658a6ce8d23e764fb17a8545d30d264eff7834c3757ca8",
+      "versionId": "2aabb3774fb63b3f81da752ccf3e83887b55ef172505ba4742a94975bcde83f0",
+      "translations": {
+        "zh": {
+          "updatedAt": "2026-10-20T23:19:13.446Z",
+          "fileName": "../hafapass_api/config/email_locales/zh.yml",
+          "postProcessHash": "bc01b9ae6fe812cdd1e5cee1b4d7131b17c627b8a7075b9dc60f56f193b4ac00"
+        },
+        "zh-Hant": {
+          "updatedAt": "2026-10-20T23:19:13.447Z",
+          "fileName": "../hafapass_api/config/email_locales/zh-Hant.yml",
+          "postProcessHash": "e9352c5160ba599011b2bb42fc332def47e9a3d14f413f0742b0de7213a72641"
+        },
+        "tl": {
+          "updatedAt": "2026-10-20T23:19:13.448Z",
+          "fileName": "../hafapass_api/config/email_locales/tl.yml",
+          "postProcessHash": "96b1ccfc09dce6efff54334f3400aa3c8918ce58bc0e2c00919f801732a1ce09"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T23:19:13.448Z",
+          "fileName": "../hafapass_api/config/email_locales/ja.yml",
+          "postProcessHash": "ce10b339f352797cb9a501466fc156f6a2d1a8bae19b0f66742385f1597c6ba9"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T23:19:13.448Z",
+          "fileName": "../hafapass_api/config/email_locales/ko.yml",
+          "postProcessHash": "30024fbfc76b4a47d9981397061f4c707ec940b8fdb366a38105fbc05a98dd7e"
+        }
+      },
+      "fileName": "../hafapass_api/config/email_locales/en.yml"
+    },
+    {
+      "fileId": "b1791c7a47875ce85f2f1e57ef6c25a9b993660f9bcc840d8f21daac6161b5a0",
+      "versionId": "67c89ca9c41228a475d2e27329511597861afb5c7a00b29635f318df5549bd03",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-10-20T23:19:13.451Z",
+          "fileName": "src/locales/ko.json",
+          "postProcessHash": "5cf88cc3ff924b6dcf46d03cc01effd561963ce46594b25ba4b8c7488a9dbddb"
+        },
+        "tl": {
+          "updatedAt": "2026-10-20T23:19:13.453Z",
+          "fileName": "src/locales/tl.json",
+          "postProcessHash": "7fa70af0198d0900ab73ef6dbf3b5b22e312f10c3e2aaaa9bcf75a19448a07f2"
+        },
+        "zh": {
+          "updatedAt": "2026-10-20T23:19:13.459Z",
+          "fileName": "src/locales/zh.json",
+          "postProcessHash": "0da4bd2d87dabf97eff3073101e8aca8a748239d7e647c423b996fa1a120f408"
+        },
+        "zh-Hant": {
+          "updatedAt": "2026-10-20T23:19:13.467Z",
+          "fileName": "src/locales/zh-Hant.json",
+          "postProcessHash": "9d5e01f6755a84a91c6f4bb68bd281b417d4a917b00c67a0c3dca7b1de274c55"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T23:19:13.474Z",
+          "fileName": "src/locales/ja.json",
+          "postProcessHash": "38e58b967970f47f14e04865d21aac9a95039678d42db66470ed586fc6c6a9cd"
+        }
+      },
+      "fileName": "src/locales/en.json"
+    }
+  ]
+}

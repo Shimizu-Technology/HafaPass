@@ -1,0 +1,83 @@
+# Buyer email copy in English (the source language). The other files in this
+# directory are generated from this one by the `gt` CLI; see docs/TRANSLATIONS.md.
+# Keep %{placeholders} unchanged. Text only: links and formatting are added by
+# EmailService, and every value is HTML-escaped.
+emails:
+  footer: "提供：HåfaPass · Shimizu Technology"
+  my_tickets: "マイチケット"
+  formats:
+    event_datetime: "%{year}年%{month_name}%{day}日 %{meridiem}%{hour}:%{minute}"
+    month_names:
+      - 1月
+      - 2月
+      - 3月
+      - 4月
+      - 5月
+      - 6月
+      - 7月
+      - 8月
+      - 9月
+      - 10月
+      - 11月
+      - 12月
+    am: "午前"
+    pm: "午後"
+  order_confirmation:
+    subject: "HåfaPassチケットのご案内 - %{event}"
+    title: "ご注文確定"
+    heading: "チケットのご購入が確定しました！"
+    thanks: "%{name}様、ご購入ありがとうございます。"
+    summary: "ご注文内容"
+    subtotal: "小計：%{amount}"
+    discount: "割引：-%{amount}"
+    service_fee: "サービス手数料：%{amount}"
+    total: "合計：%{amount}"
+    tickets_heading: "お持ちのチケット"
+    type_column: "種類"
+    attendee_column: "来場者"
+    ticket_column: "チケット"
+    view_ticket: "チケットを表示"
+    all_transferred: "このご注文のチケットはすべて譲渡済みです。譲渡先の方は%{my_tickets_link}からチケットを表示できます。"
+    entry_instructions: "入場時に受付でQR Codeをご提示ください。チケットは%{my_tickets_link}からいつでも確認できます。"
+  pdf_note:
+    single: "チケットはPDFでも添付していますので、入場時に通信環境がなくても表示できます。"
+    all: "全%{count}枚のチケットをPDFでも添付していますので、入場時に通信環境がなくても表示できます。"
+    capped: "最初の%{count}枚のチケットをPDFで添付していますので、入場時に通信環境がなくても表示できます。残りのチケットはマイチケットからご確\
+      認ください。"
+    partial: "全%{total}枚のうち%{count}枚のチケットをPDFで添付していますので、入場時に通信環境がなくても表示できます。残りのチケット\
+      は現在入場に使用できません。マイチケットで状態をご確認ください。"
+  ticket:
+    subject: "お持ちのチケット - %{event}"
+    heading: "お持ちのチケット"
+    view: "お持ちのチケットを表示"
+    entry_instructions: "入場時に受付でQR Codeをご提示ください。"
+  refund:
+    subject: "返金処理完了 - %{event}"
+    heading: "返金処理完了"
+    body: "%{event}の返金処理が完了しました。"
+    full: "全額返金"
+    partial: "一部返金（%{amount}）"
+    returned: "ご購入時のお支払い方法に、5〜10営業日以内に%{amount}が返金されます。"
+    reason: "理由："
+    questions: "ご不明な点は、イベント主催者までお問い合わせください。"
+  transfer:
+    subject: "チケットの譲渡：%{event}"
+    title: "チケットの譲渡"
+    heading: "HåfaPassのチケットが届きました"
+    accept: "チケットを受け取る"
+    sign_in: "%{email}でログインしてください。このリンクの有効期限は%{expires_at}です。"
+  waitlist:
+    subject: "チケット購入のご案内 - %{event}"
+    title: "チケット購入のご案内"
+    heading: "チケットをご購入いただけます！"
+    greeting: "%{name}様、お待たせしました。以下のイベントのチケットをご購入いただけるようになりました。"
+    greeting_anonymous: "お待たせしました。以下のイベントのチケットをご購入いただけるようになりました。"
+    deadline: "チケットの購入期限は24時間です。期限を過ぎると確保された枠は無効になります。"
+    cta: "チケットを購入"
+  waitlist_offer:
+    subject: "キャンセル待ちチケットのご案内：%{event}"
+    title: "キャンセル待ちチケットのご案内"
+    heading: "チケットをご用意できました"
+    body: "%{event}の%{ticket_type}チケットを、お客様用に%{count}枚確保しています。"
+    cta: "チケットを確保する"
+    expires: "このご案内の有効期限は%{expires_at}です。"

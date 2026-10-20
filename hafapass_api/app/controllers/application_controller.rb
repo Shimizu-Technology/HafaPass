@@ -22,6 +22,11 @@ class ApplicationController < ActionController::API
 
   private
 
+  # The visitor's language (see AppLocale): ?locale= first, then Accept-Language.
+  def request_locale
+    @request_locale ||= AppLocale.resolve(param: params[:locale], accept_language: request.headers["Accept-Language"])
+  end
+
   def with_identity_verification_cache(&block)
     ClerkIdentity.with_request_cache(&block)
   end

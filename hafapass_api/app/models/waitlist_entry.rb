@@ -6,6 +6,7 @@ class WaitlistEntry < ApplicationRecord
 
   enum :status, { waiting: 0, notified: 1, offered: 2, converted: 3, expired: 4, cancelled: 5 }
 
+  validates :locale, inclusion: { in: AppLocale::SUPPORTED }
   validates :email, presence: true, format: { with: URI::MailTo::EMAIL_REGEXP }
   validates :quantity, presence: true, numericality: { greater_than: 0, less_than_or_equal_to: 10 }
   validates :position, presence: true

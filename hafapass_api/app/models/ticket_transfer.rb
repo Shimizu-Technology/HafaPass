@@ -7,6 +7,7 @@ class TicketTransfer < ApplicationRecord
 
   enum :status, { pending: 0, accepted: 1, declined: 2, cancelled: 3, expired: 4 }
 
+  validates :locale, inclusion: { in: AppLocale::SUPPORTED }
   validates :recipient_email, presence: true, format: { with: URI::MailTo::EMAIL_REGEXP }
   validates :expires_at, presence: true
   validates :token_version, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
