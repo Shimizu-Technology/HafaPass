@@ -6,6 +6,7 @@ class Event < ApplicationRecord
   belongs_to :organizer_profile
   belongs_to :organization
   belongs_to :venue, optional: true
+  belongs_to :policy_hold_by_user, class_name: "User", optional: true
   belongs_to :recurrence_parent, class_name: "Event", optional: true
   has_many :recurrence_children, class_name: "Event", foreign_key: "recurrence_parent_id", dependent: :nullify
   has_many :ticket_types, dependent: :destroy
@@ -60,6 +61,9 @@ class Event < ApplicationRecord
   public_slug_redirects :slug_redirects
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
+  # A platform-admin policy hold: "sales" stops all sales but leaves the event
+  # page up; "hidden" also removes it from public pages and discovery.
+  POLICY_HOLD_SCOPES = %w[sales hidden].freeze
   CATEGORY_LABELS = {
     "nightlife" => "Nightlife",
     "concert" => "Music & Concerts",
@@ -104,10 +108,14 @@ class Event < ApplicationRecord
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
   scope :past, -> { where("starts_at <= ?", Time.current) }
   scope :featured, -> { where(is_featured: true) }
-  scope :publicly_visible, -> { where(status: [:published, :completed], live_money_proof_candidate: false) }
+  scope :without_hidden_policy_hold, -> { where("events.policy_hold_scope IS DISTINCT FROM 'hidden'") }
+  scope :publicly_visible, -> {
+    where(status: [:published, :completed], live_money_proof_candidate: false).without_hidden_policy_hold
+  }
   scope :discoverable, ->(at = Time.current) {
     published
       .where(live_money_proof_candidate: false)
+      .where(policy_hold_at: nil)
       .where("COALESCE(events.ends_at, events.starts_at) > ?", at)
       .where(sales_suspended_at: nil)
       .joins(:ticket_types)
@@ -177,7 +185,19 @@ class Event < ApplicationRecord
   end
 
   def sales_open?(at: Time.current)
-    published? && sales_suspended_at.nil? && (ends_at || starts_at).present? && (ends_at || starts_at) > at
+    published? && sales_suspended_at.nil? && policy_hold_at.nil? && (ends_at || starts_at).present? && (ends_at || starts_at) > at
+  end
+
+  def policy_hold?
+    policy_hold_at.present?
+  end
+
+  # Organizers see the scope, reason and time; only admins see who placed it.
+  def policy_hold_summary(include_actor: false)
+    return nil unless policy_hold?
+
+    summary = { scope: policy_hold_scope, reason: policy_hold_reason, placed_at: policy_hold_at }
+    include_actor ? summary.merge(placed_by: policy_hold_by_user&.email) : summary
   end
 
   # The stored setting only takes effect while the platform allows transfers.

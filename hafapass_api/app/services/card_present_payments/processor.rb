@@ -44,6 +44,10 @@ module CardPresentPayments
         raise ProcessingError.new(message.presence || "Card payment failed", attempt: attempt)
       end
 
+      # A policy hold or sales suspension placed after the order was created
+      # stops the charge; the order fails and its inventory is released.
+      raise CardPresentGateway::PaymentError, "This event is not currently on sale" unless order.event.reload.sales_open?
+
       result = gateway.charge(
         account: attempt.card_present_account,
         amount_cents: attempt.amount_cents,

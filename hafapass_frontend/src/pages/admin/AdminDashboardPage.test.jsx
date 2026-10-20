@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
@@ -33,5 +33,21 @@ describe('AdminDashboardPage', () => {
     expect(await screen.findByText('Published')).toBeInTheDocument()
     expect(screen.getByText('Partially refunded')).toBeInTheDocument()
     expect(screen.queryByText('published')).not.toBeInTheDocument()
+  })
+
+  it('reports platform revenue net of the processing HåfaPass covers, not organizer processing', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...dashboard,
+      financials: { fee_cents: 99999 }, open_disputes: 2, payouts_needing_reconciliation: 1,
+      platform_revenue: { gross_platform_fee_cents: 1050, platform_processing_fee_cents: 185, organizer_processing_fee_cents: 368, net_platform_revenue_cents: 865 },
+    } })
+    render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
+    const section = await screen.findByRole('region', { name: 'HåfaPass platform revenue' })
+    expect(within(section).getByText('Platform fees collected').nextElementSibling).toHaveTextContent('$10.50')
+    expect(within(section).getByText('Card processing covered by HåfaPass').nextElementSibling).toHaveTextContent('−$1.85')
+    expect(within(section).getByText('Net platform revenue').nextElementSibling).toHaveTextContent('$8.65')
+    expect(within(section).getByText(/deducted from organizer proceeds/)).toHaveTextContent('$3.68')
+    expect(screen.queryByText('$999.99')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '2 open disputes' })).toHaveAttribute('href', '/admin/disputes?status=open')
+    expect(screen.getByRole('link', { name: '1 payout awaits a recorded outcome' })).toHaveAttribute('href', '/admin/payouts')
   })
 })

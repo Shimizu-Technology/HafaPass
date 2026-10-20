@@ -26,10 +26,21 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
     end
 
     settings.assign_attributes(settings_params)
-    fee_changes = settings.changes.slice(*FEE_TERM_FIELDS)
+    changes = settings.changes.except("updated_at")
+    fee_changes = changes.slice(*FEE_TERM_FIELDS)
     saved = SiteSetting.transaction do
       next false unless settings.save
 
+      if changes.any?
+        AuditLogger.record!(action: "site_settings.updated", auditable: settings, actor: @current_user,
+          before_data: changes.transform_values { |values| values.first.to_s },
+          after_data: changes.transform_values { |values| values.last.to_s }, request: request)
+      end
+      if changes.key?("payment_mode")
+        AuditLogger.record!(action: "site_settings.payment_mode_changed", auditable: settings, actor: @current_user,
+          before_data: { "payment_mode" => changes["payment_mode"].first.to_s },
+          after_data: { "payment_mode" => changes["payment_mode"].last.to_s }, request: request)
+      end
       if fee_changes.any?
         # Fee terms apply to orders created after this change; existing orders
         # keep their snapshotted fee and processing-fee bearer.

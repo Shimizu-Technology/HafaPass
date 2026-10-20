@@ -10,6 +10,11 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
       total_orders: Order.count,
       total_revenue_cents: financials[:net_cents],
       financials: financials,
+      # financials.fee_cents sums every fee component, including actual card
+      # processing; platform_revenue separates HåfaPass fee revenue from it.
+      platform_revenue: Commerce::PlatformRevenue.call,
+      open_disputes: Dispute.open.count,
+      payouts_needing_reconciliation: Payout.where(status: [:pending, :processing]).count,
       open_reconciliation_exceptions: ReconciliationException.open.count,
       operational_signals: SystemReadiness.call.dig(:checks, :operations),
       total_tickets_sold: Ticket.where(status: [:issued, :checked_in]).count,

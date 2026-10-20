@@ -3,6 +3,8 @@
 require "csv"
 
 class Api::V1::Organizer::CrmController < Api::V1::Organizer::EventResourcesController
+  include SpreadsheetExport
+
   def segments
     scope = active_tickets
     render json: {
@@ -29,15 +31,6 @@ class Api::V1::Organizer::CrmController < Api::V1::Organizer::EventResourcesCont
   end
 
   private
-
-  def spreadsheet_safe(value)
-    return value unless value.is_a?(String)
-
-    # OWASP's Excel-resistant mitigation is a tab inside a quoted field. An
-    # apostrophe alone may be stripped when Excel saves/reopens a CSV. This
-    # export is for spreadsheet viewing; the protective tab is exported data.
-    value.match?(/\A[[:space:]\u0000-\u001f]*[=+@\-＝＋＠－]/) || value.match?(/\A[\t\r\n]/) ? "\t#{value}" : value
-  end
 
   def resource_permission
     :view_attendees

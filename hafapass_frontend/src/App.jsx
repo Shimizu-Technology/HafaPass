@@ -26,6 +26,7 @@ const EventOverviewPage = lazy(() => import('./pages/dashboard/EventOverviewPage
 const EventAnalyticsPage = lazy(() => import('./pages/dashboard/EventAnalyticsPage'))
 const ScannerPage = lazy(() => import('./pages/dashboard/ScannerPage'))
 const SettingsPage = lazy(() => import('./pages/dashboard/SettingsPage'))
+const FinancesPage = lazy(() => import('./pages/dashboard/FinancesPage'))
 const InvitationAcceptPage = lazy(() => import('./pages/dashboard/InvitationAcceptPage'))
 const EventStaffPage = lazy(() => import('./pages/dashboard/EventStaffPage'))
 const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
@@ -54,6 +55,10 @@ const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'))
 const SupportPage = lazy(() => import('./pages/support/SupportPage'))
 const MarketplaceAdminPage = lazy(() => import('./pages/admin/MarketplaceAdminPage'))
 const ProviderReadinessPage = lazy(() => import('./pages/admin/ProviderReadinessPage'))
+const AdminSettingsPage = lazy(() => import('./pages/admin/AdminSettingsPage'))
+const AdminPayoutsPage = lazy(() => import('./pages/admin/AdminPayoutsPage'))
+const AdminDisputesPage = lazy(() => import('./pages/admin/AdminDisputesPage'))
+const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'))
 
 function PageLoader() {
   return (
@@ -103,6 +108,7 @@ function App() {
           <Route path="/dashboard/events/:id/seating" element={<ProtectedRoute><SeatingManagementPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/dashboard/finances" element={<ProtectedRoute><FinancesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/team" element={<ProtectedRoute><EventStaffPage /></ProtectedRoute>} />
           <Route path="/organization-invitations/accept" element={<ProtectedRoute><InvitationAcceptPage /></ProtectedRoute>} />
           {/* Admin routes */}
@@ -112,6 +118,10 @@ function App() {
           <Route path="/admin/orders" element={<AdminRoute><AdminOrdersPage /></AdminRoute>} />
           <Route path="/admin/marketplace" element={<AdminRoute><MarketplaceAdminPage /></AdminRoute>} />
           <Route path="/admin/provider-readiness" element={<AdminRoute><ProviderReadinessPage /></AdminRoute>} />
+          <Route path="/admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
+          <Route path="/admin/payouts" element={<AdminRoute><AdminPayoutsPage /></AdminRoute>} />
+          <Route path="/admin/disputes" element={<AdminRoute><AdminDisputesPage /></AdminRoute>} />
+          <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLogPage /></AdminRoute>} />
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />

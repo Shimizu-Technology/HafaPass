@@ -65,6 +65,17 @@ module Settlements
       Result.new(attributes: attributes, items: items)
     end
 
+    # Read-only per-order view of the same processing split, for organizer
+    # exports: { order_id => [platform_cents, organizer_cents] }. It does not
+    # feed the statement or its digest.
+    def processing_by_order
+      processing_fee_components.each_with_object(Hash.new { |hash, key| hash[key] = [0, 0] }) do |component, totals|
+        platform, organizer = processing_split(component)
+        totals[component.order_id][0] += platform
+        totals[component.order_id][1] += organizer
+      end
+    end
+
     private
 
     attr_reader :event

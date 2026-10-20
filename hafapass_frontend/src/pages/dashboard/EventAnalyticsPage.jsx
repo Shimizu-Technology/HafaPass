@@ -1,11 +1,13 @@
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
-import { CheckCircle2, CircleAlert, Loader2, WalletCards } from 'lucide-react'
+import { CheckCircle2, CircleAlert, Download, Loader2, WalletCards } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 import FeeTermsNote from '../../components/FeeTermsNote'
 import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
+import EventSalesInsights from './EventSalesInsights'
+import { saveBlob } from '../../utils/download'
 
 function formatCents(cents) {
  const safe = Number.isFinite(cents) ? cents : 0
@@ -41,6 +43,9 @@ function EventAnalyticsPageSession({ id, identity }) {
  const [finance, setFinance] = useState(null)
  const [financeBusy, setFinanceBusy] = useState(false)
  const [payoutNotice, setPayoutNotice] = useState('')
+ const [exporting, setExporting] = useState(null)
+ const [exportError, setExportError] = useState(null)
+ const [statementChoice, setStatementChoice] = useState('')
  const feeTerms = usePlatformFeeTerms()
  const loadGeneration = useRef(0)
  const accessEpoch = useRef(0)
@@ -114,6 +119,30 @@ function EventAnalyticsPageSession({ id, identity }) {
   } finally { if (canApply()) setLoading(false) }
  }, [id, identity.organizationId, requestApi, current, withdrawAccess])
  useEffect(() => { fetchData() }, [fetchData])
+ // The organization finances page links straight to this event's settlement.
+ const settlementReady = Boolean(finance)
+ useEffect(() => {
+  if (!settlementReady || window.location.hash !== '#settlement') return
+  const target = document.getElementById('settlement')
+  if (!target) return
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+ }, [settlementReady])
+
+ // CSV exports come from the API, which owns the money math and the
+ // spreadsheet-safe formatting.
+ const downloadExport = async (kind, path, filename) => {
+  if (exporting) return
+  const epoch = accessEpoch.current
+  const canApply = () => current() && epoch === accessEpoch.current
+  setExporting(kind); setExportError(null)
+  try {
+   const response = await requestApi('get', path, { responseType: 'blob' })
+   if (canApply()) saveBlob(response.data, filename)
+  } catch (exportFailure) {
+   if (exportFailure?.name !== 'AbortError' && canApply()) setExportError('That export could not be downloaded. Check your connection and try again.')
+  } finally { if (canApply()) setExporting(null) }
+ }
 
  const refreshFinance = async () => {
   const epoch = accessEpoch.current
@@ -177,6 +206,10 @@ function EventAnalyticsPageSession({ id, identity }) {
   ? Math.round((stats.tickets_checked_in / stats.total_tickets_sold) * 100)
   : 0
  const latestSettlement = finance?.settlements?.[0]
+ const currency = (finance?.preview?.currency || 'usd').toUpperCase()
+ const exportName = event?.slug || `event-${id}`
+ const statementValue = statementChoice || (latestSettlement ? String(latestSettlement.id) : 'current')
+ const statementLabel = statementValue === 'current' ? 'current' : `v${finance?.settlements?.find(item => String(item.id) === statementValue)?.version ?? ''}`
 
  return (
   <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
@@ -245,7 +278,7 @@ function EventAnalyticsPageSession({ id, identity }) {
 
    {/* Settlement and payout ledger */}
    {finance && (
-    <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="finance-heading">
+    <section id="settlement" className="mb-8 scroll-mt-24 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="finance-heading">
      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-3">
        <div className="rounded-xl bg-emerald-50 p-2.5"><WalletCards className="h-5 w-5 text-emerald-700" /></div>
@@ -278,15 +311,33 @@ function EventAnalyticsPageSession({ id, identity }) {
      </div>
 
      {finance.payouts?.length > 0 && <div className="mt-5 divide-y divide-neutral-100 rounded-xl border border-neutral-200">{finance.payouts.map(payout => <div key={payout.id} className="flex items-center justify-between px-4 py-3 text-sm"><span className="text-neutral-600">{payout.provider} · {payout.status}</span><span className="font-semibold text-neutral-900">{formatCents(payout.amount_cents)}</span></div>)}</div>}
+
+     <div className="mt-5 border-t border-neutral-100 pt-5">
+      <h3 className="text-sm font-semibold text-neutral-900">Exports</h3>
+      <p className="mt-1 text-sm text-neutral-600">Spreadsheet files for your records. The orders file lists every paid, refunded and complimentary order with fees, card processing and your proceeds.</p>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+       <button type="button" disabled={Boolean(exporting)} onClick={() => downloadExport('orders', `/organizer/events/${id}/finance/orders_export`, `${exportName}-orders.csv`)} className="btn-secondary gap-2 !px-4 !py-2.5 text-sm">
+        {exporting === 'orders' ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Download aria-hidden="true" className="h-4 w-4" />} Orders CSV
+       </button>
+       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-neutral-700">Statement
+         <select value={statementValue} onChange={changeEvent => setStatementChoice(changeEvent.target.value)} className="input min-h-11 !py-2 text-sm sm:w-56">
+          {(finance.settlements || []).map(item => <option key={item.id} value={String(item.id)}>Version {item.version} ({item.status})</option>)}
+          <option value="current">Current, not finalized</option>
+         </select>
+        </label>
+        <button type="button" disabled={Boolean(exporting)} onClick={() => downloadExport('statement', `/organizer/events/${id}/finance/statement_export?settlement_id=${encodeURIComponent(statementValue)}`, `${exportName}-statement-${statementLabel}.csv`)} className="btn-secondary gap-2 !px-4 !py-2.5 text-sm">
+         {exporting === 'statement' ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Download aria-hidden="true" className="h-4 w-4" />} Statement CSV
+        </button>
+       </div>
+      </div>
+      {exportError && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}</p>}
+      <Link to="/dashboard/finances" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 hover:text-brand-900">All events and payouts</Link>
+     </div>
     </section>
    )}
 
-   <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5" aria-labelledby="acquisition-heading">
-    <h2 id="acquisition-heading" className="text-lg font-semibold text-neutral-900">Discovery and acquisition</h2>
-    <p className="mt-1 text-sm text-neutral-500">Anonymous funnel totals and attributed orders; no buyer identity is exposed here.</p>
-    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{['landing', 'event_view', 'checkout_started', 'purchase'].map(stage => <div key={stage} className="rounded-xl bg-neutral-50 p-3"><p className="text-xs capitalize text-neutral-500">{stage.replace('_', ' ')}</p><p className="mt-1 text-xl font-bold">{stats.marketplace_funnel?.[stage] || 0}</p></div>)}</div>
-    {stats.acquisition_sources?.length > 0 && <div className="mt-4 divide-y rounded-xl border">{stats.acquisition_sources.map((source, index) => <div key={index} className="flex items-center justify-between px-4 py-3 text-sm"><span>{source.source} / {source.medium}{source.campaign ? ` / ${source.campaign}` : ''}</span><strong>{source.orders} orders</strong></div>)}</div>}
-   </section>
+   <EventSalesInsights stats={stats} currency={currency} />
 
    {/* Tickets by Type */}
    <div className="bg-white rounded-xl shadow-sm border border-neutral-200 mb-8">

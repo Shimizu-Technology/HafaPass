@@ -2,6 +2,32 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- stale-shell-recovery: a page cached before a deploy can request script
+         files the new release no longer has. Reload once so the browser picks up
+         the current release instead of staying blank. -->
+    <script>
+      (function () {
+        var key = 'hafapass_stale_shell_reload_at'
+        // Returns true only when a reload actually happens.
+        function recover() {
+          try {
+            var last = Number(window.sessionStorage.getItem(key))
+            if (last && Date.now() - last < 60000) return false
+            window.sessionStorage.setItem(key, String(Date.now()))
+          } catch (error) { return false }
+          window.location.reload()
+          return true
+        }
+        window.addEventListener('error', function (event) {
+          var target = event.target
+          var url = target && (target.src || target.href || '')
+          if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK') && /\/assets\//.test(url)) recover()
+        }, true)
+        // Keep the original rejection when throttled so the app's error boundary sees it.
+        window.addEventListener('vite:preloadError', function (event) { if (recover()) event.preventDefault() })
+      })()
+    </script>
+    <!-- /stale-shell-recovery -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>HåfaPass — Your Pass to Every Event on Guam</title>
     <meta name="description" content="HåfaPass (HafaPass) — discover events, buy tickets, and check in with your phone. The modern ticketing platform built for Guam — nightlife, concerts, festivals, dining, sports, and more." />

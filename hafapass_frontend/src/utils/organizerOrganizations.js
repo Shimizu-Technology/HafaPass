@@ -43,9 +43,11 @@ function subscribeStoredOrganization(listener) {
   return () => window.removeEventListener('storage', changed)
 }
 
-// Whether the current account may open organization Settings for the selected
+export const canViewOrganizationFinances = organization => organization?.permissions?.view_finance === true
+
+// Whether the current account passes `predicate` for the selected
 // organization. Uses the cached lookup, loading it once when it is missing.
-export function useCanManageOrganizationSettings(authContext, enabled) {
+function useSelectedOrganizationPermission(authContext, enabled, predicate) {
   const current = useSyncExternalStore(subscribe, getCache)
   const organizationId = useSyncExternalStore(subscribeStoredOrganization, storedOrganization)
   const loaded = enabled && authContext && current.authContext === authContext
@@ -53,5 +55,13 @@ export function useCanManageOrganizationSettings(authContext, enabled) {
     if (!enabled || !authContext || loaded) return
     loadOrganizerOrganizations(authContext).catch(() => {})
   }, [enabled, authContext, loaded])
-  return Boolean(loaded && canManageOrganizationSettings(selectedOrganization(current.organizations, organizationId)))
+  return Boolean(loaded && predicate(selectedOrganization(current.organizations, organizationId)))
 }
+
+// Whether the current account may open organization Settings.
+export const useCanManageOrganizationSettings = (authContext, enabled) =>
+  useSelectedOrganizationPermission(authContext, enabled, canManageOrganizationSettings)
+
+// Whether the current account may open organization-wide Finances.
+export const useCanViewOrganizationFinances = (authContext, enabled) =>
+  useSelectedOrganizationPermission(authContext, enabled, canViewOrganizationFinances)

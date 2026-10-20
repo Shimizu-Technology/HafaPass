@@ -3,7 +3,7 @@
 class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   # GET /api/v1/admin/events
   def index
-    events = Event.includes(:organizer_profile, :ticket_types, :orders, :pilot_readiness_reviews,
+    events = Event.includes(:organizer_profile, :policy_hold_by_user, :ticket_types, :orders, :pilot_readiness_reviews,
       :pilot_validation_reviews, :event_day_rehearsal_reviews, :live_pilot_reviews, :live_pilot_runs,
       :pilot_closeout_reviews,
       organization: :live_money_proof_reviews)
@@ -11,6 +11,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
     events = events.accent_insensitive_search(params[:search], :title) if params[:search].present?
     events = events.where(status: params[:status]) if params[:status].present?
     events = events.where(category: params[:category]) if params[:category].present?
+    events = events.where.not(policy_hold_at: nil) if params[:policy_hold] == "true"
 
     events = events.order(created_at: :desc)
 
@@ -64,7 +65,10 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       live_money_proof_candidate: e.live_money_proof_candidate,
       live_money_proof: LiveMoneyProof.list_summary(e.organization),
       live_pilot: LivePilot.list_summary(e),
-      pilot_closeout: PilotCloseout.list_summary(e)
+      pilot_closeout: PilotCloseout.list_summary(e),
+      organization_id: e.organization_id,
+      sales_suspended: e.sales_suspended_at.present?,
+      policy_hold: e.policy_hold_summary(include_actor: true)
     }
   end
 end

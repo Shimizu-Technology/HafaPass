@@ -12,6 +12,8 @@ import LiveMoneyProofReviewDialog from '../../components/LiveMoneyProofReviewDia
 import LivePilotOperationsDialog from '../../components/LivePilotOperationsDialog'
 import PilotCloseoutDialog from '../../components/PilotCloseoutDialog'
 import { adminLabel } from './adminLabels'
+import EventPolicyHoldDialog from './EventPolicyHoldDialog'
+import { POLICY_HOLD_SCOPES } from './adminOperations'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
 const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 'other']
@@ -54,6 +56,9 @@ function AdminEventsPageSession({ identity, resourcePath }) {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [category, setCategory] = useState('')
+  const [heldOnly, setHeldOnly] = useState(false)
+  const [policyEvent, setPolicyEvent] = useState(null)
+  const [notice, setNotice] = useState('')
   const [page, setPage] = useState(1)
   const [actionError, setActionError] = useState('')
   const [refreshError, setRefreshError] = useState('')
@@ -85,6 +90,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
     if (search) params.search = search
     if (status) params.status = status
     if (category) params.category = category
+    if (heldOnly) params.policy_hold = 'true'
     apiClient.get('/admin/events', { ...request.config, params })
       .then(res => { if (active()) { setEvents(res.data.events); setMeta(res.data.meta); } })
       .catch(error => {
@@ -95,7 +101,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
         else setLoadError('Could not load events. Your filters have been kept.')
       })
       .finally(() => { request.release(); if (active()) setLoading(false) })
-  }, [page, search, status, category, beginRequest])
+  }, [page, search, status, category, heldOnly, beginRequest])
   const refreshAfterAction = useCallback(() => fetchEvents({ keepRows: true }), [fetchEvents])
 
   useEffect(() => { fetchEvents(); return () => pendingLoad.current?.abort() }, [fetchEvents])
@@ -157,7 +163,12 @@ function AdminEventsPageSession({ identity, resourcePath }) {
           <option value="">All Categories</option>
           {categories.filter(Boolean).map(c => <option key={c} value={c}>{adminLabel(c)}</option>)}
         </select>
+        <label className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-neutral-200/50 bg-white/70 px-4 text-sm text-neutral-800">
+          <input type="checkbox" checked={heldOnly} onChange={e => changeListing(() => { setHeldOnly(e.target.checked); setPage(1) })} className="h-4 w-4 accent-brand-700" />
+          On policy hold
+        </label>
       </div>
+      {notice && <p role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{notice}</p>}
 
       {refreshError && <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{refreshError} <button type="button" onClick={refreshAfterAction} className="min-h-11 rounded px-3 font-semibold underline focus-visible:ring-2 focus-visible:ring-focus">Refresh list</button></div>}
       {actionError && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
@@ -192,6 +203,13 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                         {event.organizer_name}
                         {event.category && <span className="capitalize xl:hidden">{event.organizer_name ? ' · ' : ''}{event.category}</span>}
                       </p>
+                      {event.policy_hold && <p className="mt-1.5 inline-flex rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-200">{POLICY_HOLD_SCOPES[event.policy_hold.scope]?.badge || 'On policy hold'}</p>}
+                      <div className="mt-1 flex flex-wrap gap-x-3 text-xs font-semibold">
+                        <Link to={`/admin/payouts?event_id=${event.id}`} className="inline-flex min-h-11 items-center text-brand-700 underline-offset-2 hover:underline sm:min-h-8">Payouts<span className="sr-only"> for {event.title}</span></Link>
+                        <button type="button" onClick={() => { setNotice(''); setPolicyEvent(event) }} className={`inline-flex min-h-11 items-center underline-offset-2 hover:underline sm:min-h-8 ${event.policy_hold ? 'text-brand-700' : 'text-red-700'}`}>
+                          {event.policy_hold ? 'Restore' : 'Pause or hide'}<span className="sr-only"> {event.title}</span>
+                        </button>
+                      </div>
                     </td>
                     <td className="whitespace-nowrap px-3 py-3">
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
@@ -233,6 +251,8 @@ function AdminEventsPageSession({ identity, resourcePath }) {
           </button>
         </div>
       )}
+      {policyEvent && <EventPolicyHoldDialog event={policyEvent} beginRequest={beginRequest} onClose={() => setPolicyEvent(null)}
+        onSaved={message => { setPolicyEvent(null); setNotice(message); refreshAfterAction() }} />}
     </AdminLayout>
   )
 }
