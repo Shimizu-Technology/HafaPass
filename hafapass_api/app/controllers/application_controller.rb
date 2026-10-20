@@ -79,16 +79,47 @@ class ApplicationController < ActionController::API
     clerk_id = @clerk_payload&.dig("sub")
     return nil if clerk_id.blank?
 
-    @current_user = User.find_or_create_by!(clerk_id: clerk_id) do |user|
-      user.email = clerk_email
-      user.first_name = @clerk_payload["first_name"]
-      user.last_name = @clerk_payload["last_name"]
-      user.role = initial_role_for(user)
-    end
+    @current_user = User.find_by(clerk_id: clerk_id) || create_user_from_clerk(clerk_id)
+    # Accounts created before this lookup (or during a Clerk outage) refill
+    # through the leased profile sync, which bounds provider calls to one per
+    # account every few minutes instead of one per request.
+    return @current_user if @current_user.email.present? || @current_user.previously_new_record?
+
+    @current_user = ClerkProfileSync.call(@current_user)
+  end
+
+  # The provider lookup runs before the insert so no transaction or row lock
+  # waits on Clerk. Parallel first requests race on the unique clerk_id index;
+  # the loser re-reads the winner's row instead of failing.
+  def create_user_from_clerk(clerk_id)
+    profile = new_account_profile(clerk_id) if clerk_email.blank?
+    user = User.new(
+      clerk_id: clerk_id,
+      email: clerk_email.presence || profile&.fetch(:email, nil),
+      first_name: @clerk_payload["first_name"].presence || profile&.fetch(:first_name, nil),
+      last_name: @clerk_payload["last_name"].presence || profile&.fetch(:last_name, nil)
+    )
+    user.role = initial_role_for(user)
+    User.transaction(requires_new: true) { user.save! }
+    user
+  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+    User.find_by(clerk_id: clerk_id) || raise
   end
 
   def clerk_email
     @clerk_payload["email"] || @clerk_payload.dig("email_addresses", 0, "email_address")
+  end
+
+  # Standard Clerk session tokens carry no email claim, so a new account would
+  # otherwise wait for a later profile sync to learn its contact address.
+  # ClerkIdentity reuses a successful lookup for initial_role_for's
+  # verified-address check; a timed-out short lookup is retried there at the
+  # full timeout. A failure still creates the account; the email stays blank
+  # until the next sync.
+  def new_account_profile(clerk_id)
+    profile = ClerkIdentity.profile(clerk_id, timeout: ClerkIdentity::SIGN_IN_TIMEOUT)
+    Rails.logger.info("Clerk profile unavailable for a new account; email will sync later") unless profile&.dig(:email)
+    profile
   end
 
   def initial_role_for(user)

@@ -113,7 +113,7 @@ class OrderPresenter
   end
 
   def ticket_json(ticket)
-    transferred_away = ticket.holder_user_id.present? && ticket.holder_user_id != order.user_id
+    transferred_away = ticket.transferred_away_from?(order)
     {
       id: ticket.id,
       display_credential: transferred_away ? nil : ticket.display_credential,
