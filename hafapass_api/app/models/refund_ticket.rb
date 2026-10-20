@@ -9,6 +9,7 @@ class RefundTicket < ApplicationRecord
   validates :ticket_id, uniqueness: { conditions: -> { where(released_at: nil) } }, if: -> { released_at.nil? }
   validates :amount_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :ticket_belongs_to_refund_order
+  after_save -> { Wallet::PassSync.tickets_changed(ticket_id) }, if: -> { previously_new_record? || saved_change_to_released_at? }
 
   private
 

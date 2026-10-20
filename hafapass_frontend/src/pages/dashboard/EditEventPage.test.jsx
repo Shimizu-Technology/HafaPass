@@ -10,7 +10,8 @@ vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'r
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ onUploaded }) => <button type="button" onClick={() => onUploaded('https://images.invalid/verified.png')}>Choose verified cover</button> }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ ticketTypes }) => <ul>{ticketTypes.map(type => <li key={type.id}>{type.name}</li>)}</ul> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+const launch = vi.hoisted(() => ({ value: {} }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => launch.value }))
 
 const event = { permissions: { edit_event_content: true, manage_events: true, manage_inventory: true, box_office: true, view_attendees: true, manage_staff: true, manage_attendees: true, view_finance: true }, id: 37, title: 'Published Workshop', venue_name: 'Venue', status: 'published', timezone: 'Pacific/Guam', category: 'other', age_restriction: 'all_ages', starts_at: '2026-10-16T09:00:42.123Z', ends_at: '2026-10-16T12:00:42.123Z', doors_open_at: '2026-10-16T08:30:42.123Z', ticket_types: [] }
 function mount() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/edit']}><Routes><Route path="/dashboard/events/:id/edit" element={<EditEventPage />} /></Routes></MemoryRouter>) }
@@ -262,5 +263,38 @@ describe('canonical saved event form', () => {
     expect(apiClient.put.mock.calls[0][1].max_capacity).toBe(100)
     expect(capacity.value).toBe('100')
     expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
+  })
+})
+
+describe('ticket transfer setting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    launch.value = {}
+    apiClient.get.mockResolvedValue({ data: { ...event, transfers_enabled: false } })
+    apiClient.put.mockImplementation((_url, body) => Promise.resolve({ data: { ...event, ...body } }))
+  })
+
+  it('hides the setting and sends no transfer field while the capability is off', async () => {
+    const user = userEvent.setup()
+    mount()
+    await user.type(await screen.findByLabelText(/Event Title/), ' Live')
+    expect(screen.queryByLabelText('Allow ticket transfers')).not.toBeInTheDocument()
+    await user.click(within(screen.getByTestId('event-details-save-bar')).getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1]).not.toHaveProperty('transfers_enabled')
+  })
+
+  it('lets an organizer allow transfers when the capability is on', async () => {
+    launch.value = { ticket_transfers: true }
+    const user = userEvent.setup()
+    mount()
+    const toggle = await screen.findByLabelText('Allow ticket transfers')
+    expect(toggle).not.toBeChecked()
+    expect(toggle).toHaveAccessibleDescription(/replaces the QR code/)
+    await user.click(toggle)
+    await user.click(within(screen.getByTestId('event-details-save-bar')).getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ transfers_enabled: true })
+    expect(screen.getByLabelText('Allow ticket transfers')).toBeChecked()
   })
 })

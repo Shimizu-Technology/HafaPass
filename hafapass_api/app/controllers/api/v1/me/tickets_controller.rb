@@ -4,7 +4,7 @@ class Api::V1::Me::TicketsController < ApplicationController
   def index
     tickets = Ticket
       .where(holder_user: current_user)
-      .includes(:ticket_type, :event, :order)
+      .includes(:ticket_type, :event, :order, :ticket_transfers)
       .order(created_at: :desc)
 
     pagy, paginated_tickets = paginate(tickets)
@@ -25,6 +25,7 @@ class Api::V1::Me::TicketsController < ApplicationController
       attendee_name: ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
       admission_allowed: ticket.admission_allowed?,
+      pending_transfer: ticket.issued? ? ticket.pending_transfer_summary : nil,
       event: {
         id: ticket.event.id,
         title: ticket.event.title,
@@ -34,7 +35,7 @@ class Api::V1::Me::TicketsController < ApplicationController
         starts_at: ticket.event.starts_at,
         ends_at: ticket.event.ends_at,
         timezone: ticket.event.timezone,
-        transfers_enabled: ticket.event.transfers_enabled,
+        transfers_enabled: ticket.event.transfers_available?,
         cover_image_url: ticket.event.cover_image_url
       },
       ticket_type: {

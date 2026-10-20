@@ -24,6 +24,21 @@ module PublicSiteUrl
       configured("PUBLIC_WEB_URL") || (local? && configured("FRONTEND_URL")) || local_fallback("PUBLIC_WEB_URL")
     end
 
+    # The public HTTPS API origin from PUBLIC_API_URL, for URLs that outside
+    # services fetch (Apple Wallet's web service, email PDF attachments). Nil
+    # when unset or not an HTTPS origin, so callers omit those features rather
+    # than hand out a localhost link.
+    def api
+      value = configured("PUBLIC_API_URL")
+      uri = URI.parse(value.to_s)
+      return unless uri.is_a?(URI::HTTPS) && uri.host.present? && uri.path.blank? && uri.userinfo.nil? &&
+        uri.query.nil? && uri.fragment.nil?
+
+      uri.to_s
+    rescue URI::InvalidURIError
+      nil
+    end
+
     def event(event)
       "#{base}/events/#{event.slug}"
     end

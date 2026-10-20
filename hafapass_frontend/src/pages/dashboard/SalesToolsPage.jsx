@@ -87,7 +87,7 @@ function SalesToolsSession({ eventId, identity }) {
       setCampaigns(responses[4]?.data.communication_campaigns || [])
       setSegments(responses[5]?.data.segments || null)
       if (!initialized.current) {
-        const initial = { transfers_enabled: saved.transfers_enabled, supported_locales: saved.supported_locales || [], localized_content: saved.localized_content || {} }
+        const initial = { supported_locales: saved.supported_locales || [], localized_content: saved.localized_content || {} }
         setSettings(initial); setSavedSettings(initial)
       }
       initialized.current = true
@@ -173,13 +173,10 @@ function SalesToolsSession({ eventId, identity }) {
     <button disabled={busy || refreshing} className="btn-secondary" onClick={load}>{refreshing ? 'Refreshing saved data…' : 'Refresh saved data'}</button>
     {pending && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{pending.label} may have completed. Review the saved configuration or campaign status before making another change.</p><button disabled={busy || refreshing || !reviewed} className="btn-secondary mt-3" onClick={acknowledge}>I verified the saved data</button></div>}
     <fieldset disabled={locked} className="min-w-0 space-y-6"><legend className="sr-only">Sales and audience tools</legend>
-    {(permission('edit_event_content')) && (<Section title="Ticket policy and languages" description="Choose whether tickets can transfer and maintain public translations. Who pays the service fee is set next to ticket pricing on the event's edit page.">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.transfers_enabled} onChange={e => setSettings({ ...settings, transfers_enabled: e.target.checked })} /> Allow secure ticket transfers</label>
-      </div>
+    {(permission('edit_event_content')) && (<Section title="Public languages" description="Maintain public translations. Who pays the service fee and whether tickets can transfer are set on the event's edit page.">
       <div className="mt-4 flex gap-5 text-sm">{['ja', 'ch'].map(locale => <label key={locale} className="flex items-center gap-2"><input type="checkbox" checked={settings.supported_locales.includes(locale)} onChange={e => setSettings({ ...settings, supported_locales: e.target.checked ? [...settings.supported_locales, locale] : settings.supported_locales.filter(value => value !== locale) })} />{locale === 'ja' ? 'Japanese' : 'CHamoru'}</label>)}</div>
       {['ja', 'ch'].filter(locale => settings.supported_locales.includes(locale)).map(locale => <div key={locale} className="mt-4 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2"><p className="sm:col-span-2 text-sm font-semibold">{locale === 'ja' ? 'Japanese' : 'CHamoru'} public content</p><Field label="Translated title"><input className="input font-normal" value={settings.localized_content?.[locale]?.title || ''} onChange={e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [locale]: { ...settings.localized_content?.[locale], title: e.target.value } } })} /></Field><Field label="Translated description"><textarea className="input font-normal" value={settings.localized_content?.[locale]?.description || ''} onChange={e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [locale]: { ...settings.localized_content?.[locale], description: e.target.value } } })} /></Field></div>)}
-      <button className="btn-primary mt-4" onClick={saveSettings}>Save sales settings</button>
+      <button className="btn-primary mt-4" onClick={saveSettings}>Save languages</button>
     </Section>)}
 
     {(permission('manage_inventory')) && (<Section title="Extras, merchandise and donations" description="These items share the checkout and financial ledger with ticket revenue.">

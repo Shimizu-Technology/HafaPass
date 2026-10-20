@@ -17,7 +17,7 @@ const dto = id => ({ id, organization_id: 1, title: id === 11 ? 'Alpha private e
   permissions, fee_policy: 'buyer_pays', buyer_fee_percent: 100, transfers_enabled: true, supported_locales: [], localized_content: {}, ticket_types: [{ id: 17, name: 'General', price_cents: 1000 }] })
 const tools = [
   { name: 'Staff', path: 'team', Component: EventStaffPage, ready: () => screen.findByRole('button', { name: 'Assign' }), draft: () => screen.getByRole('combobox', { name: 'Event role' }), enter: user => user.selectOptions(screen.getByRole('combobox', { name: 'Event role' }), 'manager'), value: 'manager', save: () => screen.getByRole('button', { name: 'Assign' }), retry: 'Retry staff list' },
-  { name: 'Sales', path: 'sales-tools', Component: SalesToolsPage, ready: () => screen.findByRole('button', { name: 'Save sales settings' }), draft: () => within(screen.getByRole('heading', { name: 'Extras, merchandise and donations' }).closest('section')).getByLabelText('Item name'), enter: user => user.type(within(screen.getByRole('heading', { name: 'Extras, merchandise and donations' }).closest('section')).getByLabelText('Item name'), 'Draft extra'), value: 'Draft extra', save: () => screen.getByRole('button', { name: 'Add item', exact: true }), retry: 'Retry sales tools' },
+  { name: 'Sales', path: 'sales-tools', Component: SalesToolsPage, ready: () => screen.findByRole('button', { name: 'Save languages' }), draft: () => within(screen.getByRole('heading', { name: 'Extras, merchandise and donations' }).closest('section')).getByLabelText('Item name'), enter: user => user.type(within(screen.getByRole('heading', { name: 'Extras, merchandise and donations' }).closest('section')).getByLabelText('Item name'), 'Draft extra'), value: 'Draft extra', save: () => screen.getByRole('button', { name: 'Add item', exact: true }), retry: 'Retry sales tools' },
   { name: 'Seating', path: 'seating', Component: SeatingManagementPage, ready: () => screen.findByRole('button', { name: 'Create reusable layout' }), draft: () => screen.getByLabelText('Layout name'), enter: async user => { await user.clear(screen.getByLabelText('Layout name')); await user.type(screen.getByLabelText('Layout name'), 'Draft layout') }, value: 'Draft layout', save: () => screen.getByRole('button', { name: 'Create reusable layout' }), retry: 'Retry seating operations' },
 ]
 let clearAuth, rows, getDefault
@@ -148,15 +148,15 @@ describe.each(tools)('$name organizer tool ownership and recovery', tool => {
   })
 })
 
-it('refreshing sales resources preserves an unsaved transfer setting and another draft', async () => {
+it('refreshing sales resources preserves an unsaved language setting and another draft', async () => {
   mount(tools[1]); await tools[1].ready()
   const user = userEvent.setup()
-  await user.click(screen.getByLabelText('Allow secure ticket transfers'))
+  await user.click(screen.getByLabelText('Japanese'))
   await user.type(screen.getByLabelText('Waiver title'), 'Unsubmitted waiver')
   await tools[1].enter(user); await user.click(tools[1].save())
   await waitFor(() => expect(tools[1].draft()).toHaveValue(''))
   await waitFor(() => expect(screen.getByText('Save configuration confirmed. Refreshing saved data.')).toBeInTheDocument())
-  expect(screen.getByLabelText('Allow secure ticket transfers')).not.toBeChecked()
+  expect(screen.getByLabelText('Japanese')).toBeChecked()
   expect(screen.getByLabelText('Waiver title')).toHaveValue('Unsubmitted waiver')
 })
 
@@ -164,7 +164,7 @@ it('loads only marketing resources and does not expose attendee export or invent
   rows[11] = { ...rows[11], permissions: { manage_marketing: true } }
   mount(tools[1]); await screen.findByRole('heading', { name: 'Promoters and referral commission' })
   expect(screen.queryByRole('heading', { name: 'Extras, merchandise and donations' })).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Save sales settings' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Save languages' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
   expect(apiClient.get.mock.calls.map(([path]) => path)).toEqual(['/organizer/events/11', '/organizer/events/11/promoters', '/organizer/events/11/communication_campaigns'])
 })
@@ -263,7 +263,7 @@ it('pauses staff changes while a previous saved-list refresh is unresolved', asy
 
 it('gives every sales tool input a visible label and keeps add actions secondary', async () => {
   mount(tools[1])
-  await screen.findByRole('button', { name: 'Save sales settings' })
+  await screen.findByRole('button', { name: 'Save languages' })
   for (const label of ['Item name', 'Type', 'Price ($)', 'Inventory', 'Question', 'Answer type', 'Choices (comma separated)', 'Waiver title', 'Version', 'Waiver text',
     'Promoter name', 'Promoter email', 'Referral code', 'Commission (%)', 'Internal campaign name', 'Email subject', 'Recipients', 'Send at (optional)', 'Message']) {
     expect(screen.getByLabelText(label)).toBeVisible()

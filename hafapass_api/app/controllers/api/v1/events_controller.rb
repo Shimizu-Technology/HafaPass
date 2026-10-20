@@ -246,7 +246,7 @@ module Api
           attendee_count: attendee_count,
           fee_policy: event.fee_policy,
           buyer_fee_percent: event.buyer_fee_percent,
-          transfers_enabled: event.transfers_enabled,
+          transfers_enabled: event.transfers_available?,
           assigned_seating: event.assigned_seating?,
           supported_locales: event.supported_locales,
           localized_content: event.localized_content,

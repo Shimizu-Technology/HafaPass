@@ -16,6 +16,22 @@ module Wallet
       configured? && PlatformCapabilities.enabled?("google_wallet")
     end
 
+    def self.object_id_for(ticket)
+      "#{issuer_id}.hafapass_ticket_#{ticket.id}_v#{ticket.scan_credential_version}"
+    end
+
+    def self.class_id_for(event)
+      "#{issuer_id}.hafapass_event_#{event.id}"
+    end
+
+    def self.issuer_id
+      ENV.fetch("GOOGLE_WALLET_ISSUER_ID")
+    end
+
+    def self.private_key
+      OpenSSL::PKey::RSA.new(ENV.fetch("GOOGLE_WALLET_PRIVATE_KEY").gsub("\\n", "\n"))
+    end
+
     def self.call(ticket)
       new(ticket).call
     end
@@ -28,7 +44,10 @@ module Wallet
       raise ConfigurationError, "Google Wallet is not configured" unless self.class.configured?
       raise ConfigurationError, "Google Wallet is disabled pending provider approval" unless self.class.enabled?
 
-      token = JWT.encode(claims, OpenSSL::PKey::RSA.new(normalized_private_key), "RS256")
+      wallet_pass = record_wallet_pass!
+      object = GoogleTicketObject.new(wallet_pass)
+      wallet_pass.record_content!(object.content_digest)
+      token = JWT.encode(claims(object), self.class.private_key, "RS256")
       "https://pay.google.com/gp/v/save/#{token}"
     rescue OpenSSL::PKey::PKeyError, JWT::EncodeError => e
       raise ConfigurationError, "Google Wallet signing failed: #{e.message}"
@@ -38,7 +57,15 @@ module Wallet
 
     attr_reader :ticket
 
-    def claims
+    # Remembering the object lets later state changes update or deactivate it.
+    def record_wallet_pass!
+      wallet_pass = WalletPass.record!(provider: "google", serial_number: self.class.object_id_for(ticket), ticket: ticket)
+      raise ConfigurationError, "Google Wallet object belongs to another ticket" unless wallet_pass.ticket_id == ticket.id
+
+      wallet_pass
+    end
+
+    def claims(object)
       {
         iss: ENV.fetch("GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL"),
         aud: "google",
@@ -46,54 +73,10 @@ module Wallet
         iat: Time.current.to_i,
         origins: [PublicSiteUrl.frontend],
         payload: {
-          eventTicketClasses: [event_class],
-          eventTicketObjects: [ticket_object]
+          eventTicketClasses: [object.event_class],
+          eventTicketObjects: [object.ticket_object]
         }
       }
-    end
-
-    def event_class
-      event = ticket.event
-      {
-        id: class_id,
-        issuerName: "HåfaPass",
-        reviewStatus: ENV.fetch("GOOGLE_WALLET_CLASS_REVIEW_STATUS", "UNDER_REVIEW"),
-        eventName: localized(event.title),
-        venue: { name: localized(event.venue_name.to_s), address: localized(event.venue_address.to_s) },
-        dateTime: { start: event.starts_at&.iso8601, end: (event.ends_at || event.starts_at)&.iso8601 }
-      }
-    end
-
-    def ticket_object
-      {
-        id: pass_object_id,
-        classId: class_id,
-        state: ticket.admission_allowed? ? "ACTIVE" : "INACTIVE",
-        ticketHolderName: ticket.attendee_name.to_s,
-        ticketNumber: ticket.id.to_s,
-        ticketType: localized([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")),
-        barcode: { type: "QR_CODE", value: ticket.scan_credential, alternateText: "HåfaPass #{ticket.id}" }
-      }
-    end
-
-    def localized(value)
-      { defaultValue: { language: "en-US", value: value } }
-    end
-
-    def class_id
-      "#{issuer_id}.hafapass_event_#{ticket.event_id}"
-    end
-
-    def pass_object_id
-      "#{issuer_id}.hafapass_ticket_#{ticket.id}_v#{ticket.scan_credential_version}"
-    end
-
-    def issuer_id
-      ENV.fetch("GOOGLE_WALLET_ISSUER_ID")
-    end
-
-    def normalized_private_key
-      ENV.fetch("GOOGLE_WALLET_PRIVATE_KEY").gsub("\\n", "\n")
     end
   end
 end

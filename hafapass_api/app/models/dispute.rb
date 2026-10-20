@@ -11,5 +11,8 @@ class Dispute < ApplicationRecord
   validates :amount_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :currency, length: { is: 3 }
 
+  after_save -> { Wallet::PassSync.tickets_changed(order.tickets.select(:id)) },
+    if: -> { previously_new_record? || saved_change_to_status? }
+
   attr_readonly :order_id, :payment_id, :provider, :provider_dispute_id, :amount_cents, :currency, :opened_at
 end

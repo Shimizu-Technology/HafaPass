@@ -64,7 +64,7 @@ class OrderPresenter
       ends_at: event.ends_at,
       doors_open_at: event.doors_open_at,
       timezone: event.timezone,
-      transfers_enabled: event.transfers_enabled,
+      transfers_enabled: event.transfers_available?,
       assigned_seating: event.assigned_seating?,
       cover_image_url: event.cover_image_url
     }
@@ -125,6 +125,7 @@ class OrderPresenter
         (ticket.refund_pending? ? "Ticket access is paused while its refund is pending" : nil),
       attendee_name: transferred_away ? nil : ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
+      pending_transfer: !transferred_away && ticket.issued? ? ticket.pending_transfer_summary : nil,
       refundable_cents: !transferred_away && ticket.issued? ? ticket_refundable_amounts.fetch(ticket.id, 0) : 0,
       ticket_type: {
         id: ticket.ticket_type.id,
@@ -188,7 +189,7 @@ class OrderPresenter
   def presented_tickets
     @presented_tickets ||= begin
       tickets = order.tickets
-      tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets,
+      tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
         event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
       tickets.to_a.sort_by(&:id)
     end

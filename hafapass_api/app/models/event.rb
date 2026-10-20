@@ -102,6 +102,7 @@ class Event < ApplicationRecord
 
   before_validation :assign_slug
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
+  after_update -> { Wallet::PassSync.event_changed(self) }, if: :wallet_visible_change?
 
   scope :published, -> { where(status: :published) }
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
@@ -197,6 +198,11 @@ class Event < ApplicationRecord
 
     summary = { scope: policy_hold_scope, reason: policy_hold_reason, placed_at: policy_hold_at }
     include_actor ? summary.merge(placed_by: policy_hold_by_user&.email) : summary
+  end
+
+  # The stored setting only takes effect while the platform allows transfers.
+  def transfers_available?
+    transfers_enabled? && LaunchCapabilities.enabled?(:ticket_transfers)
   end
 
   def assigned_seating?
@@ -379,6 +385,10 @@ class Event < ApplicationRecord
     elsif orders.exists?
       errors.add(:live_money_proof_candidate, "cannot change after the event has orders")
     end
+  end
+
+  def wallet_visible_change?
+    %w[status title starts_at ends_at venue_name venue_address].any? { |attribute| saved_change_to_attribute?(attribute) }
   end
 
   def copy_venue_details

@@ -21,6 +21,7 @@ RSpec.describe StageSafety do
       "CLERK_AUTHORIZED_PARTIES" => nil,
       "ENABLE_FIRST_USER_ADMIN_BOOTSTRAP" => "false",
       "HAFAPASS_LAUNCH_SCOPE" => nil,
+      "HAFAPASS_LAUNCH_CAPABILITIES" => nil,
       "STRIPE_LIVE_SECRET_KEY" => nil,
       "STRIPE_LIVE_PUBLISHABLE_KEY" => nil,
       "STRIPE_SECRET_KEY" => nil,
@@ -36,6 +37,15 @@ RSpec.describe StageSafety do
     example.run
   ensure
     original.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+  end
+
+  it "allows transfers on top of general admission but reports any other added capability" do
+    ENV["HAFAPASS_LAUNCH_CAPABILITIES"] = "ticket_transfers"
+    expect(described_class.call.dig(:checks, :launch_scope)).to be(true)
+    %w[assigned_seating door_card ticket_transfers,advanced_sales_tools not_a_capability].each do |value|
+      ENV["HAFAPASS_LAUNCH_CAPABILITIES"] = value
+      expect(described_class.call.dig(:checks, :launch_scope)).to be(false), value
+    end
   end
 
   it "rejects missing or short application secrets without disclosing them" do
@@ -91,7 +101,8 @@ RSpec.describe StageSafety do
       "ENABLE_FIRST_USER_ADMIN_BOOTSTRAP" => "true",
       "STRIPE_LIVE_SECRET_KEY" => "sk_live_fixture",
       "STRIPE_TEST_SECRET_KEY" => "sk_live_fixture",
-      "HAFAPASS_LAUNCH_SCOPE" => "full"
+      "HAFAPASS_LAUNCH_SCOPE" => "full",
+      "HAFAPASS_LAUNCH_CAPABILITIES" => "assigned_seating"
     }.each do |key, invalid_value|
       original = ENV[key]
       invalid_value.nil? ? ENV.delete(key) : ENV[key] = invalid_value
