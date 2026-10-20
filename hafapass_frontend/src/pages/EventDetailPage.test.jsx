@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EventDetailPage from './EventDetailPage'
@@ -61,11 +61,16 @@ describe('EventDetailPage buyer polish', () => {
     expect(bar).toHaveAttribute('data-visible', 'false')
     expect(bar).toHaveAttribute('inert')
     expect(bar).toHaveClass('lg:hidden')
-    reportAllOutOfView()
-    expect(bar).toHaveAttribute('data-visible', 'true')
-    expect(bar).not.toHaveAttribute('inert')
-    expect(within(bar).getByText('From $15.00')).toBeInTheDocument()
-    const link = within(bar).getByRole('link', { name: /Get tickets/ })
+    // Late page data can re-render the bar on a slow runner; report again and
+    // re-query until the settled bar reacts, instead of holding a stale node.
+    await waitFor(() => {
+      reportAllOutOfView()
+      expect(screen.getByTestId('mobile-buy-bar')).toHaveAttribute('data-visible', 'true')
+    })
+    const shownBar = screen.getByTestId('mobile-buy-bar')
+    expect(shownBar).not.toHaveAttribute('inert')
+    expect(within(shownBar).getByText('From $15.00')).toBeInTheDocument()
+    const link = within(shownBar).getByRole('link', { name: /Get tickets/ })
     expect(link).toHaveAttribute('href', '#tickets')
     const panel = document.getElementById('tickets')
     panel.scrollIntoView = vi.fn()

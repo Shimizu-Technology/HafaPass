@@ -178,6 +178,17 @@ it('does not enable seating activation while layout details are pending or use a
   expect(apiClient.post.mock.calls[0][2].authContext).toBe(getApiAuthContext())
 })
 
+it('shows the server reason when a layout with an unpaired wheelchair space is refused', async () => {
+  const reason = 'This layout has 1 wheelchair space without a companion seat: Main floor · Row A · Seat 1. Give each wheelchair space a companion seat in the same companion group, then publish the layout again.'
+  apiClient.post.mockRejectedValue({ response: { status: 422, data: { error: reason } } })
+  mount(tools[2]); await tools[2].ready(); const user = userEvent.setup()
+  await user.selectOptions(screen.getByLabelText('Published venue layout'), '42')
+  await screen.findByLabelText('Main zone ticket type')
+  await user.selectOptions(screen.getByLabelText('Main zone ticket type'), '17')
+  await user.click(screen.getByRole('button', { name: 'Activate assigned seating' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent(reason)
+})
+
 it('does not grant staff or seating controls without server permission or an enabled seating flag', async () => {
   rows[11] = { ...rows[11], permissions: { view_events: true } }
   const view = mount(tools[0])

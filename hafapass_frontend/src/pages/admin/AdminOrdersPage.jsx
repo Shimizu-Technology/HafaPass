@@ -84,37 +84,42 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 text-left text-neutral-500">
-                  <th className="px-4 py-3 font-medium w-8"></th>
-                  <th className="px-4 py-3 font-medium">Order</th>
-                  <th className="px-4 py-3 font-medium">Buyer</th>
-                  <th className="px-4 py-3 font-medium hidden md:table-cell">Event</th>
-                  <th className="px-4 py-3 font-medium text-right">Tickets</th>
-                  <th className="px-4 py-3 font-medium text-right">Total</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium hidden lg:table-cell">Date</th>
+                  <th className="w-8 px-2 py-3 font-medium"><span className="sr-only">Details</span></th>
+                  {/* Date folds under the order number and event under the buyer on narrower layouts. */}
+                  <th className="px-3 py-3 font-medium">Order</th>
+                  <th className="min-w-[12rem] px-3 py-3 font-medium">Buyer</th>
+                  <th className="hidden min-w-[12rem] px-3 py-3 font-medium md:table-cell">Event</th>
+                  <th className="px-3 py-3 font-medium text-right">Tickets</th>
+                  <th className="px-3 py-3 font-medium text-right">Total</th>
+                  <th className="px-3 py-3 font-medium">Status</th>
+                  <th className="hidden px-3 py-3 font-medium xl:table-cell">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {orders.map(order => (
                   <Fragment key={order.id}>
                     <tr className="hover:bg-neutral-50/50 transition-colors cursor-pointer" onClick={() => setExpanded(expanded === order.id ? null : order.id)}>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-3">
                         <button aria-label={`Order ${order.id} details`} aria-expanded={expanded === order.id} aria-controls={`order-${order.id}-details`} onClick={event => { event.stopPropagation(); setExpanded(expanded === order.id ? null : order.id) }} className="grid min-h-11 min-w-11 place-items-center rounded focus-visible:ring-2 focus-visible:ring-focus">
                           {expanded === order.id ? <ChevronUp aria-hidden="true" className="w-4 h-4 text-content-muted" /> : <ChevronDown aria-hidden="true" className="w-4 h-4 text-content-muted" />}
                         </button>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-neutral-500">#{order.id}</td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-neutral-900">{order.buyer_name}</p>
-                        <p className="text-xs text-neutral-500">{order.buyer_email}</p>
+                      <td className="whitespace-nowrap px-3 py-3">
+                        <p className="font-mono text-xs text-neutral-500">#{order.id}</p>
+                        <p className="text-xs text-neutral-500 xl:hidden">Date: {new Date(order.created_at).toLocaleDateString()}</p>
                       </td>
-                      <td className="px-4 py-3 text-neutral-500 hidden md:table-cell">{order.event_title}</td>
-                      <td className="px-4 py-3 text-right text-neutral-700">{order.tickets.length}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-neutral-900">{money(order.net_cents)}</td>
-                      <td className="px-4 py-3">
+                      <td className="min-w-[12rem] px-3 py-3">
+                        <p className="font-medium text-neutral-900">{order.buyer_name}</p>
+                        <p className="text-xs text-neutral-500 [overflow-wrap:anywhere]">{order.buyer_email}</p>
+                        <p className="mt-0.5 text-xs text-neutral-500 md:hidden">Event: {order.event_title}</p>
+                      </td>
+                      <td className="hidden min-w-[12rem] px-3 py-3 text-neutral-500 md:table-cell">{order.event_title}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right text-neutral-700">{order.tickets.length}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right font-semibold text-neutral-900">{money(order.net_cents)}</td>
+                      <td className="whitespace-nowrap px-3 py-3">
                         <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusBadge(order.status)}`}>{order.status.replace('_', ' ')}</span>
                       </td>
-                      <td className="px-4 py-3 text-neutral-500 hidden lg:table-cell">{new Date(order.created_at).toLocaleDateString()}</td>
+                      <td className="hidden whitespace-nowrap px-3 py-3 text-neutral-500 xl:table-cell">{new Date(order.created_at).toLocaleDateString()}</td>
                     </tr>
                     {expanded === order.id && (
                       <tr id={`order-${order.id}-details`} key={`${order.id}-detail`}>
@@ -140,7 +145,7 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
                             </div>
 
                             <div>
-                              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Immutable order items</p>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Order items as purchased</p>
                               <div className="space-y-1">
                                 {order.order_items.map(item => (
                                   <div key={item.id} className="grid grid-cols-[1fr_auto_auto] gap-4 rounded-lg bg-white px-3 py-2 text-xs text-neutral-600">

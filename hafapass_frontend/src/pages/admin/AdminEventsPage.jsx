@@ -173,24 +173,27 @@ function AdminEventsPageSession({ identity, resourcePath }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 text-left text-neutral-500">
-                  <th className="px-4 py-3 font-medium">Title</th>
-                  <th className="px-4 py-3 font-medium hidden lg:table-cell">Organizer</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium hidden md:table-cell">Category</th>
-                  <th className="px-4 py-3 font-medium text-right">Sold</th>
-                  <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Revenue</th>
-                  <th className="px-4 py-3 font-medium">Release gates</th>
-                  <th className="px-4 py-3 font-medium text-center">★</th>
+                  {/* Organizer sits under the title; category joins it below xl. */}
+                  <th className="min-w-[15rem] px-4 py-3 font-medium">Event</th>
+                  <th className="px-3 py-3 font-medium">Status</th>
+                  <th className="hidden px-3 py-3 font-medium xl:table-cell">Category</th>
+                  <th className="px-3 py-3 font-medium text-right">Sold</th>
+                  <th className="hidden px-3 py-3 font-medium text-right md:table-cell">Revenue</th>
+                  <th className="px-3 py-3 font-medium">Release gates</th>
+                  <th className="px-3 py-3 font-medium text-center"><span aria-hidden="true">★</span><span className="sr-only">Featured</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {events.map(event => (
                   <tr key={event.id} className="hover:bg-neutral-50/50 transition-colors">
-                    <td className="px-4 py-3">
+                    <td className="min-w-[15rem] px-4 py-3">
                       <Link to={`/events/${event.slug}`} className="font-medium text-brand-600 hover:text-brand-700">{event.title}</Link>
+                      <p className="mt-0.5 text-xs text-neutral-500">
+                        {event.organizer_name}
+                        {event.category && <span className="capitalize xl:hidden">{event.organizer_name ? ' · ' : ''}{event.category}</span>}
+                      </p>
                     </td>
-                    <td className="px-4 py-3 text-neutral-500 hidden lg:table-cell">{event.organizer_name}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-3 py-3">
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                         event.status === 'published' ? 'bg-emerald-50 text-emerald-700' :
                         event.status === 'draft' ? 'bg-neutral-100 text-neutral-600' :
@@ -198,11 +201,14 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                         'bg-red-50 text-red-800'
                       }`}>{adminLabel(event.status)}</span>
                     </td>
-                    <td className="px-4 py-3 text-neutral-500 hidden md:table-cell capitalize">{event.category}</td>
-                    <td className="px-4 py-3 text-right text-neutral-700">{event.tickets_sold}</td>
-                    <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
-                    <td className="px-4 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={refreshAfterAction} toggleProofCandidate={toggleProofCandidate} /></td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="hidden px-3 py-3 text-neutral-500 capitalize xl:table-cell">{event.category}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-right text-neutral-700">
+                      {event.tickets_sold}
+                      <span className="block text-xs text-neutral-500 md:hidden">Revenue: ${(event.revenue_cents / 100).toFixed(2)}</span>
+                    </td>
+                    <td className="hidden whitespace-nowrap px-3 py-3 text-right text-neutral-700 md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
+                    <td className="px-3 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={refreshAfterAction} toggleProofCandidate={toggleProofCandidate} /></td>
+                    <td className="px-3 py-3 text-center">
                       <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
                         <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-400 text-amber-400' : 'text-neutral-300'}`} />
                       </button>

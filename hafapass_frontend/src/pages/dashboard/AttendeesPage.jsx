@@ -306,7 +306,8 @@ function AttendeesPageSession({ id, identity }) {
                       <td className="px-4 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
                       <td className="px-4 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span></td>
                       <td className="px-4 py-3 text-sm text-neutral-500">{formatDate(att.checked_in_at)}</td>
-                      {showActions && <td className="px-4 py-3"><div className="flex justify-end gap-1.5">{rowActions(att, 'desktop')}</div></td>}
+                      {/* Stacked until 2xl so the actions stay in view beside the event sidebar at 1280. */}
+                      {showActions && <td className="px-4 py-3"><div className="flex flex-col items-stretch gap-1.5 2xl:flex-row 2xl:justify-end">{rowActions(att, 'desktop')}</div></td>}
                     </tr>
                   )
                 })}

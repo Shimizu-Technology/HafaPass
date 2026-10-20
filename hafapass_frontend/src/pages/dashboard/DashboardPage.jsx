@@ -133,7 +133,7 @@ function EventListCard({ event }) {
  return (
   <Link
    to={destination}
-   className="block bg-white rounded-xl shadow-sm border border-neutral-200 hover:shadow-md hover:border-brand-200 transition-all p-4"
+   className="block bg-white rounded-xl shadow-sm border border-neutral-200 hover:shadow-md hover:border-brand-200 transition-[border-color,box-shadow] duration-200 ease-out-strong p-4"
   >
    <div className="flex items-start justify-between gap-3">
     <div className="min-w-0 flex-1">

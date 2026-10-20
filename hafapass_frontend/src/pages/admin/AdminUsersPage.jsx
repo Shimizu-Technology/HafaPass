@@ -253,20 +253,21 @@ function AdminUsersPageSession({ identity, resourcePath }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-neutral-100 text-left text-neutral-500">
-                    <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-4 py-3 font-medium">Email</th>
-                    <th className="px-4 py-3 font-medium">Role</th>
-                    <th className="px-4 py-3 font-medium">Organizer readiness</th>
-                    <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Orders</th>
-                    <th className="px-4 py-3 font-medium hidden md:table-cell">Created</th>
+                    <th className="min-w-[14rem] px-4 py-3 font-medium">User</th>
+                    <th className="px-3 py-3 font-medium">Role</th>
+                    <th className="px-3 py-3 font-medium">Organizer readiness</th>
+                    <th className="px-3 py-3 font-medium text-right">Orders</th>
+                    <th className="px-3 py-3 font-medium">Created</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
                   {users.map(user => (
                     <tr key={user.id} className="hover:bg-neutral-50/50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-neutral-900">{userName(user)}</td>
-                      <td className="px-4 py-3 text-neutral-500">{userEmail(user)}</td>
-                      <td className="px-4 py-3">
+                      <td className="min-w-[14rem] px-4 py-3">
+                        <p className="font-medium text-neutral-900">{userName(user)}</p>
+                        <p className="text-xs text-neutral-500 [overflow-wrap:anywhere]">{userEmail(user)}</p>
+                      </td>
+                      <td className="px-3 py-3">
                         <select
                           value={user.role}
                           disabled={busy}
@@ -277,11 +278,11 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                           {roles.filter(Boolean).map(r => <option key={r} value={r}>{adminLabel(r)}</option>)}
                         </select>
                       </td>
-                      <td className="px-4 py-3 text-content-muted">
+                      <td className="px-3 py-3 text-content-muted">
                         <OrganizerReadiness user={user} busy={busy} reviewOrganizer={reviewOrganizer} syncConnectedAccount={syncConnectedAccount} fetchUsers={fetchUsers} />
                       </td>
-                      <td className="px-4 py-3 text-right text-neutral-700 hidden md:table-cell">{user.orders_count}</td>
-                      <td className="px-4 py-3 text-neutral-500 hidden md:table-cell">{new Date(user.created_at).toLocaleDateString()}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right text-neutral-700">{user.orders_count}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-neutral-500">{new Date(user.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
                 </tbody>
