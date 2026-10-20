@@ -103,7 +103,9 @@ RSpec.describe "Api::V1::Users", type: :request do
       }.to change(User, :count).by(1)
       expect(response).to have_http_status(:ok)
       expect(User.find_by!(clerk_id: "clerk_retry_admin")).to be_admin
-      expect(http).to have_received(:request).twice
+      # The failed attempt makes a short sign-in lookup plus one full-timeout
+      # verified-address retry; the recovered attempt needs a single lookup.
+      expect(http).to have_received(:request).exactly(3).times
     end
 
     it "does not re-promote a manually demoted existing allowlisted user" do
@@ -226,6 +228,33 @@ RSpec.describe "Api::V1::Users", type: :request do
       }.to_json))
       expect(sign_in_with({})).to have_attributes(email: "boss@example.com", role: "admin")
       expect(http).to have_received(:request).once
+    end
+
+    it "retries the verified-address check at the full timeout after a short sign-in lookup times out" do
+      allow(Rails.env).to receive(:development?).and_return(false)
+      allow(Rails.env).to receive(:test?).and_return(false)
+      allow(ENV).to receive(:fetch).with("ADMIN_EMAILS", "").and_return("boss@example.com")
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("CLERK_SECRET_KEY").and_return("sk_test_identity_fixture")
+      allow(ENV).to receive(:fetch).with("CLERK_SECRET_KEY").and_return("sk_test_identity_fixture")
+      http = instance_double(Net::HTTP)
+      allow(Net::HTTP).to receive(:start).and_yield(http)
+      calls = 0
+      allow(http).to receive(:request) do
+        calls += 1
+        raise Net::ReadTimeout if calls == 1
+
+        double(code: "200", body: {
+          id: "clerk_first_sign_in", primary_email_address_id: "idn_primary", email_addresses: [
+            { id: "idn_primary", email_address: "boss@example.com", verification: { status: "verified" } }
+          ]
+        }.to_json)
+      end
+      expect(sign_in_with({})).to have_attributes(email: nil, role: "admin")
+      expect(Net::HTTP).to have_received(:start)
+        .with("api.clerk.com", 443, hash_including(read_timeout: ClerkIdentity::SIGN_IN_TIMEOUT)).ordered
+      expect(Net::HTTP).to have_received(:start)
+        .with("api.clerk.com", 443, hash_including(read_timeout: ClerkIdentity::DEFAULT_TIMEOUT)).ordered
     end
 
     it "refills a previously created blank email through the leased profile sync" do

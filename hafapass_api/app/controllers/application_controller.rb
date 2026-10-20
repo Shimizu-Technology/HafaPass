@@ -112,9 +112,10 @@ class ApplicationController < ActionController::API
 
   # Standard Clerk session tokens carry no email claim, so a new account would
   # otherwise wait for a later profile sync to learn its contact address.
-  # ClerkIdentity caches the lookup (including failures) for this request, so
-  # initial_role_for's verified-address check reuses it. A failure still
-  # creates the account; the email stays blank until the next sync.
+  # ClerkIdentity reuses a successful lookup for initial_role_for's
+  # verified-address check; a timed-out short lookup is retried there at the
+  # full timeout. A failure still creates the account; the email stays blank
+  # until the next sync.
   def new_account_profile(clerk_id)
     profile = ClerkIdentity.profile(clerk_id, timeout: ClerkIdentity::SIGN_IN_TIMEOUT)
     Rails.logger.info("Clerk profile unavailable for a new account; email will sync later") unless profile&.dig(:email)

@@ -37,11 +37,17 @@ class ClerkIdentity
 
     # Display/contact data only. Never use persisted profile fields as proof of
     # email ownership or authorization; those checks still refetch each request.
+    # A cached failure only answers lookups that would wait no longer, so a
+    # short sign-in lookup that timed out never blocks a later full-length one.
     def profile(clerk_id, timeout: DEFAULT_TIMEOUT)
       cache = RequestCache.profiles
       return fetch_profile(clerk_id, timeout) unless cache
 
-      cache.fetch(clerk_id) { cache[clerk_id] = fetch_profile(clerk_id, timeout) }
+      entry = cache[clerk_id]
+      return entry[:profile] if entry && (entry[:profile] || entry[:timeout] >= timeout)
+
+      cache[clerk_id] = { profile: fetch_profile(clerk_id, timeout), timeout: timeout }
+      cache[clerk_id][:profile]
     end
 
     def email_matches?(user:, email:)

@@ -119,6 +119,18 @@ RSpec.describe ClerkIdentity do
     expect(described_class::RequestCache.profiles).to be_nil
   end
 
+  it "retries a short timed-out lookup at a longer timeout but reuses any success" do
+    described_class.with_request_cache do
+      allow(http).to receive(:request).and_raise(Net::ReadTimeout)
+      expect(described_class.profile("user_recipient", timeout: described_class::SIGN_IN_TIMEOUT)).to be_nil
+      expect(described_class.profile("user_recipient", timeout: described_class::SIGN_IN_TIMEOUT)).to be_nil
+      allow(http).to receive(:request).and_return(response)
+      expect(described_class.verified_email_addresses("user_recipient", require_available: true)).to eq(["team@example.com"])
+      expect(described_class.profile("user_recipient", timeout: described_class::SIGN_IN_TIMEOUT)).to include(email: "team@example.com")
+    end
+    expect(Net::HTTP).to have_received(:start).twice
+  end
+
   it "never backfills an unverified primary email" do
     allow(http).to receive(:request).and_return(double(code: "200", body: {
       id: "user_recipient", primary_email_address_id: "email_primary", email_addresses: [
