@@ -134,18 +134,24 @@ module Wallet
               timeStyle: "PKDateStyleShort", changeMessage: "Event time changed to %@" },
             { key: "venue", label: "VENUE", value: event.venue_name.to_s }
           ],
-          auxiliaryFields: [
+          # A replaced copy (e.g. the sender's after a transfer) never shows
+          # the current holder's name, seat or ticket type.
+          auxiliaryFields: (holder_details? ? [
             { key: "ticket", label: "TICKET", value: ticket.ticket_type.name },
             (ticket.seat_label && { key: "seat", label: "SEAT", value: ticket.seat_label })
-          ].compact,
+          ].compact : []),
           backFields: [
-            { key: "holder", label: "TICKET HOLDER", value: ticket.attendee_name.to_s },
+            ({ key: "holder", label: "TICKET HOLDER", value: ticket.attendee_name.to_s } if holder_details?),
             { key: "address", label: "VENUE ADDRESS", value: event.venue_address.to_s }
-          ]
+          ].compact
         },
         barcode: barcode,
         barcodes: barcode && [barcode]
       }.compact
+    end
+
+    def holder_details?
+      state.current_credential?
     end
 
     # A pass without a current, admissible credential carries no barcode.

@@ -12,7 +12,7 @@ gem "stripe"
 gem "aws-sdk-s3"
 gem "resend"
 # HTTP/2 client for Apple Wallet pass update pushes (APNs requires HTTP/2).
-gem "async-http", "~> 0.92"
+gem "async-http", "~> 0.92", require: false
 # HTTParty 0.24's response parser passes quirks_mode, removed by JSON 3.
 gem "json", ">= 2.21.2", "< 3"
 gem "sentry-rails", "~> 5.0"

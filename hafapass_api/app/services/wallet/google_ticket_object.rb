@@ -34,9 +34,11 @@ module Wallet
         id: wallet_pass.serial_number,
         classId: class_id,
         state: state.google_state(at: at),
-        ticketHolderName: ticket.attendee_name.to_s,
+        # A replaced object (e.g. the sender's after a transfer) never shows the
+        # current holder's name, seat or ticket type.
+        ticketHolderName: state.current_credential? ? ticket.attendee_name.to_s : nil,
         ticketNumber: ticket.id.to_s,
-        ticketType: localized([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")),
+        ticketType: state.current_credential? ? localized([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")) : nil,
         textModulesData: [{ id: "status", header: "Status", body: state.status_label }],
         barcode: state.barcode? ? { type: "QR_CODE", value: ticket.scan_credential, alternateText: "HåfaPass #{ticket.id}" } : nil
       }.compact

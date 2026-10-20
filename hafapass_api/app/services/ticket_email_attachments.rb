@@ -41,14 +41,21 @@ class TicketEmailAttachments
       ticket = Ticket.includes(:order, :event, :ticket_type).find_by(id: payload["ticket_id"])
       return unless ticket
 
-      current = ActiveSupport::SecurityUtils.secure_compare(ticket.display_credential_version.to_s, payload["version"].to_s)
-      [ticket, current && attachable?(ticket)]
+      [ticket, binding_for(ticket) == payload.slice("version", "scan_version", "holder_user_id") && attachable?(ticket)]
     end
 
     private
 
+    # The PDF draws the live scan credential, so the link is bound to every
+    # value that changes who may enter: a QR refresh, a transfer or a new
+    # holder each turn an old link into the "no longer valid" notice.
+    def binding_for(ticket)
+      { "version" => ticket.display_credential_version, "scan_version" => ticket.scan_credential_version,
+        "holder_user_id" => ticket.holder_user_id }
+    end
+
     def token(ticket)
-      SignedCredential.issue(namespace: NAMESPACE, payload: { ticket_id: ticket.id, version: ticket.display_credential_version },
+      SignedCredential.issue(namespace: NAMESPACE, payload: { ticket_id: ticket.id, **binding_for(ticket).symbolize_keys },
         expires_at: TTL.from_now)
     end
 

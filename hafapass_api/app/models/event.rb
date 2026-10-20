@@ -98,7 +98,7 @@ class Event < ApplicationRecord
 
   before_validation :assign_slug
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
-  after_update -> { Wallet::PassSync.tickets_changed(tickets.select(:id)) }, if: :wallet_visible_change?
+  after_update -> { Wallet::PassSync.event_changed(self) }, if: :wallet_visible_change?
 
   scope :published, -> { where(status: :published) }
   scope :upcoming, -> { where("starts_at > ?", Time.current) }

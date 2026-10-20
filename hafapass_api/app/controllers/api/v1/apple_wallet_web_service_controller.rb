@@ -40,14 +40,17 @@ class Api::V1::AppleWalletWebServiceController < ApplicationController
   end
 
   def serial_numbers
-    passes = WalletPass.apple.joins(:apple_wallet_registrations)
-      .where(apple_wallet_registrations: { device_library_identifier: device_identifier })
-      .order(:id).limit(MAX_SERIALS_PER_DEVICE).to_a
-    # A change that never reached the sync job still shows up on the next poll.
-    passes.each { |wallet_pass| Wallet::PassSync.refresh_apple_content!(wallet_pass) }
-
     since = updated_since
     return head :bad_request if since == :invalid
+
+    # Newest changes first, so a device with many passes still learns of them.
+    passes = WalletPass.apple.joins(:apple_wallet_registrations)
+      .where(apple_wallet_registrations: { device_library_identifier: device_identifier })
+      .order(Arel.sql("wallet_passes.content_updated_at DESC NULLS LAST, wallet_passes.id DESC"))
+      .limit(MAX_SERIALS_PER_DEVICE).to_a
+    # On a follow-up poll, a change that never reached the sync job still
+    # shows up. The first poll lists everything, so it needs no refresh.
+    passes.each { |wallet_pass| Wallet::PassSync.refresh_apple_content!(wallet_pass) } if since
 
     updated = passes.select { |wallet_pass| wallet_pass.content_updated_at && (since.nil? || wallet_pass.content_updated_at > since) }
     return head :no_content if updated.empty?

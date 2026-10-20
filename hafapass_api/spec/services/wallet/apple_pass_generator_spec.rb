@@ -91,4 +91,19 @@ RSpec.describe Wallet::ApplePassGenerator do
     restored = pass_json(described_class.latest(wallet_pass, authentication_token: nil))
     expect(restored.dig("barcode", "message")).to eq(ticket.reload.scan_credential)
   end
+
+  it "does not show the new holder's name, seat or ticket type on the sender's voided pass" do
+    configure_apple_wallet
+    ticket = wallet_ticket
+    token = pass_json(described_class.call(ticket))["authenticationToken"]
+    ticket.update!(attendee_name: "Recipient Private Name", holder_email: "recipient@example.com",
+      scan_credential_version: ticket.scan_credential_version + 1)
+
+    pass = pass_json(described_class.latest(WalletPass.apple.sole, authentication_token: token))
+
+    expect(pass["voided"]).to be(true)
+    expect(pass.to_json).not_to include("Recipient Private Name")
+    expect(pass.dig("eventTicket", "auxiliaryFields")).to eq([])
+    expect(pass.dig("eventTicket", "backFields").map { |field| field["key"] }).to eq(["address"])
+  end
 end

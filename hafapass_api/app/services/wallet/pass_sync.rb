@@ -16,6 +16,12 @@ module Wallet
         WalletPass.where(ticket_id: tickets).ids.each { |id| WalletPassSyncJob.perform_later(id) }
       end
 
+      # Events can have thousands of saved passes; one job fans them out in
+      # batches instead of enqueueing every pass inside the organizer's request.
+      def event_changed(event)
+        WalletPassFanoutJob.perform_later(event.id) if WalletPass.where(ticket_id: event.tickets.select(:id)).exists?
+      end
+
       def call(wallet_pass)
         wallet_pass.apple? ? sync_apple(wallet_pass) : sync_google(wallet_pass)
       end

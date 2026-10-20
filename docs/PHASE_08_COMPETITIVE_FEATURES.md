@@ -68,6 +68,10 @@ To turn the wallets on later, obtain and configure:
 | Google | `GOOGLE_WALLET_CLASS_REVIEW_STATUS` | `APPROVED` only after Google approves the event-ticket class / issuer for publishing |
 | Both | `PROVIDER_CONFIGURATION_REVISION` | Increment when provider configuration changes, then record the capability approval in Gate D |
 
+### Ticket PDFs in emails
+
+Order confirmation and ticket emails attach a PDF for each ticket that admits (up to 10), so buyers can open tickets offline. The durable email payload stores only a signed URL under `PUBLIC_API_URL` + `/api/v1/ticket_email_attachments/`, which Resend fetches when it sends; no URL is added without an HTTPS `PUBLIC_API_URL`. Blocked, refunded, disputed, cancelled and transferred tickets get no attachment. The link is bound to the ticket's display and scan credential versions and its holder, so after a QR refresh, transfer or refund it returns a short "no longer valid" PDF instead of a working QR code. Links expire after three days; a delivery replayed after that gets a 404 for its attachment, so reconcile such deliveries rather than replaying them. Each link and each IP have their own fetch limits.
+
 ## Operational rollout
 
 1. Deploy migrations before application instances. Run down/up verification in staging.

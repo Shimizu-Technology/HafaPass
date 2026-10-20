@@ -26,8 +26,10 @@ class Rack::Attack
   # ─── General Throttles ────────────────────────────────────────────────────
 
   # Throttle all requests by IP (300 requests per 5 minutes)
+  # Wallet devices and the email provider's PDF fetches share venue/carrier NAT
+  # or a small provider IP pool, so they have their own limits below.
   throttle("req/ip", limit: 300, period: 5.minutes) do |req|
-    req.ip unless req.path.start_with?("/assets")
+    req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/")
   end
 
   # ─── Authentication Throttles ─────────────────────────────────────────────
@@ -93,13 +95,30 @@ class Rack::Attack
 
   # ─── Wallet Throttles ─────────────────────────────────────────────────────
 
-  # Apple Wallet devices poll and register for pass updates; ticket emails let
-  # the email provider fetch PDF attachments. Both are unauthenticated URLs.
-  throttle("apple-wallet/ip", limit: 60, period: 1.minute) do |req|
+  # Apple Wallet devices poll and register for pass updates. One event edit
+  # pushes every device at a venue, often behind one shared Wi-Fi or carrier
+  # NAT address, so limits are per device and per pass with a high IP ceiling.
+  APPLE_WALLET_PREFIX = "/api/v1/wallet/apple/v1/"
+  throttle("apple-wallet/device", limit: 30, period: 1.minute) do |req|
+    req.path[%r{\A#{APPLE_WALLET_PREFIX}devices/([^/]+)/}, 1] if req.path.start_with?(APPLE_WALLET_PREFIX)
+  end
+
+  throttle("apple-wallet/pass", limit: 60, period: 1.minute) do |req|
+    req.path[%r{\A#{APPLE_WALLET_PREFIX}(?:passes/[^/]+|devices/[^/]+/registrations/[^/]+)/([^/]+)\z}, 1] if
+      req.path.start_with?(APPLE_WALLET_PREFIX)
+  end
+
+  throttle("apple-wallet/ip", limit: 1200, period: 1.minute) do |req|
     req.ip if req.path.start_with?("/api/v1/wallet/apple/")
   end
 
-  throttle("ticket-email-attachment/ip", limit: 60, period: 1.minute) do |req|
+  # The email provider fetches ticket PDFs from a small pool of addresses, so
+  # each signed link is limited on its own under a high IP ceiling.
+  throttle("ticket-email-attachment/token", limit: 10, period: 10.minutes) do |req|
+    Digest::SHA256.hexdigest(req.path) if req.path.start_with?("/api/v1/ticket_email_attachments/") && req.get?
+  end
+
+  throttle("ticket-email-attachment/ip", limit: 1200, period: 1.minute) do |req|
     req.ip if req.path.start_with?("/api/v1/ticket_email_attachments/") && req.get?
   end
 

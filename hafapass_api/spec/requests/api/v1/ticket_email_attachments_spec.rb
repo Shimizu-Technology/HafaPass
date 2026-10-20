@@ -58,6 +58,35 @@ RSpec.describe "Ticket email PDF attachments", type: :request do
     expect(text).not_to include(ticket.event.title)
   end
 
+  it "serves the notice after a holder-only QR refresh, so a leaked link never yields the new code" do
+    attachment = TicketEmailAttachments.for([ticket]).sole
+    ticket.rotate_scan_credential!
+
+    get attachment_path(attachment)
+    text = pdf_text(response.body)
+    expect(text).to include("This ticket is no longer valid")
+    expect(text).not_to include(ticket.event.title)
+  end
+
+  it "serves the notice once the ticket has a different holder account" do
+    attachment = TicketEmailAttachments.for([ticket]).sole
+    ticket.update!(holder_user: create(:user))
+
+    get attachment_path(attachment)
+    expect(pdf_text(response.body)).to include("This ticket is no longer valid")
+  end
+
+  it "limits each signed link on its own, not by the provider's shared fetch address" do
+    attachment = TicketEmailAttachments.for([ticket]).sole
+    other = TicketEmailAttachments.for([wallet_ticket]).sole
+    10.times { get attachment_path(attachment) }
+    expect(response).to have_http_status(:ok)
+    get attachment_path(attachment)
+    expect(response).to have_http_status(:too_many_requests)
+    get attachment_path(other)
+    expect(response).to have_http_status(:ok)
+  end
+
   it "rejects forged tokens and skips attachments without a public HTTPS API" do
     get "/api/v1/ticket_email_attachments/forged--token"
     expect(response).to have_http_status(:not_found)
@@ -72,7 +101,7 @@ RSpec.describe "Ticket email PDF attachments", type: :request do
     expect(TicketEmailAttachments.for(tickets).length).to eq(2)
   end
 
-  it "freezes attachment references in the durable payload so a retried send replays identical bytes" do
+  it "freezes the attachment reference in the durable payload, so a retried send sends the same request" do
     delivery = create(:message_delivery, order: ticket.order, recipient: ticket.order.buyer_email)
     allow(EmailService).to receive(:configured?).and_return(true)
     captured = []

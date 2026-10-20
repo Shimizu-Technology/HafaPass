@@ -1,5 +1,7 @@
 require "rails_helper"
 
+RSpec::Matchers.define_negated_matcher :not_have_enqueued_job, :have_enqueued_job
+
 RSpec.describe Wallet::PassSync do
   include ActiveJob::TestHelper
 
@@ -34,7 +36,24 @@ RSpec.describe Wallet::PassSync do
       end.to have_enqueued_job(WalletPassSyncJob)
       refund = create(:refund, order: ticket.order, status: :pending, succeeded_at: nil)
       expect { refund.update!(status: :succeeded, succeeded_at: Time.current) }.to have_enqueued_job(WalletPassSyncJob)
-      expect { ticket.event.update!(status: :cancelled) }.to have_enqueued_job(WalletPassSyncJob).with(wallet_pass.id)
+      expect { ticket.event.update!(status: :cancelled) }.to have_enqueued_job(WalletPassFanoutJob).with(ticket.event_id)
+    end
+
+    it "fans an event change out from one job in batches instead of one job per pass in the request" do
+      second = create(:ticket, order: ticket.order, event: ticket.event, ticket_type: ticket.ticket_type, order_item: ticket.order_item)
+      other_pass = WalletPass.create!(ticket: second, provider: "google", serial_number: "issuer.hafapass_ticket_#{second.id}_v1",
+        scan_credential_version: second.scan_credential_version)
+
+      expect { ticket.event.update!(title: "Renamed event") }
+        .to have_enqueued_job(WalletPassFanoutJob).exactly(:once).and(not_have_enqueued_job(WalletPassSyncJob))
+      stub_const("WalletPassFanoutJob::BATCH_SIZE", 1)
+      expect { WalletPassFanoutJob.perform_now(ticket.event_id) }.to have_enqueued_job(WalletPassSyncJob).exactly(:twice)
+      expect(enqueued_jobs.filter_map { |job| job["arguments"].first if job["job_class"] == "WalletPassSyncJob" })
+        .to include(wallet_pass.id, other_pass.id)
+    end
+
+    it "does not queue a fan-out for an event without saved passes" do
+      expect { wallet_ticket.event.update!(title: "No passes") }.not_to have_enqueued_job(WalletPassFanoutJob)
     end
 
     it "does nothing for tickets without saved passes" do

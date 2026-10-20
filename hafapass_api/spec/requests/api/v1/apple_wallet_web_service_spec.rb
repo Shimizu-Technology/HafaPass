@@ -74,6 +74,30 @@ RSpec.describe "Apple Wallet PassKit web service", type: :request do
     expect(response.parsed_body.fetch("lastUpdated").to_i).to be > tag.to_i
   end
 
+  it "does not rewrite passes on a first poll and lists the newest changes first" do
+    register
+    older = WalletPass.create!(ticket: wallet_ticket, provider: "apple", serial_number: "ticket-older-v1",
+      scan_credential_version: 1, content_digest: "a", content_updated_at: 2.days.ago.change(usec: 0))
+    older.apple_wallet_registrations.create!(device_library_identifier: device, push_token: push_token)
+    stub_const("Api::V1::AppleWalletWebServiceController::MAX_SERIALS_PER_DEVICE", 1)
+    allow(Wallet::PassSync).to receive(:refresh_apple_content!).and_call_original
+
+    get "#{base}/devices/#{device}/registrations/#{pass_type}"
+    expect(response.parsed_body.fetch("serialNumbers")).to eq([serial])
+    expect(Wallet::PassSync).not_to have_received(:refresh_apple_content!)
+  end
+
+  it "throttles a single device without blocking other devices behind the same venue address" do
+    freeze_time do
+      40.times { |index| get "#{base}/devices/venue-device-#{index}/registrations/#{pass_type}" }
+      expect(response).to have_http_status(:no_content)
+      30.times { get "#{base}/devices/#{device}/registrations/#{pass_type}" }
+      expect(response).to have_http_status(:no_content)
+      get "#{base}/devices/#{device}/registrations/#{pass_type}"
+      expect(response).to have_http_status(:too_many_requests)
+    end
+  end
+
   it "answers an unknown device with no content" do
     get "#{base}/devices/unknown-device/registrations/#{pass_type}"
     expect(response).to have_http_status(:no_content)

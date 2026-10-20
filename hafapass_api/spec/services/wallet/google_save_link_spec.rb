@@ -47,4 +47,17 @@ RSpec.describe Wallet::GoogleSaveLink do
     expect(wallet_pass.content_digest).to eq(Wallet::GoogleTicketObject.new(wallet_pass).content_digest)
     expect { described_class.call(ticket) }.not_to change(WalletPass, :count)
   end
+
+  it "does not show the new holder's name or ticket type on the previous holder's object" do
+    configure_google_wallet
+    ticket = wallet_ticket
+    described_class.call(ticket)
+    ticket.update!(attendee_name: "Recipient Private Name", scan_credential_version: ticket.scan_credential_version + 1)
+
+    object = Wallet::GoogleTicketObject.new(WalletPass.google.sole).ticket_object
+
+    expect(object).not_to include(:ticketHolderName, :ticketType, :barcode)
+    expect(object.to_json).not_to include("Recipient Private Name")
+    expect(object[:state]).to eq("INACTIVE")
+  end
 end
