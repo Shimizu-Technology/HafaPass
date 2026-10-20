@@ -447,6 +447,35 @@ class EmailService
         ""
       end
 
+      # A buyer who transferred every ticket gets no empty table or entry instructions.
+      tickets_section = if tickets.empty?
+        <<~HTML
+          <p style="color: #6b7280; margin: 0; font-size: 14px;">
+            All tickets on this order were transferred. Their new holders can open them from
+            <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">My Tickets</a>.
+          </p>
+        HTML
+      else
+        <<~HTML
+          <h3 style="color: #1f2937; margin: 0 0 12px;">Your Tickets</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background: #f9fafb;">
+                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Type</th>
+                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Attendee</th>
+                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Ticket</th>
+              </tr>
+            </thead>
+            <tbody>#{ticket_rows}</tbody>
+          </table>
+
+          <p style="color: #6b7280; margin: 28px 0 0; font-size: 14px;">
+            Present your QR code at the door for entry. You can access your tickets anytime at
+            <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">My Tickets</a>.
+          </p>
+        HTML
+      end
+
       email_wrapper("Order Confirmed") do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Your tickets are confirmed!</h2>
@@ -466,22 +495,7 @@ class EmailService
             <p style="color: #1f2937; font-weight: 600; margin: 0;"><strong>Total: $#{format_cents(order.total_cents)}</strong></p>
           </div>
 
-          <h3 style="color: #1f2937; margin: 0 0 12px;">Your Tickets</h3>
-          <table style="width: 100%; border-collapse: collapse;">
-            <thead>
-              <tr style="background: #f9fafb;">
-                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Type</th>
-                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Attendee</th>
-                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Ticket</th>
-              </tr>
-            </thead>
-            <tbody>#{ticket_rows}</tbody>
-          </table>
-
-          <p style="color: #6b7280; margin: 28px 0 0; font-size: 14px;">
-            Present your QR code at the door for entry. You can access your tickets anytime at
-            <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">My Tickets</a>.
-          </p>
+          #{tickets_section}
         HTML
       end
     end

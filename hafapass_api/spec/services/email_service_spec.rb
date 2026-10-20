@@ -58,6 +58,23 @@ RSpec.describe EmailService do
     end
   end
 
+  it "explains transferred tickets instead of an empty ticket table when the buyer holds none" do
+    order = create(:order)
+    html = described_class.send(:build_order_confirmation_html, order, order.event, [])
+
+    expect(html).to include("All tickets on this order were transferred")
+    expect(html).not_to include("Your Tickets")
+    expect(html).not_to include("Present your QR code")
+  end
+
+  it "keeps the ticket table and entry instructions while the buyer holds tickets" do
+    ticket = create(:ticket)
+    html = described_class.send(:build_order_confirmation_html, ticket.order, ticket.event, [ticket])
+
+    expect(html).to include("Your Tickets", "Present your QR code", "View Ticket")
+    expect(html).not_to include("were transferred")
+  end
+
   it "fails closed in production instead of recording a simulated customer delivery" do
     order = create(:order)
     allow(Rails.env).to receive(:production?).and_return(true)
