@@ -1,5 +1,6 @@
 class Order < ApplicationRecord
-  attr_readonly :checkout_key_digest, :checkout_request_digest, :checkout_recovery_expires_at
+  attr_readonly :checkout_key_digest, :checkout_request_digest, :checkout_recovery_expires_at,
+    :processing_fee_bearer_snapshot
 
   has_one :live_money_proof_authorization, dependent: :restrict_with_error
   belongs_to :user, optional: true
@@ -37,6 +38,9 @@ class Order < ApplicationRecord
   validates :subtotal_cents, :service_fee_cents, :discount_cents, :total_cents, :refund_amount_cents,
     :organizer_fee_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :buyer_fee_percent_snapshot, numericality: { only_integer: true, in: 0..100 }
+  # NULL is a legacy order created before the bearer was snapshotted; it keeps
+  # the legacy rule that actual processing is deducted from organizer proceeds.
+  validates :processing_fee_bearer_snapshot, inclusion: { in: SiteSetting::PROCESSING_FEE_BEARERS }, allow_nil: true
   validate :financial_components_balance
 
   before_validation :assign_reference, on: :create
@@ -90,6 +94,10 @@ class Order < ApplicationRecord
 
   def net_cents
     total_cents - refunded_cents
+  end
+
+  def platform_bears_processing?
+    processing_fee_bearer_snapshot == "platform"
   end
 
   def fee_cents

@@ -54,6 +54,12 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllGlobals() })
 
+it('leaves fee policy to the event edit page so it is not duplicated in sales tools', async () => {
+  mount(tools[1]); await tools[1].ready()
+  expect(screen.queryByRole('combobox', { name: 'Fee policy' })).not.toBeInTheDocument()
+  expect(screen.queryByTestId('fee-terms-note')).not.toBeInTheDocument()
+})
+
 describe.each(tools)('$name organizer tool ownership and recovery', tool => {
   it.each(['success', 'error'])('discards an old event load %s after opening another event', async outcome => {
     const old = deferred()
@@ -142,15 +148,15 @@ describe.each(tools)('$name organizer tool ownership and recovery', tool => {
   })
 })
 
-it('refreshing sales resources preserves an unsaved fee policy and another draft', async () => {
+it('refreshing sales resources preserves an unsaved transfer setting and another draft', async () => {
   mount(tools[1]); await tools[1].ready()
   const user = userEvent.setup()
-  await user.selectOptions(screen.getByLabelText('Fee policy'), 'organizer_absorbs')
+  await user.click(screen.getByLabelText('Allow secure ticket transfers'))
   await user.type(screen.getByLabelText('Waiver title'), 'Unsubmitted waiver')
   await tools[1].enter(user); await user.click(tools[1].save())
   await waitFor(() => expect(tools[1].draft()).toHaveValue(''))
   await waitFor(() => expect(screen.getByText('Save configuration confirmed. Refreshing saved data.')).toBeInTheDocument())
-  expect(screen.getByLabelText('Fee policy')).toHaveValue('organizer_absorbs')
+  expect(screen.getByLabelText('Allow secure ticket transfers')).not.toBeChecked()
   expect(screen.getByLabelText('Waiver title')).toHaveValue('Unsubmitted waiver')
 })
 

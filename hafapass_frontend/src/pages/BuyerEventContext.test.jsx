@@ -27,7 +27,7 @@ const event = (id, slug, ticketId) => ({ id, slug, title: `Event ${slug}`, descr
   ticket_types: [{ id: ticketId, name: `${slug} admission`, price_cents: 0, on_sale: true, quantity_remaining: 10 }] })
 const a = event(41, 'event-a', 111)
 const b = event(42, 'event-b', 222)
-const config = { payment_mode: 'simulate', buyer_terms_version: 'test-v1', service_fee_flat_cents: 0 }
+const config = { payment_mode: 'simulate', buyer_terms_version: 'test-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 }
 function RouteProbe() {
   const location = useLocation()
   return <p data-testid="route">{location.pathname}</p>
