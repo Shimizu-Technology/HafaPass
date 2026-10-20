@@ -95,18 +95,15 @@ module Api
       def filtered_events
         events = Event.discoverable
         if params[:q].present?
-          query = "%#{ActiveRecord::Base.sanitize_sql_like(params[:q].to_s.strip)}%"
-          events = events.where(<<~SQL.squish, query: query)
-            events.title ILIKE :query OR events.description ILIKE :query OR
-            events.short_description ILIKE :query OR events.venue_name ILIKE :query OR events.venue_city ILIKE :query
-          SQL
+          events = events.accent_insensitive_search(params[:q], :title, :description, :short_description,
+            :venue_name, :venue_city)
         end
         events = events.where(category: params[:category]) if Event.categories.key?(params[:category].to_s)
         events = events.where(is_featured: true) if ActiveModel::Type::Boolean.new.cast(params[:featured])
         events = events.where(starts_at: parse_date_boundary(params[:date_from], beginning: true)..) if params[:date_from].present?
         events = events.where(starts_at: ..parse_date_boundary(params[:date_to], beginning: false)) if params[:date_to].present?
         events = filter_named_window(events)
-        events = events.where("LOWER(events.venue_city) = ?", params[:village].to_s.strip.downcase) if params[:village].present?
+        events = events.accent_insensitive_equals(:venue_city, params[:village]) if params[:village].present?
         events = events.joins(:venue).where(venues: { slug: params[:venue] }) if params[:venue].present?
         events = events.joins(:organization).where(organizations: { slug: params[:organizer] }) if params[:organizer].present?
         events = filter_price(events)

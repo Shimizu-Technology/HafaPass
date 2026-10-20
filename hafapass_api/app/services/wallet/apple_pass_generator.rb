@@ -61,9 +61,9 @@ module Wallet
         passTypeIdentifier: ENV.fetch("APPLE_PASS_TYPE_IDENTIFIER"),
         serialNumber: "ticket-#{ticket.id}-v#{ticket.scan_credential_version}",
         teamIdentifier: ENV.fetch("APPLE_TEAM_IDENTIFIER"),
-        organizationName: "HafaPass",
+        organizationName: "HåfaPass",
         description: "Ticket for #{event.title}",
-        logoText: "HafaPass",
+        logoText: "HåfaPass",
         foregroundColor: "rgb(255, 255, 255)",
         backgroundColor: "rgb(14, 124, 123)",
         relevantDate: event.starts_at&.iso8601,
@@ -86,9 +86,9 @@ module Wallet
           ]
         },
         barcode: { format: "PKBarcodeFormatQR", message: ticket.scan_credential,
-          messageEncoding: "iso-8859-1", altText: "HafaPass #{ticket.id}" },
+          messageEncoding: "iso-8859-1", altText: "HåfaPass #{ticket.id}" },
         barcodes: [{ format: "PKBarcodeFormatQR", message: ticket.scan_credential,
-          messageEncoding: "iso-8859-1", altText: "HafaPass #{ticket.id}" }]
+          messageEncoding: "iso-8859-1", altText: "HåfaPass #{ticket.id}" }]
       }.compact
     end
 

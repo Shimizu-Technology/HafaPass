@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_20_090100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -609,7 +609,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_150000) do
     t.string "venue_city"
     t.bigint "venue_id"
     t.string "venue_name"
-    t.index "lower((venue_city)::text)", name: "index_events_on_lower_venue_city"
+    t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
     t.index ["organizer_profile_id"], name: "index_events_on_organizer_profile_id"
@@ -1860,7 +1860,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_150000) do
     t.datetime "created_at", null: false
     t.string "payment_mode", default: "simulate", null: false
     t.string "platform_email", default: "tickets@hafapass.com"
-    t.string "platform_name", default: "HafaPass"
+    t.string "platform_name", default: "HåfaPass"
     t.string "platform_phone"
     t.integer "service_fee_flat_cents", default: 50
     t.decimal "service_fee_percent", precision: 5, scale: 2, default: "3.0"
@@ -2222,6 +2222,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_150000) do
     t.boolean "verified", default: false, null: false
     t.string "village", null: false
     t.string "website_url"
+    t.index "lower(translate((village)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_venues_on_folded_village"
     t.index ["active", "village", "name"], name: "index_venues_on_active_and_village_and_name"
     t.index ["slug"], name: "index_venues_on_slug", unique: true
   end

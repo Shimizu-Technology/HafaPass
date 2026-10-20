@@ -58,14 +58,14 @@ RSpec.describe TicketPdfGenerator do
   it "keeps the full long text and the QR instructions on a continuation page" do
     event.update!(title: "日本語Åmot🎟️ " * 35, venue_address: "Hågatña 東京 " * 80)
     reader = read_pdf
-    text = reader.pages.map { |page| page.text(skip_overlapping: false) }.join("\n").gsub("HafaPass", "").gsub("TEST TICKET - REHEARSAL ONLY", "").gsub(/\s+/, "")
+    text = reader.pages.map { |page| page.text(skip_overlapping: false) }.join("\n").gsub("HåfaPass", "").gsub("TEST TICKET - REHEARSAL ONLY", "").gsub(/\s+/, "")
     expect(reader.page_count).to be > 1
     expect(text).to include(event.title.delete("\uFE0F").gsub(/\s+/, ""))
     expect(text.scan("Hågatña").size).to eq(81)
     expect(text.scan("東京").size).to eq(80)
     last = reader.pages.last
-    expect(last.text).to include("HafaPass", "TEST TICKET - REHEARSAL ONLY", "HP-T#{ticket.id}",
-      "For testing only - no real event admission", "Powered by HafaPass")
+    expect(last.text).to include("HåfaPass", "TEST TICKET - REHEARSAL ONLY", "HP-T#{ticket.id}",
+      "For testing only - no real event admission", "Powered by HåfaPass")
     expect(last.xobjects.values.any? { |object| object.hash[:Subtype] == :Image }).to be(true)
   end
 end

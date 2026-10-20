@@ -9,7 +9,7 @@ afterEach(() => vi.unstubAllEnvs())
 it('routes the footer contact to the configured receiving mailbox', () => {
   vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
   render(<MemoryRouter><Footer /></MemoryRouter>)
-  expect(screen.getByRole('link', { name: 'footer.contact' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=HafaPass%20Support')
+  expect(screen.getByRole('link', { name: 'footer.contact' })).toHaveAttribute('href', 'mailto:operator@example.test?subject=H%C3%A5faPass%20Support')
 })
 
 it('offers ticket recovery and support instead of unrelated social homepages', () => {

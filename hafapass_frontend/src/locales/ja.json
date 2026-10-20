@@ -12,7 +12,7 @@
     "support": "サポート",
     "viewPublicSite": "公開サイトを見る",
     "workspace": "ワークスペース",
-    "workspaceHome": "HafaPass ワークスペースのホーム"
+    "workspaceHome": "HåfaPass ワークスペースのホーム"
   },
   "home": {
     "hero": "グアムの全イベントへのパス",
@@ -103,7 +103,7 @@
     "enterCode": "コードを入力",
     "apply": "適用",
     "editInfo": "情報を編集",
-    "termsNotice": "この購入を完了すると、HafaPassの利用規約に同意したことになります。"
+    "termsNotice": "この購入を完了すると、HåfaPassの利用規約に同意したことになります。"
   },
   "tickets": {
     "myTickets": "マイチケット",

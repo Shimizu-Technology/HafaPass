@@ -65,7 +65,7 @@ export default function AdminLayout({ children }) {
         </button>
         <Shield aria-hidden="true" className="hidden h-6 w-6 shrink-0 text-brand-700 lg:block" />
         <div className="min-w-0">
-          <p className="text-xs font-medium text-content-muted">HafaPass administration</p>
+          <p className="text-xs font-medium text-content-muted">HåfaPass administration</p>
           <h1 className="mt-1 text-2xl font-bold text-neutral-900">{current?.label || 'Administration'}</h1>
         </div>
       </header>

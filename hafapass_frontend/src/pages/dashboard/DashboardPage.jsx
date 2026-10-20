@@ -52,7 +52,7 @@ function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
   <div className="max-w-lg mx-auto">
    <div className="bg-white rounded-xl shadow-md p-6">
     <h2 className="text-2xl font-bold text-neutral-900 mb-2">Create Your Organizer Profile</h2>
-    <p className="text-neutral-600 mb-6">Set up your organizer profile to start creating and managing events on HafaPass.</p>
+    <p className="text-neutral-600 mb-6">Set up your organizer profile to start creating and managing events on HåfaPass.</p>
 
     {error && (
      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">

@@ -27,7 +27,7 @@ class Api::V1::Organizer::ConnectedAccountsController < Api::V1::Organizer::Base
 
   def next_action(account)
     case account.provider
-    when "paypal" then "HafaPass marketplace approval and PayPal seller onboarding are required"
+    when "paypal" then "HåfaPass marketplace approval and PayPal seller onboarding are required"
     when "manual" then "Submit banking documents for finance review"
     when "stripe" then "Do not continue until Stripe confirms Guam entity and bank eligibility in writing"
     end
