@@ -31,4 +31,14 @@ RSpec.describe MessageDeliveryJob do
     expect(delivery.reload).to be_suppressed
     expect(EmailService).not_to have_received(:send_delivery_payload)
   end
+
+  it "never sends to a reserved placeholder address" do
+    delivery.update_columns(recipient: GuestListEntry::PLACEHOLDER_EMAIL)
+    allow(EmailService).to receive(:send_delivery_payload)
+
+    described_class.new.perform(delivery.id)
+
+    expect(delivery.reload).to have_attributes(status: "cancelled", attempts: 0)
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
 end

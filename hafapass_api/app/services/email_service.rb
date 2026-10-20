@@ -3,13 +3,24 @@
 require "digest"
 
 class EmailService
-  FROM_EMAIL = ENV.fetch("MAILER_FROM_EMAIL", "tickets@hafapass.com")
+  # Local development and test never send real mail, so a reserved domain is safe.
+  LOCAL_FROM_EMAIL = "tickets@example.test"
   class ProviderDisabled < StandardError; end
   class TransportContextChanged < StandardError; end
 
   class << self
     def configured?
       ProviderRehearsal.email_enabled? || PlatformCapabilities.enabled?("resend_production")
+    end
+
+    # The sender is configuration: a deployed environment that can send mail
+    # must name a verified MAILER_FROM_EMAIL rather than borrow a default domain.
+    def from_email
+      configured_from = ENV["MAILER_FROM_EMAIL"].to_s.strip.presence
+      return configured_from if configured_from
+      raise ProviderDisabled, "MAILER_FROM_EMAIL is required to send email in #{Rails.env}" if !Rails.env.local? && configured?
+
+      LOCAL_FROM_EMAIL
     end
 
     def transport_context_digest
@@ -250,7 +261,6 @@ class EmailService
       return unless waitlist_entry.email.present?
 
       event = waitlist_entry.event
-      frontend_url = ENV.fetch("FRONTEND_URL", "http://localhost:5173")
       event_url = "#{frontend_url}/events/#{event.slug}"
       html = build_waitlist_notification_html(waitlist_entry, event, event_url)
       subject = safe_subject("Tickets Available - #{event.title}")
@@ -364,7 +374,7 @@ class EmailService
 
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, **log_meta)
-      params = { from: FROM_EMAIL, to: delivery ? delivery.recipient : to, subject: subject, html: html }
+      params = { from: from_email, to: delivery ? delivery.recipient : to, subject: subject, html: html }
       reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
       params[:reply_to] = reply_to if reply_to
       params[:subject] = "[HåfaPass TEST] #{subject}" if ProviderRehearsal.enabled?
@@ -616,7 +626,7 @@ class EmailService
     end
 
     def frontend_url
-      ENV.fetch("FRONTEND_URL", "http://localhost:5173")
+      PublicSiteUrl.frontend
     end
 
     def format_event_date(event)

@@ -132,3 +132,28 @@ RSpec.describe ReleaseMigrationConfiguration do
     end
   end
 end
+
+RSpec.describe RuntimeConfiguration, ".allowed_origins" do
+  around do |example|
+    original = ENV["ALLOWED_ORIGINS"]
+    ENV.delete("ALLOWED_ORIGINS")
+    example.run
+  ensure
+    original.nil? ? ENV.delete("ALLOWED_ORIGINS") : ENV["ALLOWED_ORIGINS"] = original
+  end
+
+  it "uses the configured origins in every environment" do
+    ENV["ALLOWED_ORIGINS"] = " https://tickets.example.test, ,https://www.tickets.example.test "
+    expected = %w[https://tickets.example.test https://www.tickets.example.test]
+
+    expect(described_class.allowed_origins(local: false)).to eq(expected)
+    expect(described_class.allowed_origins(local: true)).to eq(expected)
+  end
+
+  it "requires configured origins in deployed environments and falls back only locally" do
+    expect { described_class.allowed_origins(local: false) }.to raise_error(KeyError, /ALLOWED_ORIGINS/)
+    ENV["ALLOWED_ORIGINS"] = "  "
+    expect { described_class.allowed_origins(local: false) }.to raise_error(KeyError, /ALLOWED_ORIGINS/)
+    expect(described_class.allowed_origins(local: true)).to include("http://localhost:5173")
+  end
+end

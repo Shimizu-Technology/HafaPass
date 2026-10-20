@@ -174,7 +174,8 @@
     "madeWith": "グアムでアロハを込めて作りました",
     "help": "ヘルプ",
     "findTickets": "チケットを探す",
-    "contactSupport": "サポートに連絡"
+    "contactSupport": "サポートに連絡",
+    "callSupport": "{{phone}} に電話"
   },
   "categories": {
     "all": "すべてのイベント",

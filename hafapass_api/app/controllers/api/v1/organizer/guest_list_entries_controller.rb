@@ -81,7 +81,7 @@ module Api
             result = Commerce::OrderCreator.call(
               event: @event,
               line_items: [{ ticket_type_id: @entry.ticket_type_id, quantity: @entry.quantity }],
-              buyer_email: @entry.guest_email || "guest@hafapass.com",
+              buyer_email: @entry.guest_email.presence || GuestListEntry::PLACEHOLDER_EMAIL,
               buyer_name: @entry.guest_name,
               buyer_phone: @entry.guest_phone,
               payment_required: false,

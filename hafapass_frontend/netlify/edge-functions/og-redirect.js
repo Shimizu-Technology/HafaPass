@@ -1,7 +1,10 @@
-// Netlify Edge Function: Detect social media crawlers and serve OG meta tags
-// from the Rails API instead of the SPA (which crawlers can't render)
+// Netlify Edge Function: social link-preview crawlers can't render the SPA, so
+// /events/:slug requests from them get the Rails OG page (meta tags + link).
+// Search engines are deliberately absent: Google and Bing render the SPA, and
+// the OG page's script redirect back to /events/:slug would loop for them.
+import { apiOrigin } from '../shared/apiOrigin.js'
 
-const CRAWLER_USER_AGENTS = [
+export const CRAWLER_USER_AGENTS = [
   'facebookexternalhit',
   'Facebot',
   'Twitterbot',
@@ -11,39 +14,29 @@ const CRAWLER_USER_AGENTS = [
   'Slackbot',
   'Discordbot',
   'Pinterest',
-  'Googlebot',
-  'bingbot',
   'iMessageBot',
 ]
 
-const API_BASE = 'https://hafapass-api.onrender.com'
+export function isPreviewCrawler(userAgent) {
+  const ua = String(userAgent || '').toLowerCase()
+  return CRAWLER_USER_AGENTS.some(bot => ua.includes(bot.toLowerCase()))
+}
 
 export default async (request, context) => {
-  const url = new URL(request.url)
-  const ua = request.headers.get('user-agent') || ''
+  const match = new URL(request.url).pathname.match(/^\/events\/([^/]+)\/?$/)
+  if (!match || !isPreviewCrawler(request.headers.get('user-agent'))) return context.next()
 
-  // Only intercept /events/:slug paths
-  const match = url.pathname.match(/^\/events\/([^/]+)$/)
-  if (!match) {
-    return context.next()
-  }
+  // Without a configured API the crawler simply gets the SPA shell.
+  const origin = apiOrigin()
+  if (!origin) return context.next()
 
-  // Check if request is from a social media crawler
-  const isCrawler = CRAWLER_USER_AGENTS.some(bot =>
-    ua.toLowerCase().includes(bot.toLowerCase())
-  )
-
-  if (!isCrawler) {
-    return context.next()
-  }
-
-  // Proxy to Rails OG endpoint
-  const slug = match[1]
   try {
-    const response = await fetch(`${API_BASE}/og/events/${slug}`)
+    const response = await fetch(`${origin}/og/events/${encodeURIComponent(decodeURIComponent(match[1]))}`)
+    // A missing event still gets the API's 404 page; an API outage falls back to the SPA.
+    if (!response.ok && response.status !== 404) return context.next()
     return new Response(await response.text(), {
       status: response.status,
-      headers: { 'content-type': 'text/html; charset=utf-8' },
+      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' },
     })
   } catch {
     return context.next()

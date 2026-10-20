@@ -57,6 +57,18 @@ module RuntimeConfiguration
     raise ArgumentError, "PUBLIC_API_URL must be an HTTPS origin"
   end
 
+  LOCAL_CORS_ORIGINS = %w[http://localhost:5173 http://localhost:5174 http://localhost:5175 http://localhost:5176].freeze
+
+  # Browser origins allowed by CORS. Every deployed environment (staging and
+  # production) must list its own; only development and test use local Vite.
+  def allowed_origins(local:)
+    origins = ENV["ALLOWED_ORIGINS"].to_s.split(",").map(&:strip).reject(&:empty?)
+    return origins if origins.any?
+    raise KeyError, "ALLOWED_ORIGINS must list the public site origins in every deployed environment" unless local
+
+    LOCAL_CORS_ORIGINS
+  end
+
   def positive_integer(name, default)
     value = ENV.fetch(name, default.to_s)
     raise ArgumentError, "#{name} must be a positive integer" unless value.match?(/\A[1-9]\d*\z/)

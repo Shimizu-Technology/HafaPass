@@ -10,6 +10,7 @@ vi.mock('../../api/client', async importOriginal => ({
 
 describe('SettingsPage', () => {
   beforeEach(() => {
+    vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
     apiClient.get.mockImplementation(path => {
       if (path === '/organizer/organization') return Promise.resolve({ data: {
         id: 7, name: 'Island Events', role: 'owner', payout_ready: false, timezone: 'Pacific/Guam'

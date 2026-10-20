@@ -1,8 +1,9 @@
 import { CalendarDays, Mail, RefreshCw } from 'lucide-react'
 import SEO from '../components/SEO'
-import { supportMailto } from '../utils/supportContact'
+import { useSupportContact } from '../utils/supportContact'
 
 export default function PrivatePreviewPage({ onRetry }) {
+  const support = useSupportContact()
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
       <SEO title="HåfaPass | Connection unavailable" description="HåfaPass services are temporarily unavailable. Retry your connection or contact support." />
@@ -27,7 +28,7 @@ export default function PrivatePreviewPage({ onRetry }) {
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
-              href={supportMailto()}
+              href={support.mailto()}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-7 py-4 font-semibold text-white shadow-lg shadow-brand-500/20 transition hover:-translate-y-0.5 hover:bg-brand-600"
             >
               <Mail className="h-5 w-5" /> Contact support
