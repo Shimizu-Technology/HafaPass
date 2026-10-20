@@ -10,7 +10,6 @@ import SeatingManagementPage from './SeatingManagementPage'
 const caps = vi.hoisted(() => ({ advanced_sales_tools: true, assigned_seating: true }))
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => caps }))
-vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children, event }) => <div><h1>{event?.title}</h1>{children}</div> }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const permissions = { manage_staff: true, manage_inventory: true, manage_events: true, manage_marketing: true, edit_event_content: true, view_attendees: true }
@@ -55,14 +54,10 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllGlobals() })
 
-it('explains the selected fee policy with the current card-processing bearer', async () => {
-  const user = userEvent.setup()
+it('leaves fee policy to the event edit page so it is not duplicated in sales tools', async () => {
   mount(tools[1]); await tools[1].ready()
-  const note = screen.getByTestId('fee-terms-note')
-  expect(note).toHaveTextContent('Buyers pay a service fee of 5% + $1.00 per paid ticket, which includes card processing. You receive the full ticket price.')
-  expect(note).toHaveTextContent('Payout timing: within 3 business days after your event.')
-  await user.selectOptions(screen.getByRole('combobox', { name: 'Fee policy' }), 'organizer_absorbs')
-  expect(note).toHaveTextContent('You cover the service fee of 5% + $1.00 per paid ticket, so buyers pay only the ticket price. HåfaPass covers card processing out of this fee.')
+  expect(screen.queryByRole('combobox', { name: 'Fee policy' })).not.toBeInTheDocument()
+  expect(screen.queryByTestId('fee-terms-note')).not.toBeInTheDocument()
 })
 
 describe.each(tools)('$name organizer tool ownership and recovery', tool => {
@@ -153,15 +148,15 @@ describe.each(tools)('$name organizer tool ownership and recovery', tool => {
   })
 })
 
-it('refreshing sales resources preserves an unsaved fee policy and another draft', async () => {
+it('refreshing sales resources preserves an unsaved transfer setting and another draft', async () => {
   mount(tools[1]); await tools[1].ready()
   const user = userEvent.setup()
-  await user.selectOptions(screen.getByLabelText('Fee policy'), 'organizer_absorbs')
+  await user.click(screen.getByLabelText('Allow secure ticket transfers'))
   await user.type(screen.getByLabelText('Waiver title'), 'Unsubmitted waiver')
   await tools[1].enter(user); await user.click(tools[1].save())
   await waitFor(() => expect(tools[1].draft()).toHaveValue(''))
   await waitFor(() => expect(screen.getByText('Save configuration confirmed. Refreshing saved data.')).toBeInTheDocument())
-  expect(screen.getByLabelText('Fee policy')).toHaveValue('organizer_absorbs')
+  expect(screen.getByLabelText('Allow secure ticket transfers')).not.toBeChecked()
   expect(screen.getByLabelText('Waiver title')).toHaveValue('Unsubmitted waiver')
 })
 

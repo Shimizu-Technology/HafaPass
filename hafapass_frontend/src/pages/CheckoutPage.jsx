@@ -495,14 +495,15 @@ function CheckoutContent({ buyerId }) {
     return { ...item, name: tt.name, price_cents: price, lineTotal: price * item.quantity, active_tier: tt.active_tier }
   }).filter(Boolean)
 
-  const totalTickets = orderLines.reduce((s, l) => s + l.quantity, 0)
+  // The flat fee applies per paid ticket only (unit price above zero).
+  const paidTickets = orderLines.reduce((s, l) => s + (l.price_cents > 0 ? l.quantity : 0), 0)
   const subtotalCents = orderLines.reduce((s, l) => s + l.lineTotal, 0)
   const catalogSubtotalCents = Object.entries(catalogSelections).reduce((sum, [id, selection]) => {
     const item = event.catalog_items?.find(candidate => candidate.id === Number(id))
     if (!item || !selection.quantity) return sum
     return sum + (item.kind === 'donation' ? (selection.amount_cents || 0) : item.price_cents) * selection.quantity
   }, 0)
-  const platformFeeCents = computePlatformFee(feeTerms, subtotalCents, totalTickets)
+  const platformFeeCents = computePlatformFee(feeTerms, subtotalCents, paidTickets)
   const serviceFeeCents = Math.round(platformFeeCents * ((event.buyer_fee_percent ?? 100) / 100))
   const discountCents = promoData?.discount_cents || 0
   const totalCents = Math.max(subtotalCents + catalogSubtotalCents + serviceFeeCents - discountCents, 0)

@@ -6,6 +6,7 @@ import apiClient from '../../api/client'
 import EditEventPage from './EditEventPage'
 
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ onUploaded }) => <button type="button" onClick={() => onUploaded('https://images.invalid/verified.png')}>Choose verified cover</button> }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ ticketTypes }) => <ul>{ticketTypes.map(type => <li key={type.id}>{type.name}</li>)}</ul> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
@@ -28,6 +29,28 @@ describe('published event content and schedule edits', () => {
     expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Cancel Event/ })).not.toBeInTheDocument()
     expect(apiClient.put).not.toHaveBeenCalled()
+  })
+
+  it('lets an event manager choose who pays the fee next to ticket pricing, saved separately', async () => {
+    const user = userEvent.setup()
+    mount()
+    const panel = (await screen.findByRole('heading', { name: 'Who pays the service fee' })).closest('section')
+    expect(panel.nextElementSibling).toHaveAttribute('id', 'ticket-types')
+    expect(within(panel).getByRole('radio', { name: /Buyer pays the fee/ })).toBeChecked()
+    apiClient.put.mockResolvedValueOnce({ data: { ...event, fee_policy: 'organizer_absorbs', buyer_fee_percent: 0 } })
+    await user.click(within(panel).getByRole('radio', { name: /I cover the fee/ }))
+    await user.click(within(panel).getByRole('button', { name: 'Save fee choice' }))
+    expect(apiClient.put).toHaveBeenCalledWith('/organizer/events/37', { fee_policy: 'organizer_absorbs', buyer_fee_percent: 0 }, expect.any(Object))
+    expect(await within(panel).findByText('Fee choice saved. It applies to new orders.')).toBeInTheDocument()
+    expect(within(panel).getByRole('radio', { name: /I cover the fee/ })).toBeChecked()
+  })
+
+  it('shows the fee choice read-only to content editors who cannot manage the event', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...event, permissions: { ...event.permissions, manage_events: false } } })
+    mount()
+    const panel = (await screen.findByRole('heading', { name: 'Who pays the service fee' })).closest('section')
+    expect(within(panel).getByRole('radio', { name: /Buyer pays the fee/ })).toBeDisabled()
+    expect(within(panel).queryByRole('button', { name: 'Save fee choice' })).not.toBeInTheDocument()
   })
 
   it('keeps Save Changes in a sticky bar that reports unsaved details and still submits', async () => {

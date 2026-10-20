@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { feeRateLabel, organizerFeeExplanation, parseFeeTerms, platformFeeCents } from './feeTerms'
+import { feeExample, feeRateLabel, organizerFeeExplanation, parseFeeTerms, platformFeeCents } from './feeTerms'
 
 const allIn = { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
 
@@ -19,6 +19,11 @@ describe('fee terms', () => {
     expect(platformFeeCents(terms, 12500, 3)).toBe(925)
     expect(platformFeeCents(terms, 0, 2)).toBe(0)
     expect(feeRateLabel(terms)).toBe('5% + $1.00 per paid ticket')
+    // Two $25 paid tickets plus free tickets: only the paid ones carry $1.00.
+    expect(platformFeeCents(terms, 5000, 2)).toBe(450)
+    expect(feeExample(terms, 2500, 'buyer_pays', 100)).toEqual({ buyerPaysCents: 2725, organizerReceivesCents: 2500 })
+    expect(feeExample(terms, 2500, 'split_fees', 50)).toEqual({ buyerPaysCents: 2613, organizerReceivesCents: 2388 })
+    expect(feeExample(terms, 0, 'buyer_pays', 100)).toEqual({ buyerPaysCents: 0, organizerReceivesCents: 0 })
     expect(feeRateLabel(parseFeeTerms({ ...allIn, service_fee_percent: '3.5', service_fee_flat_cents: 0 }))).toBe('3.5% of paid ticket sales')
   })
 

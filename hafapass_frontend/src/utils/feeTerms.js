@@ -11,10 +11,20 @@ export function parseFeeTerms(config) {
 }
 
 // Mirrors Commerce::OrderCreator#calculate_totals; the created order remains
-// the authoritative amount.
-export function platformFeeCents(terms, ticketSubtotalCents, ticketCount) {
+// the authoritative amount. paidTicketCount counts only tickets whose unit
+// price is above zero (before promo discounts): free tickets carry no fee.
+export function platformFeeCents(terms, ticketSubtotalCents, paidTicketCount) {
   if (!terms || ticketSubtotalCents <= 0) return 0
-  return Math.round(ticketSubtotalCents * (terms.percent / 100)) + (ticketCount * terms.flatCents)
+  return Math.round(ticketSubtotalCents * (terms.percent / 100)) + (paidTicketCount * terms.flatCents)
+}
+
+// Buyer and organizer amounts for one ticket at a fee policy, using the same
+// rounding as the server.
+export function feeExample(terms, priceCents, feePolicy, buyerFeePercent) {
+  const platformFee = platformFeeCents(terms, priceCents, priceCents > 0 ? 1 : 0)
+  const buyerPercent = feePolicy === 'organizer_absorbs' ? 0 : feePolicy === 'split_fees' ? Number(buyerFeePercent) || 0 : 100
+  const buyerFee = Math.round(platformFee * (buyerPercent / 100))
+  return { buyerPaysCents: priceCents + buyerFee, organizerReceivesCents: priceCents - (platformFee - buyerFee) }
 }
 
 function dollars(cents) {

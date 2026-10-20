@@ -4,7 +4,7 @@ HafaPass records the original capture's actual provider cost after Stripe suppli
 
 ## Who bears the processing cost
 
-The default buyer fee is all-in: 5% of the paid ticket subtotal plus $1.00 per paid ticket. The fee includes card processing and HåfaPass pays Stripe out of it. When the buyer pays the fee, the organizer keeps 100% of the ticket price. Free tickets carry no fee, and there is no setup fee. Organizers can still choose to absorb or split the fee per event (`fee_policy`), and the fee itself stays admin-editable.
+The default buyer fee is all-in: 5% of the paid ticket subtotal plus $1.00 per paid ticket. A paid ticket is one whose selected unit price (its pricing tier, or its seat price for assigned seating) is above zero before any promo discount; free and complimentary tickets add no flat fee, and a promo-discounted ticket still counts as paid. Orders created before this rule snapshotted their fee with every ticket counted; their recorded amounts are unchanged. The fee is allocated to order items by subtotal, so free lines carry no fee and a refunded paid ticket returns exactly its share. The fee includes card processing and HåfaPass pays Stripe out of it. When the buyer pays the fee, the organizer keeps 100% of the ticket price. Free tickets carry no fee, and there is no setup fee. Organizers can still choose to absorb or split the fee per event (`fee_policy`), and the fee itself stays admin-editable.
 
 `SiteSetting#processing_fee_bearer` holds the current rule:
 
