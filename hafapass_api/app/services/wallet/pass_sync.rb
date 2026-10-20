@@ -31,6 +31,19 @@ module Wallet
         wallet_pass.with_lock { wallet_pass.record_content!(ApplePassGenerator.content_digest(wallet_pass)) }
       end
 
+      # Event renames and reschedules live on the shared EventTicketClass, so
+      # the event fan-out updates it once rather than once per pass.
+      def sync_google_class(event)
+        return :disabled unless GoogleSaveLink.enabled?
+
+        client = GoogleWalletClient.new
+        event_class = GoogleTicketObject.event_class(event)
+        response = client.update_class(event_class)
+        response = client.insert_class(event_class) if response.status == 404
+        GoogleWalletClient.raise_for(response, "class update") unless response.status == 409
+        :updated
+      end
+
       private
 
       def sync_apple(wallet_pass)
@@ -57,11 +70,29 @@ module Wallet
       def sync_google(wallet_pass)
         return :disabled unless GoogleSaveLink.enabled?
 
-        object = GoogleTicketObject.new(wallet_pass)
-        digest = object.content_digest
-        wallet_pass.with_lock { wallet_pass.record_content!(digest) }
-        return :current unless wallet_pass.sync_pending?
+        sent = nil
+        # One sync per pass at a time: the row lock spans build -> PUT -> mark,
+        # and with_lock reloads the pass and its ticket so the object is built
+        # from committed state.
+        outcome = wallet_pass.with_lock do
+          object = GoogleTicketObject.new(wallet_pass)
+          sent = object.content_digest
+          wallet_pass.record_content!(sent)
+          next :current unless wallet_pass.sync_pending?
 
+          put_google_object(object, wallet_pass)
+          mark_synced!(wallet_pass, sent)
+          :updated
+        end
+        # A change that committed while the request was in flight gets its own
+        # sync, even if its callback ran before this job released the lock.
+        if outcome == :updated && GoogleTicketObject.new(WalletPass.find(wallet_pass.id)).content_digest != sent
+          WalletPassSyncJob.perform_later(wallet_pass.id)
+        end
+        outcome
+      end
+
+      def put_google_object(object, wallet_pass)
         client = GoogleWalletClient.new
         response = client.update_object(object.ticket_object)
         if response.status == 404
@@ -76,9 +107,6 @@ module Wallet
           response = GoogleWalletClient::Response.new(status: 200, body: "") if response.status == 404
         end
         GoogleWalletClient.raise_for(response, "object update")
-
-        mark_synced!(wallet_pass, digest)
-        :updated
       end
 
       def mark_synced!(wallet_pass, digest)

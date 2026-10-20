@@ -98,6 +98,39 @@ RSpec.describe "Apple Wallet PassKit web service", type: :request do
     end
   end
 
+  it "reports a pass changed later in the same second as the last poll" do
+    register
+    later = WalletPass.create!(ticket: wallet_ticket, provider: "apple", serial_number: "ticket-later-v1", scan_credential_version: 1)
+    later.apple_wallet_registrations.create!(device_library_identifier: device, push_token: push_token)
+    second = Time.zone.parse("2030-01-01 10:00:00")
+    wallet_pass.update_columns(content_updated_at: second + 0.1)
+    later.update_columns(content_digest: "pending", content_updated_at: nil)
+
+    get "#{base}/devices/#{device}/registrations/#{pass_type}"
+    tag = response.parsed_body.fetch("lastUpdated")
+    expect(response.parsed_body.fetch("serialNumbers")).to eq([serial])
+
+    later.update_columns(content_updated_at: second + 0.7)
+    allow(Wallet::PassSync).to receive(:refresh_apple_content!)
+    get "#{base}/devices/#{device}/registrations/#{pass_type}", params: { passesUpdatedSince: tag }
+    expect(response.parsed_body.fetch("serialNumbers")).to eq(["ticket-later-v1"])
+  end
+
+  it "downloads a second change made within the same second as the last download" do
+    allow(Time).to receive(:current).and_return(Time.zone.parse("2030-01-01 10:00:00.200000"))
+    wallet_pass.update_columns(content_digest: "first", content_updated_at: nil)
+    wallet_pass.record_content!("first-change")
+    get "#{base}/passes/#{pass_type}/#{serial}", headers: auth
+    last_modified = response.headers["Last-Modified"]
+    get "#{base}/passes/#{pass_type}/#{serial}", headers: auth.merge("If-Modified-Since" => last_modified)
+    expect(response).to have_http_status(:not_modified)
+
+    wallet_pass.reload.record_content!("second-change")
+    allow(Wallet::PassSync).to receive(:refresh_apple_content!)
+    get "#{base}/passes/#{pass_type}/#{serial}", headers: auth.merge("If-Modified-Since" => last_modified)
+    expect(response).to have_http_status(:ok)
+  end
+
   it "answers an unknown device with no content" do
     get "#{base}/devices/unknown-device/registrations/#{pass_type}"
     expect(response).to have_http_status(:no_content)

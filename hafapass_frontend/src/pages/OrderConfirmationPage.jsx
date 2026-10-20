@@ -202,6 +202,8 @@ function OrderConfirmationContent() {
 
   const formatPrice = (cents = 0) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
   const event = order?.event
+  // Transfers close when the event starts, matching the server and My Tickets.
+  const transfersOpen = Boolean(event?.starts_at) && new Date(event.starts_at) > new Date()
   const awaitingPayment = order?.status === 'pending' && order?.payment_resumable === true
   const isProcessing = order && !finalStatuses.has(order.status)
   const isClosed = ['cancelled', 'expired'].includes(order?.status)
@@ -457,7 +459,7 @@ function OrderConfirmationContent() {
                     {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) || refundNeedsStatusCheck(ticketRefundAttempt)) && (
                       <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Checking…' : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : 'Cancel'}</button>
                     )}
-                    {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && (
+                    {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && transfersOpen && (
                       <button type="button" onClick={() => { setTicketActionError(null); setTransferTarget(ticket) }} className="min-h-11 px-2 text-xs font-semibold text-brand-700">Transfer</button>
                     )}
                     {ticket.status === 'issued' && ticket.seat && (

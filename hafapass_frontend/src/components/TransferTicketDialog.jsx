@@ -35,14 +35,16 @@ export default function TransferTicketDialog({ ticketLabel, onSend, onClose }) {
   }
 
   if (sentTo) {
-    return <Dialog labelledBy="transfer-ticket-title" onClose={onClose} className="max-w-md">
+    // A separate Dialog instance (key) so focus moves into the confirmation
+    // and the focus trap restarts instead of falling back to the page.
+    return <Dialog key="sent" labelledBy="transfer-ticket-title" onClose={onClose} className="max-w-md">
       <h2 id="transfer-ticket-title" className="text-lg font-semibold text-neutral-900">Transfer sent</h2>
       <p className="mt-2 text-sm text-neutral-600">We emailed <strong className="break-all text-neutral-900">{sentTo}</strong> a link to accept {ticketLabel}. Your ticket keeps working until they accept. After that, your QR code stops working and theirs is the one to scan.</p>
       <div className="mt-6 flex justify-end"><button type="button" className="btn-primary min-h-11 px-5" onClick={onClose}>Done</button></div>
     </Dialog>
   }
 
-  return <Dialog labelledBy="transfer-ticket-title" onClose={onClose} busy={sending} className="max-w-md">
+  return <Dialog key="form" labelledBy="transfer-ticket-title" onClose={onClose} busy={sending} className="max-w-md">
     <form onSubmit={submit} noValidate>
       <h2 id="transfer-ticket-title" className="text-lg font-semibold text-neutral-900">Transfer {ticketLabel}</h2>
       <p className="mt-1 text-sm text-neutral-600">The recipient signs in with this email to accept. Transfers close when the event starts.</p>

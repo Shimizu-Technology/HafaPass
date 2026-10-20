@@ -87,6 +87,45 @@ RSpec.describe "Ticket email PDF attachments", type: :request do
     expect(response).to have_http_status(:ok)
   end
 
+  it "answers HEAD without rendering and counts it against the link's limit" do
+    attachment = TicketEmailAttachments.for([ticket]).sole
+    allow(TicketPdfGenerator).to receive(:new).and_call_original
+    10.times { head attachment_path(attachment) }
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq("application/pdf")
+    expect(TicketPdfGenerator).not_to have_received(:new)
+    head attachment_path(attachment)
+    expect(response).to have_http_status(:too_many_requests)
+    get attachment_path(attachment)
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
+  it "gives no PDF to tickets for a cancelled or postponed event, matching admission" do
+    cancelled = wallet_ticket
+    cancelled.event.update_columns(status: Event.statuses[:cancelled])
+    postponed = wallet_ticket
+    postponed.event.update_columns(status: Event.statuses[:postponed])
+    expect(TicketEmailAttachments.for([cancelled.reload, postponed.reload])).to eq([])
+    expect([cancelled, postponed].map(&:admission_allowed?)).to eq([false, false])
+  end
+
+  it "words the email note from what was actually attached" do
+    order = ticket.order
+    blocked = create(:ticket, order: order, event: ticket.event, ticket_type: ticket.ticket_type, order_item: ticket.order_item)
+    blocked.update!(status: :cancelled, cancelled_at: Time.current)
+    html = EmailService.prepare_delivery_payload(create(:message_delivery, order: order, recipient: order.buyer_email)).fetch("html")
+    expect(html).to include("1 of your 2 tickets are attached as PDFs")
+
+    blocked.update_columns(status: Ticket.statuses[:issued])
+    stub_const("TicketEmailAttachments::MAX_ATTACHMENTS", 1)
+    html = EmailService.prepare_delivery_payload(create(:message_delivery, order: order.reload, recipient: order.buyer_email)).fetch("html")
+    expect(html).to include("The first 1 tickets are attached as PDFs").and include("Open the rest from My Tickets")
+
+    stub_const("TicketEmailAttachments::MAX_ATTACHMENTS", 10)
+    html = EmailService.prepare_delivery_payload(create(:message_delivery, order: order.reload, recipient: order.buyer_email)).fetch("html")
+    expect(html).to include("All 2 tickets are also attached as PDFs")
+  end
+
   it "rejects forged tokens and skips attachments without a public HTTPS API" do
     get "/api/v1/ticket_email_attachments/forged--token"
     expect(response).to have_http_status(:not_found)

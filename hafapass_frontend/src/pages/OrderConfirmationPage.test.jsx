@@ -367,4 +367,18 @@ describe('pending ticket transfer on the order page', () => {
     expect(await screen.findByRole('button', { name: 'Transfer' })).toBeInTheDocument()
     expect(screen.queryByText(/Transfer pending/)).not.toBeInTheDocument()
   })
+
+  it('hides Transfer once the event has started', async () => {
+    const order = {
+      id: 922, reference: 'HP-922', status: 'completed', buyer_name: 'Guest', buyer_email: 'guest@example.invalid', total_cents: 0, order_items: [],
+      tickets: [{ id: 1, status: 'issued', admission_allowed: true, refundable_cents: 0, display_credential: 'signed-display', ticket_type: { id: 7, name: 'Free admission' } }],
+      event: { id: 37, slug: 'free-event', title: 'Started Event', status: 'published', starts_at: '2020-10-20T08:00:00Z', timezone: 'Pacific/Guam', venue_name: 'Venue', transfers_enabled: true },
+    }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { ticket_transfers: true } } : order }))
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation?guest_token=guest-token']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Started Event')
+    expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+  })
 })

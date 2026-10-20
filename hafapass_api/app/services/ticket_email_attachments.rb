@@ -12,25 +12,42 @@ class TicketEmailAttachments
   TTL = 3.days
 
   class << self
-    # True when at least one ticket would get a PDF, for the email copy.
-    def any?(tickets)
-      api_base.present? && Array(tickets).any? { |ticket| attachable?(ticket) }
-    end
+    # What one email attaches, decided once so the payload and the email copy
+    # agree: the attachments, how many tickets could have one, and how many
+    # tickets the email covers.
+    Plan = Struct.new(:attachments, :attachable_count, :ticket_count, keyword_init: true) do
+      def any?
+        attachments.any?
+      end
 
-    def for(tickets)
-      base = api_base
-      return [] unless base
+      def capped?
+        attachable_count > attachments.length
+      end
 
-      Array(tickets).select { |ticket| attachable?(ticket) }.first(MAX_ATTACHMENTS).map do |ticket|
-        { filename: "hafapass-ticket-#{ticket.id}.pdf", path: "#{base}#{ROUTE}/#{token(ticket)}" }
+      def complete?
+        attachments.length == ticket_count
       end
     end
 
-    # Only a ticket that admits right now gets a PDF; blocked, refunded,
-    # disputed, cancelled or transferred tickets never do.
+    def plan(tickets)
+      tickets = Array(tickets)
+      base = api_base
+      attachable = base ? tickets.select { |ticket| attachable?(ticket) } : []
+      attachments = attachable.first(MAX_ATTACHMENTS).map do |ticket|
+        { filename: "hafapass-ticket-#{ticket.id}.pdf", path: "#{base}#{ROUTE}/#{token(ticket)}" }
+      end
+      Plan.new(attachments: attachments, attachable_count: attachable.length, ticket_count: tickets.length)
+    end
+
+    def for(tickets)
+      plan(tickets).attachments
+    end
+
+    # Exactly the tickets that admit right now (Ticket#admission_allowed?), so
+    # the two never drift: blocked, refunded, disputed, cancelled, transferred
+    # and unpublished-event tickets never get a PDF.
     def attachable?(ticket)
-      ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked? &&
-        !ticket.refund_pending? && !ticket.inventory_retained?
+      ticket.admission_allowed?
     end
 
     # Returns [ticket, still_valid] for a signed URL, or nil when unknown/expired.

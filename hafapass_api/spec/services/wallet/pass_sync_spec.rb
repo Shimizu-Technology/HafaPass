@@ -191,6 +191,48 @@ RSpec.describe Wallet::PassSync do
       expect(described_class.call(wallet_pass.reload)).to eq(:updated)
     end
 
+    it "pushes an event rename to the shared class once and refreshes each object" do
+      class_update = stub_request(:put, %r{/eventTicketClass/3388000000000000000\.hafapass_event_\d+\z})
+        .with { |request| body = JSON.parse(request.body); body.dig("eventName", "defaultValue", "value") == "Renamed night" && body["reviewStatus"] == "UNDER_REVIEW" }
+        .to_return(status: 200, body: "{}")
+      object_update = stub_request(:put, object_url).to_return(status: 200, body: "{}")
+      wallet_pass
+      second = create(:ticket, order: ticket.order, event: ticket.event, ticket_type: ticket.ticket_type, order_item: ticket.order_item)
+      Wallet::GoogleSaveLink.call(second)
+
+      ticket.event.update!(title: "Renamed night")
+      WalletPassFanoutJob.perform_now(ticket.event_id)
+      expect(class_update).to have_been_requested.once
+
+      expect(described_class.call(wallet_pass.reload)).to eq(:updated)
+      expect(object_update).to have_been_requested.once
+    end
+
+    it "creates the class when an event change reaches a class Google never saw" do
+      stub_request(:put, %r{/eventTicketClass/}).to_return(status: 404)
+      insert = stub_request(:post, "https://walletobjects.googleapis.com/walletobjects/v1/eventTicketClass").to_return(status: 200, body: "{}")
+      wallet_pass
+      expect(described_class.sync_google_class(ticket.event)).to eq(:updated)
+      expect(insert).to have_been_requested
+    end
+
+    it "queues another sync when the ticket changes while the update is in flight" do
+      wallet_pass
+      ticket.update!(attendee_name: "Renamed Holder")
+      clear_enqueued_jobs
+      # Simulate a change committed mid-request whose own callback already ran.
+      allow(described_class).to receive(:tickets_changed)
+      stub_request(:put, object_url).to_return do
+        Ticket.find(ticket.id).update!(status: :cancelled, cancelled_at: Time.current)
+        { status: 200, body: "{}" }
+      end
+      sent = Wallet::GoogleTicketObject.new(wallet_pass.reload).content_digest
+
+      expect { described_class.call(wallet_pass) }.to have_enqueued_job(WalletPassSyncJob).with(wallet_pass.id)
+      expect(wallet_pass.reload.synced_digest).to eq(sent)
+      expect(Wallet::GoogleTicketObject.new(wallet_pass).content_digest).not_to eq(sent)
+    end
+
     it "is a no-op without Google Wallet approval and makes no requests" do
       wallet_pass
       allow(PlatformCapabilities).to receive(:enabled?).with("google_wallet").and_return(false)

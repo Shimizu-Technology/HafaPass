@@ -12,6 +12,8 @@ class Api::V1::TicketEmailAttachmentsController < ApplicationController
   def show
     ticket, current = TicketEmailAttachments.resolve(params[:token])
     return head :not_found unless ticket
+    # A HEAD probe learns the link is live without rendering a PDF.
+    return head :ok, content_type: "application/pdf" if request.head?
 
     pdf = current ? ticket_pdf(ticket) : notice_pdf("This ticket is no longer valid",
       "Open HåfaPass and sign in to see its current status.")

@@ -60,9 +60,12 @@ class Api::V1::AppleWalletWebServiceController < ApplicationController
 
   def latest_pass
     Wallet::PassSync.refresh_apple_content!(@wallet_pass)
-    modified_at = @wallet_pass.content_updated_at || @wallet_pass.created_at.change(usec: 0)
+    modified_at = @wallet_pass.content_updated_at || @wallet_pass.created_at
+    # HTTP dates carry whole seconds. Each change to one pass advances its
+    # time by at least a second (WalletPass#record_content!), so comparing
+    # whole seconds never hides a newer change.
     since = http_date(request.headers["If-Modified-Since"])
-    return head :not_modified if since && since >= modified_at
+    return head :not_modified if since && since >= modified_at.change(usec: 0)
 
     response.headers["Last-Modified"] = modified_at.httpdate
     send_data Wallet::ApplePassGenerator.latest(@wallet_pass, authentication_token: presented_token),
@@ -117,8 +120,8 @@ class Api::V1::AppleWalletWebServiceController < ApplicationController
   def updated_since
     value = params[:passesUpdatedSince].presence
     return if value.nil?
-    return :invalid unless value.match?(/\A\d{1,12}\z/)
+    return :invalid unless value.match?(/\A\d{1,19}\z/)
 
-    Time.zone.at(value.to_i)
+    WalletPass.time_for_tag(value)
   end
 end

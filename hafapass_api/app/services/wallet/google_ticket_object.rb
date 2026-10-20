@@ -15,16 +15,23 @@ module Wallet
       @at = at
     end
 
-    def event_class
-      event = ticket.event
+    def self.event_class(event)
       {
-        id: class_id,
+        id: GoogleSaveLink.class_id_for(event),
         issuerName: "HåfaPass",
         reviewStatus: ENV.fetch("GOOGLE_WALLET_CLASS_REVIEW_STATUS", "UNDER_REVIEW"),
         eventName: localized(event.title),
         venue: { name: localized(event.venue_name.to_s), address: localized(event.venue_address.to_s) },
         dateTime: { start: event.starts_at&.iso8601, end: (event.ends_at || event.starts_at)&.iso8601 }
       }
+    end
+
+    def self.localized(value)
+      { defaultValue: { language: "en-US", value: value } }
+    end
+
+    def event_class
+      self.class.event_class(ticket.event)
     end
 
     # Only a current, admissible credential carries a barcode. Updates replace
@@ -44,8 +51,9 @@ module Wallet
       }.compact
     end
 
+    # Covers the event class too, so a rename or reschedule counts as a change.
     def content_digest
-      Digest::SHA256.hexdigest(JSON.generate(ticket_object))
+      Digest::SHA256.hexdigest(JSON.generate([ticket_object, event_class]))
     end
 
     private
@@ -57,7 +65,7 @@ module Wallet
     end
 
     def localized(value)
-      { defaultValue: { language: "en-US", value: value } }
+      self.class.localized(value)
     end
   end
 end

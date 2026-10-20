@@ -199,11 +199,12 @@ class EmailService
 
       event = order.event
       tickets = order.tickets.includes(:ticket_type).reject { |ticket| ticket.transferred_away_from?(order) }
-      html = build_order_confirmation_html(order, event, tickets)
+      pdfs = TicketEmailAttachments.plan(tickets)
+      html = build_order_confirmation_html(order, event, tickets, pdfs: pdfs)
       subject = safe_subject("Your HåfaPass Tickets - #{event.title}")
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "order_confirmation", delivery: delivery,
-        attachments: TicketEmailAttachments.for(tickets), order_id: order.id)
+        attachments: pdfs.attachments, order_id: order.id)
     end
 
     def send_order_recovery(order, delivery: nil)
@@ -239,11 +240,12 @@ class EmailService
 
       event = ticket.event
       ticket_type = ticket.ticket_type
-      html = build_ticket_email_html(ticket, event, ticket_type)
+      pdfs = TicketEmailAttachments.plan([ticket])
+      html = build_ticket_email_html(ticket, event, ticket_type, pdfs: pdfs)
       subject = safe_subject("Your Ticket - #{event.title}")
 
       deliver(to: ticket.attendee_email, subject: subject, html: html, tag: "ticket_delivery", delivery: delivery,
-        attachments: TicketEmailAttachments.for([ticket]), ticket_id: ticket.id)
+        attachments: pdfs.attachments, ticket_id: ticket.id)
     end
 
     # ── Refund Notification ─────────────────────────────────────────
@@ -440,7 +442,7 @@ class EmailService
       HTML
     end
 
-    def build_order_confirmation_html(order, event, tickets)
+    def build_order_confirmation_html(order, event, tickets, pdfs: nil)
       ticket_rows = tickets.map do |ticket|
         <<~HTML
           <tr>
@@ -485,7 +487,7 @@ class EmailService
             Present your QR code at the door for entry. You can access your tickets anytime at
             <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">My Tickets</a>.
           </p>
-          #{pdf_attachment_note(tickets, "Your tickets are also attached as PDFs, so you can open them at the door without signal.")}
+          #{pdf_attachment_note(pdfs)}
         HTML
       end
 
@@ -513,7 +515,7 @@ class EmailService
       end
     end
 
-    def build_ticket_email_html(ticket, event, ticket_type)
+    def build_ticket_email_html(ticket, event, ticket_type, pdfs: nil)
       email_wrapper("Your Ticket") do
         <<~HTML
           <div style="text-align: center;">
@@ -532,7 +534,7 @@ class EmailService
             </p>
 
             <p style="color: #6b7280; font-size: 14px; margin: 0;">Present your QR code at the door for entry.</p>
-            #{pdf_attachment_note([ticket], "Your ticket is also attached as a PDF, so you can open it at the door without signal.")}
+            #{pdf_attachment_note(pdfs)}
           </div>
         HTML
       end
@@ -619,9 +621,22 @@ class EmailService
       end
     end
 
-    def pdf_attachment_note(tickets, text)
-      return "" unless TicketEmailAttachments.any?(tickets)
+    # Worded from what was actually attached: everything, the first few of a
+    # large order, or only the tickets that can be used right now.
+    def pdf_attachment_note(pdfs)
+      return "" unless pdfs&.any?
 
+      offline = "so you can open them at the door without signal"
+      count = pdfs.attachments.length
+      text = if pdfs.complete?
+        count == 1 ? "Your ticket is also attached as a PDF, so you can open it at the door without signal." :
+          "All #{count} tickets are also attached as PDFs, #{offline}."
+      elsif pdfs.capped?
+        "The first #{count} tickets are attached as PDFs, #{offline}. Open the rest from My Tickets."
+      else
+        "#{count} of your #{pdfs.ticket_count} tickets are attached as PDFs, #{offline}. " \
+          "The others can't be used for entry right now; check My Tickets for their status."
+      end
       %(<p style="color: #6b7280; margin: 12px 0 0; font-size: 14px;">#{h(text)}</p>)
     end
 

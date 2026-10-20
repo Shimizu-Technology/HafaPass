@@ -93,6 +93,12 @@ module Wallet
       call(Net::HTTP::Post, "#{API_BASE}/eventTicketObject", object)
     end
 
+    # Google expects updates to an approved class to go back for review.
+    def update_class(event_class)
+      call(Net::HTTP::Put, "#{API_BASE}/eventTicketClass/#{escape(event_class.fetch(:id))}",
+        event_class.merge(reviewStatus: "UNDER_REVIEW"))
+    end
+
     def insert_class(event_class)
       call(Net::HTTP::Post, "#{API_BASE}/eventTicketClass", event_class)
     end

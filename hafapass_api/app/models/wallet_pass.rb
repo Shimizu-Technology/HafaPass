@@ -54,19 +54,23 @@ class WalletPass < ApplicationRecord
 
   # Each download embeds a fresh random token. Earlier copies keep working, up
   # to a small cap, so a second device or a re-download is not locked out.
+  # The row lock keeps two simultaneous downloads from dropping a token.
   def add_authentication_token!(token)
-    digests = ([self.class.digest_token(token)] + authentication_token_digests).uniq.first(MAX_AUTHENTICATION_TOKENS)
-    update!(authentication_token_digests: digests)
+    with_lock do
+      digests = ([self.class.digest_token(token)] + authentication_token_digests).uniq.first(MAX_AUTHENTICATION_TOKENS)
+      update!(authentication_token_digests: digests)
+    end
   end
 
-  # Records the latest pass content. Apple's update tag (and Last-Modified)
-  # advances in whole seconds so a device never misses two changes made within
-  # the same second.
+  # Records the latest pass content. The time keeps microseconds so Apple's
+  # update tag orders passes changed within the same second. For one pass it
+  # moves forward by at least a second, because Last-Modified/If-Modified-Since
+  # only carry whole seconds and a second change must never look unmodified.
   def record_content!(digest)
     return false if digest == content_digest
 
-    now = Time.current.change(usec: 0)
-    now = content_updated_at + 1.second if content_updated_at && now <= content_updated_at
+    now = Time.current
+    now = content_updated_at + 1.second if content_updated_at && now < content_updated_at + 1.second
     update!(content_digest: digest, content_updated_at: now)
     true
   end
@@ -75,7 +79,12 @@ class WalletPass < ApplicationRecord
     content_digest.present? && synced_digest != content_digest
   end
 
+  # Microseconds since the epoch, as Apple's opaque lastUpdated tag.
   def update_tag
-    content_updated_at&.to_i.to_s
+    content_updated_at && (content_updated_at.to_r * 1_000_000).to_i.to_s
+  end
+
+  def self.time_for_tag(tag)
+    Time.zone.at(Rational(tag.to_i, 1_000_000))
   end
 end

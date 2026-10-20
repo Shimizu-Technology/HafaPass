@@ -115,11 +115,11 @@ class Rack::Attack
   # The email provider fetches ticket PDFs from a small pool of addresses, so
   # each signed link is limited on its own under a high IP ceiling.
   throttle("ticket-email-attachment/token", limit: 10, period: 10.minutes) do |req|
-    Digest::SHA256.hexdigest(req.path) if req.path.start_with?("/api/v1/ticket_email_attachments/") && req.get?
+    Digest::SHA256.hexdigest(req.path) if req.path.start_with?("/api/v1/ticket_email_attachments/") && (req.get? || req.head?)
   end
 
   throttle("ticket-email-attachment/ip", limit: 1200, period: 1.minute) do |req|
-    req.ip if req.path.start_with?("/api/v1/ticket_email_attachments/") && req.get?
+    req.ip if req.path.start_with?("/api/v1/ticket_email_attachments/") && (req.get? || req.head?)
   end
 
   # ─── Promo Code Validation Throttles ──────────────────────────────────────
