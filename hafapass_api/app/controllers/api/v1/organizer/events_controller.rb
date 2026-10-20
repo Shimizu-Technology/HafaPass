@@ -252,6 +252,7 @@ module Api
             }
           end
 
+          analytics = EventSalesAnalytics.call(@event)
           render json: {
             total_tickets_sold: total_tickets_sold,
             total_revenue_cents: total_revenue_cents,
@@ -265,7 +266,7 @@ module Api
               .count.map { |(source, medium, campaign), count|
                 { source: source, medium: medium, campaign: campaign, orders: count }
               }
-          }
+          }.merge(analytics)
         end
 
         def ticket_type_net_revenue(ticket_type, settled_orders)
