@@ -47,6 +47,14 @@ describe('stale shell recovery', () => {
     expect(event.defaultPrevented).toBe(true)
   })
 
+  it('leaves a throttled lazy-chunk failure unhandled so the error boundary still sees it', () => {
+    window.dispatchEvent(new Event('vite:preloadError', { cancelable: true }))
+    const throttled = new Event('vite:preloadError', { cancelable: true })
+    window.dispatchEvent(throttled)
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(throttled.defaultPrevented).toBe(false)
+  })
+
   it('ignores failures outside the release assets', () => {
     failAsset('script', 'https://example.test/vendor/analytics.js')
     expect(reload).not.toHaveBeenCalled()

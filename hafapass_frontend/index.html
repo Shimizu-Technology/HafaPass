@@ -8,20 +8,23 @@
     <script>
       (function () {
         var key = 'hafapass_stale_shell_reload_at'
+        // Returns true only when a reload actually happens.
         function recover() {
           try {
             var last = Number(window.sessionStorage.getItem(key))
-            if (last && Date.now() - last < 60000) return
+            if (last && Date.now() - last < 60000) return false
             window.sessionStorage.setItem(key, String(Date.now()))
-          } catch (error) { return }
+          } catch (error) { return false }
           window.location.reload()
+          return true
         }
         window.addEventListener('error', function (event) {
           var target = event.target
           var url = target && (target.src || target.href || '')
           if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK') && /\/assets\//.test(url)) recover()
         }, true)
-        window.addEventListener('vite:preloadError', function (event) { event.preventDefault(); recover() })
+        // Keep the original rejection when throttled so the app's error boundary sees it.
+        window.addEventListener('vite:preloadError', function (event) { if (recover()) event.preventDefault() })
       })()
     </script>
     <!-- /stale-shell-recovery -->
