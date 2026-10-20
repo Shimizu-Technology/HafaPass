@@ -58,6 +58,31 @@ RSpec.describe EmailService do
     end
   end
 
+  describe ".from_email" do
+    def stub_sender(value)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("MAILER_FROM_EMAIL").and_return(value)
+    end
+
+    it "uses the configured verified sender" do
+      stub_sender(" HåfaPass <tickets@mail.example.test> ")
+      expect(described_class.from_email).to eq("HåfaPass <tickets@mail.example.test>")
+    end
+
+    it "falls back to a reserved domain only in development and test" do
+      stub_sender(nil)
+      expect(described_class.from_email).to eq("tickets@example.test")
+    end
+
+    it "refuses to send from a deployed environment without a configured sender" do
+      stub_sender("")
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("staging"))
+      allow(described_class).to receive(:configured?).and_return(true)
+
+      expect { described_class.from_email }.to raise_error(described_class::ProviderDisabled, /MAILER_FROM_EMAIL/)
+    end
+  end
+
   it "explains transferred tickets instead of an empty ticket table when the buyer holds none" do
     order = create(:order)
     html = described_class.send(:build_order_confirmation_html, order, order.event, [])

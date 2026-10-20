@@ -87,6 +87,9 @@
     "orderSummary": "注文概要",
     "subtotal": "小計",
     "serviceFee": "サービス手数料",
+    "serviceFeeIncludesProcessing": "カード決済手数料を含みます",
+    "feesUnavailable": "現在のサービス手数料を読み込めなかったため、合計金額を表示できません。",
+    "retryFees": "再試行",
     "discount": "割引",
     "total": "合計",
     "yourInformation": "お客様情報",
@@ -175,7 +178,8 @@
     "madeWith": "グアムでアロハを込めて作りました",
     "help": "ヘルプ",
     "findTickets": "チケットを探す",
-    "contactSupport": "サポートに連絡"
+    "contactSupport": "サポートに連絡",
+    "callSupport": "{{phone}} に電話"
   },
   "categories": {
     "all": "すべてのイベント",

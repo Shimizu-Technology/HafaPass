@@ -103,10 +103,11 @@ RSpec.describe "Api::V1::Orders", type: :request do
 
         # subtotal: 2*2500 + 1*7500 = 12500 cents
         expect(json["subtotal_cents"]).to eq(12500)
-        # service_fee: (12500 * 0.03).round + (3 * 50) = 375 + 150 = 525 cents
-        expect(json["service_fee_cents"]).to eq(525)
-        # total: 12500 + 525 = 13025 cents
-        expect(json["total_cents"]).to eq(13025)
+        # service_fee: (12500 * 0.05).round + (3 * 100) = 625 + 300 = 925 cents
+        expect(json["service_fee_cents"]).to eq(925)
+        # total: 12500 + 925 = 13425 cents
+        expect(json["total_cents"]).to eq(13425)
+        expect(json["processing_fee_bearer"]).to eq("platform")
         expect(json["status"]).to eq("completed")
         expect(json["buyer_email"]).to eq("buyer@example.com")
         expect(json["buyer_name"]).to eq("Jane Smith")
@@ -237,7 +238,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       create_event_day_rehearsal_approval(event: proof_event)
       buyer = create(:user, :admin)
       authorization = LiveMoneyProofAuthorizations::Manager.request!(
-        event: proof_event, buyer_email: "proof-buyer@example.com", max_amount_cents: 200,
+        event: proof_event, buyer_email: "proof-buyer@example.com", max_amount_cents: 300,
         expires_at: 1.hour.from_now, actor: buyer
       )
       LiveMoneyProofAuthorizations::Manager.approve!(authorization: authorization, actor: create(:user, :admin))

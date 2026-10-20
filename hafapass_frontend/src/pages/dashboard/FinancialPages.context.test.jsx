@@ -52,6 +52,7 @@ function mount(Page, tool) {
 beforeEach(() => {
   vi.clearAllMocks(); window.localStorage.clear(); window.sessionStorage.clear()
   vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
+  vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
   window.localStorage.setItem('hafapass_organization_id', '1'); bind()
   apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: fixtures(url, config) }))
 })

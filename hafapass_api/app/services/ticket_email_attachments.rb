@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "uri"
-
 # Ticket PDFs attached to confirmation and ticket emails, so a buyer can open
 # their ticket offline at the door. The durable email payload stores only a
 # short-lived signed URL; the email provider fetches the PDF when it sends, so
@@ -14,6 +12,11 @@ class TicketEmailAttachments
   TTL = 3.days
 
   class << self
+    # True when at least one ticket would get a PDF, for the email copy.
+    def any?(tickets)
+      api_base.present? && Array(tickets).any? { |ticket| attachable?(ticket) }
+    end
+
     def for(tickets)
       base = api_base
       return [] unless base
@@ -51,12 +54,7 @@ class TicketEmailAttachments
 
     # The provider must reach the URL, so attachments need the public HTTPS API.
     def api_base
-      uri = URI.parse(ENV["PUBLIC_API_URL"].to_s.delete_suffix("/"))
-      return unless uri.is_a?(URI::HTTPS) && uri.host.present? && uri.path.blank? && uri.userinfo.nil?
-
-      uri.to_s
-    rescue URI::InvalidURIError
-      nil
+      PublicSiteUrl.api
     end
   end
 end

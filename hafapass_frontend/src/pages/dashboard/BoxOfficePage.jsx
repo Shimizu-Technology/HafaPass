@@ -7,7 +7,7 @@ import apiClient from '../../api/client'
 import QRCode from '../../components/QRCode'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import SeatSelector from '../../components/SeatSelector'
-import { supportMailto } from '../../utils/supportContact'
+import SupportLink from '../../components/SupportLink'
 
 const readSavedSale = key => {
   try {
@@ -250,7 +250,7 @@ function BoxOfficePageSession({ id, identity }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Ticket Selection */}
         <div className="lg:col-span-2 space-y-4">
-          {pendingSale?.recoveryRequired && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved sale recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a sale.</p><a href={supportMailto('Recover an unreadable box office sale')} className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</a></div>}
+          {pendingSale?.recoveryRequired && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved sale recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a sale.</p><SupportLink subject="Recover an unreadable box office sale" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div>}
           {pendingSale && !pendingSale.recoveryRequired && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status">
             <p className="font-semibold">A saved sale needs confirmation</p>
             <p className="mt-1">Retry uses the original sale and payment identity. Do not create another sale or collect another payment until its outcome is confirmed.</p>

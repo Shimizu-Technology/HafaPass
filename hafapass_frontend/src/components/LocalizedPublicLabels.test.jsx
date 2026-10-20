@@ -11,6 +11,7 @@ import api from '../api/client'
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('./SEO', () => ({ default: () => null }))
 it('uses the selected Japanese locale for recovery links and free/current-priced home inventory', async () => {
+  vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
   const i18n = createInstance()
   await i18n.init({ lng: 'ja', fallbackLng: 'en', resources: { en: { translation: en }, ja: { translation: ja } }, interpolation: { escapeValue: false } })
   const make = (id, price) => ({ id, title: `Synthetic ${id}`, slug: `synthetic-${id}`, starts_at: '2099-10-20T07:00:00Z', timezone: 'Pacific/Guam', category: 'other', ticket_types: [{ price_cents: price, current_price_cents: price, quantity_remaining: 10, on_sale: true }] })

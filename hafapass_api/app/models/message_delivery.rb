@@ -53,6 +53,14 @@ class MessageDelivery < ApplicationRecord
     unknown && (provider_attempted_at || created_at) <= PROVIDER_REPLAY_WINDOW.ago
   end
 
+  # HåfaPass's own reserved placeholder addresses (e.g. guest-list entries without
+  # an email) can never be delivered, so they are never handed to a provider.
+  PLACEHOLDER_EMAIL_DOMAIN = "@hafapass.invalid"
+
+  def undeliverable_recipient?
+    recipient.to_s.strip.downcase.end_with?(PLACEHOLDER_EMAIL_DOMAIN)
+  end
+
   def suppressed_recipient?
     history = self.class.where("LOWER(recipient) = ?", recipient.to_s.strip.downcase)
     # Local cancellation/propagated suppression is not provider evidence.

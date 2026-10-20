@@ -148,6 +148,7 @@ module Commerce
           buyer_terms_accepted_at: buyer_terms_accepted_at,
           fee_policy_snapshot: event.fee_policy,
           buyer_fee_percent_snapshot: event.buyer_fee_percent,
+          processing_fee_bearer_snapshot: totals[:processing_fee_bearer],
           organizer_fee_cents: totals[:organizer_fee_cents],
           expires_at: expires_at
         )
@@ -499,10 +500,15 @@ module Commerce
       end
       subtotal_cents = ticket_subtotal_cents + catalog_subtotal_cents
       settings = SiteSetting.instance
-      ticket_count = selections.sum { |selection| selection[:quantity] }
+      # The flat part is charged per paid ticket: one whose selected unit price
+      # (tier or seat price, before any promo discount) is above zero. Free
+      # and complimentary tickets carry no fee. A promo-discounted ticket is
+      # still a paid ticket. MoneyAllocator below spreads the fee by subtotal,
+      # so free lines are allocated no fee and refunds prorate accordingly.
+      paid_ticket_count = selections.sum { |selection| selection[:unit_price_cents].positive? ? selection[:quantity] : 0 }
       platform_fee_cents = if service_fee && ticket_subtotal_cents.positive?
         (ticket_subtotal_cents * (settings.service_fee_percent / 100.0)).round +
-          (ticket_count * settings.service_fee_flat_cents)
+          (paid_ticket_count * settings.service_fee_flat_cents)
       else
         0
       end
@@ -520,7 +526,15 @@ module Commerce
         organizer_fee_cents: organizer_fee_cents,
         discount_cents: discount_cents,
         total_cents: [subtotal_cents + buyer_fee_cents - discount_cents, 0].max,
-        promo_code: promo_code
+        promo_code: promo_code,
+        # Read once with the fee terms so the order's fee and its processing
+        # bearer always come from the same settings snapshot. Orders created
+        # without a service fee (box office, comps, guest list) earn no fee to
+        # cover processing, so the organizer bears it.
+        processing_fee_bearer: service_fee ? settings.processing_fee_bearer : "organizer",
+        service_fee_percent: settings.service_fee_percent,
+        service_fee_flat_cents: settings.service_fee_flat_cents,
+        paid_ticket_count: paid_ticket_count
       }
     end
 
@@ -602,8 +616,10 @@ module Commerce
         currency: order.currency,
         estimated: true,
         metadata: {
-          percent: SiteSetting.instance.service_fee_percent.to_s,
-          flat_cents_per_ticket: SiteSetting.instance.service_fee_flat_cents,
+          percent: totals[:service_fee_percent].to_s,
+          flat_cents_per_ticket: totals[:service_fee_flat_cents],
+          paid_ticket_count: totals[:paid_ticket_count],
+          processing_fee_bearer: totals[:processing_fee_bearer],
           fee_policy: event.fee_policy,
           buyer_paid_cents: totals[:service_fee_cents],
           organizer_absorbed_cents: totals[:organizer_fee_cents]

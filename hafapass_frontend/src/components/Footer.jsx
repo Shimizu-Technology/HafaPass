@@ -1,10 +1,12 @@
 import HafaPassMark from './HafaPassMark'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { supportMailto } from '../utils/supportContact'
+import { useSupportContact } from '../utils/supportContact'
+import SupportLink from './SupportLink'
 
 export default function Footer() {
   const { t } = useTranslation()
+  const support = useSupportContact()
 
   return (
     <footer className="bg-brand-950 text-content-inverse-muted py-14 relative">
@@ -38,7 +40,7 @@ export default function Footer() {
             <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">{t('footer.company')}</h3>
             <ul className="space-y-1">
               <li><a href="https://shimizu-technology.com" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.about')}</a></li>
-              <li><a href={supportMailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.contact')}</a></li>
+              <li><a href={support.mailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.contact')}</a></li>
               <li><Link to="/policies/privacy" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.privacy')}</Link></li>
               <li><Link to="/policies/buyer-terms" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Buyer Terms</Link></li>
               <li><Link to="/policies/refunds" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Refunds</Link></li>
@@ -50,7 +52,8 @@ export default function Footer() {
             <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">{t('footer.help')}</h3>
             <ul className="space-y-1">
               <li><Link to="/orders/recover" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.findTickets')}</Link></li>
-              <li><a href={supportMailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.contactSupport')}</a></li>
+              <li><a href={support.mailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.contactSupport')}</a></li>
+              {support.tel && <li><a href={support.tel} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.callSupport', { phone: support.phone })}</a></li>}
             </ul>
           </div>
         </div>
@@ -70,13 +73,14 @@ export default function Footer() {
 }
 
 // Workspace pages keep a single quiet line instead of the marketing footer.
+// Organizer/admin screens never fall back to buyer ticket recovery.
 export function WorkspaceFooter() {
   const { t } = useTranslation()
   return (
     <footer className="border-t border-neutral-200 bg-white">
       <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-4 text-xs text-neutral-500 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
         <p>&copy; {new Date().getFullYear()} {t('footer.copyright')}</p>
-        <a href={supportMailto()} className="inline-flex min-h-11 items-center self-start font-medium text-neutral-600 hover:text-neutral-900 sm:self-auto">{t('footer.contactSupport')}</a>
+        <SupportLink className="inline-flex min-h-11 items-center self-start font-medium text-neutral-600 hover:text-neutral-900 sm:self-auto">{t('footer.contactSupport')}</SupportLink>
       </div>
     </footer>
   )

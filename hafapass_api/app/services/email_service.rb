@@ -3,13 +3,24 @@
 require "digest"
 
 class EmailService
-  FROM_EMAIL = ENV.fetch("MAILER_FROM_EMAIL", "tickets@hafapass.com")
+  # Local development and test never send real mail, so a reserved domain is safe.
+  LOCAL_FROM_EMAIL = "tickets@example.test"
   class ProviderDisabled < StandardError; end
   class TransportContextChanged < StandardError; end
 
   class << self
     def configured?
       ProviderRehearsal.email_enabled? || PlatformCapabilities.enabled?("resend_production")
+    end
+
+    # The sender is configuration: a deployed environment that can send mail
+    # must name a verified MAILER_FROM_EMAIL rather than borrow a default domain.
+    def from_email
+      configured_from = ENV["MAILER_FROM_EMAIL"].to_s.strip.presence
+      return configured_from if configured_from
+      raise ProviderDisabled, "MAILER_FROM_EMAIL is required to send email in #{Rails.env}" if !Rails.env.local? && configured?
+
+      LOCAL_FROM_EMAIL
     end
 
     def transport_context_digest
@@ -250,7 +261,6 @@ class EmailService
       return unless waitlist_entry.email.present?
 
       event = waitlist_entry.event
-      frontend_url = ENV.fetch("FRONTEND_URL", "http://localhost:5173")
       event_url = "#{frontend_url}/events/#{event.slug}"
       html = build_waitlist_notification_html(waitlist_entry, event, event_url)
       subject = safe_subject("Tickets Available - #{event.title}")
@@ -364,7 +374,7 @@ class EmailService
 
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, attachments: nil, **log_meta)
-      params = { from: FROM_EMAIL, to: delivery ? delivery.recipient : to, subject: subject, html: html }
+      params = { from: from_email, to: delivery ? delivery.recipient : to, subject: subject, html: html }
       # Ticket PDFs travel as provider-fetched URLs (see TicketEmailAttachments).
       params[:attachments] = attachments if attachments.present?
       reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
@@ -475,6 +485,7 @@ class EmailService
             Present your QR code at the door for entry. You can access your tickets anytime at
             <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">My Tickets</a>.
           </p>
+          #{pdf_attachment_note(tickets, "Your tickets are also attached as PDFs, so you can open them at the door without signal.")}
         HTML
       end
 
@@ -521,6 +532,7 @@ class EmailService
             </p>
 
             <p style="color: #6b7280; font-size: 14px; margin: 0;">Present your QR code at the door for entry.</p>
+            #{pdf_attachment_note([ticket], "Your ticket is also attached as a PDF, so you can open it at the door without signal.")}
           </div>
         HTML
       end
@@ -607,6 +619,12 @@ class EmailService
       end
     end
 
+    def pdf_attachment_note(tickets, text)
+      return "" unless TicketEmailAttachments.any?(tickets)
+
+      %(<p style="color: #6b7280; margin: 12px 0 0; font-size: 14px;">#{h(text)}</p>)
+    end
+
     def ticket_url(ticket)
       "#{frontend_url}/tickets/#{ticket.display_credential}"
     end
@@ -618,7 +636,7 @@ class EmailService
     end
 
     def frontend_url
-      ENV.fetch("FRONTEND_URL", "http://localhost:5173")
+      PublicSiteUrl.frontend
     end
 
     def format_event_date(event)

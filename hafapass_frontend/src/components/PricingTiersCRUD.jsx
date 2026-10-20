@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, Loader2, Clock, Hash } from 'lucide-react'
 import apiClient from '../api/client'
 import { useLocation } from 'react-router-dom'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../hooks/useOrganizerContext'
-import { supportMailto } from '../utils/supportContact'
+import SupportLink from './SupportLink'
 import { toEventLocalInput } from '../utils/eventTime'
 
 const readPendingInventory = key => {
@@ -232,7 +232,7 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
 
       {error && <p role="alert" className="text-sm text-red-800 mb-2">{error}</p>}
       {loadError && <div role="alert" className="mb-3 text-sm text-red-800"><p>{loadError}</p><button type="button" disabled={refreshing} onClick={fetchTiers} className="min-h-11 font-semibold underline">Retry pricing tiers</button></div>}
-      {unconfirmed && <section aria-label="Unconfirmed pricing change" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>A previous pricing change is not confirmed. Changes are paused to prevent repetition.</p><button type="button" disabled={refreshing} onClick={fetchTiers} className="min-h-11 font-semibold underline">Refresh pricing list</button><a href={supportMailto('Verify an unconfirmed pricing change')} className="ml-3 inline-flex min-h-11 items-center font-semibold underline">Contact support</a></section>}
+      {unconfirmed && <section aria-label="Unconfirmed pricing change" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>A previous pricing change is not confirmed. Changes are paused to prevent repetition.</p><button type="button" disabled={refreshing} onClick={fetchTiers} className="min-h-11 font-semibold underline">Refresh pricing list</button><SupportLink subject="Verify an unconfirmed pricing change" className="ml-3 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></section>}
 
       {showForm && (
         <div className="mb-3">

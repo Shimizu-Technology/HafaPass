@@ -20,6 +20,7 @@ class OrderPresenter
       currency: order.currency,
       subtotal_cents: order.subtotal_cents,
       service_fee_cents: order.service_fee_cents,
+      processing_fee_bearer: order.processing_fee_bearer_snapshot,
       discount_cents: order.discount_cents,
       total_cents: order.total_cents,
       refunded_cents: order.refunded_cents,

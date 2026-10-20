@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
-import { supportMailto } from '../../utils/supportContact'
+import SupportLink from '../../components/SupportLink'
 import { partialRefundCents, refundConfirmLabel, ticketCountLabel } from '../../utils/eventToolFormat'
 
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
@@ -268,9 +268,9 @@ function RefundsPageSession({ eventId, identity }) {
    {notice && !pendingRequest?.financeReview && <p id="refund-notice" role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{notice}</p>}
    {pendingRequest?.financeReview && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
     <p>The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.</p>
-    <a className="inline-flex min-h-11 items-center font-semibold underline" href={supportMailto(`Refund review for order ${pendingRequest.orderId}`)}>Contact support</a>
+    <SupportLink subject={`Refund review for order ${pendingRequest.orderId}`} className="inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink>
    </div>}
-   {pendingRequest?.recoveryRequired && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved refund recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a refund.</p><a href={supportMailto('Recover an unreadable refund request')} className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</a></div>}
+   {pendingRequest?.recoveryRequired && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved refund recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a refund.</p><SupportLink subject="Recover an unreadable refund request" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div>}
    {pendingRequest && !pendingRequest.recoveryRequired && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
    {pendingRequest && !pendingRequest.recoveryRequired && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing || accessRefreshing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund'}</button>}
    {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{loadError} <button className="min-h-11 font-semibold underline" onClick={fetchOrders}>Retry</button></p>}

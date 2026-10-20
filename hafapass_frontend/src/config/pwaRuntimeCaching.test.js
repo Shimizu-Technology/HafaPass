@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import runtimeCaching from './pwaRuntimeCaching'
+import buildRuntimeCaching, { eventsListPattern } from './pwaRuntimeCaching'
 
+const API_URL = 'https://api.tickets.example.test/api/v1'
+const runtimeCaching = buildRuntimeCaching(`${API_URL}/`)
 const routeFor = url => runtimeCaching.find(route => route.urlPattern.test(url))
 
 describe('public discovery network policy', () => {
   it.each([
-    'https://hafapass-api.onrender.com/api/v1/events',
-    'https://hafapass-api.onrender.com/api/v1/events?page=1&per_page=12',
-    'https://hafapass-api.onrender.com/api/v1/events?category=music&price=under_25',
+    `${API_URL}/events`,
+    `${API_URL}/events?page=1&per_page=12`,
+    `${API_URL}/events?category=music&price=under_25`,
   ])('uses the network without a cache response or offline fallback for %s', url => {
     const route = routeFor(url)
     expect(route).toEqual(expect.objectContaining({ handler: 'NetworkOnly' }))
@@ -16,12 +18,19 @@ describe('public discovery network policy', () => {
   })
 
   it.each([
-    'https://hafapass-api.onrender.com/api/v1/events/concert',
-    'https://hafapass-api.onrender.com/api/v1/orders',
-    'https://hafapass-api.onrender.com/api/v1/organizer/events',
-    'https://hafapass-api.onrender.com/api/v1/admin/events',
+    `${API_URL}/events/concert`,
+    `${API_URL}/orders`,
+    `${API_URL}/organizer/events`,
+    `${API_URL}/admin/events`,
   ])('leaves detail, checkout and private JSON requests outside runtime caches: %s', url => {
     expect(routeFor(url)).toBeUndefined()
+  })
+
+  it('derives the API matcher from configuration instead of a hardcoded host', () => {
+    expect(eventsListPattern(API_URL).test('https://api.tickets.example.test/api/v1/events')).toBe(true)
+    expect(eventsListPattern(API_URL).test('https://apiXtickets.example.test/api/v1/events')).toBe(false)
+    expect(eventsListPattern(API_URL).test('https://other.example.test/api/v1/events')).toBe(false)
+    expect(eventsListPattern().test('http://localhost:3000/api/v1/events')).toBe(true)
   })
 
   it('retains the existing image caching policy', () => {

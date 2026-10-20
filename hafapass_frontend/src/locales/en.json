@@ -87,6 +87,9 @@
     "orderSummary": "Order Summary",
     "subtotal": "Subtotal",
     "serviceFee": "Service fee",
+    "serviceFeeIncludesProcessing": "Includes card processing",
+    "feesUnavailable": "We couldn't load the current service fee, so we can't show your total yet.",
+    "retryFees": "Try again",
     "discount": "Discount",
     "total": "Total",
     "yourInformation": "Your Information",
@@ -175,7 +178,8 @@
     "madeWith": "Made with aloha on Guam",
     "help": "Get help",
     "findTickets": "Find your tickets",
-    "contactSupport": "Contact support"
+    "contactSupport": "Contact support",
+    "callSupport": "Call {{phone}}"
   },
   "categories": {
     "all": "All Events",

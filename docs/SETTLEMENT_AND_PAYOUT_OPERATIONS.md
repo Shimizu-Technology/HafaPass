@@ -4,7 +4,7 @@
 
 1. Complete or cancel the event.
 2. Resolve every pending refund and open dispute.
-3. Review the live preview: gross, discounts, buyer refunds, net charged, buyer-paid HafaPass fees, actual processing costs, organizer proceeds, reserves, adjustments, payable amount, prior payouts, and negative balance.
+3. Review the live preview: gross, discounts, buyer refunds, net charged, buyer-paid HafaPass fees, actual processing costs deducted from the organizer, processing covered by HåfaPass, organizer proceeds, reserves, adjustments, payable amount, prior payouts, and negative balance. Each order's processing-fee bearer snapshot decides which processing column it uses; see [Stripe processing fee evidence](./STRIPE_PROCESSING_FEE_OPERATIONS.md#who-bears-the-processing-cost).
 4. Finalize the statement. An identical ledger returns the existing version; changed activity creates the next immutable version.
 5. Confirm the connected account has current provider capabilities, no provider requirements, and an unexpired independent readiness approval; then confirm the organization-wide available balance is sufficient.
 6. Submit the payout with a unique idempotency key.

@@ -98,10 +98,12 @@ RSpec.describe "Ticket email PDF attachments", type: :request do
     payload = EmailService.prepare_delivery_payload(create(:message_delivery, template: "ticket_delivery", ticket: ticket,
       order: ticket.order, recipient: ticket.attendee_email))
     expect(payload.fetch("attachments").sole.fetch("filename")).to eq("hafapass-ticket-#{ticket.id}.pdf")
+    expect(payload.fetch("html")).to include("attached as a PDF")
 
     ticket.update!(holder_user: create(:user), holder_email: "new-holder@example.com")
     order_payload = EmailService.prepare_delivery_payload(create(:message_delivery, order: ticket.order,
       recipient: ticket.order.buyer_email))
     expect(order_payload).not_to have_key("attachments")
+    expect(order_payload.fetch("html")).not_to include("attached as PDFs")
   end
 end

@@ -195,7 +195,7 @@ Query params: `?page=2&per_page=10`
 | `CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
 | `DATABASE_URL` | Production | PostgreSQL connection string (uses local DB in dev) |
 | `REDIS_URL` | Production | Redis URL for Sidekiq (e.g., `redis://localhost:6379/0`) |
-| `ALLOWED_ORIGINS` | Production | Comma-separated CORS origins (e.g., `https://hafapass.com,https://www.hafapass.com`) |
+| `ALLOWED_ORIGINS` | Staging/production | Comma-separated CORS origins (e.g., `https://tickets.example.com`); required in every deployed environment |
 | `STRIPE_SECRET_KEY` | No | Stripe API key (mock checkout without it) |
 | `STRIPE_PUBLISHABLE_KEY` | No | Stripe frontend key |
 | `STRIPE_WEBHOOK_SECRET` | Production | Stripe webhook signing secret |
@@ -208,11 +208,11 @@ Query params: `?page=2&per_page=10`
 | `AWS_REGION` | Production | Object-storage region |
 | `RESEND_API_KEY` | Production | Resend email API key |
 | `RESEND_WEBHOOK_SECRET` | Production email | Resend/Svix webhook signing secret |
-| `MAILER_FROM_EMAIL` | Production | Verified from address for emails |
+| `MAILER_FROM_EMAIL` | Production | Verified from address for emails; required whenever sending is enabled (dev/test use `tickets@example.test`) |
 | `MAILER_REPLY_TO` | Support deployment | Receiving operator mailbox for customer replies; optional in code, captured in each saved outbound payload |
 | `PROVIDER_CONFIGURATION_REVISION` | Production | Non-secret revision bumped for any provider-side account/domain/webhook/issuer configuration change |
-| `FRONTEND_URL` | Production | HTTPS frontend URL for email links and CORS validation |
-| `PUBLIC_WEB_URL` | Production | HTTPS canonical public site URL for SEO and sitemaps |
+| `FRONTEND_URL` | Staging/production | HTTPS frontend URL for email and share links; the API refuses to boot without it outside development/test |
+| `PUBLIC_WEB_URL` | Staging/production | HTTPS canonical public site URL for SEO, sitemaps and share previews; required at boot outside development/test |
 | `SENTRY_DSN` | Production | Backend error-monitoring DSN |
 | `SENTRY_ENVIRONMENT` | No | Monitoring environment label (defaults to Rails environment) |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | Backend performance trace sample rate (default: `0.1`) |
@@ -223,15 +223,15 @@ Query params: `?page=2&per_page=10`
 |----------|----------|-------------|
 | `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
 | `VITE_API_URL` | No | API base URL (default: http://localhost:3000/api/v1) |
-| `VITE_PUBLIC_WEB_URL` | Deployment | Canonical public site URL; set to the selected Netlify URL or an owned custom domain |
-| `VITE_SUPPORT_EMAIL` | Support deployment | Receiving operator mailbox used by support links; defaults to the existing public Shimizu Technology inbox |
+| `VITE_PUBLIC_WEB_URL` | Deployment | Canonical public site URL; fills OG image/JSON-LD tags and `robots.txt` at build time, and per-page canonical/share links |
+| `VITE_SUPPORT_EMAIL` | No | Optional override for support links; normally they use the admin-managed `platform_email`/`platform_phone` from `/api/v1/config` |
 | `VITE_SENTRY_DSN` | Production | Frontend error-monitoring DSN |
 | `VITE_SENTRY_ENVIRONMENT` | No | Frontend monitoring environment label |
 | `VITE_SENTRY_RELEASE` | Production | Release identifier shared with source-map upload |
 
-Set `VITE_SUPPORT_EMAIL` and `MAILER_REPLY_TO` to a mailbox the operator can actually receive and monitor before deploying customer recovery flows. Sender-domain verification for `MAILER_FROM_EMAIL` proves permission to send; it does not create a receiving inbox. These support settings do not create mailboxes or confirm delivery. Email retries retain the reply address saved with the original provider request even after configuration changes. Rebuild the frontend after changing a `VITE_` setting.
+Set the support email (admin `platform_email`, or the `VITE_SUPPORT_EMAIL` override) and `MAILER_REPLY_TO` to a mailbox the operator can actually receive and monitor before deploying customer recovery flows. Sender-domain verification for `MAILER_FROM_EMAIL` proves permission to send; it does not create a receiving inbox. These support settings do not create mailboxes or confirm delivery. Email retries retain the reply address saved with the original provider request even after configuration changes. Rebuild the frontend after changing a `VITE_` setting.
 
-The initial deployment may use the selected free Netlify domain. Set `VITE_PUBLIC_WEB_URL`, backend `PUBLIC_WEB_URL`, and `FRONTEND_URL` to that actual HTTPS URL; the compatibility default `https://hafapass.com` does not establish ownership or deployment there.
+Netlify edge functions (share previews and the `/sitemap.xml` proxy) read the API origin from the Netlify environment variable `HAFAPASS_API_ORIGIN`. Every domain is configuration; see [Changing the public domain](docs/DOMAIN_CUTOVER.md) for the full list of settings to change when the site moves.
 
 ## Seed Data
 

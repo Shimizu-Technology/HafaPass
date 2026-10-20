@@ -8,6 +8,7 @@ import EventAccessNotice from '../../components/EventAccessNotice'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
+import FeePolicyPanel from '../../components/FeePolicyPanel'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
 import FormErrorSummary from '../../components/FormErrorSummary'
@@ -81,6 +82,7 @@ function EditEventSession({ id, identity }) {
   const [error, setError] = useState(null)
   const [event, setEvent] = useState(null)
   const permissions = event?.permissions || {}
+  const [feeChoiceDirty, setFeeChoiceDirty] = useState(false)
   const canManage = permissions.manage_events === true
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -435,7 +437,7 @@ function EditEventSession({ id, identity }) {
 
 
   return (
-    <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges}><div className="mx-auto max-w-3xl">
+    <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges || feeChoiceDirty}><div className="mx-auto max-w-3xl">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
           {event?.slug && (
@@ -856,6 +858,12 @@ function EditEventSession({ id, identity }) {
           </div>
         </div>
       </form>
+
+      {/* Fee policy sits next to pricing so every organizer who can edit the
+          event can choose it, whatever the launch scope. */}
+      {event && <FeePolicyPanel eventId={id} event={event} canEdit={permissions.edit_event_content === true && permissions.manage_events === true}
+        beginRequest={beginRequest} onDirtyChange={setFeeChoiceDirty}
+        onSaved={saved => setEvent(currentEvent => ({ ...currentEvent, fee_policy: saved.fee_policy, buyer_fee_percent: saved.buyer_fee_percent }))} />}
 
       {/* Ticket Types CRUD */}
       {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="mt-10 scroll-mt-24 border-t border-neutral-200 pt-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>

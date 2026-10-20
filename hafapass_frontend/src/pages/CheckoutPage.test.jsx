@@ -77,9 +77,57 @@ describe('checkout navigation', () => {
     expect(screen.queryByText('Payment form')).not.toBeInTheDocument()
   })
 
+  it('shows a retryable error instead of a guessed fee, then the all-in fee from the server', async () => {
+    const event = { id: 38, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500 }] }
+    const configs = [
+      { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1' },
+      { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' },
+    ]
+    apiClient.get.mockImplementation(url => url === '/config' ? Promise.resolve({ data: configs.shift() }) : new Promise(() => {}))
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 2 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+
+    expect(await screen.findByText('checkout.feesUnavailable')).toBeInTheDocument()
+    expect(screen.queryByText('checkout.total')).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.retryFees' }))
+
+    expect(await screen.findByText('checkout.serviceFeeIncludesProcessing')).toBeInTheDocument()
+    // 5% of $50.00 + 2 × $1.00 = $4.50, so the buyer total is $54.50.
+    expect(screen.getByText('$4.50')).toBeInTheDocument()
+    expect(screen.getByText('$54.50')).toBeInTheDocument()
+  })
+
+  it('charges the flat fee only on paid tickets in a mixed order', async () => {
+    const event = { id: 40, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500 }, { id: 9, name: 'Child', price_cents: 0 }] }
+    apiClient.get.mockImplementation(url => url === '/config'
+      ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' } })
+      : new Promise(() => {}))
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 2 }, { ticket_type_id: 9, quantity: 2 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+
+    // 5% of $50.00 + 2 paid tickets × $1.00 = $4.50, not $6.50.
+    expect(await screen.findByText('$4.50')).toBeInTheDocument()
+    expect(screen.getByText('$54.50')).toBeInTheDocument()
+  })
+
+  it('does not claim the fee includes card processing when the organizer bears it', async () => {
+    const event = { id: 39, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500 }] }
+    apiClient.get.mockImplementation(url => url === '/config'
+      ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'organizer' } })
+      : new Promise(() => {}))
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+
+    expect(await screen.findByText('$2.25')).toBeInTheDocument()
+    expect(screen.queryByText('checkout.serviceFeeIncludesProcessing')).not.toBeInTheDocument()
+  })
+
   it('keeps a completed free order on its lazy confirmation route and stores recovery access', async () => {
     const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
-    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_flat_cents: 0 } })
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockResolvedValue({ data: { id: 922, status: 'completed', guest_access_token: 'guest-token' } })
     let openConfirmation
     const Confirmation = lazy(() => new Promise(resolve => { openConfirmation = () => resolve({ default: () => <h1>Confirmed order 922</h1> }) }))
@@ -235,7 +283,7 @@ describe('checkout navigation', () => {
 
   it('keeps the original selection and buyer form when cancelling a payment created in the current visit', async () => {
     const event = { id: 37, slug: 'paid-event', title: 'Paid event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000 }] }
-    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_flat_cents: 0 } })
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockResolvedValueOnce({ data: { id: 923, client_secret: 'new-secret', stripe_publishable_key: 'pk_test', guest_access_token: 'new-buyer-token' } })
     apiClient.post.mockResolvedValueOnce({ data: { status: 'cancelled' } })
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
@@ -276,7 +324,7 @@ describe('checkout navigation', () => {
 
   it('retries missing event details without reloading or losing the current ticket selection', async () => {
     apiClient.get.mockImplementation(url => url === '/config'
-      ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_flat_cents: 0 } })
+      ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
       : Promise.reject(new Error('Event details unavailable')))
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/free-event', state: { lineItems: [{ ticket_type_id: 7, quantity: 2 }] } }]}><Routes>
       <Route path='/checkout/:slug' element={<CheckoutPage />} />
@@ -355,7 +403,7 @@ describe('checkout navigation', () => {
 
   it.each(['reject', 'resolve'])('does not let an unmounted initial submission %s replace a newer uncertain attempt', async outcome => {
     const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
-    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_flat_cents: 0 } })
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     let finish
     apiClient.post.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = outcome === 'resolve' ? resolve : reject }))
     const view = render(<MemoryRouter initialEntries={[{ pathname: '/checkout/free-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
@@ -422,7 +470,7 @@ describe('checkout navigation', () => {
 
   it('submits corrected buyer details with a fresh identity after a definitive no-order validation error', async () => {
     const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
-    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_flat_cents: 0 } })
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockRejectedValueOnce({ response: { status: 422, data: { error: 'Correct buyer details', checkout_recovery_required: false } } })
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/free-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
       <Route path='/checkout/:slug' element={<CheckoutPage />} />
@@ -448,7 +496,7 @@ describe('checkout navigation', () => {
 
   it('shows the server buyer when a paid recovery follows local edits after a lost response', async () => {
     const event = { id: 37, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000 }] }
-    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1' } })
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
       <Route path='/checkout/:slug' element={<CheckoutPage />} />
@@ -478,7 +526,7 @@ describe('checkout navigation', () => {
 
   it('preserves buyer edits after a lost response and explicitly recovers the original order', async () => {
     const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
-    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_flat_cents: 0 } })
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/free-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
       <Route path='/checkout/:slug' element={<CheckoutPage />} />
@@ -514,7 +562,7 @@ describe('registration error recovery', () => {
     vi.clearAllMocks(); apiClient.get.mockReset(); apiClient.post.mockReset(); window.sessionStorage.clear(); window.localStorage.clear()
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
     vi.stubGlobal('requestAnimationFrame', callback => callback())
-    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'qa-v1', service_fee_flat_cents: 0 } })
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'qa-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockRejectedValue({ response: { status: 503, data: { checkout_recovery_required: true, error: 'Synthetic outcome unknown' } } })
   })
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })

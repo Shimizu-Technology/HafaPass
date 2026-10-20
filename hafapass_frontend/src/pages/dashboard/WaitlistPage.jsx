@@ -5,7 +5,7 @@ import { Link, useParams } from 'react-router-dom'
 import { Bell, Trash2, Loader2, ClipboardList, Send } from 'lucide-react'
 import apiClient from '../../api/client'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
-import { supportMailto } from '../../utils/supportContact'
+import SupportLink from '../../components/SupportLink'
 
 const STATUS_COLORS = {
   waiting: 'bg-amber-50 text-amber-700',
@@ -230,7 +230,7 @@ function WaitlistSession({ eventId, identity }) {
    {refreshing && <p role="status" className="mb-4 text-sm text-neutral-700">Updating the list…</p>}
    {loadError && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p>{loadError} The previous list and your draft are retained; actions are paused until the list is refreshed.</p><button type="button" disabled={refreshing} onClick={fetchData} className="mt-2 min-h-11 font-semibold underline">Retry list</button></div>}
    {mutationError && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p>{mutationError}</p><button type="button" disabled={refreshing || Boolean(activeMutation)} onClick={fetchData} className="mt-2 min-h-11 font-semibold underline">Check latest list</button></div>}
-   {unconfirmed && <section aria-label="Unconfirmed operation" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>An earlier {unconfirmed.operation.replaceAll('_', ' ')} request is not confirmed. Changes are paused to avoid repeating an unconfirmed request. Refresh the list and contact support before repeating it.</p><div className="mt-2 flex flex-wrap gap-3"><button type="button" disabled={refreshing || Boolean(activeMutation)} onClick={fetchData} className="min-h-11 font-semibold underline">Refresh latest list</button><a className="inline-flex min-h-11 items-center font-semibold underline" href={supportMailto('Verify an unconfirmed event-tool operation')}>Contact support</a></div></section>}
+   {unconfirmed && <section aria-label="Unconfirmed operation" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>An earlier {unconfirmed.operation.replaceAll('_', ' ')} request is not confirmed. Changes are paused to avoid repeating an unconfirmed request. Refresh the list and contact support before repeating it.</p><div className="mt-2 flex flex-wrap gap-3"><button type="button" disabled={refreshing || Boolean(activeMutation)} onClick={fetchData} className="min-h-11 font-semibold underline">Refresh latest list</button><SupportLink subject="Verify an unconfirmed event-tool operation" className="inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div></section>}
    {notice && <p role="status" className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">{notice}</p>}
 
       {/* Filters */}

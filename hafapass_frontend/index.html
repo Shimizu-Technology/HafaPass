@@ -10,11 +10,13 @@
     <!-- Favicon — ticket icon in brand teal -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230e7c7b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z'/%3E%3Cpath d='M13 5v2'/%3E%3Cpath d='M13 17v2'/%3E%3Cpath d='M13 11v2'/%3E%3C/svg%3E" />
 
-    <!-- Open Graph -->
+    <!-- Open Graph. Per-page canonical and og:url tags come from components/SEO.jsx;
+         a static copy here would give every page a second, conflicting canonical. -->
     <meta property="og:title" content="HåfaPass — Your Pass to Every Event on Guam" />
     <meta property="og:description" content="Discover events, buy tickets, and check in with your phone. The modern ticketing platform built for Guam." />
-    <meta property="og:image" content="https://hafapass.com/icons/icon-512.png" />
-    <meta property="og:url" content="https://hafapass.com" />
+    <!-- public-site-url -->
+    <meta property="og:image" content="%PUBLIC_WEB_URL%/icons/icon-512.png" />
+    <!-- /public-site-url -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="HåfaPass" />
 
@@ -22,7 +24,9 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="HåfaPass — Your Pass to Every Event on Guam" />
     <meta name="twitter:description" content="Discover events, buy tickets, and check in with your phone. The modern ticketing platform built for Guam." />
-    <meta name="twitter:image" content="https://hafapass.com/icons/icon-512.png" />
+    <!-- public-site-url -->
+    <meta name="twitter:image" content="%PUBLIC_WEB_URL%/icons/icon-512.png" />
+    <!-- /public-site-url -->
 
     <!-- Fonts are bundled with the app and use font-display: swap. -->
 
@@ -33,35 +37,36 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
     <!-- Additional SEO & PWA -->
-    <link rel="canonical" href="https://hafapass.com/" />
     <meta name="apple-mobile-web-app-title" content="HåfaPass" />
     <meta name="msapplication-TileColor" content="#0e7c7b" />
 
-    <!-- Structured Data -->
+    <!-- Structured Data: absolute URLs come from VITE_PUBLIC_WEB_URL at build time. -->
+    <!-- public-site-url -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@graph": [
         {
           "@type": "Organization",
-          "@id": "https://hafapass.com/#organization",
+          "@id": "%PUBLIC_WEB_URL%/#organization",
           "name": "HåfaPass",
           "alternateName": ["HafaPass", "Hafa Pass"],
-          "url": "https://hafapass.com",
-          "logo": "https://hafapass.com/icons/icon-512.png"
+          "url": "%PUBLIC_WEB_URL%",
+          "logo": "%PUBLIC_WEB_URL%/icons/icon-512.png"
         },
         {
           "@type": "WebSite",
-          "@id": "https://hafapass.com/#website",
+          "@id": "%PUBLIC_WEB_URL%/#website",
           "name": "HåfaPass",
           "alternateName": ["HafaPass", "Hafa Pass"],
-          "url": "https://hafapass.com",
+          "url": "%PUBLIC_WEB_URL%",
           "description": "Discover and purchase tickets for events across Guam",
-          "publisher": { "@id": "https://hafapass.com/#organization" }
+          "publisher": { "@id": "%PUBLIC_WEB_URL%/#organization" }
         }
       ]
     }
     </script>
+    <!-- /public-site-url -->
   </head>
   <body>
     <div id="root"></div>

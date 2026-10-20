@@ -33,6 +33,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "Reminder was cancelled or rescheduled")
         next :done
       end
+      if delivery.undeliverable_recipient?
+        delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
+        next :done
+      end
       if delivery.suppressed_recipient?
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
           last_error: "Recipient has a prior bounce, complaint, or suppression")

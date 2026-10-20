@@ -29,9 +29,10 @@ RSpec.describe Commerce::OrderCreator do
 
     expect(order).to be_completed
     expect(order.subtotal_cents).to eq(3000)
-    expect(order.service_fee_cents).to eq(44)
-    expect(order.organizer_fee_cents).to eq(66)
-    expect(order.total_cents).to eq(3044)
+    # 5% of the $20.00 ticket + $1.00 = $2.00 platform fee; the buyer pays 40%.
+    expect(order.service_fee_cents).to eq(80)
+    expect(order.organizer_fee_cents).to eq(120)
+    expect(order.total_cents).to eq(3080)
     expect(order.order_items.pluck(:item_kind)).to contain_exactly("ticket", "add_on")
     expect(order.catalog_item_holds.first).to be_consumed
     expect(catalog_item.reload.quantity_sold).to eq(1)
@@ -39,9 +40,9 @@ RSpec.describe Commerce::OrderCreator do
     expect(order.registration_responses.first).to have_attributes(required_snapshot: true, options_snapshot: [])
     expect(order.waiver_acceptances.first.content_digest).to eq(waiver.content_digest)
     expect(order.referral_attribution.code_snapshot).to eq("ISLAND10")
-    expect(order.promoter_commission_entries.earned.first.amount_cents).to eq(293)
+    expect(order.promoter_commission_entries.earned.first.amount_cents).to eq(288)
     expect(order.fee_components.find_by!(kind: "platform").metadata).to include(
-      "buyer_paid_cents" => 44, "organizer_absorbed_cents" => 66
+      "buyer_paid_cents" => 80, "organizer_absorbed_cents" => 120
     )
     expect(waiver.update(body: "Rewritten after acceptance")).to be(false)
     expect(waiver.errors.full_messages.join).to include("create a new version")

@@ -3,7 +3,8 @@ import { useAuth } from '@clerk/clerk-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle, Clock3, Ticket, RotateCcw, XCircle, Loader2, Mail, RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
-import { supportMailto } from '../utils/supportContact'
+import SupportLink from '../components/SupportLink'
+import { SUPPORT_FALLBACK_PATH } from '../utils/supportContact'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import TransferTicketDialog from '../components/TransferTicketDialog'
@@ -399,7 +400,7 @@ function OrderConfirmationContent() {
               </div>
             )}
             {eventRefundAttempt && <p role="status" className="mt-3 text-sm text-amber-950">{refundNotice(eventRefundAttempt)}</p>}
-            {eventRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline" href={supportMailto(`Refund review for order ${order.reference}`)}>Contact support</a>}
+            {eventRefundAttempt?.status === 'finance_review' && <SupportLink subject={`Refund review for order ${order.reference}`} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</SupportLink>}
             {decisionState === 'error' && !eventRefundAttempt && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
           </section>
         )}
@@ -457,7 +458,7 @@ function OrderConfirmationContent() {
                   </div>
                 </div>
                 {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
-                {ticketRefundAttempt?.status === 'finance_review' && <a className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline" href={supportMailto(`Refund review for order ${order.reference}`)}>Contact support</a>}
+                {ticketRefundAttempt?.status === 'finance_review' && <SupportLink subject={`Refund review for order ${order.reference}`} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline">Contact support</SupportLink>}
                 {exchangeTicketId === ticket.id && (
                   <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
                     <label className="block text-sm font-medium text-neutral-800">Available equivalent seats
@@ -490,7 +491,7 @@ function OrderConfirmationContent() {
           {emailUpdatesPaused && emailInFlightStatuses.has(delivery?.status) && <p className="mt-1 text-neutral-600">Automatic email updates have paused. Use Refresh status to check again.</p>}
           {(deliveryFailed || deliveryUnconfirmed) && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
             {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
-            <a href={supportMailto(`Ticket email for order ${order.reference}`)} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</a>
+            <SupportLink subject={`Ticket email for order ${order.reference}`} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</SupportLink>
           </div>}
         </section>
 
@@ -506,7 +507,7 @@ function OrderConfirmationContent() {
             {order.order_items.map(item => (
               <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
             ))}
-            <div className="flex justify-between border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee</span><span>{formatPrice(order.service_fee_cents)}</span></div>
+            <div className="flex justify-between gap-4 border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">Includes card processing</span>}</span><span>{formatPrice(order.service_fee_cents)}</span></div>
             {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
             <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>Total</span><span>{formatPrice(order.total_cents)}</span></div>
             {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>Refunded</span><span>−{formatPrice(order.refunded_cents)}</span></div>}

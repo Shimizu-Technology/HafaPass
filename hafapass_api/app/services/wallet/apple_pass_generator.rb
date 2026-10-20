@@ -5,7 +5,6 @@ require "digest/sha1"
 require "json"
 require "openssl"
 require "securerandom"
-require "uri"
 require "zip"
 
 module Wallet
@@ -30,12 +29,8 @@ module Wallet
     # Apple appends /v1/devices/... and /v1/passes/... to this base. Passes
     # only advertise it on an HTTPS API origin, which production requires.
     def self.web_service_url
-      uri = URI.parse(ENV["PUBLIC_API_URL"].to_s.delete_suffix("/"))
-      return unless uri.is_a?(URI::HTTPS) && uri.host.present? && uri.path.blank? && uri.userinfo.nil?
-
-      "#{uri}#{WEB_SERVICE_PATH}"
-    rescue URI::InvalidURIError
-      nil
+      base = PublicSiteUrl.api
+      "#{base}#{WEB_SERVICE_PATH}" if base
     end
 
     def self.serial_for(ticket)
