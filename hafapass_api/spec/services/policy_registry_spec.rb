@@ -55,9 +55,33 @@ RSpec.describe PolicyRegistry do
     end
   end
 
-  it "lists approval blockers while the text is a draft with bracketed review notes" do
-    expect(described_class.approval_blockers).to include(a_string_matching(/status is draft-pending-legal-review/),
-      a_string_matching(/Unresolved review notes in brackets remain in: .*Buyer Terms/))
+  it "keeps legal-review notes out of the public text and lists them for admins" do
+    strings = described_class.public_documents.values.flat_map do |document|
+      [document["title"], document["summary"]] + document["sections"].flat_map { |section| section.values_at("heading", "body") }
+    end
+    expect(strings.join("\n")).not_to match(/\[[^\]\n]+\]|Lawyer to confirm|Accountant to confirm/)
+    expect(described_class.public_documents.values.flat_map(&:keys).uniq).not_to include("review_notes")
+    expect(described_class.review_notes).to include(
+      include(document: "buyer-terms", section: "Governing law and disputes", note: a_string_matching(/governing law/)),
+      include(document: "organizer-agreement", section: "Tax information")
+    )
+    headings = described_class.public_documents.transform_values { |document| document.fetch("sections").map { |section| section.fetch("heading") } }
+    described_class.review_notes.each { |note| expect(headings.fetch(note[:document])).to include(note[:section]) }
+  end
+
+  it "treats draft status as information and only technical problems as approval blockers" do
+    expect(described_class).to be_draft
+    expect(described_class.approval_blockers).to eq([])
+
+    allow(described_class).to receive(:templates).and_return(
+      "buyer-terms" => { "title" => "Buyer Terms", "summary" => "See [Lawyer note]", "sections" => [] }
+    )
+    expect(described_class.approval_blockers).to eq(["Bracketed drafting notes remain in the public text of: Buyer Terms"])
+
+    allow(described_class).to receive(:templates).and_return(
+      "buyer-terms" => { "title" => "Buyer Terms", "summary" => "{{not_a_setting}}", "sections" => [] }
+    )
+    expect(described_class.approval_blockers).to eq(["A policy uses an unknown template placeholder (not_a_setting)"])
   end
 
   it "serves the launch draft, clearly marked as pending legal review" do

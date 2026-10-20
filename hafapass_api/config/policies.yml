@@ -1,5 +1,31 @@
 version: 2026-10-launch-draft
 status: draft-pending-legal-review
+# Outstanding legal-review items. Not served publicly and not part of any
+# digest: they are shown to admins in the policy register as information.
+# Keep docs/POLICY_REVIEW_REGISTER.md in step with this list.
+review_notes:
+  buyer-terms:
+    - section: Limits on our responsibility
+      note: Lawyer to confirm limitation wording and any consumer-law carve-outs.
+    - section: Governing law and disputes
+      note: Lawyer to confirm governing law and venue.
+  privacy:
+    - section: How long we keep it
+      note: Lawyer and accountant to confirm the retention period (at least 7 years proposed).
+  organizer-agreement:
+    - section: Our role as your limited agent
+      note: Lawyer to confirm agency and funds-handling language.
+    - section: Tax information
+      note: Accountant to confirm tax treatment and reporting.
+    - section: Chargebacks and negative balances
+      note: Lawyer to confirm payment terms and dispute-fee allocation.
+    - section: Indemnity and limitation of liability
+      note: Lawyer to confirm indemnity and the 12-month fee liability cap.
+    - section: Governing law and changes
+      note: Lawyer to confirm governing law and venue.
+  retention:
+    - section: Financial, order, and audit records
+      note: Lawyer and accountant to confirm the retention period (at least 7 years proposed).
 documents:
   buyer-terms:
     title: Buyer Terms
@@ -57,12 +83,12 @@ documents:
           If you file a chargeback or payment dispute with your bank, the tickets on that order are suspended while the dispute is open and may be cancelled if the dispute is decided in your favor.
       - heading: Limits on our responsibility
         body: |-
-          To the extent the law allows, {{operator_name}} is not liable for indirect or consequential losses, such as travel or accommodation costs, or for losses caused by the event, the organizer, or the venue. Where we are liable, our total liability for an order is limited to the amount you paid for that order. [Lawyer to confirm limitation wording and any consumer-law carve-outs.]
+          To the extent the law allows, {{operator_name}} is not liable for indirect or consequential losses, such as travel or accommodation costs, or for losses caused by the event, the organizer, or the venue. Where we are liable, our total liability for an order is limited to the amount you paid for that order.
 
           Nothing in these terms limits rights you have under consumer protection laws that cannot be waived.
       - heading: Governing law and disputes
         body: |-
-          These terms are governed by the laws of Guam [Lawyer to confirm governing law and venue]. If you have a complaint, contact us first so we can try to resolve it informally.
+          These terms are governed by the laws of Guam. If you have a complaint, contact us first so we can try to resolve it informally.
       - heading: Changes and contact
         body: |-
           We may update these terms. The version you accepted at checkout applies to that order, and we record which version that was.
@@ -156,7 +182,7 @@ documents:
           We do not sell your personal information. We do not use third-party advertising cookies or let advertising networks track you on {{platform_name}}. See our Cookie Notice for details.
       - heading: How long we keep it
         body: |-
-          Order, payment, refund, payout, and audit records are kept for the periods needed for accounting, tax, and dispute purposes [Lawyer and accountant to confirm; at least 7 years proposed]. Marketplace analytics not tied to an order are deleted after 13 months. Other records are kept only as long as needed. Our Data Retention Schedule has the details.
+          Order, payment, refund, payout, and audit records are kept for at least seven years, or longer where the law requires, for accounting, tax, and dispute purposes. Marketplace analytics not tied to an order are deleted after 13 months. Other records are kept only as long as needed. Our Data Retention Schedule has the details.
       - heading: Your choices and rights
         body: |-
           You can ask to access, correct, export, or delete your personal information by contacting us {{support_contact}}. We will verify your identity before acting. Some records, such as completed orders, must be kept for legal, tax, or dispute reasons; when that applies, we keep only what is required and tell you why.
@@ -194,7 +220,7 @@ documents:
 
           {{operator_name}} sells its ticketing service to buyers and to you, and charges the service fee for that service. Receipts and tickets will name you as the seller ("Sold by" followed by your organizer name, then "Tickets by {{platform_name}}").
 
-          Buyer card payments are processed through {{operator_name}}'s payment account and received into its business account. We record your ticket proceeds separately from our service fees. [Lawyer to confirm agency and funds-handling language.]
+          Buyer card payments are processed through {{operator_name}}'s payment account and received into its business account. We record your ticket proceeds separately from our service fees.
       - heading: Service fees
         body: |-
           The current service fee is {{fee_schedule}}.
@@ -213,7 +239,7 @@ documents:
         body: |-
           Before we pay you, you must give us a completed IRS Form W-9 (or the equivalent form that applies to you) and accurate payee details. We may issue IRS Form 1099 information returns where required.
 
-          You are responsible for taxes on your ticket proceeds, including Guam Business Privilege Tax on your gross receipts. {{operator_name}} is responsible for taxes on its own service fee. The service fee is not a tax, and you must not describe it as one. [Accountant to confirm tax treatment and reporting.]
+          You are responsible for taxes on your ticket proceeds, including Guam Business Privilege Tax on your gross receipts. {{operator_name}} is responsible for taxes on its own service fee. The service fee is not a tax, and you must not describe it as one.
       - heading: Refunds, cancellations, and postponements
         body: |-
           Refunds are funded from your event proceeds. You agree to honor your stated refund policy and our Refund & Cancellation Policy.
@@ -225,7 +251,7 @@ documents:
         body: |-
           If a buyer disputes a payment, we may hold the disputed amount from your balance and respond to the dispute using records you and we provide. If the dispute is lost, the ticket amount and any dispute fees charged to us come out of your proceeds.
 
-          If refunds, disputes, or fees exceed your balance, the difference is a negative balance you owe us. We may deduct it from future payouts or invoice you, and you agree to pay invoices by the due date shown. [Lawyer to confirm payment terms and dispute-fee allocation.]
+          If refunds, disputes, or fees exceed your balance, the difference is a negative balance you owe us. We may deduct it from future payouts or invoice you, and you agree to pay invoices by the due date shown.
       - heading: Your responsibility for the event
         body: |-
           You are solely responsible for your event: the venue, permits, licenses, staffing, security, safety and emergency planning, insurance, accessibility, age restrictions, venue rules, and compliance with all laws. You must provide accessible seating information where your event uses assigned seating.
@@ -241,13 +267,13 @@ documents:
         body: |-
           You will defend and indemnify {{operator_name}} against claims, losses, and costs arising from your events, your content, your use of buyer information, or your breach of this agreement or the law.
 
-          To the extent the law allows, {{operator_name}} is not liable for indirect or consequential losses, and its total liability to you under this agreement is limited to the service fees it earned from your events in the 12 months before the claim. [Lawyer to confirm.]
+          To the extent the law allows, {{operator_name}} is not liable for indirect or consequential losses, and its total liability to you under this agreement is limited to the service fees it earned from your events in the 12 months before the claim.
       - heading: Suspension and termination
         body: |-
           We may pause ticket sales, hold payouts, remove a listing, or suspend your account if we reasonably believe you have broken this agreement or the law, or that buyers are at risk. Either party may end this agreement with notice. Obligations for tickets already sold, refunds, disputes, negative balances, and indemnity continue after it ends.
       - heading: Governing law and changes
         body: |-
-          This agreement is governed by the laws of Guam [Lawyer to confirm governing law and venue].
+          This agreement is governed by the laws of Guam.
 
           We may update this agreement. You must accept the current version before you publish a new event, and {{platform_name}} records which version you accepted and when. For questions, contact us {{support_contact}}.
   acceptable-use:
@@ -297,7 +323,7 @@ documents:
     sections:
       - heading: Financial, order, and audit records
         body: |-
-          Orders, payments, refunds, payouts, disputes, admissions, and audit records are kept for the period required for accounting, tax, and dispute purposes [Lawyer and accountant to confirm; at least 7 years proposed].
+          Orders, payments, refunds, payouts, disputes, admissions, and audit records are kept for at least seven years, or longer where the law requires, for accounting, tax, and dispute purposes.
       - heading: Marketplace analytics
         body: |-
           Analytics events not tied to an order, such as page visits and campaign attribution, are deleted after 13 months. Attribution recorded on an order, such as a referral code, is kept with that order.

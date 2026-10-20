@@ -12,7 +12,8 @@ class Api::V1::Admin::PlatformCapabilityReviewsController < Api::V1::Admin::Base
 
   def approve
     review = PlatformCapabilityReviews::Manager.approve!(
-      submission: PlatformCapabilityReview.find(params[:id]), actor: current_user, request: request
+      submission: PlatformCapabilityReview.find(params[:id]), actor: current_user, request: request,
+      draft_policies_acknowledged: ActiveModel::Type::Boolean.new.cast(params[:draft_policies_acknowledged]) == true
     )
     render json: review_json(review), status: :created
   rescue PlatformCapabilityReviews::Manager::ReviewError => e

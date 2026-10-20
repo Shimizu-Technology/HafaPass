@@ -18,8 +18,12 @@ class PolicyRegistry
   PLACEHOLDERS = %w[platform_name operator_name support_contact fee_schedule payout_schedule].freeze
   MATERIAL_SETTINGS = %w[service_fee_percent service_fee_flat_cents processing_fee_bearer payout_schedule_text].freeze
   SUPPORT_FALLBACK = "through Find your tickets → Contact support (/orders/recover)"
-  # Unresolved drafting notes such as "[Lawyer to confirm]" block approval.
+  # Drafting notes in square brackets belong in review_notes, never in the
+  # public text; one left in a document is a technical blocker.
   REVIEW_MARKER = /\[[^\]\n]+\]/
+  # The exact words an admin affirms to approve draft policies for launch.
+  DRAFT_ACKNOWLEDGMENT = "I'm approving these draft policies for launch before legal review. " \
+    "HåfaPass will update them after counsel reviews."
 
   class << self
     def version
@@ -33,29 +37,47 @@ class PolicyRegistry
     end
 
     # What the admin policy register shows next to the approval controls: the
-    # served version, its draft status, the documents it covers and anything
-    # that still blocks approval.
+    # served version, its draft status, the documents it covers, outstanding
+    # legal-review items (information only) and any technical blockers.
     def review_summary
       {
         version: version,
         status: status,
+        draft: draft?,
+        draft_acknowledgment: draft? ? DRAFT_ACKNOWLEDGMENT : nil,
         registry_digest: registry_digest,
         approval_blockers: approval_blockers,
+        review_notes: review_notes,
         documents: documents.map { |key, document| { key: key, title: document.fetch("title") } }
       }
     end
 
-    # Reasons the policy register cannot be approved yet. Approval needs
-    # counsel-approved text: the YAML status must say "approved" and no
-    # bracketed drafting notes may remain.
+    def draft?
+      status != "approved"
+    end
+
+    # Legal-review items kept out of the public text, per document and section.
+    def review_notes
+      titles = templates.transform_values { |document| document.fetch("title") }
+      registry.fetch("review_notes", {}).flat_map do |key, notes|
+        notes.map { |note| { document: key, title: titles.fetch(key, key), section: note.fetch("section"), note: note.fetch("note") } }
+      end
+    end
+
+    # Technical problems that make the served text unfit to approve. Draft
+    # status and open legal-review items are not blockers: launching on draft
+    # policies is a business decision recorded with an explicit acknowledgment.
     def approval_blockers
       blockers = []
-      blockers << "Policy text status is #{status}, not approved" unless status == "approved"
-      marked = templates.select { |_key, document| JSON.generate(document).match?(REVIEW_MARKER) }
-      if marked.any?
-        titles = marked.map { |_key, document| document.fetch("title") }.join(", ")
-        blockers << "Unresolved review notes in brackets remain in: #{titles}"
+      begin
+        rendered = documents
+      rescue KeyError => e
+        return ["A policy uses an unknown template placeholder (#{e.key})"]
       end
+      unfilled = rendered.select { |_key, document| text_of(document).match?(PLACEHOLDER) }
+      blockers << "Unfilled template placeholders remain in: #{titles_of(unfilled)}" if unfilled.any?
+      marked = rendered.select { |_key, document| text_of(document).match?(REVIEW_MARKER) }
+      blockers << "Bracketed drafting notes remain in the public text of: #{titles_of(marked)}" if marked.any?
       blockers
     end
 
@@ -110,6 +132,20 @@ class PolicyRegistry
 
     def templates
       registry.fetch("documents")
+    end
+
+    # Every string in a document, one per line, so JSON punctuation can't
+    # look like a bracketed note.
+    def text_of(value)
+      case value
+      when Hash then value.values.map { |child| text_of(child) }.join("\n")
+      when Array then value.map { |child| text_of(child) }.join("\n")
+      else value.to_s
+      end
+    end
+
+    def titles_of(documents)
+      documents.map { |_key, document| document.fetch("title") }.join(", ")
     end
 
     def documents

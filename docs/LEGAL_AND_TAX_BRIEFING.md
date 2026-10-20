@@ -97,7 +97,7 @@ The rule took effect 2025-05-12 and covers live-event tickets, including third-p
 - [ ] **Lawyer:** Is Shimizu Technology's current entity the right one to hold this business, or should ticketing sit in a separate entity?
 - [ ] **Insurance broker/lawyer:** Which coverage do we need: general liability, cyber/privacy, errors and omissions, crime/fidelity for held funds? Should we require organizers to carry event insurance and name Shimizu Technology as additional insured?
 - [ ] **Lawyer:** Is click-through acceptance of the Organizer Agreement enough? The platform records the accepted version, content digest and time. Should larger organizers also sign the agreement?
-- [ ] **Lawyer:** Are the limitation of liability, indemnity, governing law (Guam) and venue clauses enforceable as drafted? All are marked `[Lawyer to confirm]`.
+- [ ] **Lawyer:** Are the limitation of liability, indemnity, governing law (Guam) and venue clauses enforceable as drafted? All are listed under "Outstanding legal-review items" in POLICY_REVIEW_REGISTER.md.
 - [ ] **Lawyer/accountant:** What is our exposure if an organizer cancels after being paid out and cannot fund refunds and chargebacks? Should we hold reserves, pay out only after the event, or require personal guarantees?
 
 ## 12. Documents to bring or prepare

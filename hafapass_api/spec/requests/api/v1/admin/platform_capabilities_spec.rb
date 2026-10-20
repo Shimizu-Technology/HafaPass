@@ -26,20 +26,29 @@ RSpec.describe "Admin platform capabilities", type: :request do
     expect(response.body).not_to include("RESEND_API_KEY", "STRIPE_LIVE_SECRET_KEY")
   end
 
-  it "shows draft blockers on the policy register and refuses approval" do
+  it "lists open legal-review items as information and approves drafts only with the acknowledgment" do
     get "/api/v1/admin/platform_capabilities", headers: auth_headers(submitter)
     policy = response.parsed_body.fetch("capabilities").find { |item| item["capability"] == "policy_register" }
-    expect(policy.fetch("policy_documents")).to include("version" => "2026-10-launch-draft", "status" => "draft-pending-legal-review")
-    expect(policy.dig("policy_documents", "approval_blockers")).to include(a_string_matching(/not approved/))
+    summary = policy.fetch("policy_documents")
+    expect(summary).to include("version" => "2026-10-launch-draft", "status" => "draft-pending-legal-review", "draft" => true,
+      "draft_acknowledgment" => PolicyRegistry::DRAFT_ACKNOWLEDGMENT, "approval_blockers" => [])
+    expect(summary.fetch("review_notes")).to include(include("title" => "Organizer Agreement", "section" => "Tax information",
+      "note" => a_string_matching(/Accountant to confirm/)))
 
     post "/api/v1/admin/platform_capabilities/policy_register/reviews", params: payload, headers: auth_headers(submitter)
-    post "/api/v1/admin/platform_capability_reviews/#{response.parsed_body.fetch('id')}/approve", headers: auth_headers(approver)
+    submission_id = response.parsed_body.fetch("id")
+    post "/api/v1/admin/platform_capability_reviews/#{submission_id}/approve", headers: auth_headers(approver)
     expect(response).to have_http_status(:unprocessable_entity)
-    expect(response.body).to include("not ready for approval")
+    expect(response.body).to include("before legal review")
+
+    post "/api/v1/admin/platform_capability_reviews/#{submission_id}/approve",
+      params: { draft_policies_acknowledged: true }, headers: auth_headers(approver)
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body).to include("active" => true, "reason" => PolicyRegistry::DRAFT_ACKNOWLEDGMENT)
   end
 
   it "submits and independently approves capability evidence" do
-    allow(PolicyRegistry).to receive(:approval_blockers).and_return([])
+    allow(PolicyRegistry).to receive(:draft?).and_return(false)
     post "/api/v1/admin/platform_capabilities/policy_register/reviews", params: payload,
       headers: auth_headers(submitter)
 
