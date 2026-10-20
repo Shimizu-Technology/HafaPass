@@ -38,6 +38,7 @@ class OrganizationFinanceSummary
   def call
     rows = event_rows
     {
+      organization: { id: organization.id, name: organization.name, timezone: organization.timezone },
       currency: organization.currency,
       totals: totals(rows),
       events: rows,
@@ -84,6 +85,10 @@ class OrganizationFinanceSummary
     in_flight = IN_FLIGHT_PAYOUT_STATUSES.sum { |status| payouts.fetch([event.id, status.to_s], 0) }
     owed = [preview[:payable_cents] - paid - in_flight, 0].max
     statement_current = statement_current?(settlement, preview)
+    # PayoutCreator only pays from a version whose digest still matches, and a
+    # payout is itself statement activity, so each further payout needs one.
+    payable_version = settlement&.status_finalized? && settlement.source_digest == preview[:source_digest]
+    requestable = payable_version ? [settlement.available_to_payout_cents, owed].min : 0
     {
       id: event.id,
       title: event.title,
@@ -110,11 +115,13 @@ class OrganizationFinanceSummary
         status: settlement.status,
         finalized_at: settlement.finalized_at,
         current: statement_current,
+        payable: payable_version,
         available_to_payout_cents: settlement.available_to_payout_cents
       },
+      requestable_cents: requestable,
       settlement_state: settlement_state(settlement, statement_current),
-      payout_state: payout_state(owed: owed, in_flight: in_flight, paid: paid, settlement: settlement,
-        statement_current: statement_current)
+      payout_state: payout_state(owed: owed, in_flight: in_flight, paid: paid, requestable: requestable,
+        finalized: settlement&.status_finalized?)
     }
   end
 
@@ -141,18 +148,25 @@ class OrganizationFinanceSummary
     statement_current ? "finalized" : "changed"
   end
 
-  def payout_state(owed:, in_flight:, paid:, settlement:, statement_current:)
+  # ready: a payout can be requested now; needs_new_version: money is owed
+  # but activity since the latest version (a refund, or the last payout
+  # itself) means a new version must be finalized first.
+  def payout_state(owed:, in_flight:, paid:, requestable:, finalized:)
     return "in_progress" if in_flight.positive?
     if owed.positive?
-      return "ready" if statement_current && settlement.available_to_payout_cents.positive?
+      return "ready" if requestable.positive?
 
-      return "awaiting_statement"
+      return finalized ? "needs_new_version" : "awaiting_statement"
     end
+
     paid.positive? ? "paid" : "nothing_owed"
   end
 
+  # requestable_cents is what PayoutCreator would accept now: current
+  # finalized versions, capped by the organization-wide payout balance.
   def totals(rows)
     sum = ->(key) { rows.sum { |row| row[key] } }
+    available = OrganizationPayoutBalance.available_cents(organization)
     {
       gross_cents: sum.call(:gross_cents),
       discount_cents: sum.call(:discount_cents),
@@ -167,7 +181,8 @@ class OrganizationFinanceSummary
       in_flight_cents: organization.payouts.where(status: IN_FLIGHT_PAYOUT_STATUSES).sum(:amount_cents),
       owed_cents: sum.call(:owed_cents),
       negative_balance_cents: sum.call(:negative_balance_cents),
-      available_to_payout_cents: OrganizationPayoutBalance.available_cents(organization)
+      requestable_cents: [sum.call(:requestable_cents), available].min,
+      available_to_payout_cents: available
     }
   end
 

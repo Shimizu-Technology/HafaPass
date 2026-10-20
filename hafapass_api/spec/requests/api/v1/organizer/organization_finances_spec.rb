@@ -69,8 +69,12 @@ RSpec.describe "Organizer finances and exports", type: :request do
         "in_flight_cents" => 0,
         "owed_cents" => 4632 + 4817,
         "negative_balance_cents" => 0,
-        "available_to_payout_cents" => 4632
+        "available_to_payout_cents" => 4632,
+        # The paid payout is new statement activity, so nothing is requestable
+        # until a new version is finalized (PayoutCreator's digest rule).
+        "requestable_cents" => 0
       )
+      expect(body["organization"]).to eq("id" => organization.id, "name" => organization.name, "timezone" => "Pacific/Guam")
       expect(body["processing_fee_bearers"]).to eq("platform" => 1, "organizer" => 1, "legacy" => 2)
       expect(body["events"].map { |row| row["title"] }).to contain_exactly("Closing Night", "Next Show")
     end
@@ -79,12 +83,25 @@ RSpec.describe "Organizer finances and exports", type: :request do
       get "/api/v1/organizer/finances", headers: org_headers(owner)
 
       rows = response.parsed_body["events"].index_by { |row| row["id"] }
-      expect(rows[completed_event.id]).to include("settlement_state" => "finalized", "payout_state" => "ready",
-        "paid_cents" => 10_000, "owed_cents" => 4632)
+      expect(rows[completed_event.id]).to include("settlement_state" => "finalized", "payout_state" => "needs_new_version",
+        "paid_cents" => 10_000, "owed_cents" => 4632, "requestable_cents" => 0)
       expect(rows[completed_event.id]["settlement"]).to include("id" => settlement.id, "version" => 1, "current" => true,
-        "available_to_payout_cents" => 4632)
+        "payable" => false, "available_to_payout_cents" => 4632)
       expect(rows[upcoming_event.id]).to include("settlement" => nil, "settlement_state" => "not_finalized",
         "payout_state" => "awaiting_statement", "owed_cents" => 4817)
+    end
+
+    it "is ready to request once a version covering the last payout is finalized" do
+      latest = Settlements::Finalizer.call(event: completed_event, actor: owner)
+
+      get "/api/v1/organizer/finances", headers: org_headers(owner)
+
+      row = response.parsed_body["events"].find { |event| event["id"] == completed_event.id }
+      expect(row).to include("payout_state" => "ready", "requestable_cents" => 4632)
+      expect(row["settlement"]).to include("id" => latest.id, "version" => 2, "payable" => true)
+      expect(response.parsed_body["totals"]["requestable_cents"]).to eq(4632)
+      payout = PayoutCreator.call(settlement: latest, actor: owner, idempotency_key: "org-finance-ready")
+      expect(payout.amount_cents).to eq(4632)
     end
 
     it "marks a statement changed when money moves after approval, without touching the stored version" do
