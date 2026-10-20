@@ -72,16 +72,17 @@ module Seating
     # must already have at least one active companion seat in its group.
     def validate_companion_pairs!
       seats = venue_layout.venue_seats.where(active: true)
-      companion_groups = seats.accessibility_kind_companion.where.not(companion_group: [nil, ""])
-        .pluck(:companion_group).to_set
-      unpaired = seats.accessibility_kind_wheelchair.includes(seating_row: :seating_section).reorder(:id)
-        .reject { |seat| seat.companion_group.present? && companion_groups.include?(seat.companion_group) }
-      return if unpaired.empty?
+      companion_groups = seats.accessibility_kind_companion.where.not(companion_group: [nil, ""]).select(:companion_group)
+      wheelchair = seats.accessibility_kind_wheelchair
+      unpaired = wheelchair.where(companion_group: [nil, ""]).or(wheelchair.where.not(companion_group: companion_groups))
+      count = unpaired.count
+      return if count.zero?
 
-      labels = unpaired.first(3).map(&:display_label).join("; ")
-      more = unpaired.length > 3 ? " and #{unpaired.length - 3} more" : ""
+      # Count in SQL; load only the seats named in the message.
+      labels = unpaired.includes(seating_row: :seating_section).reorder(:id).limit(3).map(&:display_label).join("; ")
+      more = count > 3 ? " and #{count - 3} more" : ""
       raise ConfigurationError,
-        "This layout has #{unpaired.length} wheelchair #{"space".pluralize(unpaired.length)} without a companion seat: " \
+        "This layout has #{count} wheelchair #{"space".pluralize(count)} without a companion seat: " \
         "#{labels}#{more}. Give each wheelchair space a companion seat in the same companion group, then publish the layout again."
     end
 

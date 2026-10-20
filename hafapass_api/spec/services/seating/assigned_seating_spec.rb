@@ -242,6 +242,17 @@ RSpec.describe "Assigned seating lifecycle" do
       expect(SeatAuditEvent.where(event: event)).to be_empty
     end
 
+    it "counts every unpaired wheelchair space but names only the first three" do
+      companion.update!(companion_group: "other-group")
+      %w[W2 W3 W4 W5].each_with_index do |label, index|
+        create(:venue_seat, seating_row: row, seating_price_zone: zone, label: label, position: 10 + index,
+          accessibility_kind: :wheelchair, companion_group: index.even? ? nil : "")
+      end
+
+      expect { activate! }.to raise_error(Seating::ConfigurationActivator::ConfigurationError,
+        /5 wheelchair spaces without a companion seat: Main floor · Row A · Seat W1; Main floor · Row A · Seat W2; Main floor · Row A · Seat W3 and 2 more\./)
+    end
+
     it "ignores inactive companions and keeps an existing configuration when the replacement is refused" do
       existing = activate!
       companion.update!(active: false)
