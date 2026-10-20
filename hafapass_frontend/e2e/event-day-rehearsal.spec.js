@@ -68,7 +68,7 @@ test('admin records complete Gate G physical event-day rehearsal evidence', asyn
     await page.getByLabel(`${label} Private contact reference`).fill(`private-directory/${label}`)
     await page.getByLabel(`${label} Acknowledgement reference`).fill(`private-rehearsal/acks/${label}`)
   }
-  for (const checkbox of await page.getByRole('checkbox').all()) {
+  for (const checkbox of await page.getByRole('dialog').getByRole('checkbox').all()) {
     if (!(await checkbox.isChecked())) await checkbox.check()
   }
 

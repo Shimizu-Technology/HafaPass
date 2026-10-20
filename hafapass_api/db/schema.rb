@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_200200) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -619,10 +619,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_200200) do
     t.bigint "venue_id"
     t.string "venue_name"
     t.boolean "custom_slug", default: false, null: false
+    t.datetime "policy_hold_at"
+    t.string "policy_hold_scope"
+    t.text "policy_hold_reason"
+    t.bigint "policy_hold_by_user_id"
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
     t.index ["organizer_profile_id"], name: "index_events_on_organizer_profile_id"
+    t.index ["policy_hold_at"], name: "index_events_on_policy_hold_at", where: "(policy_hold_at IS NOT NULL)"
     t.index ["recurrence_parent_id"], name: "index_events_on_recurrence_parent_id"
     t.index ["slug"], name: "index_events_on_slug", unique: true
     t.index ["starts_at"], name: "index_events_on_starts_at"
@@ -632,6 +637,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_200200) do
     t.check_constraint "buyer_fee_percent >= 0 AND buyer_fee_percent <= 100", name: "events_buyer_fee_percent_valid"
     t.check_constraint "fee_policy = ANY (ARRAY[0, 1, 2])", name: "events_fee_policy_valid"
     t.check_constraint "max_capacity IS NULL OR max_capacity > 0", name: "events_capacity_positive"
+    t.check_constraint "policy_hold_at IS NULL AND policy_hold_scope IS NULL AND policy_hold_reason IS NULL OR policy_hold_at IS NOT NULL AND (policy_hold_scope::text = ANY (ARRAY['sales'::character varying, 'hidden'::character varying]::text[])) AND char_length(btrim(policy_hold_reason)) > 0", name: "events_policy_hold_consistent"
   end
 
   create_table "fee_components", force: :cascade do |t|
@@ -2411,6 +2417,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_200200) do
   add_foreign_key "event_waivers", "events", on_delete: :restrict
   add_foreign_key "events", "organizations", on_delete: :restrict
   add_foreign_key "events", "organizer_profiles"
+  add_foreign_key "events", "users", column: "policy_hold_by_user_id"
   add_foreign_key "events", "venues", on_delete: :restrict
   add_foreign_key "fee_components", "order_items", on_delete: :restrict
   add_foreign_key "fee_components", "orders", on_delete: :restrict

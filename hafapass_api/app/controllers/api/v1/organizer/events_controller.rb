@@ -159,6 +159,8 @@ module Api
         end
 
         def clone
+          return render_policy_hold_refusal("copied") if @event.policy_hold?
+
           cloned = clone_event(@event, title: "#{@event.title} (Copy)", starts_at: nil, ends_at: nil, doors_open_at: nil)
           if cloned.persisted?
             render json: event_json(cloned, include_ticket_types: true), status: :created
@@ -168,6 +170,8 @@ module Api
         end
 
         def generate_recurrences
+          return render_policy_hold_refusal("repeated") if @event.policy_hold?
+
           unless @event.recurrence_rule.present?
             return render json: { error: "Event must have a recurrence rule" }, status: :unprocessable_entity
           end
@@ -459,6 +463,12 @@ module Api
           destination.starts_at + (value - source.starts_at)
         end
 
+        # A copy would not carry the hold, so it could be published and sold.
+        def render_policy_hold_refusal(verb)
+          render json: { error: "HåfaPass has placed a policy hold on this event, so it cannot be #{verb}. " \
+            "Contact HåfaPass support to resolve the hold first." }, status: :unprocessable_entity
+        end
+
         def advance_local_time(value, occurrence_number)
           case @event.recurrence_rule
           when "weekly" then value.advance(weeks: occurrence_number)
@@ -507,6 +517,7 @@ module Api
             buyer_fee_percent: event.buyer_fee_percent,
             transfers_enabled: event.transfers_enabled,
             assigned_seating: event.assigned_seating?,
+            policy_hold: event.policy_hold_summary,
             supported_locales: event.supported_locales,
             localized_content: event.localized_content,
             created_at: event.created_at,

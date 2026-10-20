@@ -45,6 +45,21 @@ RSpec.describe CardPresentPayments::Processor do
     expect(sale.payment.reload).to have_attributes(status: "succeeded", provider_payment_id: "clover-1")
   end
 
+  it "does not charge the card when a policy hold lands after the sale was started" do
+    sale = pending_sale
+    allow(gateway).to receive(:charge)
+    EventPolicyHold.place!(event: event, actor: create(:user, :admin), scope: "sales", reason: "Policy review")
+
+    expect do
+      described_class.call(order: sale.order, payment: sale.payment, account: account, user: user,
+        idempotency_key: "terminal-sale-held", gateway: gateway)
+    end.to raise_error(described_class::ProcessingError, "This event is not currently on sale")
+
+    expect(gateway).not_to have_received(:charge)
+    expect(CardPresentPaymentAttempt.find_by!(idempotency_key: "terminal-sale-held")).to be_status_failed
+    expect(sale.order.reload.tickets).to be_empty
+  end
+
   it "keeps inventory reserved and opens reconciliation when the result is unknown" do
     sale = pending_sale
     original_expiry = sale.order.expires_at

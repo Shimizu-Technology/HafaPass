@@ -65,8 +65,9 @@ function AdminDashboardSession({ identity }) {
 
   const totalEvents = Object.values(data.total_events).reduce((a, b) => a + b, 0)
   const totalUsers = Object.values(data.total_users).reduce((a, b) => a + b, 0)
-  const revenue = (data.total_revenue_cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+  const grossRevenue = (data.total_revenue_cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
   const financials = data.financials || {}
+  const revenue = data.platform_revenue || {}
   const formatMoney = (value = 0) => (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
   const signals = data.operational_signals || {}
   const operationalIssueCount = (signals.failed_messages_last_hour || 0) + (signals.stale_message_events || 0) +
@@ -78,16 +79,15 @@ function AdminDashboardSession({ identity }) {
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StaggerItem><StatCard label="Total Events" value={totalEvents} icon={Calendar} color="bg-brand-500" /></StaggerItem>
         <StaggerItem><StatCard label="Total Users" value={totalUsers} icon={Users} color="bg-indigo-500" /></StaggerItem>
-        <StaggerItem><StatCard label="Revenue" value={revenue} icon={DollarSign} color="bg-emerald-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Revenue" value={grossRevenue} icon={DollarSign} color="bg-emerald-500" /></StaggerItem>
         <StaggerItem><StatCard label="Tickets Sold" value={data.total_tickets_sold} icon={Ticket} color="bg-accent-500" /></StaggerItem>
       </StaggerContainer>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8" aria-label="Financial ledger summary">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label="Financial ledger summary">
         {[
           ['Gross sales', financials.gross_cents],
           ['Discounts', financials.discount_cents],
           ['Refunds', financials.refund_cents],
-          ['Platform fees', financials.fee_cents],
           ['Payout ready', financials.payout_ready_cents],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-neutral-200/60 bg-white/70 p-4">
@@ -96,6 +96,34 @@ function AdminDashboardSession({ identity }) {
           </div>
         ))}
       </div>
+
+      {/* Platform fees exclude card processing. Processing HåfaPass covers (orders sold
+          with the platform as bearer) reduces revenue; processing deducted from
+          organizers (organizer-bearer and legacy orders) never does. */}
+      <section aria-labelledby="platform-revenue-title" className="mb-8 rounded-xl border border-neutral-200/60 bg-white/70 p-4">
+        <h2 id="platform-revenue-title" className="text-sm font-semibold text-neutral-900">HåfaPass platform revenue</h2>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+          {[
+            ['Platform fees collected', revenue.gross_platform_fee_cents, 'Service fees, less refunded fees'],
+            ['Card processing covered by HåfaPass', revenue.platform_processing_fee_cents, 'On orders where HåfaPass pays processing'],
+            ['Net platform revenue', revenue.net_platform_revenue_cents, 'Fees collected minus processing covered'],
+          ].map(([label, value, hint], index) => (
+            <div key={label} className={index === 2 ? 'rounded-lg bg-brand-50 p-3 ring-1 ring-brand-200' : 'rounded-lg p-3 ring-1 ring-neutral-200'}>
+              <dt className="text-xs font-medium text-neutral-600">{label}</dt>
+              <dd className="mt-1 text-lg font-bold text-neutral-900">{index === 1 && value > 0 ? '−' : ''}{formatMoney(value)}</dd>
+              <dd className="text-xs text-neutral-600">{hint}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-3 text-xs text-neutral-600">Card processing deducted from organizer proceeds (organizer-bearer and older orders): {formatMoney(revenue.organizer_processing_fee_cents)}. It is not HåfaPass revenue or cost.</p>
+      </section>
+
+      {(data.open_disputes > 0 || data.payouts_needing_reconciliation > 0) && (
+        <div className="mb-8 flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+          {data.open_disputes > 0 && <Link to="/admin/disputes?status=open" className="font-semibold underline">{data.open_disputes} open {data.open_disputes === 1 ? 'dispute' : 'disputes'}</Link>}
+          {data.payouts_needing_reconciliation > 0 && <Link to="/admin/payouts" className="font-semibold underline">{data.payouts_needing_reconciliation} {data.payouts_needing_reconciliation === 1 ? 'payout awaits' : 'payouts await'} a recorded outcome</Link>}
+        </div>
+      )}
 
       {data.open_reconciliation_exceptions > 0 && (
         <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
