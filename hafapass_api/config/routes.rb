@@ -196,7 +196,9 @@ Rails.application.routes.draw do
       namespace :admin do
         resource :settings, only: [:show, :update]
         resource :dashboard, only: [:show], controller: "dashboard"
-        resources :events, only: [:index, :update]
+        resources :events, only: [:index, :update] do
+          resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
+        end
         get "events/:event_id/pilot_readiness", to: "pilot_readiness_reviews#show"
         post "events/:event_id/pilot_readiness_reviews", to: "pilot_readiness_reviews#create"
         resources :pilot_readiness_reviews, only: [] do
@@ -295,8 +297,10 @@ Rails.application.routes.draw do
           end
         end
         resources :card_present_accounts, only: [:create, :update]
-        resources :balance_adjustments, only: [:create, :destroy]
-        resources :payouts, only: [:update]
+        resources :balance_adjustments, only: [:index, :create, :destroy]
+        resources :payouts, only: [:index, :update]
+        resources :disputes, only: [:index]
+        resources :audit_logs, only: [:index]
         resource :marketplace, only: [:show], controller: "marketplace"
         resources :marketplace_collections, except: [:show]
         resources :distribution_partners, except: [:show]

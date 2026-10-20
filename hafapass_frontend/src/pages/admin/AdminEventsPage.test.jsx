@@ -6,7 +6,7 @@ import AdminEventsPage from './AdminEventsPage'
 
 vi.mock('../../api/client', async importOriginal => ({
   ...await importOriginal(),
-  default: { get: vi.fn(), patch: vi.fn() },
+  default: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }))
 
 vi.mock('./AdminLayout', () => ({
@@ -130,5 +130,51 @@ describe('AdminEventsPage', () => {
     await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/events', expect.objectContaining({ params: expect.objectContaining({ status: 'draft' }) })))
     expect(await screen.findByRole('button', { name: 'Release gates for [LIVE MONEY TEST] Proof' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('button', { name: 'Prepare Gate J closeout' })).not.toBeInTheDocument()
+  })
+
+  it('pauses sales with a required reason, then shows the hold and links to the event payouts', async () => {
+    const published = { ...proofEvent, id: 7, title: 'Night Market', status: 'published', policy_hold: null }
+    apiClient.get.mockResolvedValue({ data: { events: [published], meta: { page: 1, total_pages: 1 } } })
+    apiClient.post.mockResolvedValue({ data: {} })
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+
+    expect(await screen.findByRole('link', { name: 'Payouts for Night Market' })).toHaveAttribute('href', '/admin/payouts?event_id=7')
+    fireEvent.click(screen.getByRole('button', { name: 'Pause or hide Night Market' }))
+    const dialog = screen.getByRole('dialog', { name: 'Policy hold for Night Market' })
+    expect(dialog).toHaveTextContent('Nothing is deleted, cancelled or refunded.')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Pause sales' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('The organizer will see it.')
+    expect(apiClient.post).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Hide the event/ }))
+    fireEvent.change(within(dialog).getByLabelText('Policy reason (shown to the organizer)'), { target: { value: 'Counterfeit listing' } })
+    apiClient.get.mockResolvedValue({ data: { events: [{ ...published, policy_hold: { scope: 'hidden', reason: 'Counterfeit listing', placed_at: '2026-10-20T00:00:00Z' } }], meta: { page: 1, total_pages: 1 } } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hide the event' }))
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/events/7/policy_hold', { scope: 'hidden', reason: 'Counterfeit listing' }, expect.anything()))
+    expect(await screen.findByText('Hidden by HåfaPass')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Night Market is hidden and its sales are paused.')
+    expect(screen.getByRole('button', { name: 'Restore Night Market' })).toBeInTheDocument()
+  })
+
+  it('restores a held event with a reason', async () => {
+    const held = { ...proofEvent, id: 7, title: 'Night Market', status: 'published', policy_hold: { scope: 'sales', reason: 'Prohibited items', placed_at: '2026-10-20T00:00:00Z', placed_by: 'admin@example.com' } }
+    apiClient.get.mockResolvedValue({ data: { events: [held], meta: { page: 1, total_pages: 1 } } })
+    apiClient.delete.mockResolvedValue({ data: {} })
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+
+    expect(await screen.findByText('Sales paused by HåfaPass')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Restore Night Market' }))
+    const dialog = screen.getByRole('dialog', { name: 'Restore Night Market?' })
+    expect(dialog).toHaveTextContent('Prohibited items')
+    fireEvent.change(within(dialog).getByLabelText('Why can it be restored?'), { target: { value: 'Items removed' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Restore event' }))
+    await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith('/admin/events/7/policy_hold', expect.objectContaining({ data: { reason: 'Items removed' } })))
+  })
+
+  it('filters to events on a policy hold', async () => {
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'On policy hold' }))
+    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/events', expect.objectContaining({ params: expect.objectContaining({ policy_hold: 'true' }) })))
   })
 })

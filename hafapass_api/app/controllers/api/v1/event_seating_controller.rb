@@ -48,6 +48,6 @@ class Api::V1::EventSeatingController < ApplicationController
 
   def set_event
     @event = Event.find_by_public_slug!(params[:slug],
-      scope: Event.published.where(live_money_proof_candidate: false))
+      scope: Event.published.where(live_money_proof_candidate: false).without_hidden_policy_hold)
   end
 end

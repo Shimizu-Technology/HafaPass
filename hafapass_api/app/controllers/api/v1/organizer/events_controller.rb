@@ -506,6 +506,7 @@ module Api
             buyer_fee_percent: event.buyer_fee_percent,
             transfers_enabled: event.transfers_enabled,
             assigned_seating: event.assigned_seating?,
+            policy_hold: event.policy_hold_summary,
             supported_locales: event.supported_locales,
             localized_content: event.localized_content,
             created_at: event.created_at,

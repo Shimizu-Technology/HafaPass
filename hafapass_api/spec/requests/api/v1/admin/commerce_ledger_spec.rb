@@ -53,4 +53,12 @@ RSpec.describe "Admin commerce ledger", type: :request do
       "payout_ready_cents" => 5000
     )
   end
+
+  it "finds an order by its number so other admin screens can link to it" do
+    create(:order, buyer_name: "Someone Else")
+
+    get "/api/v1/admin/orders", params: { search: "##{order.id}" }, headers: headers
+
+    expect(response.parsed_body.fetch("orders").pluck("id")).to eq([order.id])
+  end
 end

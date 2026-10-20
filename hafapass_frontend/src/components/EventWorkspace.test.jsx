@@ -246,3 +246,10 @@ it('moves focus to the authorized ticket section without discarding the current 
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(screen.getByTestId('workspace-location')).toHaveTextContent('/dashboard/events/37/edit#ticket-types')
 })
+
+it('tells the organizer about a HåfaPass policy hold and its reason', () => {
+  mount({ event: { ...dto(), policy_hold: { scope: 'hidden', reason: 'Counterfeit listing reported', placed_at: '2026-10-20T00:00:00Z' } } })
+  const notice = screen.getByText('HåfaPass has hidden this event and paused ticket sales.').closest('[role="status"]')
+  expect(notice).toHaveTextContent('Reason: Counterfeit listing reported')
+  expect(notice).toHaveTextContent('Existing tickets stay valid and nothing has been refunded.')
+})

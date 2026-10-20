@@ -1,5 +1,6 @@
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Loader2, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
@@ -17,7 +18,9 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
   const [orders, setOrders] = useState([])
   const [meta, setMeta] = useState({})
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+  // Other admin screens link here with ?search=#42 to open a specific order.
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(() => searchParams.get('search') || '')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [expanded, setExpanded] = useState(null)
@@ -61,8 +64,8 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
           <input
             type="text"
-            aria-label="Search orders by buyer name or email"
-            placeholder="Search by buyer name or email..."
+            aria-label="Search orders by order number, buyer name or email"
+            placeholder="Search by order number, buyer name or email..."
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
             className="w-full pl-10 pr-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
