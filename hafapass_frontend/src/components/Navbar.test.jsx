@@ -146,6 +146,17 @@ describe('account-bound navbar with the real API authentication interceptor', ()
       expect(within(primary).getByRole('link', { name })).toBeInTheDocument()
     }
     expect(screen.queryByRole('link', { name: /nav.viewPublicSite/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'nav.hostEvent' })).not.toBeInTheDocument()
+  })
+
+  it('offers guests the host landing page in the desktop and mobile navigation', async () => {
+    Object.assign(auth, { isSignedIn: false, userId: null, sessionId: null, user: null })
+    render(view(true, '/events'))
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(within(primary).getByRole('link', { name: 'nav.hostEvent' })).toHaveAttribute('href', '/host')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Toggle menu' }))
+    const mobile = screen.getByRole('navigation', { name: 'Mobile navigation' })
+    expect(within(mobile).getByRole('link', { name: 'nav.hostEvent' })).toHaveAttribute('href', '/host')
   })
 
   // Settings follows the same organization permissions the dashboard uses.

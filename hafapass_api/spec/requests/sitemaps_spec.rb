@@ -17,6 +17,7 @@ RSpec.describe "Sitemaps", type: :request do
       expect(response.content_type).to include("xml")
       expect(response.body).to include("https://tickets.example.test/")
       expect(response.body).to include("https://tickets.example.test/events")
+      expect(response.body).to include("https://tickets.example.test/host")
     end
 
     it "includes published events" do

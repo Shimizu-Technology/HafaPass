@@ -29,7 +29,7 @@ export default function Footer() {
             <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4">{t('footer.platform')}</h3>
             <ul className="space-y-1">
               <li><Link to="/events" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.browseEvents')}</Link></li>
-              <li><Link to="/dashboard" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.forOrganizers')}</Link></li>
+              <li><Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.forOrganizers')}</Link></li>
               <li><Link to="/sign-in" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.signIn')}</Link></li>
             </ul>
           </div>

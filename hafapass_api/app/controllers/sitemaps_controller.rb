@@ -25,6 +25,13 @@ class SitemapsController < ApplicationController
           xml.priority "0.9"
         end
 
+        # Organizer landing page with pricing
+        xml.url do
+          xml.loc "#{base_url}/host"
+          xml.changefreq "monthly"
+          xml.priority "0.8"
+        end
+
         # Individual published events
         @events.each do |event|
           xml.url do

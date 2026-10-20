@@ -44,3 +44,8 @@ it('sends people to in-app ticket help instead of a broken mailto when no contac
   expect(screen.getByRole('link', { name: 'footer.contactSupport' })).toHaveAttribute('href', '/orders/recover')
   expect(screen.queryByRole('link', { name: /footer.callSupport/ })).not.toBeInTheDocument()
 })
+
+it('points organizers to the host landing page with pricing', () => {
+  render(<MemoryRouter><Footer /></MemoryRouter>)
+  expect(screen.getByRole('link', { name: 'footer.forOrganizers' })).toHaveAttribute('href', '/host')
+})

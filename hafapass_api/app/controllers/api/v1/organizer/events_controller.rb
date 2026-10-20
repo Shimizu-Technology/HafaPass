@@ -6,7 +6,7 @@ module Api
 
         before_action :set_event, only: [
           :show, :update, :destroy, :publish, :postpone, :resume, :cancel, :complete, :archive,
-          :clone, :generate_recurrences, :stats, :attendees
+          :clone, :generate_recurrences, :stats, :attendees, :slug_availability
         ]
 
         def index
@@ -69,6 +69,8 @@ module Api
           else
             render json: { errors: event.errors.full_messages }, status: :unprocessable_entity
           end
+        rescue ActiveRecord::RecordNotUnique => e
+          render_link_conflict(e)
         end
 
         def update
@@ -84,7 +86,7 @@ module Api
               user: current_user, organization: current_organization, permission: :manage_events, event: @event
             )
             unless can_manage
-              attributes.slice!("title", "description", "short_description", "cover_image_url", "category")
+              attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category")
             end
             attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
             reschedule = reschedule?(attributes)
@@ -113,6 +115,10 @@ module Api
           else
             render json: { errors: @event.errors.full_messages }, status: :unprocessable_entity
           end
+        rescue ActiveRecord::RecordNotUnique => e
+          # The rollback already happened; report the lost link race like the
+          # availability check would have, so the form shows it on the field.
+          render_link_conflict(e)
         end
 
         def destroy
@@ -198,6 +204,19 @@ module Api
             generated_count: generated.size,
             events: generated.map { |e| event_json(e) }
           }, status: :created
+        end
+
+        # Lets the edit form check a link name as the organizer types, using the
+        # same rules the save applies (format, reserved words, current and
+        # retired links of other events).
+        def slug_availability
+          candidate = Event.normalize_public_slug(params[:slug])
+          problem = candidate == @event.slug ? nil : Event.public_slug_problem(candidate, record: @event)
+          render json: {
+            slug: candidate,
+            available: problem.nil?,
+            message: problem && "#{Event.human_attribute_name(:slug)} #{problem}"
+          }
         end
 
         def stats
@@ -307,6 +326,12 @@ module Api
           render json: { error: e.message, publish_checklist: e.checklist }, status: :unprocessable_entity
         end
 
+        def render_link_conflict(error)
+          raise error unless PublicSlug.conflict?(error)
+
+          render json: { errors: [Event.public_slug_taken_message] }, status: :unprocessable_entity
+        end
+
         def set_event
           @event = find_organization_event(params[:id])
           return unless @event
@@ -319,14 +344,14 @@ module Api
           when "show" then :view_events
           when "stats" then :view_finance
           when "attendees" then :view_attendees
-          when "update" then :edit_event_content
+          when "update", "slug_availability" then :edit_event_content
           else :manage_events
           end
         end
 
         def event_params
           params.permit(
-            :title, :description, :short_description, :cover_image_url,
+            :title, :slug, :description, :short_description, :cover_image_url,
             :venue_id, :venue_name, :venue_address, :venue_city,
             :starts_at, :ends_at, :doors_open_at, :timezone,
             :category, :age_restriction, :max_capacity,
@@ -338,6 +363,8 @@ module Api
 
         def parsed_event_params
           attributes = event_params.to_h
+          # An empty link field keeps the current link instead of clearing it.
+          attributes.delete("slug") if attributes.key?("slug") && attributes["slug"].blank?
           timezone = attributes["timezone"].presence || @event&.timezone || "Pacific/Guam"
           %w[starts_at ends_at doors_open_at].each do |key|
             attributes[key] = EventTimeParser.call(attributes[key], timezone: timezone) if attributes.key?(key)
@@ -450,6 +477,9 @@ module Api
             ),
             title: event.title,
             slug: event.slug,
+            custom_slug: event.custom_slug,
+            slug_follows_title: event.slug_follows_title?,
+            ever_published: event.ever_published?,
             description: event.description,
             short_description: event.short_description,
             cover_image_url: event.cover_image_url,

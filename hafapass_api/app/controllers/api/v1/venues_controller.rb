@@ -12,16 +12,19 @@ class Api::V1::VenuesController < ApplicationController
   end
 
   def show
-    venue = Venue.published.find_by!(slug: params[:slug])
+    venue = Venue.find_by_public_slug!(params[:slug], scope: Venue.published)
     events = venue.events.merge(Event.discoverable).includes(:venue, :organization, :organizer_profile,
       ticket_types: [:inventory_holds, :waitlist_offers,
         { event_seats: :active_precheckout_seat_holds },
         { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
-    render json: venue_json(venue).merge(
+    json = venue_json(venue).merge(
       events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true) },
       meta: pagination_meta(pagy)
     )
+    # A retired link name still finds the venue; the SPA swaps in `slug`.
+    json[:redirected_from] = params[:slug] if venue.slug != params[:slug]
+    render json: json
   end
 
   private

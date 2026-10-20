@@ -29,3 +29,9 @@
 
 en:
   hello: "Hello world"
+  activerecord:
+    attributes:
+      event:
+        slug: "Event link"
+      venue:
+        slug: "Venue link"
