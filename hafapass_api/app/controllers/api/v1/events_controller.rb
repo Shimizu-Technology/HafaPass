@@ -246,6 +246,7 @@ module Api
           attendee_count: attendee_count,
           fee_policy: event.fee_policy,
           buyer_fee_percent: event.buyer_fee_percent,
+          service_fee_includes_processing: listing_settings.platform_bears_processing?,
           transfers_enabled: event.transfers_available?,
           assigned_seating: event.assigned_seating?,
           supported_locales: event.supported_locales,
@@ -263,6 +264,7 @@ module Api
             verified: event.organizer_profile.verification_status_verified?,
             followed: followed?(event)
           },
+          seller: SellerIdentity.for_event(event, platform_name: listing_settings.platform_name).as_json,
           venue: event.venue && {
             id: event.venue.id, name: event.venue.name, slug: event.venue.slug,
             village: event.venue.village, verified: event.venue.verified
@@ -277,13 +279,21 @@ module Api
           json[:ticket_types] = event.ticket_types.includes(:pricing_tiers).order(:sort_order, :id).map do |tt|
             active_tier = tt.active_pricing_tier
             next_tier = tt.next_pricing_tier
+            current_price_cents = tt.current_price_cents
+            fee = Commerce::ServiceFee.for_event(event, current_price_cents, terms: listing_fee_terms)
             tt_json = {
               id: tt.id,
               name: tt.name,
               description: tt.description,
               price_cents: tt.price_cents,
-              current_price_cents: tt.current_price_cents,
+              current_price_cents: current_price_cents,
               original_price_cents: tt.price_cents,
+              # All-in prices include the mandatory per-ticket service fee the
+              # buyer pays under the event's fee policy, computed by the same
+              # code as checkout. Displays lead with these (16 CFR Part 464).
+              all_in_price_cents: fee.all_in_price_cents,
+              service_fee_cents: fee.buyer_fee_cents,
+              regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents, terms: listing_fee_terms).all_in_price_cents,
               quantity_available: tt.quantity_available,
               quantity_sold: tt.quantity_sold,
               quantity_remaining: tt.available_quantity,
@@ -304,7 +314,8 @@ module Api
             if next_tier
               tt_json[:next_tier] = {
                 name: next_tier.name,
-                price_cents: next_tier.price_cents
+                price_cents: next_tier.price_cents,
+                all_in_price_cents: Commerce::ServiceFee.for_event(event, next_tier.price_cents, terms: listing_fee_terms).all_in_price_cents
               }
             end
             tt_json

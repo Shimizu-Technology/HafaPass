@@ -17,6 +17,7 @@ class TicketPdfGenerator
     @event = ticket.event
     @ticket_type = ticket.ticket_type
     @scan_credential = ticket.scan_credential
+    @seller = SellerIdentity.for_event(@event)
   end
 
   def generate
@@ -63,7 +64,7 @@ class TicketPdfGenerator
     %w[TicketSans TicketJapanese TicketEmoji].each do |family|
       pdf.font(family) { fonts << pdf.font }
     end
-    values = [@event.title, @event.venue_name, @event.venue_address, @ticket_type.name, @ticket.seat_label]
+    values = [@event.title, @event.venue_name, @event.venue_address, @ticket_type.name, @ticket.seat_label, @seller.line]
     missing = values.compact.join.each_char.uniq.reject do |character|
       character.match?(/\s/) || fonts.any? { |font| font.glyph_present?(character) }
     end
@@ -181,7 +182,7 @@ class TicketPdfGenerator
     pdf.text Rails.env.production? ? "Present this QR code at the door" : "For testing only - no real event admission", align: :center
     pdf.move_down 4
     pdf.font "TicketSans", size: 7
-    pdf.text "Powered by HåfaPass", align: :center, color: "9CA3AF"
+    pdf.text @seller.line, align: :center, color: "6B7280"
   end
 
   def format_date(datetime)

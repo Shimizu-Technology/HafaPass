@@ -24,7 +24,7 @@ class Api::V1::MarketplaceCollectionsController < ApplicationController
 
     pagy, records = paginate(events)
     render json: collection_json(collection).merge(
-      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true) },
+      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true, fee_terms: listing_fee_terms) },
       meta: pagination_meta(pagy)
     )
   end
@@ -53,7 +53,7 @@ class Api::V1::MarketplaceCollectionsController < ApplicationController
           { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }] }])
       .order(:marketplace_collection_id, :position, :id)
     memberships.group_by(&:marketplace_collection_id).transform_values do |items|
-      items.map { |membership| Marketplace::EventSerializer.call(membership.event, purchasable: true) }
+      items.map { |membership| Marketplace::EventSerializer.call(membership.event, purchasable: true, fee_terms: listing_fee_terms) }
     end
   end
 end

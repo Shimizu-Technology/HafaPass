@@ -1,72 +1,359 @@
-version: 2026-07-pilot-draft
+version: 2026-10-launch-draft
+status: draft-pending-legal-review
 documents:
   buyer-terms:
     title: Buyer Terms
-    summary: The rules for purchasing, receiving, using, transferring, and requesting help with HafaPass tickets.
+    summary: |-
+      The terms that apply when you buy, receive, use, or transfer tickets on {{platform_name}}, including who sells the ticket, how pricing and fees work, and what to do when something goes wrong. Draft pending legal review.
     sections:
-      - heading: Your purchase
-        body: Event details, prices, fees, refund eligibility, and the organizer identity are shown before checkout. A ticket is issued only after payment is confirmed or a free or approved order is completed.
-      - heading: Ticket use
-        body: Keep ticket links and entry codes private. A ticket may be refused when it is cancelled, refunded, transferred, disputed, already used, or otherwise invalid.
-      - heading: Event responsibility
-        body: The event organizer is responsible for event content, venue access, schedules, age rules, and delivery of the event. HafaPass operates the ticketing platform and support tools.
-      - heading: Changes and disputes
-        body: Cancellation, postponement, reschedule, and refund rights follow the disclosed event policy and applicable law. Contact support promptly when an order or charge is incorrect.
-  organizer-agreement:
-    title: Organizer Agreement
-    summary: The operating responsibilities an organizer must accept before publishing on HafaPass.
-    sections:
-      - heading: Accurate listings
-        body: Organizers must publish accurate dates, Guam time, venue, accessibility, age, inventory, pricing, fee, and refund information and must have authority to operate the event.
-      - heading: Buyer obligations
-        body: Organizers must honor valid tickets, cooperate with support, communicate material changes, and fund refunds, disputes, taxes, reserves, and negative balances according to approved terms.
-      - heading: Operations and safety
-        body: Organizers remain responsible for permits, staffing, security, accessibility, emergency planning, venue rules, and legal compliance.
-      - heading: Platform controls
-        body: HafaPass may pause sales, hold payouts, preserve records, investigate risk, or remove prohibited events where needed to protect buyers or the platform.
-  privacy:
-    title: Privacy Policy
-    summary: What HafaPass collects, why it is used, and the controls around personal information.
-    sections:
-      - heading: Information collected
-        body: Account identifiers, contact details, order and ticket records, event interactions, support history, device and security signals, and provider references are collected as needed to operate the service. Card details remain with approved payment providers.
-      - heading: Use and sharing
-        body: Information is used for checkout, fulfillment, admission, fraud prevention, support, accounting, legal compliance, and privacy-safe analytics. It is shared only with relevant organizers and contracted providers for those purposes.
-      - heading: Security and choices
-        body: Access is role-limited and sensitive actions are audited. Buyers may request access, correction, export, or deletion where retention duties do not require preservation.
-      - heading: Contact
-        body: Privacy requests and suspected misuse should be sent to privacy@hafapass.com. Production launch remains gated on professional Guam and US privacy review.
+      - heading: Who we are and who sells your ticket
+        body: |-
+          {{platform_name}} is a ticketing service run by {{operator_name}}. These terms are an agreement between you and {{operator_name}}.
+
+          The event organizer is the seller of your ticket. The organizer appoints {{operator_name}} as its limited agent to list the event, sell tickets, and collect payment on its behalf. When you pay {{platform_name}} for a ticket, that payment satisfies what you owe the organizer for it.
+
+          {{platform_name}} sells its own ticketing service separately and charges a service fee for it. Your receipt and ticket show both roles, for example "Sold by [organizer] · Tickets by {{platform_name}}".
+      - heading: Prices and the service fee
+        body: |-
+          The price we advertise for a ticket is the total you will pay for it, including the mandatory service fee. The checkout total matches the advertised price. If a government tax is ever charged, or you choose an optional add-on such as merchandise or a donation, we show that amount separately before you pay.
+
+          The service fee pays for the ticketing service: online sales, payment handling, ticket delivery, transfers, entry scanning, and buyer support. It is not a tax. The current fee schedule is {{fee_schedule}}. Each organizer decides whether buyers pay the fee, the organizer absorbs it, or the two share it. Either way, the total you see is the total you pay.
+      - heading: Checkout and ticket issuance
+        body: |-
+          When you start checkout, we hold the selected tickets for about 10 minutes. If you don't finish in time, the hold ends and the tickets may go to someone else.
+
+          Your order is complete only after payment is confirmed, or after a free or approved order is completed. We then send your tickets by email and make them available in your account. If you checked out as a guest, your confirmation email includes a private link to your order. Keep that email.
+
+          We may cancel an order, with a refund of what you paid, if a price or listing error was obvious, if payment fails or is reversed, or if we reasonably suspect fraud or a breach of these terms.
+      - heading: Using your ticket
+        body: |-
+          Each ticket has a QR code or entry code. One ticket admits one person, once. Treat the code like cash: anyone who presents it first may be admitted, and we can't always replace a code that someone else has used.
+
+          Venue staff may refuse a ticket that has been cancelled, refunded, transferred away, disputed, already used, or otherwise made invalid. The organizer may also check ID, enforce age limits, or refuse entry under its own venue rules.
+      - heading: Transfers and resale
+        body: |-
+          If the organizer has enabled transfers for an event, you can send a ticket to someone else through {{platform_name}}. A transfer cancels your old code and issues a new one to the recipient, so screenshots or printouts of the old ticket stop working.
+
+          Organizers may limit or forbid resale, including resale above face value. You may not use bots, scripts, multiple accounts, or other tools to get around purchase limits, holds, or queues, and you may not buy tickets for speculative resale. Tickets obtained this way may be cancelled.
+      - heading: Refunds, cancellations, and event changes
+        body: |-
+          Refunds follow our Refund & Cancellation Policy and the refund rules the organizer shows on the event page. In short: if an event is cancelled, you receive a full refund including the service fee. If an event is postponed or materially changed, your ticket stays valid for the new date, and you may ask for a refund within the window we communicate instead.
+
+          Event details such as performers, start times, and seating may change. The organizer decides on changes and is responsible for them. We pass on the notices organizers send through {{platform_name}}.
+      - heading: The event itself
+        body: |-
+          The organizer is responsible for the event: its content, venue, schedule, safety, security, accessibility, age rules, and whether it happens as advertised. {{platform_name}} does not run events and is not responsible for what happens at them.
+
+          By attending, you agree to follow the organizer's and venue's rules. Those rules may include bag checks, prohibited items, and conduct requirements. The organizer may remove you, without a refund, for breaking them.
+      - heading: Your account
+        body: |-
+          You can sign in to {{platform_name}} using our sign-in provider, or buy as a guest. Keep your sign-in details and order links private. You are responsible for activity on your account, so tell us promptly if you think someone else has used it.
+
+          Give accurate contact details. We use them to deliver tickets and tell you about changes to events you've bought tickets for.
+      - heading: Payment disputes
+        body: |-
+          If a charge looks wrong, please contact us first. We can usually fix an incorrect order faster than a bank can.
+
+          If you file a chargeback or payment dispute with your bank, the tickets on that order are suspended while the dispute is open and may be cancelled if the dispute is decided in your favor.
+      - heading: Limits on our responsibility
+        body: |-
+          To the extent the law allows, {{operator_name}} is not liable for indirect or consequential losses, such as travel or accommodation costs, or for losses caused by the event, the organizer, or the venue. Where we are liable, our total liability for an order is limited to the amount you paid for that order. [Lawyer to confirm limitation wording and any consumer-law carve-outs.]
+
+          Nothing in these terms limits rights you have under consumer protection laws that cannot be waived.
+      - heading: Governing law and disputes
+        body: |-
+          These terms are governed by the laws of Guam [Lawyer to confirm governing law and venue]. If you have a complaint, contact us first so we can try to resolve it informally.
+      - heading: Changes and contact
+        body: |-
+          We may update these terms. The version you accepted at checkout applies to that order, and we record which version that was.
+
+          For questions about an order, contact us at {{support_email}}.
   refunds:
     title: Refund & Cancellation Policy
-    summary: How event changes, ticket cancellations, refunds, fees, and timing are handled.
+    summary: |-
+      When you can get a refund, what is refunded (including the service fee), how event cancellations and postponements are handled, and how long refunds take. Draft pending legal review.
     sections:
-      - heading: Before purchase
-        body: Each event must disclose its refund rules. HafaPass shows totals and fees before payment and records the version accepted at checkout.
-      - heading: Event cancellation or change
-        body: Cancelled events require an organizer-approved refund workflow. Postponed or materially rescheduled events provide an accept-or-request-refund path when eligible.
-      - heading: Ticket-level requests
-        body: Unused active tickets may be cancelled or refunded only when the event policy and platform controls allow it. Used, transferred, disputed, or already-refunded value cannot be refunded twice.
-      - heading: Timing
-        body: Approved refunds return through the original supported payment path. Provider and bank processing time may apply, and unknown provider results must be reconciled before another refund is attempted.
+      - heading: Who sets the refund rules
+        body: |-
+          Each event's organizer sets its refund rules, and they are shown on the event page before you buy. Refunds are paid from the organizer's event proceeds.
+
+          If an event page doesn't state a refund policy, tickets are not refundable except when the event is cancelled, when it is postponed or materially changed, or where the law requires a refund.
+      - heading: If an event is cancelled
+        body: |-
+          If an event is cancelled and not rescheduled, you receive a full refund of everything you paid for your tickets, including the service fee. You don't need to ask; we process it once the organizer confirms the cancellation.
+      - heading: If an event is postponed or materially changed
+        body: |-
+          If an event moves to a new date, your tickets stay valid for the new date and you don't need to do anything.
+
+          If you can't attend the new date, or the event changes materially (for example, a different venue or headline act), you may request a refund instead. We will tell you how and by when to request it. Requests made within that window are refunded in full, including the service fee.
+      - heading: Refunding part of an order
+        body: |-
+          Where the event's rules allow it, you may be able to refund some tickets in an order and keep the rest. A partial refund returns the ticket price and the service fee charged on each ticket refunded. The service fee is refunded with the ticket it was charged on.
+      - heading: Tickets that can't be refunded
+        body: |-
+          A ticket can't be refunded if it has already been used for entry, transferred to someone else, refunded already, or is part of an open payment dispute.
+      - heading: How and when you receive the money
+        body: |-
+          Refunds go back to the original payment method. Once we issue a refund, it usually appears within 5 to 10 business days, depending on your bank or card issuer. Free tickets have no payment to return; cancelling one simply releases the seat.
+
+          If a refund attempt fails or its status is unclear, we confirm the result with our payment provider before trying again, so you are not refunded twice or left out.
+      - heading: Chargebacks
+        body: |-
+          Please contact us before disputing a charge with your bank. Filing a chargeback suspends the tickets on the order while the dispute is open.
+      - heading: How to ask for a refund
+        body: |-
+          Use the order page in your account or the link in your confirmation email, or contact us at {{support_email}} with your order number. Refund requests are subject to the event's rules and this policy.
+  privacy:
+    title: Privacy Policy
+    summary: |-
+      What personal information {{platform_name}} collects, how we use and share it, how long we keep it, and the choices you have. Draft pending legal review.
+    sections:
+      - heading: Who is responsible
+        body: |-
+          {{platform_name}} is run by {{operator_name}}, which is responsible for the personal information described here. Event organizers who receive your information for their events are separately responsible for how they use it.
+      - heading: Information we collect
+        body: |-
+          Account and contact details: your name, email address, and phone number if you choose to give it.
+
+          Orders and tickets: what you bought, attendee names, ticket transfers, refunds, and check-in or scan records at the door.
+
+          Information organizers ask for: answers to registration questions and waivers you accept for an event.
+
+          Activity on {{platform_name}}: favorites, follows, event reminders, support conversations, and how you arrived (for example, a referral code or campaign link).
+
+          Technical and security data: IP address, device and browser information, security signals used to prevent fraud and abuse, and error diagnostics.
+
+          We do not store your card number. Card details are entered into and handled by our payment processor, Stripe.
+      - heading: How we use it
+        body: |-
+          We use your information to sell and deliver tickets, check you in, process refunds and transfers, and send you messages about your orders and events you've bought tickets for.
+
+          We also use it to provide support, prevent fraud and abuse, keep accounting and tax records, meet legal obligations, fix errors, and understand in aggregate how people find events, for example which campaign or referral led to a sale.
+      - heading: Sharing with organizers
+        body: |-
+          When you buy a ticket or register for an event, the organizer receives the information it needs to run that event: your name, email address, phone number if you gave one, attendee names, your answers to its questions, and check-in status. Organizers may use this information only for their own events and must follow the law and our Organizer Agreement. They are responsible for their own use of it.
+      - heading: Service providers
+        body: |-
+          We use these providers to run {{platform_name}}. Each receives only what it needs for its job.
+
+          Clerk, for sign-in and account authentication.
+
+          Stripe, for payment processing and fraud prevention.
+
+          Resend, for email delivery.
+
+          Amazon Web Services (S3), for file storage such as event images and ticket PDFs.
+
+          Sentry, for error monitoring.
+
+          Render and Netlify, for application hosting, and Neon, for database hosting.
+
+          Apple Wallet and Google Wallet, only when you choose to add a ticket to your wallet.
+
+          We may also disclose information when the law requires it, to protect people's safety, or as part of a sale or reorganization of our business.
+      - heading: What we don't do
+        body: |-
+          We do not sell your personal information. We do not use third-party advertising cookies or let advertising networks track you on {{platform_name}}. See our Cookie Notice for details.
+      - heading: How long we keep it
+        body: |-
+          Order, payment, refund, payout, and audit records are kept for the periods needed for accounting, tax, and dispute purposes [Lawyer and accountant to confirm; at least 7 years proposed]. Marketplace analytics not tied to an order are deleted after 13 months. Other records are kept only as long as needed. Our Data Retention Schedule has the details.
+      - heading: Your choices and rights
+        body: |-
+          You can ask to access, correct, export, or delete your personal information by contacting us at {{support_email}}. We will verify your identity before acting. Some records, such as completed orders, must be kept for legal, tax, or dispute reasons; when that applies, we keep only what is required and tell you why.
+
+          If we send you marketing emails, you can unsubscribe at any time. Messages about tickets you bought, such as event changes, are part of the service and will still be sent.
+      - heading: Security and breach notification
+        body: |-
+          We limit staff access to personal information by role, record sensitive actions, and encrypt data in transit. No system is perfectly secure.
+
+          If a breach affects your personal information, we will notify you and any required authorities as required by Guam's breach notification law (9 GCA Chapter 48, Notification of Breaches of Personal Information) and other applicable US laws.
+      - heading: Children
+        body: |-
+          {{platform_name}} is not directed to children under 13, and we do not knowingly collect personal information from them. A parent or guardian may buy tickets for a child. If you believe a child under 13 has given us personal information, contact us and we will delete it.
+      - heading: Changes and contact
+        body: |-
+          We will post changes to this policy here and update the version shown. For privacy questions or requests, contact us at {{support_email}}.
+  organizer-agreement:
+    title: Organizer Agreement
+    summary: |-
+      The agreement between event organizers and {{operator_name}} for selling tickets on {{platform_name}}, covering the agency appointment, fees, payouts, refunds, responsibilities, and termination. You must accept the current version before publishing an event. Draft pending legal review.
+    sections:
+      - heading: Eligibility and authority
+        body: |-
+          This agreement is between you, the organizer, and {{operator_name}}, which runs {{platform_name}}. You must be at least 18 and able to enter contracts. If you act for a business or group, you confirm that you have authority to bind it.
+
+          You confirm that you have the right to hold and sell tickets to each event you list, including any permission you need from the venue, performers, or rights holders.
+      - heading: Accurate listings
+        body: |-
+          Event listings must be accurate and kept current, including the date and time (Guam time), venue, ticket types and quantities, prices, age rules, accessibility information, and refund policy. If you don't state a refund policy, tickets are refundable only if the event is cancelled, postponed, or materially changed, or where the law requires.
+
+          You are responsible for the content you publish, including images and descriptions.
+      - heading: Our role as your limited agent
+        body: |-
+          You are the seller of the tickets to your event. You appoint {{operator_name}} as your limited agent to market and sell tickets on {{platform_name}} and to collect payment from buyers on your behalf. A buyer's payment to {{platform_name}} satisfies the buyer's payment obligation to you for the ticket.
+
+          {{operator_name}} sells its ticketing service to buyers and to you, and charges the service fee for that service. Receipts and tickets will name you as the seller ("Sold by [organizer] · Tickets by {{platform_name}}").
+
+          Buyer card payments are processed through {{operator_name}}'s payment account and received into its business account. We record your ticket proceeds separately from our service fees. [Lawyer to confirm agency and funds-handling language.]
+      - heading: Service fees
+        body: |-
+          The current service fee is {{fee_schedule}}.
+
+          For each event you choose how the fee is handled: buyers pay it on top of the ticket price, you absorb it so buyers pay only the ticket price, or you split it and buyers pay a set share. Advertised prices always show the buyer's full total.
+
+          We may change the fee schedule with advance notice. A change applies to events published after it takes effect. Each order records the fee in force when the buyer paid, and that fee applies to that order.
+      - heading: Payouts
+        body: |-
+          We pay your available balance {{payout_schedule}}, after we reconcile the event's sales, refunds, and disputes. Payouts are made by check from {{operator_name}}'s business account; we may offer bank transfer instead.
+
+          Your available balance is your ticket proceeds minus refunds, amounts held for open disputes, and amounts already paid to you.
+
+          We may delay or hold some or all of a payout while refunds or disputes are open, if an event is cancelled or changed, or during a risk or compliance review. We will tell you why and release the hold when the issue is resolved.
+      - heading: Tax information
+        body: |-
+          Before we pay you, you must give us a completed IRS Form W-9 (or the equivalent form that applies to you) and accurate payee details. We may issue IRS Form 1099 information returns where required.
+
+          You are responsible for taxes on your ticket proceeds, including Guam Business Privilege Tax on your gross receipts. {{operator_name}} is responsible for taxes on its own service fee. The service fee is not a tax, and you must not describe it as one. [Accountant to confirm tax treatment and reporting.]
+      - heading: Refunds, cancellations, and postponements
+        body: |-
+          Refunds are funded from your event proceeds. You agree to honor your stated refund policy and our Refund & Cancellation Policy.
+
+          If you cancel an event, tell us promptly and notify buyers through {{platform_name}}. Buyers receive a full refund, including the service fee. If you postpone or materially change an event, notify buyers through {{platform_name}} and allow them to request a refund within the window we communicate.
+
+          You must honor every valid ticket sold for your event.
+      - heading: Chargebacks and negative balances
+        body: |-
+          If a buyer disputes a payment, we may hold the disputed amount from your balance and respond to the dispute using records you and we provide. If the dispute is lost, the ticket amount and any dispute fees charged to us come out of your proceeds.
+
+          If refunds, disputes, or fees exceed your balance, the difference is a negative balance you owe us. We may deduct it from future payouts or invoice you, and you agree to pay invoices by the due date shown. [Lawyer to confirm payment terms and dispute-fee allocation.]
+      - heading: Your responsibility for the event
+        body: |-
+          You are solely responsible for your event: the venue, permits, licenses, staffing, security, safety and emergency planning, insurance, accessibility, age restrictions, venue rules, and compliance with all laws. You must provide accessible seating information where your event uses assigned seating.
+
+          You may not list events or sell tickets that our Acceptable Use Policy prohibits.
+      - heading: Buyer information
+        body: |-
+          You will receive information about buyers and attendees of your events. You may use it only to run that event, provide customer service, and meet legal obligations, and to send marketing only where the buyer has agreed and the law allows. You must keep it secure, must not sell it, and must follow our Privacy Policy and the law. You are independently responsible for your use of this information.
+      - heading: Content license
+        body: |-
+          You keep ownership of the names, logos, images, and descriptions you upload. You grant {{operator_name}} a non-exclusive, royalty-free license to use them to list, promote, and sell tickets to your events on {{platform_name}} and in related marketing. You confirm you have the rights needed to grant this license.
+      - heading: Indemnity and limitation of liability
+        body: |-
+          You will defend and indemnify {{operator_name}} against claims, losses, and costs arising from your events, your content, your use of buyer information, or your breach of this agreement or the law.
+
+          To the extent the law allows, {{operator_name}} is not liable for indirect or consequential losses, and its total liability to you under this agreement is limited to the service fees it earned from your events in the 12 months before the claim. [Lawyer to confirm.]
+      - heading: Suspension and termination
+        body: |-
+          We may pause ticket sales, hold payouts, remove a listing, or suspend your account if we reasonably believe you have broken this agreement or the law, or that buyers are at risk. Either party may end this agreement with notice. Obligations for tickets already sold, refunds, disputes, negative balances, and indemnity continue after it ends.
+      - heading: Governing law and changes
+        body: |-
+          This agreement is governed by the laws of Guam [Lawyer to confirm governing law and venue].
+
+          We may update this agreement. You must accept the current version before you publish a new event, and {{platform_name}} records which version you accepted and when. Questions can go to {{support_email}}.
   acceptable-use:
     title: Acceptable Use Policy
-    summary: Events and behavior that are not allowed on HafaPass.
+    summary: |-
+      The events, content, and behavior that are not allowed on {{platform_name}}, and what we may do when the rules are broken. Draft pending legal review.
     sections:
-      - heading: Prohibited activity
-        body: No unlawful, deceptive, unsafe, hateful, exploitative, infringing, sanctions-evading, or unauthorized events, sales, content, or account access.
-      - heading: Ticket integrity
-        body: No speculative inventory, credential harvesting, automated abuse, duplicate admission, payment manipulation, or attempts to bypass holds, limits, refunds, or access controls.
+      - heading: Who this applies to
+        body: |-
+          This policy applies to everyone who uses {{platform_name}}: buyers, attendees, organizers, and their staff.
+      - heading: Events that may not be listed
+        body: |-
+          Events that are illegal, or that promote or facilitate illegal activity.
+
+          Events you don't have the right to sell, including tickets you don't hold or events you aren't authorized to run.
+
+          Events involving hate, harassment, violence, or exploitation of anyone, including minors.
+
+          Unlicensed gambling, raffles, or lotteries, and sales of regulated goods such as alcohol, tobacco, or firearms in breach of the law.
+
+          Events designed to mislead, such as fake events, bait-and-switch listings, or misrepresented performers.
+
+          Events that infringe others' intellectual property, or that involve sanctioned persons or places.
+      - heading: Ticket and payment integrity
+        body: |-
+          Don't use bots, scripts, or multiple accounts to buy tickets or get around purchase limits, holds, or queues.
+
+          Don't list speculative tickets you don't yet have, or duplicate, alter, or counterfeit tickets.
+
+          Don't use stolen payment methods, test cards, or deliberate false chargebacks, and don't try to bypass refund, transfer, or check-in controls.
+      - heading: Account and system security
+        body: |-
+          Don't access accounts, data, or admin tools you aren't authorized to use, collect other users' information, probe or overload our systems, or interfere with scanning at events.
+      - heading: Content
+        body: |-
+          Content you post must be accurate and lawful, and must not be defamatory, obscene, or infringing.
       - heading: Enforcement
-        body: HafaPass may investigate, preserve evidence, restrict access, pause sales or payouts, cancel invalid credentials, and cooperate with affected parties and authorities as legally appropriate.
+        body: |-
+          If we believe this policy has been broken, we may investigate, keep records, remove content or listings, cancel tickets, pause sales or payouts, suspend or close accounts, and cooperate with affected parties and authorities where the law allows. Where appropriate, we will tell you what action we took and why.
+      - heading: Reporting a problem
+        body: |-
+          To report a listing, ticket, or user that may break this policy, contact us at {{support_email}}.
   retention:
     title: Data Retention Schedule
-    summary: The pilot retention baseline for operational, financial, security, and support records.
+    summary: |-
+      How long {{platform_name}} keeps different kinds of records and what happens when you ask us to delete your information. Draft pending legal review.
     sections:
-      - heading: Financial and audit records
-        body: Orders, payments, refunds, settlements, payouts, disputes, admissions, and append-only audit evidence are retained for the legally and contractually approved accounting and dispute period.
-      - heading: Operational data
-        body: Provider events, delivery history, support notes, and security evidence are retained only as long as needed for delivery, incident response, disputes, and abuse prevention.
-      - heading: Device data
-        body: Offline scanner manifests and queues must be removed from devices after event closeout and the approved dispute window. Lost devices must be revoked immediately.
-      - heading: Deletion and holds
-        body: Deletion requests are honored where possible. Legal holds, active disputes, fraud investigations, and statutory duties may pause deletion for specifically required records.
+      - heading: Financial, order, and audit records
+        body: |-
+          Orders, payments, refunds, payouts, disputes, admissions, and audit records are kept for the period required for accounting, tax, and dispute purposes [Lawyer and accountant to confirm; at least 7 years proposed].
+      - heading: Marketplace analytics
+        body: |-
+          Analytics events not tied to an order, such as page visits and campaign attribution, are deleted after 13 months. Attribution recorded on an order, such as a referral code, is kept with that order.
+      - heading: Operational and support data
+        body: |-
+          Payment provider events, email delivery history, support notes, and security logs are kept only as long as needed for delivery, incident response, disputes, and abuse prevention.
+      - heading: Scanner devices
+        body: |-
+          Event data stored on organizer devices for offline scanning should be removed after the event is closed out and any dispute window has passed. Lost or stolen devices must be revoked immediately.
+      - heading: Deletion requests and holds
+        body: |-
+          We honor deletion requests where we can. Legal holds, open disputes, fraud investigations, and legal or tax duties may require us to keep specific records; when they do, we keep only those records and delete the rest. To ask for deletion, contact us at {{support_email}}.
+  cookies:
+    title: Cookie Notice
+    summary: |-
+      The cookies and similar browser storage {{platform_name}} uses, why we use them, and how to control them. We don't use advertising or third-party tracking cookies. Draft pending legal review.
+    sections:
+      - heading: What cookies are
+        body: |-
+          Cookies are small files a website stores in your browser. Websites also use similar tools, such as local storage. In this notice, "cookies" covers both.
+      - heading: Cookies needed to run the service
+        body: |-
+          These cookies make {{platform_name}} work, and the service can't function properly without them. We use them to keep you signed in through our sign-in provider, Clerk; to hold your tickets and remember your order during checkout; to let you return to a guest order; to remember your language preference; to store event data on organizer devices so scanning works offline; and to protect the service through security checks and rate limiting.
+      - heading: Payment and error monitoring
+        body: |-
+          Stripe, our payment processor, sets cookies on its payment fields to prevent fraud. Sentry, our error-monitoring service, may record technical details when something breaks so we can fix it.
+      - heading: First-party analytics
+        body: |-
+          We measure how people find events, such as which campaign link or referral code led to a purchase. This information is collected by {{platform_name}} itself, saved with the order where there is one, and not shared with advertising networks.
+      - heading: What we don't use
+        body: |-
+          We do not use advertising cookies, cross-site tracking, or third-party analytics that build profiles of you across websites.
+      - heading: Controlling cookies
+        body: |-
+          You can block or delete cookies in your browser settings. If you block the cookies needed to run the service, sign-in, checkout, and some ticket features may not work.
+
+          Questions can go to {{support_email}}.
+  accessibility:
+    title: Accessibility Statement
+    summary: |-
+      Our accessibility goals for {{platform_name}}, the known limitations, and how to get help or report a barrier. Draft pending legal review.
+    sections:
+      - heading: Our goal
+        body: |-
+          We want everyone to be able to find events, buy tickets, and get in the door using {{platform_name}}. We aim to meet the Web Content Accessibility Guidelines (WCAG) 2.1 at Level AA, and to follow WCAG 2.2 where practical.
+      - heading: What we support
+        body: |-
+          {{platform_name}} is designed to work on phones and desktop computers. Pages can be used with a keyboard and include labels for screen readers. Animations are reduced if you've turned on reduced motion in your device settings.
+      - heading: Known limitations
+        body: |-
+          Seat maps for events with assigned seating may be harder to use with a screen reader. If you have trouble choosing seats, contact us and we will help you complete your order.
+
+          Images and PDFs uploaded by organizers may not include text descriptions. We are working to improve this.
+      - heading: Accessibility at events
+        body: |-
+          Each organizer is responsible for accessibility at its venue and event. Where the organizer provides it, accessibility information is shown on the event page. For events with assigned seating, organizers confirm whether accessible seating is available. For questions about a specific venue, contact the organizer or ask us to pass your question on.
+      - heading: Get help or report a barrier
+        body: |-
+          If something on {{platform_name}} is hard to use, or you need help buying tickets, contact us at {{support_email}}. Tell us the page and what happened. We aim to respond within 5 business days.

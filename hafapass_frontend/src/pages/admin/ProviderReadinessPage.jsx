@@ -108,6 +108,15 @@ function CapabilityCard({ item, refresh, identity }) {
         <div>
           <h2 id={`${item.capability}-heading`} className="text-lg font-bold text-neutral-900">{item.label}</h2>
           <p className="mt-1 text-sm text-neutral-600">Setup {item.configured ? 'is complete' : 'is not finished'}. Credentials alone never turn this on; it also needs an approved review.</p>
+          {item.policy_documents && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="policy-register-draft">
+              <p className="font-semibold">
+                Version {item.policy_documents.version}
+                {item.policy_documents.status === 'approved' ? '' : ' · Draft pending legal review (not approved by counsel)'}
+              </p>
+              <p className="mt-1 text-amber-900">{item.policy_documents.documents.map(document => document.title).join(', ')}</p>
+            </div>
+          )}
         </div>
         <StatusBadge item={item} />
       </div>

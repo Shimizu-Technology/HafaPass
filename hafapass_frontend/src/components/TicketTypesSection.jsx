@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Minus, Plus, ShoppingCart, Clock, Zap } from 'lucide-react'
-import { formatTicketPrice, ticketPriceCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
+import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFeeCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
 
+// Rows and the buy button lead with all-in prices (ticket + the buyer's
+// service fee), with the breakdown as a smaller secondary line.
 export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
   const { t } = useTranslation()
   const [quantities, setQuantities] = useState({})
@@ -16,11 +18,9 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
     : Math.max(0, Math.min(tt.max_per_order || 10, tt.max_per_buyer || Infinity, remainingTickets(tt) ?? 0))
   const getClampedQty = (tt) => Math.min(getQty(tt.id), getMaxQty(tt))
 
-  // Use current_price_cents if available, fallback to price_cents
-  const getPrice = ticketPriceCents
-
   const totalSelected = ticketTypes.reduce((sum, tt) => sum + getClampedQty(tt), 0)
-  const totalCents = ticketTypes.reduce((sum, tt) => sum + (getClampedQty(tt) * getPrice(tt)), 0)
+  const totalCents = ticketTypes.reduce((sum, tt) => sum + (getClampedQty(tt) * ticketAllInCents(tt)), 0)
+  const totalFeeCents = ticketTypes.reduce((sum, tt) => sum + (getClampedQty(tt) * ticketServiceFeeCents(tt)), 0)
 
   const handleCheckout = () => {
     const lineItems = ticketTypes
@@ -47,8 +47,11 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
           const soldOut = getMaxQty(tt) === 0
           const maxQty = getMaxQty(tt)
           const qty = getClampedQty(tt)
-          const currentPrice = getPrice(tt)
-          const hasDiscount = tt.active_tier && currentPrice < tt.price_cents
+          const basePrice = ticketPriceCents(tt)
+          const currentPrice = ticketAllInCents(tt)
+          const feeCents = ticketServiceFeeCents(tt)
+          const regularPrice = Number.isSafeInteger(tt.regular_all_in_price_cents) ? tt.regular_all_in_price_cents : tt.price_cents
+          const hasDiscount = tt.active_tier && basePrice < tt.price_cents
 
           return (
             <div key={tt.id} className={`card p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
@@ -70,11 +73,16 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                           {tt.active_tier.name} — {formatPrice(currentPrice)}
                         </p>
                         {hasDiscount && (
-                          <p className="text-xs text-neutral-600 line-through">{formatPrice(tt.price_cents)}</p>
+                          <p className="text-xs text-neutral-600 line-through">{formatPrice(regularPrice)}</p>
                         )}
                       </div>
                     ) : (
                       <p className="text-sm font-semibold text-neutral-900">{formatPrice(currentPrice)}</p>
+                    )}
+                    {feeCents > 0 && (
+                      <p className="text-xs text-neutral-500">
+                        {t('pricing.ticketPlusFee', { price: formatTicketPrice(basePrice), fee: formatTicketPrice(feeCents) })}
+                      </p>
                     )}
                   </div>
 
@@ -99,7 +107,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                   {/* Next tier info */}
                   {tt.next_tier && (
                     <p className="text-xs text-neutral-600 mt-1">
-                      {t('pricing.regularPrice', { price: formatPrice(tt.next_tier.price_cents) })}
+                      {t('pricing.regularPrice', { price: formatPrice(Number.isSafeInteger(tt.next_tier.all_in_price_cents) ? tt.next_tier.all_in_price_cents : tt.next_tier.price_cents) })}
                     </p>
                   )}
                 </div>
@@ -130,10 +138,17 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
       </div>
 
       {totalSelected > 0 && (
-        <button onClick={handleCheckout} className="w-full mt-5 btn-primary text-base !py-4 gap-2">
-          <ShoppingCart className="w-5 h-5" />
-          {t('eventDetail.buyTickets')} &mdash; {formatPrice(totalCents)}
-        </button>
+        <>
+          <button onClick={handleCheckout} className="w-full mt-5 btn-primary text-base !py-4 gap-2">
+            <ShoppingCart className="w-5 h-5" />
+            {t('eventDetail.buyTickets')} &mdash; {formatPrice(totalCents)}
+          </button>
+          {totalFeeCents > 0 && (
+            <p className="mt-2 text-center text-xs text-neutral-500" data-testid="buy-total-fee">
+              {t('pricing.includesFee', { fee: formatTicketPrice(totalFeeCents) })}
+            </p>
+          )}
+        </>
       )}
     </div>
   )

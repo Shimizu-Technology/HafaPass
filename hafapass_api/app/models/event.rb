@@ -297,11 +297,7 @@ class Event < ApplicationRecord
   def live_money_proof_candidate_configured?
     types = ticket_types.to_a
     type = types.one? ? types.first : nil
-    settings = SiteSetting.instance
-    buyer_fee = if type
-      platform_fee = (type.price_cents * (settings.service_fee_percent / 100.0)).round + settings.service_fee_flat_cents
-      (platform_fee * buyer_fee_percent / 100.0).round
-    end
+    buyer_fee = Commerce::ServiceFee.for_event(self, type.price_cents).buyer_fee_cents if type
     live_money_proof_candidate? && title.start_with?("[LIVE MONEY TEST]") && max_capacity == 1 &&
       type.present? && type.price_cents.between?(1, 500) && type.quantity_available == 1 &&
       type.price_cents + buyer_fee <= LiveMoneyProofAuthorization::MAX_AMOUNT_CENTS && type.max_per_order == 1 &&

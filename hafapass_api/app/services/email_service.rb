@@ -491,6 +491,7 @@ class EmailService
         HTML
       end
 
+      seller = SellerIdentity.for_event(event)
       email_wrapper("Order Confirmed") do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Your tickets are confirmed!</h2>
@@ -499,15 +500,21 @@ class EmailService
           <div style="background: #f3f4f6; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
             <h3 style="color: #1f2937; margin: 0 0 8px;">#{h(event.title)}</h3>
             <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
-            <p style="color: #6b7280; margin: 0;">#{h(event.venue_name)}</p>
+            <p style="color: #6b7280; margin: 0 0 8px;">#{h(event.venue_name)}</p>
+            <p style="color: #6b7280; margin: 0; font-size: 13px;">#{h(seller.line)}</p>
           </div>
 
           <div style="margin-bottom: 28px;">
             <h3 style="color: #1f2937; margin: 0 0 12px;">Order Summary</h3>
+            <p style="color: #6b7280; margin: 0 0 4px;">Order #{h(order.reference)}</p>
             <p style="color: #6b7280; margin: 0 0 4px;">Subtotal: $#{format_cents(order.subtotal_cents)}</p>
             #{discount_row}
-            <p style="color: #6b7280; margin: 0 0 4px;">Service Fee: $#{format_cents(order.service_fee_cents)}</p>
-            <p style="color: #1f2937; font-weight: 600; margin: 0;"><strong>Total: $#{format_cents(order.total_cents)}</strong></p>
+            <p style="color: #6b7280; margin: 0 0 4px;">Service fee: $#{format_cents(order.service_fee_cents)}</p>
+            <p style="color: #1f2937; font-weight: 600; margin: 0;"><strong>Total paid: $#{format_cents(order.total_cents)}</strong></p>
+            <p style="color: #9ca3af; margin: 12px 0 0; font-size: 12px; line-height: 1.5;">
+              Event seller: #{h(seller.seller_name)}. Ticketing service: #{h(seller.ticketing_service)}, operated by
+              #{h(seller.operator_name)}, which sells these tickets as the organizer's agent and collects the service fee.
+            </p>
           </div>
 
           #{tickets_section}
@@ -534,6 +541,7 @@ class EmailService
             </p>
 
             <p style="color: #6b7280; font-size: 14px; margin: 0;">Present your QR code at the door for entry.</p>
+            <p style="color: #9ca3af; font-size: 12px; margin: 16px 0 0;">#{h(SellerIdentity.for_event(event).line)}</p>
             #{pdf_attachment_note(pdfs)}
           </div>
         HTML

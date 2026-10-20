@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import TicketTypesSection from './TicketTypesSection'
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }))
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key, options) => options ? `${key} ${JSON.stringify(options)}` : key }) }))
 
 describe('ticket selection with changing availability', () => {
   it('clears closed selections from the displayed total and checkout request', async () => {
@@ -42,5 +42,28 @@ describe('ticket selection with changing availability', () => {
       expect(price).toHaveClass('text-neutral-900', 'font-semibold')
       expect(price.className).not.toMatch(/accent|red|action/)
     }
+  })
+
+  it('leads with all-in prices and totals, with the fee as a secondary line', async () => {
+    const checkout = vi.fn()
+    render(<TicketTypesSection ticketTypes={[
+      { id: 1, name: 'General', price_cents: 1999, current_price_cents: 1999, all_in_price_cents: 2199, service_fee_cents: 200, quantity_remaining: 9, on_sale: true },
+      { id: 2, name: 'Child', price_cents: 0, current_price_cents: 0, all_in_price_cents: 0, service_fee_cents: 0, quantity_remaining: 9, on_sale: true },
+    ]} onCheckout={checkout} />)
+    expect(screen.getByText('$21.99')).toHaveClass('font-semibold')
+    expect(screen.getByText(/pricing.ticketPlusFee/)).toHaveTextContent('"price":"$19.99","fee":"$2.00"')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Increase quantity for General' }))
+    await user.click(screen.getByRole('button', { name: 'Increase quantity for General' }))
+    await user.click(screen.getByRole('button', { name: 'Increase quantity for Child' }))
+    expect(screen.getByRole('button', { name: /eventDetail.buyTickets/ })).toHaveTextContent('$43.98')
+    expect(screen.getByTestId('buy-total-fee')).toHaveTextContent('"fee":"$4.00"')
+  })
+  it('shows the ticket price alone, with no fee line, when the organizer absorbs the fee', () => {
+    render(<TicketTypesSection ticketTypes={[
+      { id: 1, name: 'General', price_cents: 2500, current_price_cents: 2500, all_in_price_cents: 2500, service_fee_cents: 0, quantity_remaining: 9, on_sale: true },
+    ]} onCheckout={vi.fn()} />)
+    expect(screen.getByText('$25.00')).toBeInTheDocument()
+    expect(screen.queryByText(/pricing.ticketPlusFee/)).not.toBeInTheDocument()
   })
 })

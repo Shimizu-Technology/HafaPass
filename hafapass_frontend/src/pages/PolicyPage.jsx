@@ -14,6 +14,7 @@ export default function PolicyPage() {
     apiClient.get('/config')
       .then(response => setRegistry({
         version: response.data.buyer_terms_version,
+        status: response.data.policy_status,
         policies: response.data.policies || {},
       }))
       .catch(() => setError(true))
@@ -37,30 +38,39 @@ export default function PolicyPage() {
 
   const content = registry.policies[policy]
   if (!content) return <Navigate to="/policies/buyer-terms" replace />
+  // Treat anything the server does not explicitly mark approved as a draft.
+  const draft = registry.status !== 'approved'
 
   return (
     <main className="min-h-screen bg-neutral-50 px-4 py-12">
       <SEO title={`${content.title} — HåfaPass`} description={content.summary} />
       <article className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-800">Pilot policy · version {registry.version}</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-800">{draft ? 'Draft policy' : 'Policy'} · version {registry.version}</p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-neutral-950">{content.title}</h1>
         <p className="mt-4 text-base leading-7 text-neutral-600">{content.summary}</p>
-        <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900" role="note">
-          This is an engineering-ready pilot draft, not a representation of completed legal approval. Production sales remain blocked until Guam/US counsel, privacy, accounting, and payment-provider reviewers approve and date the governing documents.
-        </div>
+        {draft && (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900" role="note">
+            Draft pending legal review. This text has not yet been approved by Guam or US counsel, and notes in square brackets mark points still to be confirmed.
+          </div>
+        )}
         <div className="mt-8 space-y-7">
           {content.sections.map(section => (
             <section key={section.heading}>
               <h2 className="text-lg font-semibold text-neutral-900">{section.heading}</h2>
-              <p className="mt-2 leading-7 text-neutral-600">{section.body}</p>
+              {String(section.body).split(/\n\s*\n/).map((paragraph, index) => (
+                <p key={index} className="mt-2 leading-7 text-neutral-600">{paragraph}</p>
+              ))}
             </section>
           ))}
         </div>
-        <p className="mt-10 border-t border-neutral-200 pt-6 text-sm text-neutral-700">
-          See also <Link className="text-brand-800 underline" to="/policies/privacy">Privacy</Link>,{' '}
-          <Link className="text-brand-800 underline" to="/policies/refunds">Refunds</Link>, and{' '}
-          <Link className="text-brand-800 underline" to="/policies/acceptable-use">Acceptable Use</Link>.
-        </p>
+        <nav aria-label="Other policies" className="mt-10 border-t border-neutral-200 pt-6 text-sm text-neutral-700">
+          <p className="font-semibold text-neutral-900">Other policies</p>
+          <ul className="mt-2 flex flex-wrap gap-x-4">
+            {Object.entries(registry.policies).filter(([key]) => key !== policy).map(([key, document]) => (
+              <li key={key}><Link className="inline-flex min-h-11 items-center text-brand-800 underline" to={`/policies/${key}`}>{document.title}</Link></li>
+            ))}
+          </ul>
+        </nav>
       </article>
     </main>
   )

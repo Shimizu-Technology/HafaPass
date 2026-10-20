@@ -44,6 +44,8 @@ export default function Footer() {
               <li><Link to="/policies/privacy" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.privacy')}</Link></li>
               <li><Link to="/policies/buyer-terms" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Buyer Terms</Link></li>
               <li><Link to="/policies/refunds" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Refunds</Link></li>
+              <li><Link to="/policies/accessibility" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Accessibility</Link></li>
+              <li><Link to="/policies/cookies" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Cookies</Link></li>
             </ul>
           </div>
 
