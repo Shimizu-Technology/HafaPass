@@ -189,7 +189,7 @@ class EmailService
       event = order.event
       tickets = order.tickets.includes(:ticket_type).reject { |ticket| ticket.transferred_away_from?(order) }
       html = build_order_confirmation_html(order, event, tickets)
-      subject = safe_subject("Your HafaPass Tickets - #{event.title}")
+      subject = safe_subject("Your HåfaPass Tickets - #{event.title}")
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "order_confirmation", delivery: delivery,
         order_id: order.id)
@@ -201,7 +201,7 @@ class EmailService
       html = build_order_recovery_html(order)
       deliver(
         to: order.buyer_email,
-        subject: "Access your HafaPass order #{order.reference}",
+        subject: "Access your HåfaPass order #{order.reference}",
         html: html,
         tag: "order_recovery",
         delivery: delivery, order_id: order.id
@@ -263,7 +263,7 @@ class EmailService
       url = "#{frontend_url}/ticket-transfers/accept?token=#{ERB::Util.url_encode(TicketTransferCredential.issue(transfer))}"
       html = email_wrapper("Ticket transfer") do
         <<~HTML
-          <h2 style="color:#1f2937">A HafaPass ticket was sent to you</h2>
+          <h2 style="color:#1f2937">A HåfaPass ticket was sent to you</h2>
           <p style="color:#6b7280">#{h(transfer.ticket.event.title)} — #{h(transfer.ticket.ticket_type.name)}</p>
           <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">Accept ticket</a></p>
           <p style="color:#6b7280;font-size:14px">Sign in using #{h(transfer.recipient_email)}. This link expires #{h(transfer.expires_at.iso8601)}.</p>
@@ -367,7 +367,7 @@ class EmailService
       params = { from: FROM_EMAIL, to: delivery ? delivery.recipient : to, subject: subject, html: html }
       reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
       params[:reply_to] = reply_to if reply_to
-      params[:subject] = "[HafaPass TEST] #{subject}" if ProviderRehearsal.enabled?
+      params[:subject] = "[HåfaPass TEST] #{subject}" if ProviderRehearsal.enabled?
       params[:tags] = [{ name: "category", value: tag }] if tag.present?
       return params.deep_stringify_keys if delivery&.preparing_outbound_payload
 
@@ -414,13 +414,13 @@ class EmailService
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background-color: #f9fafb;">
           <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <div style="background: linear-gradient(135deg, #0e7c7b 0%, #14a3a1 100%); padding: 28px; text-align: center;">
-              <h1 style="color: white; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px;">HafaPass</h1>
+              <h1 style="color: white; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px;">HåfaPass</h1>
             </div>
             <div style="padding: 36px 28px;">
               #{content}
             </div>
             <div style="background: #f9fafb; padding: 20px 28px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="color: #9ca3af; margin: 0; font-size: 12px;">Powered by HafaPass &middot; Shimizu Technology</p>
+              <p style="color: #9ca3af; margin: 0; font-size: 12px;">Powered by HåfaPass &middot; Shimizu Technology</p>
             </div>
           </div>
         </body>
@@ -514,7 +514,7 @@ class EmailService
       link = order_access_url(order)
       email_wrapper("Order access") do
         <<~HTML
-          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Access your HafaPass order</h2>
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Access your HåfaPass order</h2>
           <p style="color: #6b7280; margin: 0 0 24px;">Use the secure link below to view the latest payment and ticket status for order #{ERB::Util.html_escape(order.reference)}.</p>
           <p style="margin: 0 0 20px;">
             <a href="#{link}" style="display: inline-block; background: #0e7c7b; color: white; padding: 14px 28px; border-radius: 10px; text-decoration: none; font-weight: 600;">View Order</a>

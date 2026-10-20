@@ -12,7 +12,7 @@ class SiteSetting < ApplicationRecord
     first_or_create!(
       singleton_guard: 0,
       payment_mode: "simulate",
-      platform_name: "HafaPass",
+      platform_name: "HåfaPass",
       platform_email: "tickets@hafapass.com",
       service_fee_percent: 3.0,
       service_fee_flat_cents: 50

@@ -78,7 +78,7 @@ class Api::V1::OrdersController < ApplicationController
 
       unless ActiveModel::Type::Boolean.new.cast(params[:terms_accepted]) &&
           params[:terms_version].to_s == PolicyRegistry.buyer_terms[:version]
-        return render_checkout_rejection("Accept the current HafaPass buyer terms before checkout", status: :unprocessable_entity)
+        return render_checkout_rejection("Accept the current HåfaPass buyer terms before checkout", status: :unprocessable_entity)
       end
 
       proof_authorization = proof_authorization_for(event)

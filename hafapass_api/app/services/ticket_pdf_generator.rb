@@ -82,7 +82,7 @@ class TicketPdfGenerator
     # Title
     pdf.fill_color DARK_TEXT
     pdf.font "TicketSans", style: :bold, size: 20
-    pdf.text "HafaPass", color: BRAND_TEAL
+    pdf.text "HåfaPass", color: BRAND_TEAL
     pdf.move_down 4
 
     pdf.fill_color MUTED_TEXT
@@ -181,7 +181,7 @@ class TicketPdfGenerator
     pdf.text Rails.env.production? ? "Present this QR code at the door" : "For testing only - no real event admission", align: :center
     pdf.move_down 4
     pdf.font "TicketSans", size: 7
-    pdf.text "Powered by HafaPass", align: :center, color: "9CA3AF"
+    pdf.text "Powered by HåfaPass", align: :center, color: "9CA3AF"
   end
 
   def format_date(datetime)

@@ -5,7 +5,7 @@ class OgController < ApplicationController
     event = Event.publicly_visible.find_by!(slug: params[:slug])
 
     title = event.title
-    description = (event.short_description || event.description || "Get tickets on HafaPass").truncate(160)
+    description = (event.short_description || event.description || "Get tickets on HåfaPass").truncate(160)
     image_url = event.cover_image_url || "#{PublicSiteUrl.base}/og-default.jpg"
     canonical_url = PublicSiteUrl.event(event)
 
@@ -14,7 +14,7 @@ class OgController < ApplicationController
       <html lang="en">
       <head>
         <meta charset="UTF-8" />
-        <title>#{ERB::Util.html_escape(title)} | HafaPass</title>
+        <title>#{ERB::Util.html_escape(title)} | HåfaPass</title>
         <meta name="description" content="#{ERB::Util.html_escape(description)}" />
 
         <meta property="og:title" content="#{ERB::Util.html_escape(title)}" />
@@ -22,7 +22,7 @@ class OgController < ApplicationController
         <meta property="og:image" content="#{ERB::Util.html_escape(image_url)}" />
         <meta property="og:url" content="#{ERB::Util.html_escape(canonical_url)}" />
         <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="HafaPass" />
+        <meta property="og:site_name" content="HåfaPass" />
 
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="#{ERB::Util.html_escape(title)}" />
@@ -32,7 +32,7 @@ class OgController < ApplicationController
         <script>window.location.replace("#{canonical_url}");</script>
       </head>
       <body>
-        <p>Redirecting to <a href="#{ERB::Util.html_escape(canonical_url)}">#{ERB::Util.html_escape(title)} on HafaPass</a>...</p>
+        <p>Redirecting to <a href="#{ERB::Util.html_escape(canonical_url)}">#{ERB::Util.html_escape(title)} on HåfaPass</a>...</p>
       </body>
       </html>
     HTML

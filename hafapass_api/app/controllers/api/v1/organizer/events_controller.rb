@@ -18,8 +18,8 @@ module Api
           end
           query = params[:q].to_s.strip.first(200)
           if query.present?
-            pattern = "%#{Event.sanitize_sql_like(query)}%"
-            events = events.where("events.title ILIKE :q OR events.venue_name ILIKE :q OR events.slug ILIKE :q OR CAST(events.id AS TEXT) = :id", q: pattern, id: query)
+            matches = events.accent_insensitive_search(query, :title, :venue_name, :slug)
+            events = query.match?(/\A\d+\z/) ? matches.or(events.where(id: query.to_i)) : matches
           end
           events = filter_and_order_index(events)
           pagy, paginated_events = paginate(events, items: params.fetch(:per_page, 20).to_i.clamp(1, 100))

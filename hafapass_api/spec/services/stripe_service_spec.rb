@@ -19,6 +19,8 @@ RSpec.describe StripeService do
     allow(Stripe::StripeClient).to receive(:new).with("rk_test_cards").and_return(client)
     expect(intents).to receive(:create) do |params, options|
       expect(params).to include(allowed_payment_method_types: ["card"], amount: order.total_cents, currency: "usd")
+      # Retries reuse the idempotency key, so the description must stay byte-identical.
+      expect(params[:description]).to eq("HafaPass tickets for #{order.event.title}")
       %i[automatic_payment_methods payment_method_types excluded_payment_method_types payment_method_configuration].each do |field|
         expect(params).not_to have_key(field)
       end

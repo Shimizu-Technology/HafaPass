@@ -3,24 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>HafaPass — Your Pass to Every Event on Guam</title>
-    <meta name="description" content="Discover events, buy tickets, and check in with your phone. The modern ticketing platform built for Guam — nightlife, concerts, festivals, dining, sports, and more." />
-    <meta name="keywords" content="Guam, events, tickets, nightlife, concerts, festivals, HafaPass, island events, Guam entertainment" />
+    <title>HåfaPass — Your Pass to Every Event on Guam</title>
+    <meta name="description" content="HåfaPass (HafaPass) — discover events, buy tickets, and check in with your phone. The modern ticketing platform built for Guam — nightlife, concerts, festivals, dining, sports, and more." />
+    <meta name="keywords" content="Guam, events, tickets, nightlife, concerts, festivals, HåfaPass, HafaPass, Hafa Pass, island events, Guam entertainment" />
 
     <!-- Favicon — ticket icon in brand teal -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230e7c7b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z'/%3E%3Cpath d='M13 5v2'/%3E%3Cpath d='M13 17v2'/%3E%3Cpath d='M13 11v2'/%3E%3C/svg%3E" />
 
     <!-- Open Graph -->
-    <meta property="og:title" content="HafaPass — Your Pass to Every Event on Guam" />
+    <meta property="og:title" content="HåfaPass — Your Pass to Every Event on Guam" />
     <meta property="og:description" content="Discover events, buy tickets, and check in with your phone. The modern ticketing platform built for Guam." />
     <meta property="og:image" content="https://hafapass.com/icons/icon-512.png" />
     <meta property="og:url" content="https://hafapass.com" />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="HafaPass" />
+    <meta property="og:site_name" content="HåfaPass" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="HafaPass — Your Pass to Every Event on Guam" />
+    <meta name="twitter:title" content="HåfaPass — Your Pass to Every Event on Guam" />
     <meta name="twitter:description" content="Discover events, buy tickets, and check in with your phone. The modern ticketing platform built for Guam." />
     <meta name="twitter:image" content="https://hafapass.com/icons/icon-512.png" />
 
@@ -34,17 +34,32 @@
 
     <!-- Additional SEO & PWA -->
     <link rel="canonical" href="https://hafapass.com/" />
-    <meta name="apple-mobile-web-app-title" content="HafaPass" />
+    <meta name="apple-mobile-web-app-title" content="HåfaPass" />
     <meta name="msapplication-TileColor" content="#0e7c7b" />
 
     <!-- Structured Data -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "HafaPass",
-      "url": "https://hafapass.com",
-      "description": "Discover and purchase tickets for events across Guam"
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://hafapass.com/#organization",
+          "name": "HåfaPass",
+          "alternateName": ["HafaPass", "Hafa Pass"],
+          "url": "https://hafapass.com",
+          "logo": "https://hafapass.com/icons/icon-512.png"
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://hafapass.com/#website",
+          "name": "HåfaPass",
+          "alternateName": ["HafaPass", "Hafa Pass"],
+          "url": "https://hafapass.com",
+          "description": "Discover and purchase tickets for events across Guam",
+          "publisher": { "@id": "https://hafapass.com/#organization" }
+        }
+      ]
     }
     </script>
   </head>
