@@ -31,7 +31,7 @@ describe('FeePolicyPanel', () => {
 
     await user.click(screen.getByRole('radio', { name: /I cover the fee/ }))
     expect(screen.getByTestId('fee-example')).toHaveTextContent('buyer pays $25.00, you receive $22.75.')
-    expect(screen.getByTestId('fee-terms-note')).toHaveTextContent('HåfaPass covers card processing out of this fee.')
+    expect(screen.getByTestId('fee-terms-note')).toHaveTextContent('HåfaPass covers card processing on tickets out of this fee.')
 
     await user.click(screen.getByRole('radio', { name: /Split the fee/ }))
     const share = screen.getByLabelText('Buyer share of the fee (%)')
@@ -64,6 +64,13 @@ describe('FeePolicyPanel', () => {
     expect(await screen.findByTestId('fee-example')).toHaveTextContent('you receive $25.00 before card processing.')
     expect(screen.getByRole('radio', { name: /Buyer pays the fee/ })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Save fee choice' })).not.toBeInTheDocument()
+  })
+
+  it('never reports unsaved changes to a read-only viewer, even when the saved share is inconsistent', async () => {
+    const onDirtyChange = vi.fn()
+    mount({ canEdit: false, onDirtyChange, event: { fee_policy: 'buyer_pays', buyer_fee_percent: 40 } })
+    await screen.findByTestId('fee-example')
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true)
   })
 
   it('offers a retry instead of a guessed example when fee terms cannot load', async () => {

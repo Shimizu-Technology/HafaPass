@@ -26,10 +26,11 @@ module Settlements
       platform_fees = [platform_fee_components.sum(&:amount_cents) - refunded_fees, 0].max
       organizer_proceeds = [order_items.sum(&:organizer_proceeds_cents) - refunded_proceeds, 0].max
       # Actual processing on an order whose bearer snapshot is "platform" is
-      # paid by HåfaPass out of its fee and never reduces organizer proceeds.
-      # Legacy (NULL) and "organizer" orders keep the original deduction.
-      processing_fees = organizer_processing_fee_components.sum(&:amount_cents)
-      platform_processing_fees = platform_processing_fee_components.sum(&:amount_cents)
+      # split by charged amount: HåfaPass covers the ticket share (which earns
+      # its fee) and the organizer bears the share for add-ons and donations.
+      # Legacy (NULL) and "organizer" orders keep the full original deduction.
+      processing_fees = processing_fee_components.sum { |component| processing_split(component).last }
+      platform_processing_fees = processing_fee_components.sum { |component| processing_split(component).first }
       dispute_losses = lost_disputes.sum(&:amount_cents)
       reserve_effect = posted_adjustments.select { |adjustment| reserve_kind?(adjustment) }.sum(&:amount_cents)
       reserves = [-reserve_effect, 0].max
@@ -122,12 +123,28 @@ module Settlements
       @platform_processing_order_ids ||= Set.new(orders.select(&:platform_bears_processing?).map(&:id))
     end
 
-    def platform_processing_fee_components
-      processing_fee_components.select { |component| platform_processing_order_ids.include?(component.order_id) }
+    # [platform_cents, organizer_cents] for one actual processing cost. For a
+    # platform-bearer order the cost is allocated pro rata by charged amount:
+    # ticket lines (subtotal - discount + buyer fee + tax) to the platform,
+    # catalog/add-on/donation lines to the organizer. Rounding cents fall on
+    # the platform share. All of it stays with the organizer for other orders.
+    def processing_split(component)
+      @processing_splits ||= {}
+      @processing_splits[component.id] ||= if platform_processing_order_ids.include?(component.order_id)
+        ticket_cents, other_cents = charged_by_line_kind.fetch(component.order_id, [0, 0])
+        platform, organizer = Commerce::MoneyAllocator.call(component.amount_cents, [ticket_cents, other_cents])
+        platform + organizer == component.amount_cents ? [platform, organizer] : [component.amount_cents, 0]
+      else
+        [0, component.amount_cents]
+      end
     end
 
-    def organizer_processing_fee_components
-      processing_fee_components.reject { |component| platform_processing_order_ids.include?(component.order_id) }
+    def charged_by_line_kind
+      @charged_by_line_kind ||= order_items.group_by(&:order_id).transform_values do |items|
+        charged = ->(item) { item.subtotal_cents - item.discount_cents + item.fee_cents + item.tax_cents }
+        tickets, others = items.partition(&:item_ticket?)
+        [tickets.sum(&charged), others.sum(&charged)]
+      end
     end
 
     def lost_disputes
@@ -224,18 +241,20 @@ module Settlements
       end
     end
 
-    # The statement still binds the actual cost into its digest, but with no
-    # effect on the organizer: the platform's fee revenue absorbs it, even when
-    # the cost exceeds the fee collected on that order.
+    # The statement binds the actual cost into its digest. Only the organizer
+    # share (add-ons and donations) affects the organizer; the platform's fee
+    # revenue absorbs the ticket share, even when it exceeds the fee collected.
     def platform_processing_item(component)
+      platform_cents, organizer_cents = processing_split(component)
       statement_item(
         kind: "processing_fee",
-        amount_cents: 0,
+        amount_cents: -organizer_cents,
         source: component,
-        description: "Card processing covered by HåfaPass",
+        description: organizer_cents.zero? ? "Card processing covered by HåfaPass" :
+          "Card processing on add-ons and donations; HåfaPass covers the ticket share",
         occurred_at: component.updated_at,
         metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
-          processing_fee_bearer: "platform", platform_cost_cents: component.amount_cents }
+          processing_fee_bearer: "platform", platform_cost_cents: platform_cents, organizer_cost_cents: organizer_cents }
       )
     end
 

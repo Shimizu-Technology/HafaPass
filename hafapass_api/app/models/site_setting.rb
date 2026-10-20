@@ -42,6 +42,34 @@ class SiteSetting < ApplicationRecord
     first!
   end
 
+  LEGACY_SERVICE_FEE_PERCENT = 3.0
+  LEGACY_SERVICE_FEE_FLAT_CENTS = 50
+
+  # Post-deploy step (`bin/rails hafapass:adopt_launch_fee_terms`): move a row
+  # still holding the untouched 3% + 50¢ defaults to the all-in launch fee.
+  # Idempotent; an admin-chosen fee is never overwritten. Returns :adopted,
+  # :already_adopted or :custom.
+  def self.adopt_launch_fee_terms!(actor: nil)
+    transaction do
+      settings = instance
+      settings.lock!
+      fee = [settings.service_fee_percent.to_d, settings.service_fee_flat_cents]
+      if fee == [DEFAULT_SERVICE_FEE_PERCENT.to_d, DEFAULT_SERVICE_FEE_FLAT_CENTS]
+        :already_adopted
+      elsif fee != [LEGACY_SERVICE_FEE_PERCENT.to_d, LEGACY_SERVICE_FEE_FLAT_CENTS]
+        :custom
+      else
+        settings.update!(service_fee_percent: DEFAULT_SERVICE_FEE_PERCENT, service_fee_flat_cents: DEFAULT_SERVICE_FEE_FLAT_CENTS)
+        AuditLogger.record!(action: "site_settings.fee_terms_updated", auditable: settings, actor: actor,
+          before_data: { "service_fee_percent" => fee.first.to_s, "service_fee_flat_cents" => fee.last.to_s },
+          after_data: { "service_fee_percent" => settings.service_fee_percent.to_s,
+            "service_fee_flat_cents" => settings.service_fee_flat_cents.to_s },
+          metadata: { "source" => "hafapass:adopt_launch_fee_terms" })
+        :adopted
+      end
+    end
+  end
+
   # ── Mode helpers ────────────────────────────────────────────────────
   def simulate_mode?
     payment_mode == "simulate"

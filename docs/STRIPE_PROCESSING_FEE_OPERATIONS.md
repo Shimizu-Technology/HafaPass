@@ -8,19 +8,21 @@ The default buyer fee is all-in: 5% of the paid ticket subtotal plus $1.00 per p
 
 `SiteSetting#processing_fee_bearer` holds the current rule:
 
-- `platform` (default): actual processing on the order is attributed to HåfaPass's fee revenue and never reduces organizer proceeds.
+- `platform` (default): actual processing on the order's ticket lines is attributed to HåfaPass's fee revenue and never reduces organizer proceeds. Add-on, merchandise, concession and donation lines earn no HåfaPass fee, so their share stays with the organizer (see the allocation rule below).
 - `organizer`: the legacy rule. Actual processing is deducted from organizer proceeds.
 
-Every new order copies the current value into `orders.processing_fee_bearer_snapshot` at creation, alongside its fee policy, buyer-fee share and fee rate (the platform `FeeComponent` metadata also records the bearer). The column is read-only after creation. Settlement calculations read only this snapshot, never the live setting, so an admin change affects new orders only.
+Every new order copies the current value into `orders.processing_fee_bearer_snapshot` at creation. Orders created without a service fee (box office and door sales, comps, guest-list orders) always record `organizer`, because they earn no fee to cover processing. The snapshot is stored alongside its fee policy, buyer-fee share and fee rate (the platform `FeeComponent` metadata also records the bearer). The column is read-only after creation. Settlement calculations read only this snapshot, never the live setting, so an admin change affects new orders only.
 
-`NULL` marks an order created before the bearer was snapshotted. It is treated exactly like `organizer`, which was the behaviour at the time. Its settlement items, digests and totals are unchanged byte-for-byte. Migration `20261020120100` added the column without a default or backfill, so no existing order row or `updated_at` watermark changed.
+`NULL` marks an order created before the bearer was snapshotted. It is treated exactly like `organizer`, which was the behaviour at the time. Its settlement items, digests and totals are unchanged byte-for-byte. Migration `20261020200100` added the column without a default or backfill, so no existing order row or `updated_at` watermark changed. Its rollback raises `ActiveRecord::IrreversibleMigration` once any order has a recorded bearer, because dropping it would turn platform-bearer orders into legacy orders and deduct processing from organizers retroactively.
 
 How settlements show the cost:
 
 | Order bearer | Statement item (`processing_fee`) | `processing_fee_cents` | `platform_processing_fee_cents` |
 | --- | --- | --- | --- |
 | `NULL` or `organizer` | `-cost`, "Actual payment processing cost" (legacy wording and metadata, part of existing digests) | includes the cost | unchanged |
-| `platform` | `0`, "Card processing covered by HåfaPass", metadata `processing_fee_bearer: "platform"` and `platform_cost_cents` | unchanged | includes the cost |
+| `platform` | `-organizer share`; "Card processing covered by HåfaPass" when that share is zero, otherwise "Card processing on add-ons and donations; HåfaPass covers the ticket share". Metadata `processing_fee_bearer: "platform"`, `platform_cost_cents`, `organizer_cost_cents` | includes the organizer share | includes the platform share |
+
+For a `platform` order, each actual processing cost is allocated pro rata by charged amount. Ticket lines (subtotal − discount + buyer fee + tax) form the platform share; catalog lines (add-ons, merchandise, concessions, donations) form the organizer share. Rounding cents fall on the platform share. A $10.00 ticket with a $1.50 fee plus a $100.00 donation, charged $111.50 with a $3.53 processing cost, settles as $0.37 covered by HåfaPass and $3.16 deducted from the organizer. A donation-only order's processing is deducted in full.
 
 `processing_fee_cents` keeps its meaning: the processing deducted from organizer proceeds. Payable amounts, the organization payout balance and payout eligibility all use it. `platform_processing_fee_cents` records what HåfaPass covered; `Settlement#net_platform_fee_cents` is `platform_fee_cents - platform_processing_fee_cents`. That number can be negative, for example when a fully refunded order returns the whole fee but Stripe keeps the capture cost, or when an admin sets a fee below the processing cost. The platform absorbs the difference. The organizer is never charged for it. Existing settlements have `platform_processing_fee_cents = 0`, which is correct because no platform-borne processing existed before this change.
 
@@ -28,7 +30,17 @@ The platform-borne cost still appears as a zero-amount statement item, so a newl
 
 The bearer covers the original capture cost only. Refund and dispute fee adjustments still go through the finance review below. When finance records a balance adjustment for one of them, the adjustment itself decides who pays. For a `platform` order, do not post a `processing_fee` balance adjustment against the organizer for the original capture cost.
 
-Fee settings changes made through `PATCH /api/v1/admin/settings` are validated (percent 0–25, flat 0–1,000 cents per ticket, bearer `platform` or `organizer`, payout schedule text 1–200 characters) and audited as `site_settings.fee_terms_updated` with the before and after values. Migration `20261020120000` moved the singleton to 5% + 100 cents only when it still held the untouched 3% + 50 cents defaults. An admin-chosen fee was left alone. Rolling it back restores column defaults only and does not rewrite row values.
+Fee settings changes made through `PATCH /api/v1/admin/settings` are validated (percent 0–25, flat 0–1,000 cents per ticket, bearer `platform` or `organizer`, payout schedule text 1–200 characters) and audited as `site_settings.fee_terms_updated` with the before and after values. Migration `20261020200000` adds the bearer and payout-schedule columns and moves only the column defaults to 5% + 100 cents. It does not change the existing row's fee values: during a deploy the previous release may still be serving checkouts, and it would apply the new fee without snapshotting a bearer. Rolling it back restores column defaults only and does not rewrite row values.
+
+### Post-deploy: adopt the launch fee terms
+
+After the new release is serving every web and worker process, run once:
+
+```sh
+bin/rails hafapass:adopt_launch_fee_terms
+```
+
+The task locks the settings row and moves it to 5% + 100 cents per paid ticket only when it still holds the untouched 3% + 50 cents defaults. An admin-chosen fee is left alone, and terms that are already 5% + 100 cents are reported unchanged, so the task is safe to repeat. A change is audited as `site_settings.fee_terms_updated` with `metadata.source = "hafapass:adopt_launch_fee_terms"`. The task prints the resulting fee and bearer. Admins can also set the terms directly through the admin settings API.
 
 ## Capture reconciliation
 

@@ -15,6 +15,13 @@ class SnapshotProcessingFeeBearerOnOrders < ActiveRecord::Migration[8.1]
   end
 
   def down
+    # Dropping a recorded bearer would turn platform-bearer orders into legacy
+    # orders and retroactively deduct processing from organizer proceeds.
+    if select_value("SELECT 1 FROM orders WHERE processing_fee_bearer_snapshot IS NOT NULL LIMIT 1")
+      raise ActiveRecord::IrreversibleMigration,
+        "Orders have recorded processing-fee bearers; rolling back would restate their settlements"
+    end
+
     remove_check_constraint :orders, name: CONSTRAINT
     remove_column :orders, :processing_fee_bearer_snapshot
   end

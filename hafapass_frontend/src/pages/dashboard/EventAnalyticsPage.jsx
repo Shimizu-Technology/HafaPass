@@ -266,6 +266,7 @@ function EventAnalyticsPageSession({ id, identity }) {
      </div>
 
      <FeeTermsNote className="mt-4" feeTerms={feeTerms} feePolicy={event?.fee_policy} buyerFeePercent={event?.buyer_fee_percent} />
+     {feeTerms.terms?.bearer === 'platform' && finance.preview.processing_fee_cents > 0 && <p className="mt-2 text-sm text-neutral-600" data-testid="earlier-processing-note">{formatCents(finance.preview.processing_fee_cents)} in card processing is deducted from your proceeds. That covers orders placed under earlier terms, when card processing came out of organizer proceeds, and any add-ons or donations.</p>}
 
      {finance.preview.negative_balance_cents > 0 && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">A {formatCents(finance.preview.negative_balance_cents)} negative balance will be withheld from future organization payouts.</div>}
      {payoutNotice && <p role="status" className="mt-4 rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700">{payoutNotice}</p>}

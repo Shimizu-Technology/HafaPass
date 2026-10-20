@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -40,9 +40,11 @@ const CollectionsPage = lazy(() => import('./pages/CollectionsPage'))
 const CollectionPage = lazy(() => import('./pages/CollectionPage'))
 const VenuePage = lazy(() => import('./pages/VenuePage'))
 const OrganizerPage = lazy(() => import('./pages/OrganizerPage'))
+const HostPage = lazy(() => import('./pages/HostPage'))
 const DistributionRedirectPage = lazy(() => import('./pages/DistributionRedirectPage'))
 const SavedPage = lazy(() => import('./pages/SavedPage'))
 const SeatingManagementPage = lazy(() => import('./pages/dashboard/SeatingManagementPage'))
+const NotFound = lazy(() => import('./components/NotFound'))
 
 // Admin pages
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'))
@@ -74,6 +76,8 @@ function App() {
           <Route path="/collections/:slug" element={<CollectionPage />} />
           <Route path="/venues/:slug" element={<VenuePage />} />
           <Route path="/organizers/:slug" element={<OrganizerPage />} />
+          <Route path="/host" element={<HostPage />} />
+          <Route path="/pricing" element={<Navigate to="/host#pricing" replace />} />
           <Route path="/go/:code" element={<DistributionRedirectPage />} />
           <Route path="/refer/:code" element={<DistributionRedirectPage />} />
           <Route path="/checkout/:slug" element={<CheckoutPage />} />
@@ -111,6 +115,7 @@ function App() {
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </Suspense>

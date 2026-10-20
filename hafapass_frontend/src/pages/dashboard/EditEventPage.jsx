@@ -3,7 +3,7 @@ import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive } from 'lucide-react'
+import { AlertTriangle, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive, Link2 } from 'lucide-react'
 import EventAccessNotice from '../../components/EventAccessNotice'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
@@ -15,6 +15,7 @@ import FormErrorSummary from '../../components/FormErrorSummary'
 import { organizerChecklist } from '../../utils/organizerChecklist'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
+import { eventLinkFormatError, eventLinkUrl, normalizeEventLinkInput } from '../../utils/eventLink'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 
 const AGE_RESTRICTIONS = [
@@ -25,6 +26,7 @@ const AGE_RESTRICTIONS = [
 
 const eventForm = e => ({
   title: e.title || '',
+  slug: e.slug || '',
   short_description: e.short_description || '',
   description: e.description || '',
   category: e.category || 'other',
@@ -103,6 +105,7 @@ function EditEventSession({ id, identity }) {
 
   const [form, setForm] = useState({
     title: '',
+    slug: '',
     short_description: '',
     description: '',
     category: 'other',
@@ -201,6 +204,32 @@ function EditEventSession({ id, identity }) {
     setSuccessMessage(null)
   }
 
+  // The link name is checked against the API (reserved words and links other
+  // events use now or used before) shortly after the organizer stops typing.
+  const [linkCheck, setLinkCheck] = useState(null)
+  const linkSlug = form.slug.trim()
+  const linkChanged = Boolean(event) && linkSlug !== (event.slug || '')
+  const linkFormatError = linkChanged ? eventLinkFormatError(linkSlug) : null
+  useEffect(() => {
+    if (!linkChanged || linkFormatError) return undefined
+    const request = beginRequest()
+    if (!request) return undefined
+    const timer = setTimeout(async () => {
+      setLinkCheck({ slug: linkSlug, status: 'checking' })
+      try {
+        const res = await apiClient.get(`/organizer/events/${id}/slug_availability`, { ...request.config, params: { slug: linkSlug } })
+        if (request.current()) setLinkCheck({ slug: linkSlug, status: res.data.available ? 'available' : 'taken', message: res.data.message })
+      } catch {
+        if (request.current()) setLinkCheck({ slug: linkSlug, status: 'unknown' })
+      } finally {
+        request.release()
+      }
+    }, 400)
+    return () => { clearTimeout(timer); request.controller.abort(); request.release() }
+  }, [id, linkSlug, linkChanged, linkFormatError, beginRequest])
+  const currentLinkCheck = linkCheck?.slug === linkSlug ? linkCheck : null
+  const linkError = formErrors.slug || linkFormatError || (currentLinkCheck?.status === 'taken' ? currentLinkCheck.message : null)
+
   // Keep seconds in untouched API timestamps instead of rewriting them from
   // minute-precision inputs. Null explicitly clears an edited optional time.
   const scheduleChanges = Object.fromEntries(
@@ -213,6 +242,10 @@ function EditEventSession({ id, identity }) {
   const validate = () => {
     const errors = {}
     if (!form.title.trim()) errors.title = 'Title is required'
+    if (linkChanged) {
+      const linkProblem = linkFormatError || (currentLinkCheck?.status === 'taken' ? currentLinkCheck.message : null)
+      if (linkProblem) errors.slug = linkProblem
+    }
     if (canManage) {
       if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
       if (!form.starts_at) errors.starts_at = 'Start date/time is required'
@@ -252,6 +285,7 @@ function EditEventSession({ id, identity }) {
     try {
       const payload = {
         title: form.title.trim(),
+        ...(linkChanged ? { slug: linkSlug } : {}),
         short_description: form.short_description.trim() || null,
         description: form.description.trim() || null,
         category: form.category,
@@ -268,7 +302,7 @@ function EditEventSession({ id, identity }) {
         show_attendees: form.show_attendees
       }
       if (!canManage) {
-        const presentationFields = ['title', 'short_description', 'description', 'category', 'cover_image_url']
+        const presentationFields = ['title', 'slug', 'short_description', 'description', 'category', 'cover_image_url']
         Object.keys(payload).forEach(key => { if (!presentationFields.includes(key)) delete payload[key] })
       }
       if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
@@ -287,8 +321,16 @@ function EditEventSession({ id, identity }) {
       setSuccessMessage('Event updated successfully.')
     } catch (err) {
       if (!request.current()) return
-      const msg = err.response?.data?.errors?.join(', ') || err.response?.data?.error || 'Failed to update event'
-      setSubmitError(msg)
+      const errors = err.response?.data?.errors || []
+      const linkMessage = errors.find(message => message.startsWith('Event link'))
+      if (linkMessage) {
+        setFormErrors(prev => ({ ...prev, slug: linkMessage }))
+        requestAnimationFrame(() => { if (current()) document.getElementById('slug')?.focus() })
+      }
+      const otherErrors = errors.filter(message => message !== linkMessage)
+      if (!linkMessage || otherErrors.length) {
+        setSubmitError(otherErrors.join(', ') || err.response?.data?.error || 'Failed to update event')
+      }
     } finally {
       request.release()
       if (request.current()) setSubmitting(false)
@@ -577,6 +619,50 @@ function EditEventSession({ id, identity }) {
               </div>}
             </div>
           </div>
+        </section>
+
+        {/* Event Link Section */}
+        <section aria-labelledby="event-link-heading">
+          <h2 id="event-link-heading" className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Event Link</h2>
+          <label htmlFor="slug" className="block text-sm font-medium text-neutral-700 mb-1">Link name</label>
+          <input
+            id="slug"
+            type="text"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={80}
+            value={form.slug}
+            onChange={(e) => updateField('slug', normalizeEventLinkInput(e.target.value))}
+            aria-invalid={Boolean(linkError)}
+            aria-describedby={`slug-preview${linkError ? ' slug-error' : ''} slug-help`}
+            className={`input ${linkError ? 'input-error' : ''}`}
+            placeholder="e.g., full-moon-beach-party"
+            disabled={submitting}
+          />
+          <p id="slug-preview" className="mt-2 flex min-w-0 items-start gap-2 text-sm text-neutral-700">
+            <Link2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+            <span className="min-w-0 break-all"><span className="sr-only">Full link: </span>{eventLinkUrl(linkSlug || event?.slug || '')}</span>
+          </p>
+          <div aria-live="polite">
+            {linkError ? <p id="slug-error" className="mt-1 text-sm text-red-600">{linkError}</p>
+              : linkChanged && currentLinkCheck?.status === 'checking' ? <p className="mt-1 text-sm text-neutral-500">Checking this link…</p>
+              : linkChanged && currentLinkCheck?.status === 'available' ? <p className="mt-1 text-sm text-emerald-700">This link is available.</p>
+              : linkChanged && currentLinkCheck?.status === 'unknown' ? <p className="mt-1 text-sm text-neutral-500">We couldn’t check this link yet. It will be checked when you save.</p>
+              : null}
+          </div>
+          <p id="slug-help" className="mt-1 text-xs text-neutral-500">
+            Lowercase letters, numbers, and hyphens. {event?.slug_follows_title
+              ? 'Until you publish or change it, the link updates to match the title when you save.'
+              : 'Renaming the event keeps this link.'}
+          </p>
+          {linkChanged && event?.ever_published && (
+            <p role="status" className="mt-3 flex gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="min-w-0">This event is already public. After you save, the old link (<span className="break-all">{eventLinkUrl(event.slug)}</span>) keeps working and sends people to the new one. Update the link anywhere you can, like posters and social posts.</span>
+            </p>
+          )}
         </section>
 
         {canManage && <>

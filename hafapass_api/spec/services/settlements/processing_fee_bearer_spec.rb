@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require Rails.root.join("db/migrate/20261020120000_adopt_all_in_buyer_fee_defaults")
+require Rails.root.join("db/migrate/20261020200000_adopt_all_in_buyer_fee_defaults")
 
 # Who bears actual card processing is snapshotted on each order. NULL is a
 # legacy order (organizer bears it); "platform" orders leave organizer
@@ -43,7 +43,7 @@ RSpec.describe "Settlement processing-fee bearer" do
 
     after { SiteSetting.reset_column_information }
 
-    it "keeps an existing finalized statement's digest, totals and payout eligibility after the migration" do
+    it "keeps an existing finalized statement's digest, totals and payout eligibility after the migration and fee adoption" do
       _, _, component = record_sale!(event, bearer: nil, buyer_fee_cents: 250, processing_fee_cents: 183)
       create(:connected_account, organization: organization)
       SiteSetting.instance
@@ -57,6 +57,7 @@ RSpec.describe "Settlement processing-fee bearer" do
 
       ActiveRecord::Migration.suppress_messages { migration.up }
       SiteSetting.reset_column_information
+      expect(SiteSetting.adopt_launch_fee_terms!).to eq(:adopted)
       expect(SiteSetting.instance.reload).to have_attributes(service_fee_percent: 5.0, service_fee_flat_cents: 100,
         processing_fee_bearer: "platform")
 
@@ -237,5 +238,70 @@ RSpec.describe "Settlement processing-fee bearer" do
     settlement = Settlements::Finalizer.call(event: refund_event, actor: actor)
     expect(settlement).to have_attributes(platform_fee_cents: 0, processing_fee_cents: 0, platform_processing_fee_cents: 185,
       organizer_proceeds_cents: 0, payable_cents: 0, negative_balance_cents: 0, net_platform_fee_cents: -185)
+  end
+  describe "orders with add-ons and donations" do
+    # $10.00 ticket with a $1.50 buyer fee (5% + $1.00) and a $100.00 donation:
+    # $111.50 charged, so Stripe's 2.9% + 30c is 353.
+    def record_mixed_sale!(sale_event, bearer:, ticket_cents: 1000, fee_cents: 150, donation_cents: 10_000, processing_cents: 353)
+      order = create(:order, event: sale_event, subtotal_cents: ticket_cents + donation_cents, service_fee_cents: fee_cents,
+        discount_cents: 0, total_cents: ticket_cents + donation_cents + fee_cents, processing_fee_bearer_snapshot: bearer)
+      if ticket_cents.positive?
+        create(:order_item, order: order, unit_price_cents: ticket_cents, subtotal_cents: ticket_cents, fee_cents: fee_cents,
+          organizer_proceeds_cents: ticket_cents)
+      end
+      catalog = create(:catalog_item, event: sale_event, kind: :donation, price_cents: donation_cents, minimum_price_cents: donation_cents)
+      create(:order_item, order: order, ticket_type: nil, catalog_item: catalog, item_kind: :donation, name: "Donation",
+        unit_price_cents: donation_cents, subtotal_cents: donation_cents, fee_cents: 0, organizer_proceeds_cents: donation_cents)
+      create(:fee_component, order: order, kind: "platform", amount_cents: fee_cents, estimated: true)
+      create(:fee_component, order: order, kind: "processing", amount_cents: processing_cents, estimated: false,
+        provider_reference: "txn_mixed_#{SecureRandom.hex(4)}")
+      order
+    end
+
+    it "splits a platform-bearer order's processing by charged amount between tickets and the donation" do
+      order = record_mixed_sale!(event, bearer: "platform")
+      result = Settlements::Calculator.call(event)
+
+      # Ticket share 1150 / 11150 of 353 = 36.4 -> 37 (rounding falls on HåfaPass); donation share 316.
+      expect(result.attributes).to include(organizer_proceeds_cents: 11_000, platform_processing_fee_cents: 37,
+        processing_fee_cents: 316, payable_cents: 10_684)
+      item = result.items.find { |entry| entry[:kind] == "processing_fee" }
+      expect(item).to include(amount_cents: -316,
+        description: "Card processing on add-ons and donations; HåfaPass covers the ticket share")
+      expect(item[:metadata]).to include(order_id: order.id, processing_fee_bearer: "platform",
+        platform_cost_cents: 37, organizer_cost_cents: 316)
+    end
+
+    it "leaves a donation-only platform-bearer order's processing with the organizer" do
+      record_mixed_sale!(event, bearer: "platform", ticket_cents: 0, fee_cents: 0, processing_cents: 320)
+
+      expect(Settlements::Calculator.call(event).attributes).to include(organizer_proceeds_cents: 10_000,
+        platform_processing_fee_cents: 0, processing_fee_cents: 320, payable_cents: 9_680)
+    end
+
+    it "keeps the full legacy deduction for a legacy order with a donation" do
+      record_mixed_sale!(event, bearer: nil)
+
+      result = Settlements::Calculator.call(event)
+      expect(result.attributes).to include(platform_processing_fee_cents: 0, processing_fee_cents: 353, payable_cents: 10_647)
+      expect(result.items.find { |entry| entry[:kind] == "processing_fee" })
+        .to include(amount_cents: -353, description: "Actual payment processing cost")
+    end
+  end
+
+  it "records the organizer bearer for box office, comp and guest-list style orders without a service fee" do
+    SiteSetting.instance.update!(processing_fee_bearer: "platform")
+    door_event = create(:event, :published, organizer_profile: profile)
+    type = create(:ticket_type, event: door_event, price_cents: 2500, quantity_available: 10)
+    allow(EmailService).to receive(:send_order_confirmation_async)
+
+    cash = Commerce::CashSaleCreator.call(event: door_event, user: profile.user,
+      parameters: { line_items: [{ ticket_type_id: type.id, quantity: 1 }], payment_method: "door_cash" },
+      idempotency_key: "bearer-door-cash").order
+    no_fee = Commerce::OrderCreator.call(event: door_event, line_items: [{ ticket_type_id: type.id, quantity: 1 }],
+      buyer_email: "guest@example.com", buyer_name: "Guest", payment_required: false, service_fee: false).order
+
+    expect([cash, no_fee].map { |order| order.reload.processing_fee_bearer_snapshot }).to eq(%w[organizer organizer])
+    expect([cash, no_fee].map(&:service_fee_cents)).to eq([0, 0])
   end
 end

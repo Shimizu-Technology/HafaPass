@@ -50,6 +50,22 @@ it('explains that HåfaPass covers card processing and shows payout timing', asy
   expect(screen.getByText('Processing costs to you').nextSibling).toHaveTextContent('$0.00')
 })
 
+it('explains processing still deducted from organizer proceeds under earlier terms', async () => {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/finance')
+    ? { ...finance, preview: { gross_cents: 5000, processing_fee_cents: 183, platform_processing_fee_cents: 0, payable_cents: 4817 } }
+    : url.endsWith('/stats') ? stats : { ...event, fee_policy: 'buyer_pays', buyer_fee_percent: 100 } }))
+  mount()
+  expect(await screen.findByTestId('earlier-processing-note')).toHaveTextContent('$1.83 in card processing is deducted from your proceeds. That covers orders placed under earlier terms')
+})
+
+it('does not show the earlier-terms note when nothing is deducted', async () => {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/finance')
+    ? { ...finance, preview: { processing_fee_cents: 0, platform_processing_fee_cents: 185 } } : url.endsWith('/stats') ? stats : event }))
+  mount()
+  await screen.findByText('HåfaPass covered $1.85')
+  expect(screen.queryByTestId('earlier-processing-note')).not.toBeInTheDocument()
+})
+
 describe('authoritative analytics access', () => {
   it('verifies event permissions before requesting private records', async () => {
     const verify = deferred()

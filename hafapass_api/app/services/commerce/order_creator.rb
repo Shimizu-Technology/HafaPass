@@ -528,8 +528,10 @@ module Commerce
         total_cents: [subtotal_cents + buyer_fee_cents - discount_cents, 0].max,
         promo_code: promo_code,
         # Read once with the fee terms so the order's fee and its processing
-        # bearer always come from the same settings snapshot.
-        processing_fee_bearer: settings.processing_fee_bearer,
+        # bearer always come from the same settings snapshot. Orders created
+        # without a service fee (box office, comps, guest list) earn no fee to
+        # cover processing, so the organizer bears it.
+        processing_fee_bearer: service_fee ? settings.processing_fee_bearer : "organizer",
         service_fee_percent: settings.service_fee_percent,
         service_fee_flat_cents: settings.service_fee_flat_cents,
         paid_ticket_count: paid_ticket_count

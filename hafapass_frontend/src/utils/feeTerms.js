@@ -42,7 +42,7 @@ export function organizerFeeExplanation(terms, feePolicy, buyerFeePercent) {
   const rate = feeRateLabel(terms)
   const platformCovers = terms.bearer === 'platform'
   const processing = platformCovers
-    ? 'HåfaPass covers card processing out of this fee.'
+    ? 'HåfaPass covers card processing on tickets out of this fee.'
     : terms.bearer === 'organizer' ? 'Card processing costs are deducted from your proceeds.' : null
   const buyerShare = Number(buyerFeePercent)
   let sentences

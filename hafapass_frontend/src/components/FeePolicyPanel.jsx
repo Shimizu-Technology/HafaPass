@@ -42,7 +42,8 @@ export default function FeePolicyPanel({ eventId, event, canEdit, beginRequest, 
   const splitInvalid = choice.fee_policy === 'split_fees' &&
     !(Number.isInteger(Number(choice.buyer_fee_percent)) && Number(choice.buyer_fee_percent) >= 1 && Number(choice.buyer_fee_percent) <= 99)
 
-  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+  // Read-only viewers cannot save, so they never hold unsaved changes.
+  useEffect(() => { onDirtyChange?.(canEdit && dirty) }, [canEdit, dirty, onDirtyChange])
   // Follow a reloaded saved value (for example after another tab's change).
   useEffect(() => {
     setChoice({ fee_policy: event?.fee_policy || 'buyer_pays', buyer_fee_percent: event?.buyer_fee_percent ?? 100 })

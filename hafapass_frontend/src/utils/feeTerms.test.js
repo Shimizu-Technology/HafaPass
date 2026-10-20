@@ -31,7 +31,7 @@ describe('fee terms', () => {
     const platform = parseFeeTerms(allIn)
     const organizer = parseFeeTerms({ ...allIn, processing_fee_bearer: 'organizer' })
     expect(organizerFeeExplanation(platform, 'buyer_pays', 100)).toBe('Buyers pay a service fee of 5% + $1.00 per paid ticket, which includes card processing. You receive the full ticket price. Free tickets have no fee.')
-    expect(organizerFeeExplanation(platform, 'organizer_absorbs', 0)).toContain('HåfaPass covers card processing out of this fee.')
+    expect(organizerFeeExplanation(platform, 'organizer_absorbs', 0)).toContain('HåfaPass covers card processing on tickets out of this fee.')
     expect(organizerFeeExplanation(platform, 'split_fees', 40)).toContain('Buyers pay 40% of the service fee (5% + $1.00 per paid ticket) and you cover the rest.')
     expect(organizerFeeExplanation(organizer, 'buyer_pays', 100)).toBe('Buyers pay a service fee of 5% + $1.00 per paid ticket. Card processing costs are deducted from your proceeds. Free tickets have no fee.')
     expect(organizerFeeExplanation(organizer, 'organizer_absorbs', 0)).not.toContain('HåfaPass covers')

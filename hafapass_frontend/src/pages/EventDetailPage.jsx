@@ -8,6 +8,7 @@ import TicketTypesSection from '../components/TicketTypesSection'
 import SeatSelector from '../components/SeatSelector'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
+import NotFound from '../components/NotFound'
 import { FadeUp } from '../components/ui/ScrollReveal'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
@@ -67,6 +68,11 @@ function MobileBuyBar({ priceLabel, targets, endMarker }) {
   )
 }
 
+// When an old event link resolves, the event already loaded is handed to the
+// page mounted at the current link so the swap needs no second request or
+// spinner. Module scope (not history state) keeps a reload from reusing it.
+let resolvedEventHandoff = null
+
 export default function EventDetailPage() {
   const { slug } = useParams()
   const [params] = useSearchParams()
@@ -93,8 +99,12 @@ function EventDetailContent() {
   const [searchParams] = useSearchParams()
   const isPreview = searchParams.get('preview') === 'true'
   const isLiveMoneyProof = searchParams.get('live_money_proof') === 'true'
-  const [event, setEvent] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const handedOffEvent = useRef(resolvedEventHandoff?.slug === slug ? resolvedEventHandoff.event : null)
+  const liveLocation = useRef(location)
+  liveLocation.current = location
+  const viewTracked = useRef(false)
+  const [event, setEvent] = useState(handedOffEvent.current)
+  const [loading, setLoading] = useState(!handedOffEvent.current)
   const [error, setError] = useState(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [copied, setCopied] = useState(false)
@@ -109,15 +119,29 @@ function EventDetailContent() {
     let active = true
     const current = () => active && liveRoute.current.slug === slug
     if (!current()) return undefined
+    captureQueryAttribution(window.location.search)
+    const initialEvent = handedOffEvent.current
+    if (initialEvent && loadAttempt === 0) {
+      resolvedEventHandoff = null
+      if (!viewTracked.current) trackFunnel(apiClient, initialEvent.id, 'event_view')
+      viewTracked.current = true
+      return () => { active = false }
+    }
     setLoading(true)
     setEvent(null)
     setError(null)
-    captureQueryAttribution(window.location.search)
     const url = isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
       (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
     apiClient.get(url)
       .then(res => {
         if (!current()) return
+        if (res.data.redirected_from === slug && res.data.slug && res.data.slug !== slug) {
+          // An old link: show the event at its current address.
+          const { search, hash, state } = liveLocation.current
+          resolvedEventHandoff = { slug: res.data.slug, event: res.data }
+          navigate(`/events/${encodeURIComponent(res.data.slug)}${search}${hash}`, { replace: true, state })
+          return
+        }
         if (res.data.slug !== slug) throw new Error('Event response does not match its route')
         setEvent(res.data)
         trackFunnel(apiClient, res.data.id, 'event_view')
@@ -130,7 +154,7 @@ function EventDetailContent() {
         setLoading(false)
       } })
     return () => { active = false }
-  }, [slug, isPreview, isLiveMoneyProof, loadAttempt])
+  }, [slug, isPreview, isLiveMoneyProof, loadAttempt, navigate])
 
   useEffect(() => {
     if (!waitlistOfferToken) return undefined
@@ -216,6 +240,7 @@ function EventDetailContent() {
   }
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
+  if (error && !error.retryable) return <NotFound kind="event" backTo={browseFrom} />
   if (error) return (
     <div className="max-w-2xl mx-auto px-4 py-16 text-center">
       <p role="alert" className="text-neutral-700 text-lg mb-4">{error.message}</p>

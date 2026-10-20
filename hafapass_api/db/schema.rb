@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_120200) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_20_200200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -524,6 +524,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120200) do
     t.check_constraint "operational_status = ANY (ARRAY[0, 1, 2])", name: "event_seats_status_valid"
   end
 
+  create_table "event_slug_redirects", force: :cascade do |t|
+    t.bigint "event_id", null: false
+    t.string "slug", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_event_slug_redirects_on_event_id"
+    t.index ["slug"], name: "index_event_slug_redirects_on_slug", unique: true
+  end
+
   create_table "event_staff_assignments", force: :cascade do |t|
     t.bigint "assigned_by_user_id"
     t.datetime "created_at", null: false
@@ -609,6 +618,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120200) do
     t.string "venue_city"
     t.bigint "venue_id"
     t.string "venue_name"
+    t.boolean "custom_slug", default: false, null: false
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
@@ -2217,6 +2227,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120200) do
     t.check_constraint "accessibility_kind = ANY (ARRAY[0, 1, 2, 3])", name: "venue_seats_accessibility_kind_valid"
   end
 
+  create_table "venue_slug_redirects", force: :cascade do |t|
+    t.bigint "venue_id", null: false
+    t.string "slug", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_venue_slug_redirects_on_slug", unique: true
+    t.index ["venue_id"], name: "index_venue_slug_redirects_on_venue_id"
+  end
+
   create_table "venues", force: :cascade do |t|
     t.text "accessibility_notes"
     t.boolean "active", default: true, null: false
@@ -2382,6 +2401,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120200) do
   add_foreign_key "event_seats", "event_seating_configurations", on_delete: :restrict
   add_foreign_key "event_seats", "ticket_types", on_delete: :restrict
   add_foreign_key "event_seats", "venue_seats", on_delete: :restrict
+  add_foreign_key "event_slug_redirects", "events"
   add_foreign_key "event_staff_assignments", "events", on_delete: :restrict
   add_foreign_key "event_staff_assignments", "organizations", on_delete: :restrict
   add_foreign_key "event_staff_assignments", "users", column: "assigned_by_user_id", on_delete: :nullify
@@ -2572,6 +2592,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120200) do
   add_foreign_key "venue_layouts", "venues", on_delete: :restrict
   add_foreign_key "venue_seats", "seating_price_zones", on_delete: :restrict
   add_foreign_key "venue_seats", "seating_rows", on_delete: :cascade
+  add_foreign_key "venue_slug_redirects", "venues"
   add_foreign_key "waitlist_entries", "events"
   add_foreign_key "waitlist_entries", "ticket_types"
   add_foreign_key "waitlist_entries", "users"
