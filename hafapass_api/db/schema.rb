@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_200300) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -327,11 +327,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
     t.jsonb "requirements_due", default: [], null: false
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.jsonb "payout_details", default: {}, null: false
     t.index ["organization_id", "provider"], name: "index_connected_accounts_on_organization_id_and_provider", unique: true
     t.index ["organization_id"], name: "index_connected_accounts_on_organization_id"
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
-    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying::text, 'manual'::character varying::text, 'stripe'::character varying::text, 'legacy_manual'::character varying::text])", name: "connected_accounts_provider_valid"
+    t.check_constraint "jsonb_typeof(payout_details) = 'object'::text", name: "connected_accounts_payout_details_object"
+    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying, 'check'::character varying]::text[])", name: "connected_accounts_provider_valid"
     t.check_constraint "readiness_revision > 0", name: "connected_accounts_readiness_revision_positive"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
   end
@@ -1029,17 +1031,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
     t.string "transport_context_digest"
     t.text "outbound_wire_body"
     t.string "wire_body_digest"
+    t.bigint "organization_membership_id"
+    t.bigint "platform_invitation_id"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
     t.index ["order_id", "created_at"], name: "index_message_deliveries_on_order_id_and_created_at"
     t.index ["order_id"], name: "index_message_deliveries_on_order_id"
+    t.index ["organization_membership_id"], name: "index_message_deliveries_on_organization_membership_id"
+    t.index ["platform_invitation_id"], name: "index_message_deliveries_on_platform_invitation_id"
     t.index ["provider_id"], name: "index_message_deliveries_on_provider_id"
     t.index ["requested_by_id"], name: "index_message_deliveries_on_requested_by_id"
     t.index ["status", "updated_at"], name: "index_message_deliveries_on_status_and_updated_at"
     t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
     t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
-    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "message_deliveries_subject_present"
+    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL OR organization_membership_id IS NOT NULL OR platform_invitation_id IS NOT NULL", name: "message_deliveries_subject_present"
     t.check_constraint "outbound_wire_body IS NULL AND wire_body_digest IS NULL OR outbound_wire_body IS NOT NULL AND wire_body_digest IS NOT NULL AND wire_body_digest::text = encode(sha256(convert_to(outbound_wire_body, 'UTF8'::name)), 'hex'::text)", name: "message_deliveries_wire_digest_matches"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7, 8])", name: "message_deliveries_status_valid"
   end
@@ -1182,12 +1188,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.datetime "invitation_expires_at"
+    t.jsonb "pending_event_assignments", default: [], null: false
     t.index "organization_id, lower((invited_email)::text)", name: "idx_organization_memberships_unique_invite", unique: true, where: "((invited_email IS NOT NULL) AND (status = 0))"
     t.index ["invited_by_user_id"], name: "index_organization_memberships_on_invited_by_user_id"
     t.index ["organization_id", "user_id"], name: "idx_organization_memberships_unique_user", unique: true, where: "(user_id IS NOT NULL)"
     t.index ["organization_id"], name: "index_organization_memberships_on_organization_id"
     t.index ["user_id"], name: "index_organization_memberships_on_user_id"
     t.check_constraint "invitation_version > 0", name: "organization_memberships_invitation_version_positive"
+    t.check_constraint "jsonb_typeof(pending_event_assignments) = 'array'::text", name: "organization_memberships_pending_event_assignments_array"
     t.check_constraint "role = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "organization_memberships_role_valid"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organization_memberships_status_valid"
     t.check_constraint "user_id IS NOT NULL OR invited_email IS NOT NULL", name: "organization_memberships_identity_present"
@@ -1229,7 +1238,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
     t.string "policy_version"
     t.string "stripe_account_id"
     t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
     t.text "verification_notes"
     t.datetime "verification_requested_at"
     t.integer "verification_status", default: 0, null: false
@@ -1468,6 +1477,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
     t.check_constraint "decision = ANY (ARRAY[0, 1, 2, 3])", name: "platform_capability_reviews_decision_valid"
     t.check_constraint "evidence_digest::text ~ '^[0-9a-f]{64}$'::text AND configuration_digest::text ~ '^[0-9a-f]{64}$'::text", name: "platform_capability_reviews_digests_valid"
     t.check_constraint "expires_at > effective_at", name: "platform_capability_reviews_window_valid"
+  end
+
+  create_table "platform_invitations", force: :cascade do |t|
+    t.string "email", null: false
+    t.integer "role", null: false
+    t.integer "status", default: 0, null: false
+    t.integer "invitation_version", default: 1, null: false
+    t.datetime "invited_at", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "accepted_at"
+    t.datetime "revoked_at"
+    t.bigint "invited_by_user_id", null: false
+    t.bigint "accepted_by_user_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "lower((email)::text)", name: "idx_platform_invitations_unique_pending_email", unique: true, where: "(status = 0)"
+    t.index ["accepted_by_user_id"], name: "index_platform_invitations_on_accepted_by_user_id"
+    t.index ["invited_by_user_id"], name: "index_platform_invitations_on_invited_by_user_id"
+    t.check_constraint "invitation_version > 0", name: "platform_invitations_version_positive"
+    t.check_constraint "role = ANY (ARRAY[2, 3])", name: "platform_invitations_staff_role"
+    t.check_constraint "status <> 1 OR accepted_at IS NOT NULL AND accepted_by_user_id IS NOT NULL", name: "platform_invitations_acceptance_recorded"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "platform_invitations_status_valid"
   end
 
   create_table "pricing_tiers", force: :cascade do |t|
@@ -2511,6 +2542,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
   add_foreign_key "message_deliveries", "communication_campaigns", on_delete: :restrict
   add_foreign_key "message_deliveries", "events", on_delete: :restrict
   add_foreign_key "message_deliveries", "orders", on_delete: :restrict
+  add_foreign_key "message_deliveries", "organization_memberships"
+  add_foreign_key "message_deliveries", "platform_invitations"
   add_foreign_key "message_deliveries", "tickets", on_delete: :restrict
   add_foreign_key "message_deliveries", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "message_provider_events", "message_deliveries", on_delete: :nullify
@@ -2552,6 +2585,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
   add_foreign_key "pilot_validation_reviews", "users", column: "actor_user_id", on_delete: :restrict
   add_foreign_key "platform_capability_reviews", "platform_capability_reviews", column: "parent_review_id", on_delete: :restrict
   add_foreign_key "platform_capability_reviews", "users", column: "actor_user_id", on_delete: :restrict
+  add_foreign_key "platform_invitations", "users", column: "accepted_by_user_id"
+  add_foreign_key "platform_invitations", "users", column: "invited_by_user_id"
   add_foreign_key "pricing_tiers", "ticket_types"
   add_foreign_key "promo_codes", "events"
   add_foreign_key "promo_redemptions", "orders", on_delete: :restrict

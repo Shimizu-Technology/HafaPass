@@ -9,7 +9,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   def index
     scope = filtered_payouts
     counts = scope.unscope(:order).group(:status).count
-    payouts, meta = admin_page(scope.includes(:organization, :event, :settlement).order(created_at: :desc, id: :desc))
+    payouts, meta = admin_page(scope.includes(:organization, :event, :settlement, :connected_account)
+      .order(created_at: :desc, id: :desc))
     audits = AuditLog.includes(:actor_user).where(auditable_type: "Payout", auditable_id: payouts.map(&:id),
       action: RECONCILIATION_ACTIONS).order(:id).group_by(&:auditable_id)
     render json: {
@@ -79,6 +80,9 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       organization: { id: payout.organization_id, name: payout.organization.name },
       event: { id: payout.event_id, title: payout.event.title, slug: payout.event.slug },
       settlement: { id: payout.settlement_id, version: payout.settlement.version },
+      # For checks, who to write it to; the check number is the transfer ID
+      # and the date on the check is the confirmation time.
+      payee: payout.provider == "check" ? payout.connected_account.check_payee : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,
       conflict: payout.failure_code == "provider_result_conflict" && conflict ? {

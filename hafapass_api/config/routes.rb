@@ -26,6 +26,7 @@ Rails.application.routes.draw do
       post "organizer_profile/accept_policy", to: "organizer_profiles#accept_policy"
       post "organizer_profile/submit_verification", to: "organizer_profiles#submit_verification"
       post "organization_invitations/accept", to: "organization_invitations#accept"
+      post "platform_invitations/accept", to: "platform_invitations#accept"
 
       # Presigned upload URL (authenticated) - works in simulate mode too
       post "uploads/presign", to: "uploads#presign"
@@ -124,8 +125,14 @@ Rails.application.routes.draw do
           get :payouts_export
         end
         resources :organizations, only: [:index]
-        resources :memberships, only: [:index, :create, :update, :destroy]
-        resources :connected_accounts, only: [:index, :create]
+        resources :memberships, only: [:index, :create, :update, :destroy] do
+          member do
+            post :resend
+            post :invitation_link
+            post :transfer_ownership
+          end
+        end
+        resources :connected_accounts, only: [:index, :create, :update]
         resources :venue_layouts, only: [:index, :show, :create, :update]
         resource :card_present_account, only: [:show]
         resources :events, only: [:index, :show, :create, :update, :destroy] do
@@ -151,6 +158,8 @@ Rails.application.routes.draw do
           resources :promo_codes, only: [:index, :show, :create, :update, :destroy]
           resources :staff_assignments, only: [:index, :create, :update, :destroy],
                     controller: "event_staff_assignments"
+          post "staff_invitations/:membership_id/resend", to: "event_staff_assignments#resend_invitation"
+          delete "staff_invitations/:membership_id", to: "event_staff_assignments#revoke_invitation"
           resources :scanner_devices, only: [:index, :create, :update, :destroy] do
             member do
               get :manifest
@@ -296,6 +305,18 @@ Rails.application.routes.draw do
           end
         end
         resources :users, only: [:index, :update]
+        resources :platform_invitations, only: [:index, :create, :destroy] do
+          member { post :resend }
+        end
+        resources :organizations, only: [:index, :show, :create] do
+          resources :memberships, only: [:index, :create, :update, :destroy], controller: "organization_memberships" do
+            member do
+              post :resend
+              post :invitation_link
+              post :transfer_ownership
+            end
+          end
+        end
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]
         resources :connected_accounts, only: [:update] do

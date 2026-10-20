@@ -152,6 +152,11 @@ module Api
           ) : nil,
           ready_to_publish_free_events: profile.ready_to_publish_free_events?,
           ready_to_publish_paid_events: profile.ready_to_publish_paid_events?,
+          setup_progress: {
+            events_count: profile.organization.events.count,
+            published_events_count: profile.organization.events.where.not(status: :draft).count,
+            payout_method: (profile.organization.payout_account || profile.organization.connected_accounts.order(:id).last)&.provider
+          },
           created_at: profile.created_at,
           updated_at: profile.updated_at
         }

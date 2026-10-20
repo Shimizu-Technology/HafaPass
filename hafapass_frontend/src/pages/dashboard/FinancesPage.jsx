@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Circle, Clock, Download, Loader2, RotateCcw, WalletCards, XCircle } from 'lucide-react'
 import apiClient from '../../api/client'
 import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
+import NoAccessNotice from '../../components/NoAccessNotice'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
 import { formatEventDate } from '../../utils/eventTime'
@@ -145,6 +146,15 @@ function FinancesSession({ identity }) {
             <div className="h-72 animate-pulse rounded-2xl bg-neutral-100 motion-reduce:animate-none" />
           </div>
         </div>
+      </WorkspacePage>
+    )
+  }
+
+  if (state.status === 'error' && state.error === 'denied') {
+    return (
+      <WorkspacePage>
+        {header(null)}
+        <div role="alert"><NoAccessNotice title="Finances aren’t part of your role" detail="Your role in this organization does not include finances. Owners, managers and finance members can see this page." /></div>
       </WorkspacePage>
     )
   }

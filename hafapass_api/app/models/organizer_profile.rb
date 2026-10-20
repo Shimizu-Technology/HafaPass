@@ -1,5 +1,7 @@
 class OrganizerProfile < ApplicationRecord
-  belongs_to :user
+  # The person who set up the profile. Admin-created organizations have none
+  # until the invited owner accepts.
+  belongs_to :user, optional: true
   belongs_to :organization
   belongs_to :verified_by_user, class_name: "User", optional: true
   has_many :events, dependent: :destroy
@@ -7,7 +9,7 @@ class OrganizerProfile < ApplicationRecord
   enum :verification_status, { unverified: 0, pending: 1, verified: 2, rejected: 3, suspended: 4 }, prefix: true
 
   validates :business_name, presence: true
-  validates :user_id, uniqueness: true
+  validates :user_id, uniqueness: true, allow_nil: true
   validates :verification_notes, presence: true, if: -> { verification_status_rejected? || verification_status_suspended? }
 
   def policy_accepted?

@@ -62,11 +62,12 @@ describe('mobile administrator user controls', () => {
     await userEvent.selectOptions(select, 'support')
     const dialog = within(screen.getByRole('dialog', { name: 'Change platform role?' }))
     expect(dialog.getByText('organizer@example.test')).toBeInTheDocument()
-    expect(dialog.getByText('Organizer')).toBeInTheDocument()
+    // Organizer is a label from organization membership, not a platform grant.
+    expect(dialog.getByText('No staff access')).toBeInTheDocument()
     expect(dialog.getByText('Support')).toBeInTheDocument()
     await userEvent.click(dialog.getByRole('button', { name: 'Cancel' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(select).toHaveValue('organizer')
+    expect(select).toHaveValue('member')
     expect(apiClient.patch).not.toHaveBeenCalled()
   })
   it('sends the same role request after confirmation and warns before admin promotion', async () => {

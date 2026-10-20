@@ -28,6 +28,7 @@ const ScannerPage = lazy(() => import('./pages/dashboard/ScannerPage'))
 const SettingsPage = lazy(() => import('./pages/dashboard/SettingsPage'))
 const FinancesPage = lazy(() => import('./pages/dashboard/FinancesPage'))
 const InvitationAcceptPage = lazy(() => import('./pages/dashboard/InvitationAcceptPage'))
+const PlatformInvitationAcceptPage = lazy(() => import('./pages/PlatformInvitationAcceptPage'))
 const EventStaffPage = lazy(() => import('./pages/dashboard/EventStaffPage'))
 const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
 const GuestListPage = lazy(() => import('./pages/dashboard/GuestListPage'))
@@ -59,6 +60,8 @@ const AdminSettingsPage = lazy(() => import('./pages/admin/AdminSettingsPage'))
 const AdminPayoutsPage = lazy(() => import('./pages/admin/AdminPayoutsPage'))
 const AdminDisputesPage = lazy(() => import('./pages/admin/AdminDisputesPage'))
 const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'))
+const AdminOrganizationsPage = lazy(() => import('./pages/admin/AdminOrganizationsPage'))
+const AdminOrganizationPage = lazy(() => import('./pages/admin/AdminOrganizationPage'))
 
 function PageLoader() {
   return (
@@ -111,10 +114,13 @@ function App() {
           <Route path="/dashboard/finances" element={<ProtectedRoute><FinancesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/team" element={<ProtectedRoute><EventStaffPage /></ProtectedRoute>} />
           <Route path="/organization-invitations/accept" element={<ProtectedRoute><InvitationAcceptPage /></ProtectedRoute>} />
+          <Route path="/platform-invitations/accept" element={<ProtectedRoute><PlatformInvitationAcceptPage /></ProtectedRoute>} />
           {/* Admin routes */}
           <Route path="/admin" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
           <Route path="/admin/events" element={<AdminRoute><AdminEventsPage /></AdminRoute>} />
           <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
+          <Route path="/admin/organizations" element={<AdminRoute><AdminOrganizationsPage /></AdminRoute>} />
+          <Route path="/admin/organizations/:id" element={<AdminRoute><AdminOrganizationPage /></AdminRoute>} />
           <Route path="/admin/orders" element={<AdminRoute><AdminOrdersPage /></AdminRoute>} />
           <Route path="/admin/marketplace" element={<AdminRoute><MarketplaceAdminPage /></AdminRoute>} />
           <Route path="/admin/provider-readiness" element={<AdminRoute><ProviderReadinessPage /></AdminRoute>} />

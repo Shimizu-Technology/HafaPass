@@ -1,20 +1,34 @@
 # frozen_string_literal: true
 
+# Email-bound organization invitations. The link lifetime lives in
+# invitation_expires_at; accepting an invitation never sets an access expiry,
+# so an accepted teammate keeps access until an owner changes or revokes it.
 class OrganizationInvitation
   LIFETIME = 7.days
 
   class InvitationError < StandardError; end
 
   class << self
+    # Starts (or restarts) the link lifetime and returns the secure token.
     def issue!(membership)
       membership.with_lock do
-        membership.update!(invited_at: Time.current, expires_at: LIFETIME.from_now)
+        membership.update!(invited_at: Time.current, invitation_expires_at: LIFETIME.from_now)
       end
+      token_for(membership)
+    end
+
+    # The token for the membership's current version and lifetime. Rotating
+    # the version (resend, revoke, accept) invalidates every earlier link.
+    def token_for(membership)
       SignedCredential.issue(
         namespace: "organization_invitation",
         payload: { membership_id: membership.id, version: membership.invitation_version },
-        expires_at: membership.expires_at
+        expires_at: membership.invitation_expires_at
       )
+    end
+
+    def accept_url(membership)
+      "#{PublicSiteUrl.frontend}/organization-invitations/accept?token=#{ERB::Util.url_encode(token_for(membership))}"
     end
 
     def accept!(token:, user:)
@@ -26,8 +40,7 @@ class OrganizationInvitation
       raise InvitationError, "Invitation is invalid or expired" unless membership
 
       membership.with_lock do
-        unless membership.status_invited? && membership.invitation_version == version &&
-            membership.expires_at&.future?
+        unless membership.status_invited? && membership.invitation_version == version && membership.invitation_open?
           raise InvitationError, "Invitation is invalid or expired"
         end
         unless email_matches?(membership, user)
@@ -41,20 +54,54 @@ class OrganizationInvitation
           user: user,
           status: :active,
           accepted_at: Time.current,
+          expires_at: nil,
           invitation_version: membership.invitation_version + 1
         )
+        apply_pending_event_assignments!(membership)
+        adopt_organizer_profile!(membership) if membership.owner?
       end
+      user.sync_member_label!
       membership
     end
 
     def revoke!(membership)
-      membership.update!(status: :revoked, invitation_version: membership.invitation_version + 1)
+      membership.update!(status: :revoked, invitation_version: membership.invitation_version + 1,
+        pending_event_assignments: [])
+      membership.user&.sync_member_label!
     end
 
     private
 
     def email_matches?(membership, user)
       ClerkIdentity.email_matches?(user: user, email: membership.invited_email)
+    end
+
+    # Staff invited from an event's Team page get that event's access as
+    # soon as they accept, so nobody has to come back and assign them.
+    def apply_pending_event_assignments!(membership)
+      entries = Array(membership.pending_event_assignments)
+      return if entries.empty?
+
+      events = membership.organization.events.where(id: entries.map { |entry| entry["event_id"] }).index_by(&:id)
+      entries.each do |entry|
+        event = events[entry["event_id"].to_i]
+        next unless event
+
+        assignment = event.event_staff_assignments.find_or_initialize_by(user: membership.user, role: entry["role"])
+        assignment.update!(organization: membership.organization, status: :active,
+          assigned_by_user_id: entry["assigned_by_user_id"] || membership.invited_by_user_id)
+      end
+      membership.update!(pending_event_assignments: [])
+    end
+
+    # An organization created by an admin has no profile owner until the
+    # invited owner accepts.
+    def adopt_organizer_profile!(membership)
+      profile = membership.organization.organizer_profile
+      return unless profile && profile.user_id.nil?
+      return if OrganizerProfile.exists?(user_id: membership.user_id)
+
+      profile.update!(user: membership.user)
     end
   end
 end

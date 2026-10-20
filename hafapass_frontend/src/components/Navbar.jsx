@@ -43,7 +43,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
       if (res.data.clerk_id !== userId || typeof res.data.role !== 'string') {
         throw new Error('Account access response does not match the signed-in user')
       }
-      setRoleState({ context: authContext, status: 'loaded', role: res.data.role })
+      setRoleState({ context: authContext, status: 'loaded', role: res.data.role, workspace: res.data.workspace || null })
     }).catch(() => {
       if (active && getApiAuthContext() === authContext) {
         setRoleState({ context: authContext, status: 'failed', role: null })
@@ -57,6 +57,11 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   }, [location.pathname])
 
   const loadedRole = currentRole?.status === 'loaded' ? currentRole.role : null
+  // What this account can use. Unknown (still loading or an older API) keeps
+  // the links; known-false hides them. Pages still check access themselves.
+  const workspace = currentRole?.status === 'loaded' ? currentRole.workspace : null
+  const showScanner = workspace ? workspace.scanner === true : currentRole?.status !== 'loading'
+  const showDashboard = workspace ? workspace.organizer === true || loadedRole === 'admin' : currentRole?.status !== 'loading'
   useEffect(() => {
     publishAccountRole(loadedRole ? authContext : null, loadedRole)
   }, [authContext, loadedRole])
@@ -67,6 +72,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
     return <WorkspaceNav
       authContext={accountReady ? authContext : null}
       role={loadedRole}
+      workspace={workspace}
       isSignedIn={isSignedIn}
       clerkEnabled={clerkEnabled}
       roleAlert={roleAlert}
@@ -80,13 +86,15 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const navLinks = [
     { to: '/events', label: t('nav.events'), icon: CalendarDays },
     { to: '/discover', label: 'Discover', icon: Compass },
-    // Signed-in accounts already reach organizer tools through Dashboard.
+    // Signed-in accounts reach organizer tools through Dashboard once they
+    // belong to an organization; everyone else gets the setup path.
     ...(!isSignedIn ? [{ to: '/host', label: t('nav.hostEvent'), icon: CalendarPlus }] : []),
     ...(isSignedIn ? [
       { to: '/my-tickets', label: t('nav.myTickets'), icon: Ticket },
       { to: '/saved', label: 'Saved', icon: Heart },
-      { to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine },
-      { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
+      ...(showScanner ? [{ to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine }] : []),
+      ...(showDashboard ? [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard }]
+        : workspace ? [{ to: '/dashboard', label: t('nav.hostEvent'), icon: CalendarPlus }] : []),
       ...(currentRole?.role === 'admin' ? [
         { to: '/admin', label: t('nav.admin'), icon: Shield },
       ] : []),
@@ -293,16 +301,17 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
 // Organizer, admin and support routes use a workspace header: workspace links,
 // a clear way back to the public site, language and account controls.
-function WorkspaceNav({ authContext, role, isSignedIn, clerkEnabled, roleAlert, onRetryRole, mobileMenuOpen, setMobileMenuOpen, menuTrigger }) {
+function WorkspaceNav({ authContext, role, workspace, isSignedIn, clerkEnabled, roleAlert, onRetryRole, mobileMenuOpen, setMobileMenuOpen, menuTrigger }) {
   const location = useLocation()
   const { t } = useTranslation()
   const { pathname } = location
   const canManageSettings = useCanManageOrganizationSettings(authContext, Boolean(authContext))
   const canViewFinances = useCanViewOrganizationFinances(authContext, Boolean(authContext))
+  const showDashboard = !workspace || workspace.organizer === true || role === 'admin'
   const links = [
-    { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard,
-      active: pathname === '/dashboard' || pathname.startsWith('/dashboard/events') },
-    { to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine },
+    ...(showDashboard ? [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard,
+      active: pathname === '/dashboard' || pathname.startsWith('/dashboard/events') }] : []),
+    ...(!workspace || workspace.scanner === true ? [{ to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine }] : []),
     ...(canViewFinances ? [{ to: '/dashboard/finances', label: t('nav.finances'), icon: WalletCards }] : []),
     ...(canManageSettings ? [{ to: '/dashboard/settings', label: t('nav.settings'), icon: Settings }] : []),
     ...(['support', 'admin'].includes(role) ? [{ to: '/support', label: t('nav.support'), icon: LifeBuoy }] : []),

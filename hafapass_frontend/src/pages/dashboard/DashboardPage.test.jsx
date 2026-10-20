@@ -29,8 +29,8 @@ describe('staff dashboard entry', () => {
     expect(screen.getByRole('link', { name: 'Scan tickets' })).toBeInTheDocument()
     for (const name of ['Create event', 'Settings']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     expect(screen.queryByTitle('Edit Profile')).not.toBeInTheDocument()
-    expect(screen.queryByText('Organizer readiness')).not.toBeInTheDocument()
-    expect(screen.queryByText('Accept policy')).not.toBeInTheDocument()
+    expect(screen.queryByText('Get ready to sell tickets')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review and accept')).not.toBeInTheDocument()
   })
   it('offers assignment recovery instead of creation for an empty staff list', async () => {
     fixtures([scanner], [])
@@ -44,7 +44,7 @@ describe('staff dashboard entry', () => {
     fixtures([owner, scanner])
     mount()
     await screen.findByRole('link', { name: 'Create event' })
-    expect(screen.getByRole('button', { name: 'Accept policy' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Review and accept' })).toBeInTheDocument()
     await userEvent.setup().selectOptions(screen.getByLabelText('Organization'), '2')
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Create event' })).not.toBeInTheDocument())
     expect(window.localStorage.getItem('hafapass_organization_id')).toBe('2')
@@ -64,7 +64,7 @@ describe('staff dashboard entry', () => {
     const normalGet = apiClient.get.getMockImplementation()
     apiClient.get.mockImplementation(path => path === '/organizer_profile' ? Promise.reject({ response: { status: 404 } }) : normalGet(path))
     mount()
-    await screen.findByRole('heading', { name: 'Create Your Organizer Profile' })
+    await screen.findByRole('heading', { name: 'Host events on HåfaPass' })
   })
   it('uses effective event permissions for a manager assignment without allowing organization creation', async () => {
     fixtures([scanner], [{ ...event, permissions: { scan: true, edit_event_content: true, manage_events: true } }])
