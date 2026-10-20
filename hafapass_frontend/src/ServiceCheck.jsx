@@ -55,7 +55,9 @@ function ServiceGate() {
 // Once the application has rendered it is never unmounted for a later failed
 // check: typed checkout and form state must survive. A banner explains instead.
 function ConnectedApp({ owner, onMount, degraded, onRetry }) {
-  useEffect(() => { onMount(owner) }, [onMount, owner])
+  // Forget the owner on unmount: an app removed during an outage is not revived
+  // with a degraded banner; nothing-rendered-yet rules apply again.
+  useEffect(() => { onMount(owner); return () => onMount(undefined) }, [onMount, owner])
   return <>
     {degraded ? <div className="flex flex-wrap items-center justify-center gap-x-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950" role="alert">
       <span>We’re having trouble reaching HåfaPass. Some actions may not work right now.</span>

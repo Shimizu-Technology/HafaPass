@@ -280,6 +280,28 @@ describe('ServiceCheck', () => {
     expect(await screen.findByText('Cached door scanner')).toBeInTheDocument()
   })
 
+  it('swaps a mounted app for the outage page when the scanner owner changes during an outage, and keeps it there', async () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    useBackendAvailability.mockReturnValue({ status: 'available', retry })
+    const tree = () => <MemoryRouter initialEntries={['/events']}><ServiceCheck /></MemoryRouter>
+    const { rerender } = render(tree())
+    expect(screen.getByText('Public application')).toBeInTheDocument()
+    useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
+    rerender(tree())
+    expect(screen.getByText('Public application')).toBeInTheDocument()
+
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-b')
+    rerender(tree())
+    expect(screen.getByRole('button', { name: /check services again/i })).toBeInTheDocument()
+    expect(screen.queryByText('Public application')).not.toBeInTheDocument()
+
+    // The unmounted app is not revived for the earlier owner while services stay down.
+    window.localStorage.setItem('hafapass_scanner_user_id', 'staff-a')
+    rerender(tree())
+    expect(screen.getByRole('button', { name: /check services again/i })).toBeInTheDocument()
+    expect(screen.queryByText('Public application')).not.toBeInTheDocument()
+  })
+
   it('withdraws the old fallback immediately on query change and ignores a late old cache result', async () => {
     useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
     let resolveOld
