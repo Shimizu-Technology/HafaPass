@@ -84,7 +84,7 @@ function CtaGroup({ targets, tone = 'light', align = 'start' }) {
 function DoorPreview() {
   return (
     <div aria-hidden="true" className="relative mx-auto w-full max-w-sm select-none lg:max-w-none">
-      <div className="host-preview-back absolute -right-2 top-6 hidden w-56 rounded-2xl border border-neutral-200 bg-white p-4 shadow-card sm:block lg:-right-4">
+      <div className="host-preview-back absolute -right-2 -top-4 z-10 hidden w-56 rounded-2xl border border-neutral-200 bg-white p-4 shadow-card sm:block lg:-right-4">
         <p className="text-xs font-semibold text-content-muted">Checked in</p>
         <p className="mt-1 font-display text-2xl font-bold text-neutral-950">186 <span className="text-base font-medium text-content-muted">of 240</span></p>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full w-[78%] rounded-full bg-brand-500" /></div>
