@@ -213,6 +213,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const requestedEventId = searchParams.get('event')
+  // Attendees page "Check in" hands over a ticket number (HP-T123). The scanner
+  // only runs the lookup; staff still press Admit so the admission goes through
+  // this device's signed manifest, offline queue and Undo like any other scan.
+  const requestedLookup = searchParams.get('lookup')?.trim().slice(0, 80) || ''
   const routeScope = JSON.stringify([location.key, location.search, offlineOnly ? offlineEventId : null])
   const selectionVisitRef = useRef({ route: routeScope, generation: 0 })
   if (selectionVisitRef.current.route !== routeScope) {
@@ -240,7 +244,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const [error, setError] = useState(null)
   const [scanResult, setScanResult] = useState(null)
   const [manualCode, setManualCode] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery] = useState(requestedLookup)
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -1096,9 +1100,13 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     return () => { active = false; window.clearTimeout(timer) }
   }, [device, eventId, manifest, stopCamera])
 
-  const runSearch = async event => {
+  const runSearch = event => {
     event.preventDefault()
-    if (!eventId || !online || searchQuery.trim().length < 2) return
+    searchAttendees(searchQuery)
+  }
+
+  const searchAttendees = async query => {
+    if (!eventId || !online || query.trim().length < 2) return
     const request = beginPrivateRead(searchRequestRef, eventId)
     setSearching(true)
     setError(null)
@@ -1106,7 +1114,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     try {
       context = await captureAdmissionAccessContext(request.selectedEventId, { isCurrent: request.current })
       if (!request.current()) return
-      const response = await apiClient.get(`/organizer/events/${request.selectedEventId}/admissions/search`, { ...request.config, params: { q: searchQuery.trim() } })
+      const response = await apiClient.get(`/organizer/events/${request.selectedEventId}/admissions/search`, { ...request.config, params: { q: query.trim() } })
       if (request.current()) setSearchResults(response.data)
     } catch (searchError) {
       await handlePrivateReadError(searchError, request, context, 'Attendee search failed. Please retry.')
@@ -1185,6 +1193,25 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
 
   const selectedEvent = events.find(event => String(event.id) === eventId) || (String(resolvedEvent?.id) === eventId ? resolvedEvent : null)
   const ready = Boolean(eventId && device && manifest && Number(manifest.payload?.event?.id) === Number(eventId))
+  const searchAttendeesRef = useRef(searchAttendees)
+  searchAttendeesRef.current = searchAttendees
+  const handedOffLookupRef = useRef(null)
+  useEffect(() => {
+    // Wait for the trusted ticket list so the matching Admit button is usable.
+    if (!requestedLookup || !ready || !online || eventId !== String(requestedEventId) || handedOffLookupRef.current === routeScope) return
+    handedOffLookupRef.current = routeScope
+    setSearchQuery(requestedLookup)
+    searchAttendeesRef.current(requestedLookup)
+    // One-shot: drop the hand-off from the address bar so a reload, Back or a
+    // copied link does not repeat it. Rewriting history directly keeps the
+    // router location (and with it this device's setup) unchanged.
+    const address = new URL(window.location.href)
+    if (address.searchParams.has('lookup')) {
+      address.searchParams.delete('lookup')
+      window.history.replaceState(window.history.state, '', address)
+    }
+    document.getElementById('attendee-lookup')?.scrollIntoView?.({ block: 'start' })
+  }, [eventId, online, ready, requestedEventId, requestedLookup, routeScope])
   const expiresAt = Math.min(Date.parse(device?.authorization_expires_at || ''), Date.parse(manifest?.payload.expires_at || ''))
   const eventTimezone = manifest?.payload.event?.timezone || selectedEvent?.timezone || 'Pacific/Guam'
   const expiryLabel = Number.isFinite(expiresAt) ? formatEventDateTime(expiresAt, eventTimezone) : null
@@ -1206,7 +1233,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         {!offlineOnly && eventListLoading && <p role="status" className="mb-2 text-sm">Loading events…</p>}
         {!offlineOnly && eventListError && <p role="alert" className="mb-2 text-sm text-red-800">{eventListError} <button type="button" className="min-h-11 underline" onClick={() => setEventListRetry(value => value + 1)}>Retry event search</button></p>}
         <label htmlFor="scanner-event" className="mb-1 block text-sm font-medium text-neutral-800">Event to scan</label>
-        <select id="scanner-event" disabled={eventListLoading} value={eventId} onChange={event => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('event', event.target.value); return next })} className="input w-full">
+        <select id="scanner-event" disabled={eventListLoading} value={eventId} onChange={event => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('event', event.target.value); next.delete('lookup'); return next })} className="input w-full">
           {!eventId && <option value="">{events.length ? 'Choose an assigned event' : 'No assigned events'}</option>}
           {selectedEvent && !events.some(event => String(event.id) === eventId) && <option value={eventId}>{selectedEvent.title} (selected)</option>}
           {events.map(event => <option key={event.id} value={event.id}>{event.title}</option>)}

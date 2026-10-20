@@ -58,6 +58,23 @@ RSpec.describe EmailService do
     end
   end
 
+  it "explains transferred tickets instead of an empty ticket table when the buyer holds none" do
+    order = create(:order)
+    html = described_class.send(:build_order_confirmation_html, order, order.event, [])
+
+    expect(html).to include("All tickets on this order were transferred")
+    expect(html).not_to include("Your Tickets")
+    expect(html).not_to include("Present your QR code")
+  end
+
+  it "keeps the ticket table and entry instructions while the buyer holds tickets" do
+    ticket = create(:ticket)
+    html = described_class.send(:build_order_confirmation_html, ticket.order, ticket.event, [ticket])
+
+    expect(html).to include("Your Tickets", "Present your QR code", "View Ticket")
+    expect(html).not_to include("were transferred")
+  end
+
   it "fails closed in production instead of recording a simulated customer delivery" do
     order = create(:order)
     allow(Rails.env).to receive(:production?).and_return(true)
@@ -100,5 +117,20 @@ RSpec.describe EmailService do
     expect(params["html"]).to include("&lt;script&gt;buyer()&lt;/script&gt;", "&lt;img src=x onerror=alert(1)&gt;",
       "&lt;b&gt;Venue&lt;/b&gt;", "&lt;svg onload=alert(2)&gt;", "&lt;em&gt;Attendee&lt;/em&gt;")
     expect(params["html"]).not_to include("<script>buyer()", "<img src=x", "<svg onload")
+  end
+
+  it "leaves tickets transferred to another account out of the buyer's order email" do
+    buyer = create(:user)
+    order = create(:order, user: buyer)
+    ticket_type = create(:ticket_type, event: order.event)
+    held = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, attendee_name: "Held Guest")
+    moved = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, attendee_name: "Transferee Guest")
+    moved.update!(holder_user: create(:user))
+    expect([held, moved].map(&:display_credential)).to all(be_present)
+
+    html = described_class.prepare_delivery_payload(create(:message_delivery, order: order)).fetch("html")
+
+    expect(html).to include("Held Guest", "/tickets/#{held.display_credential}")
+    expect(html).not_to include("Transferee Guest", moved.display_credential)
   end
 end
