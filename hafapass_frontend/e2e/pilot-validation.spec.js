@@ -64,7 +64,7 @@ test('admin records complete Gate F device, accessibility, and load evidence', a
     ['Expected hold expirations', '10'], ['Observed hold expirations', '10'],
   ]
   for (const [label, value] of numericFields) await page.getByLabel(label).fill(value)
-  for (const checkbox of await page.getByRole('checkbox').all()) {
+  for (const checkbox of await page.getByRole('dialog').getByRole('checkbox').all()) {
     if (!(await checkbox.isChecked())) await checkbox.check()
   }
 
