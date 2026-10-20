@@ -8,6 +8,7 @@ import { SUPPORT_FALLBACK_PATH } from '../utils/supportContact'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import TransferTicketDialog from '../components/TransferTicketDialog'
+import PendingTransfer from '../components/PendingTransfer'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 
@@ -67,6 +68,7 @@ function OrderConfirmationContent() {
   const [exchangeSeatId, setExchangeSeatId] = useState('')
   const [exchangeAttested, setExchangeAttested] = useState(false)
   const [ticketActionError, setTicketActionError] = useState(null)
+  const [ticketActionNotice, setTicketActionNotice] = useState(null)
   const [, refreshRefundAttempts] = useState(0)
   const lifecycle = useRef({ active: false, generation: 0 })
   const currentRoute = useRef(null)
@@ -322,7 +324,10 @@ function OrderConfirmationContent() {
     }
   }
 
-  const sendTransfer = ticket => body => apiClient.post(`/orders/${id}/tickets/${ticket.id}/transfer`, body, { headers: orderHeaders() })
+  const sendTransfer = ticket => async body => {
+    await apiClient.post(`/orders/${id}/tickets/${ticket.id}/transfer`, body, { headers: orderHeaders() })
+    fetchOrder({ preserveOrder: true })
+  }
 
   async function openSeatExchange(ticket) {
     setTicketActionError(null)
@@ -418,6 +423,7 @@ function OrderConfirmationContent() {
             {resendState === 'uncertain' && <p className="mb-3 text-sm text-amber-700">A previous ticket email is still unconfirmed. Use Refresh status or contact support before requesting another email.</p>}
             {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
+            {ticketActionNotice && <p role="status" className="mb-3 text-sm text-brand-800">{ticketActionNotice}</p>}
             {transferTarget && <TransferTicketDialog ticketLabel={`your ${transferTarget.ticket_type.name} ticket`} onSend={sendTransfer(transferTarget)} onClose={() => setTransferTarget(null)} />}
             <div className="divide-y divide-neutral-100">
               {order.tickets.map(ticket => {
@@ -435,6 +441,9 @@ function OrderConfirmationContent() {
                     {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
                     <p className="text-xs capitalize text-neutral-600">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
                     {ticket.admission_block_reason && <p className="mt-1 text-sm text-amber-800">{ticket.admission_block_reason}</p>}
+                    {ticket.status === 'issued' && ticket.pending_transfer && <PendingTransfer transfer={ticket.pending_transfer} timeZone={event.timezone}
+                      onCancel={() => apiClient.delete(`/orders/${id}/tickets/${ticket.id}/transfer`, { headers: orderHeaders() })}
+                      onSettled={({ message }) => { setTicketActionNotice(message); fetchOrder({ preserveOrder: true }) }} />}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`}
@@ -448,7 +457,7 @@ function OrderConfirmationContent() {
                     {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) || refundNeedsStatusCheck(ticketRefundAttempt)) && (
                       <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Checking…' : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : 'Cancel'}</button>
                     )}
-                    {ticket.status === 'issued' && capabilities.ticket_transfers === true && event.transfers_enabled === true && (
+                    {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && (
                       <button type="button" onClick={() => { setTicketActionError(null); setTransferTarget(ticket) }} className="min-h-11 px-2 text-xs font-semibold text-brand-700">Transfer</button>
                     )}
                     {ticket.status === 'issued' && ticket.seat && (

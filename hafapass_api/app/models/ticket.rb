@@ -82,6 +82,13 @@ class Ticket < ApplicationRecord
     holder_user_id.present? && holder_user_id != order.user_id
   end
 
+  # The holder's own pending transfer (recipient as they typed it), so their
+  # ticket list can show it and offer to cancel. Works with preloaded transfers.
+  def pending_transfer_summary(at: Time.current)
+    transfer = ticket_transfers.select { |item| item.active?(at: at) }.max_by(&:id)
+    transfer && { id: transfer.id, recipient_email: transfer.recipient_email, expires_at: transfer.expires_at }
+  end
+
   def held_by?(user)
     user.present? && holder_user_id == user.id
   end

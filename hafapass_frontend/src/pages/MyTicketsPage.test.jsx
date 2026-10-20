@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
@@ -8,7 +8,7 @@ import MyTicketsPage from './MyTicketsPage'
 
 const launch = vi.hoisted(() => ({ value: {} }))
 vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => launch.value }))
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 const clerk = vi.hoisted(() => ({ getToken: vi.fn(), signOut: vi.fn() }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ getToken: clerk.getToken }), useClerk: () => ({ signOut: clerk.signOut }) }))
 vi.mock('../components/ui/ScrollReveal', () => ({
@@ -162,14 +162,73 @@ describe('MyTicketsPage transfers', () => {
     expect(dialog).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Send transfer' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Enter the recipient’s email address.')
+    expect(screen.getByLabelText('Recipient email')).toHaveFocus()
     await userEvent.type(screen.getByLabelText('Recipient email'), 'friend@example.com')
     await userEvent.click(screen.getByRole('button', { name: 'Send transfer' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Recipient must be different')
     expect(screen.getByLabelText('Recipient email')).toHaveValue('friend@example.com')
+    await waitFor(() => expect(screen.getByLabelText('Recipient email')).toHaveFocus())
     await userEvent.click(screen.getByRole('button', { name: 'Send transfer' }))
     expect(await screen.findByRole('dialog', { name: 'Transfer sent' })).toHaveTextContent('friend@example.com')
     expect(apiClient.post).toHaveBeenLastCalledWith('/me/tickets/3/transfer', { recipient_email: 'friend@example.com', recipient_name: undefined })
     await userEvent.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  const pending = { ...transferable, pending_transfer: { id: 9, recipient_email: 'friend@example.com', expires_at: '2029-12-27T08:00:00Z' } }
+
+  it('shows a pending transfer instead of Transfer and returns the ticket to normal after cancel', async () => {
+    let tickets = [pending]
+    apiClient.get.mockImplementation(() => Promise.resolve({ data: { tickets } }))
+    apiClient.post.mockResolvedValue({ data: {} })
+    apiClient.delete.mockImplementation(() => { tickets = [transferable]; return Promise.resolve({ data: { status: 'cancelled' } }) })
+    renderPage()
+    expect((await screen.findByText(/Transfer pending/)).closest('p')).toHaveTextContent('sent to friend@example.com · expires Dec 27')
+    expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel transfer' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Cancel this transfer?' })).getByRole('button', { name: 'Cancel transfer' }))
+    expect(apiClient.delete).toHaveBeenCalledWith('/me/tickets/3/transfer')
+    expect(await screen.findByText('Transfer cancelled. Your ticket stays with you.')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Transfer' })).toBeInTheDocument()
+    expect(screen.queryByText(/Transfer pending/)).not.toBeInTheDocument()
+  })
+
+  it('refreshes gracefully when the recipient already accepted', async () => {
+    let tickets = [pending]
+    apiClient.get.mockImplementation(() => Promise.resolve({ data: { tickets } }))
+    apiClient.post.mockResolvedValue({ data: {} })
+    apiClient.delete.mockImplementation(() => { tickets = []; return Promise.reject({ response: { status: 404, data: { error: 'Ticket not found' } } }) })
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel transfer' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Cancel this transfer?' })).getByRole('button', { name: 'Cancel transfer' }))
+    expect(await screen.findByText(/This transfer already ended/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Island workshop')).not.toBeInTheDocument())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps the dialog open with an error when cancelling fails for another reason', async () => {
+    apiClient.get.mockResolvedValue({ data: { tickets: [pending] } })
+    apiClient.post.mockResolvedValue({ data: {} })
+    apiClient.delete.mockRejectedValue(new Error('offline'))
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel transfer' }))
+    const dialog = screen.getByRole('dialog', { name: 'Cancel this transfer?' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel transfer' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('We could not cancel the transfer')
+  })
+
+  it('reloads the list after sending so the pending state appears', async () => {
+    let tickets = [transferable]
+    apiClient.get.mockImplementation(() => Promise.resolve({ data: { tickets } }))
+    apiClient.post.mockImplementation(url => {
+      if (url.endsWith('/transfer')) tickets = [pending]
+      return Promise.resolve({ data: {} })
+    })
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Transfer' }))
+    await userEvent.type(screen.getByLabelText('Recipient email'), 'friend@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Send transfer' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Done' }))
+    expect(await screen.findByText(/Transfer pending/)).toBeInTheDocument()
   })
 })

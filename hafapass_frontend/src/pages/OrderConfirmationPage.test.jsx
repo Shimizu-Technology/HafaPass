@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@clerk/clerk-react'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import OrderConfirmationPage from './OrderConfirmationPage'
 import apiClient from '../api/client'
 import { getActiveCheckout, saveActiveCheckout } from '../utils/orderAccess'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: vi.fn() }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 beforeEach(() => vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test'))
@@ -335,4 +335,36 @@ describe('confirmation ticket hierarchy and outcome', () => {
     expect(screen.queryByRole('link', { name: 'Open ticket: Refund-paused entry' })).not.toBeInTheDocument()
   })
 
+})
+
+describe('pending ticket transfer on the order page', () => {
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); window.localStorage.clear() })
+
+  it('shows the pending transfer, hides Transfer, and cancels it with the guest token', async () => {
+    const ticket = { id: 1, status: 'issued', admission_allowed: true, refundable_cents: 0, display_credential: 'signed-display', ticket_type: { id: 7, name: 'Free admission' } }
+    const base = {
+      id: 922, reference: 'HP-922', status: 'completed', buyer_name: 'Guest', buyer_email: 'guest@example.invalid', total_cents: 0,
+      order_items: [], event: { id: 37, slug: 'free-event', title: 'Free Event', status: 'published', starts_at: '2030-10-20T08:00:00Z', timezone: 'Pacific/Guam', venue_name: 'Venue', transfers_enabled: true },
+    }
+    let current = { ...base, tickets: [{ ...ticket, pending_transfer: { id: 5, recipient_email: 'friend@example.com', expires_at: '2030-10-27T08:00:00Z' } }] }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { ticket_transfers: true } } : current }))
+    apiClient.delete.mockImplementation(() => { current = { ...base, tickets: [ticket] }; return Promise.resolve({ data: { status: 'cancelled' } }) })
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation?guest_token=guest-token']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+
+    expect((await screen.findByText(/Transfer pending/)).closest('p')).toHaveTextContent('sent to friend@example.com · expires Oct 27')
+    expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel transfer' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Keep transfer' }))
+    expect(apiClient.delete).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel transfer' }))
+    const dialog = screen.getByRole('dialog', { name: 'Cancel this transfer?' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel transfer' }))
+
+    expect(await screen.findByText('Transfer cancelled. Your ticket stays with you.')).toBeInTheDocument()
+    expect(apiClient.delete).toHaveBeenCalledWith('/orders/922/tickets/1/transfer', { headers: expect.objectContaining({ 'X-Guest-Order-Token': 'guest-token' }) })
+    expect(await screen.findByRole('button', { name: 'Transfer' })).toBeInTheDocument()
+    expect(screen.queryByText(/Transfer pending/)).not.toBeInTheDocument()
+  })
 })

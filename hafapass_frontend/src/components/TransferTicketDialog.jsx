@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Dialog from './Dialog'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -12,12 +12,13 @@ export default function TransferTicketDialog({ ticketLabel, onSend, onClose }) {
   const [error, setError] = useState(null)
   const [sending, setSending] = useState(false)
   const [sentTo, setSentTo] = useState(null)
+  const emailRef = useRef(null)
 
   async function submit(event) {
     event.preventDefault()
     if (sending) return
     const recipient = email.trim()
-    if (!EMAIL_PATTERN.test(recipient)) { setError('Enter the recipient’s email address.'); return }
+    if (!EMAIL_PATTERN.test(recipient)) { setError('Enter the recipient’s email address.'); emailRef.current?.focus(); return }
     setSending(true)
     setError(null)
     try {
@@ -25,6 +26,9 @@ export default function TransferTicketDialog({ ticketLabel, onSend, onClose }) {
       setSentTo(recipient)
     } catch (err) {
       setError(err.response?.data?.error || 'We could not send this transfer. Check your connection and try again.')
+      // The address is the only field the server rejects; return focus to it
+      // once the inputs are enabled again.
+      setTimeout(() => emailRef.current?.focus(), 0)
     } finally {
       setSending(false)
     }
@@ -43,7 +47,7 @@ export default function TransferTicketDialog({ ticketLabel, onSend, onClose }) {
       <h2 id="transfer-ticket-title" className="text-lg font-semibold text-neutral-900">Transfer {ticketLabel}</h2>
       <p className="mt-1 text-sm text-neutral-600">The recipient signs in with this email to accept. Transfers close when the event starts.</p>
       <label htmlFor="transfer-recipient-email" className="mt-5 block text-sm font-medium text-neutral-700">Recipient email</label>
-      <input id="transfer-recipient-email" type="email" inputMode="email" autoComplete="email" className={`input mt-1 ${error ? 'input-error' : ''}`} value={email} onChange={event => { setEmail(event.target.value); setError(null) }} aria-invalid={Boolean(error)} aria-describedby={error ? 'transfer-ticket-error' : undefined} disabled={sending} required />
+      <input ref={emailRef} id="transfer-recipient-email" type="email" inputMode="email" autoComplete="email" className={`input mt-1 ${error ? 'input-error' : ''}`} value={email} onChange={event => { setEmail(event.target.value); setError(null) }} aria-invalid={Boolean(error)} aria-describedby={error ? 'transfer-ticket-error' : undefined} disabled={sending} required />
       <label htmlFor="transfer-recipient-name" className="mt-4 block text-sm font-medium text-neutral-700">Recipient name <span className="font-normal text-neutral-500">(optional)</span></label>
       <input id="transfer-recipient-name" type="text" autoComplete="name" className="input mt-1" value={name} onChange={event => setName(event.target.value)} disabled={sending} maxLength={120} />
       {error && <p id="transfer-ticket-error" role="alert" className="mt-3 text-sm text-red-700">{error}</p>}

@@ -46,4 +46,40 @@ RSpec.describe "Api::V1 ticket transfers", type: :request do
     expect(response).to have_http_status(:created)
     expect(ticket.ticket_transfers.pending.first.recipient_email).to eq("next@example.com")
   end
+
+  it "shows the holder their pending transfer until they cancel it" do
+    ticket
+    post "/api/v1/me/tickets/#{ticket.id}/transfer", params: { recipient_email: "Friend@Example.com" }, headers: auth_headers(owner)
+    transfer = TicketTransfer.find(response.parsed_body.fetch("id"))
+
+    get "/api/v1/me/tickets", headers: auth_headers(owner)
+    pending = response.parsed_body.fetch("tickets").sole.fetch("pending_transfer")
+    expect(pending).to include("id" => transfer.id, "recipient_email" => "friend@example.com")
+    expect(Time.zone.parse(pending.fetch("expires_at"))).to be_within(1.second).of(transfer.expires_at)
+
+    get "/api/v1/orders/#{order.id}", headers: auth_headers(owner)
+    expect(response.parsed_body.fetch("tickets").sole.dig("pending_transfer", "recipient_email")).to eq("friend@example.com")
+
+    delete "/api/v1/me/tickets/#{ticket.id}/transfer", headers: auth_headers(owner)
+    expect(response).to have_http_status(:ok)
+    get "/api/v1/me/tickets", headers: auth_headers(owner)
+    expect(response.parsed_body.fetch("tickets").sole["pending_transfer"]).to be_nil
+  end
+
+  it "drops the ticket from the sender's list once the recipient accepts" do
+    allow(ClerkIdentity).to receive(:verified_email_addresses).and_return([recipient.email])
+    transfer = TicketTransfers::Manager.create!(ticket: ticket, recipient_email: recipient.email)
+    TicketTransfers::Manager.accept!(token: TicketTransferCredential.issue(transfer), user: recipient)
+
+    get "/api/v1/me/tickets", headers: auth_headers(owner)
+    expect(response.parsed_body.fetch("tickets")).to be_empty
+    get "/api/v1/orders/#{order.id}", headers: auth_headers(owner)
+    expect(response.parsed_body.fetch("tickets").sole).to include("status" => "transferred", "pending_transfer" => nil)
+  end
+
+  it "does not report an expired invitation as pending" do
+    TicketTransfers::Manager.create!(ticket: ticket, recipient_email: recipient.email).update_columns(expires_at: 1.minute.ago)
+    get "/api/v1/me/tickets", headers: auth_headers(owner)
+    expect(response.parsed_body.fetch("tickets").sole["pending_transfer"]).to be_nil
+  end
 end
