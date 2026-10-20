@@ -21,7 +21,7 @@ beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); setAuthTokenGetter(
 afterEach(() => { cleanup(); clearAuth(); vi.restoreAllMocks() })
 const cases = [
   [AdminUsersPage, '/admin/users', 'Search users by name or email', name => ({ users: [{ id: 3, email: `${name}@example.invalid`, first_name: name, last_name: '', role: 'attendee', created_at: '2026-01-01', orders_count: 0 }], meta: {} })],
-  [AdminOrdersPage, '/admin/orders', 'Search orders by buyer name or email', name => ({ orders: [{ id: 3, buyer_name: name, buyer_email: `${name}@example.invalid`, status: 'completed', tickets: [], created_at: '2026-01-01', net_cents: 0 }], meta: {} })],
+  [AdminOrdersPage, '/admin/orders', 'Search orders by order number, buyer name or email', name => ({ orders: [{ id: 3, buyer_name: name, buyer_email: `${name}@example.invalid`, status: 'completed', tickets: [], created_at: '2026-01-01', net_cents: 0 }], meta: {} })],
   [AdminEventsPage, '/admin/events', 'Search events...', name => ({ events: [{ id: 3, title: name, status: 'draft', category: 'other', tickets_sold: 0, revenue_cents: 0 }], meta: {} })],
 ]
 const searchControl = label => label.endsWith('...') ? screen.getByPlaceholderText(label) : screen.getByRole('textbox', { name: label })

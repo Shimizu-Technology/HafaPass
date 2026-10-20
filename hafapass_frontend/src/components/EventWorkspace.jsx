@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CalendarDays, MapPin, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
 import apiClient from '../api/client'
 import Dialog from './Dialog'
+import SupportLink from './SupportLink'
 import useDraftProtection from '../hooks/useDraftProtection'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import { useOrganizerIdentity, useOrganizerRequests } from '../hooks/useOrganizerContext'
@@ -141,6 +142,12 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
           {event.starts_at && <p className="flex items-start gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>{formatEventDateTime(event.starts_at, event.timezone)} · {event.timezone || 'Pacific/Guam'}</span></p>}
           {event.venue_name && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span className="break-words">{event.venue_name}</span></p>}
         </div>
+        {event.policy_hold && <div role="status" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+          <p className="font-semibold">{event.policy_hold.scope === 'hidden' ? 'HåfaPass has hidden this event and paused ticket sales.' : 'HåfaPass has paused ticket sales for this event.'}</p>
+          <p className="mt-1 whitespace-pre-wrap break-words">Reason: {event.policy_hold.reason}</p>
+          <p className="mt-1">Existing tickets stay valid and nothing has been refunded.</p>
+          <SupportLink subject={`Policy hold: ${event.title}`} className="mt-1 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">Contact HåfaPass support about this hold</SupportLink>
+        </div>}
         <p className="mt-3 text-sm text-neutral-700">{organization?.name || event.organization_name || (event.organization_id != null ? `Organization ${event.organization_id}` : 'Event workspace')}</p>
         <p className="mt-1 text-sm text-neutral-600">{accessSummary(organization?.role, toolGroups.length > 0)}</p>
         {toolGroups.length > 0 && <details className="mt-1 text-sm text-neutral-600">
