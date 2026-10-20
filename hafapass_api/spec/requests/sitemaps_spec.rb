@@ -1,15 +1,23 @@
 require "rails_helper"
 
 RSpec.describe "Sitemaps", type: :request do
+  around do |example|
+    original = ENV["PUBLIC_WEB_URL"]
+    ENV["PUBLIC_WEB_URL"] = "https://tickets.example.test/"
+    example.run
+  ensure
+    original.nil? ? ENV.delete("PUBLIC_WEB_URL") : ENV["PUBLIC_WEB_URL"] = original
+  end
+
   describe "GET /sitemap.xml" do
     it "returns XML with static pages" do
       get "/sitemap.xml"
 
       expect(response).to have_http_status(:ok)
       expect(response.content_type).to include("xml")
-      expect(response.body).to include("https://hafapass.com/")
-      expect(response.body).to include("https://hafapass.com/events")
-      expect(response.body).to include("https://hafapass.com/host")
+      expect(response.body).to include("https://tickets.example.test/")
+      expect(response.body).to include("https://tickets.example.test/events")
+      expect(response.body).to include("https://tickets.example.test/host")
     end
 
     it "includes published events" do
@@ -19,7 +27,7 @@ RSpec.describe "Sitemaps", type: :request do
       get "/sitemap.xml"
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("https://hafapass.com/events/#{event.slug}")
+      expect(response.body).to include("https://tickets.example.test/events/#{event.slug}")
     end
 
     it "includes upcoming published events even when tickets are sold out" do
@@ -28,7 +36,7 @@ RSpec.describe "Sitemaps", type: :request do
 
       get "/sitemap.xml"
 
-      expect(response.body).to include("https://hafapass.com/events/#{event.slug}")
+      expect(response.body).to include("https://tickets.example.test/events/#{event.slug}")
     end
 
     it "does not include ended published events" do
@@ -36,7 +44,7 @@ RSpec.describe "Sitemaps", type: :request do
 
       get "/sitemap.xml"
 
-      expect(response.body).not_to include("https://hafapass.com/events/#{event.slug}")
+      expect(response.body).not_to include("https://tickets.example.test/events/#{event.slug}")
     end
 
     it "does not include draft events" do

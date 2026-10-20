@@ -15,6 +15,8 @@ class Api::V1::ConfigController < ApplicationController
       launch_capabilities: LaunchCapabilities.public_configuration,
       stripe_publishable_key: settings.stripe_publishable_key,
       platform_name: settings.platform_name,
+      support_email: settings.platform_email.presence,
+      support_phone: settings.platform_phone.presence,
       service_fee_percent: settings.service_fee_percent,
       service_fee_flat_cents: settings.service_fee_flat_cents,
       processing_fee_bearer: settings.processing_fee_bearer,

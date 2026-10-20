@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 class GuestListEntry < ApplicationRecord
+  # Orders need a buyer email; a guest without one gets a reserved, never-routable
+  # address (RFC 2606 ".invalid") so no ticket email leaves HåfaPass for them.
+  PLACEHOLDER_EMAIL = "guest-list@hafapass.invalid"
+
   belongs_to :event
   belongs_to :ticket_type
   belongs_to :order, optional: true

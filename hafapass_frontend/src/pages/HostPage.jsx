@@ -9,7 +9,8 @@ import apiClient from '../api/client'
 import SEO from '../components/SEO'
 import { formatMoneyCents } from '../utils/money'
 import { PUBLIC_WEB_URL } from '../utils/site'
-import { supportMailto } from '../utils/supportContact'
+import SupportLink from '../components/SupportLink'
+import { useSupportContact } from '../utils/supportContact'
 import {
   calculateHostPayout, describeFee, hostCtaTargets, MAX_QUANTITY, parseHostPricing, parsePriceInput, parseQuantityInput,
 } from '../utils/hostPricing'
@@ -231,7 +232,7 @@ function PricingSection({ configState }) {
               <p className="mt-1 text-sm text-content-muted">Paid tickets carry a per-ticket HåfaPass fee, which buyers see before they pay. Try again in a moment, or email us for the current rate.</p>
               <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
                 <button type="button" onClick={configState.retry} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-800 underline underline-offset-4">Try again</button>
-                <a href={supportMailto('HåfaPass pricing')} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-800 underline underline-offset-4">Email us</a>
+                <SupportLink subject="HåfaPass pricing" className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-800 underline underline-offset-4">Email us</SupportLink>
               </div>
             </div>
           )}
@@ -268,11 +269,12 @@ function faqItems(pricing) {
     { q: 'When do I get paid?', a: payoutAnswer },
     { q: 'How do refunds work?', a: <>You set the refund rules for your event and handle refund requests from your dashboard. Refunds go back to the buyer’s original payment method and come out of your event’s sales. See the <Link to="/policies/refunds" className="font-semibold text-brand-800 underline underline-offset-4">Refund &amp; Cancellation Policy</Link>.</> },
     { q: 'Does my door staff need an app?', a: 'No. Staff open the scanner in their phone’s browser and scan tickets with the camera. If the venue Wi‑Fi drops, scanning keeps working and syncs when the connection is back.' },
-    { q: 'How do I get help?', a: <>Email the HåfaPass team at any point, from setting up your first event to closing out after it. <a href={supportMailto('Hosting on HåfaPass')} className="font-semibold text-brand-800 underline underline-offset-4">Contact support</a>.</> },
+    { q: 'How do I get help?', a: <>Email the HåfaPass team at any point, from setting up your first event to closing out after it. <SupportLink subject="Hosting on HåfaPass" className="font-semibold text-brand-800 underline underline-offset-4">Contact support</SupportLink>.</> },
   ]
 }
 
 function HostContent({ targets }) {
+  const support = useSupportContact()
   const configState = usePublicConfig()
   const pricing = configState.status === 'loaded' ? parseHostPricing(configState.config) : null
 
@@ -355,7 +357,7 @@ function HostContent({ targets }) {
               </details>
             ))}
           </div>
-          <p className="mt-6 flex items-center gap-2 text-sm text-content-muted"><Mail aria-hidden="true" className="h-4 w-4" />Something else? <a href={supportMailto('Hosting on HåfaPass')} className="font-semibold text-brand-800 underline underline-offset-4">Ask us</a></p>
+          {support.email && <p className="mt-6 flex items-center gap-2 text-sm text-content-muted"><Mail aria-hidden="true" className="h-4 w-4" />Something else? <SupportLink subject="Hosting on HåfaPass" className="font-semibold text-brand-800 underline underline-offset-4">Ask us</SupportLink></p>}
         </div>
       </section>
 

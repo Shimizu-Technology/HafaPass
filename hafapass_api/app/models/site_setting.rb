@@ -31,7 +31,6 @@ class SiteSetting < ApplicationRecord
       singleton_guard: 0,
       payment_mode: "simulate",
       platform_name: "HåfaPass",
-      platform_email: "tickets@hafapass.com",
       service_fee_percent: DEFAULT_SERVICE_FEE_PERCENT,
       service_fee_flat_cents: DEFAULT_SERVICE_FEE_FLAT_CENTS,
       processing_fee_bearer: "platform",

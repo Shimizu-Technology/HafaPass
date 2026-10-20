@@ -3,7 +3,7 @@ import { CheckCircle2, CircleAlert, Copy, Loader2, ShieldCheck, Trash2, UserPlus
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
 import apiClient from '../../api/client'
-import { supportMailto } from '../../utils/supportContact'
+import SupportLink from '../../components/SupportLink'
 
 const TEAM_ROLES = ['manager', 'finance', 'marketer', 'box_office', 'scanner']
 
@@ -291,7 +291,7 @@ function SettingsPageSession({ identity }) {
                   </>}
                   <div className="flex flex-wrap gap-3">
                     {!account && <button type="button" disabled={busy} onClick={() => startOnboarding('manual')} className="btn-teal">Start bank review</button>}
-                    <a className="btn-secondary" href={supportMailto(`HåfaPass payout setup — organization ${organization.id}`)}>{account ? 'Continue with HåfaPass team' : 'Contact HåfaPass team'}</a>
+                    <SupportLink subject={`HåfaPass payout setup — organization ${organization.id}`} className="btn-secondary">{account ? 'Continue with HåfaPass team' : 'Contact HåfaPass team'}</SupportLink>
                   </div>
                   <p className="text-xs text-neutral-600">The contact link opens your email app. Send the message there to contact the team; no message is sent by starting a review.</p>
                 </div>
@@ -308,7 +308,7 @@ function SettingsPageSession({ identity }) {
                     {account && <>
                       <p className="mt-2 text-sm">Status: {label(account.status)} · {account.payout_ready ? 'Payouts ready' : 'Payouts not ready'}</p>
                       {account.requirements_due?.length > 0 && <p className="text-sm text-amber-900">Still required: {account.requirements_due.map(label).join(', ')}.</p>}
-                      <a className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-action-teal underline" href={supportMailto(`HåfaPass ${provider} setup — organization ${organization.id}`)}>Discuss {provider === 'paypal' ? 'PayPal' : 'Stripe'} setup with HåfaPass</a>
+                      <SupportLink subject={`HåfaPass ${provider} setup — organization ${organization.id}`} className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-action-teal underline">Discuss {provider === 'paypal' ? 'PayPal' : 'Stripe'} setup with HåfaPass</SupportLink>
                     </>}
                   </article>
                 })}

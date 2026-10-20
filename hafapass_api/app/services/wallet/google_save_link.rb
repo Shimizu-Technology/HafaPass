@@ -44,7 +44,7 @@ module Wallet
         aud: "google",
         typ: "savetowallet",
         iat: Time.current.to_i,
-        origins: [ENV.fetch("FRONTEND_URL", "http://localhost:5173")],
+        origins: [PublicSiteUrl.frontend],
         payload: {
           eventTicketClasses: [event_class],
           eventTicketObjects: [ticket_object]

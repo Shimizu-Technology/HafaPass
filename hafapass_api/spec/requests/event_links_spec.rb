@@ -4,6 +4,15 @@ require "rails_helper"
 # were already shared. Every public entry point resolves a retired link to the
 # event and reports the current one.
 RSpec.describe "Event links", type: :request do
+  around do |example|
+    originals = ENV.to_h.slice("PUBLIC_WEB_URL", "FRONTEND_URL")
+    ENV["PUBLIC_WEB_URL"] = "https://tickets.example.test"
+    ENV["FRONTEND_URL"] = "https://tickets.example.test"
+    example.run
+  ensure
+    %w[PUBLIC_WEB_URL FRONTEND_URL].each { |key| originals.key?(key) ? ENV[key] = originals[key] : ENV.delete(key) }
+  end
+
   let(:user) { create(:user, :organizer) }
   let!(:organizer_profile) { create(:organizer_profile, user: user) }
   let(:organization) { organizer_profile.organization }
@@ -140,7 +149,7 @@ RSpec.describe "Event links", type: :request do
 
       get "/og/events/Island-Fest"
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include('og:url" content="https://hafapass.com/events/island-fest-2026"')
+      expect(response.body).to include('og:url" content="https://tickets.example.test/events/island-fest-2026"')
     end
 
     it "does not mark a request with the current link as a redirect" do
@@ -182,16 +191,16 @@ RSpec.describe "Event links", type: :request do
       get "/og/events/island-fest"
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include('<link rel="canonical" href="https://hafapass.com/events/island-fest-2026" />')
-      expect(response.body).to include('og:url" content="https://hafapass.com/events/island-fest-2026"')
+      expect(response.body).to include('<link rel="canonical" href="https://tickets.example.test/events/island-fest-2026" />')
+      expect(response.body).to include('og:url" content="https://tickets.example.test/events/island-fest-2026"')
       expect(response.body).not_to include("/events/island-fest\"")
     end
 
     it "lists only the current link in the sitemap" do
       get "/sitemap.xml"
 
-      expect(response.body).to include("https://hafapass.com/events/island-fest-2026<")
-      expect(response.body).not_to include("https://hafapass.com/events/island-fest<")
+      expect(response.body).to include("https://tickets.example.test/events/island-fest-2026<")
+      expect(response.body).not_to include("https://tickets.example.test/events/island-fest<")
     end
 
     it "keeps an unknown link a 404" do

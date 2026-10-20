@@ -41,7 +41,7 @@ class Api::V1::Admin::DistributionLinksController < Api::V1::Admin::BaseControll
       event: { id: link.event.id, title: link.event.title, slug: link.event.slug },
       partner: { id: link.distribution_partner.id, name: link.distribution_partner.name,
         kind: link.distribution_partner.kind },
-      url: "#{ENV.fetch('FRONTEND_URL', 'http://localhost:5173')}/go/#{link.code}"
+      url: "#{PublicSiteUrl.frontend}/go/#{link.code}"
     }
   end
 end

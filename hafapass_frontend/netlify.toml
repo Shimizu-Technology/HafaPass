@@ -1,7 +1,10 @@
+# Effective Netlify configuration for the frontend. The repository-root
+# netlify.toml sets build.base to this directory, so Netlify reads this file and
+# resolves every path below relative to hafapass_frontend/.
 [build]
   publish = "dist"
   command = "npm run build"
 
-[[edge_functions]]
-  path = "/events/*"
-  function = "og-redirect"
+# Edge functions in netlify/edge-functions/ declare their own paths inline
+# (og-redirect: /events/*, sitemap: /sitemap.xml). They read the Rails API
+# origin from the HAFAPASS_API_ORIGIN environment variable.
