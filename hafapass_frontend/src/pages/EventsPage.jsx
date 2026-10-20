@@ -112,7 +112,7 @@ export default function EventsPage() {
           <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div>
             <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950 mb-2">Events</h1>
             <p className="text-content-muted text-base">Discover what's happening on Guam</p>
-          </div><Link to="/dashboard" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">For event organizers</Link></div>
+          </div><Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">For event organizers</Link></div>
 
           {/* Search bar */}
           <div className="max-w-2xl">

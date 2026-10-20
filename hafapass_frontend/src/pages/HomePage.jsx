@@ -119,7 +119,7 @@ export default function HomePage() {
             </form>
             <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1">
               <Link to="/events" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Browse Events <ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link>
-              <Link to="/dashboard" className="inline-flex min-h-11 items-center rounded text-sm font-medium text-content-muted hover:text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Start Hosting</Link>
+              <Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm font-medium text-content-muted hover:text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Start Hosting</Link>
             </div>
           </div>
 
@@ -195,8 +195,8 @@ export default function HomePage() {
 
       <section className="py-10 sm:py-12">
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-5 px-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <div><h2 className="font-display text-2xl font-bold text-neutral-950">Planning an event?</h2><p className="mt-2 max-w-xl text-content-muted">Set up your organizer profile, create an event, and prepare your tickets and team.</p></div>
-          <Link to="/dashboard" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg bg-action px-5 py-3 font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Start Hosting <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
+          <div><h2 className="font-display text-2xl font-bold text-neutral-950">Planning an event?</h2><p className="mt-2 max-w-xl text-content-muted">Sell tickets, run the door from any phone and get paid after your event. See how it works and what it costs.</p></div>
+          <Link to="/host" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg bg-action px-5 py-3 font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">Start Hosting <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
         </div>
       </section>
       <Footer />
