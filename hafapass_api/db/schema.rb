@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_20_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -106,6 +106,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120000) do
     t.index ["organization_id"], name: "index_admission_manifests_on_organization_id"
     t.check_constraint "ticket_count >= 0", name: "admission_manifests_ticket_count_nonnegative"
     t.check_constraint "version > 0", name: "admission_manifests_version_positive"
+  end
+
+  create_table "apple_wallet_registrations", force: :cascade do |t|
+    t.bigint "wallet_pass_id", null: false
+    t.string "device_library_identifier", null: false
+    t.string "push_token", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_library_identifier", "wallet_pass_id"], name: "index_apple_wallet_registrations_on_device_and_pass", unique: true
+    t.index ["wallet_pass_id"], name: "index_apple_wallet_registrations_on_wallet_pass_id"
   end
 
   create_table "audit_logs", force: :cascade do |t|
@@ -2308,6 +2318,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120000) do
     t.index ["order_id"], name: "index_waiver_acceptances_on_order_id"
   end
 
+  create_table "wallet_passes", force: :cascade do |t|
+    t.bigint "ticket_id", null: false
+    t.string "provider", null: false
+    t.string "serial_number", null: false
+    t.integer "scan_credential_version", null: false
+    t.string "authentication_token_digests", default: [], null: false, array: true
+    t.string "content_digest"
+    t.datetime "content_updated_at"
+    t.string "synced_digest"
+    t.datetime "synced_at"
+    t.integer "sync_attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider", "serial_number"], name: "index_wallet_passes_on_provider_and_serial_number", unique: true
+    t.index ["ticket_id"], name: "index_wallet_passes_on_ticket_id"
+    t.check_constraint "provider::text = ANY (ARRAY['apple'::character varying, 'google'::character varying]::text[])", name: "wallet_passes_provider_known"
+  end
+
   create_table "webhook_events", force: :cascade do |t|
     t.integer "attempts", default: 0, null: false
     t.datetime "created_at", null: false
@@ -2340,6 +2369,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120000) do
   add_foreign_key "admission_manifests", "events", on_delete: :restrict
   add_foreign_key "admission_manifests", "organizations", on_delete: :restrict
   add_foreign_key "admission_manifests", "users", column: "generated_by_user_id", on_delete: :restrict
+  add_foreign_key "apple_wallet_registrations", "wallet_passes"
   add_foreign_key "audit_logs", "organizations", on_delete: :restrict
   add_foreign_key "audit_logs", "users", column: "actor_user_id", on_delete: :nullify
   add_foreign_key "balance_adjustments", "balance_adjustments", column: "reversal_of_id", on_delete: :restrict
@@ -2596,4 +2626,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_120000) do
   add_foreign_key "waitlist_offers", "waitlist_entries", on_delete: :restrict
   add_foreign_key "waiver_acceptances", "event_waivers", on_delete: :restrict
   add_foreign_key "waiver_acceptances", "orders", on_delete: :restrict
+  add_foreign_key "wallet_passes", "tickets"
 end

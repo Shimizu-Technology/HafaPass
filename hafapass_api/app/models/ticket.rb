@@ -16,6 +16,7 @@ class Ticket < ApplicationRecord
   has_many :support_notes, dependent: :restrict_with_error
   has_many :admission_actions, dependent: :restrict_with_error
   has_many :ticket_transfers, dependent: :restrict_with_error
+  has_many :wallet_passes, dependent: :restrict_with_error
   has_one :inventory_retention, class_name: "TicketInventoryRetention", dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
@@ -31,6 +32,9 @@ class Ticket < ApplicationRecord
 
   before_validation :normalize_holder
   after_update :audit_assigned_seat_cancellation, if: :assigned_seat_just_cancelled?
+  after_update :refresh_wallet_passes, if: :wallet_visible_change?
+
+  WALLET_VISIBLE_ATTRIBUTES = %w[status scan_credential_version holder_user_id attendee_name event_seat_id ticket_type_id].freeze
 
   def issue_qr_code!
     return if qr_code.present?
@@ -48,6 +52,7 @@ class Ticket < ApplicationRecord
 
   def rotate_scan_credential!
     increment!(:scan_credential_version)
+    refresh_wallet_passes
   end
 
   def revoke_display_credential!
@@ -179,6 +184,14 @@ class Ticket < ApplicationRecord
 
   def normalize_holder
     self.holder_email = holder_email.to_s.strip.downcase.presence
+  end
+
+  def wallet_visible_change?
+    WALLET_VISIBLE_ATTRIBUTES.any? { |attribute| saved_change_to_attribute?(attribute) }
+  end
+
+  def refresh_wallet_passes
+    Wallet::PassSync.tickets_changed(id)
   end
 
   def assigned_seat_just_cancelled?

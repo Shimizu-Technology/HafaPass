@@ -57,6 +57,17 @@ Rails.application.routes.draw do
       get "tickets/:credential/wallet/apple", to: "tickets#apple_wallet", as: :ticket_apple_wallet
       get "tickets/:credential/wallet/google", to: "tickets#google_wallet", as: :ticket_google_wallet
 
+      # Apple PassKit web service (Apple appends /v1/... to the pass's webServiceURL).
+      scope "wallet/apple/v1", controller: "apple_wallet_web_service", format: false,
+        constraints: { pass_type_identifier: /[A-Za-z0-9.\-]+/, serial_number: /[A-Za-z0-9.\-]+/,
+          device_library_identifier: /[A-Za-z0-9.\-_]+/ } do
+        post "devices/:device_library_identifier/registrations/:pass_type_identifier/:serial_number", action: :register
+        delete "devices/:device_library_identifier/registrations/:pass_type_identifier/:serial_number", action: :unregister
+        get "devices/:device_library_identifier/registrations/:pass_type_identifier", action: :serial_numbers
+        get "passes/:pass_type_identifier/:serial_number", action: :latest_pass
+        post "log", action: :log
+      end
+
       # Ticket check-in
       post "check_in/:credential", to: "check_ins#create", as: :check_in
 

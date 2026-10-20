@@ -20,7 +20,7 @@ class PlatformCapabilities
     "apple_wallet" => {
       label: "Apple Wallet",
       required_env: %w[APPLE_PASS_TYPE_IDENTIFIER APPLE_TEAM_IDENTIFIER APPLE_PASS_CERTIFICATE_BASE64
-        APPLE_WWDR_CERTIFICATE_BASE64 APPLE_PASS_ICON_PATH PROVIDER_CONFIGURATION_REVISION],
+        APPLE_WWDR_CERTIFICATE_BASE64 APPLE_PASS_ICON_PATH PUBLIC_API_URL PROVIDER_CONFIGURATION_REVISION],
       controls: %w[issuer_approved signing_tested device_install_tested invalidation_behavior_tested]
     },
     "google_wallet" => {
@@ -148,6 +148,8 @@ class PlatformCapabilities
 
     def provider_specific_configuration_valid?(name)
       return ENV["GOOGLE_WALLET_CLASS_REVIEW_STATUS"] == "APPROVED" if name == "google_wallet"
+      # Saved passes can only be updated or voided through the HTTPS web service.
+      return Wallet::ApplePassGenerator.web_service_url.present? if name == "apple_wallet"
       return approved_clover_endpoint? if name == "clover_card_present"
 
       true
@@ -164,7 +166,7 @@ class PlatformCapabilities
       keys = case name
       when "stripe_live" then %w[STRIPE_LIVE_PUBLISHABLE_KEY]
       when "resend_production" then %w[MAILER_FROM_EMAIL]
-      when "apple_wallet" then %w[APPLE_PASS_TYPE_IDENTIFIER APPLE_TEAM_IDENTIFIER APPLE_PASS_ICON_PATH]
+      when "apple_wallet" then %w[APPLE_PASS_TYPE_IDENTIFIER APPLE_TEAM_IDENTIFIER APPLE_PASS_ICON_PATH PUBLIC_API_URL]
       when "google_wallet" then %w[GOOGLE_WALLET_ISSUER_ID GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL GOOGLE_WALLET_CLASS_REVIEW_STATUS]
       when "clover_card_present" then %w[CLOVER_REST_PAY_BASE_URL]
       else []

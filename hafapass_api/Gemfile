@@ -11,6 +11,8 @@ gem "lograge"
 gem "stripe"
 gem "aws-sdk-s3"
 gem "resend"
+# HTTP/2 client for Apple Wallet pass update pushes (APNs requires HTTP/2).
+gem "async-http", "~> 0.92"
 # HTTParty 0.24's response parser passes quirks_mode, removed by JSON 3.
 gem "json", ">= 2.21.2", "< 3"
 gem "sentry-rails", "~> 5.0"
@@ -43,4 +45,8 @@ group :development, :test do
   gem "rspec_junit_formatter"
   gem "rspec-rails", "~> 7.0"
   gem "rubocop-rails-omakase", require: false
+end
+
+group :test do
+  gem "webmock", require: false
 end

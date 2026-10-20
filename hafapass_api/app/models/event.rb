@@ -98,6 +98,7 @@ class Event < ApplicationRecord
 
   before_validation :assign_slug
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
+  after_update -> { Wallet::PassSync.tickets_changed(tickets.select(:id)) }, if: :wallet_visible_change?
 
   scope :published, -> { where(status: :published) }
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
@@ -364,6 +365,10 @@ class Event < ApplicationRecord
     elsif orders.exists?
       errors.add(:live_money_proof_candidate, "cannot change after the event has orders")
     end
+  end
+
+  def wallet_visible_change?
+    %w[status title starts_at ends_at venue_name venue_address].any? { |attribute| saved_change_to_attribute?(attribute) }
   end
 
   def copy_venue_details

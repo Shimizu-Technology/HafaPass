@@ -34,4 +34,17 @@ RSpec.describe Wallet::GoogleSaveLink do
     expect(payload.dig("payload", "eventTicketClasses", 0, "eventName", "defaultValue", "value")).to eq(event.title)
     expect(payload.dig("payload", "eventTicketObjects", 0, "barcode", "value")).to eq(ticket.scan_credential)
   end
+
+  it "records the saved object so later ticket changes can update it" do
+    configure_google_wallet
+    ticket = wallet_ticket
+
+    described_class.call(ticket)
+
+    wallet_pass = WalletPass.google.sole
+    expect(wallet_pass).to have_attributes(ticket: ticket, scan_credential_version: ticket.scan_credential_version,
+      serial_number: "3388000000000000000.hafapass_ticket_#{ticket.id}_v#{ticket.scan_credential_version}")
+    expect(wallet_pass.content_digest).to eq(Wallet::GoogleTicketObject.new(wallet_pass).content_digest)
+    expect { described_class.call(ticket) }.not_to change(WalletPass, :count)
+  end
 end

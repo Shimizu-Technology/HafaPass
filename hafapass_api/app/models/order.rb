@@ -40,6 +40,7 @@ class Order < ApplicationRecord
   validate :financial_components_balance
 
   before_validation :assign_reference, on: :create
+  after_update -> { Wallet::PassSync.tickets_changed(tickets.select(:id)) }, if: :saved_change_to_status?
 
   def guest_access_valid?(version:, at: Time.current)
     user_id.nil? && guest_access_revoked_at.nil? && guest_access_expires_at.present? &&

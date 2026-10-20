@@ -44,6 +44,30 @@ Google event tickets use an `EventTicketClass` for shared event data and an `Eve
 
 Required environment variables are documented in `hafapass_api/.env.example`. Until credentials and issuer approval are installed, wallet endpoints return `503 Service Unavailable`; they never emit an unsigned or fake pass.
 
+### Saved pass updates and voiding
+
+Every issued Apple pass serial and Google ticket object is recorded in `wallet_passes`, bound to the scan credential version it carried. When a ticket changes (transfer accepted, holder QR refresh, cancellation, refund or refund pending, dispute opened or resolved, retained inventory, check-in or undo, or an event status/time/venue change), `WalletPassSyncJob` updates the saved pass:
+
+- **Apple.** `pass.json` carries `webServiceURL` (`PUBLIC_API_URL` + `/api/v1/wallet/apple`) and a random per-download `authenticationToken`; only SHA-256 digests of tokens are stored. The PassKit web service under `/api/v1/wallet/apple/v1/...` implements device registration, unregistration, changed-serial listing (`passesUpdatedSince`), latest-pass download with `Last-Modified`/`If-Modified-Since`, and device logs, with `ApplePass` token checks and a per-IP throttle. The job sends an empty APNs push over HTTP/2 to `api.push.apple.com` with the Pass Type ID certificate, and drops device registrations APNs reports as gone. A replaced or ended ticket's latest pass is `voided: true` with no barcode; a temporary pause (dispute, refund pending, postponed event, checked in) removes the barcode without voiding. A status header field announces each change on the device.
+- **Google.** The job replaces the `EventTicketObject` through the Google Wallet REST API using a service-account OAuth token (`wallet_object.issuer` scope). The state becomes `INACTIVE` for an invalid ticket, `EXPIRED` after the event, `COMPLETED` once checked in, and the barcode is removed whenever the credential no longer admits. If the holder never saved the object, an invalid ticket's object is created already inactive so an old save link cannot add a working one.
+
+Both providers stay no-ops until their capability approval is active, and the web service answers `503` until Apple approval is active. Jobs retry throttling, provider errors and network failures with backoff; a definite rejection is recorded on the pass (`last_error`) and retried at the next ticket change. Apple approval now also requires an HTTPS `PUBLIC_API_URL`, because a pass without the web service could never be voided.
+
+To turn the wallets on later, obtain and configure:
+
+| Provider | Variable | Where it comes from |
+| --- | --- | --- |
+| Apple | `APPLE_TEAM_IDENTIFIER` | Apple Developer Program membership (Team ID) |
+| Apple | `APPLE_PASS_TYPE_IDENTIFIER` | A Pass Type ID registered in Certificates, Identifiers & Profiles, e.g. `pass.com.hafapass.ticket` |
+| Apple | `APPLE_PASS_CERTIFICATE_BASE64`, `APPLE_PASS_CERTIFICATE_PASSWORD` | The Pass Type ID certificate and private key exported as a `.p12`, base64-encoded, plus its export password. The same certificate signs passes and authenticates APNs pushes |
+| Apple | `APPLE_WWDR_CERTIFICATE_BASE64` | Apple Worldwide Developer Relations intermediate certificate (G4), DER, base64-encoded |
+| Apple | `APPLE_PASS_ICON_PATH` | Path to the pass icon PNG inside the deployed image |
+| Apple | `PUBLIC_API_URL` | Already set in production; must be the HTTPS API origin |
+| Google | `GOOGLE_WALLET_ISSUER_ID` | Google Pay & Wallet Console issuer account |
+| Google | `GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_WALLET_PRIVATE_KEY` | A Google Cloud service account with the Google Wallet API enabled and added as a user on the issuer account; the JSON key's `client_email` and `private_key` |
+| Google | `GOOGLE_WALLET_CLASS_REVIEW_STATUS` | `APPROVED` only after Google approves the event-ticket class / issuer for publishing |
+| Both | `PROVIDER_CONFIGURATION_REVISION` | Increment when provider configuration changes, then record the capability approval in Gate D |
+
 ## Operational rollout
 
 1. Deploy migrations before application instances. Run down/up verification in staging.

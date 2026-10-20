@@ -91,6 +91,18 @@ class Rack::Attack
     req.ip if req.path.start_with?("/api/v1/check_in") && req.post?
   end
 
+  # ─── Wallet Throttles ─────────────────────────────────────────────────────
+
+  # Apple Wallet devices poll and register for pass updates; ticket emails let
+  # the email provider fetch PDF attachments. Both are unauthenticated URLs.
+  throttle("apple-wallet/ip", limit: 60, period: 1.minute) do |req|
+    req.ip if req.path.start_with?("/api/v1/wallet/apple/")
+  end
+
+  throttle("ticket-email-attachment/ip", limit: 60, period: 1.minute) do |req|
+    req.ip if req.path.start_with?("/api/v1/ticket_email_attachments/") && req.get?
+  end
+
   # ─── Promo Code Validation Throttles ──────────────────────────────────────
 
   # Throttle promo code validation (30 per minute per IP)
