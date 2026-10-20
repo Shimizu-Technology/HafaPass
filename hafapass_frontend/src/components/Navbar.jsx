@@ -2,12 +2,12 @@ import HafaPassMark from './HafaPassMark'
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { UserButton, SignedIn, useAuth } from '@clerk/clerk-react'
-import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search, Compass, Heart, Settings, LifeBuoy, Globe, CalendarPlus } from 'lucide-react'
+import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search, Compass, Heart, Settings, LifeBuoy, Globe, CalendarPlus, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import LanguageSwitcher from './LanguageSwitcher'
 import { isWorkspacePath, publishAccountRole } from '../utils/workspace'
-import { useCanManageOrganizationSettings } from '../utils/organizerOrganizations'
+import { useCanManageOrganizationSettings, useCanViewOrganizationFinances } from '../utils/organizerOrganizations'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -298,10 +298,12 @@ function WorkspaceNav({ authContext, role, isSignedIn, clerkEnabled, roleAlert, 
   const { t } = useTranslation()
   const { pathname } = location
   const canManageSettings = useCanManageOrganizationSettings(authContext, Boolean(authContext))
+  const canViewFinances = useCanViewOrganizationFinances(authContext, Boolean(authContext))
   const links = [
     { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard,
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/events') },
     { to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine },
+    ...(canViewFinances ? [{ to: '/dashboard/finances', label: t('nav.finances'), icon: WalletCards }] : []),
     ...(canManageSettings ? [{ to: '/dashboard/settings', label: t('nav.settings'), icon: Settings }] : []),
     ...(['support', 'admin'].includes(role) ? [{ to: '/support', label: t('nav.support'), icon: LifeBuoy }] : []),
     ...(role === 'admin' ? [{ to: '/admin', label: t('nav.admin'), icon: Shield }] : []),

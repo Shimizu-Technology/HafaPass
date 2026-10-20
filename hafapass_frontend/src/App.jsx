@@ -26,6 +26,7 @@ const EventOverviewPage = lazy(() => import('./pages/dashboard/EventOverviewPage
 const EventAnalyticsPage = lazy(() => import('./pages/dashboard/EventAnalyticsPage'))
 const ScannerPage = lazy(() => import('./pages/dashboard/ScannerPage'))
 const SettingsPage = lazy(() => import('./pages/dashboard/SettingsPage'))
+const FinancesPage = lazy(() => import('./pages/dashboard/FinancesPage'))
 const InvitationAcceptPage = lazy(() => import('./pages/dashboard/InvitationAcceptPage'))
 const EventStaffPage = lazy(() => import('./pages/dashboard/EventStaffPage'))
 const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
@@ -107,6 +108,7 @@ function App() {
           <Route path="/dashboard/events/:id/seating" element={<ProtectedRoute><SeatingManagementPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/dashboard/finances" element={<ProtectedRoute><FinancesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/team" element={<ProtectedRoute><EventStaffPage /></ProtectedRoute>} />
           <Route path="/organization-invitations/accept" element={<ProtectedRoute><InvitationAcceptPage /></ProtectedRoute>} />
           {/* Admin routes */}

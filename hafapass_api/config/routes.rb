@@ -104,6 +104,10 @@ Rails.application.routes.draw do
       # Organizer events (protected)
       namespace :organizer do
         resource :organization, only: [:show], controller: "organizations"
+        resource :finances, only: [:show], controller: "organization_finances" do
+          get :orders_export
+          get :payouts_export
+        end
         resources :organizations, only: [:index]
         resources :memberships, only: [:index, :create, :update, :destroy]
         resources :connected_accounts, only: [:index, :create]
@@ -145,6 +149,8 @@ Rails.application.routes.draw do
           resource :finance, only: [:show], controller: "finances" do
             post :finalize
             post :payout
+            get :orders_export
+            get :statement_export
           end
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do

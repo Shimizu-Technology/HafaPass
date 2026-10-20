@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+import { ChevronRight } from 'lucide-react'
 import { formatEventDate } from '../../utils/eventTime'
 import { formatMoneyCents } from '../../utils/money'
 
@@ -12,7 +14,8 @@ function Tile({ label, children, detail }) {
 }
 
 // Organization-wide totals for the dashboard home. Revenue only arrives from
-// the API when the member may view finances, so its absence hides the tile.
+// the API when the member may view finances, so its absence hides the tile
+// and the link to the organization finances page.
 export default function DashboardSummary({ state, currency = 'USD', onRetry }) {
   if (!state || state.status === 'loading') {
     return (
@@ -43,6 +46,12 @@ export default function DashboardSummary({ state, currency = 'USD', onRetry }) {
         {showRevenue && <Tile label="Revenue">{formatMoneyCents(summary.revenue_cents, currency)}</Tile>}
         <Tile label="Next event" detail={next?.title}>{next ? formatEventDate(next.starts_at, next.timezone) : 'None scheduled'}</Tile>
       </dl>
+      {showRevenue && (
+        <Link to="/dashboard/finances" className="mt-2 inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-semibold text-brand-700 transition-colors hover:text-brand-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
+          Finances, payouts and exports
+          <ChevronRight aria-hidden="true" className="h-4 w-4" />
+        </Link>
+      )}
     </section>
   )
 }
