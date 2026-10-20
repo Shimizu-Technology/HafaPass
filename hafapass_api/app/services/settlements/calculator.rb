@@ -80,8 +80,17 @@ module Settlements
 
     attr_reader :event
 
+    # Production settles real money only: orders paid through Stripe test (or
+    # simulated) mode during QA never become organizer proceeds.
     def orders
-      @orders ||= event.orders.where(status: [:completed, :partially_refunded, :refunded]).order(:id).to_a
+      @orders ||= begin
+        scope = event.orders.where(status: [:completed, :partially_refunded, :refunded])
+        if Rails.env.production?
+          scope = scope.where.not(id: Payment.where(provider: "stripe").where.not(provider_environment: "live")
+            .select(:order_id))
+        end
+        scope.order(:id).to_a
+      end
     end
 
     def order_ids

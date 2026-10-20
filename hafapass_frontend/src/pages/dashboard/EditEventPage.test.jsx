@@ -191,6 +191,28 @@ it('requires saving before publishing, names the saved preview and confirms the 
 })
 
 
+it('shows organizer verification as one checklist step with a request action, and it still blocks publishing', async () => {
+  window.localStorage.setItem('hafapass_organization_id', '1')
+  const draft = { ...event, organization_id: 1, status: 'draft', slug: 'workshop', publish_checklist: [
+    { code: 'title', label: 'Title', complete: true },
+    { code: 'organizer_verified', label: 'Organizer identity verified', complete: false },
+    { code: 'pilot_readiness_approved', label: 'Pilot readiness', complete: true },
+  ] }
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer_profile'
+    ? { verification_status: 'unverified', organization: { role: 'owner' } } : draft }))
+  apiClient.post.mockResolvedValue({ data: { verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z', organization: { role: 'owner' } } })
+  const user = userEvent.setup()
+  mount()
+  const checklist = await screen.findByRole('list', { name: 'Publishing checklist' })
+  expect(checklist).toHaveTextContent('Waiting for HåfaPass to verify your organization before tickets go on sale')
+  expect(checklist).not.toHaveTextContent(/launch review|Pilot readiness/i)
+  expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+  await user.click(await within(checklist).findByRole('button', { name: 'Request verification' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', {}, expect.objectContaining({ organizationId: '1' }))
+  expect(await within(checklist).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+  window.localStorage.removeItem('hafapass_organization_id')
+})
+
 describe('canonical saved event form', () => {
   const readyDraft = { ...event, status: 'draft', venue_city: 'Tamuning', max_capacity: 300,
     description: 'Keep this event description', ticket_types: [{ id: 4, name: 'Saved admission' }],

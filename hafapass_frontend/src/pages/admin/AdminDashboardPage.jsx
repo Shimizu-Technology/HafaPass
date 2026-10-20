@@ -1,12 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useId, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Calendar, Users, DollarSign, Ticket, ArrowRight } from 'lucide-react'
+import { Loader2, Calendar, Users, DollarSign, Ticket, ArrowRight, CircleAlert } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 import { StaggerContainer, StaggerItem } from '../../components/ui/ScrollReveal'
 import { adminLabel } from './adminLabels'
+import Dialog from '../../components/Dialog'
+import OrganizerVerificationQueue from './OrganizerVerificationQueue'
+import { errorMessage } from './adminOperations'
 
 function StatCard({ label, value, icon: Icon, color }) {
   return (
@@ -22,6 +25,55 @@ function StatCard({ label, value, icon: Icon, color }) {
   )
 }
 
+// Production setup HåfaPass needs before it can sell or send email, each with
+// a one-click approval that is recorded in the audit log.
+function SetupRequired({ items, beginRequest, onApproved }) {
+  const titleId = useId()
+  const [confirming, setConfirming] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  if (!items?.length) return null
+
+  const close = () => { if (!busy) { setConfirming(null); setError('') } }
+  const approve = async () => {
+    const request = beginRequest()
+    if (!request) return
+    setBusy(true)
+    setError('')
+    try {
+      await apiClient.post(`/admin/platform_capabilities/${confirming.key}/quick_approve`, {}, request.config)
+      if (!request.current()) return
+      setConfirming(null)
+      onApproved()
+    } catch (failure) {
+      if (request.handleError(failure) || !request.current()) return
+      setError(errorMessage(failure, 'Nothing was approved. Check your connection and try again.'))
+    } finally { request.release(); setBusy(false) }
+  }
+
+  return <div className="mb-8 space-y-3">
+    {items.map(item => <div key={item.key} role="alert" className="flex flex-col gap-3 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-start gap-2">
+        <CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="min-w-0">
+          <p className="font-semibold [overflow-wrap:anywhere]">{item.message}</p>
+          {!item.configured && item.help && <p className="mt-1 [overflow-wrap:anywhere]">{item.help}</p>}
+        </div>
+      </div>
+      <button type="button" disabled={!item.configured} onClick={() => { setError(''); setConfirming(item) }} className="btn-danger min-h-11 shrink-0 text-sm">Approve now<span className="sr-only">: {item.label}</span></button>
+    </div>)}
+    {confirming && <Dialog labelledBy={titleId} busy={busy} onClose={close} className="max-w-md">
+      <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Approve {confirming.label}?</h2>
+      <p className="mt-2 text-sm text-neutral-700">This records your approval in the audit log.</p>
+      {error && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+      <div className="mt-6 flex flex-wrap justify-end gap-3">
+        <button type="button" disabled={busy} onClick={close} className="btn-secondary">Cancel</button>
+        <button type="button" disabled={busy} onClick={approve} className="btn-primary">{busy ? 'Approving…' : 'Approve'}</button>
+      </div>
+    </Dialog>}
+  </div>
+}
+
 function AdminDashboardSession({ identity }) {
   const { beginRequest } = usePlatformRequests(identity, '/admin')
   const generation = useRef(0)
@@ -30,20 +82,21 @@ function AdminDashboardSession({ identity }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const refresh = useCallback(async () => {
+  // `quiet` keeps the current dashboard on screen while it reloads after a change.
+  const refresh = useCallback(async ({ quiet = false } = {}) => {
     const request = beginRequest()
     if (!request) return
     pendingRead.current?.abort()
     pendingRead.current = request
     const read = ++generation.current
     const current = () => request.current() && read === generation.current
-    setLoading(true); setError('')
+    if (!quiet) { setLoading(true); setError('') }
     try {
       const response = await apiClient.get('/admin/dashboard', request.config)
-      if (current()) setData(response.data)
+      if (current()) { setData(response.data); setError('') }
     } catch (failure) {
       if (!current() || request.handleError(failure)) return
-      setError('Unable to load the administrator dashboard. Please try again.')
+      if (!quiet) setError('Unable to load the administrator dashboard. Please try again.')
     } finally {
       request.release()
       if (current()) setLoading(false)
@@ -61,7 +114,7 @@ function AdminDashboardSession({ identity }) {
     )
   }
 
-  if (error || !data) return <AdminLayout><section role="alert" className="rounded-xl border border-neutral-200 bg-white p-5"><p className="text-neutral-700">{error || 'Unable to load the administrator dashboard.'}</p><button type="button" onClick={refresh} className="btn-primary mt-4">Retry dashboard</button></section></AdminLayout>
+  if (error || !data) return <AdminLayout><section role="alert" className="rounded-xl border border-neutral-200 bg-white p-5"><p className="text-neutral-700">{error || 'Unable to load the administrator dashboard.'}</p><button type="button" onClick={() => refresh()} className="btn-primary mt-4">Retry dashboard</button></section></AdminLayout>
 
   const totalEvents = Object.values(data.total_events).reduce((a, b) => a + b, 0)
   const totalUsers = Object.values(data.total_users).reduce((a, b) => a + b, 0)
@@ -74,8 +127,12 @@ function AdminDashboardSession({ identity }) {
     (signals.failed_payment_webhooks || 0) + (signals.open_reconciliation_exceptions || 0) +
     (signals.unknown_card_present_results || 0)
 
+  const refreshQuietly = () => refresh({ quiet: true })
+
   return (
     <AdminLayout>
+      <SetupRequired items={data.setup_required} beginRequest={beginRequest} onApproved={refreshQuietly} />
+
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StaggerItem><StatCard label="Total Events" value={totalEvents} icon={Calendar} color="bg-brand-500" /></StaggerItem>
         <StaggerItem><StatCard label="Total Users" value={totalUsers} icon={Users} color="bg-indigo-500" /></StaggerItem>
@@ -137,6 +194,8 @@ function AdminDashboardSession({ identity }) {
           <Link to="/support" className="font-semibold underline">Open support console</Link>
         </div>
       </div>
+
+      <OrganizerVerificationQueue awaiting={data.organizers_awaiting_verification} verified={data.verified_organizers} beginRequest={beginRequest} onChanged={refreshQuietly} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Events */}

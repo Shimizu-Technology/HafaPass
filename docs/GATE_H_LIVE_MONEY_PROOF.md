@@ -1,5 +1,7 @@
 # Gate H — Low-Value Live-Money Proof
 
+> **Optional record (2026-10-21).** This gate no longer blocks publishing or sales. Production's only sales gate is an admin verifying the organizer; see [Production cutover](PRODUCTION_CUTOVER.md). Use this review when you want a written record.
+
 ## Purpose
 
 Gate H proves that the approved Guam business, organizer, production charge provider, payout path, and settlement bank can move and explain real money from end to end. It is deliberately separate from sandbox testing, platform-capability approval, accounting unit tests, Gate G rehearsal, and the later public pilot.

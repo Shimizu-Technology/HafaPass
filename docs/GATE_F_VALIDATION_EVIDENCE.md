@@ -1,5 +1,7 @@
 # Gate F Buyer, Organizer, Accessibility, and Load Evidence
 
+> **Optional record (2026-10-21).** This gate no longer blocks publishing or sales. Production's only sales gate is an admin verifying the organizer; see [Production cutover](PRODUCTION_CUTOVER.md). Use this review when you want a written record.
+
 Status: application controls implemented; real candidate evidence pending.
 
 Gate F prevents an event from being published, resumed, or sold in production until the exact Gate E candidate has approved proof of representative-user, device, accessibility, and load validation. It does not claim that CI used physical devices or that a qualified accessibility reviewer has signed off.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, Circle, Copy, ExternalLink, Loader2, MapPin } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Circle, CircleAlert, Copy, ExternalLink, Loader2, MapPin } from 'lucide-react'
 import apiClient from '../../api/client'
 import EventWorkspace from '../../components/EventWorkspace'
 import { BackLink, WorkspacePage } from '../../components/WorkspacePage'
@@ -11,6 +11,8 @@ import { PUBLIC_WEB_URL } from '../../utils/site'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { eventToolLinks } from '../../utils/eventWorkspaceNavigation'
 import { loadOrganizerOrganizations } from '../../utils/organizerOrganizations'
+import { organizerChecklist } from '../../utils/organizerChecklist'
+import VerificationNotice from '../../components/VerificationNotice'
 
 const statusCopy = {
   draft: 'Draft — only your team can see it.',
@@ -19,6 +21,16 @@ const statusCopy = {
   cancelled: 'Cancelled — sales are closed.',
   completed: 'Completed — the event has ended.',
   archived: 'Archived — kept for your records.',
+}
+
+// Sales held back by HåfaPass organizer verification, mapped to the
+// verification state to show if the organizer profile cannot be loaded.
+const verificationReasons = { organizer_not_verified: 'unverified', organizer_verification_requested: 'pending', organizer_paused: 'suspended' }
+
+// The server message may repeat the "Visible but not on sale yet" headline.
+const salesDetail = message => {
+  const detail = (message || '').replace(/^Visible but not on sale yet[:.]?\s*/i, '')
+  return detail && detail[0].toUpperCase() + detail.slice(1)
 }
 
 export default function EventOverviewPage() {
@@ -36,6 +48,8 @@ function EventOverviewSession({ id, identity }) {
   // Sales and door numbers load after the event: { status, stats, admissions }.
   const [extras, setExtras] = useState({ status: 'idle' })
   const [currency, setCurrency] = useState('USD')
+  // GET /organizer_profile, loaded only when verification holds back sales.
+  const [profile, setProfile] = useState({ status: 'idle' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [copyState, setCopyState] = useState(null)
@@ -87,10 +101,15 @@ function EventOverviewSession({ id, identity }) {
       setEvent(saved)
       setLoading(false)
       void loadExtras(saved)
+      if (verificationReasons[saved.sales_status?.reason]) {
+        setProfile({ status: 'loading' })
+        get('/organizer_profile').then(response => { if (canApply()) setProfile({ status: 'ready', data: response.data }) })
+          .catch(() => { if (canApply()) setProfile({ status: 'error' }) })
+      }
       // Same currency source as the dashboard: the selected organization.
       loadOrganizerOrganizations(identity.authContext).then(response => {
-        const organization = (Array.isArray(response.data) ? response.data : []).find(item => String(item.id) === String(saved.organization_id))
-        if (canApply() && organization?.currency) setCurrency(organization.currency)
+        const match = (Array.isArray(response.data) ? response.data : []).find(item => String(item.id) === String(saved.organization_id))
+        if (canApply() && match?.currency) setCurrency(match.currency)
       }).catch(() => {})
     } catch (requestError) {
       if (!canApply()) return
@@ -135,8 +154,15 @@ function EventOverviewSession({ id, identity }) {
   const soldPercent = capacity > 0 ? Math.min(100, Math.round((sold / capacity) * 100)) : 0
   const checkIn = stats ? { admitted: stats.tickets_checked_in, total: stats.total_tickets_sold }
     : admissions ? { admitted: admissions.admitted, total: admissions.admitted + admissions.remaining } : null
-  const checklist = event.publish_checklist || []
+  const checklist = organizerChecklist(event.publish_checklist || [])
   const openItems = checklist.filter(item => !item.complete)
+  // Older servers send no sales_status; their published events are on sale.
+  const salesStatus = event.sales_status
+  const onSale = !salesStatus || salesStatus.on_sale === true
+  const salesPaused = salesStatus?.reason === 'event_paused'
+  const verificationState = verificationReasons[salesStatus?.reason]
+  const verificationProfile = verificationState && (profile.status === 'ready' ? profile.data
+    : profile.status === 'error' ? { verification_status: verificationState } : null)
   const publicPath = event.slug ? `/events/${event.slug}` : null
   const tools = eventToolLinks(event, capabilities)
 
@@ -144,7 +170,7 @@ function EventOverviewSession({ id, identity }) {
     <div className="space-y-6">
       <section aria-labelledby="overview-status" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
         <h2 id="overview-status" className="text-lg font-semibold text-neutral-950">Overview</h2>
-        <p className="mt-1 text-sm text-neutral-700">{statusCopy[event.status] || 'Event status unavailable.'}</p>
+        <p className="mt-1 text-sm text-neutral-700">{event.status === 'published' && !onSale ? 'Published — buyers can find it, but tickets are not on sale yet.' : statusCopy[event.status] || 'Event status unavailable.'}</p>
         <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
           <div className="flex items-start gap-2"><CalendarDays aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" /><div><dt className="sr-only">Date</dt><dd className="text-neutral-900">{event.starts_at ? formatEventDateTime(event.starts_at, event.timezone) : 'Date not set yet'}</dd></div></div>
           <div className="flex items-start gap-2"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" /><div className="min-w-0"><dt className="sr-only">Venue</dt><dd className="break-words text-neutral-900">{event.venue_name || 'Venue not set yet'}{event.venue_city ? `, ${event.venue_city}` : ''}</dd></div></div>
@@ -194,7 +220,15 @@ function EventOverviewSession({ id, identity }) {
             : <p className="mt-3 text-sm text-neutral-600">Ask an event manager to finish setup and publish.</p>}
         </>}
         {event.status === 'published' && <>
-          <p className="mt-1 flex items-center gap-2 text-sm text-neutral-700"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-emerald-600" />Your event is live. Share it and get ready for the door.</p>
+          {onSale
+            ? <p className="mt-1 flex items-center gap-2 text-sm text-neutral-700"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-emerald-600" />Your event is live. Share it and get ready for the door.</p>
+            : <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+              <p className="flex items-start gap-2 font-semibold"><CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{salesPaused ? 'Sales paused by HåfaPass.' : 'Visible but not on sale yet.'}</p>
+              {salesPaused
+                ? event.policy_hold?.reason && <p className="mt-1 whitespace-pre-wrap pl-6 [overflow-wrap:anywhere]">{event.policy_hold.reason}</p>
+                : salesDetail(salesStatus.message) && <p className="mt-1 pl-6">{salesDetail(salesStatus.message)}</p>}
+              {verificationProfile && <VerificationNotice profile={verificationProfile} beginRequest={beginRequest} showSummary={false} inline className="mt-2 pl-6" />}
+            </div>}
           <div className="mt-4 flex flex-wrap gap-2">
             {publicPath && <Link to={publicPath} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><ExternalLink aria-hidden="true" className="h-4 w-4" />View public page</Link>}
             {publicPath && <button type="button" onClick={() => copyLink(`${PUBLIC_WEB_URL}${publicPath}`)} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><Copy aria-hidden="true" className="h-4 w-4" />{copyState === 'copied' ? 'Link copied' : 'Copy event link'}</button>}

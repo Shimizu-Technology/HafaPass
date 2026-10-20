@@ -1,4 +1,5 @@
-# Initial $7 existing API, isolated staging; one process with a durable PostgreSQL queue.
+# Initial $7 API, running as production; one process with a durable PostgreSQL queue.
+# See docs/PRODUCTION_CUTOVER.md for the full environment checklist.
 previews:
   generation: 'off'
 services:
@@ -61,14 +62,28 @@ services:
     sync: false
   - key: DATABASE_MIGRATION_URL
     sync: false
-  - key: STAGING_DATABASE_URL
+  - key: STRIPE_TEST_SECRET_KEY
+    sync: false
+  - key: STRIPE_TEST_PUBLISHABLE_KEY
+    sync: false
+  - key: STRIPE_TEST_PLATFORM_ACCOUNT_ID
+    sync: false
+  - key: STRIPE_WEBHOOK_SECRET
+    sync: false
+  - key: STRIPE_LIVE_SECRET_KEY
+    sync: false
+  - key: STRIPE_LIVE_PUBLISHABLE_KEY
+    sync: false
+  - key: STRIPE_LIVE_PLATFORM_ACCOUNT_ID
+    sync: false
+  - key: STRIPE_LIVE_WEBHOOK_SECRET
     sync: false
   plan: 0.5c-512mb
 envVarGroups:
 - name: hafapass-staging-runtime
   envVars:
   - key: RAILS_ENV
-    value: staging
+    value: production
   - key: HAFAPASS_LAUNCH_SCOPE
     value: general_admission
   - key: HAFAPASS_PROVIDER_REHEARSAL

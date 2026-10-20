@@ -100,8 +100,10 @@ class LivePilot
     return unless Rails.env.production?
     return if event.live_money_proof_candidate?
 
+    # A bounded pilot run is optional. When an admin starts one, its
+    # inventory cap still applies; without one, sales are not limited here.
     run = active_run(event)
-    raise InventoryLimitError, "The bounded live pilot is not actively selling" unless run
+    return unless run
 
     committed = committed_ticket_quantity(event)
     if committed + requested_quantity > run.inventory_cap

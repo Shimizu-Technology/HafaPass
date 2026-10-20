@@ -70,6 +70,44 @@ RSpec.describe Operations::SyntheticDataPurge do
     include_examples "a refusal that changes nothing", /no matching user: typo@hafapass.example/
   end
 
+  context "when no kept user is a platform admin" do
+    let(:run) { purge(keep: "owner@hafapass.example") }
+
+    include_examples "a refusal that changes nothing", /keep at least one admin/
+  end
+
+  context "when a purge already ran" do
+    before { AuditLogger.record!(action: described_class::ACTION, auditable: SiteSetting.instance) }
+
+    let(:run) { purge }
+
+    include_examples "a refusal that changes nothing", /already ran. Set ALLOW_REPEAT_PURGE=YES/
+
+    it "runs again only with ALLOW_REPEAT_PURGE=YES" do
+      described_class.call(confirm: described_class::CONFIRMATION, keep_user_emails: "ops@hafapass.example",
+        allow_repeat: "YES", out: out)
+      expect(Order.count).to eq(0)
+    end
+  end
+
+  context "when payments are live" do
+    before { SiteSetting.instance.update_column(:payment_mode, "live") }
+
+    let(:run) { purge }
+
+    include_examples "a refusal that changes nothing", /Payments are live/
+  end
+
+  context "when a kept table references a purged table" do
+    before do
+      allow_any_instance_of(described_class).to receive(:foreign_keys).and_return([%w[users organizations]])
+    end
+
+    let(:run) { purge }
+
+    include_examples "a refusal that changes nothing", /Kept tables reference purged tables \(users -> organizations\)/
+  end
+
   context "when a payment was charged in live mode" do
     before { create(:payment, :succeeded, provider_environment: "live") }
 
@@ -147,9 +185,25 @@ RSpec.describe Operations::SyntheticDataPurge do
       expect(audit.metadata["purged_at"]).to be_present
     end
 
-    it "restarts identities on purged tables" do
+    it "keeps IDs increasing so email idempotency keys and job arguments never reuse an ID" do
+      last_order_id = Order.maximum(:id)
       purge
-      expect(create(:venue).id).to eq(1)
+      expect(create(:order).id).to be > last_order_id
+    end
+
+    it "deletes pending and failed queue jobs but keeps recurring tasks and their jobs" do
+      pending = SolidQueue::Job.create!(queue_name: "default", class_name: "MessageDeliveryJob", arguments: { "arguments" => [1] })
+      recurring_job = SolidQueue::Job.create!(queue_name: "default", class_name: "RuntimeRecoveryJob", arguments: {})
+      SolidQueue::RecurringExecution.create!(job_id: recurring_job.id, task_key: "runtime_recovery", run_at: Time.current)
+      task = SolidQueue::RecurringTask.create!(key: "runtime_recovery_spec", schedule: "every minute", class_name: "RuntimeRecoveryJob")
+
+      result = purge
+
+      expect(SolidQueue::Job.where(id: pending.id)).to be_empty
+      expect(SolidQueue::Job.where(id: recurring_job.id)).to exist
+      expect(SolidQueue::RecurringTask.where(id: task.id)).to exist
+      expect(result.deleted_queue_job_count).to be >= 1
+      expect(AuditLog.sole.metadata["deleted_queue_job_count"]).to eq(result.deleted_queue_job_count)
     end
 
     it "prints a before/after summary" do
@@ -160,7 +214,7 @@ RSpec.describe Operations::SyntheticDataPurge do
       expect(out.string).to match(/^orders\s+3\s+0$/)
       expect(out.string).to match(/^users\s+#{users_before}\s+2$/)
       expect(out.string).to match(/^TOTAL\s+\d+\s+3$/)
-      expect(out.string).to include("Deleted #{users_before - 2} users. Wrote one operations.synthetic_data_purged audit log entry.")
+      expect(out.string).to include("Deleted #{users_before - 2} users and", "Wrote one operations.synthetic_data_purged audit log entry.")
     end
   end
 end

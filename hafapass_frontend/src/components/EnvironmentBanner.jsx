@@ -38,7 +38,7 @@ export default function EnvironmentBanner({ offlineOnly = false }) {
   if (!kind) return null
   return <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950" role="status">
     {kind === 'payments'
-      ? <><strong>Test payments.</strong> Cards are not charged. Use Stripe test cards; tickets bought now are for testing.</>
+      ? <><strong>Test payments.</strong> Only Stripe test cards work; no real card is charged. Tickets bought now are for testing.</>
       : <><strong>Test environment.</strong> Use test information and test payment methods. These tickets are for testing.</>}
   </div>
 }

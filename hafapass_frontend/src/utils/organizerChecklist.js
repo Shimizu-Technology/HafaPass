@@ -1,5 +1,5 @@
 const organizerSteps = {
-  organizer_verified: ['Verify your organizer profile', '/dashboard'],
+  organizer_verified: ['Waiting for HåfaPass to verify your organization before tickets go on sale', null],
   policy_accepted: ['Accept the organizer agreement', '/dashboard'],
   title: ['Add the event title', '#title'],
   description: ['Describe your event', '#description'],
@@ -9,21 +9,24 @@ const organizerSteps = {
   tickets: ['Add at least one ticket type', '#ticket-types'],
   capacity: ['Set capacity and ticket quantities that fit', '#max_capacity'],
   sales_window: ['Set valid ticket sales dates', '#ticket-types'],
-  payout: ['Connect an approved account for paid sales', '/dashboard/settings'],
+  payout: ['Add payout details for paid tickets', '/dashboard/settings'],
 }
 
-export function organizerChecklist(checklist) {
-  const steps = checklist.filter(item => organizerSteps[item.code]).map(item => ({
-    ...item,
-    label: item.code === 'payout' && item.complete ? 'Payment setup confirmed or not needed for free tickets' : organizerSteps[item.code][0],
-    href: organizerSteps[item.code][1],
-  }))
-  const reviews = checklist.filter(item => !organizerSteps[item.code])
-  if (reviews.length) steps.push({
-    code: 'launch_review',
-    label: 'HåfaPass launch review',
-    complete: reviews.every(item => item.complete),
-    detail: reviews.every(item => item.complete) ? 'Launch checks are complete.' : 'Your HåfaPass launch coordinator will confirm testing and event-day preparations before publishing.',
-  })
-  return steps
+const completeLabels = {
+  payout: 'Payout details on file, or not needed for free tickets',
+  organizer_verified: 'HåfaPass verified your organization',
 }
+
+// Steps an organizer can act on. Codes the app does not know (retired
+// release reviews, internal checks) are dropped rather than shown as jargon.
+// `organizer_verified` has no link; the page shows the verification request
+// action instead (`requestVerification: true`).
+export function organizerChecklist(checklist) {
+  return checklist.filter(item => organizerSteps[item.code]).map(item => ({
+    ...item,
+    label: item.complete && completeLabels[item.code] ? completeLabels[item.code] : organizerSteps[item.code][0],
+    href: organizerSteps[item.code][1],
+    requestVerification: item.code === 'organizer_verified' && !item.complete,
+  }))
+}
+

@@ -79,6 +79,7 @@ module Api
         profile.update!(verification_status: :pending, verification_requested_at: Time.current, verification_notes: nil)
         AuditLogger.record!(action: "organizer.verification_requested", auditable: profile, actor: current_user,
           request: request)
+        EmailService.send_verification_request_async(profile)
         render json: profile_json(profile)
       end
 

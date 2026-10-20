@@ -310,6 +310,7 @@ Rails.application.routes.draw do
         end
         resources :platform_capabilities, only: [:index]
         post "platform_capabilities/:capability/reviews", to: "platform_capability_reviews#create"
+        post "platform_capabilities/:capability/quick_approve", to: "platform_capability_reviews#quick_approve"
         resources :platform_capability_reviews, only: [] do
           member do
             post :approve

@@ -72,9 +72,13 @@ class Order < ApplicationRecord
 
     captured = payments.loaded? ? payments.select { |payment| payment.succeeded? || payment.partially_refunded? } :
       payments.where(status: [:succeeded, :partially_refunded]).to_a
+    # Stripe test-mode tickets admit people only while the platform itself is
+    # in test mode (production QA). Once payments are live they stop working.
+    admissible_environments = SiteSetting.instance.test_mode? ? %w[live test] : %w[live]
     captured.any? do |payment|
       payment.amount_cents >= total_cents && payment.currency == currency && payment.provider_payment_id.present? &&
-        (payment.provider != "stripe" || (payment.provider_environment == "live" && payment.provider_platform_account_id.present?)) &&
+        (payment.provider != "stripe" || (admissible_environments.include?(payment.provider_environment) &&
+          payment.provider_platform_account_id.present?)) &&
         !payment.provider_payment_id.start_with?("sim_") && payment.provider_payload.to_h["simulated"] != true
     end
   end

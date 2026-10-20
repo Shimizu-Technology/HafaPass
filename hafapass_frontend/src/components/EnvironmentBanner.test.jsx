@@ -21,7 +21,7 @@ describe('test environment identification', () => {
   it('warns about test payments on production while Stripe is in test mode', async () => {
     apiClient.get.mockResolvedValue({ data: { environment: 'production', payment_mode: 'test' } })
     render(<EnvironmentBanner />)
-    expect(await screen.findByRole('status')).toHaveTextContent('Test payments. Cards are not charged.')
+    expect(await screen.findByRole('status')).toHaveTextContent('Test payments. Only Stripe test cards work; no real card is charged. Tickets bought now are for testing.')
     expect(window.localStorage.getItem('hafapass_runtime_payment_mode')).toBe('test')
   })
   it('never shows a test banner once payments are live', async () => {

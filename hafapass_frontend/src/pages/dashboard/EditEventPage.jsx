@@ -13,6 +13,7 @@ import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
 import FormErrorSummary from '../../components/FormErrorSummary'
 import { organizerChecklist } from '../../utils/organizerChecklist'
+import VerificationNotice from '../../components/VerificationNotice'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
 import { eventLinkFormatError, eventLinkUrl, normalizeEventLinkInput } from '../../utils/eventLink'
@@ -103,6 +104,7 @@ function EditEventSession({ id, identity }) {
   const [generatingRecurrences, setGeneratingRecurrences] = useState(false)
   const [recurrenceChildren, setRecurrenceChildren] = useState([])
   const [changeReason, setChangeReason] = useState('')
+  const [organizerProfile, setOrganizerProfile] = useState(null)
 
   const [form, setForm] = useState({
     title: '',
@@ -409,6 +411,20 @@ function EditEventSession({ id, identity }) {
     }
   }
 
+  // Only drafts waiting for organizer verification need the organizer profile.
+  const needsVerification = event?.status === 'draft' && (event?.publish_checklist || []).some(item => item.code === 'organizer_verified' && !item.complete)
+  useEffect(() => {
+    if (!needsVerification) return
+    const request = beginRequest()
+    if (!request) return
+    let lookup
+    try { lookup = apiClient.get('/organizer_profile', request.config) } catch { request.release(); return }
+    Promise.resolve(lookup).then(response => {
+      if (request.current() && response?.data?.verification_status) setOrganizerProfile(response.data)
+    }).catch(() => {}).finally(() => request.release())
+    return () => request.controller.abort()
+  }, [needsVerification, beginRequest])
+
   const eventEndedInPast = event?.ends_at && new Date(event.ends_at) < new Date()
   const publishChecklist = event?.publish_checklist || []
   const remainingTicketCapacity = event?.max_capacity == null ? null : Math.max(0,
@@ -495,8 +511,9 @@ function EditEventSession({ id, identity }) {
             {organizerSteps.map(item => (
               <li key={item.code} className={`flex items-center gap-2 text-xs ${item.complete ? 'text-emerald-700' : 'text-neutral-600'}`}>
                 {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-                <div>{item.href && !item.complete ? <a href={item.href} className="underline underline-offset-2">{item.label}</a> : item.label}
+                <div className="min-w-0">{item.href && !item.complete ? <a href={item.href} className="underline underline-offset-2">{item.label}</a> : item.label}
                   {item.detail && <p className="mt-1 text-xs font-normal text-neutral-600">{item.detail}</p>}
+                  {item.requestVerification && <VerificationNotice profile={organizerProfile} beginRequest={beginRequest} showSummary={false} className="mt-2" />}
                 </div>
               </li>
             ))}

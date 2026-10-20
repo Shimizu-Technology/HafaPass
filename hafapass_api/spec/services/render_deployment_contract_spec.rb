@@ -109,13 +109,18 @@ RSpec.describe "Render direct command execution" do
 end
 
 RSpec.describe "Initial single-service deployment contract" do
-  it "selects only the existing $7 API with durable embedded staging and no additional billed services" do
+  it "selects only the existing $7 API running as production with no additional billed services" do
     blueprint = YAML.safe_load(Rails.root.join("../render.yaml").read)
     expect(blueprint.fetch("services").map { |service| service["name"] }).to eq(["hafapass-api"])
     service = blueprint.fetch("services").first
     expect(service).to include("plan" => "0.5c-512mb", "runtime" => "docker", "healthCheckPath" => "/up")
     env = blueprint.fetch("envVarGroups").first.fetch("envVars").to_h { |entry| [entry["key"], entry["value"]] }
-    expect(env).to include("RAILS_ENV" => "staging", "HAFAPASS_RUNTIME" => "embedded", "DB_POOL" => "10")
+    expect(env).to include("RAILS_ENV" => "production", "HAFAPASS_PROVIDER_REHEARSAL" => "false",
+      "HAFAPASS_RUNTIME" => "embedded", "DB_POOL" => "10")
     expect(service.fetch("envVars").none? { |entry| entry["key"] == "REDIS_URL" }).to be(true)
+    secrets = service.fetch("envVars").select { |entry| entry["sync"] == false }.pluck("key")
+    expect(secrets).to include("STRIPE_TEST_SECRET_KEY", "STRIPE_TEST_PUBLISHABLE_KEY", "STRIPE_TEST_PLATFORM_ACCOUNT_ID",
+      "STRIPE_WEBHOOK_SECRET", "STRIPE_LIVE_SECRET_KEY", "STRIPE_LIVE_PUBLISHABLE_KEY", "STRIPE_LIVE_PLATFORM_ACCOUNT_ID",
+      "STRIPE_LIVE_WEBHOOK_SECRET", "DATABASE_MIGRATION_URL")
   end
 end

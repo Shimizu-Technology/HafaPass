@@ -14,6 +14,8 @@ module Operations
     KEPT_TABLE_PREFIXES = %w[solid_queue_ solid_cache_ solid_cable_ runtime_].freeze
     MONEY_MOVEMENT_TABLES = %w[settlements settlement_items payouts].freeze
     LOCK_TIMEOUT = "15s"
+    REPEAT_CONFIRMATION = "YES"
+    QUEUE_JOBS_TABLE = "solid_queue_jobs"
 
     # [table, column, SQL predicate, description]. Each is checked only if the
     # table/column exists, so the guard survives schema changes.
@@ -33,14 +35,15 @@ module Operations
     class Refused < StandardError; end
 
     Result = Struct.new(:before_counts, :after_counts, :kept_user_emails, :deleted_user_count, :purged_tables,
-      keyword_init: true)
+      :deleted_queue_job_count, keyword_init: true)
 
-    def self.call(confirm:, keep_user_emails:, out: $stdout)
-      new(confirm: confirm, keep_user_emails: keep_user_emails, out: out).call
+    def self.call(confirm:, keep_user_emails:, allow_repeat: nil, out: $stdout)
+      new(confirm: confirm, keep_user_emails: keep_user_emails, allow_repeat: allow_repeat, out: out).call
     end
 
-    def initialize(confirm:, keep_user_emails:, out: $stdout)
+    def initialize(confirm:, keep_user_emails:, allow_repeat: nil, out: $stdout)
       @confirm = confirm.to_s
+      @allow_repeat = allow_repeat.to_s == REPEAT_CONFIRMATION
       @keep_user_emails = keep_user_emails.to_s.split(",").map { |email| email.strip.downcase }.reject(&:empty?).uniq
       @out = out
     end
@@ -53,6 +56,7 @@ module Operations
       result = ActiveRecord::Base.transaction do
         lock!(tables)
         verify_kept_users!
+        verify_not_repeated!
         verify_no_live_money!
         verify_no_money_movement!
         verify_no_kept_table_references!(tables)
@@ -95,9 +99,22 @@ module Operations
     def verify_kept_users!
       found = kept_users.pluck(Arel.sql("LOWER(email)")).uniq
       missing = @keep_user_emails - found
-      return if missing.empty?
+      raise Refused, "KEEP_USER_EMAILS lists emails with no matching user: #{missing.join(', ')}." if missing.any?
+      return if kept_users.where(role: :admin).exists?
 
-      raise Refused, "KEEP_USER_EMAILS lists emails with no matching user: #{missing.join(', ')}."
+      raise Refused, "None of the KEEP_USER_EMAILS users is a platform admin; keep at least one admin."
+    end
+
+    # A second run would erase real activity recorded since the first purge.
+    def verify_not_repeated!
+      return if @allow_repeat
+
+      if AuditLog.exists?(action: ACTION)
+        raise Refused, "A synthetic-data purge already ran. Set ALLOW_REPEAT_PURGE=#{REPEAT_CONFIRMATION} to run it again."
+      end
+      return unless SiteSetting.instance.live_mode?
+
+      raise Refused, "Payments are live. Set ALLOW_REPEAT_PURGE=#{REPEAT_CONFIRMATION} only if no real orders exist."
     end
 
     def verify_no_live_money!
@@ -150,7 +167,10 @@ module Operations
     def purge!(tables)
       counted = tables + ["users"]
       before = row_counts(counted)
-      connection.execute(statement("TRUNCATE", tables, "RESTART IDENTITY")) if tables.any?
+      # IDs keep counting up: email idempotency keys ("order-confirmation/<id>")
+      # and job arguments must never point at a reused ID.
+      connection.execute(statement("TRUNCATE", tables, "")) if tables.any?
+      deleted_jobs = delete_pending_jobs!
       deleted_users = User.where("email IS NULL OR LOWER(email) NOT IN (?)", @keep_user_emails).delete_all
       after_purge = row_counts(counted)
       kept_emails = kept_users.order(:id).pluck(:email)
@@ -164,6 +184,7 @@ module Operations
           purged_at: Time.current.iso8601,
           kept_user_emails: kept_emails,
           deleted_user_count: deleted_users,
+          deleted_queue_job_count: deleted_jobs,
           purged_table_count: tables.size,
           row_counts_before: before.select { |_table, count| count.positive? },
           row_counts_after: after_purge.select { |table, _count| before[table].positive? }
@@ -171,7 +192,20 @@ module Operations
       )
 
       Result.new(before_counts: before, after_counts: row_counts(counted), kept_user_emails: kept_emails,
-        deleted_user_count: deleted_users, purged_tables: tables)
+        deleted_user_count: deleted_users, purged_tables: tables, deleted_queue_job_count: deleted_jobs)
+    end
+
+    # Queued, scheduled, claimed, blocked or failed jobs may name purged rows.
+    # Jobs created by recurring tasks are kept (with the task definitions);
+    # execution rows cascade with their job.
+    def delete_pending_jobs!
+      return 0 unless connection.table_exists?(QUEUE_JOBS_TABLE)
+
+      sql = "DELETE FROM #{connection.quote_table_name(QUEUE_JOBS_TABLE)}"
+      if connection.table_exists?("solid_queue_recurring_executions")
+        sql += " WHERE id NOT IN (SELECT job_id FROM solid_queue_recurring_executions)"
+      end
+      connection.delete(sql)
     end
 
     def row_counts(tables)
@@ -195,7 +229,8 @@ module Operations
         @out.puts format("%-45s %10d %10d", table, before, result.after_counts.fetch(table))
       end
       @out.puts format("%-45s %10d %10d", "TOTAL", result.before_counts.values.sum, result.after_counts.values.sum)
-      @out.puts "Deleted #{result.deleted_user_count} users. Wrote one #{ACTION} audit log entry."
+      @out.puts "Deleted #{result.deleted_user_count} users and #{result.deleted_queue_job_count} queued jobs. " \
+        "Wrote one #{ACTION} audit log entry."
     end
   end
 end

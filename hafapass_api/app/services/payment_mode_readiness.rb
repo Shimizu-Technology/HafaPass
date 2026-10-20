@@ -28,7 +28,7 @@ class PaymentModeReadiness
 
     def live_checks
       [
-        check("production_environment", "Server runs with RAILS_ENV=production",
+        check("production_environment", "Server is running in production mode (RAILS_ENV=production)",
           !Rails.env.staging?, "Staging never takes real money. Change RAILS_ENV to production on Render first."),
         credential_check("live", :secret_key, "Live secret key", StripeCredentials.secret_key_valid?("live"),
           "an sk_live_ or rk_live_ key"),

@@ -1,5 +1,7 @@
 # Gate E — Event-Specific Pilot Readiness Evidence
 
+> **Optional record (2026-10-21).** This gate no longer blocks publishing or sales. Production's only sales gate is an admin verifying the organizer; see [Production cutover](PRODUCTION_CUTOVER.md). Use this review when you want a written record.
+
 Status: application control implemented; a real organizer, venue, operating team, and signed readiness bundle are still required.
 
 ## Why this exists

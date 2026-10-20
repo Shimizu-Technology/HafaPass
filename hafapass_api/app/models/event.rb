@@ -184,8 +184,60 @@ class Event < ApplicationRecord
     CATEGORY_LABELS.fetch(category)
   end
 
+  # Production's one sales gate: HåfaPass has verified the organizer (one
+  # admin action; suspending verification pauses all of the organizer's sales).
+  # It is not tied to deploys or event edits. Elsewhere nothing extra applies.
   def sales_open?(at: Time.current)
-    published? && sales_suspended_at.nil? && policy_hold_at.nil? && (ends_at || starts_at).present? && (ends_at || starts_at) > at
+    published? && sales_suspended_at.nil? && policy_hold_at.nil? && (ends_at || starts_at).present? &&
+      (ends_at || starts_at) > at && organizer_sales_verified?
+  end
+
+  def organizer_sales_verified?
+    !Rails.env.production? || organizer_profile.verification_status_verified?
+  end
+
+  def paid_event?
+    ticket_types.any? do |ticket_type|
+      ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
+    end
+  end
+
+  # Why a published event is not selling, in organizer language. nil when the
+  # event can sell. Checked in the order buyers and organizers would fix them.
+  def sales_blocker(at: Time.current)
+    return :not_published unless published?
+    return :event_paused if policy_hold?
+    return :sales_closed if sales_suspended_at.present? || (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
+
+    unless organizer_sales_verified?
+      return :organizer_paused if organizer_profile.verification_status_suspended?
+      return :organizer_verification_requested if organizer_profile.verification_status_pending?
+
+      return :organizer_not_verified
+    end
+    return :platform_setup if Rails.env.production? && !PolicyRegistry.production_approved?
+    return nil unless paid_event?
+    return :payments_off if Rails.env.production? && !SiteSetting.instance.stripe_enabled?
+    return :payout_details_missing unless organization.payout_ready?
+
+    nil
+  end
+
+  SALES_STATUS_MESSAGES = {
+    not_published: "Not on sale: the event is not published.",
+    event_paused: "Visible but not on sale: sales paused by HåfaPass.",
+    sales_closed: "Not on sale: sales are closed or paused for this event.",
+    organizer_not_verified: "Visible but not on sale yet: waiting for HåfaPass to verify your organization before tickets go on sale.",
+    organizer_verification_requested: "Visible but not on sale yet: verification requested. HåfaPass will review it soon.",
+    organizer_paused: "Visible but not on sale: HåfaPass paused sales for your organization.",
+    platform_setup: "Visible but not on sale yet: HåfaPass is finishing platform setup.",
+    payments_off: "Visible but not on sale yet: HåfaPass has not turned on payments.",
+    payout_details_missing: "Visible but not on sale yet: add payout details (a check payee and mailing address) for paid tickets."
+  }.freeze
+
+  def sales_status(at: Time.current)
+    reason = sales_blocker(at: at)
+    { on_sale: reason.nil?, reason: reason&.to_s, message: reason ? SALES_STATUS_MESSAGES.fetch(reason) : "On sale." }
   end
 
   def policy_hold?
@@ -235,18 +287,14 @@ class Event < ApplicationRecord
     [max_capacity - sold - held, 0].max
   end
 
+  # The detailed launch-gate reviews (pilot readiness, validation, rehearsal,
+  # live-money proof, bounded pilot) are optional records now; they never
+  # block publishing or sales. Organizer verification is the one admin step.
   def publish_checklist(at: Time.current)
-    paid_event = ticket_types.any? do |ticket_type|
-      ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
-    end
+    paid_event = paid_event?
     configured_inventory = ticket_types.sum(&:quantity_available)
-    pilot_readiness_approved, pilot_validation_approved, event_day_rehearsal_approved, live_money_approved,
-      live_pilot_approved =
-      production_release_approvals(at: at)
-    checks = [
+    [
       checklist_item("launch_scope", "Event features supported for this release", LaunchCapabilities.event_supported?(self)),
-      checklist_item("production_policy_approved", "Production policy register approved",
-        !Rails.env.production? || PolicyRegistry.production_approved?),
       checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?),
       checklist_item("policy_accepted", "Organizer policy accepted", organizer_profile.policy_accepted?),
       checklist_item("title", "Event title added", title.present?),
@@ -259,39 +307,13 @@ class Event < ApplicationRecord
       checklist_item("sales_window", "Ticket sales windows are valid", valid_ticket_sales_windows?(at: at)),
       checklist_item("live_money_candidate_scope", "Live-money proof event is hidden, single-ticket, and capped at $5",
         !live_money_proof_candidate? || live_money_proof_candidate_configured?),
-      checklist_item("payout", paid_event ? "Payout account ready for paid sales" : "No payout account needed for a free event",
-        !paid_event || organization.payout_ready?),
-      checklist_item("pilot_readiness_approved", "Event-specific pilot readiness approved",
-        pilot_readiness_approved),
-      checklist_item("pilot_validation_approved", "Buyer, organizer, accessibility, and load validation approved",
-        pilot_validation_approved),
-      checklist_item("event_day_rehearsal_approved", "Physical event-day rehearsal approved",
-        event_day_rehearsal_approved),
-      checklist_item("live_money_approved",
-        paid_event ? "Live charge, refund, settlement, payout, and bank receipt approved" :
-          "No live-money approval needed for a free event",
-        !paid_event || live_money_approved),
-      checklist_item("live_pilot_approved", "Bounded live-pilot plan approved",
-        live_money_proof_candidate? || live_pilot_approved)
+      checklist_item("payout", paid_event ? "Payout details on file for paid sales" : "No payout details needed for a free event",
+        !paid_event || organization.payout_ready?)
     ]
-    checks
   end
 
   def ready_to_publish?(at: Time.current)
     publish_checklist(at: at).all? { |item| item[:complete] }
-  end
-
-  def production_release_gate_status(at: Time.current)
-    readiness, validation, rehearsal, live_money, live_pilot = production_release_approvals(at: at)
-    return :pilot_readiness unless readiness
-    return :pilot_validation unless validation
-    return :event_day_rehearsal unless rehearsal
-    return :live_money unless live_money
-    return :live_pilot unless live_pilot
-    return :live_pilot_operation if !live_money_proof_candidate? && Rails.env.production? &&
-      LivePilot.active_run(self, at: at).nil?
-
-    :ready
   end
 
   def live_money_proof_candidate_configured?
@@ -345,28 +367,6 @@ class Event < ApplicationRecord
   end
 
   private
-
-  def production_release_approvals(at:)
-    return [true, true, true, true, true] unless Rails.env.production?
-
-    state_digest = PilotReadiness.event_state_digest(self)
-    readiness = PilotReadiness.active_approval(self, at: at, state_digest: state_digest)
-    validation = PilotValidation.active_approval(
-      self, at: at, readiness_approval: readiness, state_digest: state_digest
-    ) if readiness
-    rehearsal = EventDayRehearsal.active_approval(
-      self, at: at, validation_approval: validation, state_digest: state_digest
-    ) if validation
-    paid_event = ticket_types.any? do |ticket_type|
-      ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
-    end
-    live_money_approval = LiveMoneyProof.active_approval(organization, at: at) if paid_event && !live_money_proof_candidate?
-    live_money = live_money_proof_candidate? || !paid_event || live_money_approval.present?
-    live_pilot = live_money_proof_candidate? || (rehearsal.present? && live_money && LivePilot.active_approval(
-      self, at: at, state_digest: state_digest, rehearsal: rehearsal, live_money: live_money_approval
-    ).present?)
-    [readiness.present?, validation.present?, rehearsal.present?, live_money, live_pilot]
-  end
 
   def active_seat_holds_count(at: Time.current)
     return 0 unless event_seating_configuration

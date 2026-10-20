@@ -42,4 +42,19 @@ RSpec.describe Settlements::Calculator do
     expect(fee_item[:description]).to eq("Buyer-paid HafaPass service fee")
     expect(result.attributes[:source_digest]).to eq(Digest::SHA256.hexdigest(JSON.generate(canonical)))
   end
+
+  it "settles only live Stripe payments in production, leaving test-mode QA orders out" do
+    profile = create(:organizer_profile, :payout_ready)
+    event = create(:event, :published, organizer_profile: profile, organization: profile.organization)
+    test_order = create(:order, event: event, subtotal_cents: 2000, service_fee_cents: 0, total_cents: 2000)
+    create(:payment, :succeeded, order: test_order, amount_cents: 2000, provider_environment: "test")
+    live_order = create(:order, event: event, subtotal_cents: 3000, service_fee_cents: 0, total_cents: 3000)
+    create(:payment, :succeeded, order: live_order, amount_cents: 3000, provider_environment: "live",
+      provider_platform_account_id: "acct_liveplatform")
+
+    expect(described_class.call(event).attributes[:gross_cents]).to eq(5000)
+    allow(Rails.env).to receive(:production?).and_return(true)
+    expect(described_class.call(event).attributes[:gross_cents]).to eq(3000)
+    expect(StripeProcessingFees.missing_count([test_order.id])).to eq(0)
+  end
 end

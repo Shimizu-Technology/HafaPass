@@ -26,6 +26,30 @@ module PlatformCapabilityReviews
       raise ReviewError, error_message(e)
     end
 
+    # One-time platform setup an admin approves with a single click from the
+    # admin dashboard: every control is affirmed by that admin, and the audit
+    # log records the submission and approval under their name.
+    QUICK_APPROVAL_CAPABILITIES = %w[policy_register resend_production].freeze
+    QUICK_APPROVAL_TERM = 1.year
+
+    def self.quick_approve!(capability:, actor:, request: nil)
+      capability = capability.to_s
+      raise ReviewError, "This capability needs a full evidence review" unless QUICK_APPROVAL_CAPABILITIES.include?(capability)
+      raise ReviewError, "Administrator access is required" unless actor&.admin?
+      raise ReviewError, "Already approved" if PlatformCapabilities.active_approval(capability)
+
+      now = Time.current
+      reference = "admin-dashboard/#{capability}/#{now.utc.iso8601}"
+      submission = submit!(capability: capability, actor: actor, request: request, attributes: {
+        evidence_reference: reference,
+        evidence_digest: Digest::SHA256.hexdigest(JSON.generate([reference, actor.id,
+          PlatformCapabilities.configuration_digest(capability)])),
+        controls: PlatformCapabilities.required_controls(capability).index_with(true),
+        effective_at: now - 1.second, expires_at: now + QUICK_APPROVAL_TERM
+      })
+      approve!(submission: submission, actor: actor, request: request)
+    end
+
     def self.approve!(submission:, actor:, request: nil)
       review = nil
       SiteSetting.instance.with_lock do

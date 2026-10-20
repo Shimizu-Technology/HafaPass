@@ -8,7 +8,9 @@ class OrganizerProfile < ApplicationRecord
 
   validates :business_name, presence: true
   validates :user_id, uniqueness: true
-  validates :verification_notes, presence: true, if: -> { verification_status_rejected? || verification_status_suspended? }
+  # A rejection tells the organizer what to fix. Suspending ("Pause all sales")
+  # is one admin action; its note is optional.
+  validates :verification_notes, presence: true, if: -> { verification_status_rejected? }
 
   def policy_accepted?
     current = PolicyRegistry.organizer_agreement

@@ -1,5 +1,7 @@
 # Gate G Physical Event-Day Rehearsal Evidence
 
+> **Optional record (2026-10-21).** This gate no longer blocks publishing or sales. Production's only sales gate is an admin verifying the organizer; see [Production cutover](PRODUCTION_CUTOVER.md). Use this review when you want a written record.
+
 Status: application controls implemented; real physical rehearsal evidence pending.
 
 Gate G prevents an event from being published, resumed, or sold in production until an administrator approves a complete physical event-day rehearsal for the exact current Gate F candidate. CI proves the scanner, signed-manifest, offline queue, conflict, door-sale, and reconciliation code paths; it does not prove real cameras, batteries, venue connectivity, staff behavior, alerts, payment terminals, or a printed emergency list.

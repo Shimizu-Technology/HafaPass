@@ -1,5 +1,7 @@
 # Gate I Bounded Live-Pilot Operations
 
+> **Optional record (2026-10-21).** This gate no longer blocks publishing or sales. Production's only sales gate is an admin verifying the organizer; see [Production cutover](PRODUCTION_CUTOVER.md). Use this review when you want a written record.
+
 Status: application control implemented; a real pilot, named people, provider observations, and external evidence are still required.
 
 ## Purpose

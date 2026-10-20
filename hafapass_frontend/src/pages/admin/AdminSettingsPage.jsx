@@ -157,14 +157,16 @@ function AdminSettingsSession({ identity, resourcePath }) {
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(null)
 
-  const load = useCallback(() => {
+  // `keepForm` re-checks the saved settings (for example payment readiness)
+  // without discarding edits the admin has not saved yet.
+  const load = useCallback(({ keepForm = false } = {}) => {
     const request = beginRequest()
-    if (!request) return
+    if (!request) return Promise.resolve()
     pendingLoad.current?.abort()
     pendingLoad.current = request
     setLoadError('')
-    apiClient.get('/admin/settings', request.config)
-      .then(response => { if (request.current()) { setSaved(response.data); setForm(toForm(response.data)) } })
+    return apiClient.get('/admin/settings', request.config)
+      .then(response => { if (request.current()) { setSaved(response.data); if (!keepForm) setForm(toForm(response.data)) } })
       .catch(failure => { if (request.current() && !request.handleError(failure)) setLoadError('Settings could not be loaded. Nothing has changed.') })
       .finally(() => request.release())
   }, [beginRequest])
@@ -300,7 +302,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
         </div>
       </form>
 
-      <PaymentModeSwitch settings={saved} beginRequest={beginRequest} onChanged={data => setSaved(previous => ({ ...previous, ...data }))} />
+      <PaymentModeSwitch settings={saved} beginRequest={beginRequest} onChanged={data => setSaved(previous => ({ ...previous, ...data }))} onRefresh={() => load({ keepForm: true })} />
 
       {confirming && <Dialog labelledBy={confirmTitle} busy={saving} onClose={() => setConfirming(null)} className="max-w-lg">
         <h2 id={confirmTitle} className="text-lg font-semibold text-neutral-900">Change fee terms for new orders?</h2>

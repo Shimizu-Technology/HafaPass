@@ -87,25 +87,6 @@ module Commerce
           next
         end
         validate_launch_scope!
-        release_gate = event.production_release_gate_status
-        if release_gate == :pilot_readiness
-          raise CheckoutError, "This event does not have a current pilot readiness approval"
-        end
-        if release_gate == :pilot_validation
-          raise CheckoutError, "This event does not have a current Gate F validation approval"
-        end
-        if release_gate == :event_day_rehearsal
-          raise CheckoutError, "This event does not have a current Gate G rehearsal approval"
-        end
-        if release_gate == :live_money
-          raise CheckoutError, "This event does not have a current Gate H live-money approval"
-        end
-        if release_gate == :live_pilot
-          raise CheckoutError, "This event does not have a current Gate I bounded-pilot approval"
-        end
-        if release_gate == :live_pilot_operation
-          raise CheckoutError, "This event's bounded live-pilot sales window is not active"
-        end
         raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)
@@ -170,10 +151,12 @@ module Commerce
 
         if requires_payment && order.total_cents.positive?
           provider = payment_provider.presence || "stripe"
+          # Read once so the environment and its platform account always agree.
+          payment_mode = SiteSetting.instance.payment_mode if provider == "stripe"
           payment = order.payments.create!(
             provider: provider,
-            provider_environment: provider == "stripe" ? SiteSetting.instance.payment_mode : nil,
-            provider_platform_account_id: provider == "stripe" ? StripeService.platform_account_id(SiteSetting.instance.payment_mode) : nil,
+            provider_environment: payment_mode,
+            provider_platform_account_id: payment_mode ? StripeService.platform_account_id(payment_mode) : nil,
             idempotency_key: "#{provider}:payment:order:#{order.id}",
             amount_cents: order.total_cents,
             currency: order.currency,
@@ -261,7 +244,10 @@ module Commerce
         raise CheckoutError, "A recorded payment is required for paid tickets"
       end
       if (payment_provider.blank? || payment_provider == "stripe") && SiteSetting.instance.simulate_mode?
-        raise CheckoutError, "Simulated payments cannot be used for paid tickets in production"
+        raise CheckoutError, "Paid tickets are not on sale yet: HåfaPass has not turned on payments"
+      end
+      unless event.organization.payout_ready?
+        raise CheckoutError, "Paid tickets are not on sale until the organizer adds payout details"
       end
     end
 

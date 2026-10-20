@@ -6,7 +6,10 @@ import Dialog from '../../components/Dialog'
 
 const MODES = {
   simulate: { label: 'Simulated payments', tone: 'bg-neutral-100 text-neutral-900 ring-neutral-300', body: 'Checkout runs end to end without contacting Stripe. No card is charged.' },
-  test: { label: 'Test payments', tone: 'bg-amber-100 text-amber-950 ring-amber-300', body: 'Payments go to Stripe’s sandbox with test cards. No real money moves, and visitors see a “Test payments” banner.' },
+  test: { label: 'Test payments', tone: 'bg-amber-100 text-amber-950 ring-amber-300', body: 'Payments go to Stripe’s test mode. Only Stripe test cards work (for example 4242 4242 4242 4242); real cards are declined and nothing is charged. Tickets bought with test cards work at the door while you stay in test mode.' },
+  // Production never offers simulated checkout; a server left in that mode
+  // simply has paid checkout turned off.
+  off: { label: 'Paid sales are off', tone: 'bg-red-50 text-red-900 ring-red-300', body: 'Paid checkout is turned off until you switch to test or live payments. Free events still work.' },
   live: { label: 'Live payments', tone: 'bg-emerald-100 text-emerald-950 ring-emerald-300', body: 'Buyers’ cards are charged real money through Shimizu Technology’s Stripe account.' },
 }
 
@@ -15,16 +18,17 @@ const TARGETS = {
     action: 'Switch to live payments', title: 'Switch to live payments?', button: 'btn-primary', confirm: 'Yes, take real payments', done: 'Payments are now live. New checkouts charge real cards.',
     effects: [
       'From the next checkout, buyers’ cards are charged real money.',
-      'Orders already paid in test mode stay test orders. Their refunds and fee lookups keep using the Stripe sandbox.',
+      'Orders already paid in test mode stay test orders. Their refunds and fee lookups keep using Stripe test mode.',
       'Checkouts already in progress finish in the mode they started in.',
+      'Tickets bought with test cards stop working at the door.',
       'The “Test payments” banner disappears for visitors.',
     ],
   },
   test: {
-    action: 'Switch to test mode', title: 'Switch to test payments?', button: 'btn-secondary', confirm: 'Switch to test mode', done: 'Payments are now in test mode. Cards are not charged.',
+    action: 'Switch to test mode', title: 'Switch to test payments?', button: 'btn-secondary', confirm: 'Switch to test mode', done: 'Payments are now in test mode. Only Stripe test cards work; no real card is charged.',
     effects: [
-      'From the next checkout, payments go to the Stripe sandbox. No real card is charged.',
-      'Orders already paid live stay live. Their refunds and fee lookups keep using live Stripe.',
+      'Paid events keep selling, but only Stripe test cards work. Real buyers can’t pay until you switch back to live.',
+      'Live orders already paid stay live. Their refunds and fee lookups keep using live Stripe.',
       'Checkouts already in progress finish in the mode they started in.',
       'Visitors see a “Test payments” banner until you switch back.',
     ],
@@ -50,18 +54,25 @@ function Checklist({ readiness }) {
   )
 }
 
-export default function PaymentModeSwitch({ settings, beginRequest, onChanged }) {
+export default function PaymentModeSwitch({ settings, beginRequest, onChanged, onRefresh }) {
   const titleId = useId()
   const [target, setTarget] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [checking, setChecking] = useState(false)
   const current = settings.payment_mode
-  const mode = MODES[current] || { label: current, tone: MODES.simulate.tone, body: '' }
+  const production = settings.environment === 'production'
+  const mode = (production && current === 'simulate' ? MODES.off : MODES[current]) || { label: current, tone: MODES.simulate.tone, body: '' }
   const readiness = settings.payment_mode_readiness || {}
   const counts = settings.payments_by_mode || {}
   const targets = ['live', 'test'].filter(name => name !== current && readiness[name])
 
+  const checkAgain = async () => {
+    if (!onRefresh || checking) return
+    setChecking(true)
+    try { await onRefresh() } finally { setChecking(false) }
+  }
   const close = () => { if (!busy) { setTarget(null); setError('') } }
   const switchMode = async () => {
     const request = beginRequest()
@@ -99,8 +110,9 @@ export default function PaymentModeSwitch({ settings, beginRequest, onChanged })
           return (
             <div key={name} className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
               <h3 className="font-semibold text-neutral-900">{name === 'live' ? 'Ready for live payments?' : 'Ready for test payments?'}</h3>
-              <p className="mt-1 text-sm text-content-muted">{ready ? 'Everything is in place.' : 'Finish the items marked below, then reload this page.'}</p>
+              <p className="mt-1 text-sm text-content-muted">{ready ? 'Everything is in place.' : 'Finish the items marked below, then check again.'}</p>
               <Checklist readiness={readiness[name]} />
+              {!ready && onRefresh && <button type="button" disabled={checking} onClick={checkAgain} className="btn-secondary mt-4 mr-3">{checking ? 'Checking…' : 'Check again'}</button>}
               <button type="button" disabled={!ready || busy} onClick={() => { setNotice(''); setTarget(name) }} className={`${TARGETS[name].button} mt-4`}>
                 {TARGETS[name].action}
               </button>

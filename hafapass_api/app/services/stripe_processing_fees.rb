@@ -19,8 +19,12 @@ class StripeProcessingFees
       payment.provider_platform_account_id, payment.provider_account_id]))
   end
 
+  # Production settles live money only, so test-mode QA payments never hold
+  # back a settlement or payout there.
   def self.missing_count(order_ids)
-    Payment.where(order_id: order_ids, provider: "stripe", status: [:succeeded, :partially_refunded, :refunded])
+    scope = Payment.where(order_id: order_ids, provider: "stripe", status: [:succeeded, :partially_refunded, :refunded])
+    scope = scope.where(provider_environment: "live") if Rails.env.production?
+    scope
       .where.not(provider_payment_id: nil).where("provider_payment_id NOT LIKE 'sim_%'")
       .where("provider_environment IS NULL OR provider_environment != 'simulate'")
       .where("COALESCE(provider_payload->>'simulated', 'false') != 'true'")

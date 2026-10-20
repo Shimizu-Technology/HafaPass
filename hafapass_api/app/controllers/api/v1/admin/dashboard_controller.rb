@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
+  SETUP_ITEMS = {
+    "policy_register" => ["Production policy register", "Checkout is off until you approve the production policy register."],
+    "resend_production" => ["Production email (Resend)",
+      "Ticket and order emails are off until you approve production email."]
+  }.freeze
+
   # GET /api/v1/admin/dashboard
   def show
     financials = Commerce::LedgerTotals.call(Order.where(status: [:completed, :partially_refunded, :refunded]))
@@ -19,11 +25,54 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
       operational_signals: SystemReadiness.call.dig(:checks, :operations),
       total_tickets_sold: Ticket.where(status: [:issued, :checked_in]).count,
       recent_events: recent_events_json,
-      recent_orders: recent_orders_json
+      recent_orders: recent_orders_json,
+      setup_required: setup_required_json,
+      organizers_awaiting_verification: organizers_awaiting_verification_json,
+      verified_organizers: verified_organizers_json
     }
   end
 
   private
+
+  # One-time production setup an admin approves with one click.
+  def setup_required_json
+    return [] unless Rails.env.production?
+
+    SETUP_ITEMS.filter_map do |key, (label, message)|
+      next if PlatformCapabilities.enabled?(key)
+
+      configured = PlatformCapabilities.configured?(key)
+      missing = PlatformCapabilities.definition(key).fetch(:required_env).reject { |name| ENV[name].present? }
+      help = configured ? nil : "Set #{missing.presence&.join(', ') || 'the provider settings'} on the API service first."
+      { key: key, label: label, message: message, configured: configured, help: help }
+    end
+  end
+
+  # Organizers whose events cannot sell in production until an admin verifies
+  # them (one action on this dashboard). Requested ones first.
+  def organizers_awaiting_verification_json
+    OrganizerProfile.where(verification_status: %i[pending unverified rejected])
+      .includes(:user, organization: { organization_memberships: :user })
+      .order(Arel.sql("organizer_profiles.verification_requested_at IS NULL, " \
+        "organizer_profiles.verification_requested_at, organizer_profiles.created_at"))
+      .limit(100).map do |profile|
+        owner = profile.organization.organization_memberships.find { |membership| membership.role == "owner" }&.user
+        {
+          profile_id: profile.id, business_name: profile.business_name, organization_id: profile.organization_id,
+          owner_email: owner&.email || profile.user&.email, requested_at: profile.verification_requested_at,
+          verification_status: profile.verification_status, payout_ready: profile.organization.payout_ready?,
+          event_count: profile.events.count
+        }
+      end
+  end
+
+  def verified_organizers_json
+    OrganizerProfile.verification_status_verified.includes(:verified_by_user)
+      .order(verified_at: :desc).limit(50).map do |profile|
+        { profile_id: profile.id, business_name: profile.business_name, verified_at: profile.verified_at,
+          verified_by: profile.verified_by_user&.email }
+      end
+  end
 
   def recent_events_json
     Event.includes(:organizer_profile).order(created_at: :desc).limit(5).map do |e|

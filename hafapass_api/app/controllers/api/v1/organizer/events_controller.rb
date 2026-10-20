@@ -518,6 +518,7 @@ module Api
             transfers_enabled: event.transfers_available?,
             assigned_seating: event.assigned_seating?,
             policy_hold: event.policy_hold_summary,
+            sales_status: event.sales_status,
             supported_locales: event.supported_locales,
             localized_content: event.localized_content,
             created_at: event.created_at,

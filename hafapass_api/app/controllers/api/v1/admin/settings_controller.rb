@@ -17,6 +17,10 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
     # checklist explains what is missing; nothing switches until it is met.
     requested_mode = params[:payment_mode].presence
     switching = requested_mode && requested_mode != settings.payment_mode
+    if switching && requested_mode == "simulate" && Rails.env.production?
+      render json: { error: "Production uses test or live payments only" }, status: :unprocessable_entity
+      return
+    end
     if switching && %w[test live].include?(requested_mode)
       readiness = PaymentModeReadiness.call(requested_mode)
       unless readiness[:ready]
@@ -33,10 +37,12 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       end
     end
 
-    settings.assign_attributes(settings_params)
-    changes = settings.changes.except("updated_at")
-    fee_changes = changes.slice(*FEE_TERM_FIELDS)
-    saved = SiteSetting.transaction do
+    # The row lock serializes concurrent switches and edits; the slower
+    # readiness and Stripe checks above run before taking it.
+    saved = settings.with_lock do
+      settings.assign_attributes(settings_params)
+      changes = settings.changes.except("updated_at")
+      fee_changes = changes.slice(*FEE_TERM_FIELDS)
       next false unless settings.save
 
       if changes.any?

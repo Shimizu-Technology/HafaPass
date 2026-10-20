@@ -1,5 +1,7 @@
 # Gate J Pilot Closeout and Expansion Decision
 
+> **Optional record (2026-10-21).** This gate no longer blocks publishing or sales. Production's only sales gate is an admin verifying the organizer; see [Production cutover](PRODUCTION_CUTOVER.md). Use this review when you want a written record.
+
 Status: application control implemented; a real completed Gate I run and its restricted external evidence are still required
 Last verified: July 21, 2026 (Pacific/Guam)
 Parent plan: [Platform Completion Audit](PLATFORM_COMPLETION_AUDIT.md)
