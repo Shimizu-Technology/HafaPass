@@ -57,6 +57,10 @@ Rails.application.routes.draw do
       get "tickets/:credential/wallet/apple", to: "tickets#apple_wallet", as: :ticket_apple_wallet
       get "tickets/:credential/wallet/google", to: "tickets#google_wallet", as: :ticket_google_wallet
 
+      # Ticket PDFs fetched by the email provider when it sends a ticket email.
+      get "ticket_email_attachments/:token", to: "ticket_email_attachments#show", format: false,
+        constraints: { token: /[A-Za-z0-9_\-=]+--[A-Za-z0-9_\-=]+/ }
+
       # Apple PassKit web service (Apple appends /v1/... to the pass's webServiceURL).
       scope "wallet/apple/v1", controller: "apple_wallet_web_service", format: false,
         constraints: { pass_type_identifier: /[A-Za-z0-9.\-]+/, serial_number: /[A-Za-z0-9.\-]+/,

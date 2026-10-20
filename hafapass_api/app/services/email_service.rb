@@ -192,7 +192,7 @@ class EmailService
       subject = safe_subject("Your HåfaPass Tickets - #{event.title}")
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "order_confirmation", delivery: delivery,
-        order_id: order.id)
+        attachments: TicketEmailAttachments.for(tickets), order_id: order.id)
     end
 
     def send_order_recovery(order, delivery: nil)
@@ -232,7 +232,7 @@ class EmailService
       subject = safe_subject("Your Ticket - #{event.title}")
 
       deliver(to: ticket.attendee_email, subject: subject, html: html, tag: "ticket_delivery", delivery: delivery,
-        ticket_id: ticket.id)
+        attachments: TicketEmailAttachments.for([ticket]), ticket_id: ticket.id)
     end
 
     # ── Refund Notification ─────────────────────────────────────────
@@ -363,8 +363,10 @@ class EmailService
     end
 
     # ── Unified delivery method ─────────────────────────────────────
-    def deliver(to:, subject:, html:, tag: nil, delivery: nil, **log_meta)
+    def deliver(to:, subject:, html:, tag: nil, delivery: nil, attachments: nil, **log_meta)
       params = { from: FROM_EMAIL, to: delivery ? delivery.recipient : to, subject: subject, html: html }
+      # Ticket PDFs travel as provider-fetched URLs (see TicketEmailAttachments).
+      params[:attachments] = attachments if attachments.present?
       reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
       params[:reply_to] = reply_to if reply_to
       params[:subject] = "[HåfaPass TEST] #{subject}" if ProviderRehearsal.enabled?
