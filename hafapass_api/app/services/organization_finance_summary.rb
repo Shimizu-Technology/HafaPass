@@ -2,6 +2,10 @@
 
 # Read-only, organization-wide view of the same settlement math the event
 # finance section uses. It never finalizes, snapshots, or changes records.
+#
+# Performance: this runs Settlements::Calculator once per event with money
+# activity (a few queries each). That is fine for launch-sized organizations;
+# cache or snapshot per event if an organization grows to hundreds of events.
 class OrganizationFinanceSummary
   SETTLED_ORDER_STATUSES = %i[completed partially_refunded refunded].freeze
   IN_FLIGHT_PAYOUT_STATUSES = %i[pending processing].freeze
@@ -38,9 +42,12 @@ class OrganizationFinanceSummary
   def call
     rows = event_rows
     {
-      organization: { id: organization.id, name: organization.name, timezone: organization.timezone },
+      organization: { id: organization.id, name: organization.name, slug: organization.slug,
+                      timezone: organization.timezone },
       currency: organization.currency,
       totals: totals(rows),
+      breakdown: breakdown(rows),
+      orders_without_items_count: orders_without_items_count,
       events: rows,
       payouts: recent_payouts,
       payouts_count: organization.payouts.count,
@@ -66,9 +73,27 @@ class OrganizationFinanceSummary
 
   def event_rows
     events = financial_events.to_a
-    latest = latest_settlements(events.map(&:id))
-    payouts = organization.payouts.where(event_id: events.map(&:id)).group(:event_id, :status).sum(:amount_cents)
+    ids = events.map(&:id)
+    latest = latest_settlements(ids)
+    payouts = organization.payouts.where(event_id: ids).group(:event_id, :status).sum(:amount_cents)
+    @sales = item_sales(ids)
+    @refunded_proceeds = refunded_proceeds(ids)
+    @buyer_fees = Order.where(event_id: ids, status: SETTLED_ORDER_STATUSES).group(:event_id).sum(:service_fee_cents)
     events.map { |event| event_row(event, latest[event.id], payouts) }
+  end
+
+  # Line-item sales (tickets and add-ons) and their discounts: the same rows
+  # organizer proceeds are built from, so the breakdown reconciles.
+  def item_sales(event_ids)
+    OrderItem.joins(:order).where(orders: { event_id: event_ids, status: SETTLED_ORDER_STATUSES })
+      .group("orders.event_id").pluck(Arel.sql("orders.event_id, SUM(order_items.subtotal_cents), SUM(order_items.discount_cents)"))
+      .to_h { |event_id, subtotal, discount| [event_id, [subtotal.to_i, discount.to_i]] }
+  end
+
+  def refunded_proceeds(event_ids)
+    RefundItem.joins(refund: :order)
+      .where(refunds: { status: Refund.statuses[:succeeded] }, orders: { event_id: event_ids, status: SETTLED_ORDER_STATUSES })
+      .group("orders.event_id").sum(:organizer_proceeds_cents)
   end
 
   def latest_settlements(event_ids)
@@ -83,7 +108,14 @@ class OrganizationFinanceSummary
     preview = result.attributes
     paid = payouts.fetch([event.id, "paid"], 0)
     in_flight = IN_FLIGHT_PAYOUT_STATUSES.sum { |status| payouts.fetch([event.id, status.to_s], 0) }
+    # Balance before payouts, unfloored: the calculator floors payable at 0,
+    # which would hide an event that refunds or disputes pushed below zero.
+    balance = preview[:organizer_proceeds_cents] - preview[:processing_fee_cents] - preview[:reserve_cents] +
+      preview[:adjustment_cents]
     owed = [preview[:payable_cents] - paid - in_flight, 0].max
+    sales, item_discounts = @sales.fetch(event.id, [0, 0])
+    refunded = @refunded_proceeds.fetch(event.id, 0)
+    cash = door_cash_retained(result.items)
     statement_current = statement_current?(settlement, preview)
     # PayoutCreator only pays from a version whose digest still matches, and a
     # payout is itself statement activity, so each further payout needs one.
@@ -103,7 +135,17 @@ class OrganizationFinanceSummary
       processing_fee_cents: preview[:processing_fee_cents],
       platform_processing_fee_cents: preview[:platform_processing_fee_cents],
       organizer_proceeds_cents: preview[:organizer_proceeds_cents],
-      door_cash_retained_cents: door_cash_retained(result.items),
+      sales_cents: sales,
+      item_discount_cents: item_discounts,
+      # Whatever separates line-item sales from proceeds that is not a
+      # discount or refund: the service fee share the organizer absorbed.
+      absorbed_fee_cents: sales - item_discounts - refunded - preview[:organizer_proceeds_cents],
+      refunded_proceeds_cents: refunded,
+      buyer_fee_cents: @buyer_fees.fetch(event.id, 0),
+      door_cash_retained_cents: cash,
+      reserve_cents: preview[:reserve_cents],
+      other_adjustment_cents: preview[:adjustment_cents] + cash,
+      balance_cents: balance,
       payable_cents: preview[:payable_cents],
       paid_cents: paid,
       in_flight_cents: in_flight,
@@ -184,6 +226,48 @@ class OrganizationFinanceSummary
       requestable_cents: [sum.call(:requestable_cents), available].min,
       available_to_payout_cents: available
     }
+  end
+
+  # Organization-wide steps that sum exactly, from the proceeds side:
+  # proceeds = sales - discounts - fees absorbed - refunded proceeds;
+  # earned = proceeds - processing - door cash - reserves + adjustments;
+  # balance = earned - paid out - in progress. Events are not floored
+  # individually, so an overpaid event offsets the others, as payouts do.
+  def breakdown(rows)
+    sum = ->(key) { rows.sum { |row| row[key] } }
+    organization_adjustments = organization.balance_adjustments.effective.where(event_id: nil).sum(:amount_cents)
+    earned = sum.call(:balance_cents) + organization_adjustments
+    paid = organization.payouts.status_paid.sum(:amount_cents)
+    in_flight = organization.payouts.where(status: IN_FLIGHT_PAYOUT_STATUSES).sum(:amount_cents)
+    balance = earned - paid - in_flight
+    {
+      sales_cents: sum.call(:sales_cents),
+      discount_cents: sum.call(:item_discount_cents),
+      absorbed_fee_cents: sum.call(:absorbed_fee_cents),
+      refunded_proceeds_cents: sum.call(:refunded_proceeds_cents),
+      proceeds_cents: sum.call(:organizer_proceeds_cents),
+      processing_fee_cents: sum.call(:processing_fee_cents),
+      door_cash_retained_cents: sum.call(:door_cash_retained_cents),
+      reserve_cents: sum.call(:reserve_cents),
+      adjustment_cents: sum.call(:other_adjustment_cents) + organization_adjustments,
+      earned_cents: earned,
+      paid_cents: paid,
+      in_flight_cents: in_flight,
+      balance_cents: balance,
+      owed_cents: [balance, 0].max,
+      negative_balance_cents: [-balance, 0].max,
+      # Informational only; not steps in the sum.
+      buyer_fee_cents: sum.call(:buyer_fee_cents),
+      refunded_to_buyers_cents: sum.call(:refund_cents),
+      platform_processing_fee_cents: sum.call(:platform_processing_fee_cents)
+    }
+  end
+
+  # Settled orders with no line items (the ledger backfill skipped orders
+  # with no tickets). Statements cannot include them; the page says so.
+  def orders_without_items_count
+    Order.where(event_id: organization.events.select(:id), status: SETTLED_ORDER_STATUSES)
+      .where.not(id: OrderItem.select(:order_id)).count
   end
 
   def recent_payouts

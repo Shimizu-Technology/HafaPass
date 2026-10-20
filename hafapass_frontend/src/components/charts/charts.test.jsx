@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import BarList from './BarList'
 import DailyColumnChart from './DailyColumnChart'
-import { axisTicks, formatDay, labelIndexes, niceMax } from './chartScale'
+import { axisLabelIndexes, axisTicks, formatDay, LABEL_SLOT, labelIndexes, niceMax } from './chartScale'
 
 describe('chart scale helpers', () => {
   it('rounds axes to clean values', () => {
@@ -17,9 +17,28 @@ describe('chart scale helpers', () => {
     expect(formatDay('2026-10-02')).toBe('Oct 2')
   })
 
-  it('always labels the first and last day', () => {
+  it('always labels the first and last day on an even step', () => {
     expect(labelIndexes(1, 5)).toEqual([0])
-    expect(labelIndexes(30, 4)).toEqual([0, 10, 19, 29])
+    expect(labelIndexes(30, 4)).toEqual([0, 8, 16, 29])
+    expect(labelIndexes(13, 8)).toEqual([0, 2, 4, 6, 8, 10, 12])
+    expect(labelIndexes(14, 8)).toEqual([0, 2, 4, 6, 8, 10, 13])
+  })
+
+  // The chart's plot is its width minus the 44px axis gutter and 4px of air.
+  const gaps = (days, width) => {
+    const band = (width - 48) / days
+    const indexes = axisLabelIndexes(days, width - 48)
+    return { indexes, gaps: indexes.slice(1).map((index, position) => (index - indexes[position]) * band) }
+  }
+
+  it('keeps day labels a full label apart at desktop and phone widths', () => {
+    const cases = [[1200, 22], [1200, 23], [1200, 24], [1200, 25], [1200, 26], [640, 13], [343, 13], [343, 60], [1200, 120]]
+    for (const [width, days] of cases) {
+      const layout = gaps(days, width)
+      expect(layout.indexes[0]).toBe(0)
+      expect(layout.indexes.at(-1)).toBe(days - 1)
+      expect(Math.min(...layout.gaps)).toBeGreaterThanOrEqual(LABEL_SLOT)
+    }
   })
 })
 

@@ -23,7 +23,7 @@ function DailySales({ days, timezone, currency }) {
   const series = days.map(day => ({ date: day.date, value: metric === 'tickets' ? day.tickets : day.amount_cents }))
   const options = [['tickets', 'Tickets'], ['amount', 'Amount charged']]
   return (
-    <Card id="sales-over-time-heading" title="Sales over time" description={`Each day runs midnight to midnight in the event's timezone (${timezone || 'event timezone'}). Amounts are what buyers paid that day, before any later refunds.`}>
+    <Card id="sales-over-time-heading" title="Sales over time" description={`Each day runs midnight to midnight in the event's timezone (${timezone || 'event timezone'}). Tickets and amounts count on the day they were bought, before any later refunds or cancellations.`}>
       {days.length === 0 ? (
         <p className="rounded-xl bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-600">No sales yet. Daily sales appear here after the first order.</p>
       ) : (

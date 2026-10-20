@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { axisTicks, compactNumber, formatDay, labelIndexes } from './chartScale'
+import { axisLabelIndexes, axisTicks, compactNumber, formatDay } from './chartScale'
 
 const HEIGHT = 200
 const AXIS_BAND = 28
@@ -55,7 +55,7 @@ export default function DailyColumnChart({ days, label, formatValue = String, in
   const y = value => TOP_PAD + plotHeight - (value / top) * plotHeight
   const xCenter = index => LEFT_AXIS + band * index + band / 2
   const peakIndex = max > 0 ? values.indexOf(max) : -1
-  const shownLabels = new Set(labelIndexes(days.length, Math.max(2, Math.floor(plotWidth / 64))))
+  const shownLabels = new Set(axisLabelIndexes(days.length, plotWidth))
   const current = active != null ? days[active] : null
   const total = values.reduce((sum, value) => sum + value, 0)
   const summary = days.length === 0 ? 'No days to show.'

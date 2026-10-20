@@ -74,9 +74,63 @@ RSpec.describe "Organizer finances and exports", type: :request do
         # until a new version is finalized (PayoutCreator's digest rule).
         "requestable_cents" => 0
       )
-      expect(body["organization"]).to eq("id" => organization.id, "name" => organization.name, "timezone" => "Pacific/Guam")
+      expect(body["organization"]).to eq("id" => organization.id, "name" => organization.name,
+        "slug" => organization.slug, "timezone" => "Pacific/Guam")
       expect(body["processing_fee_bearers"]).to eq("platform" => 1, "organizer" => 1, "legacy" => 2)
       expect(body["events"].map { |row| row["title"] }).to contain_exactly("Closing Night", "Next Show")
+    end
+
+    def refund_in_full!(order)
+      refund = create(:refund, order: order, amount_cents: 5350, status: :succeeded, succeeded_at: Time.current)
+      create(:refund_item, refund: refund, order_item: order.order_items.first, amount_cents: 5350, fee_cents: 350,
+        organizer_proceeds_cents: 5000)
+      order.update!(status: :refunded, refund_amount_cents: 5350)
+    end
+
+    def expect_breakdown_to_sum(breakdown)
+      expect(breakdown["sales_cents"] - breakdown["discount_cents"] - breakdown["absorbed_fee_cents"] -
+        breakdown["refunded_proceeds_cents"]).to eq(breakdown["proceeds_cents"])
+      expect(breakdown["proceeds_cents"] - breakdown["processing_fee_cents"] - breakdown["door_cash_retained_cents"] -
+        breakdown["reserve_cents"] + breakdown["adjustment_cents"]).to eq(breakdown["earned_cents"])
+      expect(breakdown["earned_cents"] - breakdown["paid_cents"] - breakdown["in_flight_cents"]).to eq(breakdown["balance_cents"])
+      expect(breakdown["owed_cents"] - breakdown["negative_balance_cents"]).to eq(breakdown["balance_cents"])
+    end
+
+    it "builds a breakdown whose displayed lines sum exactly from the proceeds side" do
+      refund_in_full!(organizer_order)
+
+      get "/api/v1/organizer/finances", headers: org_headers(owner)
+
+      breakdown = response.parsed_body["breakdown"]
+      expect(breakdown).to include("sales_cents" => 20_000, "discount_cents" => 0, "absorbed_fee_cents" => 0,
+        "refunded_proceeds_cents" => 5000, "proceeds_cents" => 15_000, "processing_fee_cents" => 551,
+        "earned_cents" => 14_449, "paid_cents" => 10_000, "balance_cents" => 4449, "owed_cents" => 4449,
+        "buyer_fee_cents" => 1400, "refunded_to_buyers_cents" => 5350)
+      expect_breakdown_to_sum(breakdown)
+      expect(response.parsed_body["orders_without_items_count"]).to eq(0)
+    end
+
+    it "lets an overpaid event offset the others instead of overstating what is owed" do
+      refund_in_full!(organizer_order)
+      refund_in_full!(legacy_order)
+
+      get "/api/v1/organizer/finances", headers: org_headers(owner)
+
+      body = response.parsed_body
+      # Closing Night: 5,000 proceeds - 368 processing - 10,000 paid = -5,368;
+      # Next Show still has 4,817 earned, so the organization is 551 short.
+      expect(body["breakdown"]).to include("earned_cents" => 9449, "balance_cents" => -551, "owed_cents" => 0,
+        "negative_balance_cents" => 551)
+      expect_breakdown_to_sum(body["breakdown"])
+      expect(body["totals"]["available_to_payout_cents"]).to eq(0)
+    end
+
+    it "counts settled orders that have no line items and so are missing from statements" do
+      create(:order, event: completed_event, subtotal_cents: 1000, service_fee_cents: 0, total_cents: 1000)
+
+      get "/api/v1/organizer/finances", headers: org_headers(owner)
+
+      expect(response.parsed_body["orders_without_items_count"]).to eq(1)
     end
 
     it "reports statement and payout status per event" do
@@ -205,6 +259,26 @@ RSpec.describe "Organizer finances and exports", type: :request do
         .to contain_exactly(platform_order.reference, organizer_order.reference, legacy_order.reference)
       payable = rows.find { |row| row["line"] == "total" && row["kind"] == "payable" }
       expect(payable["amount"]).to eq("146.32")
+    end
+
+    it "writes negative amounts as plain numbers so spreadsheets can total them" do
+      get "/api/v1/organizer/events/#{completed_event.id}/finance/statement_export", headers: org_headers(owner)
+
+      items = csv.select { |row| row["line"] == "item" }
+      expect(items.find { |row| row["kind"] == "payout" }["amount"]).to eq("-100.00")
+      expect(items.select { |row| row["kind"] == "processing_fee" }.map { |row| row["amount"] })
+        .to contain_exactly("0.00", "-1.85", "-1.83")
+      expect(response.body).not_to include("\t-")
+    end
+
+    it "ends a stream that fails part way with a marker row instead of a silently short file" do
+      allow(FinanceExports).to receive(:order_csv_values).and_raise(RuntimeError, "boom")
+      allow(Rails.logger).to receive(:error).and_call_original
+
+      get "/api/v1/organizer/finances/orders_export", headers: org_headers(owner)
+
+      expect(response.body.lines.last).to include(SpreadsheetExport::INCOMPLETE_MARKER)
+      expect(Rails.logger).to have_received(:error).with(/stopped early: RuntimeError: boom/)
     end
 
     it "exports the current unapproved preview" do

@@ -98,7 +98,9 @@ module FinanceExports
   def money(cents)
     return nil if cents.nil?
 
-    format("%<sign>s%<units>d.%<cents>02d", sign: cents.negative? ? "-" : "", units: cents.abs / 100, cents: cents.abs % 100)
+    SpreadsheetExport::Amount.new(
+      format("%<sign>s%<units>d.%<cents>02d", sign: cents.negative? ? "-" : "", units: cents.abs / 100, cents: cents.abs % 100)
+    )
   end
 
   def order_csv_values(row)

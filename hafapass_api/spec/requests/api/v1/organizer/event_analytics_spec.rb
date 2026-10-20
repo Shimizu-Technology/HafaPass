@@ -30,6 +30,9 @@ RSpec.describe "Organizer event analytics", type: :request do
     sell!(at: Time.utc(2026, 10, 1, 13, 0))
     sell!(at: Time.utc(2026, 10, 4, 1, 0))
     create(:order, :pending, event: event, created_at: Time.utc(2026, 10, 3, 1, 0))
+    # A ticket cancelled later still counts on its purchase day, like its amount.
+    later = sell!(at: Time.utc(2026, 10, 4, 2, 0))
+    later.tickets.update_all(status: Ticket.statuses[:cancelled])
 
     body = stats
 
@@ -38,7 +41,7 @@ RSpec.describe "Organizer event analytics", type: :request do
       { "date" => "2026-10-01", "orders" => 1, "tickets" => 1, "amount_cents" => 2500 },
       { "date" => "2026-10-02", "orders" => 1, "tickets" => 2, "amount_cents" => 5000 },
       { "date" => "2026-10-03", "orders" => 0, "tickets" => 0, "amount_cents" => 0 },
-      { "date" => "2026-10-04", "orders" => 1, "tickets" => 1, "amount_cents" => 2500 }
+      { "date" => "2026-10-04", "orders" => 2, "tickets" => 2, "amount_cents" => 5000 }
     ])
   end
 

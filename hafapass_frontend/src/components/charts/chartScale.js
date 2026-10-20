@@ -42,13 +42,24 @@ export function formatDay(day, options = { month: 'short', day: 'numeric' }) {
   return date.toLocaleDateString('en-US', { ...options, timeZone: 'UTC' })
 }
 
-// Indexes of the x-axis labels to show: always the first and last, plus
-// evenly spaced ones in between, never more than `maxLabels`.
+// Horizontal room one "Oct 12" label needs, including the half-width a
+// centred neighbour can lean towards an edge-anchored first or last label.
+export const LABEL_SLOT = 72
+
+// Indexes of the x-axis labels to show: every `step` days from the first,
+// where step = ceil(length / maxLabels), plus the last day. A label within
+// one step of the last is dropped so the two never collide.
 export function labelIndexes(length, maxLabels) {
   if (length <= 0) return []
-  if (length <= maxLabels) return Array.from({ length }, (_, index) => index)
   const slots = Math.max(2, maxLabels)
-  const indexes = new Set([0, length - 1])
-  for (let slot = 1; slot < slots - 1; slot += 1) indexes.add(Math.round((slot * (length - 1)) / (slots - 1)))
-  return [...indexes].sort((a, b) => a - b)
+  if (length <= slots) return Array.from({ length }, (_, index) => index)
+  const step = Math.ceil(length / slots)
+  const indexes = []
+  for (let index = 0; index < length - 1; index += step) {
+    if (length - 1 - index >= step) indexes.push(index)
+  }
+  return [...indexes, length - 1]
 }
+
+// Label indexes for a plot of `plotWidth` pixels with `length` days.
+export const axisLabelIndexes = (length, plotWidth) => labelIndexes(length, Math.floor(plotWidth / LABEL_SLOT))

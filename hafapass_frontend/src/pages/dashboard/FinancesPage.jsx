@@ -173,10 +173,11 @@ function FinancesSession({ identity }) {
   const timezone = data.organization?.timezone || undefined
   const events = data.events || []
   const payouts = data.payouts || []
-  const slug = 'hafapass'
+  const slug = data.organization?.slug || 'organization'
+  const breakdown = data.breakdown || {}
   const today = new Date().toISOString().slice(0, 10)
-  const proceedsAfterCosts = (totals.organizer_proceeds_cents || 0) - (totals.processing_fee_cents || 0) - (totals.door_cash_retained_cents || 0)
-  const otherAdjustments = (totals.payable_cents || 0) - proceedsAfterCosts
+  const signed = cents => ({ value: money(Math.abs(cents || 0)), sign: cents < 0 ? '−' : '' })
+  const adjustment = breakdown.adjustment_cents || 0
   const payoutTiming = feeTerms.terms?.payoutScheduleText
   const notes = processingNotes(data.processing_fee_bearers, feeTerms.terms)
   const heldCents = Math.max(0, events.reduce((sum, row) => sum + (row.requestable_cents || 0), 0) - (totals.requestable_cents || 0))
@@ -200,17 +201,17 @@ function FinancesSession({ identity }) {
       <div className={`transition-opacity duration-150 ease-out-strong ${state.status === 'refreshing' ? 'opacity-60' : ''}`} aria-busy={state.status === 'refreshing'}>
         <section aria-labelledby="owed-heading" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
           <h2 id="owed-heading" className="text-sm font-medium text-neutral-600">Still owed to you</h2>
-          <p className="mt-1 text-5xl font-bold tracking-tight text-neutral-950">{money(totals.owed_cents)}</p>
+          <p className="mt-1 text-5xl font-bold tracking-tight text-neutral-950">{money(breakdown.owed_cents)}</p>
           <ul className="mt-3 space-y-1 text-sm text-neutral-700">
             <li>{totals.requestable_cents > 0 ? `${money(totals.requestable_cents)} can be requested now from finalized statements.` : 'Nothing can be requested right now. Payouts open once an event’s statement is finalized and any refunds, disputes or payment checks are settled.'}</li>
             {heldCents > 0 && <li>{money(heldCents)} from finalized statements is on hold until open refunds, disputes or payment checks are settled.</li>}
             {totals.in_flight_cents > 0 && <li>{money(totals.in_flight_cents)} is on its way in a payout that has been requested.</li>}
             {payoutTiming && <li>Payout timing: {payoutTiming}.</li>}
           </ul>
-          {totals.negative_balance_cents > 0 && (
+          {breakdown.negative_balance_cents > 0 && (
             <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>A negative balance of {money(totals.negative_balance_cents)} carries forward. It is withheld from future payouts until it is covered, for example after refunds that were paid out earlier.</span>
+              <span>A negative balance of {money(breakdown.negative_balance_cents)} carries forward. It is withheld from future payouts until it is covered, for example after refunds that were paid out earlier.</span>
             </p>
           )}
         </section>
@@ -219,20 +220,32 @@ function FinancesSession({ identity }) {
           <section aria-labelledby="breakdown-heading" className="min-w-0 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 lg:col-span-2">
             <h2 id="breakdown-heading" className="text-lg font-semibold text-neutral-900">How the total adds up</h2>
             <p className="mt-1 text-sm text-neutral-600">All events with sales, refunds or payouts. Amounts update as orders, refunds and payouts are recorded.</p>
-            <dl className="mt-4 text-sm">
-              <Line label="Gross ticket sales" value={money(totals.gross_cents)} detail="Ticket prices before discounts and fees" />
-              {totals.discount_cents > 0 && <Line label="Discounts" value={money(totals.discount_cents)} sign="−" />}
-              <Line label="Refunded to buyers" value={money(totals.refund_cents)} detail="Includes any service fees refunded" />
-              <Line label="HåfaPass service fees" value={money(totals.platform_fee_cents)} detail="Paid by buyers or by you, depending on each event’s fee setting" />
-              <Line label="Your proceeds after refunds" value={money(totals.organizer_proceeds_cents)} strong />
-              <Line label="Card processing you paid" value={money(totals.processing_fee_cents)} sign="−" detail={totals.platform_processing_fee_cents > 0 ? `HåfaPass covered another ${money(totals.platform_processing_fee_cents)}` : undefined} />
-              {totals.door_cash_retained_cents > 0 && <Line label="Door cash you already kept" value={money(totals.door_cash_retained_cents)} sign="−" detail="Cash sales stay with you, so they are not paid out again" />}
-              {otherAdjustments !== 0 && <Line label="Reserves and adjustments" value={money(Math.abs(otherAdjustments))} sign={otherAdjustments < 0 ? '−' : '+'} />}
-              <Line label="Earned for payout" value={money(totals.payable_cents)} strong />
-              <Line label="Paid out" value={money(totals.paid_cents)} sign="−" />
-              {totals.in_flight_cents > 0 && <Line label="Payouts in progress" value={money(totals.in_flight_cents)} sign="−" />}
-              <Line label="Still owed to you" value={money(totals.owed_cents)} strong />
+            <dl className="mt-4 text-sm" data-testid="finance-breakdown">
+              <Line label="Sales" value={money(breakdown.sales_cents)} detail="Tickets and add-ons at their listed prices" />
+              {breakdown.discount_cents > 0 && <Line label="Discounts" value={money(breakdown.discount_cents)} sign="−" />}
+              {breakdown.absorbed_fee_cents !== 0 && <Line label="Service fees you covered" {...signed(-breakdown.absorbed_fee_cents)} detail="Your share of the HåfaPass fee on events where you cover some or all of it" />}
+              {breakdown.refunded_proceeds_cents > 0 && <Line label="Refunded from your proceeds" value={money(breakdown.refunded_proceeds_cents)} sign="−" />}
+              <Line label="Your proceeds" value={money(breakdown.proceeds_cents)} strong />
+              <Line label="Card processing you paid" value={money(breakdown.processing_fee_cents)} sign="−" />
+              {breakdown.door_cash_retained_cents > 0 && <Line label="Door cash you already kept" value={money(breakdown.door_cash_retained_cents)} sign="−" detail="Cash sales stay with you, so they are not paid out again" />}
+              {breakdown.reserve_cents > 0 && <Line label="Reserves held" value={money(breakdown.reserve_cents)} sign="−" />}
+              {adjustment !== 0 && <Line label="Adjustments and disputes" value={money(Math.abs(adjustment))} sign={adjustment < 0 ? '−' : '+'} />}
+              <Line label="Earned for payout" {...signed(breakdown.earned_cents)} strong />
+              <Line label="Paid out" value={money(breakdown.paid_cents)} sign="−" />
+              {breakdown.in_flight_cents > 0 && <Line label="Payouts in progress" value={money(breakdown.in_flight_cents)} sign="−" />}
+              <Line label={breakdown.balance_cents < 0 ? 'Negative balance carried forward' : 'Still owed to you'} {...signed(breakdown.balance_cents)} strong />
             </dl>
+            <ul className="mt-4 space-y-1 border-t border-neutral-100 pt-4 text-xs text-neutral-600">
+              <li>Buyers also paid {money(breakdown.buyer_fee_cents)} in service fees to HåfaPass. Those are not part of your proceeds.</li>
+              {breakdown.refunded_to_buyers_cents > 0 && <li>{money(breakdown.refunded_to_buyers_cents)} was refunded to buyers in total, including any fees and tax refunded with tickets.</li>}
+              {breakdown.platform_processing_fee_cents > 0 && <li>HåfaPass paid {money(breakdown.platform_processing_fee_cents)} of card processing on your tickets.</li>}
+            </ul>
+            {data.orders_without_items_count > 0 && (
+              <p className="mt-4 flex items-start gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
+                <Circle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" />
+                <span>{plural(data.orders_without_items_count, 'older order')} {data.orders_without_items_count === 1 ? 'is' : 'are'} not included in statements because {data.orders_without_items_count === 1 ? 'it has' : 'they have'} no ticket details on record. Contact support if you need {data.orders_without_items_count === 1 ? 'it' : 'them'} added.</span>
+              </p>
+            )}
           </section>
 
           <section aria-labelledby="explain-heading" className="min-w-0 rounded-2xl border border-neutral-200 bg-neutral-50 p-5 sm:p-6">

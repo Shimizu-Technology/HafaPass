@@ -48,18 +48,24 @@ class EventSalesAnalytics
       .group(:order_id).count
   end
 
+  def purchased_tickets_by_order
+    @purchased_tickets_by_order ||= OrderItem.where(order_id: orders.select(:id), item_kind: :ticket)
+      .group(:order_id).sum(:quantity)
+  end
+
   def refunds_by_order
     @refunds_by_order ||= Refund.succeeded.where(order_id: orders.select(:id)).group(:order_id).sum(:amount_cents)
   end
 
-  # Tickets still valid and the amount charged, by the day each order was
-  # placed. Refunds are not moved back onto the day of the original sale.
+  # Tickets bought and the amount charged, by the day each order was placed.
+  # Both are as purchased: later refunds and cancellations do not move back
+  # onto the day of the original sale (the channel totals are after them).
   def sales_by_day
     days = Hash.new { |hash, key| hash[key] = { orders: 0, tickets: 0, amount_cents: 0 } }
     order_rows.each do |id, completed_at, created_at, total_cents, _source|
       day = (completed_at || created_at).in_time_zone(timezone).to_date
       days[day][:orders] += 1
-      days[day][:tickets] += tickets_by_order.fetch(id, 0)
+      days[day][:tickets] += purchased_tickets_by_order.fetch(id, 0)
       days[day][:amount_cents] += total_cents
     end
     return [] if days.empty?
