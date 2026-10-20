@@ -7,6 +7,7 @@ import EventAnalyticsPage from './EventAnalyticsPage'
 
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children }) => <div>{children}</div> }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const rights = { view_finance: true, view_attendees: true, manage_finance: true, payout: true }
 const event = { id: 37, organization_id: 1, title: 'Authorized event', status: 'completed', timezone: 'Pacific/Guam', permissions: rights }
@@ -36,6 +37,33 @@ it('distinguishes requesting a payout from a confirmed transfer', async () => {
   expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/37/finance/payout', {
     settlement_id: 7, amount_cents: 500,
   }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.any(String) } }))
+})
+
+it('explains that HåfaPass covers card processing and shows payout timing', async () => {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/finance')
+    ? { ...finance, preview: { gross_cents: 5000, processing_fee_cents: 0, platform_processing_fee_cents: 185, payable_cents: 5000 } }
+    : url.endsWith('/stats') ? stats : { ...event, fee_policy: 'buyer_pays', buyer_fee_percent: 100 } }))
+  mount()
+  expect(await screen.findByText(/which includes card processing\. You receive the full ticket price\./)).toBeInTheDocument()
+  expect(screen.getByText('Payout timing: within 3 business days after your event.')).toBeInTheDocument()
+  expect(screen.getByText('HåfaPass covered $1.85')).toBeInTheDocument()
+  expect(screen.getByText('Processing costs to you').nextSibling).toHaveTextContent('$0.00')
+})
+
+it('explains processing still deducted from organizer proceeds under earlier terms', async () => {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/finance')
+    ? { ...finance, preview: { gross_cents: 5000, processing_fee_cents: 183, platform_processing_fee_cents: 0, payable_cents: 4817 } }
+    : url.endsWith('/stats') ? stats : { ...event, fee_policy: 'buyer_pays', buyer_fee_percent: 100 } }))
+  mount()
+  expect(await screen.findByTestId('earlier-processing-note')).toHaveTextContent('$1.83 in card processing is deducted from your proceeds. That covers orders placed under earlier terms')
+})
+
+it('does not show the earlier-terms note when nothing is deducted', async () => {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/finance')
+    ? { ...finance, preview: { processing_fee_cents: 0, platform_processing_fee_cents: 185 } } : url.endsWith('/stats') ? stats : event }))
+  mount()
+  await screen.findByText('HåfaPass covered $1.85')
+  expect(screen.queryByTestId('earlier-processing-note')).not.toBeInTheDocument()
 })
 
 describe('authoritative analytics access', () => {

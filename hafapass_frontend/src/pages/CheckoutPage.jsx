@@ -11,6 +11,7 @@ import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { CheckoutAttemptConflict, checkoutBuyerIdentity, checkoutBuyerMatches, checkoutAttemptCurrent, activeCheckoutBuyerBound, recordCheckoutOutcome, checkoutDefinitelyRejected, clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout } from '../utils/orderAccess'
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
+import { parseFeeTerms, platformFeeCents as computePlatformFee } from '../utils/feeTerms'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -75,6 +76,7 @@ function CheckoutContent({ buyerId }) {
   const [error, setError] = useState(null)
   const [configError, setConfigError] = useState(null)
   const [config, setConfig] = useState(null)
+  const [configAttempt, setConfigAttempt] = useState(0)
 
   // Buyer form
   const [buyerName, setBuyerName] = useState('')
@@ -216,13 +218,20 @@ function CheckoutContent({ buyerId }) {
   }
 
   useEffect(() => {
+    let active = true
     apiClient.get('/config')
-      .then(res => setConfig(res.data))
+      .then(res => { if (active) setConfig(res.data) })
       .catch((err) => {
         console.error('Failed to load payment config:', err)
-        setConfigError('Unable to load payment configuration. Please try again later.')
+        if (active) setConfigError('Unable to load payment configuration. Please try again later.')
       })
-  }, [])
+    return () => { active = false }
+  }, [configAttempt])
+  const retryConfig = () => {
+    setConfigError(null)
+    setConfig(null)
+    setConfigAttempt(attempt => attempt + 1)
+  }
 
   useEffect(() => {
     if (!location.pathname.startsWith('/checkout/')) return
@@ -431,7 +440,7 @@ function CheckoutContent({ buyerId }) {
     <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
       <div className="text-center">
         <p className="text-red-600 mb-4">{configError}</p>
-        <button onClick={() => window.location.reload()} className="btn-primary">Retry</button>
+        <button type="button" onClick={retryConfig} className="btn-primary">Retry</button>
       </div>
     </div>
   )
@@ -464,8 +473,18 @@ function CheckoutContent({ buyerId }) {
     </div>
   )
 
-  const feePercent = parseFloat(config.service_fee_percent) || 3.0
-  const feeFlatCents = config ? config.service_fee_flat_cents : 50
+  // Never estimate a fee from a guessed rate: before an order exists, the
+  // server's current fee terms are required to show a total.
+  const feeTerms = parseFeeTerms(config)
+  if (!feeTerms && !orderData) return (
+    <div className="max-w-2xl mx-auto px-4 py-16">
+      <div className="card p-8 text-center" role="alert">
+        <p className="text-red-600 mb-4">{t('checkout.feesUnavailable')}</p>
+        <button type="button" onClick={retryConfig} className="btn-primary mb-3">{t('checkout.retryFees')}</button>
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">{t('checkout.backToEvent')}</Link>
+      </div>
+    </div>
+  )
 
   const orderLines = orderData ? (orderData.order_items || []).map(item => ({
     ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents,
@@ -476,19 +495,23 @@ function CheckoutContent({ buyerId }) {
     return { ...item, name: tt.name, price_cents: price, lineTotal: price * item.quantity, active_tier: tt.active_tier }
   }).filter(Boolean)
 
-  const totalTickets = orderLines.reduce((s, l) => s + l.quantity, 0)
+  // The flat fee applies per paid ticket only (unit price above zero).
+  const paidTickets = orderLines.reduce((s, l) => s + (l.price_cents > 0 ? l.quantity : 0), 0)
   const subtotalCents = orderLines.reduce((s, l) => s + l.lineTotal, 0)
   const catalogSubtotalCents = Object.entries(catalogSelections).reduce((sum, [id, selection]) => {
     const item = event.catalog_items?.find(candidate => candidate.id === Number(id))
     if (!item || !selection.quantity) return sum
     return sum + (item.kind === 'donation' ? (selection.amount_cents || 0) : item.price_cents) * selection.quantity
   }, 0)
-  const platformFeeCents = subtotalCents === 0 ? 0 : Math.round(subtotalCents * (feePercent / 100)) + (totalTickets * feeFlatCents)
+  const platformFeeCents = computePlatformFee(feeTerms, subtotalCents, paidTickets)
   const serviceFeeCents = Math.round(platformFeeCents * ((event.buyer_fee_percent ?? 100) / 100))
   const discountCents = promoData?.discount_cents || 0
   const totalCents = Math.max(subtotalCents + catalogSubtotalCents + serviceFeeCents - discountCents, 0)
   const displayedSubtotal = orderData?.subtotal_cents ?? (subtotalCents + catalogSubtotalCents)
   const displayedFee = orderData?.service_fee_cents ?? serviceFeeCents
+  // A created order carries its own bearer snapshot; legacy orders omit it.
+  const feeBearer = orderData ? orderData.processing_fee_bearer : feeTerms?.bearer
+  const feeIncludesProcessing = feeBearer === 'platform' && displayedFee > 0
   const displayedDiscount = orderData?.discount_cents ?? discountCents
   const displayedTotal = orderData?.total_cents ?? totalCents
   const checkoutExpired = secondsRemaining === 0
@@ -581,7 +604,13 @@ function CheckoutContent({ buyerId }) {
           <hr className="border-neutral-100 my-4" />
           <div className="space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
-            <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.serviceFee')}</span><span>{formatPrice(displayedFee)}</span></div>
+            <div className="flex justify-between gap-4">
+              <span className="text-neutral-500">
+                {t('checkout.serviceFee')}
+                {feeIncludesProcessing && <span className="block text-xs text-neutral-500">{t('checkout.serviceFeeIncludesProcessing')}</span>}
+              </span>
+              <span>{formatPrice(displayedFee)}</span>
+            </div>
             {displayedDiscount > 0 && (
               <div className="flex justify-between text-emerald-600">
                 <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {orderData?.promo_code?.code || promoData?.code || 'Discount'}</span>

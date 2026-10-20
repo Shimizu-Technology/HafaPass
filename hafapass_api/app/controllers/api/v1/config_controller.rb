@@ -19,6 +19,8 @@ class Api::V1::ConfigController < ApplicationController
       support_phone: settings.platform_phone.presence,
       service_fee_percent: settings.service_fee_percent,
       service_fee_flat_cents: settings.service_fee_flat_cents,
+      processing_fee_bearer: settings.processing_fee_bearer,
+      payout_schedule_text: settings.payout_schedule_text,
       public_web_url: PublicSiteUrl.base,
       buyer_terms_version: PolicyRegistry.buyer_terms[:version],
       policies: PolicyRegistry.public_documents,

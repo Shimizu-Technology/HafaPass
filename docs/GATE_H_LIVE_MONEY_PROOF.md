@@ -16,7 +16,7 @@ Normal paid events fail closed on Gate H, but Gate H cannot exist until one genu
 - the candidate flag is part of the material event digest, so changing it invalidates later event approvals;
 - the event title must begin `[LIVE MONEY TEST]`;
 - it must have capacity one, exactly one general-admission ticket, no pricing tiers, add-ons, promo codes, or assigned seating, and a base price from 1–500 cents;
-- the final order total, including fees, must remain within the separately authorized maximum of at most 500 cents;
+- the final order total, including fees, must remain within the separately authorized maximum of at most 500 cents (at the default 5% + $1.00 buyer fee, a 100-cent proof ticket charges 205 cents, and the largest base price that fits is 380 cents);
 - proof candidates are excluded from marketplace results, public event detail, favorites/referrals, organizer/venue discovery, Open Graph pages, and the sitemap;
 - only a signed-in HafaPass administrator may open the explicit private proof view or submit the order;
 - a different administrator must approve an authorization locked to the candidate, current Gate G approval, buyer-email digest, connected account, provider configuration, deployed revision, maximum amount, and a maximum two-hour window; and
