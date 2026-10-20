@@ -260,6 +260,26 @@ describe('ServiceCheck', () => {
     expect(screen.queryByText('Cached door scanner')).not.toBeInTheDocument()
   })
 
+  it('does not keep the online app on the door scanner while saved access is still loading during an outage', async () => {
+    useBackendAvailability.mockReturnValue({ status: 'available', retry })
+    let resolveSaved
+    loadAuthorizedScanner.mockImplementation(() => new Promise(resolve => { resolveSaved = resolve }))
+    function OpenScanner() {
+      const navigate = useNavigate()
+      return <button onClick={() => navigate('/dashboard/scanner?event=37')}>Open scanner</button>
+    }
+    const tree = <MemoryRouter initialEntries={['/dashboard']}><OpenScanner /><ServiceCheck /></MemoryRouter>
+    const { rerender } = render(tree)
+    expect(screen.getByText('Public application')).toBeInTheDocument()
+    useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
+    rerender(tree)
+    await userEvent.click(screen.getByRole('button', { name: 'Open scanner' }))
+    await waitFor(() => expect(resolveSaved).toBeDefined())
+    expect(screen.queryByText('Public application')).not.toBeInTheDocument()
+    await act(async () => resolveSaved({ manifest: { payload: { event: { id: 37 } } } }))
+    expect(await screen.findByText('Cached door scanner')).toBeInTheDocument()
+  })
+
   it('withdraws the old fallback immediately on query change and ignores a late old cache result', async () => {
     useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
     let resolveOld

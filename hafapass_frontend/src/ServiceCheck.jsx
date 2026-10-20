@@ -115,9 +115,10 @@ export default function ServiceCheck() {
   const renderServices = ({ scannerOwner }) => {
     const app = <ConnectedApp owner={scannerOwner} onMount={markAppMounted} degraded={status === 'unavailable'} onRetry={retry} />
     // Door safety first: during an outage the verified saved scanner replaces
-    // the online one. Elsewhere a mounted application stays mounted for its owner.
+    // the online one, and the online scanner never opens until a check passes.
+    // Elsewhere a mounted application stays mounted for its owner.
     if (cachedDoor && cachedScanner.owner === scannerOwner && status !== 'available') return cachedDoor
-    if (appOwner !== undefined && appOwner === scannerOwner) return app
+    if (location.pathname !== '/dashboard/scanner' && appOwner !== undefined && appOwner === scannerOwner) return app
     if (status === 'checking') return <ServiceGate />
     if (status === 'unavailable') return <PrivatePreviewPage onRetry={retry} />
     return app

@@ -106,12 +106,12 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
                       </td>
                       <td className="whitespace-nowrap px-3 py-3">
                         <p className="font-mono text-xs text-neutral-500">#{order.id}</p>
-                        <p className="text-xs text-neutral-500 xl:hidden">{new Date(order.created_at).toLocaleDateString()}</p>
+                        <p className="text-xs text-neutral-500 xl:hidden">Date: {new Date(order.created_at).toLocaleDateString()}</p>
                       </td>
                       <td className="min-w-[12rem] px-3 py-3">
                         <p className="font-medium text-neutral-900">{order.buyer_name}</p>
                         <p className="text-xs text-neutral-500 [overflow-wrap:anywhere]">{order.buyer_email}</p>
-                        <p className="mt-0.5 text-xs text-neutral-500 md:hidden">{order.event_title}</p>
+                        <p className="mt-0.5 text-xs text-neutral-500 md:hidden">Event: {order.event_title}</p>
                       </td>
                       <td className="hidden min-w-[12rem] px-3 py-3 text-neutral-500 md:table-cell">{order.event_title}</td>
                       <td className="whitespace-nowrap px-3 py-3 text-right text-neutral-700">{order.tickets.length}</td>

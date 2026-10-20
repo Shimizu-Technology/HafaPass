@@ -204,7 +204,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                     <td className="hidden px-3 py-3 text-neutral-500 capitalize xl:table-cell">{event.category}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-right text-neutral-700">
                       {event.tickets_sold}
-                      <span className="block text-xs text-neutral-500 md:hidden">${(event.revenue_cents / 100).toFixed(2)}</span>
+                      <span className="block text-xs text-neutral-500 md:hidden">Revenue: ${(event.revenue_cents / 100).toFixed(2)}</span>
                     </td>
                     <td className="hidden whitespace-nowrap px-3 py-3 text-right text-neutral-700 md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
                     <td className="px-3 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={refreshAfterAction} toggleProofCandidate={toggleProofCandidate} /></td>
