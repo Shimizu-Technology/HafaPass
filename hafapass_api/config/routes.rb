@@ -124,6 +124,7 @@ Rails.application.routes.draw do
             post :generate_recurrences
             get :stats
             get :attendees
+            get :slug_availability
           end
           resources :ticket_types, only: [:index, :show, :create, :update, :destroy] do
             resources :pricing_tiers, only: [:index, :create, :update, :destroy]

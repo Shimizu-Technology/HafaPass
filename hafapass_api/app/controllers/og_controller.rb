@@ -1,8 +1,10 @@
 class OgController < ApplicationController
   skip_before_action :authenticate_user!
 
+  # Old links resolve to the event, and every tag points crawlers at the
+  # current link so shares consolidate on one URL.
   def event
-    event = Event.publicly_visible.find_by!(slug: params[:slug])
+    event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_visible)
 
     title = event.title
     description = (event.short_description || event.description || "Get tickets on HåfaPass").truncate(160)
@@ -16,6 +18,7 @@ class OgController < ApplicationController
         <meta charset="UTF-8" />
         <title>#{ERB::Util.html_escape(title)} | HåfaPass</title>
         <meta name="description" content="#{ERB::Util.html_escape(description)}" />
+        <link rel="canonical" href="#{ERB::Util.html_escape(canonical_url)}" />
 
         <meta property="og:title" content="#{ERB::Util.html_escape(title)}" />
         <meta property="og:description" content="#{ERB::Util.html_escape(description)}" />
