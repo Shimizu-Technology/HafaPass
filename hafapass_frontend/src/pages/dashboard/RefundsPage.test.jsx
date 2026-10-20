@@ -116,7 +116,7 @@ describe('refund outcome and recovery', () => {
     const first = mountRefunds()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Record cash already returned' }))
-    expect(screen.getByText(/The organizer holds door cash/)).toHaveTextContent('HafaPass does not send money')
+    expect(screen.getByText(/The organizer holds door cash/)).toHaveTextContent('HåfaPass does not send money')
     await user.click(screen.getByRole('button', { name: 'Record cash already returned' }))
     expect(apiClient.post).not.toHaveBeenCalled()
     expect(screen.getByLabelText('Cash return reference')).toHaveFocus()
@@ -133,7 +133,7 @@ describe('refund outcome and recovery', () => {
     apiClient.post.mockResolvedValueOnce({ data: { status: 'succeeded', provider: 'door_cash', manual_record: true } })
     mountRefunds()
     await user.click(await screen.findByRole('button', { name: 'Retry saved cash return record' }))
-    await screen.findByText('Cash return recorded. The organizer returned physical cash; HafaPass did not transfer money.')
+    await screen.findByText('Cash return recorded. The organizer returned physical cash; HåfaPass did not transfer money.')
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
   })
 
@@ -160,7 +160,7 @@ describe('refund outcome and recovery', () => {
     vi.setSystemTime(new Date('2026-10-18T12:04:30'))
     apiClient.post.mockResolvedValueOnce({ data: { status: 'succeeded', provider: 'door_cash', manual_record: true } })
     await user.click(screen.getByRole('button', { name: 'Retry saved cash return record' }))
-    await screen.findByText('Cash return recorded. The organizer returned physical cash; HafaPass did not transfer money.')
+    await screen.findByText('Cash return recorded. The organizer returned physical cash; HåfaPass did not transfer money.')
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
   })
 

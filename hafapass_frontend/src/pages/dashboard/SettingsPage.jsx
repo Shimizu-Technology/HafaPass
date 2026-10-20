@@ -271,13 +271,13 @@ function SettingsPageSession({ identity }) {
 
           <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="payout-heading">
             <div className="flex items-center gap-3"><WalletCards className="h-5 w-5 text-brand-600" /><h2 id="payout-heading" className="text-lg font-semibold text-neutral-900">Payments and payouts</h2></div>
-            <p className="mt-2 text-sm text-neutral-700">Payout setup is assisted by the HafaPass team. Starting a review records your setup status; it does not connect a bank, send documents, or enable payments.</p>
+            <p className="mt-2 text-sm text-neutral-700">Payout setup is assisted by the HåfaPass team. Starting a review records your setup status; it does not connect a bank, send documents, or enable payments.</p>
             <article className="mt-5 rounded-xl border border-brand-200 bg-brand-50 p-4" aria-labelledby="assisted-setup-heading">
               <h3 id="assisted-setup-heading" className="font-semibold text-brand-900">Assisted local bank setup</h3>
               <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-neutral-700">
-                <li><strong>You:</strong> start a bank review, then contact the HafaPass team to arrange a secure document handoff.</li>
-                <li><strong>HafaPass team:</strong> confirm the banking and identity documents needed for your organization and review them with you. Do not email bank details or identity documents.</li>
-                <li><strong>HafaPass finance:</strong> confirm eligibility and payment/payout readiness before paid events can go live.</li>
+                <li><strong>You:</strong> start a bank review, then contact the HåfaPass team to arrange a secure document handoff.</li>
+                <li><strong>HåfaPass team:</strong> confirm the banking and identity documents needed for your organization and review them with you. Do not email bank details or identity documents.</li>
+                <li><strong>HåfaPass finance:</strong> confirm eligibility and payment/payout readiness before paid events can go live.</li>
               </ol>
               <p className="mt-3 text-sm text-neutral-700">A response time has not been published. Ask the team for the review timeline when you contact them.</p>
               {(() => {
@@ -287,11 +287,11 @@ function SettingsPageSession({ identity }) {
                   {account && <>
                     <StatusPill ready={account.payout_ready}>{account.payout_ready ? 'Payouts ready' : 'Review required before payouts'}</StatusPill>
                     {account.requirements_due?.length > 0 && <p className="text-sm text-amber-900">Still required: {account.requirements_due.map(label).join(', ')}.</p>}
-                    <p className="text-sm text-neutral-700">{account.payout_ready ? 'Contact the HafaPass team if your banking or identity details change.' : 'Next step: contact the HafaPass team to confirm the remaining documents and review timeline.'}</p>
+                    <p className="text-sm text-neutral-700">{account.payout_ready ? 'Contact the HåfaPass team if your banking or identity details change.' : 'Next step: contact the HåfaPass team to confirm the remaining documents and review timeline.'}</p>
                   </>}
                   <div className="flex flex-wrap gap-3">
                     {!account && <button type="button" disabled={busy} onClick={() => startOnboarding('manual')} className="btn-teal">Start bank review</button>}
-                    <a className="btn-secondary" href={supportMailto(`HafaPass payout setup — organization ${organization.id}`)}>{account ? 'Continue with HafaPass team' : 'Contact HafaPass team'}</a>
+                    <a className="btn-secondary" href={supportMailto(`HåfaPass payout setup — organization ${organization.id}`)}>{account ? 'Continue with HåfaPass team' : 'Contact HåfaPass team'}</a>
                   </div>
                   <p className="text-xs text-neutral-600">The contact link opens your email app. Send the message there to contact the team; no message is sent by starting a review.</p>
                 </div>
@@ -304,11 +304,11 @@ function SettingsPageSession({ identity }) {
                   const account = accounts.find(item => item.provider === provider)
                   return <article key={provider}>
                     <h3 className="font-semibold text-neutral-900">{provider === 'paypal' ? 'PayPal' : 'Stripe'}</h3>
-                    <p className="mt-1 text-sm text-neutral-700">{provider === 'paypal' ? 'Requires HafaPass marketplace approval and seller verification. Contact the team before choosing this path.' : 'Unavailable unless Stripe confirms Guam entity and bank eligibility in writing.'}</p>
+                    <p className="mt-1 text-sm text-neutral-700">{provider === 'paypal' ? 'Requires HåfaPass marketplace approval and seller verification. Contact the team before choosing this path.' : 'Unavailable unless Stripe confirms Guam entity and bank eligibility in writing.'}</p>
                     {account && <>
                       <p className="mt-2 text-sm">Status: {label(account.status)} · {account.payout_ready ? 'Payouts ready' : 'Payouts not ready'}</p>
                       {account.requirements_due?.length > 0 && <p className="text-sm text-amber-900">Still required: {account.requirements_due.map(label).join(', ')}.</p>}
-                      <a className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-action-teal underline" href={supportMailto(`HafaPass ${provider} setup — organization ${organization.id}`)}>Discuss {provider === 'paypal' ? 'PayPal' : 'Stripe'} setup with HafaPass</a>
+                      <a className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-action-teal underline" href={supportMailto(`HåfaPass ${provider} setup — organization ${organization.id}`)}>Discuss {provider === 'paypal' ? 'PayPal' : 'Stripe'} setup with HåfaPass</a>
                     </>}
                   </article>
                 })}

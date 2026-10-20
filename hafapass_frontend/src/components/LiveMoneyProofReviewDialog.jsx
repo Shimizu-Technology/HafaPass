@@ -35,7 +35,7 @@ const communicationKeys = [
   ['organizer_payout_notice', 'Organizer payout notice'], ['support_order_trace', 'Support order trace'],
 ]
 const controlFields = [
-  ['actual_entity_verified', 'Actual HafaPass entity verified'], ['actual_organizer_verified', 'Actual organizer verified'],
+  ['actual_entity_verified', 'Actual HåfaPass entity verified'], ['actual_organizer_verified', 'Actual organizer verified'],
   ['actual_bank_verified', 'Actual settlement bank verified'], ['production_provider_verified', 'Production provider verified'],
   ['live_charge_confirmed', 'Low-value live charge confirmed'], ['partial_refund_confirmed', 'Partial refund confirmed'],
   ['full_refund_confirmed', 'Full refund confirmed'], ['initial_settlement_finalized', 'Initial settlement finalized'],

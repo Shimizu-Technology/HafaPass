@@ -12,7 +12,7 @@
     "support": "Support",
     "viewPublicSite": "View public site",
     "workspace": "Workspace",
-    "workspaceHome": "HafaPass workspace home"
+    "workspaceHome": "HåfaPass workspace home"
   },
   "home": {
     "hero": "Your Pass to Every Event on Guam",
@@ -103,7 +103,7 @@
     "enterCode": "Enter code",
     "apply": "Apply",
     "editInfo": "Edit info",
-    "termsNotice": "By completing this purchase you agree to the HafaPass terms of service."
+    "termsNotice": "By completing this purchase you agree to the HåfaPass terms of service."
   },
   "tickets": {
     "myTickets": "My Tickets",

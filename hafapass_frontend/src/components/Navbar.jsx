@@ -114,7 +114,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
               <HafaPassMark className="h-5 w-5 text-white" />
             </div>
             <span className={`text-xl font-bold tracking-tight transition-colors duration-300 ${isDarkMode ? 'text-white' : 'text-neutral-900'}`}>
-              Hafa<span className="text-brand-500">Pass</span>
+              Håfa<span className="text-brand-500">Pass</span>
             </span>
           </Link>
 
@@ -124,7 +124,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
               <Link
                 key={link.to}
                 to={link.to}
-                className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
                   isActive(link.to)
                     ? isDarkMode
                       ? 'text-white bg-white/15'
@@ -162,7 +162,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
                     placeholder={t('nav.search')}
                     autoFocus
                     onBlur={() => { if (!searchQuery) setSearchOpen(false) }}
-                    className={`w-56 pl-9 pr-3 py-2 text-sm rounded-lg border transition-all ${
+                    className={`w-56 pl-9 pr-3 py-2 text-sm rounded-lg border transition-[color,background-color,border-color,box-shadow] ${
                       isDarkMode
                         ? 'border-white/20 bg-white/10 backdrop-blur-sm text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400'
                         : 'border-neutral-200/80 bg-white/80 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400'
@@ -316,7 +316,7 @@ function WorkspaceNav({ authContext, role, isSignedIn, clerkEnabled, roleAlert, 
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-700">
               <HafaPassMark className="h-5 w-5 text-white" />
             </span>
-            <span className="text-xl font-bold tracking-tight text-neutral-900">Hafa<span className="text-brand-500">Pass</span></span>
+            <span className="text-xl font-bold tracking-tight text-neutral-900">Håfa<span className="text-brand-500">Pass</span></span>
             <span className="hidden rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-600 sm:inline">{t('nav.workspace')}</span>
           </Link>
 

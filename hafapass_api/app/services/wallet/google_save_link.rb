@@ -56,7 +56,7 @@ module Wallet
       event = ticket.event
       {
         id: class_id,
-        issuerName: "HafaPass",
+        issuerName: "HåfaPass",
         reviewStatus: ENV.fetch("GOOGLE_WALLET_CLASS_REVIEW_STATUS", "UNDER_REVIEW"),
         eventName: localized(event.title),
         venue: { name: localized(event.venue_name.to_s), address: localized(event.venue_address.to_s) },
@@ -72,7 +72,7 @@ module Wallet
         ticketHolderName: ticket.attendee_name.to_s,
         ticketNumber: ticket.id.to_s,
         ticketType: localized([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")),
-        barcode: { type: "QR_CODE", value: ticket.scan_credential, alternateText: "HafaPass #{ticket.id}" }
+        barcode: { type: "QR_CODE", value: ticket.scan_credential, alternateText: "HåfaPass #{ticket.id}" }
       }
     end
 

@@ -15,6 +15,6 @@ describe('support contact configuration', () => {
 
   it.each([undefined, '', '   '])('uses the existing public operator inbox when configuration is %s', value => {
     vi.stubEnv('VITE_SUPPORT_EMAIL', value)
-    expect(supportMailto()).toBe('mailto:shimizutechnology@gmail.com?subject=HafaPass%20Support')
+    expect(supportMailto()).toBe('mailto:shimizutechnology@gmail.com?subject=H%C3%A5faPass%20Support')
   })
 })

@@ -5,7 +5,7 @@ import useCapturedPlatformDialog, { useCapturedDialogIdentity } from '../hooks/u
 
 const controls = [
   ['guam_territory_confirmed', 'Guam territory is covered in writing'],
-  ['platform_entity_model_confirmed', 'HafaPass entity and merchant model are covered'],
+  ['platform_entity_model_confirmed', 'HåfaPass entity and merchant model are covered'],
   ['organizer_onboarding_confirmed', 'Organizer onboarding is complete'],
   ['charges_confirmed', 'Production charges are approved'],
   ['payouts_confirmed', 'Organizer payouts are approved'],
@@ -212,7 +212,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
                       Merchant of record
                       <select value={form.merchant_of_record} onChange={event => setForm(current => ({ ...current, merchant_of_record: event.target.value }))} className="input mt-2">
                         <option value="organizer">Organizer</option>
-                        <option value="platform">HafaPass platform</option>
+                        <option value="platform">HåfaPass platform</option>
                         <option value="provider_managed">Provider-managed</option>
                       </select>
                     </label>

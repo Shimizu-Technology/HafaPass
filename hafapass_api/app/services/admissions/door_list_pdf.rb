@@ -12,7 +12,7 @@ module Admissions
     def generate
       Prawn::Document.new(page_size: "LETTER", margin: 36) do |pdf|
         pdf.font "Helvetica"
-        pdf.text "HafaPass emergency door list", size: 18, style: :bold, color: "0D9488"
+        pdf.text "HåfaPass emergency door list", size: 18, style: :bold, color: "0D9488"
         pdf.move_down 6
         pdf.text event.title, size: 14, style: :bold
         pdf.text event_details, size: 9, color: "4B5563"

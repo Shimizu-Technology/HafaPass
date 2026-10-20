@@ -348,7 +348,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         post_json "/api/v1/orders", params: valid_params.merge(terms_version: "stale-version")
 
         expect(response).to have_http_status(:unprocessable_entity)
-        expect(response.parsed_body["error"]).to include("current HafaPass buyer terms")
+        expect(response.parsed_body["error"]).to include("current HåfaPass buyer terms")
         expect(event.orders).to be_empty
       end
 
