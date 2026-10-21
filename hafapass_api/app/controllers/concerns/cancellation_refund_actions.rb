@@ -63,6 +63,6 @@ module CancellationRefundActions
 
   def cancellation_json
     { preview: EventCancellationRefunds.preview(@event),
-      run: @event.event_cancellation_refund_run&.summary }
+      run: @event.event_cancellation_refund_run&.summary(page: params[:page] || 1) }
   end
 end

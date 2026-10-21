@@ -1,6 +1,20 @@
 require "rails_helper"
 
 RSpec.describe OrderPresenter do
+  it "presents a cancelled order's pending and completed refund status to the buyer" do
+    event = create(:event, :cancelled)
+    order = create(:order, event: event)
+    payment = create(:payment, :succeeded, order: order, provider_environment: "live")
+    run = event.create_event_cancellation_refund_run!(started_by: create(:user))
+    item = run.items.create!(order: order, amount_cents: 5250, status: :pending)
+    expect(described_class.call(order)[:cancellation_refund]).to include(status: "processing", amount_cents: 5250)
+    refund = create(:refund, order: order, payment: payment, amount_cents: 5250)
+    item.update!(status: :refunded)
+    order.update!(status: :refunded)
+    expect(described_class.call(order.reload)[:cancellation_refund]).to include(
+      status: "refunded", amount_cents: 5250, refunded_at: refund.succeeded_at)
+  end
+
   it "includes the public image asset host with the cover URL" do
     order = create(:order)
     expect(described_class.call(order).fetch(:event)).to include(

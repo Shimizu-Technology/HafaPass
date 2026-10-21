@@ -13,20 +13,51 @@ class EventCancellationRefunds
   end
 
   def self.outstanding_balance_cents(event)
-    live_paid_orders(event).sum { |order| balance_cents(order) }
+    liability_snapshot(event)[:outstanding_cents]
   end
 
   def self.unresolved?(event)
-    return false unless event.cancelled?
-
-    live_paid_orders(event).any? do |order|
-      balance_cents(order).positive? || order.refunds.pending.exists? || order.disputes.open.exists?
-    end
+    event.cancelled? && liability_snapshot(event)[:unresolved]
   end
 
-  def self.live_paid_orders(event)
-    event.orders.where(status: PAID_STATUSES).order(:id).reject do |order|
-      order.payments.nonlive_stripe.exists? && !order.payments.live_or_legacy_capture.exists?
+  def self.liability_snapshot(event)
+    entries = balances(event, exclude_nonlive: true)
+    { outstanding_cents: entries.sum { |entry| entry[:amount_cents] },
+      unresolved: entries.any? { |entry| entry[:amount_cents].positive? || entry[:pending_refund] || entry[:open_dispute] } }
+  end
+
+  def self.balances(event, exclude_nonlive: Rails.env.production?)
+    rows = event.orders.where(status: PAID_STATUSES).order(:id).pluck(:id, :payment_method)
+    ids = rows.map(&:first)
+    return [] if ids.empty?
+
+    captured_statuses = Payment.statuses.values_at("succeeded", "partially_refunded", "refunded").join(", ")
+    payments = Payment.where(order_id: ids).group(:order_id).pluck(:order_id,
+      Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE status IN (#{captured_statuses})), 0)"),
+      Arel.sql("COALESCE(BOOL_OR(provider = 'stripe' AND (provider_environment IN ('test', 'simulate') OR (provider_environment IS NULL AND (provider_payload->>'livemode' = 'false' OR provider_payload->>'simulated' = 'true')))), false)"),
+      Arel.sql("COALESCE(BOOL_OR(status IN (#{captured_statuses}) AND (provider_environment = 'live' OR (provider_environment IS NULL AND provider_payload->>'livemode' IS DISTINCT FROM 'false' AND provider_payload->>'simulated' IS DISTINCT FROM 'true'))), false)"))
+      .index_by(&:first)
+    if exclude_nonlive
+      rows.reject! { |id, _method| payments[id]&.at(2) && !payments[id]&.at(3) }
+      ids = rows.map(&:first)
+      return [] if ids.empty?
+    end
+
+    refund_statuses = Refund.statuses.values_at("pending", "succeeded").join(", ")
+    refunds = Refund.where(order_id: ids).group(:order_id).pluck(:order_id,
+      Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE status IN (#{refund_statuses})), 0)"),
+      Arel.sql("COALESCE(BOOL_OR(status = #{Refund.statuses.fetch('pending')}), false)"))
+      .index_by(&:first)
+    disputes = Dispute.where(order_id: ids).group(:order_id).pluck(:order_id,
+      Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE status = #{Dispute.statuses.fetch('lost')}), 0)"),
+      Arel.sql("COALESCE(BOOL_OR(status = #{Dispute.statuses.fetch('open')}), false)"))
+      .index_by(&:first)
+    rows.map do |id, method|
+      lost_cents = disputes[id]&.at(1) || 0
+      { order_id: id, payment_method: method,
+        amount_cents: [(payments[id]&.at(1) || 0) - (refunds[id]&.at(1) || 0) - lost_cents, 0].max,
+        pending_refund: refunds[id]&.at(2) || false, open_dispute: disputes[id]&.at(2) || false,
+        lost_dispute: lost_cents.positive? }
     end
   end
 
@@ -52,43 +83,55 @@ class EventCancellationRefunds
   end
 
   def self.preview(event)
-    orders = Rails.env.production? ? live_paid_orders(event) : event.orders.where(status: PAID_STATUSES).order(:id)
-    refundable = orders.select { |order| balance_cents(order).positive? }
-    { count: refundable.length, total_cents: refundable.sum { |order| balance_cents(order) },
-      cash_count: refundable.count { |order| order.payment_method == "door_cash" } }
+    refundable = balances(event).select { |entry| entry[:amount_cents].positive? }
+    { count: refundable.length, total_cents: refundable.sum { |entry| entry[:amount_cents] },
+      cash_count: refundable.count { |entry| entry[:payment_method] == "door_cash" } }
   end
 
   def self.prepare!(event:, actor:)
     run = event.event_cancellation_refund_run || event.create_event_cancellation_refund_run!(started_by: actor)
-    orders = event.orders.where(status: PAID_STATUSES)
-    orders = orders.excluding_test_payments if Rails.env.production?
-    orders.find_each do |order|
-      open_dispute = order.disputes.open.exists?
-      lost_dispute = order.disputes.lost.exists?
-      amount = balance_cents(order)
-      pending_refund = order.refunds.pending.exists?
-      status = if open_dispute
+    hold_payouts!(event, actor: actor)
+    balances(event).each do |entry|
+      amount = entry[:amount_cents]
+      status = if entry[:open_dispute]
         :waiting_on_dispute
-      elsif pending_refund
+      elsif entry[:pending_refund]
         :waiting_on_pending_refund
       elsif amount.zero?
         :skipped
-      elsif order.payment_method == "door_cash"
+      elsif entry[:payment_method] == "door_cash"
         :needs_manual
       else
         :pending
       end
-      run.items.find_or_create_by!(order: order) do |item|
+      run.items.find_or_create_by!(order_id: entry[:order_id]) do |item|
         item.amount_cents = amount
         item.status = status
-        item.last_error = "Waiting for dispute resolution" if open_dispute
-        item.last_error = "Dispute lost; buyer refunded by chargeback" if lost_dispute && amount.zero? && !pending_refund
+        item.last_error = "Waiting for dispute resolution" if entry[:open_dispute]
+        item.last_error = "Dispute lost; buyer refunded by chargeback" if entry[:lost_dispute] && amount.zero? && !entry[:pending_refund]
         item.last_error = "Waiting for an existing refund" if status == :waiting_on_pending_refund
-        item.last_error = "Order already fully refunded" if status == :skipped && !lost_dispute
+        item.last_error = "Order already fully refunded" if status == :skipped && !entry[:lost_dispute]
       end
     end
     AuditLogger.record!(action: "event.cancellation_refunds_started", auditable: event, actor: actor,
       organization: event.organization, metadata: preview(event))
     run
+  end
+
+  def self.hold_payouts!(event, actor:)
+    event.payouts.where(status: [:pending, :processing]).find_each do |payout|
+      payout.with_lock do
+        next unless payout.status_pending? || payout.status_processing?
+
+        before_data = payout.attributes.slice("status", "failure_code", "failure_message")
+        payout.update!(status: :held,
+          failure_code: payout.failure_code == "provider_result_conflict" ? payout.failure_code : "event_cancellation",
+          failure_message: "Hold payment while cancellation refunds are unresolved")
+        AuditLogger.record!(action: "payout.held_for_cancellation", auditable: payout, actor: actor,
+          organization: event.organization, before_data: before_data,
+          after_data: payout.attributes.slice("status", "failure_code", "failure_message"),
+          metadata: { event_id: event.id })
+      end
+    end
   end
 end

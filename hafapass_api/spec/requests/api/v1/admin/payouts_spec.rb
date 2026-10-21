@@ -47,6 +47,27 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     expect(audit.after_data.fetch("status")).to eq("paid")
   end
 
+  it "shows cancelled-event buyer liability and requires already-sent evidence through the API" do
+    order = create(:order, event: event)
+    create(:payment, :succeeded, order: order, provider_environment: "live")
+    event.update!(status: :cancelled)
+    EventCancellationRefunds.prepare!(event: event, actor: admin)
+    get "/api/v1/admin/payouts", params: { event_id: event.id }, headers: auth_headers(admin)
+    expect(response.parsed_body.fetch("payouts").first).to include(
+      "status" => "held", "outstanding_buyer_balance_cents" => 5250)
+
+    reconcile
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("already sent before the cancellation")
+    reconcile(payload.merge(evidence: evidence.merge(sent_before_cancellation_confirmed: true,
+      cancellation_payout_reason: "Transfer cleared before cancellation notice")))
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to be_status_paid
+    get "/api/v1/admin/payouts", params: { event_id: event.id }, headers: auth_headers(admin)
+    expect(response.parsed_body.fetch("payouts").first).to include(
+      "status" => "paid", "outstanding_buyer_balance_cents" => 5250)
+  end
+
   it "recovers the exact same outcome without creating another audit or changing evidence" do
     2.times { reconcile; expect(response).to have_http_status(:ok) }
     expect(AuditLog.where(auditable: payout, action: "payout.reconciled").count).to eq(1)

@@ -64,6 +64,13 @@ class PayoutReconciler
         raise ReconciliationError, Payout::PAYEE_CHANGED_MESSAGE
       end
       if status == "paid"
+        liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
+          { outstanding_cents: 0, unresolved: false }
+        if liability[:unresolved]
+          unless normalized["sent_before_cancellation_confirmed"] == true && normalized["cancellation_payout_reason"].present?
+            raise ReconciliationError, "Confirm this payout was already sent before the cancellation and explain why it is being recorded while buyer refunds remain unresolved"
+          end
+        end
         if payout.tax_information_snapshot.blank?
           if normalized["approved_tax_payee_confirmed"] == true
             raise ReconciliationError, "A legacy payout has no approved W-9 payee to confirm"
@@ -89,7 +96,9 @@ class PayoutReconciler
       AuditLogger.record!(action: "payout.reconciled", auditable: payout, actor: actor,
         organization: payout.organization, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
-        metadata: { reconciliation: normalized }, request: request)
+        metadata: { reconciliation: normalized,
+          outstanding_buyer_balance_cents: status == "paid" ? liability[:outstanding_cents] : nil,
+          buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] : nil }, request: request)
     end
     payout
   rescue ActiveRecord::RecordInvalid => e
@@ -123,6 +132,15 @@ class PayoutReconciler
     end
     if ActiveModel::Type::Boolean.new.cast(values["approved_tax_payee_confirmed"])
       normalized["approved_tax_payee_confirmed"] = true
+    end
+    if ActiveModel::Type::Boolean.new.cast(values["sent_before_cancellation_confirmed"])
+      normalized["sent_before_cancellation_confirmed"] = true
+    end
+    if values.key?("cancellation_payout_reason")
+      cancellation_reason = values["cancellation_payout_reason"].to_s.strip
+      raise ReconciliationError, "Cancellation payout reason must be 1 to 1000 characters" unless (1..1000).cover?(cancellation_reason.length)
+
+      normalized["cancellation_payout_reason"] = cancellation_reason
     end
     if values.key?("legacy_payee_name") || values.key?("legacy_evidence_note") || values.key?("legacy_payee_confirmed")
       name = values["legacy_payee_name"].to_s.strip

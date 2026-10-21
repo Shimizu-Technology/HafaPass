@@ -459,6 +459,7 @@ function EditEventSession({ id, identity }) {
 
   return (
     <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges || feeChoiceDirty}><div className="mx-auto max-w-3xl">
+      {event.status === 'cancelled' && <div className="mb-6"><CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} prominent canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} /></div>}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
           {event?.slug && (
@@ -898,10 +899,9 @@ function EditEventSession({ id, identity }) {
                   <p className="text-sm font-medium text-neutral-900">Cancel event and refund all buyers</p>
                   <p className="text-xs text-neutral-500">Stop sales and refund card orders. Cash orders need a manual return.</p>
                 </div>
-                <CancellationRefundProgress eventId={id} status={event.status} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={async () => { if (await fetchEvent()) setSuccessMessage('Event cancelled. Refunds are processing.') }} />
+                <CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={async () => { if (await fetchEvent()) setSuccessMessage('Event cancelled. Refunds are processing.') }} />
               </div>
             )}
-            {event.status === 'cancelled' && <CancellationRefundProgress eventId={id} status={event.status} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} />}
             {event.status === 'published' && (
               <div className="flex items-center justify-between p-3 bg-orange-50 rounded-xl">
                 <div>

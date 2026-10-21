@@ -5,7 +5,7 @@ class OrganizerTaxInformationUpdater
 
   def self.call(organization:, attributes:, actor:, request: nil)
     organization.with_lock do
-      if organization.payouts.where(status: [:pending, :processing]).exists?
+      if organization.payouts.where(status: [:pending, :processing, :held]).exists?
         raise TaxError, "A payout is in progress. You can change tax information after HåfaPass records it."
       end
       if EncryptionConfiguration.keys(environment: Rails.env).nil?

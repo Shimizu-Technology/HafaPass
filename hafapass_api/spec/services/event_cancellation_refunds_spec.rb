@@ -55,4 +55,23 @@ RSpec.describe EventCancellationRefunds do
     expect(described_class.outstanding_balance_cents(simulated_event)).to eq(0)
     expect(described_class.unresolved?(simulated_event)).to be(false)
   end
+
+  it "computes a fifty-order preview with a bounded number of grouped queries" do
+    49.times do
+      paid_order = create(:order, event: event)
+      create(:payment, :succeeded, order: paid_order, provider_environment: "live")
+    end
+    selects = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+      selects << payload[:sql] if payload[:sql]&.match?(/\ASELECT/i) && payload[:name] != "SCHEMA"
+    end
+    preview = described_class.preview(event)
+    expect(preview).to include(count: 50, total_cents: 50 * 5250)
+    expect(selects.length).to be <= 5
+    %w[payments refunds disputes].each do |table|
+      expect(selects).to include(a_string_matching(/GROUP BY \"#{table}\"\.\"order_id\"/))
+    end
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
 end

@@ -1,4 +1,7 @@
 {
+  "unsubscribe": {
+    "unsubscribedConfirmation": "You're unsubscribed from promotional emails from {{organization}}. Ticket and order updates will still arrive. To get updates again, opt in at your next checkout."
+  },
   "nav": {
     "events": "Events",
     "myTickets": "My Tickets",
@@ -765,6 +768,14 @@
   },
   "buyerAccount": {
     "orderConfirmationPage": {
+      "cancelledCardRefunded": "Refunded {{amount}} to your card on {{date}}.",
+      "cancelledCashRefunded": "{{amount}} was returned in cash on {{date}}.",
+      "cancelledRefundProcessing": "Your refund is processing.",
+      "cancelledCashReturnPending": "The organizer will return your cash payment.",
+      "cancelledRefundComplete": "Your refund is complete.",
+      "cancelledRefundNeedsAttention": "Your refund needs attention. HåfaPass is reviewing it.",
+      "cancelledRefundAwaitingDispute": "A payment dispute is being resolved before your refund.",
+      "cancelledPaymentResolved": "Your payment was already resolved.",
       "refundPendingWaitingForThePaymentProviderCheck": "Refund pending — waiting for the payment provider. Check this saved request; a refund has not been confirmed.",
       "theRefundOutcomeIsNotConfirmedCheckThis": "The refund outcome is not confirmed. Check this saved request before starting another refund.",
       "refundFailedNoRefundWasConfirmedYouCan": "Refund failed. No refund was confirmed. You can try again.",

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import apiClient from '../api/client'
+import { useTranslation } from 'react-i18next'
 
 export default function UnsubscribePage() {
+  const { t } = useTranslation()
   const { token } = useParams()
   const [state, setState] = useState({ loading: true })
   const [busy, setBusy] = useState(false)
@@ -31,7 +33,7 @@ export default function UnsubscribePage() {
     {state.loading ? <p role="status" className="mt-4">Loading email preferences…</p>
       : !state.organization ? null
         : state.unsubscribed ? <>
-          <p role="status" className="mt-4">You're unsubscribed from promotional emails from {state.organization}. Ticket and order updates will still arrive. To get updates again, opt in at your next checkout or in your account.</p>
+          <p role="status" className="mt-4">{t('unsubscribe.unsubscribedConfirmation', { organization: state.organization })}</p>
         </> : <>
           <p className="mt-4">Unsubscribe from promotional emails from {state.organization}? Ticket and order updates will still arrive.</p>
           <button type="button" disabled={busy} onClick={unsubscribe} className="btn-primary mt-6">{busy ? 'Saving…' : 'Unsubscribe'}</button>

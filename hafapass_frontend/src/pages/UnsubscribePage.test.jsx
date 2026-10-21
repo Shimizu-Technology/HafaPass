@@ -21,5 +21,6 @@ it('uses GET for confirmation and POST for unsubscribe, without an old-link resu
   await user.click(screen.getByRole('button', { name: 'Unsubscribe' }))
   expect(apiClient.post).toHaveBeenCalledWith('/marketing/unsubscribe/signed-token', {})
   expect(await screen.findByText(/To get updates again, opt in at your next checkout/)).toBeInTheDocument()
+  expect(screen.queryByText(/or in your account/)).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Resubscribe' })).not.toBeInTheDocument()
 })

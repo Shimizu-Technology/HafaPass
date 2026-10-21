@@ -77,7 +77,15 @@ class PayoutCreator
       same_transfer = payout.provider_payout_id == attributes[:provider_payout_id]
       conflict = terminal && incoming_paid && (payout.status_failed? || !same_transfer)
       action = "payout.#{attributes.fetch(:status)}"
-      if conflict
+      if payout.status_held?
+        if incoming_paid
+          payout.update!(failure_code: "provider_result_conflict",
+            failure_message: "Provider reported payment after cancellation hold; reconcile before recording")
+          action = "payout.provider_result_conflict"
+        else
+          action = "payout.late_result_held"
+        end
+      elsif conflict
         # Conflicting transfer evidence cannot silently release funds or erase
         # the operator's evidence. Reopen review, retaining the old identity in
         # the row and both outcomes in the immutable audit trail.

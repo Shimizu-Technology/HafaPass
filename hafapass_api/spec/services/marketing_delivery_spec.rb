@@ -35,7 +35,11 @@ RSpec.describe "Marketing delivery" do
   it "blocks missing mailing address and respects unsubscribe and provider complaints" do
     attendee(email: "yes@example.com", opted_in: true)
     SiteSetting.instance.update!(business_mailing_address: nil)
-    expect { CommunicationCampaigns::Sender.call(campaign) }.to raise_error(/Business mailing address/)
+    expect { CommunicationCampaigns::Sender.call(campaign) }.to raise_error(/Contact HåfaPass support/)
+    admin_campaign = create(:communication_campaign, event: event, created_by_user: create(:user, :admin))
+    expect { CommunicationCampaigns::Sender.call(admin_campaign) }.to raise_error(/Business mailing address in admin settings/)
+    expect { CommunicationCampaigns::Sender.call(admin_campaign, actor: event.organizer_profile.user) }
+      .to raise_error(/Contact HåfaPass support/)
     SiteSetting.instance.update!(business_mailing_address: "123 Marine Drive, Hagåtña, GU 96910")
     MarketingUnsubscribe.create!(organization: event.organization, email: "yes@example.com", unsubscribed_at: Time.current)
     expect(CommunicationCampaigns::Sender.new(campaign).audience_counts[:eligible]).to eq(0)

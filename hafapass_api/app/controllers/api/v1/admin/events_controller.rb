@@ -21,21 +21,23 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
 
   def start_cancellation_refunds
     run = nil
-    @event.with_lock do
-      unless @event.cancelled? && @event.event_cancellation_refund_run.nil?
-        return render json: { error: "Only a cancelled event without a refund run can be started" }, status: :conflict
-      end
-      preview = EventCancellationRefunds.preview(@event)
-      if !params.key?(:refund_count) || !params.key?(:refund_total_cents) ||
-          params[:refund_count].to_i != preview[:count] || params[:refund_total_cents].to_i != preview[:total_cents]
-        return render json: { error: "Refund total changed. Review the current count and amount before starting.",
-          preview: preview }, status: :conflict
-      end
+    @event.organization.with_lock do
+      @event.with_lock do
+        unless @event.cancelled? && @event.event_cancellation_refund_run.nil?
+          return render json: { error: "Only a cancelled event without a refund run can be started" }, status: :conflict
+        end
+        preview = EventCancellationRefunds.preview(@event)
+        if !params.key?(:refund_count) || !params.key?(:refund_total_cents) ||
+            params[:refund_count].to_i != preview[:count] || params[:refund_total_cents].to_i != preview[:total_cents]
+          return render json: { error: "Refund total changed. Review the current count and amount before starting.",
+            preview: preview }, status: :conflict
+        end
 
-      run = EventCancellationRefunds.prepare!(event: @event, actor: current_user)
-      AuditLogger.record!(action: "event.legacy_cancellation_refunds_started", auditable: @event,
-        actor: current_user, organization: @event.organization,
-        metadata: { run_id: run.id }, request: request)
+        run = EventCancellationRefunds.prepare!(event: @event, actor: current_user)
+        AuditLogger.record!(action: "event.legacy_cancellation_refunds_started", auditable: @event,
+          actor: current_user, organization: @event.organization,
+          metadata: { run_id: run.id }, request: request)
+      end
     end
     EventCancellationRefundJob.perform_later(run.id)
     render json: cancellation_json, status: :accepted

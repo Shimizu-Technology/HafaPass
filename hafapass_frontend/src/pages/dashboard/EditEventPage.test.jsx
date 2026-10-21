@@ -46,6 +46,15 @@ describe('published event content and schedule edits', () => {
     expect(apiClient.get.mock.calls.filter(([url]) => url === '/organizer/events/37').at(-1)[1]).toHaveProperty('signal')
   })
 
+  it('places cancellation progress above the event details on a cancelled event', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/cancellation_refunds')
+      ? { preview: { count: 0, total_cents: 0, cash_count: 0 }, run: { status: 'completed', refunded: 1, skipped: 0, total_orders: 1, items: [] } }
+      : { ...event, status: 'cancelled' } }))
+    mount()
+    const banner = await screen.findByRole('button', { name: /Cancellation refunds: 1 of 1 done/ })
+    expect(banner.compareDocumentPosition(screen.getByRole('heading', { name: 'Event details' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('shows specific page design validation feedback from the API', async () => {
     apiClient.put.mockRejectedValueOnce({ response: { data: { errors: [
       'Page customization gallery photo 2 needs alt text (up to 200 characters)',

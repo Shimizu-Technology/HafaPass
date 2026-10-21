@@ -13,8 +13,11 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       .order(created_at: :desc, id: :desc))
     audits = AuditLog.includes(:actor_user).where(auditable_type: "Payout", auditable_id: payouts.map(&:id),
       action: RECONCILIATION_ACTIONS).order(:id).group_by(&:auditable_id)
+    liabilities = payouts.map(&:event).uniq.index_with do |event|
+      event.cancelled? ? EventCancellationRefunds.liability_snapshot(event) : { outstanding_cents: 0, unresolved: false }
+    end
     render json: {
-      payouts: payouts.map { |payout| payout_list_json(payout, audits.fetch(payout.id, [])) },
+      payouts: payouts.map { |payout| payout_list_json(payout, audits.fetch(payout.id, []), liabilities.fetch(payout.event)) },
       meta: meta,
       status_counts: Payout.statuses.keys.index_with { |status| counts.fetch(status, 0) },
       context: listing_context
@@ -26,7 +29,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :cancellation_payout_reason).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -73,7 +76,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     end
   end
 
-  def payout_list_json(payout, audits)
+  def payout_list_json(payout, audits, liability)
     reconciliation = audits.reverse.find { |audit| audit.action == "payout.reconciled" }
     # Compared in memory (snapshot vs. details on file), once per payout.
     payee_changed = payout.provider == "check" && !payout.payee_matches_approval?
@@ -91,6 +94,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       payee_changed: payee_changed,
       tax_approval_changed: !payout.tax_approval_matches?,
       tax_information_snapshot: payout.tax_information_snapshot,
+      outstanding_buyer_balance_cents: liability[:outstanding_cents],
+      cancellation_refunds_unresolved: liability[:unresolved],
       current_payee: payee_changed ? payout.connected_account.check_payee : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,

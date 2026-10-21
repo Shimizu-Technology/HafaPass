@@ -38,7 +38,7 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
 
   def send_now
     campaign = event.communication_campaigns.find(params[:id])
-    CommunicationCampaigns::Sender.call(campaign)
+    CommunicationCampaigns::Sender.call(campaign, actor: current_user)
     render json: serialize(campaign.reload), status: :accepted
   rescue CommunicationCampaigns::Sender::CampaignError => e
     render json: { error: e.message }, status: :unprocessable_entity

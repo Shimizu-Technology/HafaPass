@@ -30,7 +30,7 @@ class OrganizationPayoutBalance
     entitlement_cents += [organization_adjustments, 0].min
     unresolved_refunds = Refund.pending.where(order_id: order_ids).sum(:amount_cents)
     unresolved_disputes = Dispute.open.where(order_id: order_ids).sum(:amount_cents)
-    committed_cents = organization.payouts.where(status: [:pending, :processing, :paid]).sum(:amount_cents)
+    committed_cents = organization.payouts.where(status: [:pending, :processing, :held, :paid]).sum(:amount_cents)
     [entitlement_cents - unresolved_refunds - unresolved_disputes - committed_cents, 0].max
   end
 

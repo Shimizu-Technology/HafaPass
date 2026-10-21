@@ -8,7 +8,7 @@ class Payout < ApplicationRecord
   encrypts :tax_information_tin
   self.filter_attributes += [:tax_information_tin]
 
-  enum :status, { pending: 0, processing: 1, paid: 2, failed: 3, reversed: 4 }, prefix: true
+  enum :status, { pending: 0, processing: 1, paid: 2, failed: 3, reversed: 4, held: 5 }, prefix: true
 
   validates :provider, :idempotency_key, :currency, presence: true
   validates :idempotency_key, uniqueness: true
@@ -61,6 +61,7 @@ class Payout < ApplicationRecord
     {
       "pending" => %w[paid failed reversed],
       "processing" => %w[paid failed reversed],
+      "held" => %w[paid failed reversed],
       "paid" => %w[reversed],
       "failed" => [],
       "reversed" => []

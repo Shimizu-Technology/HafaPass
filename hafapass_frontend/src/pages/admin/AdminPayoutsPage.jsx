@@ -12,7 +12,7 @@ import {
   compactParams, errorMessage, foldCell, foldRow, foldTable, formatDate, formatDateTime, money, readFilters, statusTone, useAdminList,
 } from './adminOperations'
 
-const PAYOUT_STATUSES = ['pending', 'processing', 'paid', 'failed', 'reversed']
+const PAYOUT_STATUSES = ['pending', 'processing', 'held', 'paid', 'failed', 'reversed']
 const OUTCOMES = {
   paid: { label: 'Paid', body: 'The money reached the organizer’s bank account.' },
   failed: { label: 'Failed', body: 'The transfer did not complete. The amount becomes available to pay out again.' },
@@ -46,6 +46,9 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const [confirmedAt, setConfirmedAt] = useState(nowForInput)
   const [reason, setReason] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
+  const [sentBeforeCancellation, setSentBeforeCancellation] = useState(false)
+  const [cancellationReason, setCancellationReason] = useState('')
+  const needsCancellationConfirmation = payout.cancellation_refunds_unresolved || payout.outstanding_buyer_balance_cents > 0
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const keepsTransferId = payout.status === 'paid'
@@ -75,6 +78,10 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     else if (confirmed > new Date()) found.confirmedAt = 'The confirmation time cannot be in the future.'
     else if (confirmed < new Date(payout.created_at)) found.confirmedAt = 'The confirmation time must be after the payout was requested.'
     if (!reason.trim()) found.reason = 'Explain how you confirmed this outcome.'
+    if (outcome === 'paid' && needsCancellationConfirmation) {
+      if (!sentBeforeCancellation) found.sentBeforeCancellation = 'Confirm the payout was sent before the cancellation.'
+      if (!cancellationReason.trim()) found.cancellationReason = 'Explain why you are recording this payout while buyer refunds remain outstanding.'
+    }
     if (payout.conflict && !acknowledged) found.conflict = 'Confirm you reviewed the provider conflict.'
     if (outcome === 'paid' && payeeChanged && !payeeConfirmed) found.payee = 'Confirm you wrote this check to the approved payee shown above.'
     if (outcome === 'paid' && legacyTaxPayee) {
@@ -91,7 +98,8 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
       const evidence = { reference: reference.trim(), reason: reason.trim(), confirmed_at: confirmed.toISOString(),
         ...(outcome === 'paid' && payeeChanged && payeeConfirmed ? { approved_payee_confirmed: true } : {}),
         ...(outcome === 'paid' && !legacyTaxPayee && taxApprovalChanged && taxPayeeConfirmed ? { approved_tax_payee_confirmed: true } : {}),
-        ...(outcome === 'paid' && legacyTaxPayee ? { legacy_payee_name: legacyPayeeName.trim(), legacy_evidence_note: legacyEvidenceNote.trim(), legacy_payee_confirmed: true } : {}) }
+        ...(outcome === 'paid' && legacyTaxPayee ? { legacy_payee_name: legacyPayeeName.trim(), legacy_evidence_note: legacyEvidenceNote.trim(), legacy_payee_confirmed: true } : {}),
+        ...(outcome === 'paid' && needsCancellationConfirmation ? { sent_before_cancellation_confirmed: true, cancellation_payout_reason: cancellationReason.trim() } : {}) }
       if (payout.conflict) evidence.conflict_audit_id = payout.conflict.audit_id
       const body = { status: outcome, evidence }
       if (transferId.trim() && !keepsTransferId) body.provider_payout_id = transferId.trim()
@@ -109,6 +117,11 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
       <form noValidate onSubmit={submit}>
         <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Record outcome for payout #{payout.id}</h2>
         <p className="mt-1 text-sm text-content-muted">{money(payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. Record only what the bank or provider has confirmed; your name and evidence go into the audit log.</p>
+        {needsCancellationConfirmation && <div className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+          <p className="font-semibold">{payout.outstanding_buyer_balance_cents > 0 ? `${money(payout.outstanding_buyer_balance_cents, payout.currency)} remains owed to buyers for this cancelled event.` : 'Buyer refunds are still pending for this cancelled event.'}</p>
+          {outcome === 'paid' && <><label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={sentBeforeCancellation} onChange={event => setSentBeforeCancellation(event.target.checked)} className="mt-0.5 h-4 w-4" />This payout was already sent before the cancellation</label>{fieldError('sentBeforeCancellation')}
+            <label className="mt-3 block">Reason for recording an already sent payout<textarea value={cancellationReason} onChange={event => setCancellationReason(event.target.value)} maxLength={1000} className="input mt-1" /></label>{fieldError('cancellationReason')}</>}
+        </div>}
         {isCheck && payout.payee && <p className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800 [overflow-wrap:anywhere]">Approved payee: <strong>{describePayee(payout.payee)}</strong></p>}
         {payeeChanged && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
           <p className="font-semibold">The payee on file is different from the approved payee above.</p>
@@ -372,7 +385,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
                 <td data-label="Payout" className={foldCell}><span><span className="font-mono text-xs text-neutral-900">#{payout.id}</span><span className="block text-xs text-content-muted">{formatDate(payout.created_at)}</span></span></td>
                 <td data-label="For" className={foldCell}><span className="min-w-0"><span className="block font-medium text-neutral-900 [overflow-wrap:anywhere]">{payout.organization.name}</span><span className="block text-xs text-content-muted [overflow-wrap:anywhere]">{payout.event.title} · settlement v{payout.settlement.version}</span></span></td>
                 <td data-label="Amount" className={`${foldCell} md:text-right`}><span className="font-semibold text-neutral-900">{money(payout.amount_cents, payout.currency)}</span></td>
-                <td data-label="Status" className={foldCell}><span><Badge status={payout.status} />{payout.paid_at && <span className="block text-xs text-content-muted">Paid {formatDate(payout.paid_at)}</span>}</span></td>
+                <td data-label="Status" className={foldCell}><span><Badge status={payout.status} />{payout.paid_at && <span className="block text-xs text-content-muted">Paid {formatDate(payout.paid_at)}</span>}{payout.outstanding_buyer_balance_cents > 0 ? <span className="block text-xs font-semibold text-red-700">{money(payout.outstanding_buyer_balance_cents, payout.currency)} still owed to buyers</span> : payout.cancellation_refunds_unresolved && <span className="block text-xs font-semibold text-amber-800">Buyer refunds pending</span>}</span></td>
                 <td data-label="Transfer" className={foldCell}><span className="min-w-0 text-xs text-neutral-700">
                   <span className="block font-mono [overflow-wrap:anywhere]">{payout.provider_payout_id || 'No transfer ID yet'}</span>
                   {payout.failure_message && <span className="block text-red-700">{payout.failure_message}</span>}

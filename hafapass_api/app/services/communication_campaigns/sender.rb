@@ -6,12 +6,13 @@ module CommunicationCampaigns
   class Sender
     class CampaignError < StandardError; end
 
-    def self.call(campaign)
-      new(campaign).call
+    def self.call(campaign, actor: nil)
+      new(campaign, actor: actor).call
     end
 
-    def initialize(campaign)
+    def initialize(campaign, actor: nil)
       @campaign = campaign
+      @actor = actor
     end
 
     def call
@@ -22,7 +23,12 @@ module CommunicationCampaigns
           raise CampaignError, "Only draft or scheduled campaigns can be sent"
         end
         if SiteSetting.instance.business_mailing_address.blank?
-          raise CampaignError, "Set the Business mailing address in admin settings before sending promotional email"
+          message = if (@actor || campaign.created_by_user).admin?
+            "Set the Business mailing address in admin settings before sending promotional email"
+          else
+            "Promotional email is unavailable until HåfaPass adds its business mailing address. Contact HåfaPass support."
+          end
+          raise CampaignError, message
         end
         if PublicSiteUrl.api.blank? && !Rails.env.local?
           raise CampaignError, "PUBLIC_API_URL is required for one-click unsubscribe"

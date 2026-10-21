@@ -53,6 +53,38 @@ describe('AdminPayoutsPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Payout #12 recorded as paid.')
   })
 
+  it('keeps cancelled-event buyer liability visible and requires already-sent evidence', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [{ ...payout, status: 'held', outstanding_buyer_balance_cents: 5250 }] })
+    apiClient.patch.mockResolvedValue({ data: {} })
+    renderAt('/admin/payouts')
+    expect(await screen.findByText('$52.50 still owed to buyers')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/\$52\.50 remains owed to buyers/)).toBeInTheDocument()
+    await user.type(dialog.getByLabelText(/Transfer ID/), 'BANK-42')
+    await user.type(dialog.getByLabelText('Confirmation reference'), 'Statement 42')
+    await user.type(dialog.getByLabelText('How you confirmed it'), 'Bank statement')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).not.toHaveBeenCalled()
+    await user.click(dialog.getByRole('checkbox', { name: 'This payout was already sent before the cancellation' }))
+    await user.type(dialog.getByLabelText('Reason for recording an already sent payout'), 'Sent before cancellation notice')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', expect.objectContaining({
+      evidence: expect.objectContaining({ sent_before_cancellation_confirmed: true, cancellation_payout_reason: 'Sent before cancellation notice' }),
+    }), expect.anything())
+  })
+
+  it('requires prior-send confirmation while buyer refunds are pending even when the unreserved balance is zero', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [{ ...payout, status: 'held', outstanding_buyer_balance_cents: 0, cancellation_refunds_unresolved: true }] })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText('Buyer refunds are still pending for this cancelled event.')).toBeInTheDocument()
+    expect(dialog.getByRole('checkbox', { name: 'This payout was already sent before the cancellation' })).toBeInTheDocument()
+  })
+
   it('requires acknowledging a provider conflict before recording an outcome', async () => {
     const user = userEvent.setup()
     respond({ payouts: [{ ...payout, failure_code: 'provider_result_conflict', conflict_audit_id: 77,
