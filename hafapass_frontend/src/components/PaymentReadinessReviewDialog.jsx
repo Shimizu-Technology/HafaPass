@@ -246,7 +246,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
                 <div className="space-y-7">
                   <div className="border-l-4 border-amber-400 bg-amber-50 p-4">
                     <p className="font-semibold text-amber-900">Approval required</p>
-                    <p className="mt-1 text-sm leading-relaxed text-amber-800">Admin #{pending.actor_user_id} submitted this snapshot. The API rejects approval by that same administrator.</p>
+                    <p className="mt-1 text-sm leading-relaxed text-amber-800">Admin #{pending.actor_user_id} submitted this snapshot. Any administrator, including the submitter, can approve it after checking the exact evidence below.</p>
                   </div>
                   <ReferenceList review={pending} />
                   <div>

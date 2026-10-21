@@ -42,6 +42,13 @@ RSpec.describe PaymentModeReadiness do
     expect(check[:help]).to include("RAILS_ENV to production")
   end
 
+  it "never readies live payments on a development machine either" do
+    allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("development"))
+
+    check = described_class.call("live")[:checks].find { |item| item[:key] == "production_environment" }
+    expect(check).to include(met: false)
+  end
+
   it "flags a live key in the live slot that is really a test key, without echoing it" do
     allow(ENV).to receive(:[]).with("STRIPE_LIVE_SECRET_KEY").and_return("sk_test_wrong_slot")
     result = described_class.call("live")

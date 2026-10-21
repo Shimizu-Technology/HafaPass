@@ -197,3 +197,7 @@ A production boot stops on:
 Everything else (Clerk, Sentry, Resend, Stripe, S3, admission signing) is a
 readiness check: the service boots, `/api/v1/readiness` names the gap, and the
 dependent feature refuses to run.
+
+## Note on earlier approvals
+
+The `stripe_live` capability fingerprint now covers `STRIPE_LIVE_PLATFORM_ACCOUNT_ID` and `STRIPE_LIVE_WEBHOOK_SECRET`. Any `stripe_live` approval recorded before this release no longer matches and must be submitted and approved again. No deployed environment was in live mode when this changed.

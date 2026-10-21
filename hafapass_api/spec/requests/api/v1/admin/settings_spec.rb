@@ -1,4 +1,5 @@
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe "Admin settings", type: :request do
   let(:admin) { create(:user, :admin) }

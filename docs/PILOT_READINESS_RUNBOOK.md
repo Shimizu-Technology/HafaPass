@@ -6,7 +6,7 @@ Status: engineering controls implemented through Gate J; external approvals, pro
 
 The proposed primary event-day/on-call owner is **Leon Shimizu, Shimizu Technology**. This assignment must be explicitly confirmed for each pilot event, with a named backup, phone number, and private escalation channel recorded in the deployment system—not in source control. The event organizer must also name an event commander, door lead, finance contact, and venue safety contact.
 
-No one person may silently approve their own production payment configuration, payout evidence, or reconciliation exception. The existing role and audit controls remain authoritative.
+One administrator may submit and approve production payment configuration, payout evidence and reconciliation exceptions, but never silently: every submission and approval is recorded in the audit log with who, what and when. The existing role and audit controls remain authoritative.
 
 Record the event-specific owners, controls, evidence reference, and approval through [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Do not open production inventory merely because the generic checklist below is complete; the approval must match the current event-state digest.
 
