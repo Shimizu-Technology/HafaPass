@@ -45,6 +45,12 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
       end
+      if delivery.promotional? && delivery.event.nil? && delivery.attempts.positive?
+        if delivery.provider == "resend" && delivery.outbound_wire_body.blank?
+          raise MessageWirePayload::Unavailable, "The frozen legacy payload is unavailable; reconcile before rendering"
+        end
+        raise MessageWirePayload::Unavailable, "Legacy promotional delivery lacks organizer consent context; reconcile before replay"
+      end
       if delivery.marketing_unsubscribed?
         delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient unsubscribed from this organizer")
         next :done
