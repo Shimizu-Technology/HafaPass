@@ -78,6 +78,24 @@ RSpec.describe "Cancellation refund permissions", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
+  it "lets a manager preview with manage_events even without view_finance, but requires refund authority to cancel" do
+    manager = create(:user)
+    create(:organization_membership, organization: event.organization, user: manager, role: :manager)
+    original = OrganizationAuthorization.method(:allowed?)
+    allow(OrganizationAuthorization).to receive(:allowed?) do |**options|
+      options[:permission] == :view_finance ? false : original.call(**options)
+    end
+
+    EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
+    get "#{base}/cancellation_refunds", headers: auth_headers(manager)
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("preview")).to include("total_cents" => 0)
+    expect(response.parsed_body.fetch("run")).to be_nil
+    post "#{base}/cancel", params: { reason: "Storm", refund_count: 0, refund_total_cents: 0 },
+      headers: auth_headers(manager)
+    expect(response).to have_http_status(:forbidden)
+  end
+
   it "advances the key for a terminal failed provider refund with an ID" do
     order = create(:order, event: event)
     type = create(:ticket_type, event: event)
@@ -111,5 +129,22 @@ RSpec.describe "Cancellation refund permissions", type: :request do
     expect(response).to have_http_status(:accepted)
     expect(item.reload.retry_generation).to eq(0)
     expect(item).to be_pending
+  end
+
+  it "retains the key for an uncertain failed provider result" do
+    order = create(:order, event: event)
+    type = create(:ticket_type, event: event)
+    create(:order_item, order: order, ticket_type: type, quantity: 2, subtotal_cents: 5000,
+      fee_cents: 250, organizer_proceeds_cents: 5000)
+    payment = create(:payment, :succeeded, order: order, provider: "stripe", provider_payment_id: "sim_pi_failed_unknown")
+    EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
+    item = event.event_cancellation_refund_run.items.find_by!(order: order)
+    create(:refund, order: order, payment: payment, amount_cents: item.amount_cents, status: :failed,
+      succeeded_at: nil, failure_code: "provider_result_unknown", idempotency_key: item.refund_key)
+    item.update!(status: :failed)
+
+    post "#{base}/retry_cancellation_refunds", headers: auth_headers(profile.user)
+    expect(response).to have_http_status(:accepted)
+    expect(item.reload.retry_generation).to eq(0)
   end
 end

@@ -73,6 +73,19 @@ RSpec.describe Settlements::Finalizer do
     expect(described_class.call(event: event, actor: actor)).to be_status_finalized
   end
 
+  it "finalizes and pays a cancelled event that has no cancellation refund run" do
+    cancelled_event = create(:event, :cancelled, organizer_profile: profile)
+    record_sale!(cancelled_event)
+    create(:connected_account, organization: organization)
+    expect(cancelled_event.event_cancellation_refund_run).to be_nil
+
+    settlement = described_class.call(event: cancelled_event, actor: actor)
+    expect(settlement).to be_status_finalized
+    payout = PayoutCreator.call(settlement: settlement, actor: actor,
+      idempotency_key: "cancelled-without-run")
+    expect(payout).to be_status_paid
+  end
+
   it "prevents double payout and carries a post-payout refund against later organization proceeds" do
     order, item = record_sale!(event)
     create(:connected_account, organization: organization)

@@ -23,6 +23,29 @@ describe('published event content and schedule edits', () => {
     apiClient.put.mockResolvedValue({ data: event })
   })
 
+  it('reloads the cancelled event through the guarded fetch before showing success', async () => {
+    const user = userEvent.setup()
+    const cancelled = { ...event, status: 'cancelled', permissions: { ...event.permissions, refund: true } }
+    let finishReload
+    apiClient.get.mockImplementation(path => path.endsWith('/cancellation_refunds')
+      ? Promise.resolve({ data: { preview: { count: 0, total_cents: 0, cash_count: 0 }, run: null } })
+      : apiClient.get.mock.calls.filter(([url]) => url === '/organizer/events/37').length > 1
+        ? new Promise(resolve => { finishReload = resolve })
+        : Promise.resolve({ data: { ...event, permissions: cancelled.permissions } }))
+    apiClient.post.mockResolvedValue({ data: cancelled })
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Review cancellation and refunds' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel event and refund all buyers' }))
+    await user.type(screen.getByLabelText('Reason for cancellation'), 'Storm')
+    await user.click(screen.getByRole('button', { name: 'Confirm cancellation and refunds' }))
+    await waitFor(() => expect(finishReload).toBeTypeOf('function'))
+    expect(screen.queryByText('Event cancelled. Refunds are processing.')).not.toBeInTheDocument()
+    await act(async () => finishReload({ data: cancelled }))
+    expect(await screen.findByText('Event cancelled. Refunds are processing.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View cancellation refunds' })).toBeInTheDocument()
+    expect(apiClient.get.mock.calls.filter(([url]) => url === '/organizer/events/37').at(-1)[1]).toHaveProperty('signal')
+  })
+
   it('shows specific page design validation feedback from the API', async () => {
     apiClient.put.mockRejectedValueOnce({ response: { data: { errors: [
       'Page customization gallery photo 2 needs alt text (up to 200 characters)',

@@ -67,6 +67,8 @@ class Order < ApplicationRecord
   after_update :restore_marketing_opt_in, if: -> { saved_change_to_status? && completed? && marketing_opt_in? }
 
   def restore_marketing_opt_in
+    return unless MarketingConsent.latest_order(organization: event.organization, email: buyer_email)&.id == id
+
     MarketingUnsubscribe.where(organization_id: event.organization_id,
       email: buyer_email.to_s.strip.downcase).delete_all
   end

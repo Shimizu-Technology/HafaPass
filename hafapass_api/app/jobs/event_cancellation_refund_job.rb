@@ -2,6 +2,7 @@
 
 class EventCancellationRefundJob < ApplicationJob
   queue_as :default
+  limits_concurrency to: 1, key: ->(run_id) { run_id }, group: self.name
   retry_on StandardError, wait: :polynomially_longer, attempts: 10
 
   def perform(run_id)

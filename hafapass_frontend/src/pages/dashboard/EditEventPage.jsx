@@ -148,12 +148,13 @@ function EditEventSession({ id, identity }) {
     setError(null)
     try {
       const res = await apiClient.get(`/organizer/events/${id}`, request.config)
-      if (!canApply()) return
+      if (!canApply()) return false
       const e = res.data
       setEvent(e)
       setForm(eventForm(e))
+      return true
     } catch (err) {
-      if (!canApply()) return
+      if (!canApply()) return false
       if (err.response?.status === 401) {
         setError('Please sign in to access this page.')
       } else if (err.response?.status === 404) {
@@ -161,6 +162,7 @@ function EditEventSession({ id, identity }) {
       } else {
         setError('Failed to load event.')
       }
+      return false
     } finally {
       request.release()
       if (canApply()) setLoading(false)
@@ -896,7 +898,7 @@ function EditEventSession({ id, identity }) {
                   <p className="text-sm font-medium text-neutral-900">Cancel event and refund all buyers</p>
                   <p className="text-xs text-neutral-500">Stop sales and refund card orders. Cash orders need a manual return.</p>
                 </div>
-                <CancellationRefundProgress eventId={id} status={event.status} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={() => { apiClient.get(`/organizer/events/${id}`).then(response => setEvent(response.data)); setSuccessMessage('Event cancelled. Refunds are processing.') }} />
+                <CancellationRefundProgress eventId={id} status={event.status} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={async () => { if (await fetchEvent()) setSuccessMessage('Event cancelled. Refunds are processing.') }} />
               </div>
             )}
             {event.status === 'cancelled' && <CancellationRefundProgress eventId={id} status={event.status} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} />}

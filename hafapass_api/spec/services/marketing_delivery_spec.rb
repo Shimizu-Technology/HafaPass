@@ -54,4 +54,36 @@ RSpec.describe "Marketing delivery" do
     expect(delivery.reload).to be_suppressed
     expect(delivery.provider_id).to be_nil
   end
+
+  it "uses the latest completed organizer checkout choice across events" do
+    first = attendee(email: "buyer@example.com", opted_in: true)
+    sender = CommunicationCampaigns::Sender.new(campaign)
+    expect(MarketingConsent.opted_in?(organization: event.organization, email: first.buyer_email)).to be(true)
+    expect(sender.audience_counts[:eligible]).to eq(1)
+
+    other_event = create(:event, :published, organization: event.organization,
+      organizer_profile: event.organizer_profile)
+    withdrawn = create(:order, event: other_event, buyer_email: "BUYER@example.com", marketing_opt_in: false)
+    expect(MarketingConsent.opted_in?(organization: event.organization, email: first.buyer_email)).to be(false)
+    expect(sender.audience_counts[:eligible]).to eq(0)
+
+    withdrawn.update!(status: :refunded)
+    expect(sender.audience_counts[:eligible]).to eq(0)
+    renewed = create(:order, event: other_event, buyer_email: "buyer@example.com", marketing_opt_in: true)
+    expect(sender.audience_counts[:eligible]).to eq(1)
+    sender.call
+    expect(campaign.message_deliveries.sole.order).to eq(renewed)
+  end
+
+  it "suppresses a queued campaign when a later checkout withdraws consent" do
+    attendee(email: "buyer@example.com", opted_in: true)
+    CommunicationCampaigns::Sender.call(campaign)
+    delivery = campaign.message_deliveries.sole
+    create(:order, event: event, buyer_email: "buyer@example.com", marketing_opt_in: false)
+
+    MessageDeliveryJob.perform_now(delivery.id)
+
+    expect(delivery.reload).to be_suppressed
+    expect(delivery.provider_id).to be_nil
+  end
 end

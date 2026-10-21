@@ -785,7 +785,7 @@ function CheckoutContent({ buyerId }) {
                 ))}
                 <label className="flex items-start gap-3 rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700" htmlFor="marketingOptIn">
                   <input id="marketingOptIn" type="checkbox" checked={marketingOptIn} onChange={event => setMarketingOptIn(event.target.checked)} disabled={submitting} className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600" />
-                  <span>{t('buyer.Checkout.marketingOptIn', { organizer: event.organization_name || event.organizer_name || 'the organizer' })}</span>
+                  <span>{t('buyer.Checkout.marketingOptIn', { organizer: event.organizer?.business_name?.trim() || event.seller?.seller_name?.trim() || 'the organizer' })}</span>
                 </label>
                 <div>
                   <label className="flex items-start gap-3 text-sm text-neutral-600" htmlFor="termsAccepted">

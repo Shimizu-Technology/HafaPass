@@ -49,8 +49,8 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient unsubscribed from this organizer")
         next :done
       end
-      if delivery.promotional? && delivery.event && !Order.where(event_id: delivery.event.organization.events.select(:id),
-          marketing_opt_in: true).where("LOWER(buyer_email) = ?", delivery.recipient.downcase).exists?
+      if delivery.promotional? && delivery.event &&
+          !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient)
         delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient has not opted in")
         next :done
       end
@@ -101,7 +101,9 @@ class MessageDeliveryJob < ApplicationJob
       return
     end
 
-    if delivery.promotional? && delivery.event && (delivery.marketing_unsubscribed? || delivery.suppressed_recipient? ||
+    if delivery.promotional? && delivery.event && (delivery.marketing_unsubscribed? ||
+        !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient) ||
+        delivery.suppressed_recipient? ||
         SiteSetting.instance.business_mailing_address.blank?)
       delivery.with_lock do
         delivery.update!(status: :suppressed, suppressed_at: Time.current,

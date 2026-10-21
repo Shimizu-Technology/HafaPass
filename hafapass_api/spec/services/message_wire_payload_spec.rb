@@ -57,6 +57,18 @@ RSpec.describe MessageWirePayload do
     expect(Resend::Emails).not_to have_received(:send)
   end
 
+  it "sends verified legacy transactional wire bytes" do
+    delivery.update!(template: "order_confirmation")
+    hydrate(verified_wire_body: body.b)
+
+    MessageDeliveryJob.new.perform(delivery.id)
+
+    expect(Resend::Emails).to have_received(:send).once
+    expect(delivery.reload).to have_attributes(status: "sent", provider_id: "synthetic-email",
+      provider_outcome_unknown: false)
+    expect(delivery.outbound_wire_body).to eq(body)
+  end
+
   it "rejects an unverified digest" do
     expect { hydrate(verified_wire_digest: "0" * 64) }.to raise_error(described_class::Unavailable)
     expect(delivery.reload.outbound_wire_body).to be_nil

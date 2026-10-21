@@ -46,6 +46,19 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     expect(campaign.message_deliveries.count).to eq(1)
   end
 
+  it "returns audience counts only for editable campaigns" do
+    draft = create(:communication_campaign, event: event, status: :draft)
+    sent = create(:communication_campaign, event: event, status: :sent)
+    get "#{base}/communication_campaigns", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body
+    expect(payload).not_to have_key("audience")
+    campaigns = payload.fetch("communication_campaigns").index_by { |row| row.fetch("id") }
+    expect(campaigns.fetch(draft.id)).to have_key("audience")
+    expect(campaigns.fetch(sent.id)).not_to have_key("audience")
+  end
+
   it "neutralizes spreadsheet formulas while preserving original attendee values" do
     type = create(:ticket_type, event: event, name: "=HYPERLINK(\"https://example.invalid\")")
     order = create(:order, event: event)

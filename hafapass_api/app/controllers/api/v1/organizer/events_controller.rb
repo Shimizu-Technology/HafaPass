@@ -374,19 +374,28 @@ module Api
           @event = find_organization_event(params[:id])
           return unless @event
 
-          return unless authorize_organization!(permission_for_action, event: @event)
-
-          authorize_organization!(:manage_events, event: @event) if action_name == "cancel"
+          if action_name == "cancellation_refunds"
+            allowed = [:manage_events, :view_finance].any? do |permission|
+              OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
+                permission: permission, event: @event)
+            end
+            render json: { error: "You do not have permission to perform this action" }, status: :forbidden unless allowed
+          else
+            permissions_for_action.each do |permission|
+              return unless authorize_organization!(permission, event: @event)
+            end
+          end
         end
 
-        def permission_for_action
+        def permissions_for_action
           case action_name
-          when "show" then :view_events
-          when "stats", "cancellation_refunds" then :view_finance
-          when "cancel", "retry_cancellation_refunds", "mark_cash_refunded" then :refund
-          when "attendees" then :view_attendees
-          when "update", "slug_availability", "retranslate" then :edit_event_content
-          else :manage_events
+          when "show" then [:view_events]
+          when "stats" then [:view_finance]
+          when "cancel" then [:manage_events, :refund]
+          when "retry_cancellation_refunds", "mark_cash_refunded" then [:refund]
+          when "attendees" then [:view_attendees]
+          when "update", "slug_availability", "retranslate" then [:edit_event_content]
+          else [:manage_events]
           end
         end
 

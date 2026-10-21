@@ -4,7 +4,13 @@ module CancellationRefundActions
   extend ActiveSupport::Concern
 
   def cancellation_refunds
-    render json: cancellation_json
+    payload = if OrganizationAuthorization.allowed?(user: current_user, organization: @event.organization,
+        permission: :view_finance, event: @event)
+      cancellation_json
+    else
+      { preview: EventCancellationRefunds.preview(@event), run: nil }
+    end
+    render json: payload
   end
 
   def retry_cancellation_refunds
@@ -16,7 +22,8 @@ module CancellationRefundActions
         refund = item.order.refunds.find_by(idempotency_key: item.refund_key)
         # An uncertain provider result must stay on its original key so the
         # provider can be reconciled without a second money movement.
-        generation = (refund&.failed? || refund&.cancelled?) ? item.retry_generation + 1 : item.retry_generation
+        generation = (refund && (refund.failed? || refund.cancelled?) &&
+          refund.failure_code != "provider_result_unknown") ? item.retry_generation + 1 : item.retry_generation
         item.update!(status: :pending, retry_generation: generation, last_error: nil)
       end
     end

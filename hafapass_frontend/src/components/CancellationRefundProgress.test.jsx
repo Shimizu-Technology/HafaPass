@@ -26,6 +26,25 @@ it('shows the exact fee-inclusive amount before cancellation and sends the revie
   })
 })
 
+it('refreshes the reviewed totals after a stale confirmation conflict', async () => {
+  const user = userEvent.setup()
+  apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: {
+    error: 'Refund total changed.', preview: { count: 3, total_cents: 501000, cash_count: 1 },
+  } } }).mockResolvedValueOnce({ data: {} })
+  render(<CancellationRefundProgress eventId={7} status="published" />)
+  await user.click(screen.getByRole('button', { name: 'Review cancellation and refunds' }))
+  await screen.findByText('2 orders · $4,312.50 including service fees.')
+  await user.click(screen.getByRole('button', { name: 'Cancel event and refund all buyers' }))
+  await user.type(screen.getByLabelText('Reason for cancellation'), 'Storm')
+  await user.click(screen.getByRole('button', { name: 'Confirm cancellation and refunds' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Refund total changed.')
+  expect(screen.getByText('Refund 3 orders, $5,010.00 including service fees.')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Confirm cancellation and refunds' }))
+  expect(apiClient.post).toHaveBeenLastCalledWith('/organizer/events/7/cancel', {
+    reason: 'Storm', refund_count: 3, refund_total_cents: 501000,
+  })
+})
+
 it('shows progress and offers retry for failed refunds', async () => {
   const user = userEvent.setup()
   apiClient.get.mockResolvedValue({ data: { preview: { count: 1, total_cents: 5250, cash_count: 0 },

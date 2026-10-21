@@ -174,7 +174,7 @@ describe('checkout navigation', () => {
   })
 
   it('keeps a completed free order on its lazy confirmation route and stores recovery access', async () => {
-    const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
+    const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', organizer: { business_name: 'Island Nights Promotions' }, ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
     apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockResolvedValue({ data: { id: 922, status: 'completed', guest_access_token: 'guest-token' } })
     let openConfirmation
@@ -189,7 +189,7 @@ describe('checkout navigation', () => {
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText("Full Name"), 'Guest Buyer')
     await user.type(screen.getByLabelText("Email Address"), 'guest@example.invalid')
-    expect(screen.getByRole('checkbox', { name: /Send me news and offers/ })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /Send me news and offers from Island Nights Promotions/ })).not.toBeChecked()
     await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
     await user.click(screen.getByRole('button', { name: /Place Order/ }))
     await waitFor(() => expect(openConfirmation).toBeTypeOf('function'))

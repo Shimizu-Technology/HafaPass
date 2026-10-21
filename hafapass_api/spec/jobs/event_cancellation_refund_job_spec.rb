@@ -1,6 +1,11 @@
 require "rails_helper"
 
 RSpec.describe EventCancellationRefundJob do
+  it "limits concurrent executions by refund run" do
+    expect(described_class.concurrency_limit).to eq(1)
+    expect(described_class.new(42).concurrency_key).to eq("EventCancellationRefundJob/42")
+  end
+
   let(:actor) { create(:user, :organizer) }
   let(:profile) { create(:organizer_profile, :verified, user: actor) }
   let(:event) { create(:event, :published, organizer_profile: profile) }
@@ -115,6 +120,28 @@ RSpec.describe EventCancellationRefundJob do
     expect(item.amount_cents).to eq(order.total_cents - 1000)
     expect(order.refunds.find_by(idempotency_key: item.refund_key).amount_cents).to eq(order.total_cents - 1000)
     expect(AuditLog.where(action: "event.cancellation_refund_amount_changed", auditable: event)).to exist
+  end
+
+  it "uses a new key for a succeeded partial cancellation refund and never refunds the balance twice" do
+    order = paid_order(email: "reconciled@example.com")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    item = run.items.find_by!(order: order)
+    create(:refund, order: order, payment: order.payments.first, amount_cents: 1000,
+      idempotency_key: item.refund_key)
+    item.update!(status: :waiting_on_pending_refund)
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_reconciled_remainder", status: "succeeded",
+        amount: order.total_cents - 1000, currency: "usd"))
+
+    described_class.perform_now(run.id)
+    described_class.perform_now(run.id)
+
+    expect(item.reload).to be_refunded
+    expect(item.retry_generation).to eq(1)
+    expect(order.refunds.count).to eq(2)
+    expect(order.refunds.succeeded.sum(:amount_cents)).to eq(order.total_cents)
+    expect(StripeService).to have_received(:refund_payment).once
   end
 
   it "does not count a provider-pending refund as completed" do

@@ -78,7 +78,7 @@ class Api::V1::OrdersController < ApplicationController
       buyer_email: params[:buyer_email],
       buyer_name: params[:buyer_name],
       buyer_phone: params[:buyer_phone],
-      marketing_opt_in: ActiveModel::Type::Boolean.new.cast(params[:marketing_opt_in]) == true,
+      marketing_opt_in: [true, "true", 1, "1"].include?(params[:marketing_opt_in]),
       user: @current_user,
       promo_code_id: params[:promo_code_id],
       catalog_items: params[:catalog_items],

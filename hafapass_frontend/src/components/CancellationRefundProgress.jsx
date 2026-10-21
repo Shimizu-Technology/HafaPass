@@ -36,6 +36,9 @@ export default function CancellationRefundProgress({ eventId, admin = false, sta
       await load()
       return response.data
     } catch (failure) {
+      if (failure.response?.status === 409 && failure.response?.data?.preview) {
+        setData(previous => previous && ({ ...previous, preview: failure.response.data.preview }))
+      }
       setError(failure.response?.data?.error || 'The action could not be completed. Refresh the refund status before trying again.')
       return null
     } finally { setBusy(false) }

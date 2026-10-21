@@ -55,6 +55,14 @@ module CommunicationCampaigns
       raise CampaignError, "This campaign has already been queued"
     end
 
+    def audience_counts
+      all = recipients
+      consented = consented_recipients(all)
+      eligible = eligible_recipients(consented)
+      { attendees: all.length, opted_in: consented.length,
+        excluded: all.length - eligible.length, eligible: eligible.length }
+    end
+
     private
 
     attr_reader :campaign
@@ -75,32 +83,24 @@ module CommunicationCampaigns
       end.values
     end
 
-    def eligible_recipients
-      recipients.select do |recipient|
-        email = recipient.fetch(:email)
-        consented = opted_in?(email)
-        unsubscribed = MarketingUnsubscribe.exists?(organization: campaign.event.organization, email: email)
-        suppression = MessageDelivery.new(recipient: email).suppressed_recipient?
-        consented && !unsubscribed && !suppression
+    def consented_recipients(all = recipients)
+      all.filter_map do |recipient|
+        order = MarketingConsent.latest_order(organization: campaign.event.organization, email: recipient[:email])
+        recipient.merge(order: order) if order&.marketing_opt_in?
       end
     end
 
-    public
-
-    def audience_counts
-      all = recipients
-      { attendees: all.length,
-        opted_in: all.count { |recipient| opted_in?(recipient[:email]) },
-        excluded: all.length - eligible_recipients.length,
-        eligible: eligible_recipients.length }
+    def eligible_recipients(consented = consented_recipients)
+      consented.reject { |recipient| blocked?(recipient[:email]) }
     end
 
-    private
+    def blocked?(email)
+      MarketingUnsubscribe.exists?(organization: campaign.event.organization, email: email) ||
+        MessageDelivery.new(recipient: email).suppressed_recipient?
+    end
 
     def opted_in?(email)
-      campaign.event.organization.events.joins(:orders)
-        .where(orders: { marketing_opt_in: true, status: [Order.statuses[:completed], Order.statuses[:partially_refunded]] })
-        .where("LOWER(orders.buyer_email) = ?", email).exists?
+      MarketingConsent.opted_in?(organization: campaign.event.organization, email: email)
     end
   end
 end
