@@ -121,7 +121,7 @@ for (const width of [390, 1440]) {
     await page.getByRole('combobox', { name: 'Sales channel' }).selectOption('box_office')
     await page.getByRole('button', { name: 'Show results' }).click()
     await expect(page).toHaveURL(/channel=box_office/)
-    await expect(page.getByRole('region', { name: 'Active filters' })).toContainText('box office')
+    await expect(page.getByRole('region', { name: 'Active filters' })).toContainText('Sales channel: Box office')
     await expect(width < 640 ? page.locator('.sm\\:hidden').getByText('Mina Cruz') : page.locator('table').getByText('Mina Cruz')).toBeVisible()
     await page.getByRole('button', { name: 'Export this list' }).click()
     await expect(page.getByRole('dialog', { name: 'Export this list' })).toContainText('1 attendee')
