@@ -20,6 +20,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const FEE_FIELDS = ['service_fee_percent', 'service_fee_flat_cents', 'processing_fee_bearer', 'payout_schedule_text']
 const FIELD_LABELS = {
   platform_name: 'Platform name', platform_email: 'Support email', platform_phone: 'Support phone',
+  business_mailing_address: 'Business mailing address',
   service_fee_percent: 'Service fee percentage', service_fee_flat_cents: 'Flat fee per paid ticket',
   processing_fee_bearer: 'Card processing', payout_schedule_text: 'Payout timing',
 }
@@ -31,6 +32,7 @@ const toForm = settings => ({
   platform_name: settings.platform_name || '',
   platform_email: settings.platform_email || '',
   platform_phone: settings.platform_phone || '',
+  business_mailing_address: settings.business_mailing_address || '',
   service_fee_percent: settings.service_fee_percent == null ? '' : String(Number(settings.service_fee_percent)),
   service_fee_flat: settings.service_fee_flat_cents == null ? '' : (settings.service_fee_flat_cents / 100).toFixed(2),
   processing_fee_bearer: settings.processing_fee_bearer || 'platform',
@@ -44,6 +46,7 @@ function toAttributes(form) {
     platform_name: form.platform_name.trim(),
     platform_email: form.platform_email.trim(),
     platform_phone: form.platform_phone.trim(),
+    business_mailing_address: form.business_mailing_address.trim(),
     service_fee_percent: form.service_fee_percent.trim() === '' ? null : Number(form.service_fee_percent),
     service_fee_flat_cents: flat === '' ? null : Math.round(Number(flat) * 100),
     processing_fee_bearer: form.processing_fee_bearer,
@@ -56,6 +59,7 @@ function validate(form) {
   const errors = {}
   if (!values.platform_name) errors.platform_name = 'Enter the platform name buyers see.'
   if (values.platform_email && !EMAIL_PATTERN.test(values.platform_email)) errors.platform_email = 'Enter a valid support email address, or leave it blank.'
+  if (values.business_mailing_address.length > 500) errors.business_mailing_address = 'Keep the business mailing address under 500 characters.'
   if (values.service_fee_percent == null || !Number.isFinite(values.service_fee_percent) || values.service_fee_percent < 0 || values.service_fee_percent > MAX_FEE_PERCENT) {
     errors.service_fee_percent = `Enter a service fee between 0% and ${MAX_FEE_PERCENT}%.`
   }
@@ -251,6 +255,9 @@ function AdminSettingsSession({ identity, resourcePath }) {
             </Field>
             <Field id="platform_phone" label="Support phone" hint="Optional. Shown next to the support email." error={errors.platform_phone}>
               <input id="platform_phone" type="tel" inputMode="tel" autoComplete="off" value={form.platform_phone} onChange={update('platform_phone')} aria-invalid={!!errors.platform_phone} aria-describedby={describedBy('platform_phone', true, errors.platform_phone)} className={inputClass('platform_phone')} />
+            </Field>
+            <Field id="business_mailing_address" label="Business mailing address" hint="Required before organizers can send promotional emails. Include a physical postal address." error={errors.business_mailing_address}>
+              <textarea id="business_mailing_address" rows={3} maxLength={500} value={form.business_mailing_address} onChange={update('business_mailing_address')} className={inputClass('business_mailing_address')} />
             </Field>
           </div>
         </section>

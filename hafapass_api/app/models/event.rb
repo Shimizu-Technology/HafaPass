@@ -1,4 +1,5 @@
 class Event < ApplicationRecord
+  has_one :event_cancellation_refund_run, dependent: :restrict_with_error
   include PublicSlug
   include Translatable
   include EventPageCustomization

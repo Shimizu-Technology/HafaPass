@@ -16,6 +16,8 @@ Rails.application.routes.draw do
       get "health", to: "health#show"
       get "readiness", to: "health#readiness"
       get "config", to: "config#show"
+      get "marketing/unsubscribe/:token", to: "marketing_unsubscribes#show", as: :marketing_unsubscribe
+      post "marketing/unsubscribe/:token", to: "marketing_unsubscribes#create"
       get "me", to: "me#show"
       post "users/sync", to: "users#sync"
 
@@ -146,6 +148,9 @@ Rails.application.routes.draw do
             post :postpone
             post :resume
             post :cancel
+            get :cancellation_refunds
+            post :retry_cancellation_refunds
+            post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
             post :complete
             post :archive
             post :clone
@@ -240,6 +245,14 @@ Rails.application.routes.draw do
         resource :settings, only: [:show, :update]
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
+          member do
+            get :cancellation_refunds
+            post :cancel_and_refund
+            post :start_cancellation_refunds
+            post :retry_cancellation_refunds
+            post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
+            post "cancellation_refunds/:order_id/mark_card_refunded", to: "events#mark_card_refunded"
+          end
           resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
           resource :sales_suspension, only: [:destroy], controller: "event_sales_suspensions"
           post :retranslate, on: :member
@@ -356,7 +369,9 @@ Rails.application.routes.draw do
         end
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:index, :create, :destroy]
-        resources :payouts, only: [:index, :update]
+        resources :payouts, only: [:index, :update] do
+          post :release_hold, on: :member
+        end
         resources :disputes, only: [:index]
         resources :audit_logs, only: [:index]
         resource :marketplace, only: [:show], controller: "marketplace"

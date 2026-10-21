@@ -242,12 +242,23 @@ function OrderConfirmationContent() {
             : usableTickets
               ? t('buyerAccount.orderConfirmationPage.yourTicketsAreReadyYouCanRequestA')
               : t('buyerAccount.orderConfirmationPage.youCanViewYourOrderAndTicketStatuses')
-  const change = order?.latest_event_change
+  const currentChangeTypes = event?.status === 'cancelled' ? ['cancelled']
+    : event?.status === 'postponed' ? ['postponed', 'rescheduled']
+      : ['published', 'rescheduled'].includes(event?.status) ? ['rescheduled'] : []
+  const change = currentChangeTypes.includes(order?.latest_event_change?.change_type)
+    ? order.latest_event_change : null
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
     ticket.status === 'issued' && ticket.refundable_cents >= 0
   ))
   const eventRefundAttempt = change ? getBuyerRefundAttempt(id, `event:${change.id}`) : null
-  const canRespondToChange = change && (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt)) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
+  const canRespondToChange = change && (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt)) &&
+    ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type) &&
+    (event?.status !== 'cancelled' || change.change_type === 'cancelled')
+  const cancelledRefund = event?.status === 'cancelled' ? (order?.cancellation_refund || (order?.status === 'refunded'
+    ? { status: 'refunded', amount_cents: order.refunded_cents, payment_method: order.payment_method } : null)) : null
+  const showCancelledRefundStatus = cancelledRefund && ['refunded', 'processing', 'not_started', 'needs_cash_return', 'needs_card_return', 'needs_attention', 'awaiting_dispute', 'resolved'].includes(cancelledRefund.status)
+  const hasRefundableTickets = (order?.refundable_cents == null || order.refundable_cents > 0) &&
+    order?.tickets?.some(ticket => ticket.status === 'issued' && ticket.refundable_cents > 0)
   const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
   // Recovery links import credentials after mount. Read the current credential for every action.
   const orderHeaders = () => orderAccessHeaders(id)
@@ -434,14 +445,25 @@ function OrderConfirmationContent() {
           </div> : isProcessing && <p className="mt-2 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.thisPageRefreshesAutomaticallyDoNotSubmitAnother')}</p>}
         </div>
 
-        {change && (
+        {(change || showCancelledRefundStatus) && (
           <section id="order-event-change" className="mb-6 scroll-mt-24 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <h2 className="font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.event', { change: t(`buyerAccount.orderConfirmationPage.eventStatus.${change.change_type}`, { defaultValue: change.change_type }) })}</h2>
-            <p className="mt-1 text-sm text-amber-900">{change.reason || t('buyerAccount.orderConfirmationPage.theOrganizerChangedThisEventReviewTheUpdated')}</p>
-            {change.response && <p className="mt-3 text-sm font-medium text-amber-950">{t('buyerAccount.orderConfirmationPage.yourResponse', { response: t(`buyerAccount.orderConfirmationPage.changeResponse.${change.response}`, { defaultValue: change.response.replace('_', ' ') }) })}</p>}
-            {canRespondToChange && (
+            <h2 className="font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.event', { change: t(`buyerAccount.orderConfirmationPage.eventStatus.${change?.change_type || 'cancelled'}`, { defaultValue: change?.change_type || 'cancelled' }) })}</h2>
+            <p className="mt-1 text-sm text-amber-900">{change?.reason || t('buyerAccount.orderConfirmationPage.theOrganizerChangedThisEventReviewTheUpdated')}</p>
+            {change?.response && <p className="mt-3 text-sm font-medium text-amber-950">{t('buyerAccount.orderConfirmationPage.yourResponse', { response: t(`buyerAccount.orderConfirmationPage.changeResponse.${change.response}`, { defaultValue: change.response.replace('_', ' ') }) })}</p>}
+            {showCancelledRefundStatus && <p role="status" className="mt-3 text-sm font-semibold text-amber-950">{cancelledRefund.status === 'refunded'
+              ? cancelledRefund.refunded_at
+                ? t(cancelledRefund.payment_method === 'door_cash' ? 'buyerAccount.orderConfirmationPage.cancelledCashRefunded' : 'buyerAccount.orderConfirmationPage.cancelledCardRefunded', { amount: formatMoneyCents(cancelledRefund.amount_cents || 0), date: formatEventDate(cancelledRefund.refunded_at, event.timezone) })
+                : t('buyerAccount.orderConfirmationPage.cancelledRefundComplete')
+              : t({ not_started: 'buyerAccount.orderConfirmationPage.cancelledRefundNotStarted',
+                needs_cash_return: 'buyerAccount.orderConfirmationPage.cancelledCashReturnPending',
+                needs_card_return: 'buyerAccount.orderConfirmationPage.cancelledCardReturnPending',
+                needs_attention: 'buyerAccount.orderConfirmationPage.cancelledRefundNeedsAttention',
+                awaiting_dispute: 'buyerAccount.orderConfirmationPage.cancelledRefundAwaitingDispute',
+                resolved: 'buyerAccount.orderConfirmationPage.cancelledPaymentResolved',
+              }[cancelledRefund.status] || 'buyerAccount.orderConfirmationPage.cancelledRefundProcessing')}</p>}
+            {canRespondToChange && (!showCancelledRefundStatus || refundNeedsStatusCheck(eventRefundAttempt)) && (
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                {!change.response && (
+                {!change.response && change.change_type !== 'cancelled' && (
                   <button className="btn-secondary" disabled={decisionBusy} onClick={() => respondToChange('accepted')}>{t('buyerAccount.orderConfirmationPage.keepMyTickets')}</button>
                 )}
                 <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy || eventRefundAttempt?.status === 'succeeded'} onClick={() => respondToChange('refund_requested')}>{refundButton(eventRefundAttempt, refundNeedsRetry ? t('buyerAccount.orderConfirmationPage.retryRefund') : t('buyerAccount.orderConfirmationPage.requestRefund'))}</button>
@@ -577,7 +599,7 @@ function OrderConfirmationContent() {
             <span>{formatMoneyCents(refund.amount_cents)} · {t(`buyerAccount.orderConfirmationPage.refundStatus.${refund.status}`)}</span>
             <span className="text-neutral-600">{formatEventDate(refund.requested_at, event.timezone)}</span>
           </li>)}</ul> : <p className="mt-2 text-sm text-neutral-600">{t('buyerAccount.orderConfirmationPage.noRefunds')}</p>}
-          {(canRespondToChange || order.tickets?.some(ticket => ticket.status === 'issued' && ticket.refundable_cents > 0 && ['cancelled', 'postponed'].includes(event.status))) && <a href={canRespondToChange ? '#order-event-change' : '#order-tickets'} className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.requestRefund')}</a>}
+          {hasRefundableTickets && !showCancelledRefundStatus && (canRespondToChange || ['cancelled', 'postponed'].includes(event.status)) && <a href={canRespondToChange ? '#order-event-change' : '#order-tickets'} className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.requestRefund')}</a>}
         </section>
 
 

@@ -49,6 +49,7 @@ class OrderPresenter
       event: event_json,
       seller: SellerIdentity.for_event(order.event).as_json,
       latest_event_change: latest_event_change_json,
+      cancellation_refund: cancellation_refund_json,
       order_items: ordered_order_items.map { |item| order_item_json(item) },
       tickets: include_tickets ? presented_tickets.map { |ticket| ticket_json(ticket) } : []
     }.compact
@@ -57,6 +58,34 @@ class OrderPresenter
   private
 
   attr_reader :order, :include_tickets, :guest_access_token
+
+  def cancellation_refund_json
+    return unless order.event.cancelled?
+
+    succeeded = order.refunds.succeeded.order(succeeded_at: :desc, id: :desc).first
+    item = order.event.event_cancellation_refund_run&.items&.find_by(order: order)
+    return unless succeeded || item || (order.completed? && order.total_cents.positive?)
+
+    status = if succeeded && (order.refunded? || item&.refunded?)
+      "refunded"
+    elsif item&.needs_manual?
+      order.payment_method == "door_card" ? "needs_card_return" : "needs_cash_return"
+    elsif item&.failed?
+      "needs_attention"
+    elsif item&.waiting_on_dispute?
+      "awaiting_dispute"
+    elsif item&.skipped?
+      "resolved"
+    elsif !item && order.completed?
+      "not_started"
+    else
+      "processing"
+    end
+    { status: status,
+      amount_cents: status == "refunded" ? (order.refund_amount_cents.positive? ? order.refund_amount_cents : order.refunded_cents) :
+        item&.amount_cents || succeeded&.amount_cents,
+      refunded_at: succeeded&.succeeded_at, payment_method: order.payment_method }
+  end
 
   def event_json
     event = order.event

@@ -76,6 +76,20 @@ RSpec.describe "Buyer email language" do
     expect(payload.fetch("html")).not_to include("ja:Sunset Fiesta")
   end
 
+  it "states the actual cancellation refund amount after an earlier partial refund" do
+    event.update!(status: :cancelled)
+    order = create(:order, event: event, status: :refunded, refund_amount_cents: 5250)
+    refund = create(:refund, order: order, amount_cents: 4000)
+    delivery = create(:message_delivery, order: order, template: "refund_notification",
+      metadata: { refund_id: refund.id })
+
+    payload = EmailService.prepare_delivery_payload(delivery)
+
+    expect(payload.fetch("subject")).to include("$40.00")
+    expect(payload.fetch("html")).to include("refund of $40.00")
+    expect(payload.fetch("html")).not_to include("refund of $52.50")
+  end
+
   it "uses the organizer's own ticket names on issued tickets in every language" do
     ticket_type.update_columns(translations: { "name" => AppLocale::TRANSLATION_TARGETS.index_with { |locale| "#{locale}:GA" }
       .merge("_digest" => Translatable.digest("General Admission")) })

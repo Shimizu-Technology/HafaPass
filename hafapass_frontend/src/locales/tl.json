@@ -1,4 +1,14 @@
 {
+  "unsubscribe": {
+    "heading": "Mga kagustuhan sa email",
+    "loading": "Kinukuha ang mga kagustuhan sa email…",
+    "linkError": "Hindi magamit ang link na ito para mag-unsubscribe.",
+    "requestError": "Hindi ka ma-unsubscribe. Pakisubukang muli.",
+    "prompt": "Mag-unsubscribe sa mga pampromosyong email mula sa {{organization}}? Matatanggap mo pa rin ang mga update tungkol sa ticket at order.",
+    "saving": "Sine-save…",
+    "action": "Mag-unsubscribe",
+    "unsubscribedConfirmation": "Naka-unsubscribe ka na sa mga pampromosyong email mula sa {{organization}}. Matatanggap mo pa rin ang mga update tungkol sa ticket at order. Para makatanggap ulit ng mga promo, pumayag sa susunod mong checkout."
+  },
   "categories": {
     "all": "Lahat ng Mga Event",
     "concert": "Musika",

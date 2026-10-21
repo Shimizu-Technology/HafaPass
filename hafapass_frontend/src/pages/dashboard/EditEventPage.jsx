@@ -11,6 +11,7 @@ import TicketTypeCRUD from '../../components/TicketTypeCRUD'
 import FeePolicyPanel from '../../components/FeePolicyPanel'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
+import CancellationRefundProgress from '../../components/CancellationRefundProgress'
 import FormErrorSummary from '../../components/FormErrorSummary'
 import { blocksPublishing, organizerChecklist } from '../../utils/organizerChecklist'
 import VerificationNotice from '../../components/VerificationNotice'
@@ -94,7 +95,6 @@ function EditEventSession({ id, identity }) {
   const [publishing, setPublishing] = useState(false)
 
   // Danger zone modals
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
   const [showPostponeConfirm, setShowPostponeConfirm] = useState(false)
@@ -148,12 +148,13 @@ function EditEventSession({ id, identity }) {
     setError(null)
     try {
       const res = await apiClient.get(`/organizer/events/${id}`, request.config)
-      if (!canApply()) return
+      if (!canApply()) return false
       const e = res.data
       setEvent(e)
       setForm(eventForm(e))
+      return true
     } catch (err) {
-      if (!canApply()) return
+      if (!canApply()) return false
       if (err.response?.status === 401) {
         setError('Please sign in to access this page.')
       } else if (err.response?.status === 404) {
@@ -161,6 +162,7 @@ function EditEventSession({ id, identity }) {
       } else {
         setError('Failed to load event.')
       }
+      return false
     } finally {
       request.release()
       if (canApply()) setLoading(false)
@@ -379,7 +381,6 @@ function EditEventSession({ id, identity }) {
       const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined }, request.config)
       if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
-      setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
       setLifecycleReason('')
@@ -387,7 +388,6 @@ function EditEventSession({ id, identity }) {
     } catch (err) {
       if (!request.current()) return
       setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
-      setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
     } finally {
@@ -459,6 +459,7 @@ function EditEventSession({ id, identity }) {
 
   return (
     <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges || feeChoiceDirty}><div className="mx-auto max-w-3xl">
+      {event.status === 'cancelled' && <div className="mb-6"><CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} prominent canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} /></div>}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
           {event?.slug && (
@@ -543,19 +544,6 @@ function EditEventSession({ id, identity }) {
       )}
 
       {/* Danger zone modals */}
-      {showCancelConfirm && (
-        <ConfirmModal
-          title="Cancel Event?"
-          message="Ticket sales and public discovery will stop immediately. The reason is retained in the event history."
-          confirmLabel="Yes, Cancel Event"
-          onConfirm={() => handleLifecycle('cancel', 'Event has been cancelled.')}
-          onCancel={() => { setShowCancelConfirm(false); setLifecycleReason('') }}
-          loading={dangerLoading}
-          reason={lifecycleReason}
-          onReasonChange={setLifecycleReason}
-          requireReason
-        />
-      )}
       {showDeleteConfirm && (
         <ConfirmModal
           title="Delete Event?"
@@ -908,12 +896,10 @@ function EditEventSession({ id, identity }) {
             {(event.status === 'published' || event.status === 'postponed') && (
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Cancel Event</p>
-                  <p className="text-xs text-neutral-500">Stop sales and remove the event from public discovery.</p>
+                  <p className="text-sm font-medium text-neutral-900">Cancel event and refund all buyers</p>
+                  <p className="text-xs text-neutral-500">Stop sales and refund card orders. Cash orders need a manual return.</p>
                 </div>
-                <button onClick={() => setShowCancelConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5">
-                  <XCircle className="w-4 h-4" /> Cancel Event
-                </button>
+                <CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={async () => { if (await fetchEvent()) setSuccessMessage('Event cancelled. Refunds are processing.') }} />
               </div>
             )}
             {event.status === 'published' && (

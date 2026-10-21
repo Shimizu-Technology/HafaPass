@@ -50,6 +50,27 @@ RSpec.describe "Organizer finances and exports", type: :request do
   end
 
   describe "GET /api/v1/organizer/finances" do
+    it "shows held payouts separately and keeps them reserved in the balance" do
+      cancelled_event = create(:event, :cancelled, organizer_profile: profile, title: "Cancelled Show")
+      record_sale!(cancelled_event, bearer: "platform")
+      held_settlement = create(:settlement, event: cancelled_event, organization: organization)
+      create(:payout, organization: organization, event: cancelled_event, settlement: held_settlement,
+        connected_account: payout.connected_account, amount_cents: 1000, status: :held, held_from_status: "pending")
+
+      get "/api/v1/organizer/finances", headers: org_headers(owner)
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      row = body.fetch("events").find { |entry| entry.fetch("id") == cancelled_event.id }
+      expect(row).to include("held_cents" => 1000, "in_flight_cents" => 0,
+        "owed_cents" => row.fetch("payable_cents") - 1000, "payout_state" => "on_hold")
+      expect(body.fetch("totals")).to include("held_cents" => 1000)
+      expect(body.fetch("breakdown")).to include("held_cents" => 1000)
+      expect(body.fetch("breakdown").fetch("balance_cents")).to eq(
+        body.fetch("breakdown").fetch("earned_cents") - body.fetch("breakdown").fetch("paid_cents") -
+        body.fetch("breakdown").fetch("in_flight_cents") - 1000)
+    end
+
     it "totals every event using each order's own processing-fee bearer snapshot" do
       get "/api/v1/organizer/finances", headers: org_headers(owner)
 

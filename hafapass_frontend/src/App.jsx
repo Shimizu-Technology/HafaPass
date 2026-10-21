@@ -18,6 +18,7 @@ const OrderConfirmationPage = lazy(() => import('./pages/OrderConfirmationPage')
 const OrderRecoveryPage = lazy(() => import('./pages/OrderRecoveryPage'))
 const TicketPage = lazy(() => import('./pages/TicketPage'))
 const PolicyPage = lazy(() => import('./pages/PolicyPage'))
+const UnsubscribePage = lazy(() => import('./pages/UnsubscribePage'))
 const MyTicketsPage = lazy(() => import('./pages/MyTicketsPage'))
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
 const CreateEventPage = lazy(() => import('./pages/dashboard/CreateEventPage'))
@@ -94,6 +95,7 @@ function App() {
           <Route path="/orders/recover" element={<OrderRecoveryPage />} />
           <Route path="/tickets/:credential" element={<TicketPage />} />
           <Route path="/policies/:policy" element={<PolicyPage />} />
+          <Route path="/unsubscribe/:token" element={<UnsubscribePage />} />
           <Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />
           <Route path="/saved" element={<ProtectedRoute><SavedPage /></ProtectedRoute>} />
           <Route path="/ticket-transfers/accept" element={<ProtectedRoute><TicketTransferAcceptPage /></ProtectedRoute>} />

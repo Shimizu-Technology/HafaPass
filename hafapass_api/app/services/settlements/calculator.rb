@@ -302,7 +302,7 @@ module Settlements
     end
 
     def payout_items
-      event.payouts.where(status: [:pending, :processing, :paid, :reversed]).order(:id).map do |payout|
+      event.payouts.where(status: [:pending, :processing, :held, :paid, :reversed]).order(:id).map do |payout|
         statement_item(
           kind: "payout",
           amount_cents: payout.status_reversed? ? payout.amount_cents : -payout.amount_cents,

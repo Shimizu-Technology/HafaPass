@@ -90,6 +90,25 @@ RSpec.describe "Buyer orders and receipts", type: :request do
     expect(response.parsed_body).to include("payment_environment" => "test", "receipt_available" => true)
   end
 
+  it "shows an auto-refunded cancelled event once in buyer history and refund detail" do
+    event.update!(status: :cancelled)
+    payment = create(:payment, :succeeded, order: order, amount_cents: order.total_cents)
+    create(:refund, order: order, payment: payment, amount_cents: order.total_cents,
+      status: :succeeded, succeeded_at: Time.current)
+    order.update!(status: :refunded)
+
+    get "/api/v1/me/orders", headers: auth_headers(buyer)
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("orders").count { |entry| entry["id"] == order.id }).to eq(1)
+    expect(response.parsed_body.fetch("orders").first).to include("buyer_status" => "refunded",
+      "refunded_cents" => order.total_cents, "receipt_available" => true)
+
+    get "/api/v1/me/orders/#{order.id}", headers: auth_headers(buyer)
+    expect(response.parsed_body).to include("buyer_status" => "refunded")
+    expect(response.parsed_body.fetch("refund_history").length).to eq(1)
+    expect(response.parsed_body.dig("cancellation_refund", "status")).to eq("refunded")
+  end
+
   it "returns compact cards with ticket, add-on, and merchandise counts and all purchased items" do
     type = create(:ticket_type, event: event)
     create(:order_item, order: order, ticket_type: type, quantity: 2, name: "Admission")

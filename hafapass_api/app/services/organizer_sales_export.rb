@@ -71,7 +71,8 @@ class OrganizerSalesExport
     when "total_paid", "price_paid" then money(ticket ? ticket_total(item, ticket) : order.total_cents)
     when "discount_promo" then [money(ticket ? allocated(item, ticket, :discount_cents) : order.discount_cents), order.promo_code&.code].compact.join(" / ")
     when "channel" then FinanceExports.channel(order)
-    when "status" then OrganizerTicketSalesStatus.label(ticket ? OrganizerTicketSalesStatus.for(ticket) : order.status)
+    when "status" then OrganizerTicketSalesStatus.label(ticket ?
+      OrganizerTicketSalesStatus.for(ticket, event_cancelled: @query.event.cancelled?) : order.status)
     when "check_in_time" then self.class.local_time(ticket ? ticket.checked_in_at : order.tickets.filter_map(&:checked_in_at).max, @query.event)
     when "transferred_to" then transferred_to(ticket ? [ticket] : order.tickets)
     when "purchase_date" then self.class.local_time(order.completed_at || order.created_at, @query.event)

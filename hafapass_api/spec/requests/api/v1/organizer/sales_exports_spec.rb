@@ -589,6 +589,24 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(names(status: "cancelled")).to eq(["Mina"])
   end
 
+  it "shows cancelled-event refunds consistently on the list, filter, and CSV" do
+    refunded_order, refunded_ticket = sale(name: "Refunded")
+    pending_order, = sale(name: "Pending")
+    event.update!(status: :cancelled)
+    refunded_order.update!(status: :refunded)
+    refunded_ticket.update!(status: :cancelled)
+
+    expect(names(status: "refunded")).to eq(["Refunded"])
+    expect(response.parsed_body.dig("attendees", 0, "sales_status_label")).to eq("Refunded")
+    expect(names(status: "cancelled")).to eq(["Pending"])
+    expect(names(status: "paid")).to be_empty
+    post "#{base}/sales_exports", params: { columns: %w[name status] }, headers: headers
+    expect(response).to have_http_status(:ok)
+    rows = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).to_a
+    expect(rows).to include(["Refunded", "Refunded"], ["Pending", "Cancelled"])
+    expect(pending_order).to be_completed
+  end
+
   it "lists only the actor's unexpired recent exports and keeps the response private" do
     mine = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
       filters: {}, columns: %w[name], status: "ready", expires_at: 1.hour.from_now)

@@ -1,4 +1,18 @@
 {
+  "cancellationRefundProgress": {
+    "confirmRefundOrders_one": "Refund {{count}} order, {{amount}} including service fees.",
+    "confirmRefundOrders_other": "Refund {{count}} orders, {{amount}} including service fees."
+  },
+  "unsubscribe": {
+    "heading": "Email preferences",
+    "loading": "Loading email preferences…",
+    "linkError": "This unsubscribe link could not be used.",
+    "requestError": "Could not unsubscribe. Please try again.",
+    "prompt": "Unsubscribe from promotional emails from {{organization}}? Ticket and order updates will still arrive.",
+    "saving": "Saving…",
+    "action": "Unsubscribe",
+    "unsubscribedConfirmation": "You're unsubscribed from promotional emails from {{organization}}. Ticket and order updates will still arrive. To get updates again, opt in at your next checkout."
+  },
   "nav": {
     "events": "Events",
     "myTickets": "My Tickets",
@@ -345,6 +359,7 @@
       "ClassesWorkshops": "Classes & Workshops"
     },
     "Checkout": {
+      "marketingOptIn": "Send me news and offers from {{organizer}}. Optional; unsubscribe any time.",
       "preparingYourAccount": "Preparing your account…",
       "returnToTheAccountThatStartedThisSaved": "Return to the account that started this saved checkout before recovering it.",
       "anotherSavedCheckoutIsActiveRecoverItBefore": "Another saved checkout is active. Recover it before opening a different order.",
@@ -764,6 +779,16 @@
   },
   "buyerAccount": {
     "orderConfirmationPage": {
+      "cancelledCardRefunded": "Refunded {{amount}} to your card on {{date}}.",
+      "cancelledCashRefunded": "{{amount}} was returned in cash on {{date}}.",
+      "cancelledRefundProcessing": "Your refund is processing.",
+      "cancelledRefundNotStarted": "Your refund is being arranged.",
+      "cancelledCashReturnPending": "The organizer will return your cash payment.",
+      "cancelledCardReturnPending": "HåfaPass is waiting for confirmation that your card payment was returned.",
+      "cancelledRefundComplete": "Your refund is complete.",
+      "cancelledRefundNeedsAttention": "Your refund needs attention. HåfaPass is reviewing it.",
+      "cancelledRefundAwaitingDispute": "A payment dispute is being resolved before your refund.",
+      "cancelledPaymentResolved": "Your payment was already resolved.",
       "testOrderNoRealCharge": "Test order — no real charge",
       "checkoutNotCompleted": "Checkout not completed — no charge",
       "orderedOn": "Ordered on {{date}}",

@@ -26,7 +26,7 @@ class Settlement < ApplicationRecord
   before_destroy :prevent_finalized_destruction
 
   def paid_or_processing_cents
-    event.payouts.where(status: [:pending, :processing, :paid]).sum(:amount_cents)
+    event.payouts.where(status: [:pending, :processing, :held, :paid]).sum(:amount_cents)
   end
 
   # Platform fee revenue after the card processing HåfaPass covered. It can be

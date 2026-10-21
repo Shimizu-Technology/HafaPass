@@ -129,7 +129,7 @@ class OrganizerSalesQuery
   def apply_status(tickets)
     return tickets unless filters["status"]
 
-    OrganizerTicketSalesStatus.filter(tickets, filters["status"])
+    OrganizerTicketSalesStatus.filter(tickets, filters["status"], event_cancelled: @event.cancelled?)
   end
 
   def order_clause(id_column, order_grain: false)

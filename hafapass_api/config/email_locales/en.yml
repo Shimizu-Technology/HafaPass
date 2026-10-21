@@ -82,7 +82,15 @@ emails:
     heading: "Your Ticket"
     view: "View Your Ticket"
     entry_instructions: "Present your QR code at the door for entry."
+  event_cancelled:
+    subject: "Event cancelled: %{event}"
+    heading: "%{event} was cancelled"
+    body: "We are preparing automatic refunds of the full amount paid, including service fees. You do not need to request one. Cash buyers will be contacted about a manual return."
+    view_order: "View your order"
   refund:
+    cancelled_subject: "Event cancelled — your refund of %{amount} is on its way"
+    cancelled_heading: "Event cancelled — refund on its way"
+    cancelled_body: "%{event} was cancelled. Your refund of %{amount}, including service fees, is on its way."
     subject: "Refund Processed - %{event}"
     heading: "Refund Processed"
     body: "Your refund for %{event} has been processed."

@@ -72,11 +72,11 @@ module Admissions
     def row(ticket)
       if @tickets
         [ticket.attendee_name.presence || "Guest", ticket.ticket_type.name, ticket.order.reference,
-          OrganizerTicketSalesStatus.label(OrganizerTicketSalesStatus.for(ticket)), "________"]
+          OrganizerTicketSalesStatus.label(OrganizerTicketSalesStatus.for(ticket, event_cancelled: event.cancelled?)), "________"]
       else
         ["HP-T#{ticket.id}", ticket.attendee_name.presence || "Guest",
           [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
-          OrganizerTicketSalesStatus.label(OrganizerTicketSalesStatus.for(ticket)), "________"]
+          OrganizerTicketSalesStatus.label(OrganizerTicketSalesStatus.for(ticket, event_cancelled: event.cancelled?)), "________"]
       end
     end
 

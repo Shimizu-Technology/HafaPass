@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configureEnabledLanguages, setActiveLanguage } from './locale'
-import { formatEventDate, formatEventDateTime, formatEventTime, formatEventTimeRange, toEventLocalInput } from './eventTime'
+import { formatEventDate, formatEventDateTime, formatEventTime, formatEventTimeRange, fromEventLocalInput, toEventLocalInput } from './eventTime'
 
 describe('event time formatting', () => {
   const guamSevenPm = '2026-08-15T09:00:00.000Z'
@@ -12,6 +12,7 @@ describe('event time formatting', () => {
 
   it('round-trips an API timestamp into a Guam datetime-local value', () => {
     expect(toEventLocalInput(guamSevenPm, 'Pacific/Guam')).toBe('2026-08-15T19:00')
+    expect(fromEventLocalInput('2026-08-15T19:00', 'Pacific/Guam').toISOString()).toBe('2026-08-15T09:00:00.000Z')
   })
 
   it('keeps a same-day event range compact in its Guam venue timezone', () => {

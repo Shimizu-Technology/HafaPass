@@ -12,17 +12,30 @@ class OrganizerTicketSalesStatus
     LABELS.fetch(status.to_s) { status.to_s.humanize }
   end
 
-  def self.for(ticket)
+  def self.for(ticket, event_cancelled:)
+    if event_cancelled
+      return ticket.order.status if ticket.order.refunded? || ticket.order.partially_refunded?
+
+      return "cancelled"
+    end
+
     return "cancelled" if ticket.cancelled? || ticket.order.cancelled?
     return ticket.order.status if ticket.order.refunded? || ticket.order.partially_refunded?
 
     ticket.status
   end
 
-  def self.filter(relation, status)
+  def self.filter(relation, status, event_cancelled: false)
     cancelled_ticket = Ticket.statuses.fetch("cancelled")
     cancelled_order = Order.statuses.fetch("cancelled")
     refund_orders = Order.statuses.values_at("refunded", "partially_refunded")
+    if event_cancelled
+      return relation.where(orders: { status: Order.statuses.fetch(status) }) if %w[refunded partially_refunded].include?(status)
+      return relation.where.not(orders: { status: refund_orders }) if status == "cancelled"
+
+      return relation.none
+    end
+
     case status
     when "paid"
       relation.where(orders: { status: Order.statuses.fetch("completed") })

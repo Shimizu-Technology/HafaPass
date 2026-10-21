@@ -51,6 +51,7 @@ class Order < ApplicationRecord
 
   validates :locale, inclusion: { in: AppLocale::SUPPORTED }
   validates :buyer_email, presence: true
+  validates :marketing_opt_in, inclusion: { in: [true, false] }
   validates :buyer_name, presence: true
   validates :currency, presence: true, length: { is: 3 }
   validates :subtotal_cents, :service_fee_cents, :discount_cents, :total_cents, :refund_amount_cents,
@@ -63,6 +64,16 @@ class Order < ApplicationRecord
 
   before_validation :assign_reference, on: :create
   after_update -> { Wallet::PassSync.tickets_changed(tickets.select(:id)) }, if: :saved_change_to_status?
+  after_update_commit :restore_marketing_opt_in, if: -> { saved_change_to_status? && completed? && marketing_opt_in? }
+
+  def restore_marketing_opt_in
+    event.organization.with_lock do
+      return unless MarketingConsent.latest_order(organization: event.organization, email: buyer_email)&.id == id
+
+      MarketingUnsubscribe.where(organization_id: event.organization_id,
+        email: buyer_email.to_s.strip.downcase).where("unsubscribed_at < ?", created_at).delete_all
+    end
+  end
 
   def guest_access_valid?(version:, at: Time.current)
     user_id.nil? && guest_access_revoked_at.nil? && guest_access_expires_at.present? &&

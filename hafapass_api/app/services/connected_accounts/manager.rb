@@ -83,7 +83,7 @@ module ConnectedAccounts
     # The approved payee is what a check in flight is written to; changing it
     # mid-payout would leave the admin unable to record the real check.
     def self.ensure_no_check_in_flight!(organization)
-      in_flight = organization.payouts.where(provider: "check", status: [:pending, :processing]).exists?
+      in_flight = organization.payouts.where(provider: "check", status: [:pending, :processing, :held]).exists?
       raise AccountError, CHECK_IN_FLIGHT_MESSAGE if in_flight
     end
 

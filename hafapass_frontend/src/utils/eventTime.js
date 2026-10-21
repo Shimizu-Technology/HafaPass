@@ -71,6 +71,19 @@ export function toEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
   return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`
 }
 
+export function fromEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value || '')) return null
+  const requested = Date.parse(`${value}:00Z`)
+  if (Number.isNaN(requested)) return null
+  let instant = requested
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const actual = Date.parse(`${toEventLocalInput(new Date(instant), timeZone)}:00Z`)
+    instant += requested - actual
+  }
+  const result = new Date(instant)
+  return toEventLocalInput(result, timeZone) === value ? result : null
+}
+
 export function compareLocalDateTimes(first, second) {
   return first && second ? first.localeCompare(second) : 0
 }

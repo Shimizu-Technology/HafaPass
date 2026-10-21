@@ -45,9 +45,29 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
       end
+      if delivery.promotional? && delivery.event.nil? && delivery.attempts.positive?
+        if delivery.provider == "resend" && delivery.outbound_wire_body.blank?
+          raise MessageWirePayload::Unavailable, "The frozen legacy payload is unavailable; reconcile before rendering"
+        end
+        raise MessageWirePayload::Unavailable, "Legacy promotional delivery lacks organizer consent context; reconcile before replay"
+      end
+      if delivery.marketing_unsubscribed?
+        delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient unsubscribed from this organizer")
+        next :done
+      end
+      if delivery.promotional? && delivery.event &&
+          !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient)
+        delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient has not opted in")
+        next :done
+      end
       if delivery.suppressed_recipient?
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
           last_error: "Recipient has a prior bounce, complaint, or suppression")
+        next :done
+      end
+      if delivery.promotional? && SiteSetting.instance.business_mailing_address.blank?
+        delivery.update!(status: :suppressed, suppressed_at: Time.current,
+          last_error: "Promotional send blocked by missing mailing address")
         next :done
       end
       raise ReplayExpired, "Provider result requires reconciliation before replay" if delivery.provider_replay_expired?
@@ -68,6 +88,14 @@ class MessageDeliveryJob < ApplicationJob
           (delivery.provider_attempted_at.present? || (delivery.provider == "resend" && delivery.attempts.positive?))
         raise MessageWirePayload::Unavailable, "The frozen legacy payload is unavailable; reconcile before rendering"
       end
+      if delivery.promotional? && delivery.event.nil?
+        if delivery.attempts.positive?
+          raise MessageWirePayload::Unavailable, "Legacy promotional delivery lacks organizer consent context; reconcile before replay"
+        end
+        delivery.update!(status: :suppressed, suppressed_at: Time.current,
+          last_error: "Promotional delivery is missing its organizer event")
+        next :done
+      end
       payload = delivery.outbound_payload.presence || EmailService.prepare_delivery_payload(delivery)
       wire = real_provider ? MessageWirePayload.prepare(delivery, payload) : {}
       delivery.update!(outbound_payload: payload, payload_digest: Digest::SHA256.hexdigest(JSON.generate(payload.sort.to_h)),
@@ -81,6 +109,18 @@ class MessageDeliveryJob < ApplicationJob
     end
     unless outcome == :send
       MessageProviderEventProcessor.reconcile_for!(delivery) if outcome == :done
+      return
+    end
+
+    if delivery.promotional? && delivery.event && (delivery.marketing_unsubscribed? ||
+        !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient) ||
+        delivery.suppressed_recipient? ||
+        SiteSetting.instance.business_mailing_address.blank?)
+      delivery.with_lock do
+        delivery.update!(status: :suppressed, suppressed_at: Time.current,
+          provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil,
+          last_error: "Promotional send blocked by unsubscribe, provider suppression, or missing mailing address")
+      end
       return
     end
 

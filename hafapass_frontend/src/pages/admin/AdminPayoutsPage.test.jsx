@@ -28,6 +28,31 @@ const renderAt = path => render(<MemoryRouter initialEntries={[path]}><AdminPayo
 describe('AdminPayoutsPage', () => {
   beforeEach(() => { vi.clearAllMocks(); respond() })
 
+  it('releases a held payout only after the prior-send confirmation when refunds remain unresolved', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [{ ...payout, status: 'held', held_from_status: 'processing',
+      hold_available_cents: 5000, cancellation_refunds_unresolved: true }] })
+    apiClient.post.mockResolvedValue({ data: { status: 'processing' } })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Release hold for payout #12' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Release hold on payout #12' }))
+    await user.click(dialog.getByRole('button', { name: 'Release hold' }))
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await user.click(dialog.getByRole('checkbox', { name: 'This payout was already sent before the cancellation' }))
+    await user.type(dialog.getByLabelText('Reason for releasing an already sent payout'), 'Sent before the notice')
+    await user.click(dialog.getByRole('button', { name: 'Release hold' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/payouts/12/release_hold',
+      { sent_before_cancellation_confirmed: true, cancellation_payout_reason: 'Sent before the notice' }, expect.anything()))
+  })
+
+  it('shows a stale held payout amount and disables release until it is reissued', async () => {
+    respond({ payouts: [{ ...payout, status: 'held', held_from_status: 'pending', hold_available_cents: 0 }] })
+    renderAt('/admin/payouts')
+    expect(await screen.findByText('Amount exceeds current net payable; record a failed outcome and reissue.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Release hold for payout #12' }))
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Release hold' })).toBeDisabled()
+  })
+
   it('lists payouts with their context and records a paid outcome with evidence', async () => {
     const user = userEvent.setup()
     apiClient.patch.mockResolvedValue({ data: {} })
@@ -51,6 +76,50 @@ describe('AdminPayoutsPage', () => {
       evidence: expect.objectContaining({ reference: 'Statement 2026-10-02 line 4', reason: 'Matched amount on the bank statement', confirmed_at: expect.stringMatching(/Z$/) }),
     }, expect.anything()))
     expect(await screen.findByRole('status')).toHaveTextContent('Payout #12 recorded as paid.')
+  })
+
+  it('keeps cancelled-event buyer liability visible and requires already-sent evidence', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [{ ...payout, status: 'held', outstanding_buyer_balance_cents: 5250 }] })
+    apiClient.patch.mockResolvedValue({ data: {} })
+    renderAt('/admin/payouts')
+    expect(await screen.findByText('$52.50 still owed to buyers')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/\$52\.50 remains owed to buyers/)).toBeInTheDocument()
+    await user.type(dialog.getByLabelText(/Transfer ID/), 'BANK-42')
+    await user.type(dialog.getByLabelText('Confirmation reference'), 'Statement 42')
+    await user.type(dialog.getByLabelText('How you confirmed it'), 'Bank statement')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).not.toHaveBeenCalled()
+    await user.click(dialog.getByRole('checkbox', { name: 'This payout was already sent before the cancellation' }))
+    await user.type(dialog.getByLabelText('Reason for recording an already sent payout'), 'Sent before cancellation notice')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', expect.objectContaining({
+      evidence: expect.objectContaining({ sent_before_cancellation_confirmed: true, cancellation_payout_reason: 'Sent before cancellation notice' }),
+    }), expect.anything())
+  })
+
+  it('requires prior-send confirmation while buyer refunds are pending even when the unreserved balance is zero', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [{ ...payout, status: 'held', outstanding_buyer_balance_cents: 0, cancellation_refunds_unresolved: true }] })
+    apiClient.patch.mockResolvedValue({ data: {} })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText('Buyer refunds are still pending for this cancelled event.')).toBeInTheDocument()
+    await user.type(dialog.getByLabelText(/Transfer ID/), 'BANK-43')
+    await user.type(dialog.getByLabelText('Confirmation reference'), 'Statement 43')
+    await user.type(dialog.getByLabelText('How you confirmed it'), 'Bank statement')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).not.toHaveBeenCalled()
+    await user.click(dialog.getByRole('checkbox', { name: 'This payout was already sent before the cancellation' }))
+    await user.type(dialog.getByLabelText('Reason for recording an already sent payout'), 'Sent before cancellation notice')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', expect.objectContaining({
+      evidence: expect.objectContaining({ sent_before_cancellation_confirmed: true,
+        cancellation_payout_reason: 'Sent before cancellation notice' }),
+    }), expect.anything())
   })
 
   it('requires acknowledging a provider conflict before recording an outcome', async () => {

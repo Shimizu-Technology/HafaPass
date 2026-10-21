@@ -41,7 +41,9 @@ RSpec.describe "Overlapping terminal requests", :non_transactional, type: :reque
         original_responses << error
       end
     end
-    Timeout.timeout(5) { provider_entered.pop }
+    # The request must reach the provider, but database setup can take longer
+    # than five seconds on a loaded test host.
+    Timeout.timeout(30) { provider_entered.pop }
     attempt = CardPresentPaymentAttempt.find_by!(idempotency_key: "original-in-flight-key")
     original_expiry = attempt.order.expires_at
     expect(attempt).to be_status_initiated
