@@ -62,7 +62,7 @@ class OrganizerSalesQuery
 
       batch = relation.where(id: ids).includes(view == "orders" ?
         [:promo_code, :registration_responses, :support_notes, { tickets: [:ticket_type, :ticket_transfers] }] :
-        [:ticket_type, :order_item, :ticket_transfers, :support_notes,
+        [:ticket_type, { order_item: :tickets }, :ticket_transfers, :support_notes,
           { order: [:promo_code, :registration_responses, :support_notes] }]).to_a
       batch.each { |record| yield record }
       offset += ids.length
@@ -106,9 +106,10 @@ class OrganizerSalesQuery
       tickets = tickets.where("COALESCE(orders.completed_at, orders.created_at) < ?", (zone.parse(filters["purchased_to"]) + 1.day).utc)
     end
     environment = filters.fetch("payment_environment", "live")
-    test_orders = Payment.where(provider: "stripe", provider_environment: "test").select(:order_id)
-    tickets = tickets.where(orders: { id: test_orders }) if environment == "test"
-    tickets = tickets.where.not(orders: { id: test_orders }) if environment == "live"
+    nonlive_orders = Payment.nonlive_stripe.select(:order_id)
+    live_capture = Payment.live_or_legacy_capture.select(:order_id)
+    tickets = tickets.where(orders: { id: nonlive_orders }).where.not(orders: { id: live_capture }) if environment == "test"
+    tickets = tickets.where.not(orders: { id: nonlive_orders }).or(tickets.where(orders: { id: live_capture })) if environment == "live"
     if filters["search"]
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(filters['search'])}%"
       tickets = tickets.where("tickets.attendee_name ILIKE :q OR tickets.attendee_email ILIKE :q OR " \
@@ -119,16 +120,9 @@ class OrganizerSalesQuery
   end
 
   def apply_status(tickets)
-    case filters["status"]
-    when "paid" then tickets.where(orders: { status: Order.statuses.fetch("completed") })
-    when "refunded", "partially_refunded" then tickets.where(orders: { status: Order.statuses.fetch(filters["status"]) })
-    when "cancelled" then tickets.where("tickets.status = ? OR orders.status = ?",
-      Ticket.statuses[:cancelled], Order.statuses[:cancelled])
-    when "checked_in" then tickets.where(status: Ticket.statuses[:checked_in])
-    when "not_checked_in" then tickets.where(status: Ticket.statuses[:issued])
-    when "transferred", "issued" then tickets.where(status: Ticket.statuses.fetch(filters["status"]))
-    else tickets
-    end
+    return tickets unless filters["status"]
+
+    OrganizerTicketSalesStatus.filter(tickets, filters["status"])
   end
 
   def order_clause(id_column, order_grain: false)

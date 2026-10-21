@@ -126,7 +126,7 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     post "#{base}/sales_exports", params: { columns: %w[name email] }, headers: auth_headers(box)
     expect(response).to have_http_status(:ok)
     post "#{base}/sales_exports", params: { columns: %w[name phone] }, headers: auth_headers(box)
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:ok)
     manager = create(:user)
     create(:organization_membership, organization: event.organization, user: manager, role: :manager)
     post "#{base}/sales_exports", params: { columns: %w[name email price_paid] }, headers: auth_headers(manager)
@@ -149,9 +149,11 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(records.length).to eq(1)
     expect(records.first["Name"]).to eq("\t=1+1")
     expect(records.first["Purchase date"]).to include("ChST")
-    audit = AuditLog.where(action: "sales.exported").last
+    audit = AuditLog.where(action: "sales.export_requested").last
     expect(audit.actor_user).to eq(owner)
     expect(audit.metadata).to include("row_count" => 1, "columns" => %w[name order_number purchase_date])
+    expect(AuditLog.where(action: "sales.export_generated").last.metadata["outcome"]).to eq("generated")
+    expect(AuditLog.where(action: "sales.export_downloaded").last.metadata["outcome"]).to eq("downloaded")
   end
 
   it "prints only filtered door rows with order numbers and audits the PDF" do
@@ -197,7 +199,7 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
   it "limits repeated exports for the same actor" do
     sale(name: "Mina")
     10.times do
-      AuditLogger.record!(action: "sales.exported", auditable: event, actor: owner,
+      AuditLogger.record!(action: "sales.export_requested", auditable: event, actor: owner,
         metadata: { filters: {}, columns: %w[name], row_count: 1 })
     end
     post "#{base}/sales_exports", params: { columns: %w[name] }, headers: headers
@@ -217,12 +219,13 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
       content = options.fetch(:body).read
       expect(content.bytes.first(3)).to eq([239, 187, 191])
       expect(content).to include("Mina")
+      expect(options.fetch(:acl)).to eq("private")
     end
     expect { OrganizerSalesExportJob.perform_now(request_record.id) }
       .to have_enqueued_job(OrganizerSalesExportCleanupJob)
     expect(request_record.reload).to have_attributes(status: "ready", row_count: 1)
     expect(request_record.storage_key).to start_with("private/sales-exports/")
-    expect(AuditLog.where(action: "sales.export_completed").last.metadata).to include("row_count" => 1)
+    expect(AuditLog.where(action: "sales.export_generated").last.metadata).to include("row_count" => 1)
   end
 
   it "deletes an expired private export before removing its download key" do
@@ -254,5 +257,133 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
 
     expect { OrganizerSalesExportJob.perform_now(request_record.id) }.to raise_error("synthetic audit failure")
     expect(request_record.reload).to have_attributes(status: "failed", storage_key: nil)
+  end
+  it "keeps finance-only exports to transaction columns across roles" do
+    sale(name: "Mina")
+    roles = { finance: { allowed: %w[order_number ticket_price discount fee tax total_paid channel status purchase_date],
+      denied: %w[name email phone check_in_time transferred_to notes_custom_answers] },
+      box_office: { allowed: %w[name email phone check_in_time transferred_to notes_custom_answers],
+        denied: %w[ticket_price discount fee tax total_paid] },
+      manager: { allowed: %w[name email phone check_in_time transferred_to notes_custom_answers ticket_price discount fee tax total_paid], denied: [] } }
+    roles.each do |role, columns|
+      user = create(:user)
+      create(:organization_membership, organization: event.organization, user: user, role: role)
+      create(:event_staff_assignment, event: event, user: user, role: :box_office) if role == :box_office
+      post "#{base}/sales_exports", params: { columns: columns[:allowed] }, headers: auth_headers(user)
+      expect(response).to have_http_status(:ok), "#{role} should export its allowed columns"
+      columns[:denied].each do |column|
+        post "#{base}/sales_exports", params: { columns: [column] }, headers: auth_headers(user)
+        expect(response).to have_http_status(:unprocessable_entity), "#{role} should not export #{column}"
+      end
+    end
+  end
+
+  it "uses the production payment classification for simulated and legacy nonlive orders" do
+    sale(name: "Live")
+    simulated, = sale(name: "Simulated")
+    create(:payment, order: simulated, provider_environment: "simulate")
+    legacy, = sale(name: "LegacyTest")
+    create(:payment, order: legacy, provider_environment: nil, provider_payload: { simulated: "true" })
+    expect(names).to eq(["Live"])
+    expect(names(payment_environment: "test")).to contain_exactly("Simulated", "LegacyTest")
+    expect(names(payment_environment: "all")).to contain_exactly("Live", "Simulated", "LegacyTest")
+    expect(Order.where(id: [simulated.id, legacy.id]).where.not(id: Payment.nonlive_stripe.select(:order_id))).to be_empty
+  end
+
+  it "allocates a one-cent discount and all ticket money without losing cents" do
+    order = create(:order, event: event, subtotal_cents: 200, service_fee_cents: 3,
+      discount_cents: 1, total_cents: 202)
+    type = create(:ticket_type, event: event)
+    item = create(:order_item, order: order, ticket_type: type, unit_price_cents: 100,
+      quantity: 2, discount_cents: 1, fee_cents: 3, tax_cents: 0)
+    2.times { |index| create(:ticket, event: event, order: order, order_item: item, ticket_type: type, attendee_name: "Guest #{index}") }
+    post "#{base}/sales_exports", params: { columns: %w[ticket_price discount fee tax total_paid] }, headers: headers
+    expect(response).to have_http_status(:ok)
+    rows = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
+    expect(rows.sum { |row| (BigDecimal(row["Ticket price"]) * 100).to_i }).to eq(200)
+    expect(rows.sum { |row| (BigDecimal(row["Discount"]) * 100).to_i }).to eq(1)
+    expect(rows.sum { |row| (BigDecimal(row["Fee"]) * 100).to_i }).to eq(3)
+    expect(rows.sum { |row| (BigDecimal(row["Total paid"]) * 100).to_i }).to eq(202)
+  end
+
+  it "uses one ticket status for screen, filter, and CSV after a partial refund" do
+    order, ticket = sale(name: "Mina")
+    order.update!(status: :partially_refunded)
+    get "#{base}/attendees", headers: headers
+    expect(response.parsed_body.dig("attendees", 0, "sales_status")).to eq("partially_refunded")
+    expect(names(status: "partially_refunded")).to eq(["Mina"])
+    post "#{base}/sales_exports", params: { columns: %w[status] }, headers: headers
+    expect(CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).first["Status"]).to eq("partially_refunded")
+    ticket.update!(status: :cancelled)
+    expect(names(status: "partially_refunded")).to be_empty
+    expect(names(status: "cancelled")).to eq(["Mina"])
+  end
+
+  it "lists only the actor's unexpired recent exports and keeps the response private" do
+    mine = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], status: "ready", expires_at: 1.hour.from_now)
+    other = create(:user)
+    OrganizerSalesExportRequest.create!(event: event, actor_user: other,
+      filters: {}, columns: %w[name], status: "ready", expires_at: 1.hour.from_now)
+    OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], status: "ready", expires_at: 1.minute.ago)
+    get "#{base}/sales_exports", headers: headers
+    expect(response).to have_http_status(:ok)
+    expect(response.headers["Cache-Control"]).to eq("no-store")
+    expect(response.parsed_body.fetch("exports").pluck("id")).to eq([mine.id])
+  end
+
+  it "audits a completed queued download with request and export IDs" do
+    item = OrganizerSalesExportRequest.create!(event: event, actor_user: owner, filters: {}, columns: %w[name],
+      status: "ready", expires_at: 1.hour.from_now, storage_key: "private/sales-exports/test.csv")
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    allow(client).to receive(:get_object).and_yield("csv data")
+    get "#{base}/sales_exports/#{item.id}", headers: headers
+    expect(response.body).to eq("csv data")
+    audit = AuditLog.where(action: "sales.export_downloaded").last
+    expect(audit).to have_attributes(actor_user: owner)
+    expect(audit.request_id).to be_present
+    expect(audit.metadata).to include("export_request_id" => item.id, "outcome" => "downloaded")
+  end
+
+  it "records a failed queued stream without a successful download audit" do
+    item = OrganizerSalesExportRequest.create!(event: event, actor_user: owner, filters: {}, columns: %w[name],
+      status: "ready", expires_at: 1.hour.from_now, storage_key: "private/sales-exports/test.csv")
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    allow(client).to receive(:get_object).and_raise(Aws::S3::Errors::InternalError.new(nil, "synthetic"))
+    expect { get "#{base}/sales_exports/#{item.id}", headers: headers; response.body }.to raise_error(Aws::S3::Errors::InternalError)
+    expect(AuditLog.where(action: "sales.export_downloaded")).to be_empty
+    failed = AuditLog.where(action: "sales.export_download_failed").last
+    expect(failed.metadata).to include("export_request_id" => item.id, "outcome" => "stream_failed")
+  end
+
+  it "matches the sales-export throttle for trailing slash and format-suffixed door lists" do
+    throttle = Rack::Attack.throttles.fetch("sales-exports/ip")
+    ["/sales_exports", "/sales_exports/", "/sales_exports.csv",
+      "/sales_exports/door_list", "/sales_exports/door_list.pdf", "/sales_exports/door_list.pdf/",
+      "/admissions/door_list.pdf", "/admissions/door_list/"].each do |suffix|
+      path = "#{base}#{suffix}"
+      method = suffix.start_with?("/sales_exports") && !suffix.include?("door_list") ? "POST" : "GET"
+      rack_request = Rack::Attack::Request.new(Rack::MockRequest.env_for(path, method: method, "REMOTE_ADDR" => "203.0.113.1"))
+      expect(throttle.block.call(rack_request)).to eq("203.0.113.1"), path
+    end
+  end
+  it "rechecks attendee access before listing or downloading a queued PII export" do
+    actor = create(:user)
+    membership = create(:organization_membership, organization: event.organization, user: actor, role: :manager)
+    item = OrganizerSalesExportRequest.create!(event: event, actor_user: actor, filters: {}, columns: %w[phone],
+      status: "ready", expires_at: 1.hour.from_now, storage_key: "private/sales-exports/test.csv")
+    membership.update!(role: :finance)
+    get "#{base}/sales_exports", headers: auth_headers(actor)
+    expect(response.parsed_body.fetch("exports")).to be_empty
+    get "#{base}/sales_exports/#{item.id}", headers: auth_headers(actor)
+    expect(response).to have_http_status(:forbidden)
+    expect(AuditLog.where(action: "sales.export_downloaded")).to be_empty
   end
 end

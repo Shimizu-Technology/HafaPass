@@ -69,6 +69,7 @@ function AttendeesPageSession({ id, identity }) {
  const [exportOpen, setExportOpen] = useState(false)
  const [exportColumns, setExportColumns] = useState(['name', 'email', 'order_number', 'ticket_type', 'channel', 'status', 'purchase_date'])
  const [queuedExport, setQueuedExport] = useState(null)
+ const [recentExports, setRecentExports] = useState([])
  const [exporting, setExporting] = useState(false)
  const [exportError, setExportError] = useState(null)
  const [resendTarget, setResendTarget] = useState(null)
@@ -81,7 +82,7 @@ function AttendeesPageSession({ id, identity }) {
   ++accessWithdrawals.current
   requests.current.forEach(request => request.controller.abort())
   exportRequests.current.forEach(request => request.controller.abort())
-  setAttendees([]); setMeta(null); setEvent(null)
+  setAttendees([]); setMeta(null); setEvent(null); setRecentExports([]); setQueuedExport(null)
   setDetailError(null); setError(message); setLoading(false)
  }, [])
  const withdrawForDenial = useCallback(requestError => {
@@ -182,14 +183,24 @@ function AttendeesPageSession({ id, identity }) {
 
   useEffect(() => { fetchAttendees() }, [fetchAttendees, loadAttempt])
 
+  const refreshRecentExports = useCallback(async () => {
+    try {
+      const result = await requestOutsideList(config => apiClient.get(`/organizer/events/${id}/sales_exports`, config), { withdrawOnlyForSignIn: true })
+      if (current()) setRecentExports(result.data?.exports || [])
+    } catch { if (current()) setRecentExports([]) }
+  }, [id, requestOutsideList, current])
+
+  useEffect(() => { if (event && !accessDenied.current) refreshRecentExports() }, [event, refreshRecentExports])
+
   const downloadExport = async () => {
     if (exporting) return
     setExporting(true); setExportError(null)
     try {
-      const response = await requestExport(exportColumns)
+      const response = await requestExport(allowedExportColumns)
       if (response.status === 202) {
         const payload = JSON.parse(await response.data.text())
         setQueuedExport(payload.download_url)
+        refreshRecentExports()
         setExportOpen(false)
         return
       }
@@ -201,16 +212,17 @@ function AttendeesPageSession({ id, identity }) {
       if (exportFailure?.name !== 'AbortError' && current()) setExportError('Unable to export attendees. Try again when your connection is available.')
     } finally { if (current()) setExporting(false) }
   }
-  const checkQueuedExport = async () => {
-    if (!queuedExport || exporting) return
+  const checkQueuedExport = async (downloadUrl = queuedExport) => {
+    if (!downloadUrl || exporting) return
     setExporting(true); setExportError(null)
     try {
-      const response = await requestOutsideList(config => apiClient.get(queuedExport.replace('/api/v1', ''), { responseType: 'blob', ...config }))
-      if (response.status === 202) { setActionNotice('Your export is still being prepared. Check again shortly.'); return }
+      const response = await requestOutsideList(config => apiClient.get(downloadUrl.replace('/api/v1', ''), { responseType: 'blob', ...config }))
+      if (response.status === 202) { setActionNotice('Your export is still being prepared. Check again shortly.'); refreshRecentExports(); return }
       const url = URL.createObjectURL(response.data)
       try { const link = document.createElement('a'); link.href = url; link.download = `${event?.slug || `event-${id}`}-sales.csv`; link.click() }
       finally { URL.revokeObjectURL(url) }
       setQueuedExport(null)
+      refreshRecentExports()
     } catch { setExportError('The export could not be downloaded. Try again shortly.') }
     finally { if (current()) setExporting(false) }
   }
@@ -262,13 +274,16 @@ function AttendeesPageSession({ id, identity }) {
     : value.replaceAll('_', ' ')
   const canExport = permissions.view_attendees === true || permissions.view_finance === true
   const canSeeFinance = permissions.view_finance === true
+  const financeColumns = ['ticket_price', 'discount', 'fee', 'tax', 'total_paid']
+  const attendeeColumns = ['name', 'email', 'phone', 'check_in_time', 'transferred_to', 'notes_custom_answers']
+  const allowedExportColumns = exportColumns.filter(key => (canSeeFinance || !financeColumns.includes(key)) && (permissions.view_attendees === true || !attendeeColumns.includes(key)))
   const exportChoices = [
     ['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['order_number', 'Order #'],
-    ['ticket_type', 'Ticket type'], ['price_paid', 'Price paid'], ['fee', 'Fee'],
-    ['discount_promo', 'Discount / promo'], ['channel', 'Channel'], ['status', 'Status'],
+    ['ticket_type', 'Ticket type'], ['ticket_price', 'Ticket price'], ['discount', 'Discount'],
+    ['fee', 'Fee'], ['tax', 'Tax'], ['total_paid', 'Total paid'], ['channel', 'Channel'], ['status', 'Status'],
     ['check_in_time', 'Check-in time'], ['transferred_to', 'Transferred to'],
     ['purchase_date', 'Purchase date'], ['notes_custom_answers', 'Notes / custom answers']
-  ].filter(([key]) => canSeeFinance || !['price_paid', 'fee', 'discount_promo', 'phone', 'notes_custom_answers'].includes(key))
+  ].filter(([key]) => (canSeeFinance || !financeColumns.includes(key)) && (permissions.view_attendees === true || !attendeeColumns.includes(key)))
 
   return (
     <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
@@ -286,8 +301,9 @@ function AttendeesPageSession({ id, identity }) {
         </div>}
       </div>
       {activeFilters.length > 0 && <div role="region" className="mb-4 flex flex-wrap items-center gap-2" aria-label="Active filters">{activeFilters.map(([key, value]) => <button key={key} type="button" onClick={() => changeFilter(key, '')} className="rounded-full bg-brand-50 px-3 py-1 text-sm text-brand-900">{key.replaceAll('_', ' ')}: {chipValue(key, value)} ×</button>)}<button type="button" className="text-sm font-medium underline" onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}>Clear filters</button></div>}
-      {queuedExport && <p role="status" className="mb-4 rounded-lg bg-brand-50 p-3 text-sm">Your export is being prepared. <button type="button" className="underline" onClick={checkQueuedExport} disabled={exporting}>Check download</button></p>}
-      {exportOpen && <Dialog labelledBy="sales-export-title" onClose={() => setExportOpen(false)} busy={exporting} className="max-w-lg"><h3 id="sales-export-title" className="text-lg font-semibold">Export this list</h3><p className="mt-2 text-sm text-neutral-600">{pluralize(totalCount, filter('view') === 'orders' ? 'order' : 'attendee')} match the current filters. Choose the columns to share.</p><div className="mt-4 grid grid-cols-2 gap-2">{exportChoices.map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={exportColumns.includes(key)} onChange={event => setExportColumns(previous => event.target.checked ? [...previous, key] : previous.filter(column => column !== key))} />{label}</label>)}</div><div className="mt-5 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setExportOpen(false)}>Cancel</button><button type="button" className="btn-primary" disabled={exporting || !exportColumns.length} onClick={downloadExport}>{exporting ? 'Preparing…' : 'Download CSV'}</button></div></Dialog>}
+      {queuedExport && <p role="status" className="mb-4 rounded-lg bg-brand-50 p-3 text-sm">Your export is being prepared. <button type="button" className="underline" onClick={() => checkQueuedExport()} disabled={exporting}>Check download</button></p>}
+      {recentExports.length > 0 && <section aria-label="Recent exports" className="mb-4 rounded-lg border border-neutral-200 bg-white p-4"><h2 className="font-semibold">Recent exports</h2><ul className="mt-2 space-y-2 text-sm">{recentExports.map(item => <li key={item.id} className="flex flex-wrap items-center justify-between gap-2"><span>Export #{item.id} · {item.row_count} rows · {item.status}</span>{['pending', 'processing', 'ready'].includes(item.status) && <button type="button" className="underline" disabled={exporting} onClick={() => checkQueuedExport(item.download_url)}>{item.status === 'ready' ? 'Download' : 'Check status'}</button>}</li>)}</ul></section>}
+      {exportOpen && <Dialog labelledBy="sales-export-title" onClose={() => setExportOpen(false)} busy={exporting} className="max-w-lg"><h3 id="sales-export-title" className="text-lg font-semibold">Export this list</h3><p className="mt-2 text-sm text-neutral-600">{pluralize(totalCount, filter('view') === 'orders' ? 'order' : 'attendee')} match the current filters. Choose the columns to share.</p><div className="mt-4 grid grid-cols-2 gap-2">{exportChoices.map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={exportColumns.includes(key)} onChange={event => setExportColumns(previous => event.target.checked ? [...previous, key] : previous.filter(column => column !== key))} />{label}</label>)}</div><div className="mt-5 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setExportOpen(false)}>Cancel</button><button type="button" className="btn-primary" disabled={exporting || !allowedExportColumns.length} onClick={downloadExport}>{exporting ? 'Preparing…' : 'Download CSV'}</button></div></Dialog>}
       {filtersOpen && <Dialog labelledBy="sales-filters-title" onClose={() => setFiltersOpen(false)} className="max-w-lg"><h3 id="sales-filters-title" className="text-lg font-semibold">Filters & sort</h3><div className="mt-4 grid gap-3 max-h-[60vh] overflow-y-auto">
         <label className="text-sm">View<select aria-label="View sales as" value={filter('view') || 'tickets'} onChange={e => changeFilter('view', e.target.value)} className="input mt-1"><option value="tickets">Tickets / attendees</option><option value="orders">Orders</option></select></label>
         <label className="text-sm">Status<select aria-label="Filter attendees by status" value={statusFilter} onChange={e => changeFilter('status', e.target.value)} className="input mt-1"><option value="">All statuses</option>{['paid','refunded','partially_refunded','cancelled','checked_in','not_checked_in','transferred','issued'].map(value => <option key={value} value={value}>{value.replaceAll('_',' ')}</option>)}</select></label>

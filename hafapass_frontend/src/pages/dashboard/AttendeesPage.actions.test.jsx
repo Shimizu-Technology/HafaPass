@@ -23,10 +23,11 @@ function ScannerProbe() {
   return <p>Scanner at {location.pathname}{location.search}</p>
 }
 
-function mount(permissions, event = {}, initialUrl = '/dashboard/events/37/attendees') {
-  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.includes('/attendees')
-    ? { attendees, meta: { total_pages: 1, total_count: attendees.length } }
-    : { ...baseEvent, ...event, permissions: { view_attendees: true, ...permissions } } }))
+function mount(permissions, event = {}, initialUrl = '/dashboard/events/37/attendees', recentExports = []) {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/sales_exports')
+    ? { exports: recentExports }
+    : url.includes('/attendees') ? { attendees, meta: { total_pages: 1, total_count: attendees.length } }
+      : { ...baseEvent, ...event, permissions: { view_attendees: true, ...permissions } } }))
   return render(<MemoryRouter initialEntries={[initialUrl]}><Routes>
     <Route path="/dashboard/events/:id/attendees" element={<AttendeesPage />} />
     <Route path="/dashboard/scanner" element={<ScannerProbe />} />
@@ -147,7 +148,7 @@ describe('sales list controls', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
     const dialog = screen.getByRole('dialog', { name: 'Export this list' })
     expect(within(dialog).getByText(/3 attendees match/)).toBeInTheDocument()
-    expect(within(dialog).getByRole('checkbox', { name: 'Price paid' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('checkbox', { name: 'Total paid' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Download CSV' })).toBeEnabled()
   })
 
@@ -159,8 +160,8 @@ describe('sales list controls', () => {
     expect(screen.getByRole('button', { name: /channel: box office/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Show results' }))
     await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
-    expect(screen.queryByRole('checkbox', { name: 'Price paid' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: 'Phone' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Total paid' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Phone' })).toBeInTheDocument()
   })
 
   it('shows a follow-up download control for a queued large export', async () => {
@@ -200,4 +201,25 @@ describe('sales list controls', () => {
     expect(screen.getAllByText('$52.50').length).toBeGreaterThan(0)
     expect(screen.getByText('1/2 checked in')).toBeInTheDocument()
   })
+  it('restores an actor-scoped queued export after a page remount', async () => {
+    const recent = [{ id: 9, row_count: 12000, status: 'ready',
+      download_url: '/api/v1/organizer/events/37/sales_exports/9' }]
+    const page = mount({}, {}, '/dashboard/events/37/attendees', recent)
+    expect(await screen.findByRole('region', { name: 'Recent exports' })).toHaveTextContent('Export #9')
+    page.unmount()
+    mount({}, {}, '/dashboard/events/37/attendees', recent)
+    expect(await screen.findByRole('region', { name: 'Recent exports' })).toHaveTextContent('ready')
+    expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled()
+  })
+
+  it('hides attendee columns from finance-only export choices', async () => {
+    mount({ view_attendees: false, view_finance: true })
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    const dialog = screen.getByRole('dialog', { name: 'Export this list' })
+    expect(within(dialog).queryByRole('checkbox', { name: 'Phone' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('checkbox', { name: 'Notes / custom answers' })).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('checkbox', { name: 'Total paid' })).toBeInTheDocument()
+  })
+
 })

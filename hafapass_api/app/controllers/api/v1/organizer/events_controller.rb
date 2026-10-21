@@ -323,13 +323,7 @@ module Api
                 end
                 row
               else
-                sales_status = if record.cancelled? || record.order.cancelled?
-                  "cancelled"
-                elsif record.order.refunded? || record.order.partially_refunded?
-                  record.order.status
-                else
-                  record.status
-                end
+                sales_status = OrganizerTicketSalesStatus.for(record)
                 { id: record.id, attendee_name: record.attendee_name, attendee_email: record.holder_email.presence || record.attendee_email,
                   ticket_type: record.ticket_type.name, status: record.status, sales_status: sales_status,
                   checked_in_at: record.checked_in_at,

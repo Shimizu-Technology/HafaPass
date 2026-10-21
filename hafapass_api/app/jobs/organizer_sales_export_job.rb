@@ -14,12 +14,12 @@ class OrganizerSalesExportJob < ApplicationJob
     org = export_request.event.organization
     finance = OrganizationAuthorization.allowed?(user: export_request.actor_user, organization: org,
       permission: :view_finance, event: export_request.event)
-    contacts = finance || OrganizationAuthorization.allowed?(user: export_request.actor_user,
+    attendees = OrganizationAuthorization.allowed?(user: export_request.actor_user,
       organization: org, permission: :view_attendees, event: export_request.event)
-    raise "Export access revoked" unless contacts
+    raise "Export access revoked" unless finance || attendees
 
     builder = OrganizerSalesExport.new(query: query, columns: export_request.columns,
-      finance: finance, contacts: contacts)
+      finance: finance, attendees: attendees)
     key = "private/sales-exports/#{org.id}/#{export_request.id}-#{SecureRandom.hex(12)}.csv"
     count = 0
     Tempfile.create(["sales-export", ".csv"]) do |file|
@@ -37,14 +37,14 @@ class OrganizerSalesExportJob < ApplicationJob
       Aws::S3::Client.new(region: ENV.fetch("AWS_REGION", "us-west-2"),
         credentials: Aws::Credentials.new(ENV["AWS_ACCESS_KEY_ID"], ENV["AWS_SECRET_ACCESS_KEY"], ENV["AWS_SESSION_TOKEN"]))
         .put_object(bucket: ENV.fetch("AWS_BUCKET"), key: key, body: file,
-          content_type: "text/csv; charset=utf-8", cache_control: "no-store")
+          content_type: "text/csv; charset=utf-8", cache_control: "no-store", acl: "private")
       uploaded = true
     end
     export_request.update!(status: "ready", storage_key: key, row_count: count, expires_at: 1.day.from_now)
-    AuditLogger.record!(action: "sales.export_completed", auditable: export_request.event,
+    AuditLogger.record!(action: "sales.export_generated", auditable: export_request.event,
       actor: export_request.actor_user, organization: org,
       metadata: { export_request_id: export_request.id, filters: query.filters,
-        columns: builder.columns, row_count: count })
+        columns: builder.columns, row_count: count, outcome: "generated" })
     OrganizerSalesExportCleanupJob.set(wait_until: export_request.expires_at).perform_later(export_request.id)
   rescue StandardError
     if uploaded

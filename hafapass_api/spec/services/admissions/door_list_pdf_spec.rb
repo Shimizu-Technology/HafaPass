@@ -27,4 +27,13 @@ RSpec.describe Admissions::DoorListPdf do
 
     expect(text).to include("Ana ?")
   end
+  it "prints in bounded batches and enforces the explicit ticket cap" do
+    stub_const("Admissions::DoorListPdf::BATCH_SIZE", 1)
+    stub_const("Admissions::DoorListPdf::MAX_TICKETS", 2)
+    create(:ticket, event: event, ticket_type: ticket_type, attendee_name: "First")
+    create(:ticket, event: event, ticket_type: ticket_type, attendee_name: "Second")
+    expect(text_of(described_class.new(event).generate)).to include("First", "Second")
+    create(:ticket, event: event, ticket_type: ticket_type, attendee_name: "Third")
+    expect { described_class.new(event).generate }.to raise_error(ArgumentError, /limited to 2 tickets/)
+  end
 end

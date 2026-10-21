@@ -40,8 +40,8 @@ class Rack::Attack
   end
 
   throttle("sales-exports/ip", limit: 20, period: 1.hour) do |req|
-    req.ip if (req.post? && req.path.match?(%r{\A/api/v1/organizer/events/[^/]+/sales_exports\z})) ||
-      (req.get? && req.path.match?(%r{\A/api/v1/organizer/events/[^/]+/(?:crm/export|sales_exports/door_list|admissions/door_list)\z}))
+    req.ip if (req.post? && req.path.to_s.downcase.match?(%r{\A/api/v1/organizer/events/[^/]+/sales_exports(?:\.[a-z0-9]+)?/*\z})) ||
+      (req.get? && req.path.to_s.downcase.match?(%r{\A/api/v1/organizer/events/[^/]+/(?:crm/export|sales_exports/door_list|admissions/door_list)(?:\.[a-z0-9]+)?/*\z}))
   end
 
   # Full-TIN actions have a separate, tighter budget. Resolve a verified

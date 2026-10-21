@@ -118,4 +118,11 @@ RSpec.describe "Organizer event-day admissions", type: :request do
     expect(response.headers["Cache-Control"]).to eq("no-store")
     expect(AuditLog.where(action: "sales.emergency_door_list_exported").last.metadata).to include("row_count" => event.tickets.count)
   end
+  it "rejects an oversized emergency PDF before rendering it" do
+    stub_const("Admissions::DoorListPdf::MAX_TICKETS", 0)
+    expect(Admissions::DoorListPdf).not_to receive(:new)
+    get "/api/v1/organizer/events/#{event.id}/admissions/door_list", headers: headers
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to include("filtered organizer door list")
+  end
 end

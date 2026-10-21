@@ -29,7 +29,7 @@ module SpreadsheetExport
   # text value is made spreadsheet-safe. Cache headers keep Rack::ETag from
   # buffering. Headers are already sent when a row fails, so the file ends
   # with a marker row and the error is logged and reported.
-  def stream_csv(filename:, header:, rows:, bom: false)
+  def stream_csv(filename:, header:, rows:, bom: false, on_complete: nil, on_error: nil)
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
       disposition: "attachment", filename: filename
@@ -39,11 +39,13 @@ module SpreadsheetExport
     response.headers.delete("Content-Length")
     self.status = :ok
     self.response_body = Enumerator.new do |output|
-      output << "\uFEFF" if bom
-      output << CSV.generate_line(header, force_quotes: true)
       begin
+        output << "\uFEFF" if bom
+        output << CSV.generate_line(header, force_quotes: true)
         rows.each { |row| output << CSV.generate_line(row.map { |value| spreadsheet_safe(value) }, force_quotes: true) }
+        on_complete&.call
       rescue StandardError => e
+        on_error&.call
         Rails.logger.error("[csv_export] #{filename} stopped early: #{e.class}: #{e.message}")
         Sentry.capture_exception(e) if defined?(Sentry)
         output << CSV.generate_line([INCOMPLETE_MARKER], force_quotes: true)
