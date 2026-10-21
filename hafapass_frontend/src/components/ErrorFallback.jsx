@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react'
 
 export default function ErrorFallback({ error, resetError }) {
+  const { t } = useTranslation()
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-neutral-950 px-6 py-16 text-neutral-100">
       <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden="true">
@@ -13,28 +15,20 @@ export default function ErrorFallback({ error, resetError }) {
           <AlertTriangle className="h-6 w-6" aria-hidden="true" />
         </div>
 
-        <p className="mt-7 text-xs font-bold uppercase tracking-[0.24em] text-brand-300">HåfaPass recovery</p>
-        <h1 id="application-error-title" className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-          Something interrupted this page.
-        </h1>
-        <p className="mt-4 max-w-md text-base leading-7 text-neutral-300">
-          The issue has been recorded when monitoring is configured. Try the page again, or reload HåfaPass to start fresh.
-        </p>
+        <p className="mt-7 text-xs font-bold uppercase tracking-[0.24em] text-brand-300">{t('buyer.ErrorFallback.hafapassRecovery')}</p>
+        <h1 id="application-error-title" className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">{t('buyer.ErrorFallback.somethingInterruptedThisPage')}</h1>
+        <p className="mt-4 max-w-md text-base leading-7 text-neutral-300">{t('buyer.ErrorFallback.theIssueHasBeenRecordedWhenMonitoringIs')}</p>
 
         <div className="mt-8 grid gap-3 sm:grid-cols-2">
           <button type="button" onClick={resetError} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-400 px-5 py-3 font-semibold text-neutral-950 transition-colors hover:bg-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950">
-            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            Try again
-          </button>
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />{t('buyer.ErrorFallback.tryAgain')}</button>
           <button type="button" onClick={() => window.location.reload()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-5 py-3 font-semibold text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950">
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
-            Reload HåfaPass
-          </button>
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />{t('buyer.ErrorFallback.reloadHafaPass')}</button>
         </div>
 
         {import.meta.env.DEV && error?.message && (
           <details className="mt-7 rounded-xl border border-white/10 bg-black/20 p-4 text-left">
-            <summary className="cursor-pointer text-sm font-semibold text-neutral-300">Development details</summary>
+            <summary className="cursor-pointer text-sm font-semibold text-neutral-300">{t('buyer.ErrorFallback.developmentDetails')}</summary>
             <pre className="mt-3 overflow-auto whitespace-pre-wrap text-xs leading-5 text-accent-200">{error.message}</pre>
           </details>
         )}

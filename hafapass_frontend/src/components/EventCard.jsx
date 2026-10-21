@@ -1,3 +1,5 @@
+import useTranslatedContent from '../hooks/useTranslatedContent'
+import MachineTranslationNotice from './MachineTranslationNotice'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
@@ -8,6 +10,7 @@ import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remaini
 export default function EventCard({ event }) {
   const { t } = useTranslation()
   const location = useLocation()
+  const content = useTranslatedContent(event)
   const lowestPrice = lowestPurchasablePrice(event.ticket_types)
   const priceLabel = lowestPrice === null ? ''
     : lowestPrice === 0 ? t('events.free')
@@ -26,7 +29,7 @@ export default function EventCard({ event }) {
         {event.cover_image_url ? (
           <img
             src={event.cover_image_url}
-            alt={event.title}
+            alt={content.title}
             className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
           />
         ) : (
@@ -71,10 +74,10 @@ export default function EventCard({ event }) {
         )}
 
         <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-600 transition-colors duration-200 line-clamp-2 min-h-[3.5rem]">
-          {event.title}
+          {content.title}
         </h3>
         {/* Cards link to the event, so the "Show original" switch lives on the event page. */}
-        {event.machine_translated && <p className="-mt-2 mb-3 text-xs text-neutral-500">{t('translation.automatic')}</p>}
+        {content.notice && <MachineTranslationNotice {...content.notice} labelOnly className="-mt-2 mb-3" />}
 
         <div className="space-y-1.5 mb-4 flex-1">
           {event.starts_at && (

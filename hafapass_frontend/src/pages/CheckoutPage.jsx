@@ -1,3 +1,6 @@
+import BuyerEventText from '../components/BuyerEventText'
+import BuyerTicketTypeText from '../components/BuyerTicketTypeText'
+import { formatMoneyCents } from '../utils/money'
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
@@ -32,10 +35,11 @@ function selectionMatchesEvent(event, lineItems, slug) {
 }
 
 function AuthenticatedCheckout() {
+  const { t } = useTranslation()
   const { isLoaded, userId } = useAuth()
   // ClerkProviderWrapper binds local recovery state after this identity settles.
   // Its public children can otherwise mount while Clerk is still hydrating.
-  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">{t('buyer.Checkout.preparingYourAccount')}</div>
   return <CheckoutContent key={userId || 'guest'} buyerId={userId || null} />
 }
 
@@ -120,7 +124,7 @@ function CheckoutContent({ buyerId }) {
     if (!location.pathname.startsWith('/checkout/')) return undefined
     const context = captureContext()
     if (!checkoutBuyerMatches(slug)) {
-      setError('Return to the account that started this saved checkout before recovering it.')
+      setError(t('buyer.Checkout.returnToTheAccountThatStartedThisSaved'))
       setLoading(false)
       return undefined
     }
@@ -130,12 +134,12 @@ function CheckoutContent({ buyerId }) {
     const attempt = getCheckoutAttempt(slug)
     if (!activeOrderId && !attempt) return undefined
     if (attempt && !checkoutAttemptCurrent(slug, attempt.payload.checkout_key, context.buyerId)) {
-      setError('Return to the account that started this saved checkout before recovering it.')
+      setError(t('buyer.Checkout.returnToTheAccountThatStartedThisSaved'))
       setLoading(false)
       return undefined
     }
     if (expectedActiveId && activeOrderId !== expectedActiveId) {
-      setError('Another saved checkout is active. Recover it before opening a different order.')
+      setError(t('buyer.Checkout.anotherSavedCheckoutIsActiveRecoverItBefore'))
       setLoading(false)
       return undefined
     }
@@ -196,12 +200,12 @@ function CheckoutContent({ buyerId }) {
     }
     recover().catch(err => {
       if (current()) {
-        setError(err.response?.data?.error || 'We could not restore your checkout. Retry this page before starting another order.')
+        setError(err.response?.data?.error || t('buyer.Checkout.weCouldNotRestoreYourCheckoutRetryThis'))
         setLoading(false)
       }
     }).finally(() => { if (!cancelled && contextCurrent(context)) setRecovering(false) })
     return () => { cancelled = true }
-  }, [navigate, slug, location.pathname, location.search, recoveryVersion, captureContext, contextCurrent])
+  }, [navigate, slug, location.pathname, location.search, recoveryVersion, captureContext, contextCurrent, t])
 
   const retrySavedCheckout = () => {
     setError(null)
@@ -227,10 +231,10 @@ function CheckoutContent({ buyerId }) {
       .then(res => { if (active) setConfig(res.data) })
       .catch((err) => {
         console.error('Failed to load payment config:', err)
-        if (active) setConfigError('Unable to load payment configuration. Please try again later.')
+        if (active) setConfigError(t('buyer.Checkout.unableToLoadPaymentConfigurationPleaseTryAgain'))
       })
     return () => { active = false }
-  }, [configAttempt])
+  }, [configAttempt, t])
   const retryConfig = () => {
     setConfigError(null)
     setConfig(null)
@@ -267,11 +271,11 @@ function CheckoutContent({ buyerId }) {
           setEvent(res.data)
           setLoading(false)
         })
-        .catch(() => { if (current()) { setError('Unable to load event details.'); setLoading(false) } })
+        .catch(() => { if (current()) { setError(t('buyer.Checkout.unableToLoadEventDetails')); setLoading(false) } })
       return () => { active = false }
     }
   }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname, location.search, recoveryVersion,
-    canStartNewCheckout, checkoutNeedsRecovery, captureContext, contextCurrent])
+    canStartNewCheckout, checkoutNeedsRecovery, captureContext, contextCurrent, t])
 
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
@@ -285,7 +289,7 @@ function CheckoutContent({ buyerId }) {
     return () => window.clearInterval(timer)
   }, [orderData?.expires_at, seatHoldExpiresAt])
 
-  const formatPrice = (cents) => cents === 0 ? t('events.free') : `$${(cents / 100).toFixed(2)}`
+  const formatPrice = (cents) => cents === 0 ? t('events.free') : formatMoneyCents(cents)
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
   const formatTime = (dateStr) => formatEventTime(dateStr, event?.timezone)
 
@@ -309,10 +313,10 @@ function CheckoutContent({ buyerId }) {
         setPromoError(null)
       } else {
         setPromoData(null)
-        setPromoError(res.data.error || 'Invalid code')
+        setPromoError(res.data.error || t('buyer.Checkout.invalidCode'))
       }
     } catch {
-      setPromoError('Could not validate code')
+      setPromoError(t('buyer.Checkout.couldNotValidateCode'))
     } finally {
       setPromoLoading(false)
     }
@@ -326,16 +330,16 @@ function CheckoutContent({ buyerId }) {
 
   const validateForm = () => {
     const errors = {}
-    if (!buyerName.trim()) errors.name = 'Name is required'
-    if (!buyerEmail.trim()) errors.email = 'Email is required'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail.trim())) errors.email = 'Please enter a valid email'
-    if (!termsAccepted) errors.terms = 'You must accept the buyer terms to continue'
+    if (!buyerName.trim()) errors.name = t('buyer.Checkout.nameIsRequired')
+    if (!buyerEmail.trim()) errors.email = t('buyer.Checkout.emailIsRequired')
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail.trim())) errors.email = t('buyer.Checkout.pleaseEnterAValidEmail')
+    if (!termsAccepted) errors.terms = t('buyer.Checkout.youMustAcceptTheBuyerTermsToContinue')
     event?.registration_questions?.forEach(question => {
       const answer = registrationAnswers[question.id]
-      if (question.required && (answer === undefined || answer === null || (typeof answer === 'string' && !answer.trim()))) errors[`question_${question.id}`] = 'This answer is required'
+      if (question.required && (answer === undefined || answer === null || (typeof answer === 'string' && !answer.trim()))) errors[`question_${question.id}`] = t('buyer.Checkout.answerRequired')
     })
     event?.waivers?.forEach(waiver => {
-      if (waiver.required && !acceptedWaivers[waiver.id]) errors[`waiver_${waiver.id}`] = 'You must accept this waiver'
+      if (waiver.required && !acceptedWaivers[waiver.id]) errors[`waiver_${waiver.id}`] = t('buyer.Checkout.waiverRequired')
     })
     return errors
   }
@@ -424,7 +428,7 @@ function CheckoutContent({ buyerId }) {
       } else if (err instanceof CheckoutAttemptConflict || getCheckoutAttempt(slug)) {
         setCheckoutNeedsRecovery(true)
       }
-      setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message : 'Something went wrong. Retry to recover the same checkout.'))
+      setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message : t('buyer.Checkout.somethingWentWrongRetryToRecoverTheSame')))
     } finally {
       if (contextCurrent(context)) setSubmitting(false)
     }
@@ -441,7 +445,7 @@ function CheckoutContent({ buyerId }) {
     <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
       <div className="text-center">
         <p className="text-red-600 mb-4">{configError}</p>
-        <button type="button" onClick={retryConfig} className="btn-primary">Retry</button>
+        <button type="button" onClick={retryConfig} className="btn-primary">{t('buyer.Checkout.retry')}</button>
       </div>
     </div>
   )
@@ -457,11 +461,11 @@ function CheckoutContent({ buyerId }) {
       <div className="card p-8 text-center">
         <p className="text-red-600 mb-4">{error}</p>
         {cancelledCleanupRequired
-          ? <button type="button" onClick={() => window.location.reload()} className="btn-primary mb-3">Reload checkout</button>
+          ? <button type="button" onClick={() => window.location.reload()} className="btn-primary mb-3">{t('buyer.Checkout.reloadCheckout')}</button>
           : canStartNewCheckout
-          ? <button type="button" onClick={startNewCheckout} className="btn-primary mb-3">Start a new checkout</button>
-          : <button type="button" onClick={retrySavedCheckout} className="btn-primary mb-3">Retry saved checkout</button>}
-        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">Back to Event</Link>
+          ? <button type="button" onClick={startNewCheckout} className="btn-primary mb-3">{t('buyer.Checkout.startANewCheckout')}</button>
+          : <button type="button" onClick={retrySavedCheckout} className="btn-primary mb-3">{t('buyer.Checkout.retrySavedCheckout')}</button>}
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">{t('buyer.Checkout.backToEvent')}</Link>
       </div>
     </div>
   )
@@ -529,7 +533,7 @@ function CheckoutContent({ buyerId }) {
 
   return (
     <div className="bg-neutral-50 min-h-screen">
-      <SEO title={event ? `Checkout — ${event.title}` : 'Checkout'} noIndex={liveMoneyProof} />
+      <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex={liveMoneyProof} />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
         <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
@@ -564,7 +568,7 @@ function CheckoutContent({ buyerId }) {
             </div>
           )}
           <div className="min-w-0">
-            <p className="font-semibold text-neutral-900 truncate">{event.title}</p>
+            <BuyerEventText event={event} as="p" className="font-semibold text-neutral-900 truncate" />
             <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
               {event.starts_at && formatDate(event.starts_at)} · {event.starts_at && formatTime(event.starts_at)}
@@ -586,7 +590,7 @@ function CheckoutContent({ buyerId }) {
             {orderLines.map(line => (
               <div key={line.ticket_type_id} className="flex justify-between items-center">
                 <div>
-                  <span className="text-neutral-800 font-medium text-sm">{line.name}</span>
+                  <BuyerTicketTypeText ticketType={selectedTicketType(event, line.ticket_type_id) || line} />
                   <span className="text-neutral-600 ml-2 text-sm">&times; {line.quantity}</span>
                 </div>
                 <span className="text-neutral-900 font-medium text-sm">{formatPrice(line.lineTotal)}</span>
@@ -594,7 +598,7 @@ function CheckoutContent({ buyerId }) {
             ))}
             {selectedSeats.length > 0 && (
               <div className="rounded-xl bg-neutral-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Assigned seats</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{t('buyer.Checkout.assignedSeats')}</p>
                 <ul className="mt-1 space-y-1 text-sm text-neutral-700">
                   {selectedSeats.map(seat => <li key={seat.id}>{seat.display_label}</li>)}
                 </ul>
@@ -604,7 +608,7 @@ function CheckoutContent({ buyerId }) {
           {seatHoldToken && countdownLabel && step === 'info' && (
             <div className={`mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${checkoutExpired ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
               <Timer className="h-4 w-4" />
-              {checkoutExpired ? 'Your seat hold expired. Return to the event and select seats again.' : `Seats held for ${countdownLabel}`}
+              {checkoutExpired ? t('buyer.Checkout.yourSeatHoldExpiredReturnToTheEvent') : t('buyer.Checkout.seatsHeldFor', { value1: countdownLabel })}
             </div>
           )}
           <hr className="border-neutral-100 my-4" />
@@ -616,11 +620,11 @@ function CheckoutContent({ buyerId }) {
                 {feeIncludesProcessing && <span className="block text-xs text-neutral-500">{t('checkout.serviceFeeIncludesProcessing')}</span>}
               </span>
               {/* A fee is an amount, never "Free": absorbed fees show $0.00. */}
-              <span>{`$${(displayedFee / 100).toFixed(2)}`}</span>
+              <span>{formatMoneyCents(displayedFee)}</span>
             </div>
             {displayedDiscount > 0 && (
               <div className="flex justify-between text-emerald-600">
-                <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {orderData?.promo_code?.code || promoData?.code || 'Discount'}</span>
+                <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {orderData?.promo_code?.code || promoData?.code || t('buyer.Checkout.discount')}</span>
                 <span>-{formatPrice(displayedDiscount)}</span>
               </div>
             )}
@@ -646,7 +650,7 @@ function CheckoutContent({ buyerId }) {
                   <span className="text-sm font-medium text-emerald-700">{promoData.code}</span>
                   <span className="text-xs text-emerald-600">{promoData.description}</span>
                 </div>
-                <button aria-label="Remove promo code" onClick={clearPromo} className="text-emerald-600 hover:text-emerald-800 transition-colors">
+                <button aria-label={t('buyer.Checkout.removePromoCode')} onClick={clearPromo} className="text-emerald-600 hover:text-emerald-800 transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -654,14 +658,14 @@ function CheckoutContent({ buyerId }) {
               <div className="flex gap-2">
                 <input
                   type="text" value={promoInput} onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
-                  aria-label="Promo code" placeholder={t('checkout.enterCode')} className="input flex-1 !py-2.5 text-sm uppercase"
+                  aria-label={t('buyer.Checkout.promoCode')} placeholder={t('checkout.enterCode')} className="input flex-1 !py-2.5 text-sm uppercase"
                   onKeyDown={(e) => e.key === 'Enter' && handlePromoValidate()}
                 />
                 <button onClick={handlePromoValidate} disabled={promoLoading || !promoInput.trim()}
                   className="btn-secondary !py-2.5 text-sm disabled:opacity-50">
                   {promoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('checkout.apply')}
                 </button>
-                <button aria-label="Close promo code entry" onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-600 hover:text-neutral-600">
+                <button aria-label={t('buyer.Checkout.closePromoCodeEntry')} onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-600 hover:text-neutral-600">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -677,20 +681,20 @@ function CheckoutContent({ buyerId }) {
             {submitError && (
               <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
                 <p className="text-red-700 text-sm">{submitError}</p>
-                {checkoutNeedsRecovery && <button type="button" onClick={retrySavedCheckout} className="mt-2 font-semibold underline">Recover earlier checkout</button>}
-                {canStartNewCheckout && <button type="button" onClick={startNewCheckout} className="mt-2 font-semibold underline">Start a new checkout</button>}
+                {checkoutNeedsRecovery && <button type="button" onClick={retrySavedCheckout} className="mt-2 font-semibold underline">{t('buyer.Checkout.recoverEarlierCheckout')}</button>}
+                {canStartNewCheckout && <button type="button" onClick={startNewCheckout} className="mt-2 font-semibold underline">{t('buyer.Checkout.startANewCheckout')}</button>}
               </div>
             )}
             <form onSubmit={handleInfoSubmit} noValidate>
               {Object.values(formErrors).some(Boolean) && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                <p className="font-semibold">Check your information before continuing.</p>
+                <p className="font-semibold">{t('buyer.Checkout.checkYourInformationBeforeContinuing')}</p>
                 <ul className="mt-2 space-y-1">
                   {Object.entries(formErrors).filter(([, message]) => message).map(([field, message]) => {
                     const target = { name: 'buyerName', email: 'buyerEmail', terms: 'termsAccepted' }[field]
                       || field.replace('question_', 'question-').replace('waiver_', 'waiver-')
                     const label = field.startsWith('question_') ? event.registration_questions.find(question => String(question.id) === field.slice(9))?.prompt
                       : field.startsWith('waiver_') ? event.waivers.find(waiver => String(waiver.id) === field.slice(7))?.title
-                        : { name: t('checkout.fullName'), email: t('checkout.emailAddress'), terms: 'Buyer terms' }[field]
+                        : { name: t('checkout.fullName'), email: t('checkout.emailAddress'), terms: t('buyer.Checkout.termsLabel') }[field]
                     return <li key={field}><a href={`#${target}`} className="underline underline-offset-2" onClick={() => document.getElementById(target)?.focus()}>{label}: {message}</a></li>
                   })}
                 </ul>
@@ -701,7 +705,7 @@ function CheckoutContent({ buyerId }) {
                   <input id="buyerName" autoComplete="name" required aria-invalid={Boolean(formErrors.name)} aria-describedby={formErrors.name ? 'buyer-name-error' : undefined} type="text" value={buyerName}
                     onChange={(e) => { setBuyerName(e.target.value); setFormErrors(p => ({ ...p, name: null })) }}
                     className={`input ${formErrors.name ? 'input-error' : ''}`}
-                    placeholder="Enter your full name" disabled={submitting} />
+                    placeholder={t('buyer.Checkout.enterYourFullName')} disabled={submitting} />
                   {formErrors.name && <p id="buyer-name-error" role="alert" className="text-red-700 text-xs mt-1">{formErrors.name}</p>}
                 </div>
                 <div>
@@ -709,7 +713,7 @@ function CheckoutContent({ buyerId }) {
                   <input id="buyerEmail" autoComplete="email" required aria-invalid={Boolean(formErrors.email)} aria-describedby={formErrors.email ? 'buyer-email-error' : undefined} type="email" value={buyerEmail}
                     onChange={(e) => { setBuyerEmail(e.target.value); setFormErrors(p => ({ ...p, email: null })) }}
                     className={`input ${formErrors.email ? 'input-error' : ''}`}
-                    placeholder="you@example.com" disabled={submitting} />
+                    placeholder={t('buyer.Checkout.youexamplecom')} disabled={submitting} />
                   {formErrors.email && <p id="buyer-email-error" role="alert" className="text-red-700 text-xs mt-1">{formErrors.email}</p>}
                 </div>
                 <div>
@@ -722,15 +726,15 @@ function CheckoutContent({ buyerId }) {
                 </div>
                 {event.catalog_items?.length > 0 && (
                   <fieldset className="rounded-xl border border-neutral-200 p-4">
-                    <legend className="px-1 text-sm font-semibold text-neutral-900">Extras and support</legend>
+                    <legend className="px-1 text-sm font-semibold text-neutral-900">{t('buyer.Checkout.extrasAndSupport')}</legend>
                     <div className="space-y-3">
                       {event.catalog_items.map(item => {
                         const selection = catalogSelections[item.id] || { quantity: 0, amount_cents: item.minimum_price_cents || item.price_cents }
                         return <div key={item.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0 break-words"><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-xs text-neutral-500">{item.description || (item.kind === 'donation' ? 'Support this event' : formatPrice(item.price_cents))}</p></div>
+                          <div className="min-w-0 break-words"><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-xs text-neutral-500">{item.description || (item.kind === 'donation' ? t('buyer.Checkout.supportThisEvent') : formatPrice(item.price_cents))}</p></div>
                           <div className="flex items-center gap-2">
-                            {item.kind === 'donation' && selection.quantity > 0 && <label className="text-xs text-neutral-500">$<input aria-label={`${item.name} amount`} type="number" min={(item.minimum_price_cents || item.price_cents) / 100} max={item.maximum_price_cents ? item.maximum_price_cents / 100 : undefined} step="1" value={(selection.amount_cents || 0) / 100} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, amount_cents: Math.round(Number(e.target.value) * 100) } }))} className="ml-1 w-20 rounded-lg border border-neutral-300 px-2 py-1" /></label>}
-                            <input aria-label={`${item.name} quantity`} type="number" min="0" max={item.quantity_remaining || 10} value={selection.quantity} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, quantity: Math.max(0, Number(e.target.value) || 0) } }))} className="w-16 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm" />
+                            {item.kind === 'donation' && selection.quantity > 0 && <label className="text-xs text-neutral-500">$<input aria-label={t('buyer.Checkout.amount', { value1: item.name })} type="number" min={(item.minimum_price_cents || item.price_cents) / 100} max={item.maximum_price_cents ? item.maximum_price_cents / 100 : undefined} step="1" value={(selection.amount_cents || 0) / 100} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, amount_cents: Math.round(Number(e.target.value) * 100) } }))} className="ml-1 w-20 rounded-lg border border-neutral-300 px-2 py-1" /></label>}
+                            <input aria-label={t('buyer.Checkout.quantity', { value1: item.name })} type="number" min="0" max={item.quantity_remaining || 10} value={selection.quantity} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, quantity: Math.max(0, Number(e.target.value) || 0) } }))} className="w-16 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm" />
                           </div>
                         </div>
                       })}
@@ -739,14 +743,14 @@ function CheckoutContent({ buyerId }) {
                 )}
                 {event.registration_questions?.length > 0 && (
                   <fieldset className="rounded-xl border border-neutral-200 p-4">
-                    <legend className="px-1 text-sm font-semibold text-neutral-900">Registration</legend>
+                    <legend className="px-1 text-sm font-semibold text-neutral-900">{t('buyer.Checkout.registration')}</legend>
                     <div className="space-y-4">
                       {event.registration_questions.map(question => <div key={question.id}>
                         <label className="mb-1 block text-sm font-medium text-neutral-700" htmlFor={`question-${question.id}`}>{question.prompt}{question.required && ' *'}</label>
-                        {question.kind === 'selection' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">Select one</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
-                          : question.kind === 'checkbox' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] == null ? '' : String(registrationAnswers[question.id])} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value === '' ? undefined : e.target.value === 'true' })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">Choose an answer</option><option value="true">Yes</option><option value="false">No</option></select>
-                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />
-                              : <input id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />}
+                        {question.kind === 'selection' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">{t('buyer.Checkout.selectOne')}</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
+                          : question.kind === 'checkbox' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? t('buyer.Checkout.questionerror', { value1: question.id }) : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] == null ? '' : String(registrationAnswers[question.id])} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value === '' ? undefined : e.target.value === 'true' })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">{t('buyer.Checkout.chooseAnAnswer')}</option><option value="true">{t('buyer.Checkout.yes')}</option><option value="false">{t('buyer.Checkout.no')}</option></select>
+                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? t('buyer.Checkout.questionerror', { value1: question.id }) : undefined} disabled={submitting} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />
+                              : <input id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? t('buyer.Checkout.questionerror', { value1: question.id }) : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />}
                         {formErrors[`question_${question.id}`] && <p id={`question-${question.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`question_${question.id}`]}</p>}
                       </div>)}
                     </div>
@@ -756,7 +760,7 @@ function CheckoutContent({ buyerId }) {
                   <div key={waiver.id} className="rounded-xl border border-neutral-200 p-4">
                     <p className="text-sm font-semibold text-neutral-900">{waiver.title}</p>
                     <div className="my-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-600">{waiver.body}</div>
-                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input id={`waiver-${waiver.id}`} type="checkbox" required={waiver.required} aria-invalid={Boolean(formErrors[`waiver_${waiver.id}`])} aria-describedby={formErrors[`waiver_${waiver.id}`] ? `waiver-${waiver.id}-error` : undefined} disabled={submitting} checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => { setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked })); setFormErrors(previous => ({ ...previous, [`waiver_${waiver.id}`]: null })) }} className="mt-0.5" />I accept version {waiver.version}{waiver.required && ' *'}</label>
+                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input id={`waiver-${waiver.id}`} type="checkbox" required={waiver.required} aria-invalid={Boolean(formErrors[`waiver_${waiver.id}`])} aria-describedby={formErrors[`waiver_${waiver.id}`] ? `waiver-${waiver.id}-error` : undefined} disabled={submitting} checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => { setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked })); setFormErrors(previous => ({ ...previous, [`waiver_${waiver.id}`]: null })) }} className="mt-0.5" />{t('buyer.Checkout.iAcceptVersion')}{waiver.version}{waiver.required && ' *'}</label>
                     {formErrors[`waiver_${waiver.id}`] && <p id={`waiver-${waiver.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`waiver_${waiver.id}`]}</p>}
                   </div>
                 ))}
@@ -775,10 +779,9 @@ function CheckoutContent({ buyerId }) {
                       className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
                       disabled={submitting}
                     />
-                    <span>
-                      I agree to the <Link className="text-brand-700 underline" to="/policies/buyer-terms" target="_blank">Buyer Terms</Link>,{' '}
-                      <Link className="text-brand-700 underline" to="/policies/refunds" target="_blank">refund and cancellation policy</Link>, and{' '}
-                      <Link className="text-brand-700 underline" to="/policies/privacy" target="_blank">Privacy Policy</Link>.
+                    <span>{t('buyer.Checkout.iAgreeToThe')}<Link className="text-brand-700 underline" to="/policies/buyer-terms" target="_blank">{t('buyer.Checkout.buyerTerms')}</Link>,{' '}
+                      <Link className="text-brand-700 underline" to="/policies/refunds" target="_blank">{t('buyer.Checkout.refundAndCancellationPolicy')}</Link>{t('buyer.Checkout.and')}{' '}
+                      <Link className="text-brand-700 underline" to="/policies/privacy" target="_blank">{t('buyer.Checkout.privacyPolicy')}</Link>.
                     </span>
                   </label>
                   {formErrors.terms && <p id="buyer-terms-error" className="text-red-700 text-xs mt-1" role="alert">{formErrors.terms}</p>}
@@ -799,7 +802,7 @@ function CheckoutContent({ buyerId }) {
         {step === 'payment' && clientSecret && stripePublishableKey && (
           <div className="card p-5 sm:p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-neutral-900">Payment</h2>
+              <h2 className="text-base font-semibold text-neutral-900">{t('buyer.Checkout.payment')}</h2>
               <button disabled={submitting} onClick={async () => {
                 const context = captureContext()
                 const cancellingOrderId = orderId
@@ -829,7 +832,7 @@ function CheckoutContent({ buyerId }) {
                   try { cleared = current() && clearActiveCheckout(slug, cancellingOrderId) } catch { /* Preserve surviving recovery data. */ }
                   if (!cleared) {
                     setCancelledCleanupRequired(true)
-                    setError('Your order was cancelled, but this page could not reset its saved checkout. Reload the page to verify its current state before starting again.')
+                    setError(t('buyer.Checkout.yourOrderWasCancelledButThisPageCould'))
                     return
                   }
                   if (checkoutRecovered) {
@@ -844,7 +847,7 @@ function CheckoutContent({ buyerId }) {
                   setOrderId(null)
                   setOrderData(null)
                 } catch (err) {
-                  if (current()) setSubmitError(err.response?.data?.error || 'We could not confirm cancellation. Please refresh this order before starting another checkout.')
+                  if (current()) setSubmitError(err.response?.data?.error || t('buyer.Checkout.weCouldNotConfirmCancellationPleaseRefreshThis'))
                 } finally { if (viewCurrent()) setSubmitting(false) }
               }}
                 className="text-sm text-brand-500 hover:text-brand-600 font-medium">{t('checkout.editInfo')}</button>
@@ -856,7 +859,7 @@ function CheckoutContent({ buyerId }) {
             {countdownLabel && (
               <div className={`mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${checkoutExpired ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
                 <Timer className="h-4 w-4" />
-                {checkoutExpired ? 'Your ticket hold expired. Return to the event to start again.' : `Tickets held for ${countdownLabel}`}
+                {checkoutExpired ? t('buyer.Checkout.yourTicketHoldExpiredReturnToTheEvent') : t('buyer.Checkout.ticketsHeldFor', { value1: countdownLabel })}
               </div>
             )}
             <PaymentModeBanner mode={paymentMode} />

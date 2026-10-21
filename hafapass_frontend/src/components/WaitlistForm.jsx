@@ -33,7 +33,7 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
       const credentials = storedCredentials(form.email).filter(value => value.id !== res.data.id)
       window.localStorage.setItem(storageKey(form.email), JSON.stringify([...credentials, { id: res.data.id, token: res.data.management_token }]))
     } catch (err) {
-      setError(err.response?.data?.errors?.join(', ') || 'Failed to join waitlist')
+      setError(err.response?.data?.errors?.join(', ') || t('buyer.WaitlistForm.failedToJoinWaitlist'))
     }
     setSubmitting(false)
   }
@@ -52,7 +52,7 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
   }
 
   const handleLeave = async (entry) => {
-    if (!checkEmail || !confirm('Remove yourself from the waitlist?')) return
+    if (!checkEmail || !confirm(t('buyer.WaitlistForm.removeYourselfFromTheWaitlist'))) return
     try {
       const credential = storedCredentials(checkEmail).find(value => value.id === entry.id)
       await apiClient.delete(`/events/${event.slug}/waitlist`, { params: { management_token: credential?.token } })
@@ -61,7 +61,7 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
       setExistingEntries(previous => previous.filter(value => value.id !== entry.id))
       setResult(null)
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to leave waitlist')
+      alert(err.response?.data?.error || t('buyer.WaitlistForm.failedToLeaveWaitlist'))
     }
   }
 
@@ -186,7 +186,7 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-neutral-500">No waitlist entries found for this email.</p>
+              <p className="text-sm text-neutral-500">{t('buyer.WaitlistForm.noWaitlistEntriesFoundForThisEmail')}</p>
             )}
           </div>
         )}
