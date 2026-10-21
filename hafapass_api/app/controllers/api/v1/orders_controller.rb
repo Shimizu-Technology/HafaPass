@@ -5,15 +5,15 @@ class Api::V1::OrdersController < ApplicationController
     registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
     terms_accepted terms_version live_money_proof].freeze
   skip_before_action :authenticate_user!, only: [
-    :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create, :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :optional_authenticate_user!, only: [
-    :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create, :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :set_accessible_order, only: [
-    :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
 
@@ -135,6 +135,14 @@ class Api::V1::OrdersController < ApplicationController
       @order,
       include_tickets: @order.completed? || @order.partially_refunded? || @order.refunded? || @order.cancelled?
     )
+  end
+
+  def receipt
+    return render json: { error: "Order not found" }, status: :not_found unless @order.ticket_record_available?
+
+    response.headers["Cache-Control"] = "private, no-store"
+    send_data ReceiptPdfGenerator.new(@order).generate,
+      filename: "hafapass-receipt-#{@order.reference}.pdf", type: "application/pdf", disposition: "attachment"
   end
 
   def payment_resume
@@ -399,9 +407,10 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def set_accessible_order
+    response.headers["Cache-Control"] = "private, no-store" if action_name == "receipt"
     order = Order.find_by(id: params[:id])
     authorized = order && (
-      @current_user&.admin? ||
+      (@current_user&.admin? && action_name != "receipt") ||
       (order.user_id.present? && order.user_id == @current_user&.id) ||
       GuestOrderAccess.find(guest_access_token)&.id == order.id
     )

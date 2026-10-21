@@ -66,6 +66,64 @@ describe('MyTicketsPage guest recovery', () => {
   })
 })
 
+describe('MyTicketsPage orders tab', () => {
+  const purchase = {
+    id: 9, reference: 'HP-9', buyer_status: 'partially_refunded', completed_at: '2030-01-01T01:00:00Z',
+    event: { id: 1, title: 'Island workshop', timezone: 'Pacific/Guam', starts_at: '2030-01-02T08:00:00Z' },
+    order_items: [{ id: 4, item_kind: 'ticket', name: 'General admission', quantity: 2 }],
+    refund_history: [{ id: 10, status: 'pending', amount_cents: 1000 }],
+    service_fee_cents: 250, discount_cents: 100, total_cents: 5150,
+  }
+
+  beforeEach(() => {
+    apiClient.get.mockReset()
+    apiClient.post.mockReset().mockResolvedValue({ data: {} })
+  })
+
+  it('keeps tickets and exposes a paginated, linked order list', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/me/orders'
+      ? { orders: [purchase], meta: { current_page: 1, total_pages: 2, next_page: 2, prev_page: null } }
+      : { tickets: [ticket] } }))
+    renderPage()
+    expect(await screen.findByRole('tab', { name: 'Tickets' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('General admission')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByText('Order HP-9')).toBeInTheDocument()
+    expect(screen.getByText('Partially refunded')).toBeInTheDocument()
+    expect(screen.getByText('Refund pending')).toBeInTheDocument()
+    expect(screen.getByText('General admission × 2')).toBeInTheDocument()
+    expect(screen.getByText(/Total paid: \$51.50/)).toBeInTheDocument()
+    expect(screen.getByText('Island workshop').closest('a')).toHaveAttribute('href', '/orders/9/confirmation')
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(apiClient.get).toHaveBeenCalledWith('/me/orders', { params: { page: 2 } })
+  })
+
+  it('shows loading, empty and retry states for orders', async () => {
+    let finishOrders
+    apiClient.get.mockImplementation(url => url === '/me/orders' ? new Promise(resolve => { finishOrders = resolve }) : Promise.resolve({ data: { tickets: [] } }))
+    renderPage()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByText('Loading orders…')).toBeInTheDocument()
+    finishOrders({ data: { orders: [], meta: { current_page: 1, total_pages: 1 } } })
+    expect(await screen.findByText('No orders yet')).toBeInTheDocument()
+    apiClient.get.mockImplementation(url => url === '/me/orders' ? Promise.reject(new Error('offline')) : Promise.resolve({ data: { tickets: [] } }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Tickets' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('We couldn’t load your orders')
+  })
+
+  it('loads every ticket page before grouping events', async () => {
+    const second = { ...ticket, id: 4, display_credential: 'second-page-credential', ticket_type: { name: 'VIP' } }
+    apiClient.get.mockImplementation((url, options) => Promise.resolve({ data: url === '/me/tickets' && options?.params?.page === 2
+      ? { tickets: [second], meta: { next_page: null } }
+      : { tickets: [ticket], meta: { next_page: 2 } } }))
+    renderPage()
+    expect(await screen.findByText('VIP')).toBeInTheDocument()
+    expect(screen.getByText('General admission')).toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledWith('/me/tickets', { params: { page: 2 } })
+  })
+})
+
 describe('MyTicketsPage expired session', () => {
   beforeEach(() => {
     apiClient.get.mockReset(); apiClient.post.mockReset()

@@ -6,10 +6,10 @@ class Api::V1::Me::OrdersController < ApplicationController
   end
 
   def index
-    orders = current_user.orders
+    orders = current_user.orders.where(status: [:completed, :partially_refunded, :refunded, :cancelled])
       .includes(:payments, :refunds, :disputes, :order_items, :promo_code,
         event: { event_changes: :event_change_responses }, tickets: [:ticket_type, :order_item])
-      .order(created_at: :desc)
+      .order(created_at: :desc, id: :desc)
 
     pagy, paginated_orders = paginate(orders)
 

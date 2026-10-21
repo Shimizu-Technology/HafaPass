@@ -29,11 +29,15 @@ class OrderPresenter
       buyer_name: order.buyer_name,
       buyer_phone: order.buyer_phone,
       completed_at: order.completed_at,
+      created_at: order.created_at,
       expires_at: order.expires_at,
       wallet_type: order.wallet_type,
       guest_access_token: guest_access_token,
       payment_status: latest_payment&.status,
       payment_state: latest_payment&.provider_payload.to_h["status"],
+      payment_method: payment_method_json,
+      refund_history: refund_history_json,
+      buyer_status: buyer_status,
       payment_resumable: order.pending? && latest_payment&.provider == "stripe" &&
         latest_payment&.provider_payment_id.present? && latest_payment&.pending? &&
         order.expires_at&.future? && latest_payment&.provider_payload.to_h["status"] != "processing",
@@ -161,6 +165,36 @@ class OrderPresenter
     return payments.max_by(&:id) if payments.loaded?
 
     payments.order(:id).last
+  end
+
+  def payment_method_json
+    payment = order.payments.to_a.select { |entry| entry.succeeded? || entry.partially_refunded? || entry.refunded? }.max_by(&:id)
+    return unless payment
+
+    # Only the card summary already saved by the provider is safe to expose.
+    payload = payment.provider_payload.to_h
+    brand = payload["cardType"] || payload["card_brand"]
+    last4 = payload["last4"] || payload["card_last4"]
+    brand = nil unless brand.to_s.match?(/\A[a-zA-Z0-9 -]{1,24}\z/)
+    last4 = nil unless last4.to_s.match?(/\A\d{4}\z/)
+    { type: payment.provider, card_brand: brand, last4: last4 }.compact
+  end
+
+  def refund_history_json
+    order.refunds.to_a.sort_by { |refund| [refund.created_at, refund.id] }.reverse.map do |refund|
+      { id: refund.id, amount_cents: refund.amount_cents, status: refund.status,
+        requested_at: refund.created_at, succeeded_at: refund.succeeded_at }
+    end
+  end
+
+  def buyer_status
+    return "disputed" if order.disputes.to_a.any? { |dispute| dispute.open? || dispute.lost? }
+    return "refunded" if order.refunded?
+    return "partially_refunded" if order.partially_refunded?
+    return "cancelled_event" if order.event.cancelled?
+    return "cancelled" if order.cancelled?
+
+    "paid"
   end
 
   def confirmation_delivery

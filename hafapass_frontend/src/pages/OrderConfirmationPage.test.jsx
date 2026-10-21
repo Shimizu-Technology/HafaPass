@@ -105,6 +105,36 @@ describe('guest order recovery actions', () => {
 
 })
 
+describe('receipt download', () => {
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); window.localStorage.clear() })
+
+  it('offers a PDF receipt and sends the current guest token with the download', async () => {
+    const order = {
+      id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
+      total_cents: 0, order_items: [], tickets: [],
+      event: { id: 37, slug: 'free-event', title: 'Receipt Event', status: 'published',
+        starts_at: '2030-01-02T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
+    }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} }
+      : url.endsWith('/receipt') ? new Blob(['pdf'], { type: 'application/pdf' }) : order }))
+    const createObjectURL = vi.fn().mockReturnValue('blob:receipt')
+    const revokeObjectURL = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation?guest_token=guest-token']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Receipt Event')
+    await userEvent.click(screen.getByRole('button', { name: 'Download receipt (PDF)' }))
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/orders/922/receipt', {
+      headers: { 'X-Guest-Order-Token': 'guest-token' }, responseType: 'blob',
+    }))
+    expect(createObjectURL).toHaveBeenCalled()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:receipt')
+  })
+})
+
 describe('buyer refund outcomes and terminal retries', () => {
   beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); vi.spyOn(window, 'confirm').mockReturnValue(true) })
   const paidOrder = {
