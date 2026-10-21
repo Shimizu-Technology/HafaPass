@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1254,6 +1254,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id", unique: true
     t.index ["verification_status"], name: "index_organizer_profiles_on_verification_status"
     t.index ["verified_by_user_id"], name: "index_organizer_profiles_on_verified_by_user_id"
+  end
+
+  create_table "organizer_sales_export_requests", force: :cascade do |t|
+    t.bigint "event_id", null: false
+    t.bigint "actor_user_id", null: false
+    t.jsonb "filters", default: {}, null: false
+    t.jsonb "columns", default: [], null: false
+    t.integer "row_count", default: 0, null: false
+    t.string "status", default: "pending", null: false
+    t.string "storage_key"
+    t.datetime "expires_at"
+    t.datetime "claimed_at"
+    t.string "failure_reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id", "created_at"], name: "index_sales_exports_on_actor_and_created_at"
+    t.index ["actor_user_id"], name: "index_organizer_sales_export_requests_on_actor_user_id"
+    t.index ["event_id"], name: "index_organizer_sales_export_requests_on_event_id"
+    t.check_constraint "row_count >= 0", name: "organizer_sales_export_requests_row_count_nonnegative"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'ready'::character varying, 'failed'::character varying, 'expired'::character varying]::text[])", name: "organizer_sales_export_requests_status_valid"
   end
 
   create_table "organizer_tax_informations", force: :cascade do |t|
@@ -2598,6 +2618,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
   add_foreign_key "organizer_profiles", "organizations", on_delete: :restrict
   add_foreign_key "organizer_profiles", "users"
   add_foreign_key "organizer_profiles", "users", column: "verified_by_user_id"
+  add_foreign_key "organizer_sales_export_requests", "events"
+  add_foreign_key "organizer_sales_export_requests", "users", column: "actor_user_id"
   add_foreign_key "organizer_tax_informations", "organizations"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict

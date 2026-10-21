@@ -213,6 +213,10 @@ Rails.application.routes.draw do
             member { post :send_now }
           end
           post "attendees/:ticket_id/resend", to: "attendee_deliveries#create", as: :resend_attendee_ticket
+          post "sales_exports", to: "sales_exports#create"
+          get "sales_exports", to: "sales_exports#index"
+          get "sales_exports/door_list", to: "sales_exports#door_list"
+          get "sales_exports/:id", to: "sales_exports#show"
           get "crm/export", to: "crm#export"
           get "crm/segments", to: "crm#segments"
           post "catalog_fulfillments/:order_item_id", to: "catalog_fulfillments#create"

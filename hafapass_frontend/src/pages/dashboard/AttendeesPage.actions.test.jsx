@@ -3,10 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { setAuthTokenGetter } from '../../api/client'
+import { saveBlob } from '../../utils/download'
 import AttendeesPage from './AttendeesPage'
 
 vi.mock('../../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children }) => <div>{children}</div> }))
+vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
 
 const baseEvent = { id: 37, organization_id: 1, title: 'Full Moon Party', status: 'published', ticket_types: [] }
 const attendees = [
@@ -21,11 +23,12 @@ function ScannerProbe() {
   return <p>Scanner at {location.pathname}{location.search}</p>
 }
 
-function mount(permissions, event = {}) {
-  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.includes('/attendees')
-    ? { attendees, meta: { total_pages: 1, total_count: attendees.length } }
-    : { ...baseEvent, ...event, permissions: { view_attendees: true, ...permissions } } }))
-  return render(<MemoryRouter initialEntries={['/dashboard/events/37/attendees']}><Routes>
+function mount(permissions, event = {}, initialUrl = '/dashboard/events/37/attendees', recentExports = []) {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/sales_exports')
+    ? { exports: recentExports }
+    : url.includes('/attendees') ? { attendees, meta: { total_pages: 1, total_count: attendees.length } }
+      : { ...baseEvent, ...event, permissions: { view_attendees: true, ...permissions } } }))
+  return render(<MemoryRouter initialEntries={[initialUrl]}><Routes>
     <Route path="/dashboard/events/:id/attendees" element={<AttendeesPage />} />
     <Route path="/dashboard/scanner" element={<ScannerProbe />} />
   </Routes></MemoryRouter>)
@@ -126,4 +129,150 @@ describe('attendee row actions', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText('Mina Cruz')).not.toBeInTheDocument()
   })
+})
+
+describe('sales list controls', () => {
+  it('limits finance-only users to order-number search and non-name sorts', async () => {
+    mount({ view_attendees: false, view_finance: true })
+    await screen.findByRole('textbox', { name: 'Search by order #' })
+    expect(screen.getByPlaceholderText('Search by order #')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    expect(within(screen.getByRole('combobox', { name: 'Sort by' })).queryByRole('option', { name: 'Name' })).not.toBeInTheDocument()
+  })
+
+  it('restores URL filters, shows chips, and clears them', async () => {
+    mount({}, { ticket_types: [{ id: 4, name: 'Entry' }] }, '/dashboard/events/37/attendees?status=checked_in&ticket_type=4')
+    await screen.findAllByText('Mina Cruz')
+    expect(screen.getByRole('region', { name: 'Active filters' })).toHaveTextContent('Status: Checked in')
+    expect(screen.getByRole('region', { name: 'Active filters' })).toHaveTextContent('Ticket type: Entry')
+    expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining('status=checked_in'), expect.any(Object))
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Active filters' })).not.toBeInTheDocument())
+  })
+
+  it('shows human filter chips, hides defaults, and keeps machine values in the URL', async () => {
+    mount({}, { ticket_types: [{ id: 4, name: 'VIP Front Row' }] }, '/dashboard/events/37/attendees?search=tanaka&ticket_type=4&payment_environment=all&sort=name&direction=asc&purchased_from=2026-10-01&purchased_to=2026-10-15')
+    await screen.findAllByText('Mina Cruz')
+    const chips = screen.getByRole('region', { name: 'Active filters' })
+    for (const label of ['Search: tanaka', 'Ticket type: VIP Front Row', 'Live and test orders', 'Sorted by name (A–Z)', 'Purchased Oct 1 – Oct 15']) {
+      expect(within(chips).getByRole('button', { name: `${label} ×` })).toBeInTheDocument()
+    }
+    expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining('direction=asc'), expect.any(Object))
+    await userEvent.click(within(chips).getByRole('button', { name: 'Sorted by name (A–Z) ×' }))
+    expect(within(chips).queryByText(/Sorted by/)).not.toBeInTheDocument()
+  })
+
+  it('does not show chips for explicit default filter values', async () => {
+    mount({}, {}, '/dashboard/events/37/attendees?view=tickets&payment_environment=live&sort=purchase_date&direction=desc')
+    await screen.findAllByText('Mina Cruz')
+    expect(screen.queryByRole('region', { name: 'Active filters' })).not.toBeInTheDocument()
+  })
+
+  it('uses human status labels for filters and API display labels for rows', async () => {
+    mount({}, {}, '/dashboard/events/37/attendees?status=partially_refunded')
+    await screen.findAllByText('Mina Cruz')
+    expect(screen.getByRole('region', { name: 'Active filters' })).toHaveTextContent('Status: Partially refunded')
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    const select = screen.getByLabelText('Filter attendees by status')
+    expect(within(select).getByRole('option', { name: 'Valid' })).toHaveValue('issued')
+    expect(within(select).getByRole('option', { name: 'Not checked in' })).toHaveValue('not_checked_in')
+    expect(within(select).getByRole('option', { name: 'Partially refunded' })).toHaveValue('partially_refunded')
+  })
+
+  it('provides cards for phones and an export dialog with the filtered scope', async () => {
+    mount({ view_finance: true })
+    await screen.findAllByText('Mina Cruz')
+    expect(document.querySelector('.sm\\:hidden')).toHaveTextContent('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    const dialog = screen.getByRole('dialog', { name: 'Export this list' })
+    expect(within(dialog).getByText(/3 attendees match/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('checkbox', { name: 'Total paid' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Download CSV' })).toBeEnabled()
+  })
+
+  it('updates the URL when filters change and hides financial export columns from box office', async () => {
+    mount({ view_finance: false })
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Sales channel' }), 'box_office')
+    expect(screen.getByRole('button', { name: /Sales channel: Box office/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show results' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    expect(screen.queryByRole('checkbox', { name: 'Total paid' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Phone' })).toBeInTheDocument()
+  })
+
+  it('shows a follow-up download control for a queued large export', async () => {
+    apiClient.post.mockResolvedValue({ status: 202, data: { text: async () => JSON.stringify({ download_url: '/api/v1/organizer/events/37/sales_exports/9' }) } })
+    mount({})
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    expect(await screen.findByRole('button', { name: 'Check download' })).toBeInTheDocument()
+    apiClient.get.mockImplementation(url => Promise.resolve({ status: 202, data: url.includes('sales_exports/9') ? new Blob(['{"status":"processing"}']) : { ...baseEvent, permissions: { view_attendees: true } } }))
+    await userEvent.click(screen.getByRole('button', { name: 'Check download' }))
+    expect(apiClient.get).toHaveBeenCalledWith('/organizer/events/37/sales_exports/9', expect.objectContaining({ responseType: 'blob' }))
+  })
+
+  it('shows failed exports with a retry action after a denied download', async () => {
+    apiClient.post.mockResolvedValue({ status: 202, data: { text: async () => JSON.stringify({ download_url: '/api/v1/organizer/events/37/sales_exports/9' }) } })
+    mount({})
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    apiClient.get.mockImplementation(url => url.includes('sales_exports/9')
+      ? Promise.reject({ response: { status: 422, data: new Blob(['{"status":"failed"}']) } })
+      : Promise.resolve({ data: { ...baseEvent, permissions: { view_attendees: true } } }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Check download' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This export failed — run it again')
+    await userEvent.click(screen.getByRole('button', { name: 'Run again' }))
+    expect(screen.getByRole('dialog', { name: 'Export this list' })).toBeInTheDocument()
+  })
+
+  it('downloads the filtered door list as a printable PDF', async () => {
+    mount({})
+    await screen.findAllByText('Mina Cruz')
+    const pdf = new Blob(['synthetic-pdf'], { type: 'application/pdf' })
+    apiClient.get.mockResolvedValueOnce({ data: pdf })
+    await userEvent.click(screen.getByRole('button', { name: 'Print door list' }))
+    await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(pdf, 'event-37-door-list.pdf'))
+  })
+
+  it('shows order totals and check-in counts in the order view', async () => {
+    mount({ view_finance: true })
+    await screen.findAllByText('Mina Cruz')
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url.includes('/attendees')
+      ? { attendees: [{ id: 3, attendee_name: 'Buyer Mina', attendee_email: 'buyer@example.invalid',
+        order_number: 'HP-ORDER3', ticket_type: 'Entry', status: 'completed',
+        purchase_date: '2026-10-20T10:00:00Z', amount_cents: 5250, ticket_count: 2, checked_in_count: 1 }],
+        meta: { total_pages: 1, total_count: 1 } }
+      : { ...baseEvent, permissions: { view_attendees: true, view_finance: true } } }))
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'View sales as' }), 'orders')
+    await userEvent.click(screen.getByRole('button', { name: 'Show results' }))
+    expect(await screen.findByRole('heading', { name: 'Sales orders' })).toBeInTheDocument()
+    expect(screen.getAllByText('$52.50').length).toBeGreaterThan(0)
+    expect(screen.getByText('1/2 checked in')).toBeInTheDocument()
+  })
+  it('restores an actor-scoped queued export after a page remount', async () => {
+    const recent = [{ id: 9, row_count: 12000, status: 'ready',
+      download_url: '/api/v1/organizer/events/37/sales_exports/9' }]
+    const page = mount({}, {}, '/dashboard/events/37/attendees', recent)
+    expect(await screen.findByRole('region', { name: 'Recent exports' })).toHaveTextContent('Export #9')
+    page.unmount()
+    mount({}, {}, '/dashboard/events/37/attendees', recent)
+    expect(await screen.findByRole('region', { name: 'Recent exports' })).toHaveTextContent('ready')
+    expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled()
+  })
+
+  it('hides attendee columns from finance-only export choices', async () => {
+    mount({ view_attendees: false, view_finance: true })
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    const dialog = screen.getByRole('dialog', { name: 'Export this list' })
+    expect(within(dialog).queryByRole('checkbox', { name: 'Phone' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('checkbox', { name: 'Notes / custom answers' })).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('checkbox', { name: 'Total paid' })).toBeInTheDocument()
+  })
+
 })

@@ -58,15 +58,31 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
 
     get "#{base}/crm/export", headers: headers
     expect(response).to have_http_status(:ok)
-    records = CSV.parse(response.body, headers: true)
+    records = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
     protected_names = names.map { |name| name == "Ordinary Name" ? name : "\t#{name}" }
-    expect(records.map { |record| record["name"] }).to eq(protected_names)
+    expect(records.map { |record| record["name"] }).to eq(protected_names.reverse)
     expect(records.map { |record| record["ticket_type"] }).to all(start_with("\t="))
     expect(response.body).to include("\"\t=1+1\"", "\"\t=1+2\"\";,=1+2\"")
     # The protective tab is data: retain it through CSV parse/save/reopen.
     reopened = CSV.parse(CSV.generate { |csv| records.each { |record| csv << record.fields } })
-    expect(reopened.map(&:first)).to eq(protected_names)
+    expect(reopened.map(&:first)).to eq(protected_names.reverse)
     expect(tickets.map { |ticket| ticket.reload.attendee_name }).to eq(names)
+  end
+
+  it "audits the number of CRM rows actually sent when an email is blank" do
+    type = create(:ticket_type, event: event)
+    order = create(:order, event: event)
+    item = create(:order_item, order: order, ticket_type: type)
+    create(:ticket, order: order, event: event, ticket_type: type, order_item: item,
+      holder_email: "guest@example.com")
+    blank = create(:ticket, order: order, event: event, ticket_type: type, order_item: item)
+    blank.update_column(:holder_email, "")
+
+    get "#{base}/crm/export", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).length).to eq(1)
+    expect(AuditLog.where(action: "sales.exported").last.metadata).to include("row_count" => 1)
   end
 
   it "does not accumulate scheduled jobs for content-only campaign edits" do
