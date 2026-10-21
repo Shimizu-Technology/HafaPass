@@ -1,3 +1,5 @@
+import { formatMoneyCents } from './money'
+
 // Platform fee terms come only from the server (/config). A missing or invalid
 // value returns null so callers can show a retryable error instead of guessing.
 export function parseFeeTerms(config) {
@@ -28,7 +30,7 @@ export function feeExample(terms, priceCents, feePolicy, buyerFeePercent) {
 }
 
 function dollars(cents) {
-  return `$${(cents / 100).toFixed(2)}`
+  return formatMoneyCents(cents)
 }
 
 export function feeRateLabel(terms) {

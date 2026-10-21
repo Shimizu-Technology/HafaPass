@@ -115,7 +115,7 @@ export default function EventCard({ event }) {
                 <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
                 <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-700' : 'text-neutral-600'}`}>
                   {hasAvailability ? t('events.ticketsAvailable') : hasInventory
-                    ? t('events.salesUnavailable', { defaultValue: 'Sales unavailable' }) : t('events.soldOut')}
+                    ? t('events.salesUnavailable') : t('events.soldOut')}
                 </span>
               </>
             )}

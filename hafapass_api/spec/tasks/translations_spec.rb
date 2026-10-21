@@ -15,8 +15,7 @@ RSpec.describe "translations:backfill" do
     recent = create(:event, :published)
     stale_type = create(:ticket_type, event: stale)
     [stale, stale_type].each do |record|
-      pending_since = record.has_attribute?(:translation_requested_at) ? :translation_requested_at : :updated_at
-      record.update_columns(translation_status: "pending", pending_since => Translatable::STUCK_PENDING_AFTER.ago - 1.minute)
+      record.update_columns(translation_status: "pending", translation_requested_at: Translatable::STUCK_PENDING_AFTER.ago - 1.minute)
     end
     recent.update_columns(translation_status: "pending", translation_requested_at: 1.minute.ago)
 
@@ -25,5 +24,17 @@ RSpec.describe "translations:backfill" do
     expect(stale.reload.translation_status).to eq("translated")
     expect(stale_type.reload.translation_status).to eq("translated")
     expect(recent.reload.translation_status).to eq("pending")
+  end
+
+  it "recovers a stalled ticket translation after an unrelated edit" do
+    ticket_type = create(:ticket_type, event: create(:event, :published))
+    requested_at = Translatable::STUCK_PENDING_AFTER.ago - 1.minute
+    ticket_type.update_columns(translation_status: "pending", translation_requested_at: requested_at)
+    ticket_type.update!(quantity_available: ticket_type.quantity_available + 1)
+
+    expect(ticket_type.reload.updated_at).to be > requested_at
+    expect(ticket_type.translation_requested_at).to eq(requested_at)
+    expect { Rake::Task["translations:backfill"].execute }.to output(/Done/).to_stdout
+    expect(ticket_type.reload.translation_status).to eq("translated")
   end
 end

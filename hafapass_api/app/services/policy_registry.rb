@@ -178,7 +178,7 @@ class PolicyRegistry
       percent_text = "#{percent.frac.zero? ? percent.to_i : percent.round(2).to_s('F')}%"
       flat = settings.service_fee_flat_cents.to_i
       rate = if flat.positive?
-        "#{percent_text} of each paid ticket's price plus $#{format('%.2f', flat / 100.0)} per paid ticket"
+        "#{percent_text} of each paid ticket's price plus #{UsdMoney.format_cents(flat)} per paid ticket"
       else
         "#{percent_text} of each paid ticket's price"
       end

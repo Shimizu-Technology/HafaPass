@@ -49,7 +49,7 @@ module Api
           discount_type: promo.discount_type,
           discount_value: promo.discount_value,
           discount_cents: discount,
-          description: promo.percentage? ? "#{promo.discount_value}% off" : "$#{format('%.2f', promo.discount_value / 100.0)} off"
+          description: promo.percentage? ? "#{promo.discount_value}% off" : "#{UsdMoney.format_cents(promo.discount_value)} off"
         }
       end
     end

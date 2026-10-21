@@ -26,6 +26,14 @@ describe('buyer interface extraction', () => {
           JSXAttribute(node) {
             if (['aria-label', 'placeholder', 'alt', 'title'].includes(node.name.name) && node.value?.type === 'Literal') check(node, node.value.value)
           },
+          CallExpression(node) {
+            if (node.callee.name !== 't' || node.arguments[1]?.type !== 'ObjectExpression') return
+            for (const property of node.arguments[1].properties) {
+              if (property.key?.name === 'defaultValue' && typeof property.value?.value === 'string' && property.value?.type === 'Literal') {
+                context.report({ node: property.value, message: 'Extract buyer copy from defaultValue' })
+              }
+            }
+          },
         }
       } } } } },
       rules: { 'extraction/copy': 'error' },

@@ -844,7 +844,7 @@ class EmailService
     end
 
     def money(cents)
-      "$#{format_cents(cents)}"
+      UsdMoney.format_cents(cents)
     end
 
     def inviter_name(user)
@@ -855,10 +855,6 @@ class EmailService
 
     def format_invitation_expiry(time)
       time&.in_time_zone("Pacific/Guam")&.strftime("%B %-d, %Y at %-I:%M %p ChST") || "soon"
-    end
-
-    def format_cents(cents)
-      format("%.2f", cents / 100.0)
     end
 
     def h(value)

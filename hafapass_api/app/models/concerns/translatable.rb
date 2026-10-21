@@ -94,8 +94,7 @@ module Translatable
 
   def queue_translation!(fields, force: false)
     columns = { translation_status: "pending" }
-    requested_at_column = has_attribute?(:translation_requested_at) ? :translation_requested_at : :updated_at
-    columns[requested_at_column] = Time.current
+    columns[:translation_requested_at] = Time.current
     update_columns(columns)
     TranslateRecordJob.perform_later(self.class.name, id, fields, force)
   end

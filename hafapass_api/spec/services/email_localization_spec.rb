@@ -32,7 +32,7 @@ RSpec.describe "Buyer email language" do
     payload = EmailService.prepare_delivery_payload(create(:message_delivery, order: order))
 
     expect(payload.fetch("subject")).to eq("HåfaPass 티켓 - ko:Sunset Fiesta")
-    expect(payload.fetch("html")).to include('<html lang="ko">', "티켓이 확정되었습니다!", "합계: $52.50",
+    expect(payload.fetch("html")).to include('<html lang="ko">', "티켓이 확정되었습니다!", "합계: US$52.50",
       "2026년 11월 20일 오후 7:00", "ko:Sunset Fiesta")
   end
 

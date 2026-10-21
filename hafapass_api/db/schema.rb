@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2187,6 +2187,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
     t.datetime "updated_at", null: false
     t.jsonb "translations", default: {}, null: false
     t.string "translation_status", default: "untranslated", null: false
+    t.datetime "translation_requested_at"
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
