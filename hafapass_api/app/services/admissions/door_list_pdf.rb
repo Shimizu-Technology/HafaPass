@@ -52,15 +52,14 @@ module Admissions
       return @tickets if @tickets
 
       Enumerator.new do |output|
-        offset = 0
-        loop do
-          batch = event.tickets.includes(:ticket_type,
-            event_seat: { venue_seat: { seating_row: :seating_section } })
-            .order(:attendee_name, :id).offset(offset).limit(BATCH_SIZE).to_a
-          break if batch.empty?
-
-          batch.each { |ticket| output << ticket }
-          offset += batch.length
+        # Snapshot at most MAX_TICKETS + 1 IDs before rendering; new tickets
+        # cannot shift a later batch and the existing cap bounds memory.
+        ids = event.tickets.order(:attendee_name, :id).limit(MAX_TICKETS + 1).pluck(:id)
+        raise ArgumentError, "Door list is limited to #{MAX_TICKETS} tickets" if ids.length > MAX_TICKETS
+        ids.each_slice(BATCH_SIZE) do |slice|
+          records = event.tickets.where(id: slice).includes(:ticket_type,
+            event_seat: { venue_seat: { seating_row: :seating_section } }).index_by(&:id)
+          slice.each { |id| output << records[id] if records[id] }
         end
       end
     end

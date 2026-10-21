@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 # The same allowlisted relation drives the list, CSV, and printable door list.
-# Filtering happens before pagination; exports walk the ordered relation in
-# bounded batches so the page size never changes their contents.
+# Filtering happens before pagination. Exports snapshot at most 100,000 ordered
+# IDs (a few megabytes), then load records in bounded batches.
 class OrganizerSalesQuery
   class InvalidFilter < ArgumentError; end
+  MAX_SNAPSHOT_IDS = 100_000
 
   SORTS = {
     "name" => ["COALESCE(NULLIF(tickets.attendee_name, ''), orders.buyer_name)", "orders.buyer_name"],
@@ -19,8 +20,9 @@ class OrganizerSalesQuery
 
   attr_reader :filters, :view, :event
 
-  def initialize(event:, params:)
+  def initialize(event:, params:, attendee_access:)
     @event = event
+    @attendee_access = attendee_access
     input = params.respond_to?(:to_unsafe_h) ? params.to_unsafe_h : params.to_h
     @filters = input.stringify_keys.slice(*FILTER_KEYS).transform_values { |value| value.to_s.strip }
       .reject { |_key, value| value.blank? }
@@ -53,21 +55,18 @@ class OrganizerSalesQuery
   def each_batch(size: 500, on_batch: nil)
     return enum_for(:each_batch, size: size, on_batch: on_batch) unless block_given?
 
-    offset = 0
-    loop do
-      # Fetch IDs in the same stable order as the screen, then preload only
-      # this batch. Export memory is bounded even for large events.
-      ids = relation.offset(offset).limit(size).pluck(:id)
-      break if ids.empty?
+    ids = relation.limit(MAX_SNAPSHOT_IDS + 1).pluck(:id)
+    raise InvalidFilter, "Sales export is limited to #{MAX_SNAPSHOT_IDS} rows" if ids.length > MAX_SNAPSHOT_IDS
 
-      batch = relation.where(id: ids).includes(view == "orders" ?
+    ids.each_slice(size) do |slice|
+      records = relation.except(:order).where(id: slice).includes(view == "orders" ?
         [:promo_code, :registration_responses, :support_notes, :order_items,
           { tickets: [:ticket_type, :ticket_transfers] }] :
         [:ticket_type, :order_item, :ticket_transfers, :support_notes,
-          { order: [:promo_code, :registration_responses, :support_notes, :order_items] }]).to_a
-      on_batch&.call
+          { order: [:promo_code, :registration_responses, :support_notes, :order_items] }]).index_by(&:id)
+      batch = slice.filter_map { |id| records[id] }
+      on_batch&.call(batch)
       batch.each { |record| yield record }
-      offset += ids.length
     end
   end
 
@@ -78,6 +77,7 @@ class OrganizerSalesQuery
     raise InvalidFilter, "Invalid status" if filters["status"] && !STATUSES.include?(filters["status"])
     raise InvalidFilter, "Invalid channel" if filters["channel"] && !CHANNELS.include?(filters["channel"])
     raise InvalidFilter, "Invalid sort" if filters["sort"] && !SORTS.key?(filters["sort"])
+    raise InvalidFilter, "Name sorting requires attendee access" if filters["sort"] == "name" && !@attendee_access
     raise InvalidFilter, "Invalid sort direction" if filters["direction"] && !%w[asc desc].include?(filters["direction"])
     raise InvalidFilter, "Invalid payment environment" if filters["payment_environment"] && !%w[live test all].include?(filters["payment_environment"])
     raise InvalidFilter, "Search is too long" if filters["search"]&.length.to_i > 200
@@ -114,9 +114,14 @@ class OrganizerSalesQuery
     tickets = tickets.where.not(orders: { id: nonlive_orders }).or(tickets.where(orders: { id: live_capture })) if environment == "live"
     if filters["search"]
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(filters['search'])}%"
-      tickets = tickets.where("tickets.attendee_name ILIKE :q OR tickets.attendee_email ILIKE :q OR " \
-        "tickets.holder_email ILIKE :q OR orders.buyer_name ILIKE :q OR orders.buyer_email ILIKE :q OR " \
-        "orders.reference ILIKE :q", q: pattern)
+      search_clause = if @attendee_access
+        "tickets.attendee_name ILIKE :q OR tickets.attendee_email ILIKE :q OR " \
+          "tickets.holder_email ILIKE :q OR orders.buyer_name ILIKE :q OR orders.buyer_email ILIKE :q OR " \
+          "orders.reference ILIKE :q"
+      else
+        "orders.reference ILIKE :q"
+      end
+      tickets = tickets.where(search_clause, q: pattern)
     end
     tickets
   end

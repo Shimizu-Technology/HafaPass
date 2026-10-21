@@ -123,6 +123,26 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(response.parsed_body.fetch("attendees").first).not_to have_key("amount_cents")
   end
 
+  it "lets finance search order numbers without probing attendee names or emails" do
+    order, ticket = sale(name: "Mina")
+    finance = create(:user)
+    create(:organization_membership, organization: event.organization, user: finance, role: :finance)
+    [ticket.attendee_name, ticket.holder_email, order.buyer_name, order.buyer_email].each do |pii|
+      get "#{base}/attendees", params: { search: pii }, headers: auth_headers(finance)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("attendees")).to be_empty
+    end
+    get "#{base}/attendees", params: { search: order.reference }, headers: auth_headers(finance)
+    expect(response.parsed_body.fetch("attendees").pluck("order_number")).to eq([order.reference])
+    get "#{base}/attendees", params: { sort: "name" }, headers: auth_headers(finance)
+    expect(response).to have_http_status(:unprocessable_entity)
+    post "#{base}/sales_exports", params: { sort: "name", columns: %w[order_number] }, headers: auth_headers(finance)
+    expect(response).to have_http_status(:unprocessable_entity)
+    post "#{base}/sales_exports", params: { search: ticket.holder_email, columns: %w[order_number] }, headers: auth_headers(finance)
+    expect(response).to have_http_status(:ok)
+    expect(CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)).to be_empty
+  end
+
   it "guards columns by role and denies scanner exports" do
     sale(name: "Mina")
     box = create(:user)
@@ -327,6 +347,32 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(processing.reload.status).to eq("processing")
   end
 
+  it "sweeps keys from expired requests after the grace period but keeps active and unexpired keys" do
+    expired = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], status: "ready",
+      storage_key: "private/sales-exports/expired.csv", expires_at: 3.days.ago)
+    active = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], status: "processing",
+      storage_key: "private/sales-exports/active.csv")
+    unexpired = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], status: "ready",
+      storage_key: "private/sales-exports/unexpired.csv", expires_at: 1.day.ago)
+    allow(S3Service).to receive(:configured?).and_return(true)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    object = Struct.new(:key, :last_modified)
+    page = Struct.new(:contents, :is_truncated, :next_continuation_token)
+    allow(client).to receive(:list_objects_v2).and_return(page.new([
+      object.new(expired.storage_key, 3.days.ago), object.new(active.storage_key, 3.days.ago),
+      object.new(unexpired.storage_key, 3.days.ago),
+      object.new("private/sales-exports/recent.csv", 1.hour.ago)
+    ], false, nil))
+    expect(client).to receive(:delete_object).once.with(bucket: "synthetic-sales-exports", key: expired.storage_key)
+    OrganizerSalesExportOrphanSweepJob.perform_now
+  end
+
   it "logs ListBucket denial and ends the sweep cleanly" do
     allow(S3Service).to receive(:configured?).and_return(true)
     allow(ENV).to receive(:fetch).and_call_original
@@ -371,7 +417,7 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
 
   it "keeps order tax export queries bounded per batch" do
     3.times { |index| sale(name: "Buyer#{index}") }
-    query = OrganizerSalesQuery.new(event: event, params: { view: "orders" })
+    query = OrganizerSalesQuery.new(event: event, params: { view: "orders" }, attendee_access: true)
     sql = []
     subscription = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
       sql << payload[:sql] unless payload[:cached]
@@ -382,6 +428,21 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
       ActiveSupport::Notifications.unsubscribe(subscription)
     end
     expect(sql.grep(/SUM\(.*order_items.*tax_cents/i)).to be_empty
+  end
+
+  it "keeps the original ordered rows when a new sale arrives between export batches" do
+    first, = sale(name: "First", completed_at: 3.days.ago)
+    second, = sale(name: "Second", completed_at: 2.days.ago)
+    third, = sale(name: "Third", completed_at: 1.day.ago)
+    query = OrganizerSalesQuery.new(event: event, params: { view: "orders", sort: "purchase_date", direction: "desc" },
+      attendee_access: true)
+    batches = 0
+    references = query.each_batch(size: 1, on_batch: ->(_batch) {
+      batches += 1
+      sale(name: "New", completed_at: Time.current) if batches == 1
+    }).map(&:reference)
+    expect(references).to eq([third, second, first].map(&:reference))
+    expect(references.uniq.length).to eq(3)
   end
 
   it "deletes an expired private export before removing its download key" do
@@ -495,23 +556,23 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     end
   end
 
-  it "queries legacy ticket ids once for a large order in a batch" do
+  it "queries ticket groups once for all orders in a batch" do
     order = create(:order, event: event, subtotal_cents: 10_000, service_fee_cents: 0, total_cents: 10_000)
     type = create(:ticket_type, event: event)
     100.times { create(:ticket, event: event, order: order, ticket_type: type) }
+    3.times { |index| sale(name: "Extra#{index}") }
     sql = []
     subscription = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
       sql << payload[:sql] unless payload[:cached]
     end
     begin
-      query = OrganizerSalesQuery.new(event: event, params: {})
+      query = OrganizerSalesQuery.new(event: event, params: {}, attendee_access: true)
       OrganizerSalesExport.new(query: query, columns: %w[ticket_price discount fee tax total_paid],
         finance: true, attendees: false).each_row.to_a
     ensure
       ActiveSupport::Notifications.unsubscribe(subscription)
     end
-    # One batch preload and one order-level allocation query, regardless of ticket count.
-    expect(sql.grep(/SELECT.*"order_item_id".*FROM "tickets"/i).length).to be <= 2
+    expect(sql.grep(/SELECT "tickets"\."order_id", "tickets"\."id", "tickets"\."order_item_id" FROM "tickets"/i).length).to eq(1)
   end
 
   it "uses one ticket status for screen, filter, and CSV after a partial refund" do

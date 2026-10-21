@@ -42,4 +42,15 @@ RSpec.describe Admissions::DoorListPdf do
     create(:ticket, event: event, ticket_type: ticket_type, attendee_name: "Third")
     expect { described_class.new(event).generate }.to raise_error(ArgumentError, /limited to 2 tickets/)
   end
+
+  it "keeps the original door-list order when a ticket arrives between batches" do
+    stub_const("Admissions::DoorListPdf::BATCH_SIZE", 1)
+    first = create(:ticket, event: event, ticket_type: ticket_type, attendee_name: "Alpha")
+    second = create(:ticket, event: event, ticket_type: ticket_type, attendee_name: "Bravo")
+    source = described_class.new(event).send(:source)
+    expect(source.next.id).to eq(first.id)
+    create(:ticket, event: event, ticket_type: ticket_type, attendee_name: "Aardvark")
+    expect(source.next.id).to eq(second.id)
+    expect { source.next }.to raise_error(StopIteration)
+  end
 end

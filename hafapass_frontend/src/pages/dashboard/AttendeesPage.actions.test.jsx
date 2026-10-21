@@ -132,6 +132,14 @@ describe('attendee row actions', () => {
 })
 
 describe('sales list controls', () => {
+  it('limits finance-only users to order-number search and non-name sorts', async () => {
+    mount({ view_attendees: false, view_finance: true })
+    await screen.findByRole('textbox', { name: 'Search by order #' })
+    expect(screen.getByPlaceholderText('Search by order #')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    expect(within(screen.getByRole('combobox', { name: 'Sort by' })).queryByRole('option', { name: 'Name' })).not.toBeInTheDocument()
+  })
+
   it('restores URL filters, shows chips, and clears them', async () => {
     mount({}, { ticket_types: [{ id: 4, name: 'Entry' }] }, '/dashboard/events/37/attendees?status=checked_in&ticket_type=4')
     await screen.findAllByText('Mina Cruz')

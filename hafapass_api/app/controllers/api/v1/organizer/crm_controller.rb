@@ -24,7 +24,8 @@ class Api::V1::Organizer::CrmController < Api::V1::Organizer::EventResourcesCont
       return render json: { error: "Export limit reached. Try again later." }, status: :too_many_requests
     end
 
-    query = OrganizerSalesQuery.new(event: event, params: params.to_unsafe_h.merge("view" => "tickets"))
+    query = OrganizerSalesQuery.new(event: event, params: params.to_unsafe_h.merge("view" => "tickets"),
+      attendee_access: true)
     rows = query.each_batch.lazy.select { |ticket| !ticket.cancelled? && ticket.holder_email.present? }
     count = query.relation.where.not(status: Ticket.statuses[:cancelled]).where.not(holder_email: [nil, ""]).count
     AuditLogger.record!(action: "sales.exported", auditable: event, actor: current_user,

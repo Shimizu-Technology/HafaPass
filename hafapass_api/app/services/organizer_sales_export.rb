@@ -40,7 +40,7 @@ class OrganizerSalesExport
   def each_row
     return enum_for(:each_row) unless block_given?
 
-    @query.each_batch(on_batch: -> { @allocation_cache = {} }) do |record|
+    @query.each_batch(on_batch: method(:preload_ticket_groups)) do |record|
       yield columns.map { |column| value(record, column) }
     end
   end
@@ -96,8 +96,18 @@ class OrganizerSalesExport
   end
 
   def order_ticket_groups(order)
-    @allocation_cache[[order.id, :ticket_groups]] ||= order.tickets.order(:id).pluck(:id, :order_item_id)
-      .group_by(&:last).transform_values { |pairs| pairs.map(&:first) }
+    @allocation_cache.fetch([order.id, :ticket_groups])
+  end
+
+  def preload_ticket_groups(batch)
+    @allocation_cache = {}
+    order_ids = batch.map { |record| record.is_a?(Ticket) ? record.order_id : record.id }.uniq
+    groups = Ticket.where(order_id: order_ids).order(:id).pluck(:order_id, :id, :order_item_id)
+      .group_by(&:first)
+    order_ids.each do |order_id|
+      @allocation_cache[[order_id, :ticket_groups]] = Array(groups[order_id]).group_by(&:last)
+        .transform_values { |rows| rows.map { |row| row[1] } }
+    end
   end
 
   def legacy_residual(order, component)

@@ -379,7 +379,7 @@ function AttendeesPageSession({ id, identity }) {
         <label className="text-sm">Purchased from<input type="date" aria-label="Purchased from" value={filter('purchased_from')} onChange={e => changeFilter('purchased_from', e.target.value)} className="input mt-1" /></label>
         <label className="text-sm">Purchased to<input type="date" aria-label="Purchased to" value={filter('purchased_to')} onChange={e => changeFilter('purchased_to', e.target.value)} className="input mt-1" /></label>
         <label className="text-sm">Payment environment<select aria-label="Payment environment" value={filter('payment_environment') || 'live'} onChange={e => changeFilter('payment_environment', e.target.value)} className="input mt-1"><option value="live">Live only</option><option value="test">Test only</option><option value="all">Live and test</option></select></label>
-        <label className="text-sm">Sort by<select aria-label="Sort by" value={filter('sort') || 'purchase_date'} onChange={e => changeFilter('sort', e.target.value)} className="input mt-1">{[['purchase_date','Purchase date'],['name','Name'],['ticket_type','Ticket type'],['amount','Amount'],['check_in_time','Check-in time']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="text-sm">Sort by<select aria-label="Sort by" value={filter('sort') || 'purchase_date'} onChange={e => changeFilter('sort', e.target.value)} className="input mt-1">{[['purchase_date','Purchase date'], ...(permissions.view_attendees === true ? [['name','Name']] : []), ['ticket_type','Ticket type'],['amount','Amount'],['check_in_time','Check-in time']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="text-sm">Direction<select aria-label="Sort direction" value={filter('direction') || 'desc'} onChange={e => changeFilter('direction', e.target.value)} className="input mt-1"><option value="desc">Descending</option><option value="asc">Ascending</option></select></label>
       </div><div className="mt-4 flex justify-between"><button type="button" className="btn-ghost" onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}>Clear filters</button><button type="button" className="btn-primary" onClick={() => setFiltersOpen(false)}>Show results</button></div></Dialog>}
       {exportError && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}{exportError === 'This export failed — run it again' && <> <button type="button" className="underline" onClick={() => { setExportError(null); setExportOpen(true) }}>Run again</button></>}</p>}
@@ -406,8 +406,8 @@ function AttendeesPageSession({ id, identity }) {
             type="text"
             value={search}
             onChange={(e) => changeFilter('search', e.target.value)}
-            placeholder="Search name, email or order #..."
-            aria-label="Search attendees by name, email or order number"
+            placeholder={permissions.view_attendees === true ? 'Search name, email or order #...' : 'Search by order #'}
+            aria-label={permissions.view_attendees === true ? 'Search attendees by name, email or order number' : 'Search by order #'}
             className="input pl-9"
           />
         </div>

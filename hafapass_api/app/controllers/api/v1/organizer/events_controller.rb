@@ -305,7 +305,7 @@ module Api
         end
 
         def attendees
-          query = OrganizerSalesQuery.new(event: @event, params: params)
+          query = OrganizerSalesQuery.new(event: @event, params: params, attendee_access: @can_view_attendees)
           pagy, records = paginate(query.relation, items: params.fetch(:per_page, 25).to_i.clamp(1, 100))
           can_view_finance = OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
             permission: :view_finance, event: @event)

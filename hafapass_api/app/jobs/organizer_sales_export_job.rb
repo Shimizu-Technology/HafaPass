@@ -15,7 +15,6 @@ class OrganizerSalesExportJob < ApplicationJob
       .update_all(status: "processing", claimed_at: claimed_at, failure_reason: nil, updated_at: claimed_at) == 1
 
     export_request = OrganizerSalesExportRequest.find(export_id)
-    query = OrganizerSalesQuery.new(event: export_request.event, params: export_request.filters)
     org = export_request.event.organization
     finance = OrganizationAuthorization.allowed?(user: export_request.actor_user, organization: org,
       permission: :view_finance, event: export_request.event)
@@ -23,6 +22,8 @@ class OrganizerSalesExportJob < ApplicationJob
       organization: org, permission: :view_attendees, event: export_request.event)
     raise "Export access revoked" unless finance || attendees
 
+    query = OrganizerSalesQuery.new(event: export_request.event, params: export_request.filters,
+      attendee_access: attendees)
     builder = OrganizerSalesExport.new(query: query, columns: export_request.columns,
       finance: finance, attendees: attendees)
     key = "private/sales-exports/#{org.id}/#{export_request.id}-#{SecureRandom.hex(12)}.csv"

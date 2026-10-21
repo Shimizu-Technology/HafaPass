@@ -10,7 +10,7 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
   def create
     return unless can_view_sales?
 
-    query = OrganizerSalesQuery.new(event: @event, params: params)
+    query = OrganizerSalesQuery.new(event: @event, params: params, attendee_access: attendees?)
     columns = params[:columns].is_a?(Array) ? params[:columns] : params[:columns].to_s.split(",").reject(&:blank?)
     builder = OrganizerSalesExport.new(query: query, columns: columns.presence || default_columns,
       finance: finance?, attendees: attendees?)
@@ -64,7 +64,7 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
     render json: { exports: exports.filter_map { |item|
       next if item.status == "expired" || (item.expires_at && item.expires_at <= Time.current)
       begin
-        query = OrganizerSalesQuery.new(event: @event, params: item.filters)
+        query = OrganizerSalesQuery.new(event: @event, params: item.filters, attendee_access: attendees?)
         OrganizerSalesExport.new(query: query, columns: item.columns, finance: finance?, attendees: attendees?)
       rescue OrganizerSalesQuery::InvalidFilter
         next
@@ -85,7 +85,7 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
     return render json: { status: export_request.status }, status: :accepted unless export_request.status == "ready"
     return head :gone if export_request.expires_at <= Time.current
 
-    query = OrganizerSalesQuery.new(event: @event, params: export_request.filters)
+    query = OrganizerSalesQuery.new(event: @event, params: export_request.filters, attendee_access: attendees?)
     OrganizerSalesExport.new(query: query, columns: export_request.columns, finance: finance?, attendees: attendees?)
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
@@ -116,7 +116,8 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
       return render json: { error: "Door list requires attendee access" }, status: :forbidden
     end
 
-    query = OrganizerSalesQuery.new(event: @event, params: params.to_unsafe_h.merge("view" => "tickets"))
+    query = OrganizerSalesQuery.new(event: @event, params: params.to_unsafe_h.merge("view" => "tickets"),
+      attendee_access: attendees?)
     return render json: { error: "Door list is limited to 5,000 tickets" }, status: :unprocessable_entity if query.count > 5_000
 
     pdf = Admissions::DoorListPdf.new(@event, tickets: query.each_batch).generate
