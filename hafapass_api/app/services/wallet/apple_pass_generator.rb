@@ -73,11 +73,7 @@ module Wallet
       raise ConfigurationError, "Apple Wallet is not configured" unless self.class.configured?
       raise ConfigurationError, "Apple Wallet is disabled pending provider approval" unless self.class.enabled?
 
-      files = {
-        "pass.json" => JSON.generate(pass_payload),
-        "icon.png" => File.binread(ENV.fetch("APPLE_PASS_ICON_PATH")),
-        "icon@2x.png" => File.binread(ENV.fetch("APPLE_PASS_ICON_PATH"))
-      }
+      files = { "pass.json" => JSON.generate(pass_payload) }.merge(icon_files)
       manifest = JSON.generate(files.transform_values { |contents| Digest::SHA1.hexdigest(contents) })
       files["manifest.json"] = manifest
       files["signature"] = signature(manifest)
@@ -101,6 +97,19 @@ module Wallet
     private
 
     attr_reader :ticket, :state, :wallet_pass, :authentication_token
+
+    # APPLE_PASS_ICON_PATH may be relative to the app root (the bundled
+    # app/assets/wallet/icon.png). Retina variants are used when they sit next
+    # to it as icon@2x.png and icon@3x.png; otherwise the base icon is reused.
+    def icon_files
+      base = Rails.root.join(ENV.fetch("APPLE_PASS_ICON_PATH"))
+      icon = File.binread(base)
+      variant = lambda do |scale|
+        path = base.sub_ext("@#{scale}x#{base.extname}")
+        path.file? ? File.binread(path) : icon
+      end
+      { "icon.png" => icon, "icon@2x.png" => variant.call(2), "icon@3x.png" => variant.call(3) }
+    end
 
     def pass_payload
       payload = visible_payload

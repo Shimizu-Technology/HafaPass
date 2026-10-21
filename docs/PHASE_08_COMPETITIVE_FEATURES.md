@@ -61,7 +61,7 @@ To turn the wallets on later, obtain and configure:
 | Apple | `APPLE_PASS_TYPE_IDENTIFIER` | A Pass Type ID registered in Certificates, Identifiers & Profiles, e.g. `pass.com.hafapass.ticket` |
 | Apple | `APPLE_PASS_CERTIFICATE_BASE64`, `APPLE_PASS_CERTIFICATE_PASSWORD` | The Pass Type ID certificate and private key exported as a `.p12`, base64-encoded, plus its export password. The same certificate signs passes and authenticates APNs pushes |
 | Apple | `APPLE_WWDR_CERTIFICATE_BASE64` | Apple Worldwide Developer Relations intermediate certificate (G4), DER, base64-encoded |
-| Apple | `APPLE_PASS_ICON_PATH` | Path to the pass icon PNG inside the deployed image |
+| Apple | `APPLE_PASS_ICON_PATH` | Pass icon PNG, absolute or relative to the API root. The repo bundles `app/assets/wallet/icon.png` (29 px) with `icon@2x.png`/`icon@3x.png` beside it, so production uses `app/assets/wallet/icon.png` |
 | Apple | `PUBLIC_API_URL` | Already set in production; must be the HTTPS API origin |
 | Google | `GOOGLE_WALLET_ISSUER_ID` | Google Pay & Wallet Console issuer account |
 | Google | `GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_WALLET_PRIVATE_KEY` | A Google Cloud service account with the Google Wallet API enabled and added as a user on the issuer account; the JSON key's `client_email` and `private_key` |
