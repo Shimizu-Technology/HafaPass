@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe OrganizationInvitation do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:organization) { create(:organization) }
   let(:invitee) { create(:user, email: "team@example.com") }
   let(:membership) do
@@ -53,8 +55,60 @@ RSpec.describe OrganizationInvitation do
     expect { described_class.accept!(token: token, user: wrong_user) }
       .to raise_error(described_class::InvitationError)
 
-    membership.update_column(:expires_at, 1.minute.ago)
+    membership.update_column(:invitation_expires_at, 1.minute.ago)
     expect { described_class.accept!(token: token, user: invitee) }
       .to raise_error(described_class::InvitationError)
+  end
+
+  it "keeps an accepted teammate's access past the invitation lifetime (8th day and beyond)" do
+    token = described_class.issue!(membership)
+    travel 6.days
+    accepted = described_class.accept!(token: token, user: invitee)
+
+    expect(accepted.expires_at).to be_nil
+    travel_to(accepted.invited_at + 8.days) do
+      expect(accepted.reload).to be_effective
+      expect(OrganizationMembership.effective).to include(accepted)
+      expect(OrganizationAuthorization.allowed?(user: invitee, organization: organization, permission: :view_finance))
+        .to be(true)
+    end
+    travel_to(accepted.invited_at + 400.days) { expect(accepted.reload).to be_effective }
+  end
+
+  it "reports invitation status separately from access" do
+    described_class.issue!(membership)
+    expect(membership.invitation_status).to eq("pending")
+    travel_to(membership.invitation_expires_at + 1.second) { expect(membership.invitation_status).to eq("expired") }
+    described_class.revoke!(membership)
+    expect(membership.reload.invitation_status).to eq("revoked")
+  end
+
+  it "gives event access straight away to staff invited from an event" do
+    profile = create(:organizer_profile, organization: organization)
+    event = create(:event, organizer_profile: profile)
+    membership.update!(role: :scanner, pending_event_assignments: [{ "event_id" => event.id, "role" => "scanner" }])
+    token = described_class.issue!(membership)
+
+    described_class.accept!(token: token, user: invitee)
+
+    expect(event.event_staff_assignments.effective.where(user: invitee).pluck(:role)).to eq(["scanner"])
+    expect(membership.reload.pending_event_assignments).to eq([])
+    expect(OrganizationAuthorization.allowed?(user: invitee, organization: organization, permission: :scan, event: event))
+      .to be(true)
+  end
+
+  it "reactivates an old revoked event assignment without its past end date" do
+    profile = create(:organizer_profile, organization: organization)
+    event = create(:event, organizer_profile: profile)
+    create(:event_staff_assignment, organization: organization, event: event, user: invitee, role: :scanner,
+      status: :revoked, expires_at: 2.days.ago)
+    membership.update!(role: :scanner, pending_event_assignments: [{ "event_id" => event.id, "role" => "scanner" }])
+    token = described_class.issue!(membership)
+
+    described_class.accept!(token: token, user: invitee)
+
+    assignment = event.event_staff_assignments.find_by!(user: invitee, role: :scanner)
+    expect(assignment).to have_attributes(status: "active", expires_at: nil)
+    expect(assignment).to be_effective
   end
 end

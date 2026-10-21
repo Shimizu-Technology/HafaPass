@@ -2,9 +2,11 @@ import useOperationalListing from '../../hooks/useOperationalListing'
 import OperationalSearch from '../../components/OperationalSearch'
 import OperationalPagination from '../../components/OperationalPagination'
 import { PageHeader, WorkspacePage } from '../../components/WorkspacePage'
-import { canManageOrganizationSettings, loadOrganizerOrganizations } from '../../utils/organizerOrganizations'
+import { canManageOrganizationSettings, loadOrganizerOrganizations, resetOrganizerOrganizations } from '../../utils/organizerOrganizations'
+import OrganizerSetupChecklist from './OrganizerSetupChecklist'
+import { roleLabel } from '../../utils/roles'
 import { uploadImage } from '../../utils/uploads'
-import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck, Plus, ScanLine, Settings } from 'lucide-react'
+import { Loader2, Pencil, X, Upload, Plus, ScanLine, Settings } from 'lucide-react'
 import { useState, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient, { getApiAuthContext } from '../../api/client'
@@ -12,7 +14,6 @@ import { formatEventDate } from '../../utils/eventTime'
 import { currentScannerOwner } from '../../utils/admissionStore'
 import { useOrganizerIdentity, useOrganizerPageVisit } from '../../hooks/useOrganizerContext'
 import DashboardSummary from './DashboardSummary'
-import OrganizerAgreementDialog from '../../components/OrganizerAgreementDialog'
 
 function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  const [businessName, setBusinessName] = useState('')
@@ -52,8 +53,15 @@ function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  return (
   <div className="max-w-lg mx-auto">
    <div className="bg-white rounded-xl shadow-md p-6">
-    <h2 className="text-2xl font-bold text-neutral-900 mb-2">Create Your Organizer Profile</h2>
-    <p className="text-neutral-600 mb-6">Set up your organizer profile to start creating and managing events on HåfaPass.</p>
+    <h2 className="text-2xl font-bold text-neutral-900 mb-2">Host events on HåfaPass</h2>
+    <p className="text-neutral-600">Start with your organization’s name. After that, a short checklist walks you through the rest:</p>
+    <ol className="mt-3 mb-6 list-decimal space-y-1 pl-5 text-sm text-neutral-700">
+     <li>Accept the organizer agreement</li>
+     <li>HåfaPass verifies your organization</li>
+     <li>Choose how you get paid (check or bank transfer)</li>
+     <li>Create and publish your first event</li>
+    </ol>
+    <p className="mb-6 text-sm text-content-muted">Joining someone else’s team? Use the invitation link from your email instead — you don’t need your own profile.</p>
 
     {error && (
      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -261,12 +269,12 @@ function DashboardSession({ authContext }) {
  const [events, setEvents] = useState([])
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
+ const [actionError, setActionError] = useState(null)
  const [editor, setEditor] = useState(null)
  const editorRef = useRef(null)
  const editorGeneration = useRef(0)
  const [profileContext, setProfileContext] = useState(null)
  const [readinessLoading, setReadinessLoading] = useState(false)
- const [agreementOpen, setAgreementOpen] = useState(false)
  const [organizations, setOrganizations] = useState([])
  const [selectedOrganizationId, setSelectedOrganizationId] = useState(window.localStorage.getItem('hafapass_organization_id') || '')
  const listing = useOperationalListing(`events:${authContext?.userId || currentScannerOwner()}:${selectedOrganizationId}`)
@@ -329,16 +337,18 @@ function DashboardSession({ authContext }) {
  }
 
  const updateReadiness = async (path) => {
-  if (readinessLoading) return
+  if (readinessLoading) return false
   const request = beginRequest(profileContext)
-  if (!request) return
+  if (!request) return false
   setReadinessLoading(true)
-  setError(null)
+  setActionError(null)
   try {
    const response = await apiClient.post(`/organizer_profile/${path}`, {}, request.config)
    if (request.current()) setProfile(response.data)
+   return request.current()
   } catch (err) {
-   if (request.current()) setError(err.response?.data?.error || 'Could not update organizer readiness.')
+   if (request.current()) setActionError({ path, message: err.response?.data?.error || 'Could not update your setup. Please try again.' })
+   return false
   } finally {
    request.release()
    if (request.current()) setReadinessLoading(false)
@@ -398,6 +408,8 @@ function DashboardSession({ authContext }) {
   requests.current.clear()
   closeEditor(editorRef.current)
   setReadinessLoading(false)
+  // An earlier organization's setup error must not look like this one's.
+  setActionError(null)
   const requestedOrganization = window.localStorage.getItem('hafapass_organization_id')
   loadingOrganization.current = requestedOrganization || ''
   if (profileContext?.organizationId !== requestedOrganization) {
@@ -456,6 +468,15 @@ function DashboardSession({ authContext }) {
    request.release()
    if (current() && !eventsStarted) { setLoading(false); setListLoading(false) }
   }
+ }
+
+ // An admin who opened another organization from the admin console returns
+ // to their own organizations (if any) without a stale switcher entry.
+ const leaveAdminView = () => {
+  window.localStorage.removeItem('hafapass_organization_id')
+  resetOrganizerOrganizations()
+  setSelectedOrganizationId('')
+  fetchDashboardRef.current()
  }
 
  const fetchDashboardRef = useRef(fetchDashboard)
@@ -560,7 +581,7 @@ function DashboardSession({ authContext }) {
        window.localStorage.setItem('hafapass_organization_id', event.target.value)
        setSelectedOrganizationId(event.target.value)
       }} className="input min-h-[44px] min-w-0 max-w-full !w-full !py-2 text-sm sm:flex-1 sm:max-w-sm">
-       {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {(organization.role || 'staff').replaceAll('_', ' ')}</option>)}
+       {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {organization.admin_view ? 'Admin view' : roleLabel(organization.role) || 'Staff'}</option>)}
       </select>
      </label>
     )}
@@ -578,37 +599,18 @@ function DashboardSession({ authContext }) {
     />
    )}
 
-   {canManageProfile && agreementOpen && !profile.policy_accepted && (
-    <OrganizerAgreementDialog version={profile.current_policy_version} reaccept={Boolean(profile.policy_version)}
-     busy={readinessLoading} error={error} onAccept={() => updateReadiness('accept_policy')} onClose={() => setAgreementOpen(false)} />
-   )}
+   {organization?.admin_view && <div role="status" className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+    <p>You’re viewing <strong>{organization.name}</strong> as a HåfaPass admin. Changes you make here are recorded in the audit log.</p>
+    <button type="button" onClick={leaveAdminView} className="btn-secondary shrink-0 !px-4 !py-2 text-sm">Leave this organization</button>
+   </div>}
 
-   {canManageProfile && <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="organizer-readiness-title">
-    <div className="flex items-start gap-3">
-     <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5 text-brand-600" /></div>
-     <div className="min-w-0 flex-1">
-      <h2 id="organizer-readiness-title" className="font-semibold text-neutral-900">Organizer readiness</h2>
-      <p className="text-sm text-neutral-500 mt-1">These platform checks protect attendees and are required before an event can be published.</p>
-      {profile.policy_version && !profile.policy_accepted && (
-       <p role="status" data-testid="agreement-update-notice" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        The organizer agreement was updated to version {profile.current_policy_version}. Review what changed and accept it to keep publishing events.
-       </p>
-      )}
-      <ul className="mt-4 space-y-3">
-       <li className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-neutral-700">{profile.policy_accepted ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} <Link className="inline-flex min-h-[44px] items-center underline" to="/policies/organizer-agreement" target="_blank">Organizer agreement</Link> {profile.policy_accepted ? 'accepted' : 'requires acceptance'}</span>
-        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => setAgreementOpen(true)} className="btn-secondary min-h-[44px] text-xs !py-2">{profile.policy_version ? 'Review and accept' : 'Accept policy'}</button>}
-       </li>
-       <li className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-neutral-700">{profile.verification_status === 'verified' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Identity verification: <strong className="capitalize">{profile.verification_status}</strong></span>
-        {['unverified', 'rejected'].includes(profile.verification_status) && <button type="button" disabled={readinessLoading} onClick={() => updateReadiness('submit_verification')} className="btn-secondary min-h-[44px] text-xs !py-2">Submit for review</button>}
-       </li>
-       <li className="flex flex-col items-start gap-3 text-sm text-neutral-700 sm:flex-row sm:items-center sm:justify-between"><span className="flex min-w-0 flex-wrap items-center gap-2">{profile.payout_ready ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Paid-event payouts {profile.payout_ready ? `ready via ${profile.connected_account?.provider}` : 'not ready'}</span>{!profile.payout_ready && <Link to="/dashboard/settings" className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center font-semibold text-brand-600 hover:text-brand-700">Set up</Link>}</li>
-      </ul>
-      {profile.verification_notes && <p className="mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3">Review note: {profile.verification_notes}</p>}
-     </div>
-    </div>
-   </section>}
+   {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading}
+    agreementError={actionError?.path === 'accept_policy' ? actionError.message : null} onOpenAgreement={() => setActionError(null)}
+    onEditProfile={openEditor}
+    onAcceptPolicy={() => updateReadiness('accept_policy')}
+    onSubmitVerification={() => updateReadiness('submit_verification')} />}
+   {/* Agreement errors show inside the agreement dialog only. */}
+   {actionError && actionError.path !== 'accept_policy' && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{actionError.message}</p>}
 
    <DashboardSummary state={summary} currency={organization?.currency || 'USD'} onRetry={() => fetchSummary()} />
    <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue, link name or event ID." query={listing.q} onSearch={listing.search} busy={listLoading} />

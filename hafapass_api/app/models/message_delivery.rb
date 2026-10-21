@@ -6,6 +6,8 @@ class MessageDelivery < ApplicationRecord
   belongs_to :event, optional: true
   belongs_to :communication_campaign, optional: true
   belongs_to :requested_by, class_name: "User", optional: true
+  belongs_to :organization_membership, optional: true
+  belongs_to :platform_invitation, optional: true
   has_many :message_provider_events, dependent: :nullify
 
   enum :status, {
@@ -114,7 +116,8 @@ class MessageDelivery < ApplicationRecord
   end
 
   def subject_present
-    errors.add(:base, "Order, ticket, or event is required") if order_id.blank? && ticket_id.blank? && event_id.blank?
+    subjects = [order_id, ticket_id, event_id, organization_membership_id, platform_invitation_id]
+    errors.add(:base, "Order, ticket, event, or invitation is required") if subjects.all?(&:blank?)
   end
 
   def assign_idempotency_key

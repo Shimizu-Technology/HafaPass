@@ -3,7 +3,7 @@
 class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   # GET /api/v1/admin/users
   def index
-    users = User.includes(:organizer_profile, :orders)
+    users = User.includes(:organizer_profile, :orders, organization_memberships: :organization)
 
     if params[:search].present?
       users = users.accent_insensitive_search(params[:search], :email, :first_name, :last_name)
@@ -45,6 +45,10 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
       return
     end
 
+    # Organizer is a label derived from organization membership, never a
+    # grant. Choosing "no staff access" stores whichever label fits.
+    requested_role = user.derived_member_role if %w[attendee organizer].include?(requested_role)
+
     previous_role = user.role
     if user.update(role: requested_role)
       AuditLogger.record!(
@@ -55,6 +59,9 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
         after_data: { role: user.role },
         request: request
       )
+      if previous_role == "admin" && !user.admin?
+        PlatformInvitations.revoke_sent_by!(user, actor: current_user, request: request)
+      end
       render json: user_json(user)
     else
       render json: { errors: user.errors.full_messages }, status: :unprocessable_entity
@@ -71,6 +78,9 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
       last_name: u.last_name,
       role: u.role,
       created_at: u.created_at,
+      organizations: u.organization_memberships.select { |membership| membership.effective? }.map do |membership|
+        { id: membership.organization_id, name: membership.organization.name, role: membership.role }
+      end,
       orders_count: u.orders.size,
       organizer_profile: u.organizer_profile ? {
         id: u.organizer_profile.id,
@@ -98,7 +108,8 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
       payout_ready: account.externally_ready? && active_approval.present?,
       readiness_submission: payment_readiness_review_json(account.pending_payment_readiness_submission),
       readiness_approval: payment_readiness_review_json(account.latest_payment_readiness_approval),
-      readiness_approval_active: active_approval.present?
+      readiness_approval_active: active_approval.present?,
+      payout_details: account.check_payee
     )
   end
 end

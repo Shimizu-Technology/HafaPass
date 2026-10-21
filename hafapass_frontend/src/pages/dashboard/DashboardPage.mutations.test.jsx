@@ -9,7 +9,9 @@ import { uploadImage } from '../../utils/uploads'
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }))
 vi.mock('../../utils/uploads', () => ({ uploadImage: vi.fn() }))
 const owners = [1, 2].map(id => ({ id, name: id === 1 ? 'Alpha organization' : 'Beta organization', role: 'owner', permissions: { manage_organization: true, manage_events: true } }))
-const profile = name => ({ business_name: name, business_description: '', policy_accepted: true, verification_status: 'unverified' })
+// Verification needs a description (the API refuses it otherwise), so the
+// fixture has one and the setup checklist's Submit for review is available.
+const profile = name => ({ business_name: name, business_description: 'Island events', policy_accepted: true, verification_status: 'unverified' })
 const deferred = () => {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
@@ -69,7 +71,7 @@ describe('dashboard mutation ownership', () => {
     expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()
     expect(apiClient.get.mock.calls.filter(([path]) => path !== '/organizer/events')).toEqual(profileReads)
     await act(async () => pending.resolve({ data: { ...profiles[1], verification_status: 'pending' } }))
-    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.getByText('Submitted — HåfaPass is reviewing it')).toBeInTheDocument()
     expect(screen.getByLabelText('Find an event')).toHaveValue(navigation === 'search' ? 'venue' : '')
     expect(screen.getByText(`Page ${navigation === 'page' ? 2 : 1} of 2 · 21 results`)).toBeInTheDocument()
   })
@@ -127,7 +129,7 @@ describe('dashboard mutation ownership', () => {
     expect(screen.queryByRole('heading', { name: 'Welcome, Alpha' })).not.toBeInTheDocument()
     expect(screen.queryByTitle('Edit Profile')).not.toBeInTheDocument()
     expect(screen.queryByText('19 sold')).not.toBeInTheDocument()
-    expect(screen.queryByText('Organizer readiness')).not.toBeInTheDocument()
+    expect(screen.queryByText('Get ready to sell tickets')).not.toBeInTheDocument()
     if (outcome === 'failure') {
       await act(async () => betaProfile.reject({ response: { status: 503 } }))
       await screen.findByText('Failed to load dashboard. Please try again.')
@@ -160,7 +162,7 @@ describe('dashboard mutation ownership', () => {
     expect(oldConfig.organizationId).toBe('1')
     expect(oldConfig.signal.aborted).toBe(true)
     await act(async () => current.resolve({ data: { ...profiles[2], verification_status: 'pending' } }))
-    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.getByText('Submitted — HåfaPass is reviewing it')).toBeInTheDocument()
   })
 
   it('does not revive an old Alpha operation after switching away and back', async () => {
@@ -174,7 +176,7 @@ describe('dashboard mutation ownership', () => {
     expect(screen.getByRole('heading', { name: 'Welcome, Alpha' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()
     await act(async () => current.resolve({ data: { ...profiles[1], verification_status: 'pending' } }))
-    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.getByText('Submitted — HåfaPass is reviewing it')).toBeInTheDocument()
   })
 
   it.each(['success', 'error'])('keeps a new Beta editor draft when an old Alpha save completes with %s', async outcome => {

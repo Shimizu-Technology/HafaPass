@@ -9,7 +9,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   def index
     scope = filtered_payouts
     counts = scope.unscope(:order).group(:status).count
-    payouts, meta = admin_page(scope.includes(:organization, :event, :settlement).order(created_at: :desc, id: :desc))
+    payouts, meta = admin_page(scope.includes(:organization, :event, :settlement, :connected_account)
+      .order(created_at: :desc, id: :desc))
     audits = AuditLog.includes(:actor_user).where(auditable_type: "Payout", auditable_id: payouts.map(&:id),
       action: RECONCILIATION_ACTIONS).order(:id).group_by(&:auditable_id)
     render json: {
@@ -25,7 +26,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -36,6 +37,9 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     render json: { error: "Payout not found" }, status: :not_found
   rescue PayoutReconciler::ReconciliationError => e
     render json: { error: e.message, conflict_audit_id: e.conflict_audit_id }.compact, status: :unprocessable_entity
+  rescue ActiveRecord::RecordNotUnique
+    message = payout&.provider == "check" ? "That check number is already recorded" : "That transfer identifier is already recorded"
+    render json: { error: message }, status: :unprocessable_entity
   end
 
   private
@@ -71,6 +75,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
 
   def payout_list_json(payout, audits)
     reconciliation = audits.reverse.find { |audit| audit.action == "payout.reconciled" }
+    # Compared in memory (snapshot vs. details on file), once per payout.
+    payee_changed = payout.provider == "check" && !payout.payee_matches_approval?
     conflict = audits.reverse.find { |audit| audit.action == "payout.provider_result_conflict" }
     payout.attributes.slice(
       "id", "provider", "provider_payout_id", "amount_cents", "currency", "status", "failure_code",
@@ -79,6 +85,11 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       organization: { id: payout.organization_id, name: payout.organization.name },
       event: { id: payout.event_id, title: payout.event.title, slug: payout.event.slug },
       settlement: { id: payout.settlement_id, version: payout.settlement.version },
+      # For checks, who to write it to; the check number is the transfer ID
+      # and the date on the check is the confirmation time.
+      payee: payout.provider == "check" ? payout.payee_snapshot : nil,
+      payee_changed: payee_changed,
+      current_payee: payee_changed ? payout.connected_account.check_payee : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,
       conflict: payout.failure_code == "provider_result_conflict" && conflict ? {

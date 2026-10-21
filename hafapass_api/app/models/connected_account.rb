@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 class ConnectedAccount < ApplicationRecord
-  PROVIDERS = %w[paypal manual stripe legacy_manual].freeze
+  PROVIDERS = %w[paypal manual stripe legacy_manual check].freeze
+  CHECK_DELIVERY_METHODS = %w[mail pickup].freeze
 
   belongs_to :organization
   has_many :payouts, dependent: :restrict_with_error
@@ -17,6 +18,7 @@ class ConnectedAccount < ApplicationRecord
   validates :provider_account_id, uniqueness: { scope: :provider }, allow_blank: true
   validates :country, :currency, presence: true
   validates :currency, length: { is: 3 }
+  validate :check_payee_details, if: -> { provider == "check" }
 
   def payout_ready?
     externally_ready? && active_payment_readiness_approval.present?
@@ -73,10 +75,38 @@ class ConnectedAccount < ApplicationRecord
       provider_requirements_due: provider_requirements_due.sort,
       capabilities: canonicalize_readiness_value(capabilities)
     }
+    # Where money goes is part of what an approval covers. Accounts without
+    # payee details (every account before checks existed) keep their digest.
+    payload[:payout_details] = canonicalize_readiness_value(payout_details) if payout_details.present?
     Digest::SHA256.hexdigest(payload.to_json)
   end
 
+  def check_payee
+    return {} unless provider == "check"
+
+    payout_details.to_h.slice("payee_name", "delivery_method", "mailing_address", "pickup_note", "memo")
+  end
+
   private
+
+  def check_payee_details
+    unless payout_details.is_a?(Hash)
+      errors.add(:payout_details, "are invalid")
+      return
+    end
+
+    details = payout_details
+    errors.add(:payout_details, "need the name to write on the check") if details["payee_name"].to_s.strip.blank?
+    unless CHECK_DELIVERY_METHODS.include?(details["delivery_method"])
+      errors.add(:payout_details, "need a delivery choice: mail or pickup")
+    end
+    if details["delivery_method"] == "mail" && details["mailing_address"].to_s.strip.blank?
+      errors.add(:payout_details, "need a mailing address for mailed checks")
+    end
+    if details.values.any? { |value| value.to_s.length > 1000 }
+      errors.add(:payout_details, "are too long")
+    end
+  end
 
   def canonicalize_readiness_value(value)
     case value
