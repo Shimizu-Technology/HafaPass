@@ -155,16 +155,25 @@ export default function PageDesignEditor({
   const [previewOpen, setPreviewOpen] = useState(false)
   const page = normalizePageCustomization(design)
   const sections = page.sections
-  const change = (patch) => onChange({ ...page, ...patch })
-  const updateSection = (index, patch) =>
-    change({
-      sections: sections.map((section, position) => (position === index ? { ...section, ...patch } : section)),
-    })
+  const change = (patch) => onChange(previous => {
+    const current = normalizePageCustomization(previous)
+    return { ...current, ...(typeof patch === 'function' ? patch(current) : patch) }
+  })
+  const updateSection = (type, patch) =>
+    change(current => ({
+      sections: current.sections.map(section => section.type === type
+        ? { ...section, ...(typeof patch === 'function' ? patch(section) : patch) } : section),
+    }))
   const moveSection = (index, delta) => {
-    const next = [...sections]
-    const [section] = next.splice(index, 1)
-    next.splice(index + delta, 0, section)
-    change({ sections: next })
+    const type = sections[index].type
+    change(current => {
+      const next = [...current.sections]
+      const position = next.findIndex(section => section.type === type)
+      if (position < 0 || position + delta < 0 || position + delta >= next.length) return {}
+      const [section] = next.splice(position, 1)
+      next.splice(position + delta, 0, section)
+      return { sections: next }
+    })
   }
   return (
     <section
@@ -180,7 +189,10 @@ export default function PageDesignEditor({
             Make the page yours while HåfaPass keeps tickets and checkout consistent.
           </p>
         </div>
-        <button type="button" className="btn-secondary min-h-11" onClick={() => change(defaultDesign())}>
+        <button type="button" className="btn-secondary min-h-11" onClick={() => onChange(previous => ({
+          ...defaultDesign(),
+          ...(normalizePageCustomization(previous).description_format === 'markdown' ? { description_format: 'markdown' } : {}),
+        }))}>
           Reset to HåfaPass default look
         </button>
       </div>
@@ -243,7 +255,7 @@ export default function PageDesignEditor({
                 <input
                   type="checkbox"
                   checked={section.enabled}
-                  onChange={(event) => updateSection(index, { enabled: event.target.checked })}
+                  onChange={(event) => updateSection(section.type, { enabled: event.target.checked })}
                 />
                 {TITLES[section.type]}
               </label>
@@ -274,7 +286,7 @@ export default function PageDesignEditor({
                     <input
                       className="input mt-1"
                       value={section.url || ''}
-                      onChange={(event) => updateSection(index, { url: event.target.value })}
+                      onChange={(event) => updateSection(section.type, { url: event.target.value })}
                     />
                   </label>
                 ) : section.type === 'gallery' ? (
@@ -298,11 +310,11 @@ export default function PageDesignEditor({
                               aria-invalid={!photo.alt.trim()}
                               maxLength="200"
                               onChange={(event) =>
-                                change({
-                                  gallery: page.gallery.map((p, i) =>
+                                change(current => ({
+                                  gallery: current.gallery.map((p, i) =>
                                     i === photoIndex ? { ...p, alt: event.target.value } : p
                                   ),
-                                })
+                                }))
                               }
                             />
                           </label>
@@ -313,11 +325,11 @@ export default function PageDesignEditor({
                               value={photo.caption || ''}
                               maxLength="300"
                               onChange={(event) =>
-                                change({
-                                  gallery: page.gallery.map((p, i) =>
+                                change(current => ({
+                                  gallery: current.gallery.map((p, i) =>
                                     i === photoIndex ? { ...p, caption: event.target.value } : p
                                   ),
-                                })
+                                }))
                               }
                             />
                           </label>
@@ -328,7 +340,7 @@ export default function PageDesignEditor({
                             className="btn-secondary"
                             disabled={photoIndex === 0}
                             onClick={() => {
-                              change({ gallery: swapItems(page.gallery, photoIndex, photoIndex - 1) })
+                              change(current => ({ gallery: swapItems(current.gallery, photoIndex, photoIndex - 1) }))
                             }}
                           >
                             Up
@@ -338,7 +350,7 @@ export default function PageDesignEditor({
                             className="btn-secondary"
                             disabled={photoIndex === page.gallery.length - 1}
                             onClick={() => {
-                              change({ gallery: swapItems(page.gallery, photoIndex, photoIndex + 1) })
+                              change(current => ({ gallery: swapItems(current.gallery, photoIndex, photoIndex + 1) }))
                             }}
                           >
                             Down
@@ -346,7 +358,7 @@ export default function PageDesignEditor({
                           <button
                             type="button"
                             className="btn-secondary"
-                            onClick={() => change({ gallery: page.gallery.filter((_, i) => i !== photoIndex) })}
+                            onClick={() => change(current => ({ gallery: current.gallery.filter((_, i) => i !== photoIndex) }))}
                           >
                             Remove
                           </button>
@@ -358,7 +370,7 @@ export default function PageDesignEditor({
                         label="Gallery photo"
                         eventId={eventId}
                         currentUrl=""
-                        onUploaded={(url) => change({ gallery: [...page.gallery, { url, alt: '' }] })}
+                        onUploaded={(url) => change(current => ({ gallery: [...current.gallery, { url, alt: '' }] }))}
                         disabled={disabled}
                       />
                     )}
@@ -371,9 +383,9 @@ export default function PageDesignEditor({
                           type={section.type}
                           item={item}
                           onChange={(value) =>
-                            updateSection(index, {
-                              items: section.items.map((row, i) => (i === itemIndex ? value : row)),
-                            })
+                            updateSection(section.type, current => ({
+                              items: current.items.map((row, i) => (i === itemIndex ? value : row)),
+                            }))
                           }
                         />
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -382,7 +394,7 @@ export default function PageDesignEditor({
                             className="btn-secondary"
                             disabled={itemIndex === 0}
                             onClick={() => {
-                              updateSection(index, { items: swapItems(section.items, itemIndex, itemIndex - 1) })
+                              updateSection(section.type, current => ({ items: swapItems(current.items, itemIndex, itemIndex - 1) }))
                             }}
                           >
                             Up
@@ -392,7 +404,7 @@ export default function PageDesignEditor({
                             className="btn-secondary"
                             disabled={itemIndex === section.items.length - 1}
                             onClick={() => {
-                              updateSection(index, { items: swapItems(section.items, itemIndex, itemIndex + 1) })
+                              updateSection(section.type, current => ({ items: swapItems(current.items, itemIndex, itemIndex + 1) }))
                             }}
                           >
                             Down
@@ -401,7 +413,7 @@ export default function PageDesignEditor({
                             type="button"
                             className="btn-secondary"
                             onClick={() =>
-                              updateSection(index, { items: section.items.filter((_, i) => i !== itemIndex) })
+                              updateSection(section.type, current => ({ items: current.items.filter((_, i) => i !== itemIndex) }))
                             }
                           >
                             <Trash2 size={16} /> Remove
@@ -414,13 +426,13 @@ export default function PageDesignEditor({
                             currentUrl={item.photo_url || item.logo_url || ''}
                             imageAssetHost={event.image_asset_host}
                             onUploaded={(url) =>
-                              updateSection(index, {
-                                items: section.items.map((row, i) =>
+                              updateSection(section.type, current => ({
+                                items: current.items.map((row, i) =>
                                   i === itemIndex
                                     ? { ...row, [section.type === 'lineup' ? 'photo_url' : 'logo_url']: url }
                                     : row
                                 ),
-                              })
+                              }))
                             }
                             disabled={disabled}
                           />
@@ -431,7 +443,7 @@ export default function PageDesignEditor({
                       <button
                         type="button"
                         className="btn-secondary min-h-11"
-                        onClick={() => updateSection(index, { items: [...section.items, { ...EMPTY[section.type] }] })}
+                        onClick={() => updateSection(section.type, current => ({ items: [...current.items, { ...EMPTY[section.type] }] }))}
                       >
                         <Plus size={16} /> Add {section.type === 'faq' ? 'question' : 'item'}
                       </button>
@@ -475,7 +487,7 @@ export default function PageDesignEditor({
         </div>
         {previewOpen && (
           <div
-            className={`mx-auto overflow-hidden rounded-2xl border border-neutral-200 bg-white ${page.accent ? 'event-customized' : ''} ${previewWidth === 'phone' ? 'max-w-sm' : 'relative left-1/2 w-[min(1120px,calc(100vw-3rem))] max-w-none -translate-x-1/2'}`}
+            className={`mx-auto overflow-hidden rounded-2xl border border-neutral-200 bg-white ${accentStyle(page.accent) ? 'event-customized' : ''} ${previewWidth === 'phone' ? 'max-w-sm' : 'relative left-1/2 w-[min(1120px,calc(100vw-3rem))] max-w-none -translate-x-1/2'}`}
             style={accentStyle(page.accent)}
           >
             <div className="relative aspect-[16/9] bg-neutral-900">

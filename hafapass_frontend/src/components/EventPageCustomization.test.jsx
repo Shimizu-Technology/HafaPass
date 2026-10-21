@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
 import EventDescription from './EventDescription'
 import EventPageSections from './EventPageSections'
 import PageDesignEditor from './PageDesignEditor'
@@ -36,7 +37,7 @@ describe('event page customization', () => {
 
   it('makes missing sections editable when only FAQ was saved', () => {
     let latest = { sections: [{ type: 'faq', enabled: true, items: [] }] }
-    const onChange = vi.fn(value => { latest = value; rerender(view()) })
+    const onChange = vi.fn(value => { latest = typeof value === 'function' ? value(latest) : value; rerender(view()) })
     const view = () => <PageDesignEditor event={{ title: 'Reef Night', ticket_types: [] }} design={latest}
       onChange={onChange} description="" coverUrl="" eventId={7} />
     const { rerender } = render(view())
@@ -47,7 +48,7 @@ describe('event page customization', () => {
   it('omits a cleared optional link from the design sent by the editor', () => {
     let latest = { sections: [{ type: 'lineup', enabled: true,
       items: [{ name: 'Mia', url: 'https://example.test' }] }] }
-    const onChange = vi.fn(value => { latest = value; rerender(view()) })
+    const onChange = vi.fn(value => { latest = typeof value === 'function' ? value(latest) : value; rerender(view()) })
     const view = () => <PageDesignEditor event={{ title: 'Reef Night', ticket_types: [] }} design={latest}
       onChange={onChange} description="" coverUrl="" eventId={7} />
     const { rerender } = render(view())
@@ -65,7 +66,19 @@ describe('event page customization', () => {
     expect(screen.getByText('Mia')).toBeInTheDocument()
     expect(screen.getByText('Partner')).toBeInTheDocument()
     expect(document.querySelector('img')).toBeNull()
+    expect(document.querySelector('img[src=""]')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open photo 1' })).not.toBeInTheDocument()
+  })
+  it('omits empty video and link sections and shows sponsor names without logos', () => {
+    render(<EventPageSections imageAssetHost="storage.invalid" design={{ sections: [
+      { type: 'video', enabled: true, url: 'https://invalid.test/watch' },
+      { type: 'links', enabled: true, items: [{ label: 'Unsafe', url: 'javascript:alert(1)', kind: 'website' }] },
+      { type: 'sponsors', enabled: true, items: [{ name: 'Island Sponsor', logo_url: '' }] },
+    ] }} />)
+    expect(screen.queryByRole('heading', { name: 'Video' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Links' })).not.toBeInTheDocument()
+    expect(screen.getByText('Island Sponsor')).toBeInTheDocument()
+    expect(document.querySelector('img[src=""]')).toBeNull()
   })
   it('preserves plain text and renders safe markdown without executable HTML or links', () => {
     const { rerender } = render(<EventDescription text={'First line\n<script>alert(1)</script>'} />)
@@ -76,6 +89,30 @@ describe('event page customization', () => {
     expect(screen.getByRole('link', { name: 'safe' })).toHaveAttribute('rel', 'noopener noreferrer nofollow')
     expect(screen.queryByRole('link', { name: 'bad' })).not.toBeInTheDocument()
     expect(document.querySelector('script')).toBeNull()
+  })
+  it.each(['- ', '1. ', '## ', '* ', '###   ', '  -   '])('renders incomplete marker %j as text', marker => {
+    const { container } = render(<EventDescription format="markdown" text={marker} />)
+    expect(container.querySelector('p')).toHaveTextContent(marker.trim())
+    expect(container.querySelector('h2,h3,ul,ol')).toBeNull()
+  })
+
+  it('keeps incomplete markers in paragraphs beside complete blocks', () => {
+    render(<EventDescription format="markdown" text={'Intro\n- \n1. \n## \n* \n- Real item\nOutro'} />)
+    expect(screen.getByText(/Intro/)).toHaveTextContent('Intro- 1. ## *')
+    expect(screen.getByRole('listitem')).toHaveTextContent('Real item')
+    expect(screen.getByText('Outro')).toBeInTheDocument()
+  })
+
+  it('terminates for seeded combinations of markers, spaces and text', () => {
+    let seed = 131
+    const next = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed }
+    const parts = ['-', '*', '1.', '##', '###', ' ', '  ', 'word', 'more', '']
+    for (let sample = 0; sample < 300; sample++) {
+      const lines = Array.from({ length: 1 + next() % 12 }, () =>
+        Array.from({ length: 1 + next() % 5 }, () => parts[next() % parts.length]).join(''))
+      const html = renderToStaticMarkup(<EventDescription format="markdown" text={lines.join('\n')} />)
+      expect(html).toContain('<div>')
+    }
   })
 
   it('protects contrast for light and dark accents and allowlists video hosts', () => {
@@ -123,7 +160,7 @@ describe('event page customization', () => {
 
   it('reorders and toggles sections and updates the preview immediately', () => {
     let latest = { ...defaultDesign(), accent: '#ffffff' }
-    const onChange = vi.fn(value => { latest = value; rerender(view()) })
+    const onChange = vi.fn(value => { latest = typeof value === 'function' ? value(latest) : value; rerender(view()) })
     const view = () => <PageDesignEditor event={{ title: 'Reef Night', ticket_types: [] }} design={latest} onChange={onChange} description="Hello" onDescriptionChange={vi.fn()} coverUrl="" eventId={7} />
     const { rerender } = render(view())
     fireEvent.click(screen.getByRole('button', { name: 'Move Schedule up' }))
@@ -135,5 +172,19 @@ describe('event page customization', () => {
     expect(screen.getByText('Reef Night')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Custom accent hex'), { target: { value: '#123456' } })
     expect(latest.accent).toBe('#123456')
+  })
+
+  it('resets the design while preserving markdown and avoids invalid accent styling', () => {
+    let latest = { ...defaultDesign(), accent: '#123456', focal_point: { x: 10, y: 80 },
+      description_format: 'markdown', gallery: [photo] }
+    const onChange = value => { latest = typeof value === 'function' ? value(latest) : value; rerender(view()) }
+    const view = () => <PageDesignEditor event={{ title: 'Reef Night', ticket_types: [] }} design={latest}
+      onChange={onChange} description="Hello" coverUrl="" eventId={7} />
+    const { rerender } = render(view())
+    fireEvent.change(screen.getByLabelText('Custom accent hex'), { target: { value: '#12' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Show preview' }))
+    expect(screen.getByText('Reef Night').closest('.event-customized')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to HåfaPass default look' }))
+    expect(latest).toEqual({ ...defaultDesign(), description_format: 'markdown' })
   })
 })

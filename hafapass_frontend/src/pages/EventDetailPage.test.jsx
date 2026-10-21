@@ -192,4 +192,10 @@ describe('EventDetailPage buyer polish', () => {
     expect(seo.props.image).toBeUndefined()
   })
 
+  it('does not apply custom button styles for an invalid stored accent', async () => {
+    const { container } = mount({ ...baseEvent, page_customization: { accent: '#12' } })
+    await screen.findByRole('heading', { name: 'Reef Night' })
+    expect(container.querySelector('.event-customized')).toBeNull()
+  })
+
 })

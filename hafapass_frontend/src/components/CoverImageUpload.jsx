@@ -6,6 +6,7 @@ import { approvedImageUrl } from '../utils/eventPageDesign'
 
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const clampPercent = value => Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 50
 
 export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eventId, focalPoint, onFocalChange, imageAssetHost, label = 'Cover image' }) {
   const [uploading, setUploading] = useState(false)
@@ -87,7 +88,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
 
       {displayUrl ? (
         <div className="relative rounded-xl overflow-hidden border border-neutral-200">
-          {onFocalChange ? <button type="button" aria-label="Set cover focal point" className="block w-full" onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); onFocalChange({ x: Math.round((event.clientX - rect.left) / rect.width * 100), y: Math.round((event.clientY - rect.top) / rect.height * 100) }) }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); onFocalChange({ x: Math.max(0, Math.min(100, (focalPoint?.x ?? 50) + (event.key === 'ArrowLeft' ? -5 : event.key === 'ArrowRight' ? 5 : 0))), y: Math.max(0, Math.min(100, (focalPoint?.y ?? 50) + (event.key === 'ArrowUp' ? -5 : event.key === 'ArrowDown' ? 5 : 0))) }) } }}><img src={displayUrl} alt="Cover" className="w-full h-48 object-cover" style={{ objectPosition: `${focalPoint?.x ?? 50}% ${focalPoint?.y ?? 50}%` }} /><span className="pointer-events-none absolute rounded-full border-2 border-white bg-black/30 w-5 h-5 -translate-x-1/2 -translate-y-1/2" style={{ left: `${focalPoint?.x ?? 50}%`, top: `${focalPoint?.y ?? 50}%` }} /></button> : <img src={displayUrl} alt="Cover" className="w-full h-48 object-cover" />}
+          {onFocalChange ? <button type="button" aria-label="Set cover focal point" className="block w-full" onClick={event => { if (event.detail === 0) return; const rect = event.currentTarget.getBoundingClientRect(); if (!rect.width || !rect.height) return; onFocalChange({ x: clampPercent((event.clientX - rect.left) / rect.width * 100), y: clampPercent((event.clientY - rect.top) / rect.height * 100) }) }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); onFocalChange({ x: clampPercent((focalPoint?.x ?? 50) + (event.key === 'ArrowLeft' ? -5 : event.key === 'ArrowRight' ? 5 : 0)), y: clampPercent((focalPoint?.y ?? 50) + (event.key === 'ArrowUp' ? -5 : event.key === 'ArrowDown' ? 5 : 0)) }) } }}><img src={displayUrl} alt="Cover" className="w-full h-48 object-cover" style={{ objectPosition: `${focalPoint?.x ?? 50}% ${focalPoint?.y ?? 50}%` }} /><span className="pointer-events-none absolute rounded-full border-2 border-white bg-black/30 w-5 h-5 -translate-x-1/2 -translate-y-1/2" style={{ left: `${focalPoint?.x ?? 50}%`, top: `${focalPoint?.y ?? 50}%` }} /></button> : <img src={displayUrl} alt="Cover" className="w-full h-48 object-cover" />}
           <div className="absolute right-2 top-2 flex items-center justify-center">
             <button
               type="button"

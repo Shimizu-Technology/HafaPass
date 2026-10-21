@@ -173,6 +173,8 @@ export default function EventPageSections({ design, imageAssetHost }) {
       const items = section.items || []
       if (section.type !== 'video' && section.type !== 'gallery' && !items.length) return null
       if (section.type === 'gallery' && !page.gallery.some(photo => approvedImageUrl(photo.url, imageAssetHost))) return null
+      if (section.type === 'video' && !videoEmbed(section.url)) return null
+      if (section.type === 'links' && !items.some(item => safeLink(item.url))) return null
       const title = t(`buyer.EventDetail.design.${section.type}`)
       return (
         <section key={section.type} className="mb-8" aria-label={title}>

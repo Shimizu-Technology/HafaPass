@@ -148,7 +148,8 @@ describe('hosting entry navigation', () => {
   it('recovers broken organizer artwork while keeping featured details and action usable', async () => {
     const artwork = 'https://storage.invalid/uploads/organizer-poster.png'
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 45, slug: 'poster', title: 'Organizer poster event',
-      cover_image_url: artwork, image_asset_host: 'storage.invalid', is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
+      cover_image_url: artwork, image_asset_host: 'storage.invalid', page_customization: { focal_point: { x: 25, y: 75 } },
+      is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     const featured = await screen.findByRole('article', { name: 'Featured event' })
     const image = within(featured).getByRole('img', { name: 'Artwork for Organizer poster event' })
@@ -156,8 +157,10 @@ describe('hosting entry navigation', () => {
     expect(image).toHaveAttribute('loading', 'eager')
     // Fills its 16:9 frame without relying on percentage heights; a blurred copy fills behind portrait posters.
     expect(image).toHaveClass('absolute', 'inset-0', 'object-contain')
+    expect(image.style.objectPosition).toBe('')
     expect(image.parentElement).toHaveClass('relative', 'aspect-[16/9]')
     expect(within(featured).getByTestId('artwork-backdrop')).toHaveAttribute('src', artwork)
+    expect(within(featured).getByTestId('artwork-backdrop')).toHaveStyle({ objectPosition: '25% 75%' })
     fireEvent.error(image)
     expect(within(featured).queryByRole('img')).not.toBeInTheDocument()
     expect(within(featured).getByText('Event artwork unavailable')).toBeInTheDocument()

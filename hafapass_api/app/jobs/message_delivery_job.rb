@@ -37,6 +37,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "Invitation was accepted, revoked, expired or resent")
         next :done
       end
+      if obsolete_event_change?(delivery)
+        delivery.update!(status: :cancelled, last_error: "This is not a material event change")
+        next :done
+      end
       if delivery.undeliverable_recipient?
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
@@ -150,6 +154,13 @@ class MessageDeliveryJob < ApplicationJob
       return false
     end
     !open || invitation.invitation_version != delivery.metadata["invitation_version"].to_i
+  end
+
+  def obsolete_event_change?(delivery)
+    return false unless delivery.template == "event_change"
+
+    change = EventChange.find_by(id: delivery.metadata["event_change_id"])
+    !change || !EventChange::TYPES.include?(change.change_type) || change.event_id != delivery.order&.event_id
   end
 
   def mark_reminder_sent!(delivery)

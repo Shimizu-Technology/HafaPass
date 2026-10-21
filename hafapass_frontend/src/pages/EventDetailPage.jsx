@@ -292,6 +292,7 @@ function EventDetailContent() {
   // Offers carry all-in prices (ticket + mandatory buyer fee), like every other display.
   const prices = purchasableAllInPrices(ticketTypes).map(price => price / 100)
   const design = normalizePageCustomization(event.page_customization)
+  const eventAccentStyle = accentStyle(design.accent)
   const coverImage = approvedImageUrl(event.cover_image_url, event.image_asset_host) ? event.cover_image_url : null
   const lineup = design.sections.find(section => section.type === 'lineup' && section.enabled)
   const eventJsonLd = {
@@ -330,7 +331,7 @@ function EventDetailContent() {
   }
 
   return (
-    <div className={design.accent ? 'event-customized' : undefined} style={accentStyle(design.accent)}>
+    <div className={eventAccentStyle ? 'event-customized' : undefined} style={eventAccentStyle}>
       <SEO
         title={event.title}
         description={truncatedDescription}

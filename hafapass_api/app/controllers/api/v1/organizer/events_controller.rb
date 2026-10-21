@@ -12,7 +12,8 @@ module Api
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
             .includes(:organization, :organizer_profile, :event_seating_configuration,
-              ticket_types: [:pricing_tiers, :waitlist_offers, { inventory_holds: :order }, { tickets: :order },
+              ticket_types: [:waitlist_offers, { pricing_tiers: [:inventory_holds, :waitlist_offers,
+                :active_precheckout_seat_holds] }, { inventory_holds: :order }, { tickets: :order },
                 { event_seats: :active_precheckout_seat_holds }])
             .order(created_at: :desc, id: :desc)
           if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
@@ -103,9 +104,9 @@ module Api
             previous_design = @event.page_customization.deep_dup if attributes.key?("page_customization")
             updated = @event.update(attributes)
             if updated && previous_design && previous_design != @event.page_customization
-              @event.event_changes.create!(actor_user: current_user, change_type: "customized",
+              AuditLogger.record!(action: "event.page_customized", auditable: @event, actor: current_user,
                 before_data: { page_customization: previous_design },
-                after_data: { page_customization: @event.page_customization }, occurred_at: Time.current)
+                after_data: { page_customization: @event.page_customization }, request: request)
             end
             if updated && reschedule
               event_change = @event.event_changes.create!(

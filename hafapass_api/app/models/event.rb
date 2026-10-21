@@ -105,10 +105,11 @@ class Event < ApplicationRecord
   validate :valid_iana_timezone
   validate :chronological_event_times
   validate :live_money_candidate_flag_immutable_after_orders
-  validate :page_customization_is_valid
+  validate :page_customization_is_valid, if: :will_save_change_to_page_customization?
   validate :cover_image_is_approved
 
   before_validation :assign_slug
+  before_validation :clamp_page_focal_point, if: :will_save_change_to_page_customization?
 
   def cover_image_is_approved
     return unless new_record? || will_save_change_to_cover_image_url?

@@ -203,7 +203,7 @@ function EditEventSession({ id, identity }) {
 
   const updateField = (field, value) => {
     if (!current()) return
-    setForm(prev => ({ ...prev, [field]: value }))
+    setForm(prev => ({ ...prev, [field]: typeof value === 'function' ? value(prev[field]) : value }))
     if (formErrors[field]) {
       setFormErrors(prev => ({ ...prev, [field]: null }))
     }

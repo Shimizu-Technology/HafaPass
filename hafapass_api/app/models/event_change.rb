@@ -7,7 +7,9 @@ class EventChange < ApplicationRecord
   belongs_to :actor_user, class_name: "User", optional: true
   has_many :event_change_responses, dependent: :restrict_with_error
 
-  TYPES = %w[postponed rescheduled cancelled customized].freeze
+  TYPES = %w[postponed rescheduled cancelled].freeze
+
+  scope :buyer_visible, -> { where(change_type: TYPES) }
 
   validates :change_type, inclusion: { in: TYPES }
   validates :occurred_at, presence: true

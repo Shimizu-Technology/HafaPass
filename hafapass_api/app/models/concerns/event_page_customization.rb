@@ -12,6 +12,10 @@ module EventPageCustomization
     return errors.add(:page_customization, "must be an object") unless data.is_a?(Hash)
     return errors.add(:page_customization, "is too large") if data.to_json.bytesize > 32.kilobytes
     return errors.add(:page_customization, "has unknown fields") unless (data.keys - %w[accent focal_point description_format gallery sections]).empty?
+    urls = page_image_urls(data).uniq
+    @approved_page_image_urls = urls.empty? ? [] : ImageUploadReceipt.where(
+      organization_id: organization_id, public_url: urls
+    ).where.not(completed_at: nil).pluck(:public_url)
     return if valid_accent?(data["accent"]) && valid_focal?(data["focal_point"]) &&
       [nil, "plain", "markdown"].include?(data["description_format"]) &&
       valid_gallery?(data["gallery"]) && valid_sections?(data["sections"])
@@ -19,6 +23,34 @@ module EventPageCustomization
     errors.add(:page_customization, "is invalid; image URLs #{ApprovedImageUrl::MESSAGE}")
   rescue JSON::GeneratorError
     errors.add(:page_customization, "is invalid")
+  ensure
+    @approved_page_image_urls = nil
+  end
+
+  def clamp_page_focal_point
+    data = page_customization
+    return unless data.is_a?(Hash) && data["focal_point"].is_a?(Hash)
+
+    focal = data["focal_point"]
+    return unless %w[x y].all? { |axis| focal[axis].is_a?(Numeric) && focal[axis].finite? }
+
+    self.page_customization = data.merge("focal_point" => focal.transform_values { |number| number.clamp(0, 100) })
+  end
+
+  def page_image_urls(data)
+    gallery = data["gallery"].is_a?(Array) ? data["gallery"] : []
+    sections = data["sections"].is_a?(Array) ? data["sections"] : []
+    gallery.filter_map { |photo| photo["url"] if photo.is_a?(Hash) && photo["url"].is_a?(String) } +
+      sections.flat_map do |section|
+        next [] unless section.is_a?(Hash) && section["items"].is_a?(Array)
+
+        section["items"].filter_map do |item|
+          next unless item.is_a?(Hash)
+
+          image_url = item["photo_url"] || item["logo_url"]
+          image_url if image_url.is_a?(String)
+        end
+      end
   end
 
   def valid_accent?(value)
@@ -89,7 +121,7 @@ module EventPageCustomization
   end
 
   def valid_image?(value)
-    ApprovedImageUrl.valid?(value, organization_id: organization_id)
+    ApprovedImageUrl.well_formed?(value) && @approved_page_image_urls.include?(value)
   end
 
   def valid_web?(value)

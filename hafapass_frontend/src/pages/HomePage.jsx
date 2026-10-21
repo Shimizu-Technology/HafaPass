@@ -41,7 +41,7 @@ function EventArtwork({ event, className, priority = false, backdrop = false }) 
         <>
           {backdrop && <img src={event.cover_image_url} alt="" aria-hidden="true" style={{ objectPosition: focalPosition(event.page_customization) }} data-testid="artwork-backdrop"
             className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl" />}
-          <img src={event.cover_image_url} alt={t('buyer.Home.artworkFor', { value1: event.title })} style={{ objectPosition: focalPosition(event.page_customization) }} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
+          <img src={event.cover_image_url} alt={t('buyer.Home.artworkFor', { value1: event.title })} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
             onError={() => setFailed(true)} className="absolute inset-0 h-full w-full object-contain" />
         </>
       ) : (

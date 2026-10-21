@@ -132,6 +132,8 @@ class EmailService
     end
 
     def send_event_change_notifications_async(change)
+      return unless change && EventChange::TYPES.include?(change.change_type)
+
       change.event.orders.where(status: [:completed, :partially_refunded]).find_each do |order|
         delivery = nil
         delivery = create_delivery(order: order, event: change.event, template: "event_change",
@@ -295,6 +297,8 @@ class EmailService
     end
 
     def send_event_change_notification(change, order, delivery: nil)
+      return unless change && EventChange::TYPES.include?(change.change_type)
+
       action = change.change_type.humanize.downcase
       html = email_wrapper("Event #{action}") do
         <<~HTML

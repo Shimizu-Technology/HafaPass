@@ -75,9 +75,10 @@ class OrderPresenter
   def latest_event_change_json
     changes = order.event.event_changes
     change = if changes.loaded?
-      changes.max_by { |candidate| [candidate.occurred_at || Time.at(0), candidate.id] }
+      changes.select { |candidate| EventChange::TYPES.include?(candidate.change_type) }
+        .max_by { |candidate| [candidate.occurred_at || Time.at(0), candidate.id] }
     else
-      changes.order(occurred_at: :desc, id: :desc).first
+      changes.buyer_visible.order(occurred_at: :desc, id: :desc).first
     end
     return unless change
 

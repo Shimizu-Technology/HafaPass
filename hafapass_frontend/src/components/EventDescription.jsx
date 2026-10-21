@@ -44,7 +44,7 @@ export default function EventDescription({ text, format = 'plain' }) {
       i++
       continue
     }
-    const heading = /^(#{2,3})\s+(.+)$/.exec(line)
+    const heading = /^(#{2,3})\s+(\S.*)$/.exec(line)
     if (heading) {
       const Heading = heading[1].length === 2 ? 'h2' : 'h3'
       blocks.push(
@@ -55,12 +55,12 @@ export default function EventDescription({ text, format = 'plain' }) {
       i++
       continue
     }
-    const bullet = /^\s*[-*]\s+(.+)$/.exec(line)
-    const numbered = /^\s*\d+\.\s+(.+)$/.exec(line)
+    const bullet = /^\s*[-*]\s+(\S.*)$/.exec(line)
+    const numbered = /^\s*\d+\.\s+(\S.*)$/.exec(line)
     if (bullet || numbered) {
       const start = i
       const items = []
-      const regex = bullet ? /^\s*[-*]\s+(.+)$/ : /^\s*\d+\.\s+(.+)$/
+      const regex = bullet ? /^\s*[-*]\s+(\S.*)$/ : /^\s*\d+\.\s+(\S.*)$/
       while (i < lines.length && regex.test(lines[i])) {
         items.push(<li key={i}>{inline(regex.exec(lines[i])[1])}</li>)
         i++
@@ -75,13 +75,20 @@ export default function EventDescription({ text, format = 'plain' }) {
     }
     const start = i
     const paragraph = []
-    while (i < lines.length && lines[i].trim() && !/^(#{2,3}\s|\s*[-*]\s|\s*\d+\.\s)/.test(lines[i])) {
+    while (i < lines.length && lines[i].trim() &&
+      !/^(#{2,3}\s+\S.*|\s*[-*]\s+\S.*|\s*\d+\.\s+\S.*)$/.test(lines[i])) {
       paragraph.push(
         <Fragment key={i}>
           {i > start && <br />}
           {inline(lines[i])}
         </Fragment>
       )
+      i++
+    }
+    // The paragraph scan must always consume its first line, including an
+    // incomplete marker that is not a heading or list item.
+    if (i === start) {
+      paragraph.push(<Fragment key={i}>{inline(lines[i])}</Fragment>)
       i++
     }
     blocks.push(

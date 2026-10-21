@@ -9,7 +9,8 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
     it "loads inventory and site settings in a fixed number of queries as the list grows" do
       4.times do
         event = create(:event, organizer_profile: organizer_profile)
-        create(:ticket_type, event: event)
+        ticket_type = create(:ticket_type, event: event)
+        create(:pricing_tier, ticket_type: ticket_type)
       end
       queries = []
       callback = ->(_name, _started, _finished, _id, payload) {
@@ -297,7 +298,12 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(response).to have_http_status(:ok)
       expect(event.reload.page_customization).to include("accent" => "#123456")
       expect(response.parsed_body["page_customization"]["gallery"].first["alt"]).to eq("Stage")
-      expect(event.event_changes.last).to have_attributes(change_type: "customized")
+      expect(event.event_changes).to be_empty
+      audit = AuditLog.find_by!(auditable: event, action: "event.page_customized")
+      expect(audit.actor_user).to eq(user)
+      expect(audit.before_data).to eq("page_customization" => {})
+      expect(audit.after_data.dig("page_customization", "accent")).to eq("#123456")
+      expect(OrderPresenter.call(create(:order, event: event))[:latest_event_change]).to be_nil
       expect(response.parsed_body["seller"]["seller_name"]).to be_present
     end
 

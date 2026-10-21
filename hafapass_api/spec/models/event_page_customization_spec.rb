@@ -25,9 +25,36 @@ RSpec.describe Event, type: :model do
   end
 
   it "rejects unknown fields, malformed colors and out-of-range focal points" do
-    [{ injected: "<script>" }, { accent: "red; color: white" }, { focal_point: { x: 101, y: 10 } }].each do |design|
+    [{ injected: "<script>" }, { accent: "red; color: white" }, { focal_point: { x: "101", y: 10 } }].each do |design|
       expect(accepts?(design)).to be(false)
     end
+  end
+
+  it "clamps numeric focal points on the server" do
+    event.update!(page_customization: { focal_point: { x: -50, y: 125 } })
+    expect(event.reload.page_customization.fetch("focal_point")).to eq("x" => 0, "y" => 100)
+  end
+
+  it "does not revalidate legacy design data when saving unrelated lifecycle state" do
+    event.update_columns(page_customization: { accent: "legacy-invalid" })
+    expect { event.reload.update!(status: :cancelled) }.not_to raise_error
+    expect(event.reload.page_customization).to eq("accent" => "legacy-invalid")
+  end
+
+  it "checks all image receipts in one query" do
+    other = "https://storage.invalid/uploads/other.webp"
+    ImageUploadReceipt.create!(user: event.organizer_profile.user, organization: event.organization,
+      event: event, source_key: "pending/test/other", final_key: "uploads/test/other.webp",
+      public_url: other, completed_at: Time.current)
+    queries = []
+    callback = ->(_name, _started, _finished, _id, payload) {
+      queries << payload[:sql] if payload[:sql]&.include?("FROM \"image_upload_receipts\"")
+    }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      expect(accepts?({ gallery: [{ url: image, alt: "Stage" }, { url: other, alt: "Crowd" }],
+        sections: [{ type: "lineup", enabled: true, items: [{ name: "Band", photo_url: image }] }] })).to be(true)
+    end
+    expect(queries.size).to eq(1)
   end
 
   it "limits galleries, requires alt text and bounds JSON size" do
