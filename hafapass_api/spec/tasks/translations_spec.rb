@@ -28,7 +28,7 @@ RSpec.describe "translations:backfill" do
 
   it "recovers a stalled ticket translation after an unrelated edit" do
     ticket_type = create(:ticket_type, event: create(:event, :published))
-    requested_at = Translatable::STUCK_PENDING_AFTER.ago - 1.minute
+    requested_at = (Translatable::STUCK_PENDING_AFTER.ago - 1.minute).change(usec: 0)
     ticket_type.update_columns(translation_status: "pending", translation_requested_at: requested_at)
     ticket_type.update!(quantity_available: ticket_type.quantity_available + 1)
 
