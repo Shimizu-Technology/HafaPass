@@ -15,7 +15,7 @@ class Api::V1::Organizer::TaxInformationsController < Api::V1::Organizer::BaseCo
       attributes: params.require(:tax_information).permit(:legal_name, :business_name, :tax_classification,
         :tin_type, :tin, :mailing_address, :exempt_payee_code, :signer_name, :certified),
       actor: current_user, request: request)
-    render json: { tax_information: record.safe_json, edit_locked: false,
+    render json: { tax_information: record.safe_json, edit_locked: edit_locked?,
       certification: OrganizerTaxInformation::CERTIFICATION }
   rescue OrganizerTaxInformationUpdater::TaxError => e
     render json: { error: e.message }, status: :unprocessable_entity

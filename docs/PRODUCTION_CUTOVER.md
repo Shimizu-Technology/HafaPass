@@ -91,10 +91,10 @@ Add (if not already present):
 - `SENTRY_DSN`; optional `SENTRY_ENVIRONMENT`
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET`, `AWS_REGION`
 - `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` (RSA ≥ 2048-bit)
+- `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`: required before the production deploy, on the web service and any job service, even before any W-9 is collected; production refuses to boot without them. Generate each as a random 32-character value, keep them stable and backed up securely, never log them, and never replace them without a key-rotation plan. Staging can boot without them but cannot store tax information.
 
 Keep as they are:
 
-- `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` on web and job services. All three are mandatory in production; missing keys prevent boot. Staging can boot without them but cannot store tax information. Keep them stable, backed up securely, and out of logs. Never rotate by replacing them without a data migration/key-rotation plan.
 - `DATABASE_URL` (pooled), `DATABASE_MIGRATION_URL` (direct), `SECRET_KEY_BASE`, `PUBLIC_API_URL` (only this host is accepted; change it only if the API gets its own domain), `ADMIN_EMAILS`, `ENABLE_FIRST_USER_ADMIN_BOOTSTRAP=false`, `HAFAPASS_LAUNCH_SCOPE=general_admission`, `HAFAPASS_RUNTIME=embedded`, `RAILS_MAX_THREADS=3`, `DB_POOL=10`
 
 Remove after the production deploy is healthy (unused in production):

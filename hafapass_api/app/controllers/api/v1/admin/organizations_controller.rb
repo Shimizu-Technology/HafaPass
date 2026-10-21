@@ -14,7 +14,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
         q: like_pattern(term)
       )
     end
-    organizations, meta = admin_page(scope.includes(:organizer_profile, organization_memberships: :user))
+    organizations, meta = admin_page(scope.includes(:organizer_profile, :organizer_tax_information, organization_memberships: :user))
     render json: { organizations: organizations.map { |organization| organization_summary(organization) }, meta: meta }
   end
 

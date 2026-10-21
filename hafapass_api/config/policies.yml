@@ -238,7 +238,7 @@ documents:
         body: |-
           We pay your available balance {{payout_schedule}}, after we reconcile the event's sales, refunds, and disputes. Payouts are made by check from {{operator_name}}'s business account; we may offer bank transfer instead.
 
-          Your available balance is your ticket proceeds minus refunds, amounts held for open disputes, and amounts already paid to you.
+          Your available balance is your ticket proceeds minus any service fees you absorb, refunds, chargebacks, adjustments, amounts held for open disputes, and amounts already paid to you.
 
           We may delay or hold some or all of a payout while refunds or disputes are open, if an event is cancelled or changed, or during a risk or compliance review. We will tell you why and release the hold when the issue is resolved.
       - heading: Tax information
