@@ -1,4 +1,4 @@
-version: 2026-10-launch-draft
+version: 2026-10-counsel-draft-2
 status: draft-pending-legal-review
 # Outstanding legal-review items. Not served publicly and not part of any
 # digest: they are shown to admins in the policy register as information.
@@ -10,12 +10,20 @@ review_notes:
     - section: Limits on our responsibility
       note: Lawyer to confirm limitation wording and any consumer-law carve-outs.
     - section: Governing law and disputes
-      note: Lawyer to confirm governing law and venue.
+      note: Counsel to confirm Guam governing law, court venue, informal resolution wording, and enforceability for visiting buyers; decide whether arbitration is appropriate. No arbitration clause is proposed.
+    - section: Transfers and resale
+      note: Counsel to check Guam and federal ticket resale and anti-bot rules; the app supports transfers, not an authorized resale marketplace.
+    - section: Refunds, cancellations, and event changes
+      note: Counsel to set the buyer remedy and any deadline for cancellation, postponement and material changes; current product requires a buyer or staff refund action and has no automatic bulk cancellation refund.
   privacy:
     - section: Information we collect
       note: Counsel to confirm TIN collection, encryption, audited admin disclosure, tax-authority sharing, retention and breach response.
     - section: How long we keep it
-      note: Lawyer and accountant to confirm the retention period (at least 7 years proposed).
+      note: Counsel and CPA to approve retention periods and a deletion/legal-hold procedure. The 13-month analytics purge is implemented; a seven-year financial-record purge is not.
+    - section: Service providers
+      note: Privacy counsel to review General Translation text transfers, vendor contracts and cross-border processing, including Japan APPI, Korea PIPA and any EU targeting.
+    - section: Your choices and rights
+      note: Counsel to distinguish legal rights from voluntary requests and review marketing email consent, CAN-SPAM unsubscribe and organizer campaign controls. No unsubscribe workflow is implemented.
   organizer-agreement:
     - section: Our role as your limited agent
       note: Counsel to confirm agent-of-payee appointment and buyer discharge, check disbursements under FinCEN FIN-2014-R009 and Guam 11 GCA Ch. 109, fund custody, withholding and offsets, and whether licensing or segregated accounts are required.
@@ -23,13 +31,25 @@ review_notes:
       note: Accountant to confirm fee-only BPT treatment and current rate, organizer gross receipts, 1099 form and filer, backup withholding, Guam reporting, and electronic substitute W-9 certification and retention. Product collection is not TIN matching or a filed return.
     - section: Chargebacks and negative balances
       note: Lawyer to confirm payment terms and dispute-fee allocation.
+    - section: Buyer information
+      note: Counsel to settle HåfaPass and organizer data roles, permitted event messages, independent marketing, incident notice and a data-processing addendum if needed.
+    - section: Your responsibility for the event
+      note: Counsel to set organizer license, permit, alcohol, insurance and accessibility warranties, and decide when proof is required.
     - section: Indemnity and limitation of liability
       note: Lawyer to confirm indemnity and the 12-month fee liability cap.
     - section: Governing law and changes
       note: Lawyer to confirm governing law and venue.
   retention:
     - section: Financial, order, and audit records
-      note: Lawyer and accountant to confirm the retention period (at least 7 years proposed).
+      note: Counsel and CPA to set a retention schedule and legal-hold process; the product does not automatically purge these records after seven years.
+    - section: Scanner devices
+      note: Counsel and operations to approve an enforced scanner-data deletion and lost-device procedure; current wording is an organizer instruction.
+  cookies:
+    - section: Payment and error monitoring
+      note: Privacy counsel to review current Clerk, Stripe and Sentry SDK storage/cookie inventory and whether consent controls are required for any nonessential activity.
+  accessibility:
+    - section: What we support
+      note: Accessibility reviewer to test actual keyboard and assistive technology journeys before making a broad conformance claim.
 documents:
   buyer-terms:
     title: Buyer Terms
@@ -62,12 +82,12 @@ documents:
           Venue staff may refuse a ticket that has been cancelled, refunded, transferred away, disputed, already used, or otherwise made invalid. The organizer may also check ID, enforce age limits, or refuse entry under its own venue rules.
       - heading: Transfers and resale
         body: |-
-          If the organizer has enabled transfers for an event, you can send a ticket to someone else through {{platform_name}}. A transfer cancels your old code and issues a new one to the recipient, so screenshots or printouts of the old ticket stop working.
+          If the organizer has enabled transfers for an event, you can invite someone else to take an unused ticket through {{platform_name}} before the event starts. The recipient must accept the invitation with the verified email address that received it. Once accepted, your old entry code stops working. A pending invitation can expire or be cancelled.
 
-          Organizers may limit or forbid resale, including resale above face value. You may not use bots, scripts, multiple accounts, or other tools to get around purchase limits, holds, or queues, and you may not buy tickets for speculative resale. Tickets obtained this way may be cancelled.
+          Transfers do not make {{platform_name}} a resale marketplace or guarantee a private resale. Follow any organizer resale restrictions and applicable law. You may not use bots, scripts, multiple accounts, or other tools to get around purchase limits, holds, or queues, or buy tickets for speculative resale. We may cancel tickets obtained through abuse, subject to applicable law.
       - heading: Refunds, cancellations, and event changes
         body: |-
-          Refunds follow our Refund & Cancellation Policy and the refund rules the organizer shows on the event page. In short: if an event is cancelled, you receive a full refund including the service fee. If an event is postponed or materially changed, your ticket stays valid for the new date, and you may ask for a refund within the window we communicate instead.
+          Refunds follow our Refund & Cancellation Policy and the refund rules the organizer shows on the event page. If an event is cancelled, you are entitled to a full refund including the service fee; cancellation does not itself send money back, so use your order page or contact support. If an event is postponed, your ticket remains valid while the organizer sets a new date, and you can seek a refund. Contact us about another material change so we can review the remedy with the organizer.
 
           Event details such as performers, start times, and seating may change. The organizer decides on changes and is responsible for them. We pass on the notices organizers send through {{platform_name}}.
       - heading: The event itself
@@ -75,11 +95,16 @@ documents:
           The organizer is responsible for the event: its content, venue, schedule, safety, security, accessibility, age rules, and whether it happens as advertised. {{platform_name}} does not run events and is not responsible for what happens at them.
 
           By attending, you agree to follow the organizer's and venue's rules. Those rules may include bag checks, prohibited items, and conduct requirements. The organizer may remove you, without a refund, for breaking them.
+      - heading: Events beyond anyone's control
+        body: |-
+          A typhoon, public-health order, government action, venue closure, or similar event may force an organizer to postpone or cancel an event. The organizer must tell buyers what changed. Our Refund & Cancellation Policy and any rights you cannot waive still apply; this section does not take away an eligible refund.
       - heading: Your account
         body: |-
           You can sign in to {{platform_name}} using our sign-in provider, or buy as a guest. Keep your sign-in details and order links private. You are responsible for activity on your account, so tell us promptly if you think someone else has used it.
 
           Give accurate contact details. We use them to deliver tickets and tell you about changes to events you've bought tickets for.
+
+          The service is for buyers who are at least 13. If you are under 18, use it with a parent or guardian. A parent or guardian may buy a ticket for a child, subject to the event's age rules.
       - heading: Payment disputes
         body: |-
           If a charge looks wrong, please contact us first. We can usually fix an incorrect order faster than a bank can.
@@ -92,7 +117,7 @@ documents:
           Nothing in these terms limits rights you have under consumer protection laws that cannot be waived.
       - heading: Governing law and disputes
         body: |-
-          These terms are governed by the laws of Guam. If you have a complaint, contact us first so we can try to resolve it informally.
+          These terms are governed by the laws of Guam, subject to consumer rights that cannot be waived. If you have a complaint, contact us so we can try to resolve it. If a court case is needed, the parties may bring it in a court with jurisdiction in Guam, subject to any mandatory law that applies to you.
       - heading: Changes and contact
         body: |-
           We may update these terms. The version you accepted at checkout applies to that order, and we record which version that was.
@@ -110,12 +135,12 @@ documents:
           If an event page doesn't state a refund policy, tickets are not refundable except when the event is cancelled, when it is postponed or materially changed, or where the law requires a refund.
       - heading: If an event is cancelled
         body: |-
-          If an event is cancelled and not rescheduled, you receive a full refund of everything you paid for your tickets, including the service fee. You don't need to ask; we process it once the organizer confirms the cancellation.
+          If an event is cancelled and not rescheduled, you are entitled to a full refund of everything you paid for your tickets, including the service fee. The cancellation notice does not automatically issue the refund. You can request a refund from your order page or contact us; the organizer and our staff can also process refunds. We will work with the organizer to process eligible refunds.
       - heading: If an event is postponed or materially changed
         body: |-
-          If an event moves to a new date, your tickets stay valid for the new date and you don't need to do anything.
+          If an event is postponed, your ticket stays valid while the organizer sets a new date. You can request a refund for an unused ticket from your order page or contact us. If the event is rescheduled, check the new event details before attending.
 
-          If you can't attend the new date, or the event changes materially (for example, a different venue or headline act), you may request a refund instead. We will tell you how and by when to request it. Requests made within that window are refunded in full, including the service fee.
+          If the event changes materially in another way, such as a different venue or headline act, contact us with your order number. We will review the change with the organizer and applicable law. We will communicate any refund option and deadline before it closes.
       - heading: Refunding part of an order
         body: |-
           Where the event's rules allow it, you may be able to refund some tickets in an order and keep the rest. A partial refund returns the ticket price and the service fee charged on each ticket refunded. The service fee is refunded with the ticket it was charged on.
@@ -124,7 +149,7 @@ documents:
           A ticket can't be refunded if it has already been used for entry, transferred to someone else, refunded already, or is part of an open payment dispute.
       - heading: How and when you receive the money
         body: |-
-          Refunds go back to the original payment method. Once we issue a refund, it usually appears within 5 to 10 business days, depending on your bank or card issuer. Free tickets have no payment to return; cancelling one simply releases the seat.
+          Card refunds go back to the original payment method. Once our payment provider confirms a refund, it usually appears within 5 to 10 business days, depending on your bank or card issuer. For tickets paid for in cash at the door, the organizer handles the physical cash return; {{platform_name}} may record that return but does not transfer the cash. Free tickets have no payment to return; cancelling one releases the seat.
 
           If a refund attempt fails or its status is unclear, we confirm the result with our payment provider before trying again, so you are not refunded twice or left out.
       - heading: Chargebacks
@@ -166,7 +191,7 @@ documents:
           When you buy a ticket or register for an event, the organizer receives the information it needs to run that event: your name, email address, phone number if you gave one, attendee names, your answers to its questions, and check-in status. Organizers may use this information only for their own events and must follow the law and our Organizer Agreement. They are responsible for their own use of it.
       - heading: Service providers
         body: |-
-          We use these providers to run {{platform_name}}. Each receives only what it needs for its job.
+          We use these providers to run {{platform_name}}. The information each receives depends on the feature you use and may be processed outside Guam.
 
           Clerk, for sign-in and account authentication.
 
@@ -180,6 +205,8 @@ documents:
 
           Render and Netlify, for application hosting, and Neon, for database hosting.
 
+          General Translation, to translate organizer event content into other languages when automatic translation is enabled. Event titles, descriptions and other text selected for translation may be sent to it; do not put sensitive attendee information in event copy.
+
           Apple Wallet and Google Wallet, only when you choose to add a ticket to your wallet.
 
           We may also disclose information when the law requires it, to protect people's safety, or as part of a sale or reorganization of our business.
@@ -188,12 +215,12 @@ documents:
           We do not sell your personal information. We do not use third-party advertising cookies or let advertising networks track you on {{platform_name}}. See our Cookie Notice for details.
       - heading: How long we keep it
         body: |-
-          Order, payment, refund, payout, and audit records are kept for at least seven years, or longer where the law requires, for accounting, tax, and dispute purposes. Marketplace analytics not tied to an order are deleted after 13 months. Other records are kept only as long as needed. Our Data Retention Schedule has the details.
+          We retain order, payment, refund, payout, tax and audit records for accounting, tax, dispute and legal needs. Our proposed minimum is seven years, subject to professional review and any longer legal duty. The service does not currently run an automatic seven-year deletion job for those records. Marketplace analytics not tied to an order are deleted after 13 months. Our Data Retention Schedule has more detail.
       - heading: Your choices and rights
         body: |-
-          You can ask to access, correct, export, or delete your personal information by contacting us {{support_contact}}. We will verify your identity before acting. Some records, such as completed orders, must be kept for legal, tax, or dispute reasons; when that applies, we keep only what is required and tell you why.
+          You can ask to access, correct, export, or delete your personal information by contacting us {{support_contact}}. We will verify your identity and assess the request under applicable law and our recordkeeping duties. Some records, such as completed orders, may need to be kept for legal, tax, or dispute reasons.
 
-          If we send you marketing emails, you can unsubscribe at any time. Messages about tickets you bought, such as event changes, are part of the service and will still be sent.
+          Order confirmations, tickets, transfers, refunds and event changes are service messages. Organizers can use an event message tool to email ticket holders; that tool currently has no self-service marketing unsubscribe. If an organizer message is promotional and you do not want more, contact us {{support_contact}}. We are reviewing the controls needed before promotional campaigns are sent.
       - heading: Security and breach notification
         body: |-
           We limit staff access to personal information by role, record sensitive actions, and encrypt data in transit. No system is perfectly secure.
@@ -201,7 +228,7 @@ documents:
           If a breach affects your personal information, we will notify you and any required authorities as required by Guam's breach notification law (9 GCA Chapter 48, Notification of Breaches of Personal Information) and other applicable US laws.
       - heading: Children
         body: |-
-          {{platform_name}} is not directed to children under 13, and we do not knowingly collect personal information from them. A parent or guardian may buy tickets for a child. If you believe a child under 13 has given us personal information, contact us and we will delete it.
+          {{platform_name}} is not directed to children under 13. People under 13 should not create an account or place an order. A parent or guardian may buy tickets for a child and provide an attendee name where needed. If you believe a child under 13 gave us personal information directly, contact us so we can investigate and take appropriate action.
       - heading: Changes and contact
         body: |-
           We will post changes to this policy here and update the version shown. For privacy questions or requests, contact us {{support_contact}}.
@@ -217,7 +244,7 @@ documents:
           You confirm that you have the right to hold and sell tickets to each event you list, including any permission you need from the venue, performers, or rights holders.
       - heading: Accurate listings
         body: |-
-          Event listings must be accurate and kept current, including the date and time (Guam time), venue, ticket types and quantities, prices, age rules, accessibility information, and refund policy. If you don't state a refund policy, tickets are refundable only if the event is cancelled, postponed, or materially changed, or where the law requires.
+          Event listings must be accurate and kept current, including the local date and time, venue, ticket types and quantities, all-in prices, age rules, accessibility information, and refund policy. If you don't state a refund policy, tickets are refundable for cancellation or postponement, for another material change where we or the law determine a refund is due, or where the law otherwise requires.
 
           You are responsible for the content you publish, including images and descriptions.
       - heading: Our role as your limited agent
@@ -236,23 +263,26 @@ documents:
           We may change the fee schedule with advance notice. A change applies to events published after it takes effect. Each order records the fee in force when the buyer paid, and that fee applies to that order.
       - heading: Payouts
         body: |-
-          We pay your available balance {{payout_schedule}}, after we reconcile the event's sales, refunds, and disputes. Payouts are made by check from {{operator_name}}'s business account; we may offer bank transfer instead.
+          We pay your available balance {{payout_schedule}}, after we reconcile the event's sales, refunds, and disputes and receive required tax information. Payouts are made by check from {{operator_name}}'s business account unless a different payout method is approved and recorded for you.
 
           Your available balance is your ticket proceeds minus any service fees you absorb, refunds, chargebacks, adjustments, amounts held for open disputes, and amounts already paid to you.
 
-          We may delay or hold some or all of a payout while refunds or disputes are open, if an event is cancelled or changed, or during a risk or compliance review. We will tell you why and release the hold when the issue is resolved.
+          We may delay or hold some or all of a payout while refunds or disputes are open, if an event is cancelled or changed, or during a documented risk or compliance review. We will give you a reason and review the hold when the underlying issue is resolved. A hold does not remove your responsibility for refunds or chargebacks.
       - heading: Tax information
         body: |-
-          Before any paid payout, you must provide accurate tax information, a completed W-9, and accurate payee details. You must update them when they change. We may issue IRS Form 1099 information returns where required.
+          Before any paid payout, you must provide accurate tax information, a completed W-9 or other form we require for your status, and accurate payee details. You must update them when they change. We may request corrections or pause a payout while required tax details are missing. We will arrange any legally required withholding or information reporting through a separate reviewed process. The tax reports in {{platform_name}} are preparation tools; they are not filed returns.
 
-          You are solely responsible for your own taxes on ticket sales, including Guam Business Privilege Tax on your gross receipts. {{operator_name}} is responsible for taxes on its own service fee. The service fee is not a tax, and you must not describe it as one.
+          You are responsible for determining and paying taxes on your ticket sales, including any Guam Business Privilege Tax or event-specific levy that applies to you. {{operator_name}} is responsible for its own taxes on ticketing revenue. The service fee is not a government tax, and you must not describe it as one.
       - heading: Refunds, cancellations, and postponements
         body: |-
           Refunds are funded from your event proceeds. You agree to honor your stated refund policy and our Refund & Cancellation Policy.
 
-          If you cancel an event, tell us promptly and notify buyers through {{platform_name}}. Buyers receive a full refund, including the service fee. If you postpone or materially change an event, notify buyers through {{platform_name}} and allow them to request a refund within the window we communicate.
+          If you cancel an event, tell us promptly, notify buyers through {{platform_name}}, and cooperate in issuing full refunds including service fees. Changing the event status does not itself send refunds. If you postpone an event, notify buyers and cooperate with refund requests for unused tickets. If you materially change an event in another way, promptly disclose the change and work with us on the remedy and any request window under applicable law.
 
           You must honor every valid ticket sold for your event.
+      - heading: Events beyond anyone's control
+        body: |-
+          A typhoon, public-health order, government action, venue closure, or comparable event outside reasonable control may delay performance. Tell us and buyers promptly, take reasonable steps to limit harm, and propose a lawful remedy. This does not excuse required refunds, chargebacks, amounts already owed, or duties that can still be performed.
       - heading: Chargebacks and negative balances
         body: |-
           If a buyer disputes a payment, we may hold the disputed amount from your balance and respond to the dispute using records you and we provide. If the dispute is lost, the ticket amount and any dispute fees charged to us come out of your proceeds.
@@ -260,18 +290,18 @@ documents:
           If refunds, disputes, or fees exceed your balance, the difference is a negative balance you owe us. We may deduct it from future payouts or invoice you, and you agree to pay invoices by the due date shown.
       - heading: Your responsibility for the event
         body: |-
-          You are solely responsible for your event: the venue, permits, licenses, staffing, security, safety and emergency planning, insurance, accessibility, age restrictions, venue rules, and compliance with all laws. You must provide accessible seating information where your event uses assigned seating.
+          You are responsible for your event: the venue, permits, business and event licenses, staffing, security, safety and emergency planning, insurance, accessibility, age restrictions, venue rules, and compliance with all laws. If you serve or sell alcohol, use regulated goods, or run a raffle or gaming activity, you must hold the required approvals and follow applicable rules. We may ask for proof before allowing sales. You must provide accessible seating information where your event uses assigned seating.
 
           You may not list events or sell tickets that our Acceptable Use Policy prohibits.
       - heading: Buyer information
         body: |-
-          You will receive information about buyers and attendees of your events. You may use it only to run that event, provide customer service, and meet legal obligations, and to send marketing only where the buyer has agreed and the law allows. You must keep it secure, must not sell it, and must follow our Privacy Policy and the law. You are independently responsible for your use of this information.
+          You will receive information about buyers and attendees of your events. You may use it to run that event, provide customer service, and meet legal obligations. Do not send unrelated promotions through the event message tool. If you conduct marketing using data you lawfully hold, you are responsible for any required consent, accurate sender details, an effective opt-out, and honoring opt-outs. Keep attendee data secure, do not sell it, and notify us promptly if it is lost, misused, or accessed without authority. You are independently responsible for your use of this information; we remain responsible for our own platform processing.
       - heading: Content license
         body: |-
           You keep ownership of the names, logos, images, and descriptions you upload. You grant {{operator_name}} a non-exclusive, royalty-free license to use them to list, promote, and sell tickets to your events on {{platform_name}} and in related marketing. You confirm you have the rights needed to grant this license.
       - heading: Indemnity and limitation of liability
         body: |-
-          You will defend and indemnify {{operator_name}} against claims, losses, and costs arising from your events, your content, your use of buyer information, or your breach of this agreement or the law.
+          You will defend and indemnify {{operator_name}} against third-party claims, reasonable losses, and reasonable costs arising from your events, your content, your use of buyer information, or your breach of this agreement or the law, except to the extent caused by our own misconduct.
 
           To the extent the law allows, {{operator_name}} is not liable for indirect or consequential losses, and its total liability to you under this agreement is limited to the service fees it earned from your events in the 12 months before the claim.
       - heading: Suspension and termination
@@ -279,7 +309,7 @@ documents:
           We may pause ticket sales, hold payouts, remove a listing, or suspend your account if we reasonably believe you have broken this agreement or the law, or that buyers are at risk. Either party may end this agreement with notice. Obligations for tickets already sold, refunds, disputes, negative balances, and indemnity continue after it ends.
       - heading: Governing law and changes
         body: |-
-          This agreement is governed by the laws of Guam.
+          This agreement is governed by the laws of Guam. Either party may bring a dispute in a court with jurisdiction in Guam after giving the other a reasonable chance to resolve it informally, unless urgent relief is needed.
 
           We may update this agreement. You must accept the current version before you publish a new event, and {{platform_name}} records which version you accepted and when. For questions, contact us {{support_contact}}.
   acceptable-use:
@@ -318,7 +348,7 @@ documents:
           Content you post must be accurate and lawful, and must not be defamatory, obscene, or infringing.
       - heading: Enforcement
         body: |-
-          If we believe this policy has been broken, we may investigate, keep records, remove content or listings, cancel tickets, pause sales or payouts, suspend or close accounts, and cooperate with affected parties and authorities where the law allows. Where appropriate, we will tell you what action we took and why.
+          If we reasonably believe this policy has been broken, we may investigate, preserve evidence, remove content or listings, cancel tickets, pause sales or payouts, suspend or close accounts, and cooperate with affected parties and authorities where the law allows. We may act faster where buyers or the service face immediate risk. Where appropriate, we will tell you what action we took and why, and you can contact support to contest an error.
       - heading: Reporting a problem
         body: |-
           To report a listing, ticket, or user that may break this policy, contact us {{support_contact}}.
@@ -329,7 +359,7 @@ documents:
     sections:
       - heading: Financial, order, and audit records
         body: |-
-          Orders, payments, refunds, payouts, disputes, admissions, and audit records are kept for at least seven years, or longer where the law requires, for accounting, tax, and dispute purposes.
+          We keep orders, payments, refunds, payouts, tax records, disputes, admissions, and audit records for accounting, tax, legal, and dispute purposes. Seven years is the proposed minimum pending professional review; no automatic seven-year purge is currently in place. A legal hold or longer legal duty may extend retention.
       - heading: Marketplace analytics
         body: |-
           Analytics events not tied to an order, such as page visits and campaign attribution, are deleted after 13 months. Attribution recorded on an order, such as a referral code, is kept with that order.
@@ -338,7 +368,7 @@ documents:
           Payment provider events, email delivery history, support notes, and security logs are kept only as long as needed for delivery, incident response, disputes, and abuse prevention.
       - heading: Scanner devices
         body: |-
-          Event data stored on organizer devices for offline scanning should be removed after the event is closed out and any dispute window has passed. Lost or stolen devices must be revoked immediately.
+          Organizers should remove offline scanner data from their devices after the event and any needed reconciliation. Tell us promptly if a scanner device is lost or stolen so access can be revoked. We cannot erase data on an organizer's device remotely.
       - heading: Deletion requests and holds
         body: |-
           We honor deletion requests where we can. Legal holds, open disputes, fraud investigations, and legal or tax duties may require us to keep specific records; when they do, we keep only those records and delete the rest. To ask for deletion, contact us {{support_contact}}.
@@ -355,7 +385,7 @@ documents:
           These cookies make {{platform_name}} work, and the service can't function properly without them. We use them to keep you signed in through our sign-in provider, Clerk; to hold your tickets and remember your order during checkout; to let you return to a guest order; to remember your language preference; to store event data on organizer devices so scanning works offline; and to protect the service through security checks and rate limiting.
       - heading: Payment and error monitoring
         body: |-
-          Stripe, our payment processor, sets cookies on its payment fields to prevent fraud. Sentry, our error-monitoring service, may record technical details when something breaks so we can fix it.
+          Stripe may use cookies and similar storage in payment fields for payment and fraud prevention. When error monitoring is enabled, Sentry receives technical diagnostics and may use browser storage for tracing or session continuity. We do not intentionally send payment card details to Sentry.
       - heading: First-party analytics
         body: |-
           We measure how people find events, such as which campaign link or referral code led to a purchase. This information is collected by {{platform_name}} itself, saved with the order where there is one, and not shared with advertising networks.
@@ -377,7 +407,7 @@ documents:
           We want everyone to be able to find events, buy tickets, and get in the door using {{platform_name}}. We aim to meet the Web Content Accessibility Guidelines (WCAG) 2.1 at Level AA, and to follow WCAG 2.2 where practical.
       - heading: What we support
         body: |-
-          {{platform_name}} is designed to work on phones and desktop computers. Pages can be used with a keyboard and include labels for screen readers. Animations are reduced if you've turned on reduced motion in your device settings.
+          {{platform_name}} is designed for phones and desktop computers. We use keyboard controls, labels, and reduced-motion settings in many parts of the service. We have not completed an independent conformance audit of every checkout, organizer, scanner, and wallet flow.
       - heading: Known limitations
         body: |-
           Seat maps for events with assigned seating may be harder to use with a screen reader. If you have trouble choosing seats, contact us and we will help you complete your order.
