@@ -1096,5 +1096,54 @@
         "context": "Public HåfaPass policy page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Policy content remains authoritative English; this key labels page navigation or policy status. "
       }
     }
+  },
+  "buyerAccount": {
+    "orderConfirmationPage": {
+      "free": {
+        "context": "Ticket price of zero US dollars. Not an instruction to release a ticket."
+      },
+      "seller": {
+        "context": "Receipt disclosure: the event organizer is the seller; HåfaPass provides ticketing as the organizer’s agent. Keep legal relationships intact."
+      },
+      "sellerWithOperator": {
+        "context": "Receipt disclosure: the event organizer is the seller; the named operator operates the ticketing service as the organizer’s agent. Keep relationships intact."
+      },
+      "refundPendingWaitingForThePaymentProviderCheck": {
+        "context": "Payment refund status. Pending is not a confirmed refund; do not imply that money has already been returned."
+      },
+      "refreshQR": {
+        "context": "Replace the ticket entry QR code; all copies of the previous QR stop working."
+      },
+      "transferTicketLabel": {
+        "context": "Description of the ticket being sent to a new holder. The inserted name is the original ticket type printed on the admission ticket."
+      }
+    },
+    "transferTicketDialog": {
+      "sentMessage": {
+        "context": "Ticket ownership transfers only after the recipient accepts. Keep <recipient> markup around the email, and retain all placeholders."
+      },
+      "recipientNameLabel": {
+        "context": "Form label. The recipient name is optional; email is required. Preserve <optional> markup."
+      }
+    },
+    "pendingTransfer": {
+      "transferPending": {
+        "context": "A ticket ownership transfer waiting for the recipient to accept; the sender can still use the ticket."
+      },
+      "cancelMessage": {
+        "context": "Cancel the invitation to transfer this ticket, not the ticket itself. The sender keeps the valid ticket. Preserve recipient markup."
+      }
+    },
+    "ticketPage": {
+      "valid": {
+        "context": "Ticket status: valid for admission."
+      },
+      "used": {
+        "context": "Ticket status: already checked in at the event entrance."
+      },
+      "ticketHPT": {
+        "context": "Admission ticket identifier. Keep the HP-T prefix and id placeholder exactly as written."
+      }
+    }
   }
 }

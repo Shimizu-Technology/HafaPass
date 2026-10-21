@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import { useRef, useState } from 'react'
 import Dialog from './Dialog'
 
@@ -7,6 +8,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // performs the request and rejects with the API error so the form keeps the
 // typed address for a retry.
 export default function TransferTicketDialog({ ticketLabel, onSend, onClose }) {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState(null)
@@ -18,14 +20,14 @@ export default function TransferTicketDialog({ ticketLabel, onSend, onClose }) {
     event.preventDefault()
     if (sending) return
     const recipient = email.trim()
-    if (!EMAIL_PATTERN.test(recipient)) { setError('Enter the recipient’s email address.'); emailRef.current?.focus(); return }
+    if (!EMAIL_PATTERN.test(recipient)) { setError(t('buyerAccount.transferTicketDialog.enterTheRecipientSEmailAddress')); emailRef.current?.focus(); return }
     setSending(true)
     setError(null)
     try {
       await onSend({ recipient_email: recipient, recipient_name: name.trim() || undefined })
       setSentTo(recipient)
     } catch (err) {
-      setError(err.response?.data?.error || 'We could not send this transfer. Check your connection and try again.')
+      setError(err.response?.data?.error || t('buyerAccount.transferTicketDialog.weCouldNotSendThisTransferCheckYour'))
       // The address is the only field the server rejects; return focus to it
       // once the inputs are enabled again.
       setTimeout(() => emailRef.current?.focus(), 0)
@@ -38,24 +40,24 @@ export default function TransferTicketDialog({ ticketLabel, onSend, onClose }) {
     // A separate Dialog instance (key) so focus moves into the confirmation
     // and the focus trap restarts instead of falling back to the page.
     return <Dialog key="sent" labelledBy="transfer-ticket-title" onClose={onClose} className="max-w-md">
-      <h2 id="transfer-ticket-title" className="text-lg font-semibold text-neutral-900">Transfer sent</h2>
-      <p className="mt-2 text-sm text-neutral-600">We emailed <strong className="break-all text-neutral-900">{sentTo}</strong> a link to accept {ticketLabel}. Your ticket keeps working until they accept. After that, your QR code stops working and theirs is the one to scan.</p>
-      <div className="mt-6 flex justify-end"><button type="button" className="btn-primary min-h-11 px-5" onClick={onClose}>Done</button></div>
+      <h2 id="transfer-ticket-title" className="text-lg font-semibold text-neutral-900">{t('buyerAccount.transferTicketDialog.transferSent')}</h2>
+      <p className="mt-2 text-sm text-neutral-600"><Trans t={t} i18nKey="buyerAccount.transferTicketDialog.sentMessage" values={{ email: sentTo, ticket: ticketLabel }} components={{ recipient: <strong className="break-all text-neutral-900" /> }} /></p>
+      <div className="mt-6 flex justify-end"><button type="button" className="btn-primary min-h-11 px-5" onClick={onClose}>{t('buyerAccount.transferTicketDialog.done')}</button></div>
     </Dialog>
   }
 
   return <Dialog key="form" labelledBy="transfer-ticket-title" onClose={onClose} busy={sending} className="max-w-md">
     <form onSubmit={submit} noValidate>
-      <h2 id="transfer-ticket-title" className="text-lg font-semibold text-neutral-900">Transfer {ticketLabel}</h2>
-      <p className="mt-1 text-sm text-neutral-600">The recipient signs in with this email to accept. Transfers close when the event starts.</p>
-      <label htmlFor="transfer-recipient-email" className="mt-5 block text-sm font-medium text-neutral-700">Recipient email</label>
+      <h2 id="transfer-ticket-title" className="text-lg font-semibold text-neutral-900">{t('buyerAccount.transferTicketDialog.transfer', { ticketLabel: ticketLabel })}</h2>
+      <p className="mt-1 text-sm text-neutral-600">{t('buyerAccount.transferTicketDialog.theRecipientSignsInWithThisEmailTo')}</p>
+      <label htmlFor="transfer-recipient-email" className="mt-5 block text-sm font-medium text-neutral-700">{t('buyerAccount.transferTicketDialog.recipientEmail')}</label>
       <input ref={emailRef} id="transfer-recipient-email" type="email" inputMode="email" autoComplete="email" className={`input mt-1 ${error ? 'input-error' : ''}`} value={email} onChange={event => { setEmail(event.target.value); setError(null) }} aria-invalid={Boolean(error)} aria-describedby={error ? 'transfer-ticket-error' : undefined} disabled={sending} required />
-      <label htmlFor="transfer-recipient-name" className="mt-4 block text-sm font-medium text-neutral-700">Recipient name <span className="font-normal text-neutral-500">(optional)</span></label>
+      <label htmlFor="transfer-recipient-name" className="mt-4 block text-sm font-medium text-neutral-700"><Trans t={t} i18nKey="buyerAccount.transferTicketDialog.recipientNameLabel" components={{ optional: <span className="font-normal text-neutral-500" /> }} /></label>
       <input id="transfer-recipient-name" type="text" autoComplete="name" className="input mt-1" value={name} onChange={event => setName(event.target.value)} disabled={sending} maxLength={120} />
       {error && <p id="transfer-ticket-error" role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
       <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <button type="button" className="btn-secondary min-h-11 px-5" onClick={onClose} disabled={sending}>Cancel</button>
-        <button type="submit" className="btn-primary min-h-11 px-5" disabled={sending}>{sending ? 'Sending…' : 'Send transfer'}</button>
+        <button type="button" className="btn-secondary min-h-11 px-5" onClick={onClose} disabled={sending}>{t('buyerAccount.transferTicketDialog.cancel')}</button>
+        <button type="submit" className="btn-primary min-h-11 px-5" disabled={sending}>{sending ? t('buyerAccount.transferTicketDialog.sending') : t('buyerAccount.transferTicketDialog.sendTransfer')}</button>
       </div>
     </form>
   </Dialog>
