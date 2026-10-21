@@ -38,9 +38,56 @@ RSpec.describe "Buyer orders and receipts", type: :request do
     expect(response.headers["Cache-Control"]).to include("no-store")
     text = PDF::Reader.new(StringIO.new(response.body)).pages.map(&:text).join("\n")
     expect(text).to include("HP-RECEIPT", "January 2, 2030 1:30 AM ChST", "Guam Night Market",
-      "Sold by", "Tickets by HåfaPass", "General Admission", "$50.00", "$2.50", "$5.00", "$47.50",
+      "Sold by", "Tickets by HåfaPass", "General Admission", "$50.00", "$2.50", "$5.00", "Test total (no real charge): $47.50",
       "VISA ending in 4242", "Refund: $10.00", "Pending")
     expect(text).to include("organizer's agent")
+    expect(text).to include("TEST — NOT A RECEIPT FOR A REAL CHARGE")
+  end
+
+  it "excludes unpaid cancelled checkouts from history and returns 404 for their receipts" do
+    unpaid = create(:order, :cancelled, event: event, user: buyer, completed_at: nil)
+    get "/api/v1/me/orders", headers: auth_headers(buyer)
+    expect(response.parsed_body.fetch("orders").pluck("id")).not_to include(unpaid.id)
+    expect(response.headers["Cache-Control"]).to eq("private, no-store")
+    get "/api/v1/me/orders/#{unpaid.id}", headers: auth_headers(buyer)
+    expect(response.parsed_body).to include("receipt_available" => false, "buyer_status" => "cancelled")
+    expect(response.headers["Cache-Control"]).to eq("private, no-store")
+    get "/api/v1/orders/#{unpaid.id}", headers: auth_headers(buyer)
+    expect(response.headers["Cache-Control"]).to eq("private, no-store")
+    get "/api/v1/orders/#{unpaid.id}/receipt", headers: auth_headers(buyer)
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "issues correctly labeled receipts for completed complimentary and box-office cash sales" do
+    free = create(:order, event: event, user: buyer, subtotal_cents: 0, service_fee_cents: 0, total_cents: 0)
+    get "/api/v1/orders/#{free.id}/receipt", headers: auth_headers(buyer)
+    expect(response).to have_http_status(:ok)
+    expect(PDF::Reader.new(StringIO.new(response.body)).pages.first.text).to include("Complimentary")
+
+    cash = create(:order, event: event, user: buyer)
+    create(:payment, :succeeded, order: cash, provider: "door_cash", provider_environment: "live")
+    get "/api/v1/orders/#{cash.id}/receipt", headers: auth_headers(buyer)
+    expect(response).to have_http_status(:ok)
+    expect(PDF::Reader.new(StringIO.new(response.body)).pages.first.text).to include("Cash at door", "Total paid")
+
+    card = create(:order, :cancelled, event: event, user: buyer, completed_at: nil)
+    create(:payment, :succeeded, order: card, provider: "clover", provider_environment: "live")
+    get "/api/v1/orders/#{card.id}/receipt", headers: auth_headers(buyer)
+    expect(response).to have_http_status(:ok)
+    expect(PDF::Reader.new(StringIO.new(response.body)).pages.first.text).to include("Total paid")
+  end
+
+  it "replaces unsupported emoji in receipt text without losing the purchase" do
+    event.update!(title: "Festival \u{1FAE9}")
+    get "/api/v1/orders/#{order.id}/receipt", headers: auth_headers(buyer)
+    expect(response).to have_http_status(:ok)
+    expect(PDF::Reader.new(StringIO.new(response.body)).pages.first.text).to include("Festival ?")
+  end
+
+  it "exposes test payment environment and receipt eligibility" do
+    create(:payment, :succeeded, order: order)
+    get "/api/v1/me/orders/#{order.id}", headers: auth_headers(buyer)
+    expect(response.parsed_body).to include("payment_environment" => "test", "receipt_available" => true)
   end
 
   it "allows a valid guest token to download only its own order receipt" do

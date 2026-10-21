@@ -764,6 +764,8 @@
   },
   "buyerAccount": {
     "orderConfirmationPage": {
+      "testOrderNoRealCharge": "Test order — no real charge",
+      "checkoutNotCompleted": "Checkout not completed — no charge",
       "orderedOn": "Ordered on {{date}}",
       "downloadReceipt": "Download receipt (PDF)",
       "preparingReceipt": "Preparing receipt…",
@@ -959,6 +961,11 @@
       }
     },
     "myTicketsPage": {
+      "testOrderNoRealCharge": "Test order — no real charge",
+      "checkoutNotCompleted": "Checkout not completed — no charge",
+      "noCharge": "No charge",
+      "complimentary": "Complimentary",
+      "testTotal": "Test total (no real charge)",
       "purchaseHistory": "Purchase history",
       "tabs": {
         "tickets": "Tickets",

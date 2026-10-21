@@ -4,6 +4,9 @@
 # EmailService, and every value is HTML-escaped.
 emails:
   receipt:
+    test_notice: "TEST — NOT A RECEIPT FOR A REAL CHARGE"
+    complimentary: "Complimentary — no charge"
+    test_total: "Test total (no real charge): %{amount}"
     title: "HåfaPass purchase receipt"
     order_number: "Order number: %{reference}"
     order_date: "Order date: %{date}"

@@ -34,6 +34,8 @@ class OrderPresenter
       wallet_type: order.wallet_type,
       guest_access_token: guest_access_token,
       payment_status: latest_payment&.status,
+      payment_environment: order.payment_environment,
+      receipt_available: order.receipt_available?,
       payment_state: latest_payment&.provider_payload.to_h["status"],
       payment_method: payment_method_json,
       refund_history: refund_history_json,

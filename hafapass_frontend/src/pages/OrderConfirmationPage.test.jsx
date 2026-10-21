@@ -108,6 +108,35 @@ describe('guest order recovery actions', () => {
 describe('receipt download', () => {
   beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); window.localStorage.clear() })
 
+  it('shows no-charge status and no receipt for an unpaid cancelled checkout', async () => {
+    const order = {
+      id: 922, reference: 'HP-922', status: 'cancelled', buyer_email: 'guest@example.invalid',
+      receipt_available: false, total_cents: 500, order_items: [], tickets: [],
+      event: { id: 37, slug: 'free-event', title: 'Cancelled checkout', status: 'published',
+        starts_at: '2030-01-02T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
+    }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+    expect(await screen.findByText('Checkout not completed — no charge')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Download receipt (PDF)' })).not.toBeInTheDocument()
+  })
+
+  it('marks a test order in the confirmation view', async () => {
+    const order = {
+      id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
+      payment_environment: 'test', receipt_available: true, total_cents: 500, order_items: [], tickets: [],
+      event: { id: 37, slug: 'test-event', title: 'Test event', status: 'published',
+        starts_at: '2030-01-02T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
+    }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+    expect(await screen.findByText('Test order — no real charge')).toBeInTheDocument()
+  })
+
   it('offers a PDF receipt and sends the current guest token with the download', async () => {
     const order = {
       id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',

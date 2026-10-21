@@ -11,12 +11,13 @@ class ReceiptPdfGenerator
     I18n.with_locale(AppLocale.i18n_locale(@order.locale)) do
       lines = receipt_lines
       Prawn::Document.new(page_size: "A4", margin: 48) do |pdf|
-        PdfFonts.configure(pdf, texts: lines, locale: @order.locale)
+        title = I18n.t("emails.receipt.title")
+        unsupported = PdfFonts.configure(pdf, texts: lines + [title], locale: @order.locale, strict: false)
         pdf.font_size 10
-        pdf.text I18n.t("emails.receipt.title"), size: 18, style: :bold
+        pdf.text PdfFonts.replace_unsupported(title, unsupported), size: 18, style: :bold
         pdf.move_down 12
         lines.each_with_index do |line, index|
-          pdf.text line
+          pdf.text PdfFonts.replace_unsupported(line, unsupported)
           pdf.move_down(index == 3 || index == lines.length - 1 ? 12 : 5)
         end
       end.render
@@ -39,6 +40,7 @@ class ReceiptPdfGenerator
       I18n.t("emails.order_confirmation.seller_disclosure", seller: seller.seller_name,
         service: seller.ticketing_service, operator: seller.operator_name)
     ]
+    lines.unshift(I18n.t("emails.receipt.test_notice")) if %w[test simulated].include?(@order.payment_environment)
     @order.order_items.order(:id).each do |item|
       lines << I18n.t("emails.receipt.line_item", name: item.name, quantity: item.quantity,
         unit: money(item.unit_price_cents), amount: money(item.subtotal_cents))
@@ -46,7 +48,13 @@ class ReceiptPdfGenerator
     lines << I18n.t("emails.receipt.subtotal", amount: money(@order.subtotal_cents))
     lines << I18n.t("emails.receipt.service_fee", amount: money(@order.service_fee_cents))
     lines << I18n.t("emails.receipt.discount", amount: money(@order.discount_cents))
-    lines << I18n.t("emails.receipt.total_paid", amount: money(@order.total_cents))
+    lines << if @order.total_cents.zero?
+      I18n.t("emails.receipt.complimentary")
+    elsif %w[test simulated].include?(@order.payment_environment)
+      I18n.t("emails.receipt.test_total", amount: money(@order.total_cents))
+    else
+      I18n.t("emails.receipt.total_paid", amount: money(@order.total_cents))
+    end
     lines << payment_method_line
     refunds = @order.refunds.order(created_at: :asc, id: :asc)
     if refunds.empty?

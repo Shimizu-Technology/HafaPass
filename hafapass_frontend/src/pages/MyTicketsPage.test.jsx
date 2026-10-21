@@ -59,10 +59,19 @@ describe('MyTicketsPage guest recovery', () => {
 
   it('keeps known tickets when the post-recovery refresh fails', async () => {
     apiClient.get.mockResolvedValueOnce({ data: { tickets: [ticket] } }).mockRejectedValueOnce(new Error('API unavailable'))
-    apiClient.post.mockResolvedValue({ data: {} })
+    apiClient.post.mockResolvedValue({ data: { recovered_orders_count: 1 } })
     renderPage()
     await screen.findByRole('button', { name: 'Retry guest purchase recovery' })
     expect(screen.getByText('Island workshop')).toBeInTheDocument()
+  })
+
+  it('does not fetch tickets again when recovery changes nothing', async () => {
+    apiClient.get.mockResolvedValue({ data: { tickets: [ticket] } })
+    apiClient.post.mockResolvedValue({ data: { recovered_orders_count: 0, recovered_tickets_count: 0 } })
+    renderPage()
+    await screen.findByText('Island workshop')
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1))
+    expect(apiClient.get).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -121,6 +130,68 @@ describe('MyTicketsPage orders tab', () => {
     expect(await screen.findByText('VIP')).toBeInTheDocument()
     expect(screen.getByText('General admission')).toBeInTheDocument()
     expect(apiClient.get).toHaveBeenCalledWith('/me/tickets', { params: { page: 2 } })
+  })
+
+  it('shows the first ticket page while the next page is pending', async () => {
+    let finishSecond
+    apiClient.get.mockImplementation((url, options) => url === '/me/tickets' && options?.params?.page === 2
+      ? new Promise(resolve => { finishSecond = resolve })
+      : Promise.resolve({ data: { tickets: [ticket], meta: { next_page: 2 } } }))
+    renderPage()
+    expect(await screen.findByText('Island workshop')).toBeInTheDocument()
+    expect(finishSecond).toBeTypeOf('function')
+    finishSecond({ data: { tickets: [], meta: {} } })
+  })
+
+  it('loads Orders while a ticket page is unresolved', async () => {
+    let finishTickets
+    apiClient.get.mockImplementation(url => url === '/me/tickets'
+      ? new Promise(resolve => { finishTickets = resolve })
+      : Promise.resolve({ data: { orders: [purchase], meta: {} } }))
+    renderPage()
+    await userEvent.click(screen.getByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByText('Order HP-9')).toBeInTheDocument()
+    finishTickets({ data: { tickets: [] } })
+  })
+
+  it('stops at repeated or non-advancing ticket pages', async () => {
+    apiClient.get.mockResolvedValue({ data: { tickets: [ticket], meta: { next_page: 1 } } })
+    renderPage()
+    await screen.findByText('Island workshop')
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1))
+    expect(apiClient.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('caps ticket pagination even when the server always advertises another page', async () => {
+    apiClient.get.mockImplementation((url, options) => Promise.resolve({ data: {
+      tickets: [ticket], meta: { next_page: (options?.params?.page || 1) + 1 },
+    } }))
+    renderPage()
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1))
+    expect(apiClient.get).toHaveBeenCalledTimes(20)
+  })
+
+  it('labels test purchases and supports tab keyboard navigation', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/me/orders'
+      ? { orders: [{ ...purchase, payment_environment: 'test' }], meta: {} }
+      : { tickets: [ticket] } }))
+    renderPage()
+    const ticketsTab = screen.getByRole('tab', { name: 'Tickets' })
+    ticketsTab.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    const ordersTab = screen.getByRole('tab', { name: 'Orders' })
+    await waitFor(() => expect(ordersTab).toHaveFocus())
+    expect(ordersTab).toHaveAttribute('tabindex', '0')
+    expect(ticketsTab).toHaveAttribute('tabindex', '-1')
+    expect(ordersTab).toHaveAttribute('aria-controls', 'history-orders-panel')
+    expect(await screen.findByText('Test order — no real charge')).toBeInTheDocument()
+    expect(screen.getByText(/Test total \(no real charge\): \$51.50/)).toBeInTheDocument()
+    await userEvent.keyboard('{Home}')
+    await waitFor(() => expect(ticketsTab).toHaveFocus())
+    await userEvent.keyboard('{End}')
+    await waitFor(() => expect(ordersTab).toHaveFocus())
+    await userEvent.keyboard('{ArrowLeft}')
+    await waitFor(() => expect(ticketsTab).toHaveFocus())
   })
 })
 

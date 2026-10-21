@@ -6,7 +6,10 @@ class Api::V1::Me::OrdersController < ApplicationController
   end
 
   def index
+    response.headers["Cache-Control"] = "private, no-store"
     orders = current_user.orders.where(status: [:completed, :partially_refunded, :refunded, :cancelled])
+      .where("orders.completed_at IS NOT NULL OR EXISTS (SELECT 1 FROM payments WHERE payments.order_id = orders.id AND payments.status IN (?))",
+        [Payment.statuses.fetch("succeeded"), Payment.statuses.fetch("partially_refunded"), Payment.statuses.fetch("refunded")])
       .includes(:payments, :refunds, :disputes, :order_items, :promo_code,
         event: { event_changes: :event_change_responses }, tickets: [:ticket_type, :order_item])
       .order(created_at: :desc, id: :desc)
@@ -20,6 +23,7 @@ class Api::V1::Me::OrdersController < ApplicationController
   end
 
   def show
+    response.headers["Cache-Control"] = "private, no-store"
     order = current_user.orders
       .includes(:payments, :refunds, :disputes, :order_items, :promo_code,
         event: { event_changes: :event_change_responses }, tickets: [:ticket_type, :order_item])

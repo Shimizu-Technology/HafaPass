@@ -18,6 +18,7 @@ class Api::V1::OrdersController < ApplicationController
   ]
 
   def create
+    response.headers["Cache-Control"] = "private, no-store"
     checkout_key = params[:checkout_key].presence
     if checkout_key && (!checkout_key.is_a?(String) || !checkout_key.match?(/\A[0-9a-f]{64}\z/))
       return render json: { error: "Checkout recovery key is invalid", checkout_recovery_required: true }, status: :unprocessable_entity
@@ -131,6 +132,7 @@ class Api::V1::OrdersController < ApplicationController
   private :render_checkout_rejection
 
   def show
+    response.headers["Cache-Control"] = "private, no-store"
     render json: OrderPresenter.call(
       @order,
       include_tickets: @order.completed? || @order.partially_refunded? || @order.refunded? || @order.cancelled?
@@ -138,7 +140,7 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def receipt
-    return render json: { error: "Order not found" }, status: :not_found unless @order.ticket_record_available?
+    return render json: { error: "Order not found" }, status: :not_found unless @order.receipt_available?
 
     response.headers["Cache-Control"] = "private, no-store"
     send_data ReceiptPdfGenerator.new(@order).generate,
@@ -407,7 +409,7 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def set_accessible_order
-    response.headers["Cache-Control"] = "private, no-store" if action_name == "receipt"
+    response.headers["Cache-Control"] = "private, no-store" if %w[show receipt].include?(action_name)
     order = Order.find_by(id: params[:id])
     authorized = order && (
       (@current_user&.admin? && action_name != "receipt") ||

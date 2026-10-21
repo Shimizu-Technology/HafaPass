@@ -51,12 +51,15 @@ function MyTicketsContent({ refreshSession, signOut }) {
   const [purchaseLoading, setPurchaseLoading] = useState(false)
   const [purchaseError, setPurchaseError] = useState(false)
   const purchaseRequest = useRef(0)
+  const firstPageLoaded = useRef(false)
   const capabilities = useLaunchCapabilities()
 
-  const loadAllTickets = useCallback(async () => {
+  const loadAllTickets = useCallback(async (onPage = () => {}) => {
     const all = []
     let page = 1
-    for (;;) {
+    const seen = new Set()
+    while (page && !seen.has(page) && seen.size < 20) {
+      seen.add(page)
       let response
       try {
         response = await apiClient.get('/me/tickets', page === 1 ? undefined : { params: { page } })
@@ -66,10 +69,18 @@ function MyTicketsContent({ refreshSession, signOut }) {
         response = await apiClient.get('/me/tickets', page === 1 ? undefined : { params: { page } })
       }
       all.push(...(response.data.tickets || []))
-      if (!response.data.meta?.next_page) return all
-      page = response.data.meta.next_page
+      onPage(all)
+      const next = Number(response.data.meta?.next_page)
+      page = Number.isInteger(next) && next > page && !seen.has(next) ? next : null
     }
+    return all
   }, [refreshSession])
+
+  const showTickets = useCallback(tickets => {
+    firstPageLoaded.current = true
+    setOrders(tickets.map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
+    setLoading(false)
+  }, [])
 
   const loadPurchases = useCallback(async (page = 1) => {
     const request = ++purchaseRequest.current
@@ -91,36 +102,37 @@ function MyTicketsContent({ refreshSession, signOut }) {
     setRecovering(true)
     setRecoveryError(null)
     try {
-      await apiClient.post('/me/orders/recover_guest')
-      const tickets = await loadAllTickets()
-      setOrders(tickets.map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
-      if (activeTab.current === 'orders') await loadPurchases(1)
+      const response = await apiClient.post('/me/orders/recover_guest')
+      if ((response.data?.recovered_orders_count || 0) > 0 || (response.data?.recovered_tickets_count || 0) > 0) {
+        await loadAllTickets(showTickets)
+        if (activeTab.current === 'orders') await loadPurchases(1)
+      }
     } catch {
       setRecoveryError(t('buyerAccount.myTicketsPage.weCouldNotCheckForGuestPurchasesYet'))
     } finally {
       setRecovering(false)
     }
-  }, [loadAllTickets, loadPurchases, t])
+  }, [loadAllTickets, loadPurchases, showTickets, t])
 
   const fetchOrders = useCallback(async () => {
+    firstPageLoaded.current = false
     setError(null)
     setSignedOut(false)
     try {
-      const tickets = await loadAllTickets()
-      setOrders(tickets.map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
-      setLoading(false)
+      await loadAllTickets(showTickets)
       await recoverGuestPurchases()
     } catch (err) {
       if (err.response?.status === 401) {
         // An expired session is not a failure; invite the visitor to sign in again.
         setSignedOut(true)
       } else {
-        setError(t('buyerAccount.myTicketsPage.weCouldnTLoadYourTicketsTryAgain'))
+        if (!firstPageLoaded.current) setError(t('buyerAccount.myTicketsPage.weCouldnTLoadYourTicketsTryAgain'))
+        else setTicketNotice(t('buyerAccount.myTicketsPage.weCouldnTRefreshYourTicketsReloadThe'))
       }
     } finally {
       setLoading(false)
     }
-  }, [loadAllTickets, recoverGuestPurchases, t])
+  }, [loadAllTickets, recoverGuestPurchases, showTickets, t])
 
   useEffect(() => {
     fetchOrders()
@@ -134,12 +146,11 @@ function MyTicketsContent({ refreshSession, signOut }) {
   // drops out of this list, because it now belongs to them.
   const refreshTickets = useCallback(async () => {
     try {
-      const tickets = await loadAllTickets()
-      setOrders(tickets.map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
+      await loadAllTickets(showTickets)
     } catch {
       setTicketNotice(t('buyerAccount.myTicketsPage.weCouldnTRefreshYourTicketsReloadThe'))
     }
-  }, [loadAllTickets, t])
+  }, [loadAllTickets, showTickets, t])
 
   const recoveryNotice = (
     <div className="mb-5 text-sm" role="status">
@@ -152,14 +163,6 @@ function MyTicketsContent({ refreshSession, signOut }) {
     </div>
   )
 
-  if (loading) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-      </div>
-    )
-  }
-
   if (signedOut) {
     return (
       <div className="max-w-md mx-auto px-4 py-12">
@@ -171,17 +174,6 @@ function MyTicketsContent({ refreshSession, signOut }) {
           {signOut
             ? <button type="button" onClick={() => signOut({ redirectUrl: signInDestination(location) })} className="btn-primary mt-6 w-full sm:w-auto">{t('buyerAccount.myTicketsPage.signInAgain')}</button>
             : <Link to={signInDestination(location)} className="btn-primary mt-6 w-full sm:w-auto">{t('buyerAccount.myTicketsPage.signInAgain')}</Link>}
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-12">
-        <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-          <p className="text-red-700">{error}</p>
-          <button type="button" onClick={fetchOrders} className="btn-secondary mt-4">{t('buyerAccount.myTicketsPage.tryAgain')}</button>
         </div>
       </div>
     )
@@ -269,10 +261,23 @@ function MyTicketsContent({ refreshSession, signOut }) {
           {recoveryNotice}
           <div role="tablist" aria-label={t('buyerAccount.myTicketsPage.purchaseHistory')} className="mb-6 flex gap-2 border-b border-neutral-200">
             {['tickets', 'orders'].map(value => <button key={value} type="button" role="tab" id={`history-${value}-tab`} aria-controls={`history-${value}-panel`} aria-selected={tab === value}
+              tabIndex={tab === value ? 0 : -1}
+              onKeyDown={event => {
+                const values = ['tickets', 'orders']
+                const index = values.indexOf(value)
+                const next = event.key === 'ArrowRight' ? values[(index + 1) % values.length] : event.key === 'ArrowLeft' ? values[(index + values.length - 1) % values.length] : event.key === 'Home' ? values[0] : event.key === 'End' ? values[values.length - 1] : null
+                if (!next) return
+                event.preventDefault()
+                navigate({ pathname: location.pathname, search: next === 'orders' ? '?tab=orders' : '' })
+                requestAnimationFrame(() => document.getElementById(`history-${next}-tab`)?.focus())
+              }}
               onClick={() => navigate({ pathname: location.pathname, search: value === 'orders' ? '?tab=orders' : '' })} className={`min-h-11 border-b-2 px-4 font-semibold ${tab === value ? 'border-brand-600 text-brand-800' : 'border-transparent text-neutral-600'}`}>
               {t(`buyerAccount.myTicketsPage.tabs.${value}`)}
             </button>)}
           </div>
+          {tab === 'tickets'
+            ? <div role="tabpanel" id="history-orders-panel" aria-labelledby="history-orders-tab" hidden />
+            : <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" hidden />}
           {tab === 'orders' ? <div role="tabpanel" id="history-orders-panel" aria-labelledby="history-orders-tab" className="space-y-4">
             {purchaseLoading && <p role="status" className="flex items-center gap-2 text-neutral-600"><Loader2 className="h-5 w-5 animate-spin" />{t('buyerAccount.myTicketsPage.loadingOrders')}</p>}
             {purchaseError && <div role="alert" className="card p-5"><p>{t('buyerAccount.myTicketsPage.ordersLoadError')}</p><button type="button" onClick={() => loadPurchases(purchaseMeta?.current_page || 1)} className="btn-secondary mt-3">{t('buyerAccount.myTicketsPage.tryAgain')}</button></div>}
@@ -288,6 +293,8 @@ function MyTicketsContent({ refreshSession, signOut }) {
                   <p className="text-sm text-neutral-600">{formatEventDate(purchase.event.starts_at, purchase.event.timezone)} · {formatEventTime(purchase.event.starts_at, purchase.event.timezone)}</p>
                   <p className="mt-2 text-sm text-neutral-600">{t('buyerAccount.myTicketsPage.orderedOn', { date: formatEventDate(purchase.completed_at || purchase.created_at, purchase.event.timezone) })}</p>
                   <p className="text-sm text-neutral-600">{t('buyerAccount.myTicketsPage.orderNumber', { reference: purchase.reference })}</p>
+                  {['test', 'simulate', 'simulated'].includes(purchase.payment_environment) && <p className="mt-2 font-semibold text-amber-900">{t('buyerAccount.myTicketsPage.testOrderNoRealCharge')}</p>}
+                  {purchase.receipt_available === false && <p className="mt-2 font-semibold text-amber-900">{t('buyerAccount.myTicketsPage.checkoutNotCompleted')}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-800">{t(`buyerAccount.myTicketsPage.orderStatus.${purchase.buyer_status || purchase.status}`)}</span>
@@ -298,7 +305,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
               <div className="mt-4 grid grid-cols-2 gap-2 border-t border-neutral-200 pt-3 text-sm sm:grid-cols-3">
                 <span>{t('buyerAccount.myTicketsPage.serviceFee')}: {formatMoneyCents(purchase.service_fee_cents)}</span>
                 <span>{t('buyerAccount.myTicketsPage.discount')}: {purchase.discount_cents > 0 ? '−' : ''}{formatMoneyCents(purchase.discount_cents)}</span>
-                <span className="font-semibold">{t('buyerAccount.myTicketsPage.totalPaid')}: {formatMoneyCents(purchase.total_cents)}</span>
+                <span className="font-semibold">{purchase.receipt_available === false ? t('buyerAccount.myTicketsPage.noCharge') : ['test', 'simulate', 'simulated'].includes(purchase.payment_environment) ? t('buyerAccount.myTicketsPage.testTotal') : purchase.total_cents === 0 ? t('buyerAccount.myTicketsPage.complimentary') : t('buyerAccount.myTicketsPage.totalPaid')}{purchase.receipt_available === false ? '' : `: ${formatMoneyCents(purchase.total_cents)}`}</span>
               </div>
             </Link>)}
             {!purchaseLoading && (purchaseMeta?.prev_page || purchaseMeta?.next_page) && <nav aria-label={t('buyerAccount.myTicketsPage.ordersPages')} className="flex items-center justify-between gap-3 pt-2">
@@ -306,7 +313,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
               <span className="text-sm text-neutral-600">{t('buyerAccount.myTicketsPage.pageOf', { page: purchaseMeta.current_page, total: purchaseMeta.total_pages })}</span>
               <button type="button" disabled={!purchaseMeta.next_page} onClick={() => loadPurchases(purchaseMeta.next_page)} className="btn-secondary disabled:opacity-50">{t('buyerAccount.myTicketsPage.next')}</button>
             </nav>}
-          </div> : eventGroups.length === 0 ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="card p-8 text-center">
+          </div> : error ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="rounded-xl border border-red-200 bg-red-50 p-6 text-center" ><div role="alert"><p className="text-red-700">{error}</p><button type="button" onClick={fetchOrders} className="btn-secondary mt-4">{t('buyerAccount.myTicketsPage.tryAgain')}</button></div></div> : loading ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="flex min-h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div> : eventGroups.length === 0 ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="card p-8 text-center">
             <Ticket className="mx-auto h-16 w-16 text-neutral-300" />
             <h2 className="mt-4 text-xl font-semibold text-neutral-800">{recovering ? t('buyerAccount.myTicketsPage.lookingForYourTickets') : recoveryError ? t('buyerAccount.myTicketsPage.guestPurchasesNeedAnotherCheck') : t('buyerAccount.myTicketsPage.noTicketsYet')}</h2>
             <p className="mt-2 text-neutral-500">{t('buyerAccount.myTicketsPage.purchasesMadeWithAVerifiedEmailOnYour')}</p>
