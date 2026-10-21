@@ -76,6 +76,16 @@ class Order < ApplicationRecord
     disputes.where(status: [:open, :lost]).exists?
   end
 
+  def buyer_status
+    return "disputed" if ticket_access_blocked?
+    return "refunded" if refunded?
+    return "partially_refunded" if partially_refunded?
+    return "cancelled_event" if event.cancelled?
+    return "cancelled" if cancelled?
+
+    "paid"
+  end
+
   def full_refund_pending?
     return false unless total_cents.positive?
 
@@ -104,6 +114,24 @@ class Order < ApplicationRecord
 
   def ticket_record_available?
     completed? || partially_refunded? || refunded? || cancelled?
+  end
+
+  def receipt_available?
+    ticket_record_available? && (completed_at.present? ||
+      payments.any? { |payment| payment.succeeded? || payment.partially_refunded? || payment.refunded? })
+  end
+
+  def payment_environment
+    entries = payments.to_a
+    payment = entries.select { |entry| entry.succeeded? || entry.partially_refunded? || entry.refunded? }.max_by(&:id) ||
+      entries.max_by(&:id)
+    return if payment.nil?
+
+    return "simulated" if payment.provider_environment == "simulate" ||
+      payment.provider_payload.to_h["simulated"] == true || payment.provider_payment_id.to_s.start_with?("sim_")
+    return "test" if payment.provider_payload.to_h["livemode"] == false
+
+    payment.provider_environment
   end
 
   def gross_cents
