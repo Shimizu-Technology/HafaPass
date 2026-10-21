@@ -1,3 +1,5 @@
+import { formatMoneyCents } from './money'
+
 // Discovery is a snapshot. Checkout still obtains the authoritative server quote.
 //
 // Prices lead with the all-in amount: the ticket price plus the mandatory
@@ -54,5 +56,5 @@ export function purchasableAllInPrices(ticketTypes = []) {
 
 export function formatTicketPrice(cents, freeLabel = 'Free') {
   if (cents === null || !Number.isSafeInteger(cents) || cents < 0) return ''
-  return cents === 0 ? freeLabel : `$${(cents / 100).toFixed(2)}`
+  return cents === 0 ? freeLabel : formatMoneyCents(cents)
 }

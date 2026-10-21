@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
 import apiClient from '../api/client'
 
@@ -18,6 +19,7 @@ function bannerKind(environment, paymentMode) {
 }
 
 export default function EnvironmentBanner({ offlineOnly = false }) {
+  const { t } = useTranslation()
   const [runtime, setRuntime] = useState(() => offlineOnly
     ? { environment: window.localStorage.getItem(ENVIRONMENT_KEY), paymentMode: window.localStorage.getItem(PAYMENT_MODE_KEY) }
     : { environment: null, paymentMode: null })
@@ -38,7 +40,7 @@ export default function EnvironmentBanner({ offlineOnly = false }) {
   if (!kind) return null
   return <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950" role="status">
     {kind === 'payments'
-      ? <><strong>Test payments.</strong> Only Stripe test cards work; no real card is charged. Tickets bought now are for testing.</>
-      : <><strong>Test environment.</strong> Use test information and test payment methods. These tickets are for testing.</>}
+      ? <><strong>{t('buyer.environment.testPayments')}</strong>{t('buyer.environment.testPaymentDetail')}</>
+      : <><strong>{t('buyer.environment.testEnvironment')}</strong>{t('buyer.environment.testEnvironmentDetail')}</>}
   </div>
 }

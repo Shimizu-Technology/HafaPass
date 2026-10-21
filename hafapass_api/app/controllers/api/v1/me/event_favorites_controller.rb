@@ -9,7 +9,7 @@ class Api::V1::Me::EventFavoritesController < ApplicationController
         { event_seats: :active_precheckout_seat_holds },
         { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
-    render json: { events: records.map { |event| Marketplace::EventSerializer.call(event, fee_terms: listing_fee_terms) }, meta: pagination_meta(pagy) }
+    render json: { events: records.map { |event| Marketplace::EventSerializer.call(event, fee_terms: listing_fee_terms, locale: request_locale) }, meta: pagination_meta(pagy) }
   end
 
   def create

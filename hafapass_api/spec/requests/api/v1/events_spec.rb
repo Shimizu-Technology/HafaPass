@@ -3,6 +3,16 @@ require "rails_helper"
 RSpec.describe "Api::V1::Events", type: :request do
   let(:organizer_profile) { create(:organizer_profile) }
 
+  it "groups a large fixed promo amount shown during checkout" do
+    event = create(:event, :published, organizer_profile: organizer_profile)
+    create(:promo_code, event: event, code: "LARGE", discount_type: "fixed", discount_value: 1234567)
+
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "LARGE", subtotal_cents: 2000000 }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("description")).to eq("$12,345.67 off")
+  end
+
   describe "GET /api/v1/events" do
     it "returns upcoming purchasable events and excludes non-purchasable inventory" do
       published_upcoming = create(:event, :published, organizer_profile: organizer_profile, starts_at: 3.days.from_now)

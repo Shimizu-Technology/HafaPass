@@ -143,6 +143,38 @@ RSpec.describe TranslateRecordJob, type: :job do
     expect(event.reload.translation_status).to eq("untranslated")
   end
 
+  it "settles a completed partial job as untranslated so backfill can recover missing fields" do
+    described_class.perform_now("Event", event.id, %w[title], false)
+
+    expect(event.reload.translation_status).to eq("untranslated")
+    expect(event.translation_complete?).to be(false)
+
+    described_class.perform_now("Event", event.id, nil, false)
+    expect(event.reload.translation_status).to eq("translated")
+  end
+
+  it "requests and requires only enabled non-English locales" do
+    with_locales_enabled(%w[en ko], machine_translation: true)
+
+    described_class.perform_now("Event", event.id, nil, false)
+
+    expect(service).to have_received(:translate).once.with(anything, context: anything, locales: ["ko"])
+    expect(event.reload.translations["title"].keys).to contain_exactly("ko", "_digest")
+    expect(event.machine_translation_current?("title")).to be(true)
+    expect(event.translation_complete?).to be(true)
+    expect(event.translation_status).to eq("translated")
+
+    with_locales_enabled(%w[en ko ja], machine_translation: true)
+    expect(event.machine_translation_current?("title")).to be(false)
+    expect(event.translation_complete?).to be(false)
+  end
+
+  it "sends nothing to General Translation when only English is enabled" do
+    with_locales_enabled(%w[en], machine_translation: true)
+    described_class.perform_now("Event", event.id, nil, true)
+    expect(service).not_to have_received(:translate)
+  end
+
   it "ignores unknown classes and missing records" do
     expect { described_class.perform_now("User", 1, nil, false) }.not_to raise_error
     expect { described_class.perform_now("Event", 0, nil, false) }.not_to raise_error

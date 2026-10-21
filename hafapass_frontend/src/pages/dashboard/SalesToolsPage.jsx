@@ -32,7 +32,7 @@ const TRANSLATION_STATUS = {
   pending: 'Translating your latest changes. This usually takes under a minute.',
   failed: 'Automatic translation did not finish. Try again.',
   untranslated: 'Not translated yet.',
-  unavailable: 'Automatic translation is paused for now, so buyers see your English text. It resumes on its own.',
+  unavailable: 'Automatic translation is paused for now, so buyers see your English text. It stays paused until translation credit is restored.',
 }
 const TRANSLATION_POLL_MS = 5000
 

@@ -9,6 +9,8 @@ describe('discovery ticket pricing', () => {
       { price_cents: 2000, current_price_cents: 1250, quantity_remaining: 3, on_sale: true },
     ])).toBe(1250)
     expect(formatTicketPrice(1250)).toBe('$12.50')
+    expect(formatTicketPrice(100000)).toBe('$1,000.00')
+    expect(formatTicketPrice(1234567)).toBe('$12,345.67')
   })
   it('does not coerce missing, negative or invalid prices to Free', () => {
     expect(lowestPurchasablePrice([{ price_cents: null }, { price_cents: -1 }, { price_cents: '0' }])).toBeNull()

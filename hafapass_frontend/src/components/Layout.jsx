@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useOutlet } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
@@ -7,6 +8,9 @@ import EnvironmentBanner from './EnvironmentBanner'
 import { isWorkspacePath } from '../utils/workspace'
 
 export default function Layout() {
+  const { t } = useTranslation()
+  const translation = useRef(t)
+  translation.current = t
   const location = useLocation()
   const main = useRef(null)
   const previousPath = useRef(location.pathname)
@@ -26,7 +30,7 @@ export default function Layout() {
     // Focus only for a different page. Query/filter/hash updates leave the
     // user's input and in-page focus alone, including ticket-type anchors.
     content.focus({ preventScroll: true })
-    setAnnouncement('Loading page')
+    setAnnouncement(translation.current('buyer.layout.loading'))
     const orient = () => {
       const hash = window.location.hash
       let anchor = null
@@ -45,7 +49,7 @@ export default function Layout() {
         }
         target.focus({ preventScroll: !anchor })
       }
-      setAnnouncement(heading?.textContent?.trim() || 'Page loaded')
+      setAnnouncement(heading?.textContent?.trim() || translation.current('buyer.layout.loaded'))
       return true
     }
     if (orient()) return undefined
@@ -59,7 +63,7 @@ export default function Layout() {
   return (
     <div className="app-shell flex flex-col">
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</div>
-      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-3 focus:text-neutral-950">Skip to main content</a>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-3 focus:text-neutral-950">{t('buyer.layout.skip')}</a>
       <EnvironmentBanner />
       <Navbar />
       <main ref={main} id="main-content" tabIndex={-1} className="flex-1">

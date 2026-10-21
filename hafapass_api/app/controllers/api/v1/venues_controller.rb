@@ -19,7 +19,7 @@ class Api::V1::VenuesController < ApplicationController
         { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
     json = venue_json(venue).merge(
-      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: event.organizer_sales_verified?, fee_terms: listing_fee_terms) },
+      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: event.organizer_sales_verified?, fee_terms: listing_fee_terms, locale: request_locale) },
       meta: pagination_meta(pagy)
     )
     # A retired link name still finds the venue; the SPA swaps in `slug`.

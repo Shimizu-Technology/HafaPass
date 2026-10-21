@@ -1,3 +1,5 @@
+import TranslatedTicketContent from './TranslatedTicketContent'
+import MachineTranslationNotice from './MachineTranslationNotice'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Minus, Plus, ShoppingCart, Clock, Zap } from 'lucide-react'
@@ -11,7 +13,7 @@ import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFee
 // ones only for platform admins.
 // `showOriginal` follows the event page's "Show original" switch for
 // machine-translated ticket names.
-export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false }) {
+export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false, showTranslationNotice = true }) {
   const { t } = useTranslation()
   const [quantities, setQuantities] = useState({})
 
@@ -64,16 +66,18 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
             : Number.isSafeInteger(tt.next_tier.all_in_price_cents) ? tt.next_tier.all_in_price_cents : tt.next_tier.price_cents
 
           return (
-            <div key={tt.id} className={`card p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
+            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`card p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-medium text-neutral-900 break-words max-w-full">{showOriginal && tt.original_name ? tt.original_name : tt.name}</h3>
+                    <h3 className="font-medium text-neutral-900 break-words max-w-full">{content.name}</h3>
                     {soldOut && (
-                      <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : 'Sales unavailable'}</span>
+                      <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : t('buyer.TicketTypesSection.salesUnavailable')}</span>
                     )}
                   </div>
-                  {(showOriginal && tt.machine_translated ? tt.original_description : tt.description) && <p className="text-sm text-neutral-600 mt-0.5 break-words">{showOriginal && tt.machine_translated ? tt.original_description : tt.description}</p>}
+                  {content.description && <p className="text-sm text-neutral-600 mt-0.5 break-words">{content.description}</p>}
+
+                  {showTranslationNotice && content.notice && <MachineTranslationNotice {...content.notice} />}
 
                   {/* Pricing with tier info */}
                   <div className="mt-1">
@@ -127,7 +131,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                     <button
                       onClick={() => setQty(tt.id, qty - 1)}
                       disabled={qty === 0}
-                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={`Decrease quantity for ${tt.name}`}
+                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={t('buyer.TicketTypesSection.decreaseQuantityFor', { value1: tt.name })}
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
@@ -135,14 +139,14 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                     <button
                       onClick={() => setQty(tt.id, Math.min(qty + 1, maxQty))}
                       disabled={qty >= maxQty}
-                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={`Increase quantity for ${tt.name}`}
+                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={t('buyer.TicketTypesSection.increaseQuantityFor', { value1: tt.name })}
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
               </div>
-            </div>
+            </div>}</TranslatedTicketContent>
           )
         })}
       </div>

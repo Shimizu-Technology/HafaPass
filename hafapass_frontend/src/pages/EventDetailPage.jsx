@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
 import { useParams, useNavigate, useSearchParams, useMatch, useLocation, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight } from 'lucide-react'
@@ -29,6 +30,7 @@ const INERT_VALUE = Number(reactVersion.split('.')[0]) >= 19 ? true : ''
 // the visitor reaches (or scrolls past) the end of the event content, so it never
 // covers the footer.
 function MobileBuyBar({ priceLabel, targets, endMarker }) {
+  const { t } = useTranslation()
   const reducedMotion = useReducedMotion()
   const [visible, setVisible] = useState(false)
 
@@ -64,8 +66,7 @@ function MobileBuyBar({ priceLabel, targets, endMarker }) {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
         <p className="min-w-0 truncate text-base font-semibold text-neutral-900">{priceLabel}</p>
-        <a href="#tickets" onClick={openTickets} className="btn-primary shrink-0 !px-5 !py-2.5">
-          Get tickets <ChevronRight aria-hidden="true" className="ml-1 h-4 w-4" />
+        <a href="#tickets" onClick={openTickets} className="btn-primary shrink-0 !px-5 !py-2.5">{t('buyer.EventDetail.getTickets')}<ChevronRight aria-hidden="true" className="ml-1 h-4 w-4" />
         </a>
       </div>
     </div>
@@ -87,6 +88,9 @@ export default function EventDetailPage() {
 }
 
 function EventDetailContent() {
+  const { t } = useTranslation()
+  const translation = useRef(t)
+  translation.current = t
   const { slug } = useParams()
   const reducedMotion = useReducedMotion()
   const navigate = useNavigate()
@@ -156,8 +160,8 @@ function EventDetailContent() {
       })
       .catch(error => { if (current()) {
         setError(error.response?.status === 404
-          ? { message: 'Event not found.', retryable: false }
-          : { message: 'This event couldn’t load. Please try again.', retryable: true })
+          ? { message: translation.current('buyer.EventDetail.eventNotFound'), retryable: false }
+          : { message: translation.current('buyer.EventDetail.thisEventCouldntLoadPleaseTryAgain'), retryable: true })
         setLoading(false)
       } })
     return () => { active = false }
@@ -183,7 +187,7 @@ function EventDetailContent() {
     let active = true
     apiClient.get(`/waitlist_offers/${encodeURIComponent(waitlistOfferToken)}`)
       .then(res => { if (active && liveRoute.current.slug === slug) setWaitlistOffer(res.data) })
-      .catch(() => { if (active && liveRoute.current.slug === slug) setWaitlistOffer({ error: 'This waitlist offer is no longer available.' }) })
+      .catch(() => { if (active && liveRoute.current.slug === slug) setWaitlistOffer({ error: translation.current('buyer.EventDetail.offerUnavailable') }) })
     return () => { active = false }
   }, [waitlistOfferToken, slug])
 
@@ -220,7 +224,7 @@ function EventDetailContent() {
     }
   }
 
-  const ageLabels = { all_ages: 'All Ages', eighteen_plus: '18+', twenty_one_plus: '21+' }
+  const ageLabels = { all_ages: t('buyer.EventDetail.allAges'), eighteen_plus: '18+', twenty_one_plus: '21+' }
 
   const buildGoogleCalendarUrl = (evt) => {
     const toGCalDate = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
@@ -267,8 +271,8 @@ function EventDetailContent() {
   if (error) return (
     <div className="max-w-2xl mx-auto px-4 py-16 text-center">
       <p role="alert" className="text-neutral-700 text-lg mb-4">{error.message}</p>
-      {error.retryable && <button type="button" className="btn-primary mb-4" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry event</button>}
-      <Link to={browseFrom} className="btn-primary">Browse Events</Link>
+      {error.retryable && <button type="button" className="btn-primary mb-4" onClick={() => setLoadAttempt(attempt => attempt + 1)}>{t('buyer.EventDetail.retryEvent')}</button>}
+      <Link to={browseFrom} className="btn-primary">{t('buyer.EventDetail.browseEvents')}</Link>
     </div>
   )
   if (!event) return null
@@ -277,7 +281,7 @@ function EventDetailContent() {
   const eventUrl = `${PUBLIC_WEB_URL}/events/${event.slug}`
   const lowestPrice = lowestPurchasablePrice(event.ticket_types || [])
   const onSale = event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
-  const buyBarPrice = lowestPrice === 0 ? 'Free' : lowestPrice !== null ? `From ${formatTicketPrice(lowestPrice)}` : 'Tickets available'
+  const buyBarPrice = lowestPrice === 0 ? t('buyer.EventDetail.free') : lowestPrice !== null ? t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) }) : t('buyer.EventDetail.ticketsAvailable')
 
   // Build JSON-LD structured data for the event
   const ticketTypes = event.ticket_types || []
@@ -346,12 +350,11 @@ function EventDetailContent() {
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 sm:pb-10 w-full">
             {/* Back link */}
             <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-neutral-200 transition-colors hover:text-white">
-              <ArrowLeft aria-hidden="true" className="w-4 h-4" /> All Events
-            </Link>
+              <ArrowLeft aria-hidden="true" className="w-4 h-4" />{t('buyer.EventDetail.allEvents')}</Link>
 
             {event.category && event.category !== 'other' && (
               <span className="block text-xs font-medium text-brand-400 uppercase tracking-wider mb-2">
-                {event.category_label || event.category}
+                {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
               </span>
             )}
             <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3 break-words">{content.title}</h1>
@@ -374,7 +377,7 @@ function EventDetailContent() {
                 </div>
               )}
             </div>
-            <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">Choose tickets</a>
+            <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>
           </div>
         </div>
       </div>
@@ -399,12 +402,12 @@ function EventDetailContent() {
               <div className="lg:sticky lg:top-24">
                 {waitlistOffer && !waitlistOffer.error && (
                   <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                    <p className="text-sm font-semibold text-emerald-900">Your tickets are reserved</p>
-                    <p className="mt-1 text-sm text-emerald-800">{waitlistOffer.quantity} × {waitlistOffer.ticket_type_name} until {new Date(waitlistOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>
+                    <p className="text-sm font-semibold text-emerald-900">{t('buyer.EventDetail.yourTicketsAreReserved')}</p>
+                    <p className="mt-1 text-sm text-emerald-800">{t('buyer.EventDetail.reservedUntil', { quantity: waitlistOffer.quantity, ticket: waitlistOffer.ticket_type_name, time: formatEventTime(waitlistOffer.expires_at, event.timezone) })}</p>
                     {Number.isSafeInteger(waitlistOffer.all_in_price_cents) && waitlistOffer.all_in_price_cents > 0 && (
-                      <p className="mt-1 text-sm font-semibold text-emerald-900">{formatTicketPrice(waitlistOffer.all_in_price_cents)} each, fees included</p>
+                      <p className="mt-1 text-sm font-semibold text-emerald-900">{t('buyer.EventDetail.eachFeesIncluded', { price: formatTicketPrice(waitlistOffer.all_in_price_cents) })}</p>
                     )}
-                    <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>Claim waitlist offer</button>
+                    <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>{t('buyer.EventDetail.claimWaitlistOffer')}</button>
                   </div>
                 )}
                 {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
@@ -412,9 +415,9 @@ function EventDetailContent() {
                   {event.assigned_seating ? (
                     <SeatSelector event={event} onReserved={handleSeatCheckout} />
                   ) : event.ticket_types && event.ticket_types.length > 0 ? (
-                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} showOriginal={content.showingOriginal} />
+                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} showOriginal={content.showingOriginal} showTranslationNotice={!content.notice} />
                   ) : (
-                    <p className="text-neutral-500 text-center py-4">No tickets available</p>
+                    <p className="text-neutral-500 text-center py-4">{t('buyer.EventDetail.noTicketsAvailable')}</p>
                   )}
                   <div className="mt-4 space-y-1 border-t border-neutral-100 pt-3">
                     <AllInPriceNote ticketTypes={event.ticket_types || []} includesProcessing={event.service_fee_includes_processing === true}
@@ -427,7 +430,7 @@ function EventDetailContent() {
                   event.status === 'published' &&
                   event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
                   <div className="mt-4">
-                    <WaitlistForm event={event} ticketTypes={event.ticket_types} />
+                    <WaitlistForm event={event} ticketTypes={event.ticket_types} showOriginal={content.showingOriginal} />
                   </div>
                 )}
               </div>
@@ -449,22 +452,20 @@ function EventDetailContent() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:text-brand-600 hover:border-brand-300 transition-colors text-sm font-medium"
                   >
-                    <CalendarPlus className="w-4 h-4" />
-                    Add to Calendar
-                  </a>
+                    <CalendarPlus className="w-4 h-4" />{t('buyer.EventDetail.addToCalendar')}</a>
                 )}
                 <button
                   onClick={handleShare}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:text-neutral-700 hover:border-neutral-300 transition-colors text-sm font-medium"
                 >
                   {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
-                  {copied ? 'Copied!' : 'Share'}
+                  {copied ? t('buyer.EventDetail.copied') : t('buyer.EventDetail.share')}
                 </button>
                 <button onClick={() => marketplaceAction('favorite')} aria-pressed={event.favorited} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
-                  <Heart className={`h-4 w-4 ${event.favorited ? 'fill-accent-700 text-accent-700' : ''}`} />{event.favorited ? 'Saved' : 'Save'}
+                  <Heart className={`h-4 w-4 ${event.favorited ? 'fill-accent-700 text-accent-700' : ''}`} />{event.favorited ? t('buyer.EventDetail.saved') : t('buyer.EventDetail.save')}
                 </button>
                 <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
-                  <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-700' : ''}`} />{event.reminder ? 'Reminder set' : 'Remind me'}
+                  <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-700' : ''}`} />{event.reminder ? t('buyer.EventDetail.reminderSet') : t('buyer.EventDetail.remindMe')}
                 </button>
               </div>
 
@@ -478,8 +479,7 @@ function EventDetailContent() {
                 )}
                 {event.doors_open_at && (
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
-                    <Clock className="w-3 h-3" />
-                    Doors {formatEventTime(event.doors_open_at, event.timezone)}
+                    <Clock className="w-3 h-3" />{t('buyer.EventDetail.doorsAt', { time: formatEventTime(event.doors_open_at, event.timezone) })}
                   </span>
                 )}
               </div>
@@ -494,17 +494,17 @@ function EventDetailContent() {
               {/* Description */}
               {content.description && (
                 <FadeUp><div className="prose prose-neutral max-w-none mb-8">
-                  <h2 className="text-lg font-semibold text-neutral-900 mb-3">About</h2>
+                  <h2 className="text-lg font-semibold text-neutral-900 mb-3">{t('buyer.EventDetail.about')}</h2>
                   <p className="text-neutral-600 leading-relaxed whitespace-pre-wrap">{content.description}</p>
                 </div></FadeUp>
               )}
 
-              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Organizer</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">Verified</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? 'Following' : 'Follow'}</button></div></div></FadeUp>}
+              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button></div></div></FadeUp>}
 
               {/* Venue Location Section */}
               {event.venue_address && (
                 <FadeUp delay={0.1}><section aria-labelledby="event-location-heading" className="mb-8">
-                  <h2 id="event-location-heading" className="text-lg font-semibold text-neutral-900 mb-3">Location</h2>
+                  <h2 id="event-location-heading" className="text-lg font-semibold text-neutral-900 mb-3">{t('buyer.EventDetail.location')}</h2>
                   <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 p-4 sm:flex-row sm:items-center sm:p-5">
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
@@ -523,9 +523,7 @@ function EventDetailContent() {
                       rel="noopener noreferrer"
                       className="btn-secondary shrink-0 gap-2 !px-4 !py-2.5 text-sm"
                     >
-                      <Navigation aria-hidden="true" className="h-4 w-4" />
-                      Directions
-                      <span className="sr-only">(opens Google Maps in a new tab)</span>
+                      <Navigation aria-hidden="true" className="h-4 w-4" />{t('buyer.EventDetail.directions')}<span className="sr-only">{t('buyer.EventDetail.opensGoogleMapsInANewTab')}</span>
                     </a>
                   </div>
                 </section></FadeUp>
