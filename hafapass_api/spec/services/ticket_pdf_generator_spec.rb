@@ -38,11 +38,10 @@ RSpec.describe TicketPdfGenerator do
     expect(text).not_to include(ticket.attendee_name, ticket.attendee_email, ticket.scan_credential, ticket.display_credential)
   end
 
-  it "rejects unsupported glyphs before creating an unreadable admission QR" do
+  it "replaces unsupported glyphs and still creates the admission QR" do
     event.update!(title: "Unsupported \u{10FFFF}")
-    expect(RQRCode::QRCode).not_to receive(:new)
-    expect { described_class.new(ticket).generate }.to raise_error(
-      TicketPdfGenerator::UnsupportedCharacterError, "Ticket PDF fonts do not support U+10FFFF")
+    expect(RQRCode::QRCode).to receive(:new).and_call_original
+    expect(read_pdf.pages.map(&:text).join("\n")).to include("Unsupported ?")
   end
 
   {

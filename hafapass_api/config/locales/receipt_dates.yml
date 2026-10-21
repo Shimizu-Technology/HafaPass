@@ -1,0 +1,24 @@
+en:
+  time:
+    formats:
+      receipt: "%B %-d, %Y %-I:%M %p %Z"
+ko:
+  time:
+    formats:
+      receipt: "%Y년 %-m월 %-d일 %H:%M %Z"
+ja:
+  time:
+    formats:
+      receipt: "%Y年%-m月%-d日 %H:%M %Z"
+zh:
+  time:
+    formats:
+      receipt: "%Y年%-m月%-d日 %H:%M %Z"
+zh-Hant:
+  time:
+    formats:
+      receipt: "%Y年%-m月%-d日 %H:%M %Z"
+tl:
+  time:
+    formats:
+      receipt: "%-m/%-d/%Y %-I:%M %p %Z"

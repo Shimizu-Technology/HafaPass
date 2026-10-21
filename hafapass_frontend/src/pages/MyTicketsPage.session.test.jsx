@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
 import { AxiosError } from 'axios'
@@ -25,6 +26,7 @@ describe('MyTicketsPage session refresh through the real API client', () => {
   let originalAdapter
   let uninstall
   let ticketRequests
+  let orderRequests
 
   beforeEach(() => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
@@ -37,6 +39,7 @@ describe('MyTicketsPage session refresh through the real API client', () => {
     clerk.signOut = vi.fn()
     uninstall = setAuthTokenGetter(() => clerk.getToken(), { userId: 'user_1', sessionId: 'sess_1', ready: true })
     ticketRequests = []
+    orderRequests = []
     originalAdapter = apiClient.defaults.adapter
     apiClient.defaults.adapter = async config => {
       const authorization = config.headers.Authorization
@@ -47,6 +50,14 @@ describe('MyTicketsPage session refresh through the real API client', () => {
           throw new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', config, null, response)
         }
         return { status: 200, statusText: 'OK', data: { tickets: [ticket] }, headers: {}, config }
+      }
+      if (config.url === '/me/orders') {
+        orderRequests.push(authorization)
+        if (authorization !== 'Bearer fresh-token') {
+          const response = { status: 401, statusText: 'Unauthorized', data: { error: 'expired' }, headers: {}, config }
+          throw new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', config, null, response)
+        }
+        return { status: 200, statusText: 'OK', data: { orders: [], meta: {} }, headers: {}, config }
       }
       return { status: 200, statusText: 'OK', data: {}, headers: {}, config }
     }
@@ -64,5 +75,15 @@ describe('MyTicketsPage session refresh through the real API client', () => {
     expect(clerk.getToken).toHaveBeenCalledWith({ skipCache: true })
     expect(ticketRequests.slice(0, 2)).toEqual(['Bearer stale-token', 'Bearer fresh-token'])
     expect(clerk.signOut).not.toHaveBeenCalled()
+  })
+
+  it('refreshes and retries the orders request after a 401', async () => {
+    render(<HelmetProvider><MemoryRouter initialEntries={['/my-tickets']}><MyTicketsPage /></MemoryRouter></HelmetProvider>)
+    await screen.findByText('Island workshop')
+    clerk.token = 'stale-token'
+    await userEvent.click(screen.getByRole('tab', { name: 'Orders' }))
+    await waitFor(() => expect(orderRequests.slice(0, 2)).toEqual(['Bearer stale-token', 'Bearer fresh-token']))
+    expect(await screen.findByText('No orders yet')).toBeInTheDocument()
+    expect(screen.queryByText('We couldn’t load your orders. Try again.')).not.toBeInTheDocument()
   })
 })

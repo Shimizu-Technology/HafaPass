@@ -52,6 +52,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         keyed = valid_params.merge(checkout_key: SecureRandom.hex(32))
         post_json "/api/v1/orders", params: keyed
         expect(response).to have_http_status(:created)
+        expect(response.headers["Cache-Control"]).to eq("private, no-store")
         original_id = response.parsed_body["id"]
         expect do
           post_json "/api/v1/orders", params: keyed.merge(order: { buyer_name: "Wrapper changed" },

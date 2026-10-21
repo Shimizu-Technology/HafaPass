@@ -333,6 +333,7 @@ function EventAnalyticsPageSession({ id, identity }) {
        </div>
       </div>
       {exportError && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}</p>}
+      <Link to={`/dashboard/events/${id}/attendees`} className="mt-3 mr-5 inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 hover:text-brand-900">Export this list with filters</Link>
       <Link to="/dashboard/finances" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 hover:text-brand-900">All events and payouts</Link>
      </div>
     </section>

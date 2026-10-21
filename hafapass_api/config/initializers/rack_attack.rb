@@ -39,6 +39,14 @@ class Rack::Attack
     req.ip if req.path == "/api/v1/users/sync" && req.post?
   end
 
+  throttle("sales-exports/ip", limit: 20, period: 1.hour) do |req|
+    req.ip if (req.post? && req.path.to_s.downcase.match?(%r{\A/api/v1/organizer/events/[^/]+/sales_exports(?:\.[a-z0-9]+)?/*\z})) ||
+      (req.get? && req.path.to_s.downcase.match?(%r{\A/api/v1/organizer/events/[^/]+/crm/export(?:\.[a-z0-9]+)?/*\z}))
+  end
+  throttle("door-lists/ip", limit: 60, period: 1.hour) do |req|
+    req.ip if req.get? && req.path.to_s.downcase.match?(%r{\A/api/v1/organizer/events/[^/]+/(?:sales_exports/door_list|admissions/door_list)(?:\.[a-z0-9]+)?/*\z})
+  end
+
   # Full-TIN actions have a separate, tighter budget. Resolve a verified
   # Clerk subject before using an admin ID; unverified requests only consume
   # the IP budget and never create a user during rate-limit evaluation.

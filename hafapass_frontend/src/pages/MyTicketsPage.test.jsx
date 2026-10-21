@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode } from 'react'
 import apiClient from '../api/client'
 import MyTicketsPage from './MyTicketsPage'
 
@@ -59,10 +60,175 @@ describe('MyTicketsPage guest recovery', () => {
 
   it('keeps known tickets when the post-recovery refresh fails', async () => {
     apiClient.get.mockResolvedValueOnce({ data: { tickets: [ticket] } }).mockRejectedValueOnce(new Error('API unavailable'))
-    apiClient.post.mockResolvedValue({ data: {} })
+    apiClient.post.mockResolvedValue({ data: { recovered_orders_count: 1 } })
     renderPage()
     await screen.findByRole('button', { name: 'Retry guest purchase recovery' })
     expect(screen.getByText('Island workshop')).toBeInTheDocument()
+  })
+
+  it('does not fetch tickets again when recovery changes nothing', async () => {
+    apiClient.get.mockResolvedValue({ data: { tickets: [ticket] } })
+    apiClient.post.mockResolvedValue({ data: { recovered_orders_count: 0, recovered_tickets_count: 0 } })
+    renderPage()
+    await screen.findByText('Island workshop')
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1))
+    expect(apiClient.get).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('MyTicketsPage orders tab', () => {
+  const purchase = {
+    id: 9, reference: 'HP-9', buyer_status: 'partially_refunded', completed_at: '2030-01-01T01:00:00Z',
+    event: { id: 1, title: 'Island workshop', timezone: 'Pacific/Guam', starts_at: '2030-01-02T08:00:00Z' },
+    order_items: [{ id: 4, item_kind: 'ticket', name: 'General admission', quantity: 2 }],
+    refund_pending: true, refunded_cents: 1000,
+    subtotal_cents: 5000, service_fee_cents: 250, discount_cents: 100, total_cents: 5150,
+  }
+
+  beforeEach(() => {
+    apiClient.get.mockReset()
+    apiClient.post.mockReset().mockResolvedValue({ data: {} })
+  })
+
+  it('keeps tickets and exposes a paginated, linked order list', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/me/orders'
+      ? { orders: [purchase], meta: { current_page: 1, total_pages: 2, next_page: 2, prev_page: null } }
+      : { tickets: [ticket] } }))
+    renderPage()
+    expect(await screen.findByRole('tab', { name: 'Tickets' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('General admission')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByText('Order HP-9')).toBeInTheDocument()
+    expect(screen.getByText('Partially refunded')).toBeInTheDocument()
+    expect(screen.getByText('Refund pending')).toBeInTheDocument()
+    expect(screen.getByText('General admission × 2')).toBeInTheDocument()
+    expect(screen.getByText('Subtotal: $50.00')).toBeInTheDocument()
+    expect(screen.getByText('Refunded $10.00')).toBeInTheDocument()
+    expect(screen.getByText(/Total paid: \$51.50/)).toBeInTheDocument()
+    expect(screen.getByText('Island workshop').closest('a')).toHaveAttribute('href', '/orders/9/confirmation')
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(apiClient.get).toHaveBeenCalledWith('/me/orders', { params: { page: 2 } })
+  })
+
+  it('shows every purchased item, including an add-on-only order, and hides zero discount and refund rows', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/me/orders'
+      ? { orders: [{ ...purchase, order_items: [
+        { id: 5, item_kind: 'add_on', name: 'Meal voucher', quantity: 2 },
+        { id: 6, item_kind: 'merchandise', name: 'Festival shirt', quantity: 1 },
+      ], discount_cents: 0, refunded_cents: 0, refund_pending: false }], meta: {} }
+      : { tickets: [] } }))
+    renderPage()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByText('Meal voucher × 2')).toBeInTheDocument()
+    expect(screen.getByText('Festival shirt × 1')).toBeInTheDocument()
+    expect(screen.queryByText(/Discount:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Refunded \$/)).not.toBeInTheDocument()
+  })
+
+  it('shows loading, empty and retry states for orders', async () => {
+    let finishOrders
+    apiClient.get.mockImplementation(url => url === '/me/orders' ? new Promise(resolve => { finishOrders = resolve }) : Promise.resolve({ data: { tickets: [] } }))
+    renderPage()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByText('Loading orders…')).toBeInTheDocument()
+    finishOrders({ data: { orders: [], meta: { current_page: 1, total_pages: 1 } } })
+    expect(await screen.findByText('No orders yet')).toBeInTheDocument()
+    apiClient.get.mockImplementation(url => url === '/me/orders' ? Promise.reject(new Error('offline')) : Promise.resolve({ data: { tickets: [] } }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Tickets' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('We couldn’t load your orders')
+  })
+
+  it('loads every ticket page before grouping events', async () => {
+    const second = { ...ticket, id: 4, display_credential: 'second-page-credential', ticket_type: { name: 'VIP' } }
+    apiClient.get.mockImplementation((url, options) => Promise.resolve({ data: url === '/me/tickets' && options?.params?.page === 2
+      ? { tickets: [second], meta: { next_page: null } }
+      : { tickets: [ticket], meta: { next_page: 2 } } }))
+    renderPage()
+    expect(await screen.findByText('VIP')).toBeInTheDocument()
+    expect(screen.getByText('General admission')).toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledWith('/me/tickets', { params: { page: 1, per_page: 100 } })
+    expect(apiClient.get).toHaveBeenCalledWith('/me/tickets', { params: { page: 2, per_page: 100 } })
+  })
+
+  it('shows the first ticket page while the next page is pending', async () => {
+    let finishSecond
+    apiClient.get.mockImplementation((url, options) => url === '/me/tickets' && options?.params?.page === 2
+      ? new Promise(resolve => { finishSecond = resolve })
+      : Promise.resolve({ data: { tickets: [ticket], meta: { next_page: 2 } } }))
+    renderPage()
+    expect(await screen.findByText('Island workshop')).toBeInTheDocument()
+    expect(finishSecond).toBeTypeOf('function')
+    finishSecond({ data: { tickets: [], meta: {} } })
+  })
+
+  it('ignores an older ticket request after a newer request has completed', async () => {
+    let finishOlder
+    let ticketCalls = 0
+    apiClient.get.mockImplementation(url => {
+      if (url !== '/me/tickets') return Promise.resolve({ data: { orders: [], meta: {} } })
+      ticketCalls += 1
+      return ticketCalls === 1 ? new Promise(resolve => { finishOlder = resolve })
+        : Promise.resolve({ data: { tickets: [ticket], meta: {} } })
+    })
+    render(<StrictMode><HelmetProvider><MemoryRouter><MyTicketsPage /></MemoryRouter></HelmetProvider></StrictMode>)
+    expect(await screen.findByText('Island workshop')).toBeInTheDocument()
+    await act(async () => finishOlder({ data: { tickets: [], meta: { next_page: 2 } } }))
+    expect(screen.getByText('Island workshop')).toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledTimes(2)
+  })
+
+  it('loads Orders while a ticket page is unresolved', async () => {
+    let finishTickets
+    apiClient.get.mockImplementation(url => url === '/me/tickets'
+      ? new Promise(resolve => { finishTickets = resolve })
+      : Promise.resolve({ data: { orders: [purchase], meta: {} } }))
+    renderPage()
+    await userEvent.click(screen.getByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByText('Order HP-9')).toBeInTheDocument()
+    finishTickets({ data: { tickets: [] } })
+  })
+
+  it('stops at repeated or non-advancing ticket pages', async () => {
+    apiClient.get.mockResolvedValue({ data: { tickets: [ticket], meta: { next_page: 1 } } })
+    renderPage()
+    await screen.findByText('Island workshop')
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1))
+    expect(apiClient.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('caps ticket pagination even when the server always advertises another page', async () => {
+    apiClient.get.mockImplementation((url, options) => Promise.resolve({ data: {
+      tickets: [ticket], meta: { next_page: (options?.params?.page || 1) + 1 },
+    } }))
+    renderPage()
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1))
+    expect(apiClient.get).toHaveBeenCalledTimes(20)
+    expect(apiClient.get).toHaveBeenLastCalledWith('/me/tickets', { params: { page: 20, per_page: 100 } })
+    expect(screen.getByText('Showing your most recent 20 tickets. More tickets are available.')).toBeInTheDocument()
+  })
+
+  it('labels test purchases and supports tab keyboard navigation', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/me/orders'
+      ? { orders: [{ ...purchase, payment_environment: 'test' }], meta: {} }
+      : { tickets: [ticket] } }))
+    renderPage()
+    const ticketsTab = screen.getByRole('tab', { name: 'Tickets' })
+    ticketsTab.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    const ordersTab = screen.getByRole('tab', { name: 'Orders' })
+    await waitFor(() => expect(ordersTab).toHaveFocus())
+    expect(ordersTab).toHaveAttribute('tabindex', '0')
+    expect(ticketsTab).toHaveAttribute('tabindex', '-1')
+    expect(ordersTab).toHaveAttribute('aria-controls', 'history-orders-panel')
+    expect(await screen.findByText('Test order — no real charge')).toBeInTheDocument()
+    expect(screen.getByText(/Test total \(no real charge\): \$51.50/)).toBeInTheDocument()
+    await userEvent.keyboard('{Home}')
+    await waitFor(() => expect(ticketsTab).toHaveFocus())
+    await userEvent.keyboard('{End}')
+    await waitFor(() => expect(ordersTab).toHaveFocus())
+    await userEvent.keyboard('{ArrowLeft}')
+    await waitFor(() => expect(ticketsTab).toHaveFocus())
   })
 })
 

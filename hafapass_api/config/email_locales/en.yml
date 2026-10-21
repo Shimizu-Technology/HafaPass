@@ -3,6 +3,37 @@
 # Keep %{placeholders} unchanged. Text only: links and formatting are added by
 # EmailService, and every value is HTML-escaped.
 emails:
+  receipt:
+    test_notice: "TEST — NOT A RECEIPT FOR A REAL CHARGE"
+    complimentary: "Complimentary — no charge"
+    test_total: "Test total (no real charge): %{amount}"
+    title: "HåfaPass purchase receipt"
+    order_number: "Order number: %{reference}"
+    order_date: "Order date: %{date}"
+    event: "Event: %{title} · %{date}"
+    seller_line: "Sold by %{seller} · Tickets by %{service}"
+    line_item: "%{name} × %{quantity} at %{unit}: %{amount}"
+    subtotal: "Subtotal: %{amount}"
+    service_fee: "Service fee: %{amount}"
+    discount: "Discount: -%{amount}"
+    total_paid: "Total paid: %{amount}"
+    refunded_amount: "Refunded %{amount}"
+    payment_method: "Payment method: %{method}"
+    not_recorded: "Not recorded"
+    card: "%{brand} ending in %{last4}"
+    payment_type:
+      stripe: "Card"
+      clover: "Card"
+      boh_clover: "Card at door"
+      door_cash: "Cash at door"
+      other: "Payment recorded"
+    no_refunds: "Refunds: none"
+    refund: "Refund: %{amount} · %{status} · requested %{date}"
+    refund_status:
+      pending: "Pending"
+      succeeded: "Confirmed"
+      failed: "Failed"
+      cancelled: "Cancelled"
   footer: "Powered by HåfaPass · Shimizu Technology"
   my_tickets: "My Tickets"
   formats:
