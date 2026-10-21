@@ -29,6 +29,14 @@ export function loadOrganizerOrganizations(authContext) {
   return promise
 }
 
+// Forget the cached list, for example after joining an organization or when
+// an admin opens or leaves another organization's workspace.
+export function resetOrganizerOrganizations() {
+  cache = { authContext: undefined, organizations: null }
+  inFlight = null
+  listeners.forEach(listener => listener())
+}
+
 // Same rule as the dashboard: the stored organization, otherwise the first one.
 export const selectedOrganization = (organizations, organizationId) =>
   organizations.find(item => String(item.id) === organizationId) || organizations[0] || null

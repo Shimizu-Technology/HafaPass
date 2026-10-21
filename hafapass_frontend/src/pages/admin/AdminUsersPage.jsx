@@ -7,8 +7,20 @@ import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../.
 import PaymentReadinessReviewDialog from '../../components/PaymentReadinessReviewDialog'
 import Dialog from '../../components/Dialog'
 import { adminLabel } from './adminLabels'
+import StaffInvitationsPanel from './StaffInvitationsPanel'
+import { PLATFORM_ROLES, roleLabel } from '../../utils/roles'
 
 const roles = ['', 'attendee', 'organizer', 'support', 'admin']
+// Platform access an admin can choose. "Organizer" is not a grant: it is the
+// label for anyone on an organization team, derived by the API.
+const accessOptions = [
+  { value: 'member', label: 'No staff access', description: 'Buys tickets. Organizer tools come only from organization teams.' },
+  { value: 'support', label: 'Support', description: PLATFORM_ROLES.support.description },
+  { value: 'admin', label: 'Admin', description: PLATFORM_ROLES.admin.description },
+]
+const accessValue = role => ['attendee', 'organizer'].includes(role) ? 'member' : role
+const accessLabel = value => accessOptions.find(option => option.value === accessValue(value))?.label || adminLabel(value)
+const roleFilterLabel = role => role === 'organizer' ? 'Organizer (on a team)' : role === 'attendee' ? 'Attendee (no team)' : adminLabel(role)
 const userEmail = (user, fallback = 'Email unavailable') => user.email?.trim() || fallback
 const userLabel = user => userEmail(user, `User #${user.id}`)
 const userName = user => [user.first_name, user.last_name].filter(name => name?.trim()).join(' ') || `User #${user.id}`
@@ -29,17 +41,16 @@ function ConfirmChangeDialog({ change, busy, onCancel, onConfirm }) {
   const noteRequired = change.kind === 'verification' && needsReviewNote(change.to)
   const noteOffered = change.kind === 'verification' && offersReviewNote(change.to)
   const noteMissing = noteRequired && !note.trim()
-  const label = change.kind === 'verification' ? verificationLabel : adminLabel
   const subject = change.kind === 'role' ? userLabel(change.user) : change.user.organizer_profile?.business_name || userLabel(change.user)
   return (
     <Dialog labelledBy="confirm-change-title" onClose={onCancel} busy={busy} className="max-w-md">
       <h2 id="confirm-change-title" className="text-lg font-semibold text-neutral-900">{change.kind === 'role' ? 'Change platform role?' : 'Change verification status?'}</h2>
       <p className="mt-2 break-words text-sm text-content-muted">{subject}</p>
       <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-neutral-800">
-        <span className="rounded-full bg-neutral-100 px-2.5 py-1 font-medium">{label(change.from)}</span>
+        <span className="rounded-full bg-neutral-100 px-2.5 py-1 font-medium">{change.kind === 'role' ? accessLabel(change.from) : verificationLabel(change.from)}</span>
         <span aria-hidden="true">→</span>
         <span className="sr-only">to</span>
-        <span className="rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-800">{label(change.to)}</span>
+        <span className="rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-800">{change.kind === 'role' ? accessLabel(change.to) : verificationLabel(change.to)}</span>
       </p>
       {change.kind === 'role' && change.to === 'admin' && <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">This grants full platform access.</p>}
       {change.kind === 'verification' && change.to === 'suspended' && <p className="mt-4 text-sm text-neutral-700">Their events stay visible but stop selling until you verify them again.</p>}
@@ -60,6 +71,27 @@ function ConfirmChangeDialog({ change, busy, onCancel, onConfirm }) {
   )
 }
 
+// Staff access plus the organizations that give this person organizer tools.
+function AccessPicker({ user, busy, onChange, className = '' }) {
+  const value = accessValue(user.role)
+  const option = accessOptions.find(item => item.value === value)
+  const descriptionId = `access-${user.id}-description`
+  return (
+    <div className="min-w-[12rem]">
+      <select value={value} disabled={busy} aria-label={`Role for ${userLabel(user)}`} aria-describedby={descriptionId} onChange={event => onChange(event.target.value)}
+        className={`input min-h-11 !py-1 !text-sm font-medium ${className}`}>
+        {accessOptions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+      </select>
+      <p id={descriptionId} className="mt-1 text-xs font-normal text-content-muted">{option?.description}</p>
+      <p className="mt-1 text-xs font-normal text-neutral-700">
+        {user.organizations?.length
+          ? user.organizations.map(item => `${item.name} · ${roleLabel(item.role)}`).join(', ')
+          : 'Not on any organization team'}
+      </p>
+    </div>
+  )
+}
+
 function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount, fetchUsers }) {
   const profile = user.organizer_profile
   if (!profile) return <p className="text-sm text-content-muted">No organizer profile.</p>
@@ -75,6 +107,7 @@ function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount,
       {account ? (
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm">
           <p className="break-words font-semibold text-neutral-800">{account.provider} · {account.status}</p>
+          {account.provider === 'check' && account.payout_details?.payee_name && <p className="mt-1 [overflow-wrap:anywhere] text-neutral-800">Check to {account.payout_details.payee_name} · {account.payout_details.delivery_method === 'pickup' ? 'pickup' : 'mail'}</p>}
           <p className="mt-1 [overflow-wrap:anywhere] text-content-muted">{account.requirements_due?.length ? `Due: ${account.requirements_due.join(', ')}` : 'No outstanding requirements'}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {!profile.payout_ready && <button onClick={() => {
@@ -138,8 +171,9 @@ function AdminUsersPageSession({ identity, resourcePath }) {
 
   useEffect(() => { fetchUsers(); return () => pendingLoad.current?.abort() }, [fetchUsers])
 
-  const requestRoleChange = (user, newRole) => {
-    if (newRole === user.role || !mutationAvailable()) return
+  const requestRoleChange = (user, newAccess) => {
+    const newRole = newAccess === 'member' ? 'attendee' : newAccess
+    if (newAccess === accessValue(user.role) || !mutationAvailable()) return
     setPendingChange({ kind: 'role', user, from: user.role, to: newRole })
   }
 
@@ -232,6 +266,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
 
   return (
     <AdminLayout>
+      <StaffInvitationsPanel beginRequest={beginRequest} />
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
           <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-muted" />
@@ -245,8 +280,8 @@ function AdminUsersPageSession({ identity, resourcePath }) {
           />
         </div>
         <select aria-label="Filter users by role" value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1) }} className="input min-h-11 !text-sm sm:w-auto">
-          <option value="">All Roles</option>
-          {roles.filter(Boolean).map(r => <option key={r} value={r}>{adminLabel(r)}</option>)}
+          <option value="">All people</option>
+          {roles.filter(Boolean).map(r => <option key={r} value={r}>{roleFilterLabel(r)}</option>)}
         </select>
       </div>
 
@@ -263,7 +298,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                 <thead>
                   <tr className="border-b border-neutral-100 text-left text-neutral-500">
                     <th className="min-w-[14rem] px-4 py-3 font-medium">User</th>
-                    <th className="px-3 py-3 font-medium">Role</th>
+                    <th className="px-3 py-3 font-medium">Platform access</th>
                     <th className="px-3 py-3 font-medium">Organizer readiness</th>
                     <th className="px-3 py-3 font-medium text-right">Orders</th>
                     <th className="px-3 py-3 font-medium">Created</th>
@@ -277,15 +312,7 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                         <p className="text-xs text-neutral-500 [overflow-wrap:anywhere]">{userEmail(user)}</p>
                       </td>
                       <td className="px-3 py-3">
-                        <select
-                          value={user.role}
-                          disabled={busy}
-                          aria-label={`Role for ${userLabel(user)}`}
-                          onChange={e => requestRoleChange(user, e.target.value)}
-                          className={`min-h-11 text-sm px-2 py-1 rounded-lg font-medium border border-neutral-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${roleBadge(user.role)}`}
-                        >
-                          {roles.filter(Boolean).map(r => <option key={r} value={r}>{adminLabel(r)}</option>)}
-                        </select>
+                        <AccessPicker user={user} busy={busy} onChange={next => requestRoleChange(user, next)} className={roleBadge(user.role)} />
                       </td>
                       <td className="px-3 py-3 text-content-muted">
                         <OrganizerReadiness user={user} busy={busy} reviewOrganizer={reviewOrganizer} syncConnectedAccount={syncConnectedAccount} fetchUsers={fetchUsers} />
@@ -302,12 +329,10 @@ function AdminUsersPageSession({ identity, resourcePath }) {
                 <article key={user.id} aria-label={userEmail(user, '') ? `User ${userLabel(user)}` : userLabel(user)} className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
                   <h2 className="break-words font-semibold text-neutral-900">{userName(user)}</h2>
                   <p className="mt-1 break-all text-sm text-content-muted">{userEmail(user)}</p>
-                  <label className="mt-4 block text-sm font-medium text-neutral-800">
-                    Platform role
-                    <select value={user.role} disabled={busy} aria-label={`Role for ${userLabel(user)}`} onChange={event => requestRoleChange(user, event.target.value)} className={`input mt-1 min-h-11 ${roleBadge(user.role)}`}>
-                      {roles.filter(Boolean).map(role => <option key={role} value={role}>{adminLabel(role)}</option>)}
-                    </select>
-                  </label>
+                  <div className="mt-4 text-sm font-medium text-neutral-800">
+                    <p className="mb-1">Platform access</p>
+                    <AccessPicker user={user} busy={busy} onChange={next => requestRoleChange(user, next)} className={roleBadge(user.role)} />
+                  </div>
                   <section aria-label={`Organizer readiness for ${userLabel(user)}`} className="mt-4 border-t border-neutral-200 pt-4">
                     <h3 className="mb-2 text-sm font-semibold text-neutral-900">Organizer readiness</h3>
                     <OrganizerReadiness user={user} busy={busy} reviewOrganizer={reviewOrganizer} syncConnectedAccount={syncConnectedAccount} fetchUsers={fetchUsers} />

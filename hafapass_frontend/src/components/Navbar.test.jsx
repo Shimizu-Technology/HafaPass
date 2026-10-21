@@ -267,4 +267,41 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     expect(screen.queryByRole('navigation', { name: 'Mobile navigation' })).not.toBeInTheDocument()
     expect(toggle).toHaveFocus()
   })
+
+  // Least privilege: links follow what /me says this account can use.
+  const serveWorkspace = (workspaceFlags, role = 'attendee') => apiClient.defaults.adapter.mockImplementation(config => Promise.resolve(
+    config.url === '/me' ? { config, data: { clerk_id: 'buyer-a', role, workspace: workspaceFlags }, status: 200, statusText: 'OK', headers: {} }
+      : { config, data: [], status: 200, statusText: 'OK', headers: {} }))
+
+  it('offers a buyer without a team "Host an event" instead of Scanner and Dashboard', async () => {
+    serveWorkspace({ organizer: false, scanner: false })
+    render(view(true, '/events'))
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(await within(primary).findByRole('link', { name: 'nav.hostEvent' })).toHaveAttribute('href', '/dashboard')
+    expect(within(primary).queryByRole('link', { name: 'nav.scanner' })).not.toBeInTheDocument()
+    expect(within(primary).queryByRole('link', { name: 'nav.dashboard' })).not.toBeInTheDocument()
+  })
+
+  it('shows Dashboard without Scanner to a marketer and both to door staff', async () => {
+    serveWorkspace({ organizer: true, scanner: false })
+    const first = render(view(true, '/events'))
+    let primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(await within(primary).findByRole('link', { name: 'nav.dashboard' })).toBeInTheDocument()
+    expect(within(primary).queryByRole('link', { name: 'nav.scanner' })).not.toBeInTheDocument()
+    first.unmount()
+
+    serveWorkspace({ organizer: true, scanner: true })
+    render(view(true, '/dashboard'))
+    primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(await within(primary).findByRole('link', { name: 'nav.scanner' })).toHaveAttribute('href', '/dashboard/scanner')
+  })
+
+  it('hides workspace Dashboard and Scanner from support staff without a team', async () => {
+    serveWorkspace({ organizer: false, scanner: false }, 'support')
+    render(view(true, '/support'))
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(await within(primary).findByRole('link', { name: 'nav.support' })).toBeInTheDocument()
+    expect(within(primary).queryByRole('link', { name: 'nav.dashboard' })).not.toBeInTheDocument()
+    expect(within(primary).queryByRole('link', { name: 'nav.scanner' })).not.toBeInTheDocument()
+  })
 })

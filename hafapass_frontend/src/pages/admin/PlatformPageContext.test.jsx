@@ -82,13 +82,14 @@ describe('platform list isolation and recovery', () => {
     const update = deferred(); apiClient.patch.mockReturnValue(update.promise)
     render(<MemoryRouter initialEntries={['/admin/users']}><AdminUsersPage /></MemoryRouter>)
     await screen.findAllByText('Visible')
-    fireEvent.change(screen.getAllByRole('combobox', { name: 'Role for Visible@example.invalid' })[0], { target: { value: 'organizer' } })
+    fireEvent.change(screen.getAllByRole('combobox', { name: 'Role for Visible@example.invalid' })[0], { target: { value: 'support' } })
     fireEvent.click(screen.getByRole('button', { name: 'Change role' }))
     expect(apiClient.patch.mock.calls[0][2].authContext.sessionId).toBe('a')
     await act(async () => { clearAuth = setAuthTokenGetter(() => Promise.resolve('b'), { userId: 'same-user', sessionId: 'b', ready: true }) })
     await screen.findAllByText('Visible')
-    await act(async () => update.resolve({ data: { ...cases[0][3]('Visible').users[0], role: 'organizer' } }))
-    for (const control of screen.getAllByRole('combobox', { name: 'Role for Visible@example.invalid' })) expect(control).toHaveValue('attendee')
+    await act(async () => update.resolve({ data: { ...cases[0][3]('Visible').users[0], role: 'support' } }))
+    // Attendee and organizer both show as "No staff access" (value "member").
+    for (const control of screen.getAllByRole('combobox', { name: 'Role for Visible@example.invalid' })) expect(control).toHaveValue('member')
   })
   it('order disclosure works with a named focusable button', async () => {
     apiClient.get.mockResolvedValue({ data: { orders: [{ ...cases[1][3]('Buyer').orders[0], order_items: [], payments: [], refunds: [], reconciliation_exceptions: [] }], meta: {} } })

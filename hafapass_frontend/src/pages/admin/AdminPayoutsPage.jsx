@@ -49,25 +49,36 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const keepsTransferId = payout.status === 'paid'
+  // Organizers are paid by check from Shimizu Technology's business account:
+  // the check number is the transfer ID and the date on the check is the
+  // confirmation time.
+  const isCheck = payout.provider === 'check'
+  // The payee shown is the one this payout was approved for. If the organizer
+  // changed it since, the API refuses "Paid" until the change is approved.
+  const payeeChanged = isCheck && payout.payee_changed === true
+  const [payeeConfirmed, setPayeeConfirmed] = useState(false)
+  const describePayee = payee => payee ? `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}` : ''
 
   const submit = async event => {
     event.preventDefault()
     const found = {}
     const confirmed = new Date(confirmedAt)
-    if (outcome === 'paid' && placeholderReference(transferId.trim())) found.transfer = 'Enter the real bank or provider transfer ID.'
+    if (outcome === 'paid' && placeholderReference(transferId.trim())) found.transfer = isCheck ? 'Enter the check number.' : 'Enter the real bank or provider transfer ID.'
     if (!reference.trim()) found.reference = 'Enter the confirmation reference, such as the bank statement line.'
     if (Number.isNaN(confirmed.getTime())) found.confirmedAt = 'Enter when the outcome was confirmed.'
     else if (confirmed > new Date()) found.confirmedAt = 'The confirmation time cannot be in the future.'
     else if (confirmed < new Date(payout.created_at)) found.confirmedAt = 'The confirmation time must be after the payout was requested.'
     if (!reason.trim()) found.reason = 'Explain how you confirmed this outcome.'
     if (payout.conflict && !acknowledged) found.conflict = 'Confirm you reviewed the provider conflict.'
+    if (outcome === 'paid' && payeeChanged && !payeeConfirmed) found.payee = 'Confirm you wrote this check to the approved payee shown above.'
     setErrors(found)
     if (Object.keys(found).length) return
     const request = beginRequest()
     if (!request) return
     setBusy(true)
     try {
-      const evidence = { reference: reference.trim(), reason: reason.trim(), confirmed_at: confirmed.toISOString() }
+      const evidence = { reference: reference.trim(), reason: reason.trim(), confirmed_at: confirmed.toISOString(),
+        ...(outcome === 'paid' && payeeChanged && payeeConfirmed ? { approved_payee_confirmed: true } : {}) }
       if (payout.conflict) evidence.conflict_audit_id = payout.conflict.audit_id
       const body = { status: outcome, evidence }
       if (transferId.trim() && !keepsTransferId) body.provider_payout_id = transferId.trim()
@@ -85,6 +96,17 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
       <form noValidate onSubmit={submit}>
         <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Record outcome for payout #{payout.id}</h2>
         <p className="mt-1 text-sm text-content-muted">{money(payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. Record only what the bank or provider has confirmed; your name and evidence go into the audit log.</p>
+        {isCheck && payout.payee && <p className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800 [overflow-wrap:anywhere]">Approved payee: <strong>{describePayee(payout.payee)}</strong></p>}
+        {payeeChanged && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
+          <p className="font-semibold">The payee on file is different from the approved payee above.</p>
+          {payout.current_payee && <p className="mt-1">Now on file: {describePayee(payout.current_payee)}. Write and record this check only to the approved payee.</p>}
+          {outcome === 'paid' && <label className="mt-2 flex min-h-11 items-start gap-2 font-medium">
+            <input type="checkbox" checked={payeeConfirmed} onChange={event => setPayeeConfirmed(event.target.checked)} aria-describedby={errors.payee ? 'reconcile-payee-error' : undefined} className="mt-0.5 h-4 w-4 accent-brand-700" />
+            I wrote this check to the approved payee shown above
+          </label>}
+          {fieldError('payee')}
+        </div>}
+        {isCheck && <p className="mt-2 text-sm text-content-muted">A check is recorded as paid on the date written on the check, not when it clears.</p>}
         {errors.form && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{errors.form}</p>}
         {payout.conflict && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
           <p className="font-semibold">The provider reported a result that conflicts with an earlier outcome.</p>
@@ -109,22 +131,22 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-neutral-900">
-              Transfer ID {outcome === 'paid' ? '(required)' : '(optional)'}
+              {isCheck ? 'Check number' : 'Transfer ID'} {outcome === 'paid' ? '(required)' : '(optional)'}
               <input value={transferId} disabled={keepsTransferId} onChange={event => setTransferId(event.target.value)} maxLength={255} aria-invalid={!!errors.transfer} aria-describedby={errors.transfer ? 'reconcile-transfer-error' : undefined} className={`input mt-1 ${errors.transfer ? 'input-error' : ''}`} />
             </label>
-            {keepsTransferId && <p className="mt-1 text-sm text-content-muted">A reversal keeps the original transfer ID.</p>}
+            {keepsTransferId && <p className="mt-1 text-sm text-content-muted">A reversal keeps the original {isCheck ? 'check number' : 'transfer ID'}.</p>}
             {fieldError('transfer')}
           </div>
           <div>
             <label className="block text-sm font-medium text-neutral-900">
-              Confirmation reference
+              {isCheck ? 'Reference (for example the check register line)' : 'Confirmation reference'}
               <input value={reference} onChange={event => setReference(event.target.value)} maxLength={500} aria-invalid={!!errors.reference} aria-describedby={errors.reference ? 'reconcile-reference-error' : undefined} className={`input mt-1 ${errors.reference ? 'input-error' : ''}`} />
             </label>
             {fieldError('reference')}
           </div>
           <div>
             <label className="block text-sm font-medium text-neutral-900">
-              Confirmed at
+              {isCheck ? 'Date on the check' : 'Confirmed at'}
               <input type="datetime-local" value={confirmedAt} onChange={event => setConfirmedAt(event.target.value)} aria-invalid={!!errors.confirmedAt} aria-describedby={errors.confirmedAt ? 'reconcile-confirmedAt-error' : undefined} className={`input mt-1 ${errors.confirmedAt ? 'input-error' : ''}`} />
             </label>
             {fieldError('confirmedAt')}

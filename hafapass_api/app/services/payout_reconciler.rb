@@ -35,6 +35,11 @@ class PayoutReconciler
       if status == "paid" && (external_id.blank? || external_id.start_with?("sim_", "manual_po_"))
         raise ReconciliationError, "A real provider or bank transfer identifier is required to record payment"
       end
+      if external_id.present? && external_id != payout.provider_payout_id &&
+          Payout.where(provider: payout.provider, provider_payout_id: external_id).where.not(id: payout.id).exists?
+        raise ReconciliationError, payout.provider == "check" ? "That check number is already recorded" :
+          "That transfer identifier is already recorded"
+      end
       confirmed_at = Time.iso8601(normalized.fetch("confirmed_at"))
       if confirmed_at < payout.created_at || confirmed_at > Time.current
         raise ReconciliationError, "Confirmation time must be after the payout request and not in the future"
@@ -52,6 +57,10 @@ class PayoutReconciler
       end
       if payout.status_paid? && external_id != payout.provider_payout_id
         raise ReconciliationError, "Keep the original transfer identifier when recording a reversal"
+      end
+
+      if status == "paid" && !payout.payee_matches_approval? && normalized["approved_payee_confirmed"] != true
+        raise ReconciliationError, Payout::PAYEE_CHANGED_MESSAGE
       end
 
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
@@ -88,6 +97,11 @@ class PayoutReconciler
       raise ReconciliationError, "Conflict audit identifier must be a positive integer" unless conflict_id.match?(/\A[1-9]\d*\z/)
 
       normalized["conflict_audit_id"] = conflict_id.to_i
+    end
+    # Recorded in the audit evidence when a check's details on file differ
+    # from the approved payee the admin wrote the check to.
+    if ActiveModel::Type::Boolean.new.cast(values["approved_payee_confirmed"])
+      normalized["approved_payee_confirmed"] = true
     end
     normalized
   rescue ArgumentError

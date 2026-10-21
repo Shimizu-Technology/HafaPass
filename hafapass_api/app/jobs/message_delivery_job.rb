@@ -33,6 +33,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "Reminder was cancelled or rescheduled")
         next :done
       end
+      if obsolete_invitation?(delivery)
+        delivery.update!(status: :cancelled, last_error: "Invitation was accepted, revoked, expired or resent")
+        next :done
+      end
       if delivery.undeliverable_recipient?
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
@@ -128,6 +132,24 @@ class MessageDeliveryJob < ApplicationJob
     reminder = EventReminder.find_by(id: delivery.metadata["event_reminder_id"])
     scheduled_for = delivery.metadata["scheduled_for"]
     reminder.nil? || !reminder.pending? || scheduled_for.blank? || reminder.remind_at.iso8601(6) != scheduled_for
+  end
+
+  # An unsent invitation email whose link is no longer the current one must
+  # never go out: a newer email (or no email) replaces it.
+  def obsolete_invitation?(delivery)
+    return false if delivery.outbound_payload.present?
+
+    invitation, open = case delivery.template
+    when "organization_invitation"
+      membership = delivery.organization_membership
+      [membership, membership&.status_invited? && membership.invitation_open?]
+    when "platform_invitation"
+      record = delivery.platform_invitation
+      [record, record&.display_status == "pending"]
+    else
+      return false
+    end
+    !open || invitation.invitation_version != delivery.metadata["invitation_version"].to_i
   end
 
   def mark_reminder_sent!(delivery)

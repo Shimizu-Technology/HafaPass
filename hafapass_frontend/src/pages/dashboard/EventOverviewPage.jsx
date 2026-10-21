@@ -116,7 +116,7 @@ function EventOverviewSession({ id, identity }) {
       setEvent(null)
       const status = requestError.response?.status
       setError(status === 401 ? 'Please sign in to see this event.'
-        : status === 403 ? 'Your access does not include this event.'
+        : status === 403 ? 'You don’t have access to this event. Ask your organization owner if you need it.'
           : status === 404 ? 'Event not found.' : 'We could not load this event. Please try again.')
     } finally { if (canApply()) setLoading(false) }
   }, [current, get, id, identity.authContext, identity.organizationId, loadExtras])

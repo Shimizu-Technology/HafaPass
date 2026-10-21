@@ -74,6 +74,10 @@ class EmailService
       when "verification_request"
         profile = OrganizerProfile.find(delivery.metadata.fetch("organizer_profile_id"))
         send_verification_request(profile, delivery.recipient, delivery: delivery)
+      when "organization_invitation"
+        send_organization_invitation(delivery.organization_membership, delivery: delivery)
+      when "platform_invitation"
+        send_platform_invitation(delivery.platform_invitation, delivery: delivery)
       else
         raise ArgumentError, "Unsupported message template"
       end
@@ -233,6 +237,34 @@ class EmailService
         tag: "verification_request", delivery: delivery, organizer_profile_id: profile.id)
     end
 
+    # Invitations are best-effort mail: the invitation itself is already saved
+    # and the inviter can always copy the secure link instead.
+    def send_organization_invitation_async(membership, requested_by: nil)
+      delivery = create_delivery(organization_membership: membership, requested_by: requested_by,
+        template: "organization_invitation", recipient: membership.invited_email,
+        metadata: { invitation_version: membership.invitation_version },
+        idempotency_key: "organization-invitation/#{membership.id}/v#{membership.invitation_version}")
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    rescue StandardError => e
+      record_enqueue_failure(delivery, e)
+      Rails.logger.error("[OrganizationInvitation] Unable to queue membership=#{membership.id}: #{e.class}")
+      delivery
+    end
+
+    def send_platform_invitation_async(invitation, requested_by: nil)
+      delivery = create_delivery(platform_invitation: invitation, requested_by: requested_by,
+        template: "platform_invitation", recipient: invitation.email,
+        metadata: { invitation_version: invitation.invitation_version },
+        idempotency_key: "platform-invitation/#{invitation.id}/v#{invitation.invitation_version}")
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    rescue StandardError => e
+      record_enqueue_failure(delivery, e)
+      Rails.logger.error("[PlatformInvitation] Unable to queue invitation=#{invitation.id}: #{e.class}")
+      delivery
+    end
+
     # ── Order Confirmation ──────────────────────────────────────────
     def send_order_confirmation(order, delivery: nil)
       return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
@@ -382,6 +414,43 @@ class EmailService
         tag: "event_reminder", delivery: delivery, reminder_id: reminder.id)
     end
 
+    def send_organization_invitation(membership, delivery: nil)
+      organization = membership.organization
+      events = organization.events.where(id: membership.pending_event_ids).order(:starts_at)
+      role = OrganizationRoles.label(membership.role)
+      event_line = if events.any?
+        "<p style=\"color:#4b5563\">You'll work at: #{events.map { |event| h(event.title) }.join(', ')}.</p>"
+      else
+        ""
+      end
+      html = email_wrapper("Team invitation") do
+        <<~HTML
+          <h2 style="color:#1f2937">Join #{h(organization.name)} on HåfaPass</h2>
+          <p style="color:#4b5563">#{h(inviter_name(membership.invited_by_user))} invited you as <strong>#{h(role)}</strong>: #{h(OrganizationRoles.description(membership.role))}.</p>
+          #{event_line}
+          <p><a href="#{OrganizationInvitation.accept_url(membership)}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">Accept invitation</a></p>
+          <p style="color:#6b7280;font-size:14px">Sign in or create an account using #{h(membership.invited_email)}. This link expires #{h(format_invitation_expiry(membership.invitation_expires_at))}.</p>
+        HTML
+      end
+      deliver(to: membership.invited_email, subject: safe_subject("You're invited to #{organization.name} on HåfaPass"),
+        html: html, tag: "organization_invitation", delivery: delivery, membership_id: membership.id)
+    end
+
+    def send_platform_invitation(invitation, delivery: nil)
+      role = OrganizationRoles.platform_label(invitation.role)
+      url = "#{frontend_url}/platform-invitations/accept?token=#{ERB::Util.url_encode(PlatformInvitations.token_for(invitation))}"
+      html = email_wrapper("HåfaPass staff invitation") do
+        <<~HTML
+          <h2 style="color:#1f2937">Join the HåfaPass team</h2>
+          <p style="color:#4b5563">#{h(inviter_name(invitation.invited_by_user))} invited you as <strong>#{h(role)}</strong>: #{h(OrganizationRoles.platform_description(invitation.role))}.</p>
+          <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">Accept invitation</a></p>
+          <p style="color:#6b7280;font-size:14px">Sign in or create an account using #{h(invitation.email)}. Your access starts once that email is verified. This link expires #{h(format_invitation_expiry(invitation.expires_at))}.</p>
+        HTML
+      end
+      deliver(to: invitation.email, subject: safe_subject("You're invited to the HåfaPass team"),
+        html: html, tag: "platform_invitation", delivery: delivery, invitation_id: invitation.id)
+    end
+
     # ── Guest List Notification ─────────────────────────────────────
     def send_guest_list_notification(guest_entry, delivery: nil)
       return unless guest_entry.guest_email.present?
@@ -397,13 +466,17 @@ class EmailService
     private
 
     def create_delivery(order: nil, ticket: nil, event: nil, requested_by: nil, template:, recipient:, metadata: {},
-      idempotency_key: nil)
+      idempotency_key: nil, organization_membership: nil, platform_invitation: nil)
       digest_source = [template, recipient.to_s.downcase, order&.cache_key_with_version,
         ticket&.cache_key_with_version, event&.cache_key_with_version, metadata.to_json].join("|")
+      invitation_subject = organization_membership || platform_invitation
+      digest_source = "#{digest_source}|#{invitation_subject.class.name}/#{invitation_subject.id}" if invitation_subject
       attributes = {
         order: order,
         ticket: ticket,
         event: event,
+        organization_membership: organization_membership,
+        platform_invitation: platform_invitation,
         requested_by: requested_by,
         channel: "email",
         template: template,
@@ -772,6 +845,16 @@ class EmailService
 
     def money(cents)
       "$#{format_cents(cents)}"
+    end
+
+    def inviter_name(user)
+      return "The HåfaPass team" unless user
+
+      [user.first_name, user.last_name].compact.join(" ").presence || user.email.presence || "The HåfaPass team"
+    end
+
+    def format_invitation_expiry(time)
+      time&.in_time_zone("Pacific/Guam")&.strftime("%B %-d, %Y at %-I:%M %p ChST") || "soon"
     end
 
     def format_cents(cents)
