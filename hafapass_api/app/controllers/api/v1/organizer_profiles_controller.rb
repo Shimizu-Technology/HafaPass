@@ -146,6 +146,7 @@ module Api
           business_name: profile.business_name,
           business_description: profile.business_description,
           logo_url: profile.logo_url,
+          image_asset_host: S3Service.public_asset_host,
           is_ambros_partner: profile.is_ambros_partner,
           verification_status: profile.verification_status,
           verification_requested_at: profile.verification_requested_at,

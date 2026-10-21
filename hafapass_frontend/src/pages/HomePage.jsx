@@ -1,3 +1,4 @@
+import { approvedImageUrl } from '../utils/eventPageDesign'
 import { focalPosition } from '../utils/eventPageDesign'
 import BuyerEventText from '../components/BuyerEventText'
 import { useTranslation } from 'react-i18next'
@@ -36,7 +37,7 @@ function EventArtwork({ event, className, priority = false, backdrop = false }) 
   const [failed, setFailed] = useState(false)
   return (
     <div className={`relative overflow-hidden rounded-lg bg-neutral-100 ${className}`}>
-      {event.cover_image_url && !failed ? (
+      {approvedImageUrl(event.cover_image_url, event.image_asset_host) && !failed ? (
         <>
           {backdrop && <img src={event.cover_image_url} alt="" aria-hidden="true" style={{ objectPosition: focalPosition(event.page_customization) }} data-testid="artwork-backdrop"
             className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl" />}
@@ -131,7 +132,7 @@ export default function HomePage() {
 
           {showFeatured && (
             <article aria-label={t('buyer.Home.featuredEvent')} className="min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-              {featuredEvent.cover_image_url && <EventArtwork key={featuredEvent.cover_image_url} event={featuredEvent} priority backdrop className="aspect-[16/9] w-full !rounded-none" />}
+              {approvedImageUrl(featuredEvent.cover_image_url, featuredEvent.image_asset_host) && <EventArtwork key={featuredEvent.cover_image_url} event={featuredEvent} priority backdrop className="aspect-[16/9] w-full !rounded-none" />}
               <div className="p-5 sm:p-6">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-800">{t('buyer.Home.featuredEvent')}</p>
                 <BuyerEventText event={featuredEvent} as="h2" className="break-words font-display text-2xl font-bold text-neutral-950" />

@@ -3,13 +3,70 @@ import { describe, expect, it, vi } from 'vitest'
 import EventDescription from './EventDescription'
 import EventPageSections from './EventPageSections'
 import PageDesignEditor from './PageDesignEditor'
-import { ACCENT_PRESETS, accentStyle, defaultDesign, videoEmbed } from '../utils/eventPageDesign'
+import { ACCENT_PRESETS, accentStyle, defaultDesign, videoEmbed, normalizePageCustomization, approvedImageUrl } from '../utils/eventPageDesign'
 
 vi.mock('./CoverImageUpload', () => ({ default: () => <div>Image upload</div> }))
 
-const photo = { url: 'https://example.invalid/stage.webp', alt: 'Dancers on stage', caption: 'Opening night' }
+const photo = { url: 'https://storage.invalid/uploads/stage.webp', alt: 'Dancers on stage', caption: 'Opening night' }
 
 describe('event page customization', () => {
+  it('normalizes malformed and partial designs and rejects off-host images', () => {
+    for (const value of [null, 'broken', { sections: {} }, { sections: [{ type: 'faq', enabled: true, items: {} }] }]) {
+      const normalized = normalizePageCustomization(value)
+      expect(normalized.sections).toHaveLength(7)
+      expect(normalized.sections.find(section => section.type === 'faq').items).toEqual([])
+    }
+    expect(normalizePageCustomization({ sections: [{ type: 'faq', enabled: true, items: [] }] })
+      .sections.map(section => section.type)).toContain('gallery')
+    expect(approvedImageUrl('https://storage.invalid/uploads/photo.webp', 'storage.invalid')).toBe(true)
+    expect(approvedImageUrl('https://storage.invalid.evil.test/uploads/photo.webp', 'storage.invalid')).toBe(false)
+    expect(approvedImageUrl('https://evil.test/pixel.webp', 'storage.invalid')).toBe(false)
+  })
+
+  it('keeps video click to load and restricts the iframe permissions', () => {
+    render(<EventPageSections design={{ sections: [{ type: 'video', enabled: true,
+      url: 'https://www.youtube.com/watch?v=abcdefghijk' }] }} />)
+    expect(screen.queryByTitle('Event video')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Play video' }))
+    expect(screen.getByTitle('Event video')).toHaveAttribute('sandbox',
+      'allow-scripts allow-same-origin allow-presentation allow-popups')
+    expect(screen.getByTitle('Event video')).toHaveAttribute('allow',
+      'autoplay; encrypted-media; picture-in-picture; fullscreen')
+  })
+
+  it('makes missing sections editable when only FAQ was saved', () => {
+    let latest = { sections: [{ type: 'faq', enabled: true, items: [] }] }
+    const onChange = vi.fn(value => { latest = value; rerender(view()) })
+    const view = () => <PageDesignEditor event={{ title: 'Reef Night', ticket_types: [] }} design={latest}
+      onChange={onChange} description="" coverUrl="" eventId={7} />
+    const { rerender } = render(view())
+    fireEvent.click(screen.getByLabelText('Photo gallery'))
+    expect(latest.sections.find(section => section.type === 'gallery').enabled).toBe(true)
+  })
+
+  it('omits a cleared optional link from the design sent by the editor', () => {
+    let latest = { sections: [{ type: 'lineup', enabled: true,
+      items: [{ name: 'Mia', url: 'https://example.test' }] }] }
+    const onChange = vi.fn(value => { latest = value; rerender(view()) })
+    const view = () => <PageDesignEditor event={{ title: 'Reef Night', ticket_types: [] }} design={latest}
+      onChange={onChange} description="" coverUrl="" eventId={7} />
+    const { rerender } = render(view())
+    fireEvent.change(screen.getByLabelText('Link (optional)'), { target: { value: '' } })
+    expect(latest.sections.find(section => section.type === 'lineup').items[0]).toEqual({ name: 'Mia' })
+  })
+
+  it('hides legacy off-host gallery, lineup, and sponsor images', () => {
+    render(<EventPageSections imageAssetHost="storage.invalid" design={{
+      gallery: [{ url: 'https://evil.test/pixel.webp', alt: 'Unsafe' }],
+      sections: [{ type: 'gallery', enabled: true, items: [] },
+        { type: 'lineup', enabled: true, items: [{ name: 'Mia', photo_url: 'https://evil.test/pixel.webp' }] },
+        { type: 'sponsors', enabled: true, items: [{ name: 'Partner', logo_url: 'https://evil.test/pixel.webp' }] }]
+    }} />)
+    expect(screen.getByText('Mia')).toBeInTheDocument()
+    expect(screen.getByText('Partner')).toBeInTheDocument()
+    expect(document.querySelector('img')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open photo 1' })).not.toBeInTheDocument()
+  })
   it('preserves plain text and renders safe markdown without executable HTML or links', () => {
     const { rerender } = render(<EventDescription text={'First line\n<script>alert(1)</script>'} />)
     expect(screen.getByText(/First line/)).toHaveClass('whitespace-pre-wrap')
@@ -40,12 +97,12 @@ describe('event page customization', () => {
   })
 
   it('renders ordered sections and supports gallery keyboard and Escape', () => {
-    const design = { gallery: [photo, { ...photo, url: 'https://example.invalid/second.webp', alt: 'Crowd' }], sections: [
+    const design = { gallery: [photo, { ...photo, url: 'https://storage.invalid/uploads/second.webp', alt: 'Crowd' }], sections: [
       { type: 'faq', enabled: true, items: [{ question: 'When?', answer: 'Tonight' }] },
       { type: 'gallery', enabled: true, items: [] },
       { type: 'lineup', enabled: false, items: [{ name: 'Hidden' }] }
     ] }
-    render(<EventPageSections design={design} />)
+    render(<EventPageSections design={design} imageAssetHost="storage.invalid" />)
     expect(screen.getByText('FAQ').compareDocumentPosition(screen.getByText('Photos')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText('Hidden')).not.toBeInTheDocument()
     const opener = screen.getByRole('button', { name: 'Open photo 1' })

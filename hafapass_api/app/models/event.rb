@@ -106,8 +106,16 @@ class Event < ApplicationRecord
   validate :chronological_event_times
   validate :live_money_candidate_flag_immutable_after_orders
   validate :page_customization_is_valid
+  validate :cover_image_is_approved
 
   before_validation :assign_slug
+
+  def cover_image_is_approved
+    return unless new_record? || will_save_change_to_cover_image_url?
+    return if cover_image_url.blank? || ApprovedImageUrl.valid?(cover_image_url, organization_id: organization_id)
+
+    errors.add(:cover_image_url, ApprovedImageUrl::MESSAGE)
+  end
   before_save :record_localized_content_sources, if: :will_save_change_to_localized_content?
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
   after_update -> { Wallet::PassSync.event_changed(self) }, if: :wallet_visible_change?
@@ -362,7 +370,7 @@ class Event < ApplicationRecord
   # The detailed launch-gate reviews (pilot readiness, validation, rehearsal,
   # live-money proof, bounded pilot) are optional records now; they never
   # block publishing or sales. Organizer verification is the one admin step.
-  def publish_checklist(at: Time.current)
+  def publish_checklist(at: Time.current, organizer_agreement: nil)
     paid_event = paid_event?
     configured_inventory = ticket_types.sum(&:quantity_available)
     [
@@ -372,7 +380,8 @@ class Event < ApplicationRecord
       # verification is still required to publish.
       checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?,
         required_to_publish: !Rails.env.production?),
-      checklist_item("policy_accepted", "Organizer policy accepted", organizer_profile.policy_accepted?),
+      checklist_item("policy_accepted", "Organizer policy accepted",
+        organizer_profile.policy_accepted?(current: organizer_agreement || PolicyRegistry.organizer_agreement)),
       checklist_item("title", "Event title added", title.present?),
       checklist_item("description", "Event description added", description.present?),
       checklist_item("venue", "Venue name and address added", venue_name.present? && venue_address.present? && venue_city.present?),

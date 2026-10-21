@@ -146,9 +146,9 @@ describe('hosting entry navigation', () => {
   })
 
   it('recovers broken organizer artwork while keeping featured details and action usable', async () => {
-    const artwork = 'https://example.test/organizer-poster.png'
+    const artwork = 'https://storage.invalid/uploads/organizer-poster.png'
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 45, slug: 'poster', title: 'Organizer poster event',
-      cover_image_url: artwork, is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
+      cover_image_url: artwork, image_asset_host: 'storage.invalid', is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     const featured = await screen.findByRole('article', { name: 'Featured event' })
     const image = within(featured).getByRole('img', { name: 'Artwork for Organizer poster event' })

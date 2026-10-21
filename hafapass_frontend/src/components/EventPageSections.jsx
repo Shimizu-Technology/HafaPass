@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, ChevronLeft, ChevronRight, Play, Globe, Instagram, Facebook, Youtube, Music2, Link2 } from 'lucide-react'
-import { safeLink, videoEmbed } from '../utils/eventPageDesign'
+import { safeLink, videoEmbed, normalizePageCustomization, approvedImageUrl } from '../utils/eventPageDesign'
 
 const linkIcons = {
   website: Globe,
@@ -146,7 +146,8 @@ function Video({ url }) {
     <iframe
       title={t('buyer.EventDetail.eventVideo')}
       src={embed}
-      allow="accelerometer; autoplay; encrypted-media; picture-in-picture"
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
       allowFullScreen
       loading="lazy"
       className="aspect-video w-full rounded-xl border-0"
@@ -163,25 +164,26 @@ function Video({ url }) {
   )
 }
 
-export default function EventPageSections({ design }) {
+export default function EventPageSections({ design, imageAssetHost }) {
   const { t } = useTranslation()
-  return (design?.sections || [])
+  const page = normalizePageCustomization(design)
+  return page.sections
     .filter((section) => section.enabled)
     .map((section) => {
       const items = section.items || []
       if (section.type !== 'video' && section.type !== 'gallery' && !items.length) return null
-      if (section.type === 'gallery' && !design.gallery?.length) return null
+      if (section.type === 'gallery' && !page.gallery.some(photo => approvedImageUrl(photo.url, imageAssetHost))) return null
       const title = t(`buyer.EventDetail.design.${section.type}`)
       return (
         <section key={section.type} className="mb-8" aria-label={title}>
           <h2 className="event-heading mb-3 text-lg font-semibold">{title}</h2>
-          {section.type === 'gallery' && <Gallery photos={design.gallery} />}
+          {section.type === 'gallery' && <Gallery photos={page.gallery.filter(photo => approvedImageUrl(photo.url, imageAssetHost))} />}
           {section.type === 'video' && <Video url={section.url} />}
           {section.type === 'lineup' && (
             <div className="grid gap-3 sm:grid-cols-2">
               {items.map((item, index) => (
                 <div key={index} className="flex min-w-0 items-center gap-3 rounded-xl border border-neutral-200 p-3">
-                  {item.photo_url && (
+                  {approvedImageUrl(item.photo_url, imageAssetHost) && (
                     <img
                       src={item.photo_url}
                       alt=""
@@ -240,14 +242,14 @@ export default function EventPageSections({ design }) {
               {items.map((item, index) => {
                 const content = (
                   <>
-                    <img
+                    {approvedImageUrl(item.logo_url, imageAssetHost) && <img
                       src={item.logo_url}
                       alt=""
                       loading="lazy"
                       width="160"
                       height="96"
                       className="mx-auto h-24 w-full object-contain"
-                    />
+                    />}
                     <span className="mt-2 block text-center text-sm font-medium">{item.name}</span>
                   </>
                 )

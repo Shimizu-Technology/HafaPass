@@ -67,7 +67,8 @@ class OrderPresenter
       timezone: event.timezone,
       transfers_enabled: event.transfers_available?,
       assigned_seating: event.assigned_seating?,
-      cover_image_url: event.cover_image_url
+      cover_image_url: event.cover_image_url,
+      image_asset_host: S3Service.public_asset_host
     }
   end
 

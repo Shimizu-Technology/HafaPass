@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe Event, type: :model do
   let(:event) { create(:event) }
-  let(:image) { "https://example.invalid/photo.webp" }
+  let(:image) { "https://storage.invalid/uploads/photo.webp" }
 
   before do
     ImageUploadReceipt.create!(user: event.organizer_profile.user, organization: event.organization,
@@ -45,5 +45,11 @@ RSpec.describe Event, type: :model do
     expect(accepts?({ sections: [{ type: "video", enabled: true,
       url: "https://youtube.com.evil.invalid/watch?v=abcdefghijk" }] })).to be(false)
     expect(accepts?({ sections: Array.new(2) { { type: "faq", enabled: false, items: [] } } })).to be(false)
+  end
+
+  it "accepts a cleared optional lineup or sponsor link" do
+    expect(accepts?({ sections: [{ type: "lineup", enabled: true,
+      items: [{ name: "Mia", url: "" }] },
+      { type: "sponsors", enabled: true, items: [{ name: "Partner", logo_url: image, url: "" }] }] })).to be(true)
   end
 end

@@ -6,6 +6,25 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
   let(:headers) { auth_headers(user) }
 
   describe "GET /api/v1/organizer/events" do
+    it "loads inventory and site settings in a fixed number of queries as the list grows" do
+      4.times do
+        event = create(:event, organizer_profile: organizer_profile)
+        create(:ticket_type, event: event)
+      end
+      queries = []
+      callback = ->(_name, _started, _finished, _id, payload) {
+        queries << payload[:sql] if payload[:sql]&.match?(/FROM "(?:inventory_holds|waitlist_offers|seat_holds|site_settings)"/)
+      }
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        get "/api/v1/organizer/events", headers: headers
+      end
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("events").size).to eq(4)
+      expect(queries.grep(/inventory_holds/).size).to be <= 2
+      expect(queries.grep(/waitlist_offers/).size).to be <= 2
+      expect(queries.grep(/seat_holds/).size).to be <= 2
+      expect(queries.grep(/site_settings/).size).to be <= 3
+    end
     it "returns the organizer's events" do
       event1 = create(:event, organizer_profile: organizer_profile, title: "Event 1")
       event2 = create(:event, :published, organizer_profile: organizer_profile, title: "Event 2")
@@ -271,8 +290,8 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
     it "saves and audits page design through event edit permission" do
       ImageUploadReceipt.create!(user: user, organization: event.organization, event: event,
         source_key: "pending/test/page", final_key: "uploads/test/page.webp",
-        public_url: "https://example.invalid/p.webp", completed_at: Time.current)
-      design = { accent: "#123456", gallery: [{ url: "https://example.invalid/p.webp", alt: "Stage" }],
+        public_url: "https://storage.invalid/uploads/p.webp", completed_at: Time.current)
+      design = { accent: "#123456", gallery: [{ url: "https://storage.invalid/uploads/p.webp", alt: "Stage" }],
         sections: [{ type: "gallery", enabled: true, items: [] }] }
       put "/api/v1/organizer/events/#{event.id}", params: { page_customization: design }, headers: headers, as: :json
       expect(response).to have_http_status(:ok)

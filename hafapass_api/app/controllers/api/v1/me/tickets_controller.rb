@@ -36,7 +36,8 @@ class Api::V1::Me::TicketsController < ApplicationController
         ends_at: ticket.event.ends_at,
         timezone: ticket.event.timezone,
         transfers_enabled: ticket.event.transfers_available?,
-        cover_image_url: ticket.event.cover_image_url
+        cover_image_url: ticket.event.cover_image_url,
+        image_asset_host: S3Service.public_asset_host
       },
       ticket_type: {
         id: ticket.ticket_type.id,

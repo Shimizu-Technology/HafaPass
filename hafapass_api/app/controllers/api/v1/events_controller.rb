@@ -98,7 +98,7 @@ module Api
       private
 
       def show_json(event)
-        json = event_json(event, include_ticket_types: true)
+        json = event_json(event, include_ticket_types: true, include_design: true)
         json[:redirected_from] = params[:slug] if event.slug != params[:slug]
         json
       end
@@ -227,7 +227,7 @@ module Api
         end
       end
 
-      def event_json(event, include_ticket_types: false)
+      def event_json(event, include_ticket_types: false, include_design: false)
         content = event.content_for(request_locale)
         active_tickets = event.tickets.where.not(status: :cancelled)
         attendee_count = active_tickets.count
@@ -242,7 +242,9 @@ module Api
           machine_translated: content[:machine_translated],
           original_content: content[:locale] == AppLocale::DEFAULT ? nil : event.slice(*Event::CONTENT_FIELDS),
           cover_image_url: event.cover_image_url,
-          page_customization: event.page_customization,
+          page_customization: include_design ? event.page_customization :
+            (event.page_customization.is_a?(Hash) ? event.page_customization.slice("focal_point", "accent") : {}),
+          image_asset_host: S3Service.public_asset_host,
           venue_name: event.venue_name,
           venue_address: event.venue_address,
           venue_city: event.venue_city,

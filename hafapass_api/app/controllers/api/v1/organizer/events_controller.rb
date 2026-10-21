@@ -11,7 +11,9 @@ module Api
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(:organization, :organizer_profile, :event_seating_configuration, ticket_types: :pricing_tiers)
+            .includes(:organization, :organizer_profile, :event_seating_configuration,
+              ticket_types: [:pricing_tiers, :waitlist_offers, { inventory_holds: :order }, { tickets: :order },
+                { event_seats: :active_precheckout_seat_holds }])
             .order(created_at: :desc, id: :desc)
           if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
             assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner]).select(:event_id)
@@ -516,8 +518,9 @@ module Api
             short_description: event.short_description,
             cover_image_url: event.cover_image_url,
             page_customization: event.page_customization,
-            seller: SellerIdentity.for_event(event, platform_name: SiteSetting.instance.platform_name).as_json,
-            service_fee_includes_processing: SiteSetting.instance.platform_bears_processing?,
+            image_asset_host: S3Service.public_asset_host,
+            seller: SellerIdentity.for_event(event, platform_name: listing_settings.platform_name).as_json,
+            service_fee_includes_processing: listing_settings.platform_bears_processing?,
             venue_name: event.venue_name,
             venue_address: event.venue_address,
             venue_city: event.venue_city,
@@ -552,7 +555,7 @@ module Api
             updated_at: event.updated_at
           }
 
-          json[:publish_checklist] = event.publish_checklist
+          json[:publish_checklist] = event.publish_checklist(organizer_agreement: listing_organizer_agreement)
           json[:state_history] = event.event_state_changes.order(occurred_at: :desc).limit(20).map do |change|
             {
               action: change.action,
@@ -564,9 +567,11 @@ module Api
           end
 
           if include_ticket_types
-            json[:ticket_types] = event.ticket_types.order(:sort_order, :id).map do |tt|
+            ticket_types = event.ticket_types.loaded? ? event.ticket_types.sort_by { |type| [type.sort_order || 0, type.id] } :
+              event.ticket_types.order(:sort_order, :id)
+            json[:ticket_types] = ticket_types.map do |tt|
               price = tt.current_price_cents
-              fee = Commerce::ServiceFee.for_event(event, price)
+              fee = Commerce::ServiceFee.for_event(event, price, terms: listing_fee_terms)
               {
                 id: tt.id,
                 name: tt.name,
@@ -575,7 +580,7 @@ module Api
                 current_price_cents: price,
                 all_in_price_cents: fee.all_in_price_cents,
                 service_fee_cents: fee.buyer_fee_cents,
-                regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents).all_in_price_cents,
+                regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents, terms: listing_fee_terms).all_in_price_cents,
                 quantity_remaining: tt.available_quantity,
                 on_sale: tt.on_sale?,
                 quantity_available: tt.quantity_available,
@@ -593,6 +598,18 @@ module Api
           end
 
           json
+        end
+
+        def listing_settings
+          @listing_settings ||= SiteSetting.instance
+        end
+
+        def listing_fee_terms
+          @listing_fee_terms ||= Commerce::ServiceFee.terms(listing_settings)
+        end
+
+        def listing_organizer_agreement
+          @listing_organizer_agreement ||= PolicyRegistry.organizer_agreement
         end
       end
     end

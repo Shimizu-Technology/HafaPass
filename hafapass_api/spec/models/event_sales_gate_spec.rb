@@ -33,8 +33,10 @@ RSpec.describe "Event sales gate in production" do
   end
 
   it "keeps selling after the organizer edits the description, cover, and short description" do
-    event.update!(description: "New details", short_description: "Now with food trucks",
-      cover_image_url: "https://images.example.com/new-cover.jpg")
+    url = "https://storage.invalid/uploads/new-cover.jpg"
+    ImageUploadReceipt.create!(user: event.organizer_profile.user, organization: event.organization,
+      source_key: "pending/new-cover", final_key: "uploads/new-cover.jpg", public_url: url, completed_at: Time.current)
+    event.update!(description: "New details", short_description: "Now with food trucks", cover_image_url: url)
 
     expect(event.reload.sales_open?).to be(true)
   end

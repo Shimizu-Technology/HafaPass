@@ -31,4 +31,11 @@ RSpec.describe Marketplace::EventSerializer do
     expect(described_class.call(event, locale: "ko")).to include(title: "Sunset Fiesta", content_locale: "en",
       machine_translated: false, original_content: nil)
   end
+
+  it "limits marketplace card design to focal point and accent" do
+    event.update!(page_customization: { accent: "#123456", focal_point: { x: 20, y: 60 },
+      sections: [{ type: "faq", enabled: true, items: [{ question: "When?", answer: "Tonight" }] }] })
+    expect(described_class.call(event)[:page_customization]).to eq("accent" => "#123456",
+      "focal_point" => { "x" => 20, "y" => 60 })
+  end
 end

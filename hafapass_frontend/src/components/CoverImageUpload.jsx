@@ -2,14 +2,16 @@ import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Loader2, Image as ImageIcon } from 'lucide-react'
 import { uploadImage } from '../utils/uploads'
 import { uploadScope, uploadScopeCurrent } from '../utils/uploadRecovery'
+import { approvedImageUrl } from '../utils/eventPageDesign'
 
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
-export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eventId, focalPoint, onFocalChange, label = 'Cover image' }) {
+export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eventId, focalPoint, onFocalChange, imageAssetHost, label = 'Cover image' }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
+  const [completedUrl, setCompletedUrl] = useState(null)
   const [dragOver, setDragOver] = useState(false)
   const [retryFile, setRetryFile] = useState(null)
   const inputRef = useRef(null)
@@ -26,6 +28,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
     setError(null)
     setRetryFile(null)
     setPreview(null)
+    setCompletedUrl(null)
   }, [eventId, currentScope.userId, currentScope.organizationId])
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
@@ -57,6 +60,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
       const finalUrl = await uploadImage(file, eventId, current)
       if (!current()) return
       onUploaded(finalUrl)
+      setCompletedUrl(finalUrl)
       setPreview(null)
     } catch (uploadError) {
       if (!current()) return
@@ -75,7 +79,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
     handleFile(e.dataTransfer.files[0])
   }
 
-  const displayUrl = preview || currentUrl
+  const displayUrl = preview || (approvedImageUrl(currentUrl, imageAssetHost) || currentUrl === completedUrl ? currentUrl : null)
 
   return (
     <div>

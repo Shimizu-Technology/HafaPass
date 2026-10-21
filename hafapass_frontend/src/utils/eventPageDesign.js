@@ -1,4 +1,12 @@
 export const SECTION_TYPES = ['lineup', 'schedule', 'faq', 'sponsors', 'video', 'links', 'gallery']
+const ITEM_FIELDS = {
+  lineup: ['name', 'role', 'photo_url', 'url'],
+  schedule: ['time', 'title', 'note'],
+  faq: ['question', 'answer'],
+  sponsors: ['name', 'logo_url', 'url'],
+  links: ['label', 'url', 'kind'],
+  gallery: [],
+}
 export const ACCENT_PRESETS = [
   '#087e82',
   '#185e96',
@@ -18,6 +26,46 @@ export const defaultDesign = () => ({
   })),
   gallery: [],
 })
+
+export function normalizePageCustomization(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const defaults = defaultDesign()
+  const seen = new Set()
+  const saved = Array.isArray(source.sections) ? source.sections : []
+  const sections = saved.filter(section => section && typeof section === 'object' &&
+    SECTION_TYPES.includes(section.type) && !seen.has(section.type) && seen.add(section.type))
+    .map(section => section.type === 'video'
+      ? { type: 'video', enabled: section.enabled === true, url: typeof section.url === 'string' ? section.url : '' }
+      : { type: section.type, enabled: section.enabled === true,
+        items: Array.isArray(section.items) ? section.items.filter(item => item && typeof item === 'object' && !Array.isArray(item))
+          .map(item => Object.fromEntries(ITEM_FIELDS[section.type]
+            .filter(key => typeof item[key] === 'string' &&
+              !(key === 'url' && ['lineup', 'sponsors'].includes(section.type) && !item[key].trim()))
+            .map(key => [key, item[key]]))) : [] })
+  const focal = source.focal_point
+  return {
+    ...(typeof source.accent === 'string' ? { accent: source.accent } : {}),
+    ...(focal && Number.isFinite(focal.x) && Number.isFinite(focal.y) &&
+      focal.x >= 0 && focal.x <= 100 && focal.y >= 0 && focal.y <= 100 ? { focal_point: focal } : {}),
+    ...(source.description_format === 'markdown' ? { description_format: 'markdown' } : {}),
+    gallery: Array.isArray(source.gallery) ? source.gallery.filter(photo => photo && typeof photo === 'object' &&
+      typeof photo.url === 'string').slice(0, 8).map(photo => ({ url: photo.url,
+      alt: typeof photo.alt === 'string' ? photo.alt : '',
+      ...(typeof photo.caption === 'string' ? { caption: photo.caption } : {}) })) : [],
+    sections: [...sections, ...defaults.sections.filter(section => !seen.has(section.type))],
+  }
+}
+
+export function approvedImageUrl(value, host) {
+  if (!host || typeof value !== 'string') return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.hostname === host && url.port === '' &&
+      !url.username && !url.password && !url.search && !url.hash && url.pathname.startsWith('/uploads/')
+  } catch {
+    return false
+  }
+}
 
 const channel = (value) => {
   const s = value / 255

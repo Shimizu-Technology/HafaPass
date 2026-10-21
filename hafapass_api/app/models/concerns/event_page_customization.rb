@@ -16,7 +16,7 @@ module EventPageCustomization
       [nil, "plain", "markdown"].include?(data["description_format"]) &&
       valid_gallery?(data["gallery"]) && valid_sections?(data["sections"])
 
-    errors.add(:page_customization, "is invalid")
+    errors.add(:page_customization, "is invalid; image URLs #{ApprovedImageUrl::MESSAGE}")
   rescue JSON::GeneratorError
     errors.add(:page_customization, "is invalid")
   end
@@ -71,7 +71,7 @@ module EventPageCustomization
       next false unless valid_fields?(item, required: schema[0], optional: schema[1])
       item.all? do |key, val|
         case key
-        when "url" then valid_web?(val)
+        when "url" then (schema[1].include?(key) && val.blank?) || valid_web?(val)
         when "photo_url", "logo_url" then valid_image?(val)
         when "kind" then LINK_TYPES.include?(val)
         else valid_text?(val, key == "answer" ? 1000 : 200, required: schema[0].include?(key))
@@ -89,9 +89,7 @@ module EventPageCustomization
   end
 
   def valid_image?(value)
-    valid_web?(value) && organization_id.present? && ImageUploadReceipt.where(
-      organization_id: organization_id, public_url: value
-    ).where.not(completed_at: nil).exists?
+    ApprovedImageUrl.valid?(value, organization_id: organization_id)
   end
 
   def valid_web?(value)

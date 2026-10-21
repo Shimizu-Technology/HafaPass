@@ -96,7 +96,8 @@ class Api::V1::TicketsController < ApplicationController
         ends_at: ticket.event.ends_at,
         doors_open_at: ticket.event.doors_open_at,
         timezone: ticket.event.timezone,
-        cover_image_url: ticket.event.cover_image_url
+        cover_image_url: ticket.event.cover_image_url,
+        image_asset_host: S3Service.public_asset_host
       },
       seller: SellerIdentity.for_event(ticket.event).as_json,
       ticket_type: {

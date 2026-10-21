@@ -5,7 +5,7 @@ import EventDescription from './EventDescription'
 import EventPageSections from './EventPageSections'
 import TicketTypesSection from './TicketTypesSection'
 import { AllInPriceNote, SellerLine } from './PriceDisclosure'
-import { ACCENT_PRESETS, SECTION_TYPES, accentStyle, defaultDesign, focalPosition } from '../utils/eventPageDesign'
+import { ACCENT_PRESETS, SECTION_TYPES, accentStyle, defaultDesign, focalPosition, normalizePageCustomization, approvedImageUrl } from '../utils/eventPageDesign'
 
 const TITLES = {
   lineup: 'Lineup / performers / speakers',
@@ -88,7 +88,11 @@ function ItemEditor({ type, item, onChange }) {
               className="input mt-1 min-h-11"
               maxLength={field.includes('url') ? 2048 : 200}
               value={item[field] || ''}
-              onChange={(event) => onChange({ ...item, [field]: event.target.value })}
+              onChange={(event) => {
+                const next = { ...item, [field]: event.target.value }
+                if (field === 'url' && type !== 'links' && !event.target.value.trim()) delete next.url
+                onChange(next)
+              }}
             />
           )}
         </label>
@@ -149,8 +153,8 @@ export default function PageDesignEditor({
 }) {
   const [previewWidth, setPreviewWidth] = useState('phone')
   const [previewOpen, setPreviewOpen] = useState(false)
-  const page = { ...defaultDesign(), ...design }
-  const sections = page.sections?.length ? page.sections : defaultDesign().sections
+  const page = normalizePageCustomization(design)
+  const sections = page.sections
   const change = (patch) => onChange({ ...page, ...patch })
   const updateSection = (index, patch) =>
     change({
@@ -220,6 +224,7 @@ export default function PageDesignEditor({
         <CoverImageUpload
           eventId={eventId}
           currentUrl={coverUrl}
+          imageAssetHost={event.image_asset_host}
           onUploaded={onCoverUploaded}
           disabled={disabled}
           focalPoint={page.focal_point}
@@ -277,13 +282,13 @@ export default function PageDesignEditor({
                     <p className="text-sm text-neutral-600">Up to 8 photos. Alt text is required.</p>
                     {page.gallery.map((photo, photoIndex) => (
                       <div key={photoIndex} className="rounded-lg bg-neutral-50 p-3">
-                        <img
+                        {approvedImageUrl(photo.url, event.image_asset_host) && <img
                           src={photo.url}
                           alt=""
                           width="160"
                           height="100"
                           className="mb-2 h-24 w-40 rounded object-cover"
-                        />
+                        />}
                         <div className="grid gap-2 sm:grid-cols-2">
                           <label className="text-xs">
                             Alt text (required)
@@ -407,6 +412,7 @@ export default function PageDesignEditor({
                             label={section.type === 'lineup' ? 'Performer photo' : 'Sponsor logo'}
                             eventId={eventId}
                             currentUrl={item.photo_url || item.logo_url || ''}
+                            imageAssetHost={event.image_asset_host}
                             onUploaded={(url) =>
                               updateSection(index, {
                                 items: section.items.map((row, i) =>
@@ -473,7 +479,7 @@ export default function PageDesignEditor({
             style={accentStyle(page.accent)}
           >
             <div className="relative aspect-[16/9] bg-neutral-900">
-              {coverUrl && (
+              {approvedImageUrl(coverUrl, event.image_asset_host) && (
                 <img
                   src={coverUrl}
                   alt=""
@@ -514,7 +520,7 @@ export default function PageDesignEditor({
                       <EventDescription text={description} format={page.description_format} />
                     </section>
                   )}
-                  <EventPageSections design={page} />
+                  <EventPageSections design={page} imageAssetHost={event.image_asset_host} />
                 </div>
               </div>
             </div>
