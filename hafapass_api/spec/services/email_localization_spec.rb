@@ -36,6 +36,18 @@ RSpec.describe "Buyer email language" do
       "2026년 11월 20일 오후 7:00", "ko:Sunset Fiesta")
   end
 
+  it "falls back to English for an order locale that is now disabled" do
+    store_korean_copy
+    order = create(:order, event: event, locale: "ko")
+    with_locales_enabled(%w[en], machine_translation: true)
+
+    payload = EmailService.prepare_delivery_payload(create(:message_delivery, order: order))
+
+    expect(payload.fetch("subject")).to eq("Your HåfaPass Tickets - Sunset Fiesta")
+    expect(payload.fetch("html")).to include('<html lang="en">', "Your tickets are confirmed!")
+    expect(payload.fetch("html")).not_to include("ko:Sunset Fiesta")
+  end
+
   it "keeps legacy and staff-created orders in English" do
     store_korean_copy
     order = create(:order, event: event)

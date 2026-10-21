@@ -818,7 +818,7 @@ class EmailService
     # Buyer emails are written in the language recorded on the order, waitlist
     # entry or transfer; anything else is English.
     def in_locale(locale, &)
-      I18n.with_locale(AppLocale.i18n_locale(locale), &)
+      I18n.with_locale(AppLocale.enabled?(locale.to_s) ? AppLocale.i18n_locale(locale) : :en, &)
     end
 
     def t(key, **values)

@@ -12,7 +12,10 @@ namespace :translations do
     job = TranslateRecordJob.new
     failures = 0
     [Event, TicketType].each do |model|
+      pending_since = model.column_names.include?("translation_requested_at") ? :translation_requested_at : :updated_at
       scope = model.where(translation_status: %w[untranslated failed unavailable])
+        .or(model.where(translation_status: "pending")
+          .where(model.arel_table[pending_since].lt(Translatable::STUCK_PENDING_AFTER.ago)))
       puts "#{model.name}: #{scope.count} to check"
       scope.find_each do |record|
         next unless record.machine_translation_eligible?
