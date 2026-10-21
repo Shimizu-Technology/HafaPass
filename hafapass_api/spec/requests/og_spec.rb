@@ -7,10 +7,17 @@ RSpec.describe "OG Meta Endpoints", type: :request do
       title: "Beach Party 2026",
       slug: "beach-party-2026",
       description: "Join us for the biggest beach party on Guam!",
-      cover_image_url: "https://example.com/beach.jpg",
+      cover_image_url: nil,
       status: :published,
       organizer_profile: organizer_profile
     )
+  end
+
+  before do
+    url = "https://storage.invalid/uploads/beach.jpg"
+    ImageUploadReceipt.create!(user: organizer_profile.user, organization: organizer_profile.organization,
+      source_key: "pending/beach", final_key: "uploads/beach.jpg", public_url: url, completed_at: Time.current)
+    event.update!(cover_image_url: url)
   end
 
   describe "GET /og/events/:slug" do

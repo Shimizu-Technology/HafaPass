@@ -2,16 +2,21 @@ module Api
   module V1
     module Organizer
       class EventsController < BaseController
+        include CancellationRefundActions
         include Paginatable
 
         before_action :set_event, only: [
           :show, :update, :destroy, :publish, :postpone, :resume, :cancel, :complete, :archive,
-          :clone, :generate_recurrences, :stats, :attendees, :slug_availability, :retranslate
+          :clone, :generate_recurrences, :stats, :attendees, :slug_availability, :retranslate,
+          :cancellation_refunds, :retry_cancellation_refunds, :mark_cash_refunded
         ]
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(:organization, :organizer_profile, :event_seating_configuration, ticket_types: :pricing_tiers)
+            .includes(:organization, :organizer_profile, :event_seating_configuration,
+              ticket_types: [:waitlist_offers, { pricing_tiers: [:inventory_holds, :waitlist_offers,
+                :active_precheckout_seat_holds] }, { inventory_holds: :order }, { tickets: :order },
+                { event_seats: :active_precheckout_seat_holds }])
             .order(created_at: :desc, id: :desc)
           if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
             assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner]).select(:event_id)
@@ -87,7 +92,7 @@ module Api
               user: current_user, organization: current_organization, permission: :manage_events, event: @event
             )
             unless can_manage
-              attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category")
+              attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category", "page_customization")
             end
             attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
             reschedule = reschedule?(attributes)
@@ -98,7 +103,13 @@ module Api
             end
 
             before_data = event_change_snapshot(@event) if reschedule
+            previous_design = @event.page_customization.deep_dup if attributes.key?("page_customization")
             updated = @event.update(attributes)
+            if updated && previous_design && previous_design != @event.page_customization
+              AuditLogger.record!(action: "event.page_customized", auditable: @event, actor: current_user,
+                before_data: { page_customization: previous_design },
+                after_data: { page_customization: @event.page_customization }, request: request)
+            end
             if updated && reschedule
               event_change = @event.event_changes.create!(
                 actor_user: current_user,
@@ -160,6 +171,12 @@ module Api
         end
 
         def cancel
+          preview = EventCancellationRefunds.preview(@event)
+          if !params.key?(:refund_count) || !params.key?(:refund_total_cents) ||
+              params[:refund_count].to_i != preview[:count] || params[:refund_total_cents].to_i != preview[:total_cents]
+            return render json: { error: "Refund total changed. Review the current count and amount before cancelling.",
+              preview: preview }, status: :conflict
+          end
           transition_event(:cancel)
         end
 
@@ -296,24 +313,42 @@ module Api
         end
 
         def attendees
-          tickets = @event.tickets.includes(:ticket_type, order: :payments).order(created_at: :desc)
-          pagy, paginated_tickets = paginate(tickets)
-
+          query = OrganizerSalesQuery.new(event: @event, params: params, attendee_access: @can_view_attendees)
+          pagy, records = paginate(query.relation, items: params.fetch(:per_page, 25).to_i.clamp(1, 100))
+          can_view_finance = OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
+            permission: :view_finance, event: @event)
+          can_view_attendees = @can_view_attendees
+          response.headers["Cache-Control"] = "no-store"
           render json: {
-            attendees: paginated_tickets.map { |ticket|
-              {
-                id: ticket.id,
-                attendee_name: ticket.attendee_name,
-                attendee_email: ticket.attendee_email,
-                ticket_type: ticket.ticket_type.name,
-                status: ticket.status,
-                checked_in_at: ticket.checked_in_at,
-                order_id: ticket.order_id,
-                test_payment: ticket.order.test_payment?
-              }
+            attendees: records.includes(query.view == "orders" ? [{ tickets: :ticket_type }, :promo_code] : [:ticket_type, { order: :payments }]).map { |record|
+              if record.is_a?(Order)
+                row = { id: record.id,
+                  order_number: record.reference, ticket_type: record.tickets.map { |ticket| ticket.ticket_type.name }.uniq.join(", "),
+                  status: record.status, sales_status_label: OrganizerTicketSalesStatus.label(record.status), purchase_date: record.completed_at || record.created_at,
+                  channel: FinanceExports.channel(record), ticket_count: record.tickets.size,
+                  checked_in_count: record.tickets.count(&:checked_in?) }
+                row.merge!(attendee_name: record.buyer_name, attendee_email: record.buyer_email,
+                  checked_in_at: record.tickets.filter_map(&:checked_in_at).max) if can_view_attendees
+                row[:amount_cents] = record.total_cents if can_view_finance
+                row
+              else
+                sales_status = OrganizerTicketSalesStatus.for(record, event_cancelled: @event.cancelled?)
+                row = { id: record.id,
+                  ticket_type: record.ticket_type.name, status: record.status, sales_status: sales_status,
+                  sales_status_label: OrganizerTicketSalesStatus.label(sales_status),
+                  order_id: record.order_id, order_number: record.order.reference,
+                  purchase_date: record.order.completed_at || record.order.created_at,
+                  channel: FinanceExports.channel(record.order), test_payment: record.order.test_payment? }
+                row.merge!(attendee_name: record.attendee_name,
+                  attendee_email: record.holder_email.presence || record.attendee_email,
+                  checked_in_at: record.checked_in_at) if can_view_attendees
+                row
+              end
             },
             meta: pagination_meta(pagy)
           }
+        rescue OrganizerSalesQuery::InvalidFilter => error
+          render json: { error: error.message }, status: :unprocessable_entity
         end
 
         private
@@ -339,7 +374,9 @@ module Api
         end
 
         def transition_event(action)
-          EventLifecycle.call(event: @event, action: action, actor: current_user, reason: params[:reason])
+          EventLifecycle.call(event: @event, action: action, actor: current_user, reason: params[:reason],
+            expected_refund_count: action == :cancel ? params[:refund_count].to_i : nil,
+            expected_refund_total_cents: action == :cancel ? params[:refund_total_cents].to_i : nil)
           render json: event_json(@event.reload, include_ticket_types: true)
         rescue EventLifecycle::TransitionError => e
           render json: { error: e.message, publish_checklist: e.checklist }, status: :unprocessable_entity
@@ -355,16 +392,31 @@ module Api
           @event = find_organization_event(params[:id])
           return unless @event
 
-          authorize_organization!(permission_for_action, event: @event)
+          if action_name == "cancellation_refunds"
+            allowed = [:manage_events, :view_finance].any? do |permission|
+              OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
+                permission: permission, event: @event)
+            end
+            render json: { error: "You do not have permission to perform this action" }, status: :forbidden unless allowed
+          else
+            permissions_for_action.each do |permission|
+              return unless authorize_organization!(permission, event: @event)
+            end
+          end
         end
 
-        def permission_for_action
+        def permissions_for_action
           case action_name
-          when "show" then :view_events
-          when "stats" then :view_finance
-          when "attendees" then :view_attendees
-          when "update", "slug_availability", "retranslate" then :edit_event_content
-          else :manage_events
+          when "show" then [:view_events]
+          when "stats" then [:view_finance]
+          when "cancel" then [:manage_events, :refund]
+          when "retry_cancellation_refunds", "mark_cash_refunded" then [:refund]
+          when "attendees" then
+            @can_view_attendees = OrganizationAuthorization.allowed?(user: current_user,
+              organization: current_organization, permission: :view_attendees, event: @event)
+            [@can_view_attendees ? :view_attendees : :view_finance]
+          when "update", "slug_availability", "retranslate" then [:edit_event_content]
+          else [:manage_events]
           end
         end
 
@@ -376,7 +428,8 @@ module Api
             :category, :age_restriction, :max_capacity,
             :recurrence_rule, :recurrence_end_date, :show_attendees,
             :fee_policy, :buyer_fee_percent, :transfers_enabled, supported_locales: [],
-            localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS }
+            localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS },
+            page_customization: {}
           )
         end
 
@@ -414,7 +467,7 @@ module Api
 
         def clone_event(source, overrides = {})
           attrs = source.attributes.slice(
-            "title", "description", "short_description", "cover_image_url",
+            "title", "description", "short_description", "cover_image_url", "page_customization",
             "venue_name", "venue_address", "venue_city", "timezone",
             "category", "age_restriction", "max_capacity",
             "show_attendees"
@@ -508,6 +561,10 @@ module Api
             description: event.description,
             short_description: event.short_description,
             cover_image_url: event.cover_image_url,
+            page_customization: event.page_customization,
+            image_asset_host: S3Service.public_asset_host,
+            seller: SellerIdentity.for_event(event, platform_name: listing_settings.platform_name).as_json,
+            service_fee_includes_processing: listing_settings.platform_bears_processing?,
             venue_name: event.venue_name,
             venue_address: event.venue_address,
             venue_city: event.venue_city,
@@ -542,7 +599,7 @@ module Api
             updated_at: event.updated_at
           }
 
-          json[:publish_checklist] = event.publish_checklist
+          json[:publish_checklist] = event.publish_checklist(organizer_agreement: listing_organizer_agreement)
           json[:state_history] = event.event_state_changes.order(occurred_at: :desc).limit(20).map do |change|
             {
               action: change.action,
@@ -554,12 +611,22 @@ module Api
           end
 
           if include_ticket_types
-            json[:ticket_types] = event.ticket_types.order(:sort_order, :id).map do |tt|
+            ticket_types = event.ticket_types.loaded? ? event.ticket_types.sort_by { |type| [type.sort_order || 0, type.id] } :
+              event.ticket_types.order(:sort_order, :id)
+            json[:ticket_types] = ticket_types.map do |tt|
+              price = tt.current_price_cents
+              fee = Commerce::ServiceFee.for_event(event, price, terms: listing_fee_terms)
               {
                 id: tt.id,
                 name: tt.name,
                 description: tt.description,
                 price_cents: tt.price_cents,
+                current_price_cents: price,
+                all_in_price_cents: fee.all_in_price_cents,
+                service_fee_cents: fee.buyer_fee_cents,
+                regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents, terms: listing_fee_terms).all_in_price_cents,
+                quantity_remaining: tt.available_quantity,
+                on_sale: tt.on_sale?,
                 quantity_available: tt.quantity_available,
                 quantity_sold: tt.quantity_sold,
                 door_allocation: tt.door_allocation,
@@ -575,6 +642,18 @@ module Api
           end
 
           json
+        end
+
+        def listing_settings
+          @listing_settings ||= SiteSetting.instance
+        end
+
+        def listing_fee_terms
+          @listing_fee_terms ||= Commerce::ServiceFee.terms(listing_settings)
+        end
+
+        def listing_organizer_agreement
+          @listing_organizer_agreement ||= PolicyRegistry.organizer_agreement
         end
       end
     end

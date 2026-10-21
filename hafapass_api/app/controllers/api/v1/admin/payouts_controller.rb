@@ -13,8 +13,11 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       .order(created_at: :desc, id: :desc))
     audits = AuditLog.includes(:actor_user).where(auditable_type: "Payout", auditable_id: payouts.map(&:id),
       action: RECONCILIATION_ACTIONS).order(:id).group_by(&:auditable_id)
+    liabilities = payouts.map(&:event).uniq.index_with do |event|
+      event.cancelled? ? EventCancellationRefunds.liability_snapshot(event) : { outstanding_cents: 0, unresolved: false }
+    end
     render json: {
-      payouts: payouts.map { |payout| payout_list_json(payout, audits.fetch(payout.id, [])) },
+      payouts: payouts.map { |payout| payout_list_json(payout, audits.fetch(payout.id, []), liabilities.fetch(payout.event)) },
       meta: meta,
       status_counts: Payout.statuses.keys.index_with { |status| counts.fetch(status, 0) },
       context: listing_context
@@ -26,7 +29,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :cancellation_payout_reason).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -40,6 +43,18 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   rescue ActiveRecord::RecordNotUnique
     message = payout&.provider == "check" ? "That check number is already recorded" : "That transfer identifier is already recorded"
     render json: { error: message }, status: :unprocessable_entity
+  end
+
+  def release_hold
+    payout = Payout.find(params[:id])
+    PayoutHoldRelease.call(payout: payout, actor: current_user,
+      sent_before_cancellation_confirmed: params[:sent_before_cancellation_confirmed] == true,
+      cancellation_payout_reason: params[:cancellation_payout_reason], request: request)
+    render json: { id: payout.id, status: payout.status }
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Payout not found" }, status: :not_found
+  rescue PayoutHoldRelease::ReleaseError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   private
@@ -73,11 +88,17 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     end
   end
 
-  def payout_list_json(payout, audits)
+  def payout_list_json(payout, audits, liability)
     reconciliation = audits.reverse.find { |audit| audit.action == "payout.reconciled" }
     # Compared in memory (snapshot vs. details on file), once per payout.
     payee_changed = payout.provider == "check" && !payout.payee_matches_approval?
     conflict = audits.reverse.find { |audit| audit.action == "payout.provider_result_conflict" }
+    hold_available = if payout.status_held?
+      current_payable = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
+      other_reserved = payout.event.payouts.where(status: [:pending, :processing, :held, :paid])
+        .where.not(id: payout.id).sum(:amount_cents)
+      [current_payable - other_reserved, 0].max
+    end
     payout.attributes.slice(
       "id", "provider", "provider_payout_id", "amount_cents", "currency", "status", "failure_code",
       "failure_message", "initiated_at", "paid_at", "created_at"
@@ -91,6 +112,10 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       payee_changed: payee_changed,
       tax_approval_changed: !payout.tax_approval_matches?,
       tax_information_snapshot: payout.tax_information_snapshot,
+      outstanding_buyer_balance_cents: liability[:outstanding_cents],
+      cancellation_refunds_unresolved: liability[:unresolved],
+      held_from_status: payout.held_from_status,
+      hold_available_cents: hold_available,
       current_payee: payee_changed ? payout.connected_account.check_payee : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,

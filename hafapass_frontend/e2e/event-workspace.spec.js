@@ -97,3 +97,37 @@ for (const width of [320, 1440]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   })
 }
+
+for (const width of [390, 1440]) {
+  test(`attendee sales filters and export stay usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await prepare(page)
+    await page.route('**/api/v1/organizer/events/601/attendees?**', route => json(route, {
+      attendees: [{ id: 7, attendee_name: 'Mina Cruz', attendee_email: 'mina@example.invalid',
+        order_number: 'HP-DEMO7', ticket_type: 'Entry', status: 'issued' }],
+      meta: { total_count: 1, total_pages: 1 }
+    }))
+    await page.route('**/api/v1/organizer/events/601/sales_exports', route => {
+      if (route.request().method() !== 'POST') return json(route, { exports: [] })
+      return route.fulfill({
+        status: 200, contentType: 'text/csv; charset=utf-8',
+        headers: { 'Content-Disposition': 'attachment; filename="sales.csv"' },
+        body: '\uFEFF"Name","Order #"\n"Mina Cruz","HP-DEMO7"\n'
+      })
+    })
+    await page.goto('/dashboard/events/601/attendees')
+    await expect(page.getByRole('status').filter({ hasText: '1 attendee' })).toBeVisible()
+    await page.getByRole('button', { name: 'Filters & sort' }).click()
+    await page.getByRole('combobox', { name: 'Sales channel' }).selectOption('box_office')
+    await page.getByRole('button', { name: 'Show results' }).click()
+    await expect(page).toHaveURL(/channel=box_office/)
+    await expect(page.getByRole('region', { name: 'Active filters' })).toContainText('Sales channel: Box office')
+    await expect(width < 640 ? page.locator('.sm\\:hidden').getByText('Mina Cruz') : page.locator('table').getByText('Mina Cruz')).toBeVisible()
+    await page.getByRole('button', { name: 'Export this list' }).click()
+    await expect(page.getByRole('dialog', { name: 'Export this list' })).toContainText('1 attendee')
+    const download = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Download CSV' }).click()
+    expect((await download).suggestedFilename()).toContain('attendees.csv')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  })
+}

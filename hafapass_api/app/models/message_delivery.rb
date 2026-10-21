@@ -24,6 +24,20 @@ class MessageDelivery < ApplicationRecord
   attr_accessor :preparing_outbound_payload
 
   TICKET_EMAIL_TEMPLATES = %w[order_confirmation fulfillment_resend].freeze
+  PROMOTIONAL_TEMPLATES = %w[communication_campaign].freeze
+
+  def promotional?
+    channel == "email" && PROMOTIONAL_TEMPLATES.include?(template)
+  end
+
+  def transactional?
+    channel == "email" && !promotional?
+  end
+
+  def marketing_unsubscribed?
+    promotional? && event&.organization_id.present? &&
+      MarketingUnsubscribe.exists?(organization_id: event.organization_id, email: recipient.to_s.strip.downcase)
+  end
   scope :ticket_email, -> { where(channel: "email", template: TICKET_EMAIL_TEMPLATES) }
   scope :unconfirmed_provider_result, -> {
     where(provider_outcome_unknown: true).or(

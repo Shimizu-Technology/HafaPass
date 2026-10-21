@@ -14,6 +14,20 @@ vi.mock('../components/QRCode', () => ({ default: () => <div>Entry QR</div> }))
 describe('ticket download recovery', () => {
   beforeEach(() => { vi.clearAllMocks(); motionPreference.reduced = false; window.sessionStorage.clear() })
 
+  it('uses the public focal point for an approved ticket cover', async () => {
+    api.get.mockResolvedValue({ data: {
+      id: 3, status: 'issued', admission_allowed: true, scan_credential: 'synthetic-scan', wallet: {},
+      event: { title: 'Rehearsal', status: 'published', starts_at: '2026-11-20T07:00:00Z', timezone: 'Pacific/Guam',
+        cover_image_url: 'https://storage.invalid/uploads/cover.webp', image_asset_host: 'storage.invalid',
+        page_customization: { focal_point: { x: 20, y: 80 } } },
+      ticket_type: { name: 'Admission' },
+    } })
+    render(<MemoryRouter initialEntries={['/tickets/synthetic-display']}><Routes>
+      <Route path="/tickets/:credential" element={<TicketPage />} />
+    </Routes></MemoryRouter>)
+    expect(await screen.findByRole('img', { name: 'Rehearsal' })).toHaveStyle({ objectPosition: '20% 80%' })
+  })
+
   it.each([404, 503])('orients a failed ticket load with a heading and alert (HTTP %s)', async status => {
     api.get.mockRejectedValue({ response: { status } })
     render(<MemoryRouter initialEntries={['/tickets/synthetic-display?order=2']}><Routes>

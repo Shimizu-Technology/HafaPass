@@ -16,6 +16,8 @@ Rails.application.routes.draw do
       get "health", to: "health#show"
       get "readiness", to: "health#readiness"
       get "config", to: "config#show"
+      get "marketing/unsubscribe/:token", to: "marketing_unsubscribes#show", as: :marketing_unsubscribe
+      post "marketing/unsubscribe/:token", to: "marketing_unsubscribes#create"
       get "me", to: "me#show"
       post "users/sync", to: "users#sync"
 
@@ -35,6 +37,7 @@ Rails.application.routes.draw do
       # Orders (public create for guest checkout)
       resources :orders, only: [:create, :show] do
         member do
+          get :receipt
           post :payment_resume
           post :cancel
           post :resend
@@ -145,6 +148,9 @@ Rails.application.routes.draw do
             post :postpone
             post :resume
             post :cancel
+            get :cancellation_refunds
+            post :retry_cancellation_refunds
+            post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
             post :complete
             post :archive
             post :clone
@@ -212,6 +218,10 @@ Rails.application.routes.draw do
             member { post :send_now }
           end
           post "attendees/:ticket_id/resend", to: "attendee_deliveries#create", as: :resend_attendee_ticket
+          post "sales_exports", to: "sales_exports#create"
+          get "sales_exports", to: "sales_exports#index"
+          get "sales_exports/door_list", to: "sales_exports#door_list"
+          get "sales_exports/:id", to: "sales_exports#show"
           get "crm/export", to: "crm#export"
           get "crm/segments", to: "crm#segments"
           post "catalog_fulfillments/:order_item_id", to: "catalog_fulfillments#create"
@@ -235,6 +245,14 @@ Rails.application.routes.draw do
         resource :settings, only: [:show, :update]
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
+          member do
+            get :cancellation_refunds
+            post :cancel_and_refund
+            post :start_cancellation_refunds
+            post :retry_cancellation_refunds
+            post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
+            post "cancellation_refunds/:order_id/mark_card_refunded", to: "events#mark_card_refunded"
+          end
           resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
           resource :sales_suspension, only: [:destroy], controller: "event_sales_suspensions"
           post :retranslate, on: :member
@@ -351,7 +369,9 @@ Rails.application.routes.draw do
         end
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:index, :create, :destroy]
-        resources :payouts, only: [:index, :update]
+        resources :payouts, only: [:index, :update] do
+          post :release_hold, on: :member
+        end
         resources :disputes, only: [:index]
         resources :audit_logs, only: [:index]
         resource :marketplace, only: [:show], controller: "marketplace"

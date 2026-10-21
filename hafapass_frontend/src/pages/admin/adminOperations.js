@@ -69,6 +69,7 @@ export function compactParams(filters) {
 export const statusTone = {
   pending: 'bg-amber-50 text-amber-900 ring-amber-200',
   processing: 'bg-amber-50 text-amber-900 ring-amber-200',
+  held: 'bg-amber-50 text-amber-900 ring-amber-200',
   open: 'bg-amber-50 text-amber-900 ring-amber-200',
   paid: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
   won: 'bg-emerald-50 text-emerald-800 ring-emerald-200',

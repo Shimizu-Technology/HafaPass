@@ -17,6 +17,9 @@ default: &default
   runtime_retention:
     class: RuntimeRetentionJob
     schedule: every day at 00:30 UTC
+  sales_export_orphan_sweep:
+    class: OrganizerSalesExportOrphanSweepJob
+    schedule: every day at 01:00 UTC
 
 production:
   <<: *default

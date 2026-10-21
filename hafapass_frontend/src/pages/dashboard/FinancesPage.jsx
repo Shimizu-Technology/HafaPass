@@ -40,6 +40,7 @@ function PayoutStateBadge({ state }) {
   switch (state) {
     case 'ready': return <Badge tone="action" icon={WalletCards}>Ready to request</Badge>
     case 'in_progress': return <Badge tone="warning" icon={Clock}>Payout in progress</Badge>
+    case 'on_hold': return <Badge tone="warning" icon={Clock}>On hold — event cancelled, refunds in progress</Badge>
     case 'paid': return <Badge tone="good" icon={CheckCircle2}>Paid</Badge>
     case 'needs_new_version': return <Badge tone="warning" icon={AlertTriangle}>Finalize new version</Badge>
     case 'awaiting_statement': return <Badge icon={Clock}>Waiting for statement</Badge>
@@ -48,6 +49,7 @@ function PayoutStateBadge({ state }) {
 }
 
 function PayoutStatusBadge({ status }) {
+  if (status === 'held') return <Badge tone="warning" icon={Clock}>On hold — event cancelled, refunds in progress</Badge>
   if (status === 'paid') return <Badge tone="good" icon={CheckCircle2}>Paid</Badge>
   if (status === 'failed') return <Badge tone="critical" icon={XCircle}>Failed</Badge>
   if (status === 'reversed') return <Badge tone="critical" icon={RotateCcw}>Reversed</Badge>
@@ -213,6 +215,7 @@ function FinancesSession({ identity }) {
             <li>{totals.requestable_cents > 0 ? `${money(totals.requestable_cents)} can be requested now from finalized statements.` : 'Nothing can be requested right now. Payouts open once an event’s statement is finalized and any refunds, disputes or payment checks are settled.'}</li>
             {heldCents > 0 && <li>{money(heldCents)} from finalized statements is on hold until open refunds, disputes or payment checks are settled.</li>}
             {totals.in_flight_cents > 0 && <li>{money(totals.in_flight_cents)} is on its way in a payout that has been requested.</li>}
+            {totals.held_cents > 0 && <li>{money(totals.held_cents)} is on hold — event cancelled, refunds in progress.</li>}
             {payoutTiming && <li>Payout timing: {payoutTiming}.</li>}
           </ul>
           {breakdown.negative_balance_cents > 0 && (
@@ -240,6 +243,7 @@ function FinancesSession({ identity }) {
               <Line label="Earned for payout" {...signed(breakdown.earned_cents)} strong />
               <Line label="Paid out" value={money(breakdown.paid_cents)} sign="−" />
               {breakdown.in_flight_cents > 0 && <Line label="Payouts in progress" value={money(breakdown.in_flight_cents)} sign="−" />}
+              {breakdown.held_cents > 0 && <Line label="On hold — event cancelled, refunds in progress" value={money(breakdown.held_cents)} sign="−" />}
               <Line label={breakdown.balance_cents < 0 ? 'Negative balance carried forward' : 'Still owed to you'} {...signed(breakdown.balance_cents)} strong />
             </dl>
             <ul className="mt-4 space-y-1 border-t border-neutral-100 pt-4 text-xs text-neutral-600">

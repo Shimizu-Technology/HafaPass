@@ -23,6 +23,50 @@ describe('published event content and schedule edits', () => {
     apiClient.put.mockResolvedValue({ data: event })
   })
 
+  it('reloads the cancelled event through the guarded fetch before showing success', async () => {
+    const user = userEvent.setup()
+    const cancelled = { ...event, status: 'cancelled', permissions: { ...event.permissions, refund: true } }
+    let finishReload
+    apiClient.get.mockImplementation(path => path.endsWith('/cancellation_refunds')
+      ? Promise.resolve({ data: { preview: { count: 0, total_cents: 0, cash_count: 0 }, run: null } })
+      : apiClient.get.mock.calls.filter(([url]) => url === '/organizer/events/37').length > 1
+        ? new Promise(resolve => { finishReload = resolve })
+        : Promise.resolve({ data: { ...event, permissions: cancelled.permissions } }))
+    apiClient.post.mockResolvedValue({ data: cancelled })
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Review cancellation and refunds' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel event and refund all buyers' }))
+    await user.type(screen.getByLabelText('Reason for cancellation'), 'Storm')
+    await user.click(screen.getByRole('button', { name: 'Confirm cancellation and refunds' }))
+    await waitFor(() => expect(finishReload).toBeTypeOf('function'))
+    expect(screen.queryByText('Event cancelled. Refunds are processing.')).not.toBeInTheDocument()
+    await act(async () => finishReload({ data: cancelled }))
+    expect(await screen.findByText('Event cancelled. Refunds are processing.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View cancellation refunds' })).toBeInTheDocument()
+    expect(apiClient.get.mock.calls.filter(([url]) => url === '/organizer/events/37').at(-1)[1]).toHaveProperty('signal')
+  })
+
+  it('places cancellation progress above the event details on a cancelled event', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/cancellation_refunds')
+      ? { preview: { count: 0, total_cents: 0, cash_count: 0 }, run: { status: 'completed', refunded: 1, skipped: 0, total_orders: 1, items: [] } }
+      : { ...event, status: 'cancelled' } }))
+    mount()
+    const banner = await screen.findByRole('button', { name: /Cancellation refunds: 1 of 1 done/ })
+    expect(banner.compareDocumentPosition(screen.getByRole('heading', { name: 'Event details' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows specific page design validation feedback from the API', async () => {
+    apiClient.put.mockRejectedValueOnce({ response: { data: { errors: [
+      'Page customization gallery photo 2 needs alt text (up to 200 characters)',
+      'Page customization video URL must be a valid YouTube or Vimeo HTTPS link'
+    ] } } })
+    const user = userEvent.setup()
+    mount()
+    await user.type(await screen.findByLabelText(/Event Title/), ' Updated')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(await screen.findByText(/gallery photo 2 needs alt text/)).toHaveTextContent('video URL must be a valid YouTube or Vimeo HTTPS link')
+  })
+
   it('shows assigned scanner recovery on direct editor access without editing controls', async () => {
     apiClient.get.mockResolvedValue({ data: { ...event, permissions: { scan: true, edit_event_content: false } } })
     mount()

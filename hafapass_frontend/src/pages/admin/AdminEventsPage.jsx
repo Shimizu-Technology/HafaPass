@@ -14,6 +14,7 @@ import PilotCloseoutDialog from '../../components/PilotCloseoutDialog'
 import { adminLabel } from './adminLabels'
 import EventPolicyHoldDialog from './EventPolicyHoldDialog'
 import EventSalesSuspensionDialog from './EventSalesSuspensionDialog'
+import CancellationRefundProgress from '../../components/CancellationRefundProgress'
 import { POLICY_HOLD_SCOPES } from './adminOperations'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
@@ -219,6 +220,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                           Resume sales<span className="sr-only"> for {event.title}</span>
                         </button>}
                       </div>
+                      {['published', 'postponed', 'cancelled'].includes(event.status) && <CancellationRefundProgress admin canMarkCash eventId={event.id} status={event.status} eventTimeZone={event.timezone} onCancelled={() => fetchEvents({ keepRows: true })} />}
                     </td>
                     <td className="whitespace-nowrap px-3 py-3">
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${

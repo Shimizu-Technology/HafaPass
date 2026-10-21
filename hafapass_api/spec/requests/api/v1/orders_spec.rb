@@ -29,10 +29,30 @@ RSpec.describe "Api::V1::Orders", type: :request do
     end
 
     context "with valid params" do
+      it "casts checkout marketing choices and preserves each recovery identity" do
+        { true => true, "1" => true, false => false, nil => false, "invalid" => false }.each do |choice, expected|
+          key = SecureRandom.hex(32)
+          params = valid_params.merge(checkout_key: key, buyer_email: "buyer-#{key.first(8)}@example.invalid")
+          params[:marketing_opt_in] = choice unless choice.nil?
+          post_json "/api/v1/orders", params: params
+          expect(response).to have_http_status(:created)
+          order = Order.find(response.parsed_body.fetch("id"))
+          expect(order.marketing_opt_in).to be(expected)
+          digest = order.checkout_request_digest
+          expect do
+            post_json "/api/v1/orders", params: params
+          end.not_to change(Order, :count)
+          expect(response).to have_http_status(:created)
+          expect(response.parsed_body.fetch("id")).to eq(order.id)
+          expect(order.reload.checkout_request_digest).to eq(digest)
+        end
+      end
+
       it "keeps recovery identity stable across wrapped params and ignored schema metadata" do
         keyed = valid_params.merge(checkout_key: SecureRandom.hex(32))
         post_json "/api/v1/orders", params: keyed
         expect(response).to have_http_status(:created)
+        expect(response.headers["Cache-Control"]).to eq("private, no-store")
         original_id = response.parsed_body["id"]
         expect do
           post_json "/api/v1/orders", params: keyed.merge(order: { buyer_name: "Wrapper changed" },

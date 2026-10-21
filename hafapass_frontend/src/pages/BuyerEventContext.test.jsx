@@ -90,7 +90,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     expect(screen.getByTestId('route')).toHaveTextContent('/checkout/event-b')
     await user.type(await screen.findByLabelText("Full Name"), 'Synthetic Buyer')
     await user.type(screen.getByLabelText("Email Address"), 'buyer@example.invalid')
-    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
     await user.click(screen.getByRole('button', { name: /Place Order/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.anything()))
     await act(async () => finishB())
@@ -146,7 +146,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     if (name) {
       await user.type(name, 'Synthetic Buyer')
       await user.type(screen.getByLabelText("Email Address"), 'buyer@example.invalid')
-      await user.click(screen.getByRole('checkbox'))
+      await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
       await user.click(await screen.findByRole('button', { name: /Place Order/ }))
     }
     await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('/events/event-b'))
@@ -164,7 +164,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     expect(screen.getByLabelText("Email Address")).toHaveValue('')
     await user.type(screen.getByLabelText("Full Name"), 'Current B Buyer')
     await user.type(screen.getByLabelText("Email Address"), 'current-b@example.invalid')
-    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
     await user.click(screen.getByRole('button', { name: /Place Order/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.anything()))
     expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 42, buyer_name: 'Current B Buyer',
@@ -198,7 +198,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     }))
     await user.type(screen.getByLabelText("Full Name"), 'Current B Buyer')
     await user.type(screen.getByLabelText("Email Address"), 'buyer@example.invalid')
-    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
     await user.click(screen.getByRole('button', { name: /Place Order/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.objectContaining({
       event_id: 42, line_items: [{ ticket_type_id: selectedId, quantity: 2 }],

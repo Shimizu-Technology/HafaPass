@@ -48,6 +48,15 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllEnvs() })
 
 describe('dashboard mutation ownership', () => {
+  it.each([
+    ['https://storage.invalid/uploads/logo.webp', 'storage.invalid', true],
+    ['https://off-host.invalid/uploads/logo.webp', 'storage.invalid', false],
+  ])('previews only a logo from the approved host (%s)', async (logo, host, visible) => {
+    profiles[1] = { ...profiles[1], logo_url: logo, image_asset_host: host }
+    mount()
+    await userEvent.click(await screen.findByTitle('Edit Profile'))
+    expect(screen.queryByRole('img', { name: 'Logo' }) !== null).toBe(visible)
+  })
   it.each(['page', 'search'])('keeps a readiness mutation live while changing the event %s', async navigation => {
     const pending = deferred()
     const normalGet = apiClient.get.getMockImplementation()

@@ -14,7 +14,7 @@ review_notes:
     - section: Transfers and resale
       note: Counsel to check Guam and federal ticket resale and anti-bot rules; the app supports transfers, not an authorized resale marketplace.
     - section: Refunds, cancellations, and event changes
-      note: Counsel to set the buyer remedy and any deadline for cancellation, postponement and material changes; current product requires a buyer or staff refund action and has no automatic bulk cancellation refund.
+      note: Counsel to set the buyer remedy and any deadline for cancellation, postponement and material changes; card cancellation refunds now start automatically, while cash and non-Stripe door-card returns need manual action.
   privacy:
     - section: Information we collect
       note: Counsel to confirm TIN collection, encryption, audited admin disclosure, tax-authority sharing, retention and breach response.
@@ -23,7 +23,7 @@ review_notes:
     - section: Service providers
       note: Privacy counsel to review General Translation text transfers, vendor contracts and cross-border processing, including Japan APPI, Korea PIPA and any EU targeting.
     - section: Your choices and rights
-      note: Counsel to distinguish legal rights from voluntary requests and review marketing email consent, CAN-SPAM unsubscribe and organizer campaign controls. No unsubscribe workflow is implemented.
+      note: Counsel to distinguish legal rights from voluntary requests and review marketing email consent, CAN-SPAM unsubscribe and organizer campaign controls. Checkout consent and one-click unsubscribe are implemented.
   organizer-agreement:
     - section: Our role as your limited agent
       note: Counsel to confirm agent-of-payee appointment and buyer discharge, check disbursements under FinCEN FIN-2014-R009 and Guam 11 GCA Ch. 109, fund custody, withholding and offsets, and whether licensing or segregated accounts are required.
@@ -74,7 +74,7 @@ documents:
 
           Your order is complete only after payment is confirmed, or after a free or approved order is completed. We then send your tickets by email and make them available in your account. If you checked out as a guest, your confirmation email includes a private link to your order. Keep that email.
 
-          We may cancel an order, with a refund of what you paid, if a price or listing error was obvious, if payment fails or is reversed, or if we reasonably suspect fraud or a breach of these terms.
+          You can download a receipt from your order page after the order is completed. We may cancel an order, with a refund of what you paid, if a price or listing error was obvious, if payment fails or is reversed, or if we reasonably suspect fraud or a breach of these terms.
       - heading: Using your ticket
         body: |-
           Each ticket has a QR code or entry code. One ticket admits one person, once. Treat the code like cash: anyone who presents it first may be admitted, and we can't always replace a code that someone else has used.
@@ -87,7 +87,7 @@ documents:
           Transfers do not make {{platform_name}} a resale marketplace or guarantee a private resale. Follow any organizer resale restrictions and applicable law. You may not use bots, scripts, multiple accounts, or other tools to get around purchase limits, holds, or queues, or buy tickets for speculative resale. We may cancel tickets obtained through abuse, subject to applicable law.
       - heading: Refunds, cancellations, and event changes
         body: |-
-          Refunds follow our Refund & Cancellation Policy and the refund rules the organizer shows on the event page. If an event is cancelled, you are entitled to a full refund including the service fee; cancellation does not itself send money back, so use your order page or contact support. If an event is postponed, your ticket remains valid while the organizer sets a new date, and you can seek a refund. Contact us about another material change so we can review the remedy with the organizer.
+          Refunds follow our Refund & Cancellation Policy and the refund rules the organizer shows on the event page. If an event is cancelled, we start eligible card refunds, including the service fee, without a request. The organizer returns cash payments manually; a non-Stripe door-card return also needs manual processing. If an event is postponed, your ticket remains valid while the organizer sets a new date, and you can request a refund. Contact us about another material change so we can review the remedy with the organizer.
 
           Event details such as performers, start times, and seating may change. The organizer decides on changes and is responsible for them. We pass on the notices organizers send through {{platform_name}}.
       - heading: The event itself
@@ -135,7 +135,7 @@ documents:
           If an event page doesn't state a refund policy, tickets are not refundable except when the event is cancelled, when it is postponed or materially changed, or where the law requires a refund.
       - heading: If an event is cancelled
         body: |-
-          If an event is cancelled and not rescheduled, you are entitled to a full refund of everything you paid for your tickets, including the service fee. The cancellation notice does not automatically issue the refund. You can request a refund from your order page or contact us; the organizer and our staff can also process refunds. We will work with the organizer to process eligible refunds.
+          If an event is cancelled and not rescheduled, you are entitled to a full refund of everything you paid for your tickets, including the service fee. You don't need to ask for a Stripe card refund; we start it when the event is cancelled, and it goes back to the original card. For cash purchases, the organizer must return your cash and record the refund. Non-Stripe door-card payments also need a manual return through their provider. Disputed payments need separate resolution before we can refund them. We hold organizer payouts while buyer refunds remain unresolved.
       - heading: If an event is postponed or materially changed
         body: |-
           If an event is postponed, your ticket stays valid while the organizer sets a new date. You can request a refund for an unused ticket from your order page or contact us. If the event is rescheduled, check the new event details before attending.
@@ -149,7 +149,7 @@ documents:
           A ticket can't be refunded if it has already been used for entry, transferred to someone else, refunded already, or is part of an open payment dispute.
       - heading: How and when you receive the money
         body: |-
-          Card refunds go back to the original payment method. Once our payment provider confirms a refund, it usually appears within 5 to 10 business days, depending on your bank or card issuer. For tickets paid for in cash at the door, the organizer handles the physical cash return; {{platform_name}} may record that return but does not transfer the cash. Free tickets have no payment to return; cancelling one releases the seat.
+          Stripe card refunds go back to the original card. Once our payment provider confirms a refund, it usually appears within 5 to 10 business days, depending on your bank or card issuer. For non-Stripe card payments at the door, the organizer handles the return through its card provider and records it. For tickets paid for in cash at the door, the organizer handles the physical cash return; {{platform_name}} may record that return but does not transfer the cash. Free tickets have no payment to return; cancelling one releases the seat.
 
           If a refund attempt fails or its status is unclear, we confirm the result with our payment provider before trying again, so you are not refunded twice or left out.
       - heading: Chargebacks
@@ -189,6 +189,8 @@ documents:
       - heading: Sharing with organizers
         body: |-
           When you buy a ticket or register for an event, the organizer receives the information it needs to run that event: your name, email address, phone number if you gave one, attendee names, your answers to its questions, and check-in status. Organizers may use this information only for their own events and must follow the law and our Organizer Agreement. They are responsible for their own use of it.
+
+          Authorized organizer owners, managers, and assigned box-office staff can export attendee information for their events. Staff with finance access alone can export transaction details without attendee names or contact details. Export files for large sales lists are kept in private storage for two days after they are prepared, then deleted. Smaller exports download directly and are not kept as export files by {{platform_name}}.
       - heading: Service providers
         body: |-
           We use these providers to run {{platform_name}}. The information each receives depends on the feature you use and may be processed outside Guam.
@@ -220,7 +222,7 @@ documents:
         body: |-
           You can ask to access, correct, export, or delete your personal information by contacting us {{support_contact}}. We will verify your identity and assess the request under applicable law and our recordkeeping duties. Some records, such as completed orders, may need to be kept for legal, tax, or dispute reasons.
 
-          Order confirmations, tickets, transfers, refunds and event changes are service messages. Organizers can use an event message tool to email ticket holders; that tool currently has no self-service marketing unsubscribe. If an organizer message is promotional and you do not want more, contact us {{support_contact}}. We are reviewing the controls needed before promotional campaigns are sent.
+          We send organizer marketing emails only when you choose to receive them at checkout. Your choice applies to that organizer across its events until you unsubscribe or change it at a later checkout. Leaving the box unchecked at a later checkout withdraws your earlier choice. Each marketing email has a one-click unsubscribe link, and we honor your request immediately. Order confirmations, tickets, transfers, refunds and event changes are service messages and will still be sent.
       - heading: Security and breach notification
         body: |-
           We limit staff access to personal information by role, record sensitive actions, and encrypt data in transit. No system is perfectly secure.
@@ -277,7 +279,7 @@ documents:
         body: |-
           Refunds are funded from your event proceeds. You agree to honor your stated refund policy and our Refund & Cancellation Policy.
 
-          If you cancel an event, tell us promptly, notify buyers through {{platform_name}}, and cooperate in issuing full refunds including service fees. Changing the event status does not itself send refunds. If you postpone an event, notify buyers and cooperate with refund requests for unused tickets. If you materially change an event in another way, promptly disclose the change and work with us on the remedy and any request window under applicable law.
+          If you cancel an event, tell us promptly and notify buyers through {{platform_name}}. Cancellation starts eligible Stripe card refunds, including service fees, without a buyer request. You must return cash purchases and record the returns; non-Stripe door-card payments also need manual returns through their provider. We hold your payout while buyer refunds remain unresolved. If you postpone an event, notify buyers and cooperate with refund requests for unused tickets. If you materially change an event in another way, promptly disclose the change and work with us on the remedy and any request window under applicable law.
 
           You must honor every valid ticket sold for your event.
       - heading: Events beyond anyone's control
@@ -295,7 +297,7 @@ documents:
           You may not list events or sell tickets that our Acceptable Use Policy prohibits.
       - heading: Buyer information
         body: |-
-          You will receive information about buyers and attendees of your events. You may use it to run that event, provide customer service, and meet legal obligations. Do not send unrelated promotions through the event message tool. If you conduct marketing using data you lawfully hold, you are responsible for any required consent, accurate sender details, an effective opt-out, and honoring opt-outs. Keep attendee data secure, do not sell it, and notify us promptly if it is lost, misused, or accessed without authority. You are independently responsible for your use of this information; we remain responsible for our own platform processing.
+          Authorized owners, managers, and assigned box-office staff can export buyer and attendee information for your events. Finance-only staff can export transaction details without attendee personal information. Large sales export files are stored privately for two days after preparation, then deleted. You may use buyer and attendee information to run that event, provide customer service, and meet legal obligations. Organizer marketing through {{platform_name}} is limited to buyers who chose it at checkout and have not unsubscribed; each marketing email has a one-click unsubscribe link. If you conduct marketing outside {{platform_name}} using data you lawfully hold, you are responsible for any required consent, accurate sender details, an effective opt-out, and honoring opt-outs. Keep attendee data secure, do not sell it, and notify us promptly if it is lost, misused, or accessed without authority. You are independently responsible for your use of this information; we remain responsible for our own platform processing.
       - heading: Content license
         body: |-
           You keep ownership of the names, logos, images, and descriptions you upload. You grant {{operator_name}} a non-exclusive, royalty-free license to use them to list, promote, and sell tickets to your events on {{platform_name}} and in related marketing. You confirm you have the rights needed to grant this license.
@@ -366,6 +368,9 @@ documents:
       - heading: Operational and support data
         body: |-
           Payment provider events, email delivery history, support notes, and security logs are kept only as long as needed for delivery, incident response, disputes, and abuse prevention.
+      - heading: Organizer sales exports
+        body: |-
+          Large organizer sales exports are kept in private file storage for two days after preparation, then deleted. Smaller exports download directly and are not kept as export files by {{platform_name}}. The underlying order and attendee records have separate retention needs described above.
       - heading: Scanner devices
         body: |-
           Organizers should remove offline scanner data from their devices after the event and any needed reconciliation. Tell us promptly if a scanner device is lost or stolen so access can be revoked. We cannot erase data on an organizer's device remotely.

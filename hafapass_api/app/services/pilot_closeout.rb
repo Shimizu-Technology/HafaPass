@@ -189,7 +189,7 @@ class PilotCloseout
       "active_scanner_device_count" => event.scanner_devices.status_active.count,
       "effective_staff_assignment_count" => event.event_staff_assignments.effective.count,
       "unresolved_incident_count" => run.unresolved_incidents.count,
-      "payout_in_flight_count" => payouts.where(status: [:pending, :processing]).count
+      "payout_in_flight_count" => payouts.where(status: [:pending, :processing, :held]).count
     }
   end
 

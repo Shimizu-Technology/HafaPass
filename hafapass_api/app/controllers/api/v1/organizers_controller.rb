@@ -35,6 +35,7 @@ class Api::V1::OrganizersController < ApplicationController
       slug: organization.slug,
       description: profile.business_description,
       logo_url: profile.logo_url,
+      image_asset_host: S3Service.public_asset_host,
       verified: profile.verification_status_verified?,
       ambros_partner: profile.is_ambros_partner,
       completed_events: metric_for(@completed_events, organization.id) { organization.events.completed.count },

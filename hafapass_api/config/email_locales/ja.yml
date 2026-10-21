@@ -51,7 +51,15 @@ emails:
     heading: "お持ちのチケット"
     view: "お持ちのチケットを表示"
     entry_instructions: "入場時に受付でQR Codeをご提示ください。"
+  event_cancelled:
+    subject: "イベント中止：%{event}"
+    heading: "%{event}は中止となりました"
+    body: "サービス料を含むお支払い全額の自動返金を準備しています。申請は不要です。現金で購入された方には返金方法を別途ご案内します。"
+    view_order: "注文を確認"
   refund:
+    cancelled_subject: "イベント中止 — %{amount}の返金手続き中"
+    cancelled_heading: "イベント中止 — 返金手続き中"
+    cancelled_body: "%{event}は中止となりました。サービス料を含む%{amount}の返金手続きを進めています。"
     subject: "返金処理完了 - %{event}"
     heading: "返金処理完了"
     body: "%{event}の返金処理が完了しました。"

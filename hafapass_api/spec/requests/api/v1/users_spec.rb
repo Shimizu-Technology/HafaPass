@@ -1,6 +1,18 @@
 require "rails_helper"
 
 RSpec.describe "Api::V1::Users", type: :request do
+  it "includes the image asset host in the buyer ticket list" do
+    user = create(:user, :attendee)
+    order = create(:order)
+    ticket_type = create(:ticket_type, event: order.event)
+    ticket = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, holder_user: user)
+
+    get "/api/v1/me/tickets", headers: auth_headers(user)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("tickets").find { |item| item["id"] == ticket.id }.fetch("event"))
+      .to include("image_asset_host" => S3Service.public_asset_host)
+  end
   describe "POST /api/v1/users/sync" do
     it "requires authentication" do
       post "/api/v1/users/sync", params: { clerk_id: "attacker", email: "attacker@example.com" }.to_json,

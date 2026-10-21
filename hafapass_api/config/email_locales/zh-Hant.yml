@@ -50,7 +50,15 @@ emails:
     heading: "您的票券"
     view: "查看您的票券"
     entry_instructions: "入場時請出示您的 QR Code。"
+  event_cancelled:
+    subject: "活動取消：%{event}"
+    heading: "%{event}已取消"
+    body: "我們正在準備自動退還您支付的全部金額，包括服務費。您無需申請。現金購票者將收到人工退款說明。"
+    view_order: "查看訂單"
   refund:
+    cancelled_subject: "活動取消 — %{amount}退款正在處理"
+    cancelled_heading: "活動取消 — 退款正在處理"
+    cancelled_body: "%{event}已取消。包含服務費的%{amount}退款正在處理。"
     subject: "退款已處理 - %{event}"
     heading: "退款已處理"
     body: "您在 %{event} 的退款已處理完畢。"

@@ -1,4 +1,14 @@
 {
+  "unsubscribe": {
+    "heading": "メールの設定",
+    "loading": "メール設定を読み込み中…",
+    "linkError": "この配信停止リンクは利用できません。",
+    "requestError": "配信停止できませんでした。もう一度お試しください。",
+    "prompt": "{{organization}}からの宣伝メールの配信を停止しますか？チケットと注文に関する通知は引き続き届きます。",
+    "saving": "保存中…",
+    "action": "配信停止",
+    "unsubscribedConfirmation": "{{organization}}からの宣伝メールの配信を停止しました。チケットと注文に関する通知は引き続き届きます。再度受け取るには、次回の購入時に同意してください。"
+  },
   "categories": {
     "all": "すべてのイベント",
     "concert": "音楽",

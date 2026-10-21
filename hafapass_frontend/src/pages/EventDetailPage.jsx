@@ -9,6 +9,10 @@ import TicketTypesSection from '../components/TicketTypesSection'
 import SeatSelector from '../components/SeatSelector'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
+import EventDescription from '../components/EventDescription'
+import EventPageSections from '../components/EventPageSections'
+import { normalizePageCustomization, approvedImageUrl } from '../utils/eventPageDesign'
+import { accentStyle, focalPosition } from '../utils/eventPageDesign'
 import MachineTranslationNotice from '../components/MachineTranslationNotice'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import useContentLanguage from '../hooks/useContentLanguage'
@@ -287,6 +291,10 @@ function EventDetailContent() {
   const ticketTypes = event.ticket_types || []
   // Offers carry all-in prices (ticket + mandatory buyer fee), like every other display.
   const prices = purchasableAllInPrices(ticketTypes).map(price => price / 100)
+  const design = normalizePageCustomization(event.page_customization)
+  const eventAccentStyle = accentStyle(design.accent)
+  const coverImage = approvedImageUrl(event.cover_image_url, event.image_asset_host) ? event.cover_image_url : null
+  const lineup = design.sections.find(section => section.type === 'lineup' && section.enabled)
   const eventJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Event',
@@ -294,7 +302,8 @@ function EventDetailContent() {
     startDate: event.starts_at,
     ...(event.ends_at && { endDate: event.ends_at }),
     description: truncatedDescription,
-    ...(event.cover_image_url && { image: event.cover_image_url }),
+    ...(coverImage && { image: coverImage }),
+    ...(lineup?.items?.length && { performer: lineup.items.map(item => ({ '@type': 'Person', name: item.name })) }),
     url: eventUrl,
     ...(event.venue_name && {
       location: {
@@ -322,22 +331,24 @@ function EventDetailContent() {
   }
 
   return (
-    <div>
+    <div className={eventAccentStyle ? 'event-customized' : undefined} style={eventAccentStyle}>
       <SEO
         title={event.title}
         description={truncatedDescription}
-        image={event.cover_image_url || undefined}
+        image={coverImage || undefined}
         url={eventUrl}
         jsonLd={eventJsonLd}
         noIndex={isLiveMoneyProof}
       />
       {/* Hero Section — full-width cover image with dark overlay */}
-      <div className={`relative w-full overflow-hidden bg-neutral-950 ${event.cover_image_url ? 'min-h-[340px] sm:min-h-[400px]' : 'min-h-[260px]'}`}>
-        {event.cover_image_url ? (
+      <div className={`relative w-full overflow-hidden bg-neutral-950 ${coverImage ? 'min-h-[340px] sm:min-h-[400px]' : 'min-h-[260px]'}`}>
+        {coverImage ? (
           <img
-            src={event.cover_image_url}
+            src={coverImage}
             alt={event.title}
+            width="1600" height="900"
             className="absolute inset-0 w-full h-full object-cover"
+            style={{ objectPosition: focalPosition(design) }}
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-brand-900 to-neutral-950" />
@@ -495,11 +506,13 @@ function EventDetailContent() {
               {content.description && (
                 <FadeUp><div className="prose prose-neutral max-w-none mb-8">
                   <h2 className="text-lg font-semibold text-neutral-900 mb-3">{t('buyer.EventDetail.about')}</h2>
-                  <p className="text-neutral-600 leading-relaxed whitespace-pre-wrap">{content.description}</p>
+                  <EventDescription text={content.description} format={design.description_format} />
                 </div></FadeUp>
               )}
 
-              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button></div></div></FadeUp>}
+              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3">{approvedImageUrl(event.organizer.logo_url, event.image_asset_host) && <img src={event.organizer.logo_url} alt="" loading="lazy" width="48" height="48" className="h-12 w-12 rounded-xl object-contain" />}<Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button></div></div></FadeUp>}
+
+              <EventPageSections design={design} imageAssetHost={event.image_asset_host} />
 
               {/* Venue Location Section */}
               {event.venue_address && (

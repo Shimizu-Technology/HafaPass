@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -299,7 +299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: { "type" => "all_attendees" }, null: false
+    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false
@@ -333,7 +333,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
     t.check_constraint "jsonb_typeof(payout_details) = 'object'::text", name: "connected_accounts_payout_details_object"
-    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying, 'check'::character varying]::text[])", name: "connected_accounts_provider_valid"
+    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying::text, 'manual'::character varying::text, 'stripe'::character varying::text, 'legacy_manual'::character varying::text, 'check'::character varying::text])", name: "connected_accounts_provider_valid"
     t.check_constraint "readiness_revision > 0", name: "connected_accounts_readiness_revision_positive"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
   end
@@ -391,6 +391,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.index ["active", "kind"], name: "index_distribution_partners_on_active_and_kind"
     t.index ["slug"], name: "index_distribution_partners_on_slug", unique: true
     t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3, 4])", name: "distribution_partners_kind_valid"
+  end
+
+  create_table "event_cancellation_refund_items", force: :cascade do |t|
+    t.bigint "event_cancellation_refund_run_id", null: false
+    t.bigint "order_id", null: false
+    t.integer "status", default: 0, null: false
+    t.integer "amount_cents", default: 0, null: false
+    t.integer "retry_generation", default: 0, null: false
+    t.text "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_cancellation_refund_run_id"], name: "index_cancellation_refund_items_on_run"
+    t.index ["order_id"], name: "index_event_cancellation_refund_items_on_order_id", unique: true
+  end
+
+  create_table "event_cancellation_refund_runs", force: :cascade do |t|
+    t.bigint "event_id", null: false
+    t.bigint "started_by_id", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_event_cancellation_refund_runs_on_event_id", unique: true
+    t.index ["started_by_id"], name: "index_event_cancellation_refund_runs_on_started_by_id"
   end
 
   create_table "event_change_responses", force: :cascade do |t|
@@ -639,6 +663,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.string "translation_status", default: "untranslated", null: false
     t.datetime "translation_requested_at"
     t.jsonb "localized_content_sources", default: {}, null: false
+    t.jsonb "page_customization", default: {}, null: false
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
@@ -653,7 +678,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.check_constraint "buyer_fee_percent >= 0 AND buyer_fee_percent <= 100", name: "events_buyer_fee_percent_valid"
     t.check_constraint "fee_policy = ANY (ARRAY[0, 1, 2])", name: "events_fee_policy_valid"
     t.check_constraint "max_capacity IS NULL OR max_capacity > 0", name: "events_capacity_positive"
-    t.check_constraint "policy_hold_at IS NULL AND policy_hold_scope IS NULL AND policy_hold_reason IS NULL OR policy_hold_at IS NOT NULL AND (policy_hold_scope::text = ANY (ARRAY['sales'::character varying, 'hidden'::character varying]::text[])) AND char_length(btrim(policy_hold_reason)) > 0", name: "events_policy_hold_consistent"
+    t.check_constraint "policy_hold_at IS NULL AND policy_hold_scope IS NULL AND policy_hold_reason IS NULL OR policy_hold_at IS NOT NULL AND (policy_hold_scope::text = ANY (ARRAY['sales'::character varying::text, 'hidden'::character varying::text])) AND char_length(btrim(policy_hold_reason)) > 0", name: "events_policy_hold_consistent"
   end
 
   create_table "fee_components", force: :cascade do |t|
@@ -946,6 +971,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "live_pilot_runs_status_valid"
   end
 
+  create_table "marketing_unsubscribes", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "email", null: false
+    t.datetime "unsubscribed_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "email"], name: "index_marketing_unsubscribes_on_organization_id_and_email", unique: true
+    t.index ["organization_id"], name: "index_marketing_unsubscribes_on_organization_id"
+  end
+
   create_table "marketplace_collection_events", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "event_id", null: false
@@ -1153,6 +1188,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.datetime "checkout_recovery_expires_at"
     t.string "processing_fee_bearer_snapshot"
     t.string "locale", default: "en", null: false
+    t.boolean "marketing_opt_in", default: false, null: false
+    t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
@@ -1170,7 +1207,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.check_constraint "fee_policy_snapshot = ANY (ARRAY[0, 1, 2])", name: "orders_fee_policy_snapshot_valid"
     t.check_constraint "guest_access_version > 0", name: "orders_guest_access_version_positive"
     t.check_constraint "organizer_fee_cents >= 0", name: "orders_organizer_fee_nonnegative"
-    t.check_constraint "processing_fee_bearer_snapshot IS NULL OR (processing_fee_bearer_snapshot::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying]::text[]))", name: "orders_processing_fee_bearer_snapshot_valid"
+    t.check_constraint "processing_fee_bearer_snapshot IS NULL OR (processing_fee_bearer_snapshot::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text]))", name: "orders_processing_fee_bearer_snapshot_valid"
     t.check_constraint "refund_amount_cents <= total_cents", name: "orders_refund_within_total"
     t.check_constraint "refund_amount_cents >= 0", name: "orders_refund_nonnegative"
     t.check_constraint "service_fee_cents >= 0", name: "orders_service_fee_nonnegative"
@@ -1253,6 +1290,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id", unique: true
     t.index ["verification_status"], name: "index_organizer_profiles_on_verification_status"
     t.index ["verified_by_user_id"], name: "index_organizer_profiles_on_verified_by_user_id"
+  end
+
+  create_table "organizer_sales_export_requests", force: :cascade do |t|
+    t.bigint "event_id", null: false
+    t.bigint "actor_user_id", null: false
+    t.jsonb "filters", default: {}, null: false
+    t.jsonb "columns", default: [], null: false
+    t.integer "row_count", default: 0, null: false
+    t.string "status", default: "pending", null: false
+    t.string "storage_key"
+    t.datetime "expires_at"
+    t.datetime "claimed_at"
+    t.string "failure_reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_user_id", "created_at"], name: "index_sales_exports_on_actor_and_created_at"
+    t.index ["actor_user_id"], name: "index_organizer_sales_export_requests_on_actor_user_id"
+    t.index ["event_id"], name: "index_organizer_sales_export_requests_on_event_id"
+    t.check_constraint "row_count >= 0", name: "organizer_sales_export_requests_row_count_nonnegative"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'processing'::character varying::text, 'ready'::character varying::text, 'failed'::character varying::text, 'expired'::character varying::text])", name: "organizer_sales_export_requests_status_valid"
   end
 
   create_table "organizer_tax_informations", force: :cascade do |t|
@@ -1370,6 +1427,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.jsonb "tax_information_snapshot", default: {}, null: false
     t.text "tax_information_tin"
     t.string "tax_approval_digest"
+    t.string "held_from_status"
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
     t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
@@ -1380,7 +1438,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.check_constraint "char_length(currency::text) = 3", name: "payouts_currency_length"
     t.check_constraint "jsonb_typeof(payee_snapshot) = 'object'::text", name: "payouts_payee_snapshot_object"
     t.check_constraint "jsonb_typeof(tax_information_snapshot) = 'object'::text", name: "payouts_tax_snapshot_object"
-    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "payouts_status_valid"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payouts_status_valid"
   end
 
   create_table "pilot_closeout_reviews", force: :cascade do |t|
@@ -1959,8 +2017,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.datetime "updated_at", null: false
     t.string "processing_fee_bearer", default: "platform", null: false
     t.string "payout_schedule_text", default: "within 3 business days after your event", null: false
+    t.text "business_mailing_address"
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
-    t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying]::text[])", name: "site_settings_processing_fee_bearer_valid"
+    t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
   end
 
   create_table "solid_queue_batch_executions", force: :cascade do |t|
@@ -2413,7 +2472,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.datetime "updated_at", null: false
     t.index ["provider", "serial_number"], name: "index_wallet_passes_on_provider_and_serial_number", unique: true
     t.index ["ticket_id"], name: "index_wallet_passes_on_ticket_id"
-    t.check_constraint "provider::text = ANY (ARRAY['apple'::character varying, 'google'::character varying]::text[])", name: "wallet_passes_provider_known"
+    t.check_constraint "provider::text = ANY (ARRAY['apple'::character varying::text, 'google'::character varying::text])", name: "wallet_passes_provider_known"
   end
 
   create_table "webhook_events", force: :cascade do |t|
@@ -2481,6 +2540,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
   add_foreign_key "distribution_links", "distribution_partners", on_delete: :restrict
   add_foreign_key "distribution_links", "events", on_delete: :restrict
   add_foreign_key "distribution_links", "users", column: "created_by_user_id", on_delete: :restrict
+  add_foreign_key "event_cancellation_refund_items", "event_cancellation_refund_runs"
+  add_foreign_key "event_cancellation_refund_items", "orders"
+  add_foreign_key "event_cancellation_refund_runs", "events"
+  add_foreign_key "event_cancellation_refund_runs", "users", column: "started_by_id"
   add_foreign_key "event_change_responses", "event_changes", on_delete: :restrict
   add_foreign_key "event_change_responses", "orders", on_delete: :restrict
   add_foreign_key "event_changes", "events", on_delete: :restrict
@@ -2567,6 +2630,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
   add_foreign_key "live_pilot_runs", "live_pilot_reviews", on_delete: :restrict
   add_foreign_key "live_pilot_runs", "users", column: "completed_by_user_id", on_delete: :restrict
   add_foreign_key "live_pilot_runs", "users", column: "started_by_user_id", on_delete: :restrict
+  add_foreign_key "marketing_unsubscribes", "organizations"
   add_foreign_key "marketplace_collection_events", "events", on_delete: :restrict
   add_foreign_key "marketplace_collection_events", "marketplace_collections", on_delete: :cascade
   add_foreign_key "marketplace_collections", "users", column: "created_by_user_id", on_delete: :restrict
@@ -2597,6 +2661,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
   add_foreign_key "organizer_profiles", "organizations", on_delete: :restrict
   add_foreign_key "organizer_profiles", "users"
   add_foreign_key "organizer_profiles", "users", column: "verified_by_user_id"
+  add_foreign_key "organizer_sales_export_requests", "events"
+  add_foreign_key "organizer_sales_export_requests", "users", column: "actor_user_id"
   add_foreign_key "organizer_tax_informations", "organizations"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict

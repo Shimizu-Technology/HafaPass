@@ -9,6 +9,8 @@ class EventChange < ApplicationRecord
 
   TYPES = %w[postponed rescheduled cancelled].freeze
 
+  scope :buyer_visible, -> { where(change_type: TYPES) }
+
   validates :change_type, inclusion: { in: TYPES }
   validates :occurred_at, presence: true
 

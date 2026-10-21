@@ -14,6 +14,7 @@ import { formatEventDate } from '../../utils/eventTime'
 import { currentScannerOwner } from '../../utils/admissionStore'
 import { useOrganizerIdentity, useOrganizerPageVisit } from '../../hooks/useOrganizerContext'
 import DashboardSummary from './DashboardSummary'
+import { approvedImageUrl } from '../../utils/eventPageDesign'
 
 function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  const [businessName, setBusinessName] = useState('')
@@ -233,7 +234,7 @@ function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, 
      <div>
       <label className="block text-sm font-medium text-neutral-700 mb-1">Logo</label>
       <div className="flex items-center gap-3">
-       {logoUrl ? (
+       {approvedImageUrl(logoUrl, profile.image_asset_host) ? (
         <img src={logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover border border-neutral-200" />
        ) : (
         <div className="w-12 h-12 rounded-xl bg-neutral-100 flex items-center justify-center">

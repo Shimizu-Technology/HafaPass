@@ -24,8 +24,8 @@ class TicketPdfGenerator
     Prawn::Document.new(page_size: "A5", margin: [110, 30, 30, 30]) do |pdf|
       # Picks fonts for every character before the QR is made; text no bundled
       # font can draw raises instead of printing missing-glyph boxes.
-      PdfFonts.configure(pdf, texts: [@event.title, @event.venue_name, @event.venue_address, @ticket_type.name,
-        @ticket.seat_label, @seller.line], locale: @ticket.order&.locale)
+      @unsupported = PdfFonts.configure(pdf, texts: [@event.title, @event.venue_name, @event.venue_address, @ticket_type.name,
+        @ticket.seat_label, @seller.line], locale: @ticket.order&.locale, strict: false)
       # Reserve the header in the page margin so flowing text cannot overlap
       # repeated branding or rehearsal labels on continuation pages.
       pdf.repeat(:all, dynamic: true) do
@@ -64,7 +64,7 @@ class TicketPdfGenerator
   def render_event_details(pdf)
     pdf.fill_color DARK_TEXT
     pdf.font "TicketSans", style: :bold, size: 16
-    pdf.text @event.title
+    pdf.text safe_text(@event.title)
     pdf.move_down 8
 
     if @event.cancelled? || @event.postponed?
@@ -85,8 +85,8 @@ class TicketPdfGenerator
       pdf.text time_str
     end
 
-    pdf.text @event.venue_name if @event.venue_name.present?
-    pdf.text @event.venue_address if @event.venue_address.present?
+    pdf.text safe_text(@event.venue_name) if @event.venue_name.present?
+    pdf.text safe_text(@event.venue_address) if @event.venue_address.present?
     pdf.move_down 12
   end
 
@@ -101,8 +101,8 @@ class TicketPdfGenerator
   def render_ticket_details(pdf)
     pdf.fill_color DARK_TEXT
     pdf.font "TicketSans", style: :bold, size: 11
-    pdf.text @ticket_type.name
-    pdf.text @ticket.seat_label if @ticket.seat_label.present?
+    pdf.text safe_text(@ticket_type.name)
+    pdf.text safe_text(@ticket.seat_label) if @ticket.seat_label.present?
 
     pdf.move_down 4
     pdf.fill_color MUTED_TEXT
@@ -151,7 +151,11 @@ class TicketPdfGenerator
     pdf.text Rails.env.production? ? "Present this QR code at the door" : "For testing only - no real event admission", align: :center
     pdf.move_down 4
     pdf.font "TicketSans", size: 7
-    pdf.text @seller.line, align: :center, color: "6B7280"
+    pdf.text safe_text(@seller.line), align: :center, color: "6B7280"
+  end
+
+  def safe_text(text)
+    PdfFonts.replace_unsupported(text, @unsupported)
   end
 
   def format_date(datetime)

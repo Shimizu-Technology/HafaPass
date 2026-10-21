@@ -6,11 +6,12 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle, Clock3, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive, Link2 } from 'lucide-react'
 import EventAccessNotice from '../../components/EventAccessNotice'
 import apiClient from '../../api/client'
-import CoverImageUpload from '../../components/CoverImageUpload'
+import PageDesignEditor, { DescriptionToolbar } from '../../components/PageDesignEditor'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
 import FeePolicyPanel from '../../components/FeePolicyPanel'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
+import CancellationRefundProgress from '../../components/CancellationRefundProgress'
 import FormErrorSummary from '../../components/FormErrorSummary'
 import { blocksPublishing, organizerChecklist } from '../../utils/organizerChecklist'
 import VerificationNotice from '../../components/VerificationNotice'
@@ -40,6 +41,7 @@ const eventForm = e => ({
   doors_open_at: toEventLocalInput(e.doors_open_at, e.timezone),
   max_capacity: e.max_capacity ? String(e.max_capacity) : '',
   cover_image_url: e.cover_image_url || '',
+  page_customization: e.page_customization || {},
   recurrence_rule: e.recurrence_rule || '',
   recurrence_end_date: e.recurrence_end_date || '',
   show_attendees: e.show_attendees !== false,
@@ -93,7 +95,6 @@ function EditEventSession({ id, identity }) {
   const [publishing, setPublishing] = useState(false)
 
   // Danger zone modals
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
   const [showPostponeConfirm, setShowPostponeConfirm] = useState(false)
@@ -121,6 +122,7 @@ function EditEventSession({ id, identity }) {
     doors_open_at: '',
     max_capacity: '',
     cover_image_url: '',
+    page_customization: {},
     recurrence_rule: '',
     recurrence_end_date: '',
     show_attendees: true,
@@ -129,8 +131,8 @@ function EditEventSession({ id, identity }) {
 
   const savedForm = eventForm(event || {})
   const hasUnsavedChanges = Object.keys(form).some(field => {
-    const value = typeof form[field] === 'string' ? form[field].trim() : form[field]
-    const savedValue = typeof savedForm[field] === 'string' ? savedForm[field].trim() : savedForm[field]
+    const value = field === 'page_customization' ? JSON.stringify(form[field]) : typeof form[field] === 'string' ? form[field].trim() : form[field]
+    const savedValue = field === 'page_customization' ? JSON.stringify(savedForm[field]) : typeof savedForm[field] === 'string' ? savedForm[field].trim() : savedForm[field]
     return value !== savedValue
   })
 
@@ -146,12 +148,13 @@ function EditEventSession({ id, identity }) {
     setError(null)
     try {
       const res = await apiClient.get(`/organizer/events/${id}`, request.config)
-      if (!canApply()) return
+      if (!canApply()) return false
       const e = res.data
       setEvent(e)
       setForm(eventForm(e))
+      return true
     } catch (err) {
-      if (!canApply()) return
+      if (!canApply()) return false
       if (err.response?.status === 401) {
         setError('Please sign in to access this page.')
       } else if (err.response?.status === 404) {
@@ -159,6 +162,7 @@ function EditEventSession({ id, identity }) {
       } else {
         setError('Failed to load event.')
       }
+      return false
     } finally {
       request.release()
       if (canApply()) setLoading(false)
@@ -201,7 +205,7 @@ function EditEventSession({ id, identity }) {
 
   const updateField = (field, value) => {
     if (!current()) return
-    setForm(prev => ({ ...prev, [field]: value }))
+    setForm(prev => ({ ...prev, [field]: typeof value === 'function' ? value(prev[field]) : value }))
     if (formErrors[field]) {
       setFormErrors(prev => ({ ...prev, [field]: null }))
     }
@@ -301,13 +305,14 @@ function EditEventSession({ id, identity }) {
         ...scheduleChanges,
         max_capacity: form.max_capacity ? Number(form.max_capacity) : null,
         cover_image_url: form.cover_image_url.trim() || null,
+        ...(JSON.stringify(form.page_customization) !== JSON.stringify(savedForm.page_customization) ? { page_customization: form.page_customization } : {}),
         recurrence_rule: form.recurrence_rule || null,
         recurrence_end_date: form.recurrence_end_date || null,
         show_attendees: form.show_attendees,
         ...(capabilities.ticket_transfers === true ? { transfers_enabled: form.transfers_enabled } : {})
       }
       if (!canManage) {
-        const presentationFields = ['title', 'slug', 'short_description', 'description', 'category', 'cover_image_url']
+        const presentationFields = ['title', 'slug', 'short_description', 'description', 'category', 'cover_image_url', 'page_customization']
         Object.keys(payload).forEach(key => { if (!presentationFields.includes(key)) delete payload[key] })
       }
       if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
@@ -376,7 +381,6 @@ function EditEventSession({ id, identity }) {
       const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined }, request.config)
       if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
-      setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
       setLifecycleReason('')
@@ -384,7 +388,6 @@ function EditEventSession({ id, identity }) {
     } catch (err) {
       if (!request.current()) return
       setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
-      setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
     } finally {
@@ -456,6 +459,7 @@ function EditEventSession({ id, identity }) {
 
   return (
     <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges || feeChoiceDirty}><div className="mx-auto max-w-3xl">
+      {event.status === 'cancelled' && <div className="mb-6"><CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} prominent canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} /></div>}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
           {event?.slug && (
@@ -497,7 +501,7 @@ function EditEventSession({ id, identity }) {
 
       <h2 className="mb-6 text-xl font-semibold text-neutral-950">Event details</h2>
 
-      {hasUnsavedChanges && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">You have unsaved changes. Save Changes before publishing. Preview shows the last saved event.</p>}
+      {hasUnsavedChanges && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">You have unsaved changes. Save Changes before publishing. Preview shows the last saved event in a new tab; the live preview below shows your draft.</p>}
 
       {/* Publish Button for Draft Events */}
       {canManage && event?.status === 'draft' && (
@@ -540,19 +544,6 @@ function EditEventSession({ id, identity }) {
       )}
 
       {/* Danger zone modals */}
-      {showCancelConfirm && (
-        <ConfirmModal
-          title="Cancel Event?"
-          message="Ticket sales and public discovery will stop immediately. The reason is retained in the event history."
-          confirmLabel="Yes, Cancel Event"
-          onConfirm={() => handleLifecycle('cancel', 'Event has been cancelled.')}
-          onCancel={() => { setShowCancelConfirm(false); setLifecycleReason('') }}
-          loading={dangerLoading}
-          reason={lifecycleReason}
-          onReasonChange={setLifecycleReason}
-          requireReason
-        />
-      )}
       {showDeleteConfirm && (
         <ConfirmModal
           title="Delete Event?"
@@ -599,17 +590,6 @@ function EditEventSession({ id, identity }) {
 
       <FormErrorSummary errors={formErrors} />
       <form noValidate onSubmit={handleSubmit} className="space-y-8">
-        {/* Cover Image Upload */}
-        <section>
-          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Cover Image</h2>
-          <CoverImageUpload
-            eventId={id}
-            currentUrl={form.cover_image_url}
-            onUploaded={(url) => updateField('cover_image_url', url)}
-            disabled={submitting}
-          />
-        </section>
-
         {/* Basic Info Section */}
         <section>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Basic Info</h2>
@@ -627,7 +607,9 @@ function EditEventSession({ id, identity }) {
             </div>
             <div>
               <label htmlFor="description" className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
+              <DescriptionToolbar description={form.description} onDescriptionChange={value => updateField('description', value)} onFormatChange={format => updateField('page_customization', { ...form.page_customization, description_format: format })} />
               <textarea id="description" value={form.description} onChange={(e) => updateField('description', e.target.value)} rows={4} className="input" placeholder="Full event description..." disabled={submitting} />
+              <p className="mt-1 text-xs text-neutral-600">Formatting is optional. Existing plain text stays as written.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -866,6 +848,11 @@ function EditEventSession({ id, identity }) {
 
         </>}
 
+        <PageDesignEditor event={{ ...event, title: form.title }} eventId={id} design={form.page_customization}
+          onChange={value => updateField('page_customization', value)} description={form.description}
+          coverUrl={form.cover_image_url}
+          onCoverUploaded={url => updateField('cover_image_url', url)} disabled={submitting} />
+
         {/* Event-details save bar: sticks to the viewport bottom while the long
             form scrolls and stops at the form's end, above independently saved
             ticket types. */}
@@ -909,12 +896,10 @@ function EditEventSession({ id, identity }) {
             {(event.status === 'published' || event.status === 'postponed') && (
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Cancel Event</p>
-                  <p className="text-xs text-neutral-500">Stop sales and remove the event from public discovery.</p>
+                  <p className="text-sm font-medium text-neutral-900">Cancel event and refund all buyers</p>
+                  <p className="text-xs text-neutral-500">Stop sales and refund card orders. Cash orders need a manual return.</p>
                 </div>
-                <button onClick={() => setShowCancelConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5">
-                  <XCircle className="w-4 h-4" /> Cancel Event
-                </button>
+                <CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={async () => { if (await fetchEvent()) setSuccessMessage('Event cancelled. Refunds are processing.') }} />
               </div>
             )}
             {event.status === 'published' && (
