@@ -8,7 +8,7 @@ vi.mock('../utils/workspace', () => ({ useAccountRole: () => role.value }))
 describe('PaidCheckoutGate', () => {
   it('lets platform admins through and tells everyone else paid sales open soon', () => {
     const { rerender } = render(<PaidCheckoutGate active><button type="button">Buy</button></PaidCheckoutGate>)
-    expect(screen.getByRole('status')).toHaveTextContent('Paid ticket sales open soon')
+    expect(screen.getByRole('status')).toHaveTextContent('eventDetail.paidSalesOpenSoon')
     expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument()
     role.value = 'admin'
     rerender(<PaidCheckoutGate active><button type="button">Buy</button></PaidCheckoutGate>)

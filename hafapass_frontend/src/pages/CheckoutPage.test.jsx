@@ -107,7 +107,7 @@ describe('checkout navigation', () => {
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
       <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
     </MemoryRouter>)
-    expect(await screen.findByText('Paid ticket sales open soon')).toBeInTheDocument()
+    expect(await screen.findByText('eventDetail.paidSalesOpenSoon')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /checkout.continueToPayment/ })).not.toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
   })

@@ -88,7 +88,7 @@ describe('ticket selection with changing availability', () => {
     await user.click(screen.getByRole('button', { name: /eventDetail.buyTickets/ }))
     expect(checkout).toHaveBeenCalledWith([{ ticket_type_id: 2, quantity: 1 }])
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Entry' }))
-    expect(screen.getByRole('status')).toHaveTextContent('Paid ticket sales open soon')
+    expect(screen.getByRole('status')).toHaveTextContent('eventDetail.paidSalesOpenSoon')
     expect(screen.queryByRole('button', { name: /eventDetail.buyTickets/ })).not.toBeInTheDocument()
     config.adminOnly = false
   })
