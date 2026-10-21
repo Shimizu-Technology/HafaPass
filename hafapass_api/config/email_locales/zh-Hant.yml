@@ -1,0 +1,82 @@
+# Buyer email copy in English (the source language). The other files in this
+# directory are generated from this one by the `gt` CLI; see docs/TRANSLATIONS.md.
+# Keep %{placeholders} unchanged. Text only: links and formatting are added by
+# EmailService, and every value is HTML-escaped.
+emails:
+  footer: "由 HåfaPass · Shimizu Technology 提供技術支援"
+  my_tickets: "我的票券"
+  formats:
+    event_datetime: "%{year}年%{month_name}%{day}日 %{meridiem} %{hour}:%{minute}"
+    month_names:
+      - 1月
+      - 2月
+      - 3月
+      - 4月
+      - 5月
+      - 6月
+      - 7月
+      - 8月
+      - 9月
+      - 10月
+      - 11月
+      - 12月
+    am: "上午"
+    pm: "下午"
+  order_confirmation:
+    subject: "您的 HåfaPass 票券 - %{event}"
+    title: "訂單已確認"
+    heading: "您的票券已確認！"
+    thanks: "%{name}，感謝您的購買。"
+    summary: "訂單摘要"
+    subtotal: "小計：%{amount}"
+    discount: "折扣：-%{amount}"
+    service_fee: "服務費：%{amount}"
+    total: "總計：%{amount}"
+    tickets_heading: "您的票券"
+    type_column: "類型"
+    attendee_column: "參加者"
+    ticket_column: "票券"
+    view_ticket: "查看票券"
+    all_transferred: "此訂單的所有票券均已轉讓。新持有人可透過「%{my_tickets_link}」開啟票券。"
+    entry_instructions: "入場時請出示您的 QR Code。您可隨時透過「%{my_tickets_link}」查看票券。"
+  pdf_note:
+    single: "另附上您的票券 PDF 檔，方便您在入場時即使沒有網路訊號，也能開啟票券。"
+    all: "另附上全部 %{count} 張票券的 PDF 檔，方便您在入場時即使沒有網路訊號，也能開啟票券。"
+    capped: "已附上前 %{count} 張票券的 PDF 檔，方便您在入場時即使沒有網路訊號，也能開啟票券。其餘票券請至「我的票券」開啟。"
+    partial: "您的 %{total} 張票券中，已有 %{count} 張附上 PDF
+      檔，方便您在入場時即使沒有網路訊號，也能開啟票券。其餘票券目前無法用於入場，請至「我的票券」查看狀態。"
+  ticket:
+    subject: "您的票券 - %{event}"
+    heading: "您的票券"
+    view: "查看您的票券"
+    entry_instructions: "入場時請出示您的 QR Code。"
+  refund:
+    subject: "退款已處理 - %{event}"
+    heading: "退款已處理"
+    body: "您在 %{event} 的退款已處理完畢。"
+    full: "全額退款"
+    partial: "部分退款（%{amount}）"
+    returned: "%{amount} 將於 5–10 個工作天內透過原付款方式退還。"
+    reason: "原因："
+    questions: "如有任何疑問，請聯絡活動主辦單位。"
+  transfer:
+    subject: "票券轉讓：%{event}"
+    title: "票券轉讓"
+    heading: "有人傳送了一張 HåfaPass 票券給您"
+    accept: "接受票券"
+    sign_in: "請使用 %{email} 登入。此連結將於 %{expires_at} 失效。"
+  waitlist:
+    subject: "票券現已開放購買 - %{event}"
+    title: "票券現已開放購買"
+    heading: "票券現已開放購買！"
+    greeting: "%{name}，好消息！以下活動的票券現已開放購買："
+    greeting_anonymous: "您好，好消息！以下活動的票券現已開放購買："
+    deadline: "請在 24 小時內購票，逾時您的保留名額將失效。"
+    cta: "立即購票"
+  waitlist_offer:
+    subject: "您的候補購票通知：%{event}"
+    title: "候補購票通知"
+    heading: "您的票券已準備就緒"
+    body: "已為您保留 %{event} 的 %{ticket_type} 票券，共 %{count} 張。"
+    cta: "領取票券"
+    expires: "此購票資格將於 %{expires_at} 到期。"

@@ -1,9 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 
-// Organizer, admin and support routes share the workspace shell instead of the
-// public buyer navigation and marketing footer.
-export const isWorkspacePath = pathname => /^\/(dashboard|admin|support)(?:\/|$)/.test(pathname)
+export { isWorkspacePath } from './workspacePath'
 
 // Shared widths for organizer, admin and support pages: `standard` for lists
 // and consoles, `form` for single-column forms and notices.

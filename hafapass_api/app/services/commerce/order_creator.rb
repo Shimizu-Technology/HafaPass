@@ -22,7 +22,7 @@ module Commerce
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
       attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
       cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
-      checkout_attempt: nil, checkout_lease_token: nil)
+      checkout_attempt: nil, checkout_lease_token: nil, locale: AppLocale::DEFAULT)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -53,6 +53,8 @@ module Commerce
       @checkout_lease_token = checkout_lease_token
       @cash_sale_key = cash_sale_key
       @cash_sale_request_digest = cash_sale_request_digest
+      # The buyer's language for receipts and ticket emails; staff-created orders stay English.
+      @locale = AppLocale.normalize(locale) || AppLocale::DEFAULT
     end
 
     def call
@@ -136,6 +138,7 @@ module Commerce
           buyer_email: buyer_email,
           buyer_name: buyer_name,
           buyer_phone: buyer_phone,
+          locale: @locale,
           source: source,
           payment_method: payment_method,
           checkout_key_digest: @checkout_key_digest,

@@ -5,7 +5,7 @@ module TicketTransfers
     class TransferError < StandardError; end
 
     class << self
-      def create!(ticket:, recipient_email:, recipient_name: nil, initiated_by: nil)
+      def create!(ticket:, recipient_email:, recipient_name: nil, initiated_by: nil, locale: AppLocale::DEFAULT)
         transfer = nil
         Ticket.transaction do
           ticket.lock!
@@ -32,6 +32,7 @@ module TicketTransfers
             initiated_by_user: initiated_by,
             recipient_email: normalized,
             recipient_name: recipient_name,
+            locale: locale,
             expires_at: [7.days.from_now, ticket.event.starts_at].compact.min
           )
           audit_seat!(ticket, "seat.transfer_started", initiated_by,

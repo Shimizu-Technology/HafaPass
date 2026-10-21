@@ -1,0 +1,29 @@
+{
+  "$schema": "https://assets.gtx.dev/config-schema.json",
+  "defaultLocale": "en",
+  "locales": [
+    "ko",
+    "ja",
+    "zh-Hant",
+    "zh",
+    "tl"
+  ],
+  "customMapping": {
+    "tl": {
+      "code": "fil",
+      "name": "Filipino"
+    }
+  },
+  "files": {
+    "json": {
+      "include": [
+        "src/locales/[locale].json"
+      ]
+    },
+    "yaml": {
+      "include": [
+        "../hafapass_api/config/email_locales/[locale].yml"
+      ]
+    }
+  }
+}

@@ -200,8 +200,10 @@ class EmailService
       event = order.event
       tickets = order.tickets.includes(:ticket_type).reject { |ticket| ticket.transferred_away_from?(order) }
       pdfs = TicketEmailAttachments.plan(tickets)
-      html = build_order_confirmation_html(order, event, tickets, pdfs: pdfs)
-      subject = safe_subject("Your HåfaPass Tickets - #{event.title}")
+      html, subject = in_locale(order.locale) do
+        [build_order_confirmation_html(order, event, tickets, pdfs: pdfs),
+          safe_subject(t("order_confirmation.subject", event: event_title(event)))]
+      end
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "order_confirmation", delivery: delivery,
         attachments: pdfs.attachments, order_id: order.id)
@@ -241,8 +243,10 @@ class EmailService
       event = ticket.event
       ticket_type = ticket.ticket_type
       pdfs = TicketEmailAttachments.plan([ticket])
-      html = build_ticket_email_html(ticket, event, ticket_type, pdfs: pdfs)
-      subject = safe_subject("Your Ticket - #{event.title}")
+      html, subject = in_locale(ticket.order&.locale) do
+        [build_ticket_email_html(ticket, event, ticket_type, pdfs: pdfs),
+          safe_subject(t("ticket.subject", event: event_title(event)))]
+      end
 
       deliver(to: ticket.attendee_email, subject: subject, html: html, tag: "ticket_delivery", delivery: delivery,
         attachments: pdfs.attachments, ticket_id: ticket.id)
@@ -251,8 +255,9 @@ class EmailService
     # ── Refund Notification ─────────────────────────────────────────
     def send_refund_notification(order, delivery: nil)
       event = order.event
-      html = build_refund_notification_html(order, event)
-      subject = safe_subject("Refund Processed - #{event.title}")
+      html, subject = in_locale(order.locale) do
+        [build_refund_notification_html(order, event), safe_subject(t("refund.subject", event: event_title(event)))]
+      end
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "refund_notification", delivery: delivery,
         order_id: order.id)
@@ -264,8 +269,10 @@ class EmailService
 
       event = waitlist_entry.event
       event_url = "#{frontend_url}/events/#{event.slug}"
-      html = build_waitlist_notification_html(waitlist_entry, event, event_url)
-      subject = safe_subject("Tickets Available - #{event.title}")
+      html, subject = in_locale(waitlist_entry.locale) do
+        [build_waitlist_notification_html(waitlist_entry, event, event_url),
+          safe_subject(t("waitlist.subject", event: event_title(event)))]
+      end
 
       deliver(to: waitlist_entry.email, subject: subject, html: html, tag: "waitlist_notification", delivery: delivery,
         entry_id: waitlist_entry.id)
@@ -273,29 +280,41 @@ class EmailService
 
     def send_ticket_transfer(transfer, delivery: nil)
       url = "#{frontend_url}/ticket-transfers/accept?token=#{ERB::Util.url_encode(TicketTransferCredential.issue(transfer))}"
-      html = email_wrapper("Ticket transfer") do
-        <<~HTML
-          <h2 style="color:#1f2937">A HåfaPass ticket was sent to you</h2>
-          <p style="color:#6b7280">#{h(transfer.ticket.event.title)} — #{h(transfer.ticket.ticket_type.name)}</p>
-          <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">Accept ticket</a></p>
-          <p style="color:#6b7280;font-size:14px">Sign in using #{h(transfer.recipient_email)}. This link expires #{h(transfer.expires_at.iso8601)}.</p>
-        HTML
+      event = transfer.ticket.event
+      # The recipient's language is unknown (the transfer records the sender's), so English.
+      html, subject = in_locale(AppLocale::DEFAULT) do
+        body = email_wrapper(t("transfer.title")) do
+          <<~HTML
+            <h2 style="color:#1f2937">#{ht('transfer.heading')}</h2>
+            <p style="color:#6b7280">#{h(event_title(event))} — #{h(ticket_type_name(transfer.ticket.ticket_type))}</p>
+            <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{ht('transfer.accept')}</a></p>
+            <p style="color:#6b7280;font-size:14px">#{ht('transfer.sign_in', email: transfer.recipient_email,
+              expires_at: format_local_datetime(transfer.expires_at, event.timezone, with_zone: true))}</p>
+          HTML
+        end
+        [body, safe_subject(t("transfer.subject", event: event_title(event)))]
       end
-      deliver(to: transfer.recipient_email, subject: safe_subject("Ticket transfer: #{transfer.ticket.event.title}"),
+      deliver(to: transfer.recipient_email, subject: subject,
         html: html, tag: "ticket_transfer", delivery: delivery, ticket_id: transfer.ticket_id)
     end
 
     def send_waitlist_offer(offer, delivery: nil)
       url = "#{frontend_url}/events/#{offer.event.slug}?waitlist_offer=#{ERB::Util.url_encode(WaitlistCredential.offer(offer))}"
-      html = email_wrapper("Waitlist offer") do
-        <<~HTML
-          <h2 style="color:#1f2937">Your tickets are ready</h2>
-          <p style="color:#6b7280">#{offer.quantity} #{h(offer.ticket_type.name)} ticket(s) for #{h(offer.event.title)} are reserved for you.</p>
-          <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">Claim tickets</a></p>
-          <p style="color:#6b7280;font-size:14px">This offer expires #{h(offer.expires_at.iso8601)}.</p>
-        HTML
+      event = offer.event
+      html, subject = in_locale(offer.waitlist_entry.locale) do
+        body = email_wrapper(t("waitlist_offer.title")) do
+          <<~HTML
+            <h2 style="color:#1f2937">#{ht('waitlist_offer.heading')}</h2>
+            <p style="color:#6b7280">#{ht('waitlist_offer.body', count: offer.quantity,
+              ticket_type: ticket_type_name(offer.ticket_type), event: event_title(event))}</p>
+            <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{ht('waitlist_offer.cta')}</a></p>
+            <p style="color:#6b7280;font-size:14px">#{ht('waitlist_offer.expires',
+              expires_at: format_local_datetime(offer.expires_at, event.timezone, with_zone: true))}</p>
+          HTML
+        end
+        [body, safe_subject(t("waitlist_offer.subject", event: event_title(event)))]
       end
-      deliver(to: offer.waitlist_entry.email, subject: safe_subject("Your waitlist offer: #{offer.event.title}"),
+      deliver(to: offer.waitlist_entry.email, subject: subject,
         html: html, tag: "waitlist_offer", delivery: delivery, offer_id: offer.id)
     end
 
@@ -420,7 +439,7 @@ class EmailService
       content = block.call
       <<~HTML
         <!DOCTYPE html>
-        <html>
+        <html lang="#{I18n.locale}">
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -434,7 +453,7 @@ class EmailService
               #{content}
             </div>
             <div style="background: #f9fafb; padding: 20px 28px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="color: #9ca3af; margin: 0; font-size: 12px;">Powered by HåfaPass &middot; Shimizu Technology</p>
+              <p style="color: #9ca3af; margin: 0; font-size: 12px;">#{ht('footer')}</p>
             </div>
           </div>
         </body>
@@ -446,74 +465,74 @@ class EmailService
       ticket_rows = tickets.map do |ticket|
         <<~HTML
           <tr>
-            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h([ticket.ticket_type.name, ticket.seat_label].compact.join(" — "))}</td>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h([ticket_type_name(ticket.ticket_type), ticket.seat_label].compact.join(" — "))}</td>
             <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h(ticket.attendee_name)}</td>
             <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">
-              <a href="#{ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">View Ticket</a>
+              <a href="#{ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">#{ht('order_confirmation.view_ticket')}</a>
             </td>
           </tr>
         HTML
       end.join
 
       discount_row = if order.discount_cents > 0
-        "<p style=\"color: #059669; margin: 0 0 4px;\">Discount: -$#{format_cents(order.discount_cents)}</p>"
+        "<p style=\"color: #059669; margin: 0 0 4px;\">#{ht('order_confirmation.discount', amount: money(order.discount_cents))}</p>"
       else
         ""
       end
+      my_tickets_link = %(<a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">#{ht('my_tickets')}</a>)
+      header_style = "padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;"
 
       # A buyer who transferred every ticket gets no empty table or entry instructions.
       tickets_section = if tickets.empty?
         <<~HTML
           <p style="color: #6b7280; margin: 0; font-size: 14px;">
-            All tickets on this order were transferred. Their new holders can open them from
-            <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">My Tickets</a>.
+            #{ht('order_confirmation.all_transferred', links: { my_tickets_link: my_tickets_link })}
           </p>
         HTML
       else
         <<~HTML
-          <h3 style="color: #1f2937; margin: 0 0 12px;">Your Tickets</h3>
+          <h3 style="color: #1f2937; margin: 0 0 12px;">#{ht('order_confirmation.tickets_heading')}</h3>
           <table style="width: 100%; border-collapse: collapse;">
             <thead>
               <tr style="background: #f9fafb;">
-                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Type</th>
-                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Attendee</th>
-                <th style="padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;">Ticket</th>
+                <th style="#{header_style}">#{ht('order_confirmation.type_column')}</th>
+                <th style="#{header_style}">#{ht('order_confirmation.attendee_column')}</th>
+                <th style="#{header_style}">#{ht('order_confirmation.ticket_column')}</th>
               </tr>
             </thead>
             <tbody>#{ticket_rows}</tbody>
           </table>
 
           <p style="color: #6b7280; margin: 28px 0 0; font-size: 14px;">
-            Present your QR code at the door for entry. You can access your tickets anytime at
-            <a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">My Tickets</a>.
+            #{ht('order_confirmation.entry_instructions', links: { my_tickets_link: my_tickets_link })}
           </p>
           #{pdf_attachment_note(pdfs)}
         HTML
       end
 
       seller = SellerIdentity.for_event(event)
-      email_wrapper("Order Confirmed") do
+      email_wrapper(t("order_confirmation.title")) do
         <<~HTML
-          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Your tickets are confirmed!</h2>
-          <p style="color: #6b7280; margin: 0 0 28px;">Thank you for your purchase, #{ERB::Util.html_escape(order.buyer_name)}.</p>
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ht('order_confirmation.heading')}</h2>
+          <p style="color: #6b7280; margin: 0 0 28px;">#{ht('order_confirmation.thanks', name: order.buyer_name)}</p>
 
           <div style="background: #f3f4f6; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
-            <h3 style="color: #1f2937; margin: 0 0 8px;">#{h(event.title)}</h3>
-            <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
+            <h3 style="color: #1f2937; margin: 0 0 8px;">#{h(event_title(event))}</h3>
+            <p style="color: #6b7280; margin: 0 0 4px;">#{h(format_event_date(event))}</p>
             <p style="color: #6b7280; margin: 0 0 8px;">#{h(event.venue_name)}</p>
             <p style="color: #6b7280; margin: 0; font-size: 13px;">#{h(seller.line)}</p>
           </div>
 
           <div style="margin-bottom: 28px;">
-            <h3 style="color: #1f2937; margin: 0 0 12px;">Order Summary</h3>
-            <p style="color: #6b7280; margin: 0 0 4px;">Order #{h(order.reference)}</p>
-            <p style="color: #6b7280; margin: 0 0 4px;">Subtotal: $#{format_cents(order.subtotal_cents)}</p>
+            <h3 style="color: #1f2937; margin: 0 0 12px;">#{ht('order_confirmation.summary')}</h3>
+            <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.reference', reference: order.reference)}</p>
+            <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.subtotal', amount: money(order.subtotal_cents))}</p>
             #{discount_row}
-            <p style="color: #6b7280; margin: 0 0 4px;">Service fee: $#{format_cents(order.service_fee_cents)}</p>
-            <p style="color: #1f2937; font-weight: 600; margin: 0;"><strong>Total paid: $#{format_cents(order.total_cents)}</strong></p>
+            <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.service_fee', amount: money(order.service_fee_cents))}</p>
+            <p style="color: #1f2937; font-weight: 600; margin: 0;"><strong>#{ht('order_confirmation.total', amount: money(order.total_cents))}</strong></p>
             <p style="color: #9ca3af; margin: 12px 0 0; font-size: 12px; line-height: 1.5;">
-              Event seller: #{h(seller.seller_name)}. Ticketing service: #{h(seller.ticketing_service)}, operated by
-              #{h(seller.operator_name)}, which sells these tickets as the organizer's agent and collects the service fee.
+              #{ht('order_confirmation.seller_disclosure', seller: seller.seller_name, service: seller.ticketing_service,
+                operator: seller.operator_name)}
             </p>
           </div>
 
@@ -523,24 +542,24 @@ class EmailService
     end
 
     def build_ticket_email_html(ticket, event, ticket_type, pdfs: nil)
-      email_wrapper("Your Ticket") do
+      email_wrapper(t("ticket.heading")) do
         <<~HTML
           <div style="text-align: center;">
-            <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Your Ticket</h2>
-            <p style="color: #6b7280; margin: 0 0 28px;">#{h(event.title)}</p>
+            <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ht('ticket.heading')}</h2>
+            <p style="color: #6b7280; margin: 0 0 28px;">#{h(event_title(event))}</p>
 
             <div style="background: #f3f4f6; border-radius: 10px; padding: 28px; margin-bottom: 28px;">
-              <p style="color: #1f2937; font-weight: 600; margin: 0 0 4px;">#{h(ticket_type.name)}</p>
+              <p style="color: #1f2937; font-weight: 600; margin: 0 0 4px;">#{h(ticket_type_name(ticket_type))}</p>
               #{ticket.seat_label ? "<p style=\"color: #1f2937; margin: 0 0 4px;\">#{h(ticket.seat_label)}</p>" : ""}
-              <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
+              <p style="color: #6b7280; margin: 0 0 4px;">#{h(format_event_date(event))}</p>
               <p style="color: #6b7280; margin: 0;">#{h(event.venue_name)}</p>
             </div>
 
             <p style="margin: 0 0 20px;">
-              <a href="#{ticket_url(ticket)}" style="display: inline-block; background: linear-gradient(135deg, #e85a4f 0%, #d64545 100%); color: white; padding: 14px 32px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 16px;">View Your Ticket</a>
+              <a href="#{ticket_url(ticket)}" style="display: inline-block; background: linear-gradient(135deg, #e85a4f 0%, #d64545 100%); color: white; padding: 14px 32px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 16px;">#{ht('ticket.view')}</a>
             </p>
 
-            <p style="color: #6b7280; font-size: 14px; margin: 0;">Present your QR code at the door for entry.</p>
+            <p style="color: #6b7280; font-size: 14px; margin: 0;">#{ht('ticket.entry_instructions')}</p>
             <p style="color: #9ca3af; font-size: 12px; margin: 16px 0 0;">#{h(SellerIdentity.for_event(event).line)}</p>
             #{pdf_attachment_note(pdfs)}
           </div>
@@ -564,24 +583,29 @@ class EmailService
 
     def build_refund_notification_html(order, event)
       amount_str = if order.refund_amount_cents >= order.total_cents
-        "Full refund"
+        t("refund.full")
       else
-        "Partial refund ($#{format_cents(order.refund_amount_cents)})"
+        t("refund.partial", amount: money(order.refund_amount_cents))
+      end
+      reason = if order.refund_reason.present?
+        "<p style=\"color: #6b7280; margin: 0 0 12px;\"><strong>#{ht('refund.reason')}</strong> #{h(order.refund_reason)}</p>"
+      else
+        ""
       end
 
-      email_wrapper("Refund Processed") do
+      email_wrapper(t("refund.heading")) do
         <<~HTML
-          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Refund Processed</h2>
-          <p style="color: #6b7280; margin: 0 0 28px;">Your refund for #{h(event.title)} has been processed.</p>
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ht('refund.heading')}</h2>
+          <p style="color: #6b7280; margin: 0 0 28px;">#{ht('refund.body', event: event_title(event))}</p>
 
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
-            <p style="color: #166534; font-weight: 600; margin: 0 0 8px;">#{amount_str}</p>
-            <p style="color: #166534; margin: 0;">$#{format_cents(order.refund_amount_cents)} will be returned to your original payment method within 5-10 business days.</p>
+            <p style="color: #166534; font-weight: 600; margin: 0 0 8px;">#{h(amount_str)}</p>
+            <p style="color: #166534; margin: 0;">#{ht('refund.returned', amount: money(order.refund_amount_cents))}</p>
           </div>
 
-          #{order.refund_reason.present? ? "<p style=\"color: #6b7280; margin: 0 0 12px;\"><strong>Reason:</strong> #{ERB::Util.html_escape(order.refund_reason)}</p>" : ""}
+          #{reason}
 
-          <p style="color: #6b7280; font-size: 14px; margin: 0;">If you have any questions, please contact the event organizer.</p>
+          <p style="color: #6b7280; font-size: 14px; margin: 0;">#{ht('refund.questions')}</p>
         HTML
       end
     end
@@ -609,21 +633,22 @@ class EmailService
     end
 
     def build_waitlist_notification_html(entry, event, event_url)
-      email_wrapper("Tickets Available") do
+      greeting = entry.name.present? ? ht("waitlist.greeting", name: entry.name) : ht("waitlist.greeting_anonymous")
+      email_wrapper(t("waitlist.title")) do
         <<~HTML
           <div style="text-align: center;">
-            <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">Tickets Are Available!</h2>
-            <p style="color: #6b7280; margin: 0 0 28px;">#{ERB::Util.html_escape(entry.name || 'Hi there')}, great news — tickets are now available for:</p>
+            <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ht('waitlist.heading')}</h2>
+            <p style="color: #6b7280; margin: 0 0 28px;">#{greeting}</p>
 
             <div style="background: #f3f4f6; border-radius: 10px; padding: 28px; margin-bottom: 28px;">
-              <h3 style="color: #1f2937; margin: 0 0 8px;">#{ERB::Util.html_escape(event.title)}</h3>
-              <p style="color: #6b7280; margin: 0 0 4px;">#{format_event_date(event)}</p>
-              <p style="color: #6b7280; margin: 0;">#{ERB::Util.html_escape(event.venue_name || '')}</p>
+              <h3 style="color: #1f2937; margin: 0 0 8px;">#{h(event_title(event))}</h3>
+              <p style="color: #6b7280; margin: 0 0 4px;">#{h(format_event_date(event))}</p>
+              <p style="color: #6b7280; margin: 0;">#{h(event.venue_name)}</p>
             </div>
 
-            <p style="color: #6b7280; margin: 0 0 24px;">You have <strong>24 hours</strong> to purchase your tickets before your spot expires.</p>
+            <p style="color: #6b7280; margin: 0 0 24px;">#{ht('waitlist.deadline')}</p>
 
-            <a href="#{event_url}" style="display: inline-block; background: linear-gradient(135deg, #0e7c7b 0%, #14a3a1 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-weight: 600; font-size: 16px;">Get Your Tickets</a>
+            <a href="#{event_url}" style="display: inline-block; background: linear-gradient(135deg, #0e7c7b 0%, #14a3a1 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-weight: 600; font-size: 16px;">#{ht('waitlist.cta')}</a>
           </div>
         HTML
       end
@@ -634,16 +659,13 @@ class EmailService
     def pdf_attachment_note(pdfs)
       return "" unless pdfs&.any?
 
-      offline = "so you can open them at the door without signal"
       count = pdfs.attachments.length
       text = if pdfs.complete?
-        count == 1 ? "Your ticket is also attached as a PDF, so you can open it at the door without signal." :
-          "All #{count} tickets are also attached as PDFs, #{offline}."
+        count == 1 ? t("pdf_note.single") : t("pdf_note.all", count: count)
       elsif pdfs.capped?
-        "The first #{count} tickets are attached as PDFs, #{offline}. Open the rest from My Tickets."
+        t("pdf_note.capped", count: count)
       else
-        "#{count} of your #{pdfs.ticket_count} tickets are attached as PDFs, #{offline}. " \
-          "The others can't be used for entry right now; check My Tickets for their status."
+        t("pdf_note.partial", count: count, total: pdfs.ticket_count)
       end
       %(<p style="color: #6b7280; margin: 12px 0 0; font-size: 14px;">#{h(text)}</p>)
     end
@@ -663,7 +685,53 @@ class EmailService
     end
 
     def format_event_date(event)
-      event.starts_at&.in_time_zone(event.timezone || "Pacific/Guam")&.strftime("%B %d, %Y at %I:%M %p")
+      format_local_datetime(event.starts_at, event.timezone)
+    end
+
+    # "October 5, 2026 at 7:00 PM" in English; word order, month names and
+    # AM/PM come from the email copy of the current language. Deadlines add
+    # the zone ("ChST") so a buyer elsewhere is not misled.
+    def format_local_datetime(time, zone, with_zone: false)
+      return nil unless time
+
+      local = time.in_time_zone(zone.presence || "Pacific/Guam")
+      text = I18n.t("emails.formats.event_datetime",
+        month_name: Array(I18n.t("emails.formats.month_names"))[local.month - 1], day: local.day,
+        year: local.year, hour: local.strftime("%-I"), minute: local.strftime("%M"),
+        meridiem: I18n.t(local.hour < 12 ? "emails.formats.am" : "emails.formats.pm"))
+      with_zone ? "#{text} #{local.strftime('%Z')}" : text
+    end
+
+    # Buyer emails are written in the language recorded on the order, waitlist
+    # entry or transfer; anything else is English.
+    def in_locale(locale, &)
+      I18n.with_locale(AppLocale.i18n_locale(locale), &)
+    end
+
+    def t(key, **values)
+      I18n.t("emails.#{key}", **values)
+    end
+
+    # Escaped copy; `links` fills %{placeholders} with trusted HTML after escaping.
+    def ht(key, links: {}, **values)
+      tokens = links.keys.each_with_index.to_h { |name, index| [name, "LINKTOKEN#{index}X"] }
+      text = h(t(key, **values, **tokens))
+      tokens.each { |name, token| text = text.sub(token, links.fetch(name)) }
+      text
+    end
+
+    def event_title(event)
+      event.content_for(I18n.locale)[:title]
+    end
+
+    # Issued tickets (emails, PDFs, My Tickets, door lists) all use the
+    # organizer's own ticket names so buyers and door staff see the same words.
+    def ticket_type_name(ticket_type)
+      ticket_type.name
+    end
+
+    def money(cents)
+      "$#{format_cents(cents)}"
     end
 
     def format_cents(cents)

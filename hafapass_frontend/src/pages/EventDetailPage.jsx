@@ -8,6 +8,9 @@ import TicketTypesSection from '../components/TicketTypesSection'
 import SeatSelector from '../components/SeatSelector'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
+import MachineTranslationNotice from '../components/MachineTranslationNotice'
+import useTranslatedContent from '../hooks/useTranslatedContent'
+import useContentLanguage from '../hooks/useContentLanguage'
 import NotFound from '../components/NotFound'
 import { FadeUp } from '../components/ui/ScrollReveal'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
@@ -115,6 +118,9 @@ function EventDetailContent() {
   const pageEnd = useRef(null)
   const [buyBarTargets] = useState(() => [heroTicketsLink, ticketPanel])
   const waitlistOfferToken = searchParams.get('waitlist_offer')
+  const content = useTranslatedContent(event)
+  const contentLanguage = useContentLanguage()
+  const loadedLanguage = useRef(contentLanguage)
 
   useEffect(() => {
     let active = true
@@ -156,6 +162,21 @@ function EventDetailContent() {
       } })
     return () => { active = false }
   }, [slug, isPreview, isLiveMoneyProof, loadAttempt, navigate])
+
+  // Switching language reloads the event text quietly, keeping the page (and any
+  // ticket selection) in place; the first load already used the current language.
+  useEffect(() => {
+    if (loadedLanguage.current === contentLanguage) return undefined
+    loadedLanguage.current = contentLanguage
+    if (!event) return undefined
+    let active = true
+    const url = isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
+      (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
+    apiClient.get(url)
+      .then(res => { if (active && liveRoute.current.slug === slug && res.data.slug === slug) setEvent(res.data) })
+      .catch(() => { /* Keep the text already shown; the next navigation retries. */ })
+    return () => { active = false }
+  }, [contentLanguage, event, slug, isPreview, isLiveMoneyProof])
 
   useEffect(() => {
     if (!waitlistOfferToken) return undefined
@@ -333,7 +354,8 @@ function EventDetailContent() {
                 {event.category_label || event.category}
               </span>
             )}
-            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3 break-words">{event.title}</h1>
+            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3 break-words">{content.title}</h1>
+            {content.notice && <MachineTranslationNotice {...content.notice} tone="dark" className="mb-3" />}
 
             {/* Date & Venue on hero */}
             <div className="flex flex-wrap items-center gap-4 text-neutral-200 text-sm">
@@ -390,7 +412,7 @@ function EventDetailContent() {
                   {event.assigned_seating ? (
                     <SeatSelector event={event} onReserved={handleSeatCheckout} />
                   ) : event.ticket_types && event.ticket_types.length > 0 ? (
-                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} />
+                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} showOriginal={content.showingOriginal} />
                   ) : (
                     <p className="text-neutral-500 text-center py-4">No tickets available</p>
                   )}
@@ -470,10 +492,10 @@ function EventDetailContent() {
               />
 
               {/* Description */}
-              {event.description && (
+              {content.description && (
                 <FadeUp><div className="prose prose-neutral max-w-none mb-8">
                   <h2 className="text-lg font-semibold text-neutral-900 mb-3">About</h2>
-                  <p className="text-neutral-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
+                  <p className="text-neutral-600 leading-relaxed whitespace-pre-wrap">{content.description}</p>
                 </div></FadeUp>
               )}
 

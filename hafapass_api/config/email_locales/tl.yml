@@ -1,0 +1,95 @@
+# Buyer email copy in English (the source language). The other files in this
+# directory are generated from this one by the `gt` CLI; see docs/TRANSLATIONS.md.
+# Keep %{placeholders} unchanged. Text only: links and formatting are added by
+# EmailService, and every value is HTML-escaped.
+emails:
+  footer: "Pinapagana ng HåfaPass · Shimizu Technology"
+  my_tickets: "Mga Tiket Ko"
+  formats:
+    event_datetime: "%{month_name} %{day}, %{year} sa ganap na %{hour}:%{minute} %{meridiem}"
+    month_names:
+      - Enero
+      - Pebrero
+      - Marso
+      - Abril
+      - Mayo
+      - Hunyo
+      - Hulyo
+      - Agosto
+      - Setyembre
+      - Oktubre
+      - Nobyembre
+      - Disyembre
+    am: "AM"
+    pm: "PM"
+  order_confirmation:
+    subject: "Ang Iyong mga Tiket sa HåfaPass - %{event}"
+    title: "Kumpirmado na ang Order"
+    heading: "Kumpirmado na ang iyong mga tiket!"
+    thanks: "Salamat sa iyong pagbili, %{name}."
+    summary: "Buod ng Order"
+    subtotal: "Subtotal: %{amount}"
+    discount: "Diskuwento: -%{amount}"
+    service_fee: "Bayad sa Serbisyo: %{amount}"
+    total: "Kabuuan: %{amount}"
+    tickets_heading: "Ang Iyong mga Tiket"
+    type_column: "Uri"
+    attendee_column: "Dadalo"
+    ticket_column: "Tiket"
+    view_ticket: "Tingnan ang Tiket"
+    all_transferred: "Nailipat na ang lahat ng tiket sa order na ito. Mabubuksan ng
+      mga bagong may-ari ang mga ito sa %{my_tickets_link}."
+    entry_instructions: "Ipakita ang iyong QR Code sa pasukan upang makapasok.
+      Mabubuksan mo ang iyong mga tiket anumang oras sa %{my_tickets_link}."
+  pdf_note:
+    single: "Nakalakip din ang iyong tiket bilang PDF, kaya mabubuksan mo ito sa
+      pasukan kahit walang signal."
+    all: "Nakalakip din ang lahat ng %{count} tiket bilang mga PDF, kaya mabubuksan
+      mo ang mga ito sa pasukan kahit walang signal."
+    capped: "Nakalakip ang unang %{count} tiket bilang mga PDF, kaya mabubuksan mo
+      ang mga ito sa pasukan kahit walang signal. Buksan ang natitira sa Mga
+      Tiket Ko."
+    partial: "Nakalakip bilang mga PDF ang %{count} sa iyong %{total} tiket, kaya
+      mabubuksan mo ang mga ito sa pasukan kahit walang signal. Hindi magagamit
+      sa pagpasok ang iba sa ngayon; tingnan ang status ng mga ito sa Mga Tiket
+      Ko."
+  ticket:
+    subject: "Ang Iyong Tiket - %{event}"
+    heading: "Ang Iyong Tiket"
+    view: "Tingnan ang Iyong Tiket"
+    entry_instructions: "Ipakita ang iyong QR Code sa pasukan upang makapasok."
+  refund:
+    subject: "Naproseso na ang Refund - %{event}"
+    heading: "Naproseso na ang Refund"
+    body: "Naproseso na ang iyong refund para sa %{event}."
+    full: "Buong refund"
+    partial: "Bahagyang refund (%{amount})"
+    returned: "Ibabalik ang %{amount} sa ginamit mong paraan ng pagbabayad sa loob
+      ng 5-10 araw ng trabaho."
+    reason: "Dahilan:"
+    questions: "Kung mayroon kang mga tanong, mangyaring makipag-ugnayan sa
+      tagapag-organisa ng event."
+  transfer:
+    subject: "Paglilipat ng tiket: %{event}"
+    title: "Paglilipat ng tiket"
+    heading: "Pinadalhan ka ng tiket sa HåfaPass"
+    accept: "Tanggapin ang tiket"
+    sign_in: "Mag-sign in gamit ang %{email}. Mawawalan ng bisa ang link na ito sa
+      %{expires_at}."
+  waitlist:
+    subject: "May Mabibili nang mga Tiket - %{event}"
+    title: "May Mabibili nang mga Tiket"
+    heading: "May Mabibili nang mga Tiket!"
+    greeting: "%{name}, magandang balita — may mabibili nang mga tiket para sa:"
+    greeting_anonymous: "Kumusta! Magandang balita — may mabibili nang mga tiket para sa:"
+    deadline: "Mayroon kang 24 na oras upang bilhin ang iyong mga tiket bago mawala
+      ang iyong puwesto."
+    cta: "Kunin ang Iyong mga Tiket"
+  waitlist_offer:
+    subject: "Alok para sa iyo bilang nasa waitlist: %{event}"
+    title: "Alok para sa mga nasa waitlist"
+    heading: "Handa na ang iyong mga tiket"
+    body: "Nakareserba para sa iyo ang %{count} tiket na %{ticket_type} para sa
+      %{event}."
+    cta: "Kunin ang mga tiket"
+    expires: "Mawawalan ng bisa ang alok na ito sa %{expires_at}."

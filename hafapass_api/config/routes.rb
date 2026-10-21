@@ -144,6 +144,7 @@ Rails.application.routes.draw do
             get :stats
             get :attendees
             get :slug_availability
+            post :retranslate
           end
           resources :ticket_types, only: [:index, :show, :create, :update, :destroy] do
             resources :pricing_tiers, only: [:index, :create, :update, :destroy]
@@ -219,6 +220,7 @@ Rails.application.routes.draw do
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
           resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
+          post :retranslate, on: :member
         end
         get "events/:event_id/pilot_readiness", to: "pilot_readiness_reviews#show"
         post "events/:event_id/pilot_readiness_reviews", to: "pilot_readiness_reviews#create"

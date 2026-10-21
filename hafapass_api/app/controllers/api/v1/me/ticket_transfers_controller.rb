@@ -4,7 +4,7 @@ class Api::V1::Me::TicketTransfersController < ApplicationController
   def create
     ticket = current_user.held_tickets.find(params[:ticket_id])
     transfer = TicketTransfers::Manager.create!(ticket: ticket, recipient_email: params[:recipient_email],
-      recipient_name: params[:recipient_name], initiated_by: current_user)
+      recipient_name: params[:recipient_name], initiated_by: current_user, locale: request_locale)
     render json: { id: transfer.id, status: transfer.status, recipient_email: transfer.recipient_email,
       expires_at: transfer.expires_at }, status: :created
   rescue TicketTransfers::Manager::TransferError => e
