@@ -65,6 +65,12 @@ module PdfFonts
     (leading + CJK_ORDER).uniq + ["TicketEmoji"]
   end
 
+  def replace_unsupported(text, characters)
+    return text if text.nil? || characters.empty?
+
+    text.each_char.map { |character| characters.include?(character) ? "?" : character }.join
+  end
+
   def uncovered(pdf, family, characters)
     return characters if characters.empty?
 

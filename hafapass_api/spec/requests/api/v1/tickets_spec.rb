@@ -143,16 +143,17 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(reader.pages.map(&:text).join("\n")).to include(event.title.delete("\uFE0F"), event.venue_name)
     end
 
-    it "reports unsupported PDF text only to the owning guest without an artifact" do
+    it "replaces unsupported PDF text for the owning guest without exposing private fields" do
       event.update!(title: "Unsupported \u{10FFFF}")
       get "/api/v1/tickets/#{ticket.display_credential}/download",
         headers: { "X-Guest-Order-Token" => GuestOrderAccess.issue!(order) }
 
-      expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error_code"]).to eq("unsupported_pdf_text")
-      expect(response.content_type).to include("application/json")
-      expect(response.headers["Content-Disposition"]).to be_nil
-      expect(response.body).not_to include(ticket.scan_credential, ticket.attendee_name, event.title)
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to include("application/pdf")
+      expect(response.headers["Content-Disposition"]).to include("attachment")
+      text = PDF::Reader.new(StringIO.new(response.body)).pages.map(&:text).join("\n")
+      expect(text).to include("Unsupported ?")
+      expect(text).not_to include(ticket.scan_credential, ticket.attendee_name, event.title)
     end
 
     it "does not expose a PDF admission credential to a public display link" do
