@@ -129,7 +129,8 @@ describe('MyTicketsPage orders tab', () => {
     renderPage()
     expect(await screen.findByText('VIP')).toBeInTheDocument()
     expect(screen.getByText('General admission')).toBeInTheDocument()
-    expect(apiClient.get).toHaveBeenCalledWith('/me/tickets', { params: { page: 2 } })
+    expect(apiClient.get).toHaveBeenCalledWith('/me/tickets', { params: { page: 1, per_page: 100 } })
+    expect(apiClient.get).toHaveBeenCalledWith('/me/tickets', { params: { page: 2, per_page: 100 } })
   })
 
   it('shows the first ticket page while the next page is pending', async () => {
@@ -169,6 +170,8 @@ describe('MyTicketsPage orders tab', () => {
     renderPage()
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1))
     expect(apiClient.get).toHaveBeenCalledTimes(20)
+    expect(apiClient.get).toHaveBeenLastCalledWith('/me/tickets', { params: { page: 20, per_page: 100 } })
+    expect(screen.getByText('Showing your most recent 20 tickets. More tickets are available.')).toBeInTheDocument()
   })
 
   it('labels test purchases and supports tab keyboard navigation', async () => {

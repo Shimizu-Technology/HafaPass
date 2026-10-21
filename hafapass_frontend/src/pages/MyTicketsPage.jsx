@@ -17,6 +17,9 @@ import TransferTicketDialog from '../components/TransferTicketDialog'
 import PendingTransfer from '../components/PendingTransfer'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 
+const TICKETS_PER_PAGE = 100
+const MAX_TICKET_PAGES = 20
+
 // This route sits behind ProtectedRoute, so a 401 means Clerk still holds a session the
 // API no longer accepts. Refresh the token once; if that fails, end the stale Clerk
 // session so the sign-in page does not bounce the visitor straight back here.
@@ -43,6 +46,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
   const [recoveryError, setRecoveryError] = useState(null)
   const [transferTarget, setTransferTarget] = useState(null)
   const [ticketNotice, setTicketNotice] = useState(null)
+  const [ticketsCapped, setTicketsCapped] = useState(false)
   const tab = new URLSearchParams(location.search).get('tab') === 'orders' ? 'orders' : 'tickets'
   const activeTab = useRef(tab)
   activeTab.current = tab
@@ -55,24 +59,26 @@ function MyTicketsContent({ refreshSession, signOut }) {
   const capabilities = useLaunchCapabilities()
 
   const loadAllTickets = useCallback(async (onPage = () => {}) => {
+    setTicketsCapped(false)
     const all = []
     let page = 1
     const seen = new Set()
-    while (page && !seen.has(page) && seen.size < 20) {
+    while (page && !seen.has(page) && seen.size < MAX_TICKET_PAGES) {
       seen.add(page)
       let response
       try {
-        response = await apiClient.get('/me/tickets', page === 1 ? undefined : { params: { page } })
+        response = await apiClient.get('/me/tickets', { params: { page, per_page: TICKETS_PER_PAGE } })
       } catch (err) {
         if (err.response?.status !== 401 || !refreshSession) throw err
         await refreshSession().catch(() => { throw new Error('Session refresh failed') })
-        response = await apiClient.get('/me/tickets', page === 1 ? undefined : { params: { page } })
+        response = await apiClient.get('/me/tickets', { params: { page, per_page: TICKETS_PER_PAGE } })
       }
       all.push(...(response.data.tickets || []))
       onPage(all)
       const next = Number(response.data.meta?.next_page)
       page = Number.isInteger(next) && next > page && !seen.has(next) ? next : null
     }
+    if (page && seen.size === MAX_TICKET_PAGES) setTicketsCapped(true)
     return all
   }, [refreshSession])
 
@@ -155,6 +161,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
   const recoveryNotice = (
     <div className="mb-5 text-sm" role="status">
       {ticketNotice && <p className="rounded-xl border border-brand-200 bg-brand-50 p-4 text-brand-900">{ticketNotice}</p>}
+      {ticketsCapped && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">{t('buyerAccount.myTicketsPage.ticketLimitNotice', { count: orders.length })}</p>}
       {recovering && <p className="text-neutral-600">{t('buyerAccount.myTicketsPage.checkingForPurchasesMadeBeforeYouSignedIn')}</p>}
       {recoveryError && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
         <p>{recoveryError}</p>

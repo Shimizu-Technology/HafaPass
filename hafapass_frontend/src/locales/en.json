@@ -997,6 +997,7 @@
       "weCouldNotCheckForGuestPurchasesYet": "We could not check for guest purchases yet. Please try again shortly.",
       "weCouldnTLoadYourTicketsTryAgain": "We couldn’t load your tickets. Try again.",
       "weCouldnTRefreshYourTicketsReloadThe": "We couldn’t refresh your tickets. Reload the page to see the latest status.",
+      "ticketLimitNotice": "Showing your most recent {{count}} tickets. More tickets are available.",
       "checkingForPurchasesMadeBeforeYouSignedIn": "Checking for purchases made before you signed in…",
       "retryGuestPurchaseRecovery": "Retry guest purchase recovery",
       "myTickets": "My Tickets",
