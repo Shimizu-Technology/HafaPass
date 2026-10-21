@@ -219,7 +219,7 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
       content = options.fetch(:body).read
       expect(content.bytes.first(3)).to eq([239, 187, 191])
       expect(content).to include("Mina")
-      expect(options.fetch(:acl)).to eq("private")
+      expect(options).not_to have_key(:acl)
     end
     expect { OrganizerSalesExportJob.perform_now(request_record.id) }
       .to have_enqueued_job(OrganizerSalesExportCleanupJob)

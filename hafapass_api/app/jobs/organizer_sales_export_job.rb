@@ -34,10 +34,12 @@ class OrganizerSalesExportJob < ApplicationJob
       file.rewind
       raise "Export storage unavailable" unless S3Service.configured?
 
+      # Bucket owner enforced disables ACLs. The bucket policy grants public reads
+      # only under uploads/*, so this private/sales-exports key stays private.
       Aws::S3::Client.new(region: ENV.fetch("AWS_REGION", "us-west-2"),
         credentials: Aws::Credentials.new(ENV["AWS_ACCESS_KEY_ID"], ENV["AWS_SECRET_ACCESS_KEY"], ENV["AWS_SESSION_TOKEN"]))
         .put_object(bucket: ENV.fetch("AWS_BUCKET"), key: key, body: file,
-          content_type: "text/csv; charset=utf-8", cache_control: "no-store", acl: "private")
+          content_type: "text/csv; charset=utf-8", cache_control: "no-store")
       uploaded = true
     end
     export_request.update!(status: "ready", storage_key: key, row_count: count, expires_at: 1.day.from_now)
