@@ -1000,5 +1000,101 @@
         "context": "Buyer-facing ErrorFallback interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       }
     }
+  },
+  "buyerDiscovery": {
+    "host": {
+      "admitted": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Door means event entrance. Admitted means a valid ticket was scanned for entry; this is an illustrative scanner preview. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "checkedIn": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Door means event entrance. Admitted means a valid ticket was scanned for entry; this is an illustrative scanner preview. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "doorScanner": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Door means event entrance. Admitted means a valid ticket was scanned for entry; this is an illustrative scanner preview. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "nextGuest": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Door means event entrance. Admitted means a valid ticket was scanned for entry; this is an illustrative scanner preview. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "exampleEvent": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Door means event entrance. Admitted means a valid ticket was scanned for entry; this is an illustrative scanner preview. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "perPaidTicket": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "noFeeOnTickets": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "buyerPaysTheFee": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "youAbsorbTheFee": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "guestList": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "cashBoxOffice": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "attendeeCSV": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "waitlist": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "generalAdmission1Ticket": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "payouts": {
+        "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      }
+    },
+    "organizer": {
+      "completedEvents_one": {
+        "context": "Public HåfaPass organizer page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "completedEvents_other": {
+        "context": "Public HåfaPass organizer page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "ticketsIssued_one": {
+        "context": "Public HåfaPass organizer page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "ticketsIssued_other": {
+        "context": "Public HåfaPass organizer page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "followers_one": {
+        "context": "Public HåfaPass organizer page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "followers_other": {
+        "context": "Public HåfaPass organizer page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "ambrosPartner": {
+        "context": "Public HåfaPass organizer page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      }
+    },
+    "saved": {
+      "saved": {
+        "context": "Public HåfaPass saved page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "reminder": {
+        "context": "Public HåfaPass saved page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      }
+    },
+    "collections": {
+      "usefulLocalPicksCuratedByPeopleNot": {
+        "context": "Public HåfaPass collections page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      }
+    },
+    "policy": {
+      "draftPolicy": {
+        "context": "Public HåfaPass policy page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Policy content remains authoritative English; this key labels page navigation or policy status. "
+      },
+      "version": {
+        "context": "Public HåfaPass policy page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Policy content remains authoritative English; this key labels page navigation or policy status. "
+      },
+      "draftPendingLegalReviewThisTextHas": {
+        "context": "Public HåfaPass policy page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Policy content remains authoritative English; this key labels page navigation or policy status. "
+      }
+    }
   }
 }
