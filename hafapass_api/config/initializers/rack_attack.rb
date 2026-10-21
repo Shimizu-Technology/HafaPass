@@ -47,7 +47,7 @@ class Rack::Attack
     # to these actions, so match every accepted form.
     path = req.path.to_s.downcase
     req.post? && (path.match?(%r{\A/api/v1/admin/tax_reports/preparation_export(?:\.[a-z0-9]+)?/*\z}) ||
-      path.match?(%r{\A/api/v1/admin/organizations/\d+/tax_information/reveal(?:\.[a-z0-9]+)?/*\z}))
+      path.match?(%r{\A/api/v1/admin/organizations/[^/]+/tax_information/reveal(?:\.[a-z0-9]+)?/*\z}))
   end
   throttle("tax-sensitive/ip", limit: 10, period: 1.hour) do |req|
     req.ip if sensitive_tax_request.call(req)

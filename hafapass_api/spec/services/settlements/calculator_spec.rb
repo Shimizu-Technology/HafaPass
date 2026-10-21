@@ -57,4 +57,17 @@ RSpec.describe Settlements::Calculator do
     expect(described_class.call(event).attributes[:gross_cents]).to eq(3000)
     expect(StripeProcessingFees.missing_count([test_order.id])).to eq(0)
   end
+
+  it "includes legacy NULL-environment captures unless provider evidence says test" do
+    event = create(:event, :published)
+    legacy = create(:order, event: event, subtotal_cents: 3000, service_fee_cents: 0, total_cents: 3000)
+    create(:payment, :succeeded, order: legacy, amount_cents: 3000, provider_environment: nil)
+    create(:payment, order: legacy, status: :failed, provider_environment: "test")
+    explicit_test = create(:order, event: event, subtotal_cents: 2000, service_fee_cents: 0, total_cents: 2000)
+    create(:payment, :succeeded, order: explicit_test, amount_cents: 2000, provider_environment: nil,
+      provider_payload: { "livemode" => false })
+
+    allow(Rails.env).to receive(:production?).and_return(true)
+    expect(described_class.call(event).attributes[:gross_cents]).to eq(3000)
+  end
 end

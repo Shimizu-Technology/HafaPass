@@ -15,7 +15,7 @@ class TaxReports
   end
 
   def organizers
-    @organizers ||= Organization.includes(:organizer_tax_information).order(:id).flat_map do |organization|
+    @organizers ||= Organization.where(id: organization_ids).includes(:organizer_tax_information).order(:id).flat_map do |organization|
       event_ids = organization.events.select(:id)
       collected = collected_orders.where(event_id: event_ids)
       refunds = period_refunds.where(order_id: live_orders.where(event_id: event_ids).select(:id))
@@ -74,6 +74,14 @@ class TaxReports
     end
   end
 
+  def organization_ids
+    @organization_ids ||= (
+      collected_orders.joins(:event).distinct.pluck("events.organization_id") +
+      period_refunds.joins(order: :event).distinct.pluck("events.organization_id") +
+      paid_payouts.distinct.pluck(:organization_id)
+    ).uniq.sort
+  end
+
   def months
     (1..12).map do |month|
       range = month_start(month)...month_start(month).next_month
@@ -99,7 +107,7 @@ class TaxReports
 
   def live_orders
     # The shared scope is production-only; enforce live evidence in every env.
-    captured = Payment.where(provider_environment: "live", status: [:succeeded, :partially_refunded, :refunded])
+    captured = Payment.live_or_legacy_capture
     Order.excluding_test_payments.where(status: [:completed, :partially_refunded, :refunded], currency: "usd")
       .where(id: captured.select(:order_id))
   end

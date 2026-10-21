@@ -194,9 +194,10 @@ A production boot stops on:
 - `DB_POOL` smaller than the request/job threads, or an unknown `HAFAPASS_RUNTIME`
 - `REDIS_URL` missing when `HAFAPASS_RUNTIME` is `sidekiq` (not the case with `embedded`)
 - `SECRET_KEY_BASE` missing
+- `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, or `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` missing in production
 
-Everything else (Clerk, Sentry, Resend, Stripe, S3, admission signing) is a
-readiness check: the service boots, `/api/v1/readiness` names the gap, and the
+The other listed integrations (Clerk, Sentry, Resend, Stripe, S3, admission signing) are
+readiness checks: the service boots, `/api/v1/readiness` names the gap, and the
 dependent feature refuses to run.
 
 ## Note on earlier approvals

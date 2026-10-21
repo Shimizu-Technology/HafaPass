@@ -41,11 +41,11 @@ RSpec.describe TaxReports do
       amount_cents: 999, status: :processing)
     report = described_class.new(2026)
     row = report.organizers.sole
-    expect(row).to include(gross_ticket_proceeds_cents: 2400, refunds_cents: 600, fees_collected_cents: 225,
+    expect(row).to include(gross_ticket_proceeds_cents: 4800, refunds_cents: 600, fees_collected_cents: 450,
       fees_refunded_cents: 100, net_paid_cents: 1700, w9_on_file: true)
     expect(row[:tax_information]).to include("masked_tin" => "***-**-5678")
-    expect(report.months[9]).to include(fees_collected_cents: 225, fees_refunded_cents: 100,
-      gross_receipts_cents: 125, card_processing_costs_cents: 80)
+    expect(report.months[9]).to include(fees_collected_cents: 450, fees_refunded_cents: 100,
+      gross_receipts_cents: 350, card_processing_costs_cents: 80)
     expect(report.as_json.to_json).not_to include("012345678")
   end
 
@@ -92,6 +92,29 @@ RSpec.describe TaxReports do
     expect(Order.excluding_test_payments).not_to include(simulated)
     expect(Settlements::Calculator.new(event).send(:orders)).to include(order)
     expect(described_class.new(2026).organizers.sole[:gross_ticket_proceeds_cents]).to eq(2400)
+  end
+
+  it "reports legacy NULL-environment live sales and excludes payload-confirmed test payments" do
+    at = Time.utc(2026, 10, 2)
+    legacy = sale(at: at, environment: nil)
+    create(:payment, order: legacy, status: :failed, provider_environment: "test")
+    test_order = sale(at: at, environment: nil)
+    test_order.payments.first.update!(provider_payload: { "livemode" => false })
+    allow(Rails.env).to receive(:production?).and_return(true)
+
+    expect(described_class.new(2026).organizers.sole[:gross_ticket_proceeds_cents]).to eq(2400)
+    expect(described_class.new(2026).months[9][:gross_receipts_cents]).to eq(225)
+    expect(Settlements::Calculator.new(event).send(:orders)).to include(legacy)
+    expect(Settlements::Calculator.new(event).send(:orders)).not_to include(test_order)
+  end
+
+  it "loads organizer details only for organizations with period activity" do
+    at = Time.utc(2026, 10, 2)
+    sale(at: at)
+    3.times { create(:organization) }
+    report = described_class.new(2026)
+    expect(Organization).to receive(:where).with(id: [organization.id]).and_call_original
+    expect(report.organizers.map { |row| row[:organization_id] }).to eq([organization.id])
   end
 
   it "reconciles ticket, add-on and donation gross with a partial refund and paid payout" do

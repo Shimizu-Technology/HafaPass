@@ -153,6 +153,27 @@ RSpec.describe "Admin tax reporting", type: :request do
     end
   end
 
+  it "counts Rails IDs with suffixes against the full-TIN budget" do
+    freeze_time do
+      headers = auth_headers(admin)
+      5.times do
+        ["#{organization.id}abc", "#{organization.id}-x"].each do |id|
+          post "/api/v1/admin/organizations/#{id}/tax_information/reveal", headers: headers
+          expect(response).not_to have_http_status(:too_many_requests)
+        end
+      end
+      post "/api/v1/admin/organizations/#{organization.id}-x/tax_information/reveal", headers: headers
+      expect(response).to have_http_status(:too_many_requests)
+    end
+  end
+
+  it "audits receipts without constructing organizer detail rows" do
+    expect_any_instance_of(TaxReports).not_to receive(:organizers)
+    get "/api/v1/admin/tax_reports/receipts_export", params: { year: 2026 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(AuditLog.where(action: "tax_report.exported").last.metadata["organization_ids"]).to eq([organization.id])
+  end
+
   it "applies the admin budget across IPs" do
     freeze_time do
       headers = auth_headers(admin)

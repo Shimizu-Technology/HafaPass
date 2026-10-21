@@ -127,13 +127,37 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     expect(audit.metadata.to_json).not_to include("012345678")
   end
 
-  it "requires the same confirmation for legacy payouts without a snapshot, but allows failure" do
+  it "requires actual payee and evidence for a legacy paid payout, but allows failure" do
     Payout.where(id: payout.id).update_all(tax_information_snapshot: {}, tax_information_tin: nil, tax_approval_digest: nil)
     payout.reload
     reconcile
     expect(response).to have_http_status(:unprocessable_content)
+    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
+    expect(response).to have_http_status(:unprocessable_content)
+    legacy = evidence.merge(legacy_payee_name: "  Actual Guam Payee  ", legacy_evidence_note: "  Check 1042  ", legacy_payee_confirmed: true)
+    reconcile(payload.merge(evidence: legacy.merge(legacy_evidence_note: " ")))
+    expect(response).to have_http_status(:unprocessable_content)
+    reconcile(payload.merge(evidence: legacy.merge(legacy_payee_confirmed: false)))
+    expect(response).to have_http_status(:unprocessable_content)
+    reconcile(payload.merge(evidence: legacy.merge(approved_tax_payee_confirmed: true)))
+    expect(response).to have_http_status(:unprocessable_content)
     reconcile(payload.merge(status: "failed", evidence: evidence))
     expect(response).to have_http_status(:ok)
     expect(payout.reload).to be_status_failed
+  end
+
+  it "records the entered legacy payee and reference in append-only audit evidence" do
+    Payout.where(id: payout.id).update_all(tax_information_snapshot: {}, tax_information_tin: nil, tax_approval_digest: nil)
+    legacy = evidence.merge(legacy_payee_name: " Actual Guam Payee ", legacy_evidence_note: " Check 1042 ", legacy_payee_confirmed: true)
+    reconcile(payload.merge(evidence: legacy))
+    expect(response).to have_http_status(:ok)
+    expect(AuditLog.find_by!(auditable: payout, action: "payout.reconciled").metadata.fetch("reconciliation"))
+      .to include("legacy_payee_name" => "Actual Guam Payee", "legacy_evidence_note" => "Check 1042", "legacy_payee_confirmed" => true)
+  end
+
+  it "does not attach legacy payee evidence to a payout with a W-9 snapshot" do
+    reconcile(payload.merge(evidence: evidence.merge(legacy_payee_name: "Other Payee", legacy_evidence_note: "Check 1042", legacy_payee_confirmed: true)))
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(payout.reload).to be_status_processing
   end
 end

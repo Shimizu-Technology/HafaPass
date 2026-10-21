@@ -63,8 +63,22 @@ class PayoutReconciler
       if status == "paid" && !payout.payee_matches_approval? && normalized["approved_payee_confirmed"] != true
         raise ReconciliationError, Payout::PAYEE_CHANGED_MESSAGE
       end
-      if status == "paid" && !payout.tax_approval_matches? && normalized["approved_tax_payee_confirmed"] != true
-        raise ReconciliationError, Payout::TAX_APPROVAL_CHANGED_MESSAGE
+      if status == "paid"
+        if payout.tax_information_snapshot.blank?
+          if normalized["approved_tax_payee_confirmed"] == true
+            raise ReconciliationError, "A legacy payout has no approved W-9 payee to confirm"
+          end
+          unless normalized["legacy_payee_confirmed"] == true && normalized["legacy_payee_name"].present? && normalized["legacy_evidence_note"].present?
+            raise ReconciliationError, "Record the actual payee, evidence note, and legacy payout confirmation"
+          end
+        else
+          if normalized.key?("legacy_payee_name")
+            raise ReconciliationError, "Legacy payee evidence is only for payouts without a W-9 snapshot"
+          end
+          if !payout.tax_approval_matches? && normalized["approved_tax_payee_confirmed"] != true
+            raise ReconciliationError, Payout::TAX_APPROVAL_CHANGED_MESSAGE
+          end
+        end
       end
 
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
@@ -109,6 +123,16 @@ class PayoutReconciler
     end
     if ActiveModel::Type::Boolean.new.cast(values["approved_tax_payee_confirmed"])
       normalized["approved_tax_payee_confirmed"] = true
+    end
+    if values.key?("legacy_payee_name") || values.key?("legacy_evidence_note") || values.key?("legacy_payee_confirmed")
+      name = values["legacy_payee_name"].to_s.strip
+      note = values["legacy_evidence_note"].to_s.strip
+      raise ReconciliationError, "Legacy payee name must be 1 to 255 characters" unless (1..255).cover?(name.length)
+      raise ReconciliationError, "Legacy evidence note must be 1 to 500 characters" unless (1..500).cover?(note.length)
+
+      normalized["legacy_payee_name"] = name
+      normalized["legacy_evidence_note"] = note
+      normalized["legacy_payee_confirmed"] = true if ActiveModel::Type::Boolean.new.cast(values["legacy_payee_confirmed"])
     end
     normalized
   rescue ArgumentError

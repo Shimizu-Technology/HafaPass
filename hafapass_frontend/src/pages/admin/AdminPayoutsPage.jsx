@@ -58,7 +58,11 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const payeeChanged = isCheck && payout.payee_changed === true
   const [payeeConfirmed, setPayeeConfirmed] = useState(false)
   const taxApprovalChanged = payout.tax_approval_changed === true
+  const legacyTaxPayee = !payout.tax_information_snapshot || Object.keys(payout.tax_information_snapshot).length === 0
   const [taxPayeeConfirmed, setTaxPayeeConfirmed] = useState(false)
+  const [legacyPayeeName, setLegacyPayeeName] = useState('')
+  const [legacyEvidenceNote, setLegacyEvidenceNote] = useState('')
+  const [legacyPayeeConfirmed, setLegacyPayeeConfirmed] = useState(false)
   const describePayee = payee => payee ? `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}` : ''
 
   const submit = async event => {
@@ -73,7 +77,11 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     if (!reason.trim()) found.reason = 'Explain how you confirmed this outcome.'
     if (payout.conflict && !acknowledged) found.conflict = 'Confirm you reviewed the provider conflict.'
     if (outcome === 'paid' && payeeChanged && !payeeConfirmed) found.payee = 'Confirm you wrote this check to the approved payee shown above.'
-    if (outcome === 'paid' && taxApprovalChanged && !taxPayeeConfirmed) found.taxPayee = 'Confirm the payout was already sent to the approved tax payee shown above.'
+    if (outcome === 'paid' && legacyTaxPayee) {
+      if (!legacyPayeeName.trim()) found.legacyPayeeName = 'Enter the payee who was actually paid.'
+      if (!legacyEvidenceNote.trim()) found.legacyEvidenceNote = 'Enter a check number, bank reference, or other evidence note.'
+      if (!legacyPayeeConfirmed) found.legacyPayee = 'Confirm this legacy payout was already sent to the payee entered here.'
+    } else if (outcome === 'paid' && taxApprovalChanged && !taxPayeeConfirmed) found.taxPayee = 'Confirm the payout was already sent to the approved tax payee shown above.'
     setErrors(found)
     if (Object.keys(found).length) return
     const request = beginRequest()
@@ -82,7 +90,8 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     try {
       const evidence = { reference: reference.trim(), reason: reason.trim(), confirmed_at: confirmed.toISOString(),
         ...(outcome === 'paid' && payeeChanged && payeeConfirmed ? { approved_payee_confirmed: true } : {}),
-        ...(outcome === 'paid' && taxApprovalChanged && taxPayeeConfirmed ? { approved_tax_payee_confirmed: true } : {}) }
+        ...(outcome === 'paid' && !legacyTaxPayee && taxApprovalChanged && taxPayeeConfirmed ? { approved_tax_payee_confirmed: true } : {}),
+        ...(outcome === 'paid' && legacyTaxPayee ? { legacy_payee_name: legacyPayeeName.trim(), legacy_evidence_note: legacyEvidenceNote.trim(), legacy_payee_confirmed: true } : {}) }
       if (payout.conflict) evidence.conflict_audit_id = payout.conflict.audit_id
       const body = { status: outcome, evidence }
       if (transferId.trim() && !keepsTransferId) body.provider_payout_id = transferId.trim()
@@ -110,7 +119,23 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
           </label>}
           {fieldError('payee')}
         </div>}
-        {taxApprovalChanged && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
+        {legacyTaxPayee && outcome === 'paid' && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
+          <p className="font-semibold">No W-9 was on file when this payout was created.</p>
+          <label className="mt-2 block font-medium">Payee actually paid
+            <input value={legacyPayeeName} onChange={event => setLegacyPayeeName(event.target.value)} maxLength={255} aria-invalid={!!errors.legacyPayeeName} className="input mt-1" />
+          </label>
+          {fieldError('legacyPayeeName')}
+          <label className="mt-2 block font-medium">Evidence note or reference
+            <input value={legacyEvidenceNote} onChange={event => setLegacyEvidenceNote(event.target.value)} maxLength={500} aria-invalid={!!errors.legacyEvidenceNote} className="input mt-1" />
+          </label>
+          {fieldError('legacyEvidenceNote')}
+          <label className="mt-2 flex min-h-11 items-start gap-2 font-medium">
+            <input type="checkbox" checked={legacyPayeeConfirmed} onChange={event => setLegacyPayeeConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-700" />
+            This payout was already sent to the payee entered here; it was created before W-9 collection.
+          </label>
+          {fieldError('legacyPayee')}
+        </div>}
+        {!legacyTaxPayee && taxApprovalChanged && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
           <p className="font-semibold">The W-9 or payout approval on file differs from this payout’s approved tax identity.</p>
           <p className="mt-1">Approved tax payee: {payout.tax_information_snapshot?.legal_name || 'No W-9 on file at payout'}{payout.tax_information_snapshot?.masked_tin ? ` · ${payout.tax_information_snapshot.masked_tin}` : ''}.</p>
           {outcome === 'paid' && <label className="mt-2 flex min-h-11 items-start gap-2 font-medium">

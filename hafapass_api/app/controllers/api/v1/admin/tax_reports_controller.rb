@@ -59,6 +59,6 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
 
   def audit_export!(kind)
     AuditLogger.record!(action: "tax_report.exported", auditable: current_user, actor: current_user,
-      metadata: { export: kind, year: @report.year, organization_ids: @report.organizers.pluck(:organization_id) }, request: request)
+      metadata: { export: kind, year: @report.year, organization_ids: @report.organization_ids }, request: request)
   end
 end
