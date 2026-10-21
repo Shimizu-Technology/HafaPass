@@ -17,17 +17,7 @@ class EventCancellationRefundJob < ApplicationJob
       end
       submit_refund(item, run, amount) if amount
     end
-    run.with_lock do
-      if run.items.where.not(status: [:refunded, :skipped]).none?
-        unless run.completed?
-          run.update!(status: :completed, completed_at: Time.current)
-          AuditLogger.record!(action: "event.cancellation_refunds_completed", auditable: run.event,
-            actor: run.started_by, organization: run.event.organization, metadata: run.summary)
-        end
-      else
-        run.update!(status: :needs_attention, completed_at: nil)
-      end
-    end
+    run.reconcile_status!
   end
 
   private
@@ -41,14 +31,6 @@ class EventCancellationRefundJob < ApplicationJob
       return nil
     end
     existing = order.refunds.find_by(idempotency_key: item.refund_key)
-    if order.disputes.lost.exists?
-      if order.refunds.pending.exists?
-        item.update!(status: :waiting_on_pending_refund, last_error: "Dispute lost; waiting for refund confirmation")
-      else
-        item.update!(status: :skipped, last_error: "Dispute lost; buyer refunded by chargeback")
-      end
-      return nil
-    end
     if existing&.failed? || existing&.cancelled?
       item.update!(status: :failed, last_error: existing.failure_message || "Provider refund failed")
       return nil
@@ -62,7 +44,7 @@ class EventCancellationRefundJob < ApplicationJob
       return nil
     end
 
-    amount = existing&.pending? ? existing.amount_cents : order.refundable_cents
+    amount = existing&.pending? ? existing.amount_cents : EventCancellationRefunds.balance_cents(order)
     if existing&.succeeded? && amount.positive?
       item.update!(retry_generation: item.retry_generation + 1)
       existing = nil
@@ -75,8 +57,15 @@ class EventCancellationRefundJob < ApplicationJob
         metadata: { order_id: order.id, previous_amount_cents: previous_amount, amount_cents: amount })
     end
     if amount.zero?
+      message = if existing&.succeeded?
+        nil
+      elsif order.disputes.lost.exists?
+        "Dispute lost; buyer refunded by chargeback"
+      else
+        "Buyer balance already resolved"
+      end
       item.update!(status: existing&.succeeded? ? :refunded : :skipped,
-        last_error: existing&.succeeded? ? nil : "Order already fully refunded")
+        last_error: message)
       return nil
     end
 

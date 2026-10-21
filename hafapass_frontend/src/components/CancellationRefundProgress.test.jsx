@@ -70,6 +70,32 @@ it('explains cash-return permissions to an organizer manager', async () => {
   expect(screen.queryByRole('button', { name: 'Mark refunded in cash' })).not.toBeInTheDocument()
 })
 
+it('offers an admin a way to start refunds on a legacy cancelled event', async () => {
+  const user = userEvent.setup()
+  apiClient.get.mockResolvedValue({ data: { preview: { count: 1, total_cents: 4250, cash_count: 0 }, run: null } })
+  apiClient.post.mockResolvedValue({ data: {} })
+  render(<CancellationRefundProgress eventId={7} status="cancelled" admin />)
+  await user.click(screen.getByRole('button', { name: 'View cancellation refunds' }))
+  expect(await screen.findByText('1 order · $42.50 still to resolve.')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Start refunds for this cancelled event' }))
+  expect(screen.getByText(/Review 1 order and \$42\.50 still to resolve/)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Confirm and start refunds' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/admin/events/7/start_cancellation_refunds', {
+    refund_count: 1, refund_total_cents: 4250,
+  })
+})
+
+it('labels a refreshed cash amount as the amount remaining to return', async () => {
+  const user = userEvent.setup()
+  apiClient.get.mockResolvedValue({ data: { preview: { count: 1, total_cents: 4250, cash_count: 1 },
+    run: { status: 'needs_attention', refunded: 0, pending: 0, failed: 0, needs_manual: 1, skipped: 0,
+      items: [{ id: 2, order_id: 5, order_reference: 'HP-CASH', amount_cents: 4250,
+        status: 'needs_manual', error: null }] } } })
+  render(<CancellationRefundProgress eventId={7} status="cancelled" canMarkCash />)
+  await user.click(screen.getByRole('button', { name: 'View cancellation refunds' }))
+  expect(await screen.findByText(/\$42\.50 remaining to return/)).toBeInTheDocument()
+})
+
 it('offers a retry when the first progress load fails', async () => {
   const user = userEvent.setup()
   apiClient.get.mockRejectedValueOnce(new Error('network down')).mockResolvedValueOnce({

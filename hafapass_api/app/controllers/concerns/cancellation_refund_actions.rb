@@ -37,16 +37,21 @@ module CancellationRefundActions
     item = run&.items&.find_by(order_id: params[:order_id])
     return render json: { error: "Cash refund item not found" }, status: :not_found unless item&.needs_manual?
 
-    item.with_lock do
-      raise Commerce::RefundCreator::RefundError, "Cash refund was already recorded" unless item.needs_manual?
-
-      refund = Commerce::RefundCreator.call(order: item.order, amount_cents: item.amount_cents,
-        reason: "event_cancelled_cash_return", requested_by: current_user, idempotency_key: item.refund_key,
-        cash_return: { reference: params[:reference], returned_at: params[:returned_at] })
-      item.update!(status: :refunded, last_error: nil) if refund.succeeded?
-      AuditLogger.record!(action: "event.cancellation_cash_refunded", auditable: @event, actor: current_user,
-        organization: @event.organization, metadata: { order_id: item.order_id, refund_id: refund.id,
-          amount_cents: refund.amount_cents }, request: request)
+    @event.organization.with_lock do
+      item.order.with_lock do
+        item.with_lock do
+          amount = EventCancellationRefunds.refresh_cash_item!(item, actor: current_user)
+          if item.needs_manual? && amount.positive?
+            refund = Commerce::RefundCreator.call(order: item.order, amount_cents: amount,
+              reason: "event_cancelled_cash_return", requested_by: current_user, idempotency_key: item.refund_key,
+              cash_return: { reference: params[:reference], returned_at: params[:returned_at] })
+            item.update!(status: :refunded, last_error: nil) if refund.succeeded?
+            AuditLogger.record!(action: "event.cancellation_cash_refunded", auditable: @event, actor: current_user,
+              organization: @event.organization, metadata: { order_id: item.order_id, refund_id: refund.id,
+                amount_cents: refund.amount_cents }, request: request)
+          end
+        end
+      end
     end
     EventCancellationRefundJob.perform_later(run.id)
     render json: cancellation_json

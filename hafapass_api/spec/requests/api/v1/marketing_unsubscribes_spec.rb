@@ -38,4 +38,27 @@ RSpec.describe "Marketing unsubscribe", type: :request do
     post "/api/v1/marketing/unsubscribe/#{token}"
     expect(MarketingUnsubscribe.where(organization: event.organization)).to exist
   end
+
+  it "keeps an unsubscribe made after the checkout choice when that order completes" do
+    event = create(:event)
+    order = create(:order, event: event, buyer_email: "buyer@example.com", marketing_opt_in: true,
+      status: :pending, created_at: 2.minutes.ago)
+    token = MarketingUnsubscribe.token(organization: event.organization, email: order.buyer_email)
+    post "/api/v1/marketing/unsubscribe/#{token}"
+
+    order.update!(status: :completed)
+    expect(MarketingUnsubscribe.where(organization: event.organization, email: order.buyer_email)).to exist
+  end
+
+  it "uses the latest unsubscribe click when the address was already suppressed" do
+    event = create(:event)
+    token = MarketingUnsubscribe.token(organization: event.organization, email: "buyer@example.com")
+    post "/api/v1/marketing/unsubscribe/#{token}"
+    order = create(:order, event: event, buyer_email: "buyer@example.com", marketing_opt_in: true,
+      status: :pending)
+    post "/api/v1/marketing/unsubscribe/#{token}"
+
+    order.update!(status: :completed)
+    expect(MarketingUnsubscribe.where(organization: event.organization, email: order.buyer_email)).to exist
+  end
 end

@@ -2,7 +2,7 @@
 
 # A checkout choice applies to the buyer's address for the whole organizer.
 # The newest completed checkout replaces an earlier choice; an explicit
-# unsubscribe remains effective until a newer affirmative checkout completes.
+# unsubscribe remains effective until a later affirmative checkout choice completes.
 class MarketingConsent
   def self.latest_order(organization:, email:)
     Order.joins(:event).where(events: { organization_id: organization.id },

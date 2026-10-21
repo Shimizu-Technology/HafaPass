@@ -15,13 +15,10 @@ class Api::V1::MarketingUnsubscribesController < ApplicationController
     organization, email = verified_identity
     return unless organization
 
-    MarketingUnsubscribe.find_or_create_by!(organization: organization, email: email) do |record|
-      record.unsubscribed_at = Time.current
+    organization.with_lock do
+      record = MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: email)
+      record.update!(unsubscribed_at: Time.current)
     end
-    render json: { organization: organization.name, unsubscribed: true }
-  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
-    raise unless MarketingUnsubscribe.exists?(organization: organization, email: email)
-
     render json: { organization: organization.name, unsubscribed: true }
   end
 

@@ -12,7 +12,7 @@ RSpec.describe EventCancellationRefundJob do
 
   before { allow(EmailService).to receive(:send_event_change_notifications_async) }
 
-  def paid_order(email:, method: nil, environment: "test")
+  def paid_order(email:, method: nil, environment: "live")
     order = create(:order, event: event, buyer_email: email, payment_method: method)
     type = create(:ticket_type, event: event)
     create(:order_item, order: order, ticket_type: type, quantity: 2, subtotal_cents: 5000,
@@ -108,6 +108,28 @@ RSpec.describe EventCancellationRefundJob do
     expect(run.reload).to be_completed
   end
 
+  it "refunds only the remainder after a partial lost dispute" do
+    order = paid_order(email: "partial-loss@example.com")
+    Dispute.create!(order: order, payment: order.payments.first, status: :lost,
+      provider: "stripe", provider_dispute_id: "dp-partial-loss", amount_cents: 1000,
+      currency: "usd", opened_at: 1.day.ago, closed_at: Time.current)
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    item = run.items.find_by!(order: order)
+    expect(item.amount_cents).to eq(4250)
+    expect(item).to be_pending
+    expect(EventCancellationRefunds.unresolved?(event)).to be(true)
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_partial_loss", status: "succeeded", amount: 4250, currency: "usd"))
+
+    described_class.perform_now(run.id)
+
+    expect(item.reload).to be_refunded
+    expect(order.refunds.succeeded.sum(:amount_cents)).to eq(4250)
+    expect(run.reload).to be_completed
+    expect(EventCancellationRefunds.unresolved?(event)).to be(false)
+  end
+
   it "recalculates the remaining balance after another partial refund" do
     order = paid_order(email: "partial@example.com")
     EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
@@ -160,7 +182,7 @@ RSpec.describe EventCancellationRefundJob do
   end
 
   it "records partial failure, resumes with a new key after a definite rejection, and retains payment environment" do
-    first = paid_order(email: "first@example.com")
+    first = paid_order(email: "first@example.com", environment: "test")
     second = paid_order(email: "second@example.com", environment: "live")
     EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
     run = event.reload.event_cancellation_refund_run
@@ -174,8 +196,7 @@ RSpec.describe EventCancellationRefundJob do
     expect(run.items.find_by!(order: first)).to be_failed
     expect(run.items.find_by!(order: second)).to be_refunded
     expect(run.reload).to be_needs_attention
-    expect { PayoutCreator.call(settlement: create(:settlement, event: event, organization: event.organization),
-      actor: actor, idempotency_key: "blocked-cancelled-payout") }.to raise_error(/Finish cancellation refunds/)
+    expect(EventCancellationRefunds.unresolved?(event)).to be(false)
 
     failed_item = run.items.find_by!(order: first)
     failed_item.update!(status: :pending, retry_generation: 1, last_error: nil)

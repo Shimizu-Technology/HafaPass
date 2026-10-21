@@ -3,7 +3,7 @@
 class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   include CancellationRefundActions
   before_action :set_cancellation_event, only: [:cancellation_refunds, :cancel_and_refund,
-    :retry_cancellation_refunds, :mark_cash_refunded]
+    :start_cancellation_refunds, :retry_cancellation_refunds, :mark_cash_refunded]
 
   def cancel_and_refund
     preview = EventCancellationRefunds.preview(@event)
@@ -17,6 +17,28 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
     render json: cancellation_json, status: :accepted
   rescue EventLifecycle::TransitionError => e
     render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def start_cancellation_refunds
+    run = nil
+    @event.with_lock do
+      unless @event.cancelled? && @event.event_cancellation_refund_run.nil?
+        return render json: { error: "Only a cancelled event without a refund run can be started" }, status: :conflict
+      end
+      preview = EventCancellationRefunds.preview(@event)
+      if !params.key?(:refund_count) || !params.key?(:refund_total_cents) ||
+          params[:refund_count].to_i != preview[:count] || params[:refund_total_cents].to_i != preview[:total_cents]
+        return render json: { error: "Refund total changed. Review the current count and amount before starting.",
+          preview: preview }, status: :conflict
+      end
+
+      run = EventCancellationRefunds.prepare!(event: @event, actor: current_user)
+      AuditLogger.record!(action: "event.legacy_cancellation_refunds_started", auditable: @event,
+        actor: current_user, organization: @event.organization,
+        metadata: { run_id: run.id }, request: request)
+    end
+    EventCancellationRefundJob.perform_later(run.id)
+    render json: cancellation_json, status: :accepted
   end
   # GET /api/v1/admin/events
   def index

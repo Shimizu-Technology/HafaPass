@@ -243,6 +243,7 @@ Rails.application.routes.draw do
           member do
             get :cancellation_refunds
             post :cancel_and_refund
+            post :start_cancellation_refunds
             post :retry_cancellation_refunds
             post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
           end
