@@ -17,6 +17,18 @@ RSpec.describe EventLifecycle do
     expect(event.event_state_changes.last.update(reason: "rewritten")).to be(false)
   end
 
+  it "keeps lifecycle transitions available for events with legacy invalid page design" do
+    event.update_columns(page_customization: { accent: "legacy-invalid" })
+    event.reload
+
+    described_class.call(event: event, action: :publish, actor: actor)
+    described_class.call(event: event, action: :postpone, actor: actor, reason: "Venue closure")
+    described_class.call(event: event, action: :cancel, actor: actor, reason: "Event cancelled")
+
+    expect(event.reload).to be_cancelled
+    expect(event.page_customization).to eq("accent" => "legacy-invalid")
+  end
+
   it "rejects an incomplete event with its publishing checklist" do
     event.ticket_types.destroy_all
 

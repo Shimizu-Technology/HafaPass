@@ -24,6 +24,9 @@ module Marketplace
         machine_translated: content[:machine_translated],
         original_content: content[:locale] == AppLocale::DEFAULT ? nil : event.slice(*Event::CONTENT_FIELDS),
         cover_image_url: event.cover_image_url,
+        page_customization: event.page_customization.is_a?(Hash) ?
+          event.page_customization.slice("focal_point", "accent") : {},
+        image_asset_host: S3Service.public_asset_host,
         starts_at: event.starts_at,
         ends_at: event.ends_at,
         timezone: event.timezone,

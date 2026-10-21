@@ -198,7 +198,7 @@ event1 = Event.create!(
   age_restriction: :all_ages,
   max_capacity: 3000,
   is_featured: true,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32856/10244887/a91b1e92e03f19017094d73739facdd6a15c1e9b35259a7ddd1665a4f13c7493/922f43db-8352-410e-a057-dd943d6c54ae.png"
+  cover_image_url: nil
 )
 
 # Event 2: Humåtak CHamoru Heritage Festival (FEATURED, upcoming)
@@ -220,7 +220,7 @@ event2 = Event.create!(
   age_restriction: :all_ages,
   max_capacity: 5000,
   is_featured: true,
-  cover_image_url: "https://guam.stripes.com/travel/cc6jnj-chamoru-heritage.jpg/alternates/LANDSCAPE_910/Chamoru-Heritage.jpg"
+  cover_image_url: nil
 )
 
 # Event 3: FIBA World Cup Qualifiers (upcoming)
@@ -242,7 +242,7 @@ event3 = Event.create!(
   age_restriction: :all_ages,
   max_capacity: 2500,
   is_featured: false,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/33143/10261224/dce11f39df6197871f2b01f5149c18b6f5c92ec1f53ca3b01d441bd3067c1c50/8625e216-218d-4e9c-ad0e-dcd0a7dfe462.png"
+  cover_image_url: nil
 )
 
 # Event 4: Scraps 6 — MMA/Boxing (upcoming)
@@ -264,7 +264,7 @@ event4 = Event.create!(
   age_restriction: :eighteen_plus,
   max_capacity: 800,
   is_featured: false,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32896/10297726/34647bbd177ac93cb8816747536ae8be36125d2d0f531d76e385422f99a06d5b/efe69b3b-94a1-4e9f-90a3-cc4b320e9e07.jpeg"
+  cover_image_url: nil
 )
 
 # Event 5: Tides of Fantasy — Renaissance Faire (this weekend, almost sold out)
@@ -286,7 +286,7 @@ event5 = Event.create!(
   age_restriction: :all_ages,
   max_capacity: 500,
   is_featured: true,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32904/10262262/9b4292ea3f5f5f96a8393de382bd097501febd126364a1e57d238c4df4a10a33/2f8b7ba3-2973-487e-a3fb-523574b915e6.jpg"
+  cover_image_url: nil
 )
 
 # Event 6: Full Moon Beach Party (nightlife, upcoming)
@@ -308,7 +308,7 @@ event6 = Event.create!(
   age_restriction: :twenty_one_plus,
   max_capacity: 500,
   is_featured: false,
-  cover_image_url: "https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=1200"
+  cover_image_url: nil
 )
 
 # Event 7: Safe Haven Gala (upcoming, formal)
@@ -330,7 +330,7 @@ event7 = Event.create!(
   age_restriction: :twenty_one_plus,
   max_capacity: 300,
   is_featured: false,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32933/10282525/d33db73fe173b9d2c35e61e12034392763972cd02229320a3655ba729ceca3ef/87eec079-2e26-4514-8e94-520ccbc7edb6.png"
+  cover_image_url: nil
 )
 
 # Event 8: The Mad Collab Block Party (upcoming, community)
@@ -352,7 +352,7 @@ event8 = Event.create!(
   age_restriction: :all_ages,
   max_capacity: 2000,
   is_featured: false,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32988/10260840/0ebf50cf2ea18ef783b2de31b4016fe834af186aeb4e845a79f362240ad27615/8a50fb54-beda-4a99-aadf-a54da1ff165f.png"
+  cover_image_url: nil
 )
 
 # Event 9: Neon Nights UV Glow Party (nightlife)
@@ -374,7 +374,7 @@ event9 = Event.create!(
   age_restriction: :eighteen_plus,
   max_capacity: 300,
   is_featured: false,
-  cover_image_url: "https://images.unsplash.com/photo-1574391884720-bbc3740c59d1?w=1200"
+  cover_image_url: nil
 )
 
 # Event 10: Draft event (organizer hasn't published yet)

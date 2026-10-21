@@ -4,7 +4,7 @@ FactoryBot.define do
     association :organization
     business_name { "Island Nights Promotions" }
     business_description { "Premier nightlife events on Guam" }
-    logo_url { "https://example.com/logo.png" }
+    logo_url { nil }
     stripe_account_id { nil }
     is_ambros_partner { false }
 

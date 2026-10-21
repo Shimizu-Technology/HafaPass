@@ -9,6 +9,13 @@ RSpec.describe "Marketplace discovery", type: :request do
   end
   let!(:ticket_type) { create(:ticket_type, event: event, price_cents: 2000) }
 
+  it "includes the image asset host on organizer listing and detail responses" do
+    get "/api/v1/organizers"
+    expect(response.parsed_body.fetch("organizers").first).to include("image_asset_host" => S3Service.public_asset_host)
+    get "/api/v1/organizers/#{profile.organization.slug}"
+    expect(response.parsed_body).to include("image_asset_host" => S3Service.public_asset_host)
+  end
+
   it "publishes non-empty curated collections and credibility pages" do
     collection = create(:marketplace_collection, title: "Family Weekend")
     collection.marketplace_collection_events.create!(event: event, position: 0)

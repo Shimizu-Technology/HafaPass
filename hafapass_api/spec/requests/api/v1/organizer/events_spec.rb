@@ -6,6 +6,26 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
   let(:headers) { auth_headers(user) }
 
   describe "GET /api/v1/organizer/events" do
+    it "loads inventory and site settings in a fixed number of queries as the list grows" do
+      4.times do
+        event = create(:event, organizer_profile: organizer_profile)
+        ticket_type = create(:ticket_type, event: event)
+        create(:pricing_tier, ticket_type: ticket_type)
+      end
+      queries = []
+      callback = ->(_name, _started, _finished, _id, payload) {
+        queries << payload[:sql] if payload[:sql]&.match?(/FROM "(?:inventory_holds|waitlist_offers|seat_holds|site_settings)"/)
+      }
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        get "/api/v1/organizer/events", headers: headers
+      end
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("events").size).to eq(4)
+      expect(queries.grep(/inventory_holds/).size).to be <= 2
+      expect(queries.grep(/waitlist_offers/).size).to be <= 2
+      expect(queries.grep(/seat_holds/).size).to be <= 2
+      expect(queries.grep(/site_settings/).size).to be <= 3
+    end
     it "returns the organizer's events" do
       event1 = create(:event, organizer_profile: organizer_profile, title: "Event 1")
       event2 = create(:event, :published, organizer_profile: organizer_profile, title: "Event 2")
@@ -267,6 +287,44 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
   describe "PUT /api/v1/organizer/events/:id" do
     let!(:event) { create(:event, organizer_profile: organizer_profile, title: "Original Title") }
+
+    it "saves and audits page design through event edit permission" do
+      ImageUploadReceipt.create!(user: user, organization: event.organization, event: event,
+        source_key: "pending/test/page", final_key: "uploads/test/page.webp",
+        public_url: "https://storage.invalid/uploads/p.webp", completed_at: Time.current)
+      design = { accent: "#123456", gallery: [{ url: "https://storage.invalid/uploads/p.webp", alt: "Stage" }],
+        sections: [{ type: "gallery", enabled: true, items: [] }] }
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: design }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization).to include("accent" => "#123456")
+      expect(response.parsed_body["page_customization"]["gallery"].first["alt"]).to eq("Stage")
+      expect(event.event_changes).to be_empty
+      audit = AuditLog.find_by!(auditable: event, action: "event.page_customized")
+      expect(audit.actor_user).to eq(user)
+      expect(audit.before_data).to eq("page_customization" => {})
+      expect(audit.after_data.dig("page_customization", "accent")).to eq("#123456")
+      expect(OrderPresenter.call(create(:order, event: event))[:latest_event_change]).to be_nil
+      expect(response.parsed_body["seller"]["seller_name"]).to be_present
+    end
+
+    it "allows content editors and platform admins to change design" do
+      membership = event.organization.organization_memberships.find_by!(user: user)
+      membership.update!(role: :marketer)
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "#123456" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization["accent"]).to eq("#123456")
+      user.update!(role: :admin)
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "#654321" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization["accent"]).to eq("#654321")
+    end
+
+    it "rejects invalid page design without persisting or auditing it" do
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "url(javascript:evil)" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(event.reload.page_customization).to eq({})
+      expect(event.event_changes).to be_empty
+    end
 
     it "updates the event" do
       put "/api/v1/organizer/events/#{event.id}", params: { title: "Updated Title" }, headers: headers

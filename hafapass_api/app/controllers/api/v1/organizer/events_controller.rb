@@ -11,7 +11,10 @@ module Api
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(:organization, :organizer_profile, :event_seating_configuration, ticket_types: :pricing_tiers)
+            .includes(:organization, :organizer_profile, :event_seating_configuration,
+              ticket_types: [:waitlist_offers, { pricing_tiers: [:inventory_holds, :waitlist_offers,
+                :active_precheckout_seat_holds] }, { inventory_holds: :order }, { tickets: :order },
+                { event_seats: :active_precheckout_seat_holds }])
             .order(created_at: :desc, id: :desc)
           if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
             assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner]).select(:event_id)
@@ -87,7 +90,7 @@ module Api
               user: current_user, organization: current_organization, permission: :manage_events, event: @event
             )
             unless can_manage
-              attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category")
+              attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category", "page_customization")
             end
             attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
             reschedule = reschedule?(attributes)
@@ -98,7 +101,13 @@ module Api
             end
 
             before_data = event_change_snapshot(@event) if reschedule
+            previous_design = @event.page_customization.deep_dup if attributes.key?("page_customization")
             updated = @event.update(attributes)
+            if updated && previous_design && previous_design != @event.page_customization
+              AuditLogger.record!(action: "event.page_customized", auditable: @event, actor: current_user,
+                before_data: { page_customization: previous_design },
+                after_data: { page_customization: @event.page_customization }, request: request)
+            end
             if updated && reschedule
               event_change = @event.event_changes.create!(
                 actor_user: current_user,
@@ -376,7 +385,8 @@ module Api
             :category, :age_restriction, :max_capacity,
             :recurrence_rule, :recurrence_end_date, :show_attendees,
             :fee_policy, :buyer_fee_percent, :transfers_enabled, supported_locales: [],
-            localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS }
+            localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS },
+            page_customization: {}
           )
         end
 
@@ -414,7 +424,7 @@ module Api
 
         def clone_event(source, overrides = {})
           attrs = source.attributes.slice(
-            "title", "description", "short_description", "cover_image_url",
+            "title", "description", "short_description", "cover_image_url", "page_customization",
             "venue_name", "venue_address", "venue_city", "timezone",
             "category", "age_restriction", "max_capacity",
             "show_attendees"
@@ -508,6 +518,10 @@ module Api
             description: event.description,
             short_description: event.short_description,
             cover_image_url: event.cover_image_url,
+            page_customization: event.page_customization,
+            image_asset_host: S3Service.public_asset_host,
+            seller: SellerIdentity.for_event(event, platform_name: listing_settings.platform_name).as_json,
+            service_fee_includes_processing: listing_settings.platform_bears_processing?,
             venue_name: event.venue_name,
             venue_address: event.venue_address,
             venue_city: event.venue_city,
@@ -542,7 +556,7 @@ module Api
             updated_at: event.updated_at
           }
 
-          json[:publish_checklist] = event.publish_checklist
+          json[:publish_checklist] = event.publish_checklist(organizer_agreement: listing_organizer_agreement)
           json[:state_history] = event.event_state_changes.order(occurred_at: :desc).limit(20).map do |change|
             {
               action: change.action,
@@ -554,12 +568,22 @@ module Api
           end
 
           if include_ticket_types
-            json[:ticket_types] = event.ticket_types.order(:sort_order, :id).map do |tt|
+            ticket_types = event.ticket_types.loaded? ? event.ticket_types.sort_by { |type| [type.sort_order || 0, type.id] } :
+              event.ticket_types.order(:sort_order, :id)
+            json[:ticket_types] = ticket_types.map do |tt|
+              price = tt.current_price_cents
+              fee = Commerce::ServiceFee.for_event(event, price, terms: listing_fee_terms)
               {
                 id: tt.id,
                 name: tt.name,
                 description: tt.description,
                 price_cents: tt.price_cents,
+                current_price_cents: price,
+                all_in_price_cents: fee.all_in_price_cents,
+                service_fee_cents: fee.buyer_fee_cents,
+                regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents, terms: listing_fee_terms).all_in_price_cents,
+                quantity_remaining: tt.available_quantity,
+                on_sale: tt.on_sale?,
                 quantity_available: tt.quantity_available,
                 quantity_sold: tt.quantity_sold,
                 door_allocation: tt.door_allocation,
@@ -575,6 +599,18 @@ module Api
           end
 
           json
+        end
+
+        def listing_settings
+          @listing_settings ||= SiteSetting.instance
+        end
+
+        def listing_fee_terms
+          @listing_fee_terms ||= Commerce::ServiceFee.terms(listing_settings)
+        end
+
+        def listing_organizer_agreement
+          @listing_organizer_agreement ||= PolicyRegistry.organizer_agreement
         end
       end
     end

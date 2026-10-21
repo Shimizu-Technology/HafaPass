@@ -301,7 +301,7 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def event_change_response
-    change = @order.event.event_changes.find_by(id: params[:event_change_id])
+    change = @order.event.event_changes.buyer_visible.find_by(id: params[:event_change_id])
     return render json: { error: "Event change not found" }, status: :not_found unless change
 
     decision = params[:decision].to_s

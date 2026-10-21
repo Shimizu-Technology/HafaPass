@@ -1,6 +1,24 @@
 require "rails_helper"
 
 RSpec.describe OrderPresenter do
+  it "includes the public image asset host with the cover URL" do
+    order = create(:order)
+    expect(described_class.call(order).fetch(:event)).to include(
+      cover_image_url: order.event.cover_image_url, image_asset_host: S3Service.public_asset_host
+    )
+  end
+  [false, true].each do |preloaded|
+    it "ignores legacy cosmetic event changes with event changes preloaded=#{preloaded}" do
+      order = create(:order)
+      material = order.event.event_changes.create!(change_type: "postponed", occurred_at: 2.hours.ago)
+      cosmetic = order.event.event_changes.create!(change_type: "rescheduled", occurred_at: 1.hour.ago)
+      EventChange.where(id: cosmetic.id).update_all(change_type: "customized")
+      order.event.event_changes.reload if preloaded
+
+      expect(described_class.call(order)[:latest_event_change][:id]).to eq(material.id)
+    end
+  end
+
   it "preserves original allocations while reporting cancelled tickets as non-refundable" do
     order = create(:order, subtotal_cents: 2_000, service_fee_cents: 200, total_cents: 2_200)
     ticket_type = create(:ticket_type, event: order.event, price_cents: 1_000)

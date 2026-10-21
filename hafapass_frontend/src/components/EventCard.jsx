@@ -1,3 +1,4 @@
+import { focalPosition, approvedImageUrl } from '../utils/eventPageDesign'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
 import { Link, useLocation } from 'react-router-dom'
@@ -26,11 +27,13 @@ export default function EventCard({ event }) {
     >
       {/* Image */}
       <div className="aspect-[16/10] overflow-hidden bg-gradient-to-br from-brand-100 to-brand-200 relative rounded-t-2xl">
-        {event.cover_image_url ? (
+        {approvedImageUrl(event.cover_image_url, event.image_asset_host) ? (
           <img
             src={event.cover_image_url}
             alt={content.title}
+            width="800" height="500"
             className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+            style={{ objectPosition: focalPosition(event.page_customization) }}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">

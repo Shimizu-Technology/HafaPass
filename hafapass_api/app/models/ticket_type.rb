@@ -72,10 +72,19 @@ class TicketType < ApplicationRecord
   end
 
   def door_sold_quantity
+    if tickets.loaded? && tickets.all? { |ticket| ticket.association(:order).loaded? }
+      return tickets.count { |ticket| !ticket.cancelled? && ticket.order.source == "box_office" }
+    end
+
     tickets.joins(:order).where(orders: { source: "box_office" }).where.not(status: :cancelled).count
   end
 
   def door_held_quantity
+    if inventory_holds.loaded? && inventory_holds.all? { |hold| hold.association(:order).loaded? }
+      return inventory_holds.sum { |hold| hold.active? && hold.expires_at > Time.current &&
+        hold.order.source == "box_office" ? hold.quantity : 0 }
+    end
+
     inventory_holds.current.joins(:order).where(orders: { source: "box_office" }).sum(:quantity)
   end
 

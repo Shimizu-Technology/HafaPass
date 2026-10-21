@@ -124,6 +124,26 @@ RSpec.describe "Buyer order access", type: :request do
     expect(change.event_change_responses.find_by(order: order).decision).to eq("accepted")
   end
 
+  it "hides legacy cosmetic changes and rejects a refund request for their IDs" do
+    material = event.event_changes.create!(change_type: "rescheduled", occurred_at: 2.hours.ago)
+    cosmetic = event.event_changes.create!(change_type: "rescheduled", occurred_at: 1.hour.ago)
+    EventChange.where(id: cosmetic.id).update_all(change_type: "customized")
+    cosmetic.reload
+    allow(Commerce::RefundCreator).to receive(:call)
+
+    get "/api/v1/orders/#{order.id}", headers: access_headers
+    expect(response.parsed_body.dig("latest_event_change", "id")).to eq(material.id)
+
+    post "/api/v1/orders/#{order.id}/event_change_response",
+      params: { event_change_id: cosmetic.id, decision: "refund_requested" },
+      headers: access_headers.merge("Idempotency-Key" => SecureRandom.uuid)
+    expect(response).to have_http_status(:not_found)
+    expect(cosmetic.event_change_responses).to be_empty
+    expect(Commerce::RefundCreator).not_to have_received(:call)
+    expect(cosmetic.event_change_responses.build(order: order, decision: "accepted", responded_at: Time.current)).not_to be_valid
+    expect { EmailService.send_event_change_notifications_async(cosmetic) }.not_to change(MessageDelivery, :count)
+  end
+
   it "rejects a changed decision before performing refund side effects" do
     change = event.event_changes.create!(change_type: "rescheduled", reason: "Later start",
       before_data: {}, after_data: {}, occurred_at: Time.current)

@@ -166,3 +166,9 @@
 @media (prefers-reduced-motion: reduce) {
   .host-preview-front, .host-preview-back, .host-preview-check { animation: none; }
 }
+
+/* Event-specific accents stay inside the public event page. The ticket layout is fixed. */
+.event-customized .btn-primary, .event-customized .event-buy { background: var(--event-accent); color: var(--event-on-accent); border: 1px solid var(--event-link); }
+.event-customized .btn-primary:hover { box-shadow: inset 0 0 0 2px var(--event-on-accent); }
+.event-customized .event-link, .event-customized .event-heading, .event-customized .text-brand-600, .event-customized .text-brand-700, .event-customized .prose h2 { color: var(--event-link); }
+.event-customized a:not(.btn-primary):hover { text-decoration: underline; }
