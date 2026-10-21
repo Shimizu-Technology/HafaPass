@@ -2,9 +2,10 @@ import { formatMoneyCents } from './money'
 
 // Organizer pricing for the public host page. Every number comes from the
 // public `/config` response; nothing here assumes a rate. The fee math mirrors
-// Commerce::OrderCreator#calculate_totals: a percentage of the order's ticket
-// subtotal (rounded half up to the cent) plus a flat amount per ticket, and no
-// fee at all when the tickets are free.
+// Commerce::ServiceFee, which checkout uses: per ticket, a percentage of the
+// ticket price (rounded half up to the cent) plus the flat amount, times the
+// quantity, and no fee at all when the tickets are free. The shared fixture
+// serviceFeeParity.json is checked against both implementations.
 
 export const MAX_TICKET_PRICE_CENTS = 10_000_00
 export const MAX_QUANTITY = 1000
@@ -73,10 +74,11 @@ export function parseQuantityInput(input) {
 }
 
 export function serviceFeeCents({ priceCents, quantity, pricing }) {
-  const subtotal = priceCents * quantity
-  if (subtotal <= 0) return 0
-  // Integer half-up rounding avoids float drift (e.g. 5% of $10.10).
-  return Math.floor((subtotal * pricing.basisPoints + 5000) / 10000) + quantity * pricing.flatCents
+  if (priceCents <= 0 || quantity <= 0) return 0
+  // Rounded per ticket, like checkout. Integer half-up rounding avoids float
+  // drift (e.g. 5% of $10.10 is 50.5 cents, charged as 51 on every ticket).
+  const perTicket = Math.floor((priceCents * pricing.basisPoints + 5000) / 10000) + pricing.flatCents
+  return perTicket * quantity
 }
 
 // Both ways an organizer can handle the fee, for one order, before any card

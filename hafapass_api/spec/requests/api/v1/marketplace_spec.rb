@@ -61,6 +61,30 @@ RSpec.describe "Marketplace discovery", type: :request do
     expect(ids).not_to include(increased.id)
   end
 
+  it "filters price bands on the all-in price shown on cards, not the base price" do
+    SiteSetting.instance.update!(service_fee_percent: 5.0, service_fee_flat_cents: 100)
+    # $23.50 + (5% = $1.18) + $1.00 = $25.68 all-in: over $25 for buyers.
+    over = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+      starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours)
+    create(:ticket_type, event: over, price_cents: 2350)
+    # The same ticket with the fee absorbed is $23.50 all-in.
+    absorbed = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+      starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours, fee_policy: :organizer_absorbs, buyer_fee_percent: 0)
+    create(:ticket_type, event: absorbed, price_cents: 2350)
+    # $22.85 + $1.14 + $1.00 = $24.99, half of a split fee keeps it lower still.
+    under = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+      starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours)
+    create(:ticket_type, event: under, price_cents: 2285)
+
+    get "/api/v1/events", params: { price: "under_25", per_page: 50 }
+
+    ids = response.parsed_body.fetch("events").pluck("id")
+    expect(ids).to include(absorbed.id, under.id)
+    expect(ids).not_to include(over.id)
+    listed = response.parsed_body.fetch("events").find { |item| item["id"] == under.id }
+    expect(listed.fetch("ticket_types").sole.fetch("all_in_price_cents")).to eq(2499)
+  end
+
   it "moves to the next effective price when assigned-seat holds exhaust a quantity tier" do
     tiered_event = create(:event, :published, organizer_profile: profile, organization: profile.organization,
       venue: venue, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 2.hours)

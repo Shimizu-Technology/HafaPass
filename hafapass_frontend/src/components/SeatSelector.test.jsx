@@ -34,6 +34,22 @@ describe('SeatSelector', () => {
     apiClient.post.mockResolvedValue({ data: { token: 'seat-token', expires_at: '2026-07-21T03:00:00Z' } })
   })
 
+  it('shows online buyers all-in seat prices and the box office the seat price', async () => {
+    const priced = { ...map, sections: map.sections.map(section => ({ ...section, rows: section.rows.map(row => ({ ...row,
+      seats: row.seats.map(seat => ({ ...seat, all_in_price_cents: 2725, service_fee_cents: 225 })) })) })) }
+    apiClient.get.mockResolvedValue({ data: priced })
+    const { unmount } = render(<SeatSelector event={{ slug: 'guam-show' }} onReserved={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Main floor, row A, seat 1, Reserved, \$27\.25/ }))
+    expect(screen.getByText('Main floor · Row A · Seat 1 · $27.25')).toBeInTheDocument()
+    expect(screen.getByText('Includes $2.25 service fee')).toBeInTheDocument()
+    unmount()
+
+    render(<SeatSelector event={{ slug: 'guam-show' }} source="box_office" onReserved={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Main floor, row A, seat 1, Reserved, \$25\.00/ }))
+    expect(screen.getByText('Main floor · Row A · Seat 1 · $25.00')).toBeInTheDocument()
+    expect(screen.queryByText(/service fee/)).not.toBeInTheDocument()
+  })
+
   it('reserves keyboard-selectable seats and returns grouped ticket lines', async () => {
     const onReserved = vi.fn()
     render(<SeatSelector event={{ slug: 'guam-show' }} onReserved={onReserved} />)

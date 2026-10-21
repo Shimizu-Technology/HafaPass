@@ -30,7 +30,12 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
     section.rows.flatMap(row => row.seats.map(seat => ({ ...seat, section: section.name, row: row.label })))
   ) || [], [map])
   const selected = seats.filter(seat => selectedIds.includes(seat.id))
-  const totalCents = selected.reduce((sum, seat) => sum + seat.price_cents, 0)
+  // Online buyers see all-in seat prices (seat + their service fee); door
+  // sales carry no service fee, so the box office sees the seat price.
+  const allIn = source === 'online'
+  const seatPrice = seat => allIn && Number.isSafeInteger(seat.all_in_price_cents) ? seat.all_in_price_cents : seat.price_cents
+  const totalCents = selected.reduce((sum, seat) => sum + seatPrice(seat), 0)
+  const totalFeeCents = allIn ? selected.reduce((sum, seat) => sum + (Number.isSafeInteger(seat.service_fee_cents) ? seat.service_fee_cents : 0), 0) : 0
   const requiresAttestation = selected.some(seat => seat.requires_accessibility_attestation)
 
   const toggleSeat = (seat) => {
@@ -111,7 +116,7 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
                       const description = [
                         `${section.name}, row ${row.label}, seat ${seat.label}`,
                         seat.ticket_type_name,
-                        money(seat.price_cents),
+                        money(seatPrice(seat)),
                         accessible ? seat.accessibility_kind.replace('_', ' ') : null,
                         seat.obstructed_view ? `obstructed view${seat.view_note ? `: ${seat.view_note}` : ''}` : null,
                         unavailable ? seat.status : 'available',
@@ -153,10 +158,13 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
             <div>
               <p className="font-semibold text-neutral-900">{selected.length} seat{selected.length === 1 ? '' : 's'} selected</p>
               <ul className="mt-1 text-sm text-neutral-600">
-                {selected.map(seat => <li key={seat.id}>{seat.display_label} · {money(seat.price_cents)}</li>)}
+                {selected.map(seat => <li key={seat.id}>{seat.display_label} · {money(seatPrice(seat))}</li>)}
               </ul>
             </div>
-            <p className="font-semibold text-neutral-900">{money(totalCents)}</p>
+            <div className="text-right">
+              <p className="font-semibold text-neutral-900">{money(totalCents)}</p>
+              {totalFeeCents > 0 && <p className="text-xs text-neutral-500">Includes {money(totalFeeCents)} service fee</p>}
+            </div>
           </div>
           {requiresAttestation && (
             <label className="mt-4 flex items-start gap-3 rounded-xl bg-blue-50 p-3 text-sm text-blue-950">

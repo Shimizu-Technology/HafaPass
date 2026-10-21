@@ -98,6 +98,7 @@ class Api::V1::TicketsController < ApplicationController
         timezone: ticket.event.timezone,
         cover_image_url: ticket.event.cover_image_url
       },
+      seller: SellerIdentity.for_event(ticket.event).as_json,
       ticket_type: {
         id: ticket.ticket_type.id,
         name: ticket.ticket_type.name,

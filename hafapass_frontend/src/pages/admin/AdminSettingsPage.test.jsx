@@ -51,6 +51,8 @@ describe('AdminSettingsPage', () => {
     expect(dialog).toHaveTextContent('Existing orders, settlements and payouts keep the terms')
     expect(dialog).toHaveTextContent('$1.00')
     expect(dialog).toHaveTextContent('$0.75')
+    expect(within(dialog).getByTestId('policy-terms-effect')).toHaveTextContent('Every organizer must accept the updated agreement')
+    expect(within(dialog).getByTestId('policy-terms-effect')).toHaveTextContent('needs a new approval')
     expect(apiClient.patch).not.toHaveBeenCalled()
     await user.click(within(dialog).getByRole('button', { name: 'Save fee terms' }))
 

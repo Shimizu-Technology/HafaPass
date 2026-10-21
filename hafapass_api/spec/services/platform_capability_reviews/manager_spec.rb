@@ -13,6 +13,36 @@ RSpec.describe PlatformCapabilityReviews::Manager do
     }
   end
 
+  # Generic examples model counsel-approved policy text; the draft path is below.
+  before { allow(PolicyRegistry).to receive(:draft?).and_return(false) }
+
+  it "approves draft policies for launch only with the explicit acknowledgment, and records it" do
+    allow(PolicyRegistry).to receive(:draft?).and_call_original
+    expect(PolicyRegistry).to be_draft
+    submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
+
+    expect do
+      described_class.approve!(submission: submission, actor: approver)
+    end.to raise_error(described_class::ReviewError, /approving draft policies for launch before legal review/)
+
+    approval = described_class.approve!(submission: submission, actor: approver, draft_policies_acknowledged: true)
+    expect(approval).to be_active
+    expect(approval.reason).to eq(PolicyRegistry::DRAFT_ACKNOWLEDGMENT)
+    log = AuditLog.find_by!(auditable: approval, action: "platform_capability.approved")
+    expect(log.metadata).to include("draft_policies_acknowledged" => true, "policy_version" => PolicyRegistry.version)
+    expect(log.after_data).to include("reason" => PolicyRegistry::DRAFT_ACKNOWLEDGMENT)
+  end
+
+  it "blocks approval only for technical problems in the policy text" do
+    allow(PolicyRegistry).to receive(:approval_blockers).and_return(["Unfilled template placeholders remain in: Buyer Terms"])
+    submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
+
+    expect do
+      described_class.approve!(submission: submission, actor: approver, draft_policies_acknowledged: true)
+    end.to raise_error(described_class::ReviewError, /technical problems: Unfilled template placeholders/)
+    expect(PlatformCapabilities.enabled?("policy_register")).to be(false)
+  end
+
   it "requires a second administrator before enabling an exact evidence snapshot" do
     submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
 
