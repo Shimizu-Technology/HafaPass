@@ -141,6 +141,7 @@ describe('hosting entry navigation', () => {
     expect(within(featured).getByRole('heading', { name: 'A real catalog event' })).toBeInTheDocument()
     expect(within(featured).getByRole('link', { name: 'Get Tickets' })).toHaveAttribute('href', '/events/no-art')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(within(featured).getByText('Event artwork unavailable')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Food & Drink' })).toHaveAttribute('href', '/events?category=dining')
     expect(screen.getByRole('link', { name: 'Classes & Workshops' })).toHaveAttribute('href', '/events?category=workshop')
   })

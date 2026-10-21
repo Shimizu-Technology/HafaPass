@@ -1,6 +1,12 @@
 require "rails_helper"
 
 RSpec.describe OrderPresenter do
+  it "includes the public image asset host with the cover URL" do
+    order = create(:order)
+    expect(described_class.call(order).fetch(:event)).to include(
+      cover_image_url: order.event.cover_image_url, image_asset_host: S3Service.public_asset_host
+    )
+  end
   [false, true].each do |preloaded|
     it "ignores legacy cosmetic event changes with event changes preloaded=#{preloaded}" do
       order = create(:order)

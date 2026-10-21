@@ -13,7 +13,7 @@ class OrganizerProfile < ApplicationRecord
   validates :user_id, uniqueness: true, allow_nil: true
 
   def logo_image_is_approved
-    return unless new_record? || will_save_change_to_logo_url?
+    return unless new_record? || will_save_change_to_logo_url? || will_save_change_to_organization_id?
     return if logo_url.blank? || ApprovedImageUrl.valid?(logo_url, organization_id: organization_id)
 
     errors.add(:logo_url, ApprovedImageUrl::MESSAGE)

@@ -1,4 +1,4 @@
-import { approvedImageUrl } from '../utils/eventPageDesign'
+import { approvedImageUrl, focalPosition } from '../utils/eventPageDesign'
 import useContentLanguage from '../hooks/useContentLanguage'
 import BuyerEventText from '../components/BuyerEventText'
 import BuyerTicketTypeText from '../components/BuyerTicketTypeText'
@@ -581,7 +581,7 @@ function CheckoutContent({ buyerId }) {
         <div className="card p-4 mb-6 flex items-center gap-4">
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden flex-shrink-0">
-              <img src={event.cover_image_url} alt={event.title} className="w-full h-full object-cover" />
+              <img src={event.cover_image_url} alt={event.title} className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
             </div>
           )}
           <div className="min-w-0">

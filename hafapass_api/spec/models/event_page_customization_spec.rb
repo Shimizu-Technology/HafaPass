@@ -79,4 +79,24 @@ RSpec.describe Event, type: :model do
       items: [{ name: "Mia", url: "" }] },
       { type: "sponsors", enabled: true, items: [{ name: "Partner", logo_url: image, url: "" }] }] })).to be(true)
   end
+
+  it "names each invalid page field without blaming unrelated image URLs" do
+    cases = [
+      [{ accent: "red" }, /accent must be a six-digit hex color/],
+      [{ focal_point: { x: "50", y: 20 } }, /focal point/],
+      [{ description_format: "html" }, /description format/],
+      [{ gallery: [{ url: image, alt: "Stage" }, { url: image, alt: " " }] }, /gallery photo 2 needs alt text/],
+      [{ gallery: Array.new(9) { { url: image, alt: "Stage" } } }, /at most 8 photos/],
+      [{ sections: [{ type: "video", enabled: true, url: "https://example.invalid/watch" }] }, /video URL/],
+      [{ sections: [{ type: "links", enabled: true, items: [{ label: "Bad", kind: "website", url: "javascript:alert(1)" }] }] }, /unsafe link/],
+      [{ sections: [{ type: "faq", enabled: true, items: Array.new(21) { { question: "Q", answer: "A" } } }] }, /at most 20 items/]
+    ]
+    cases.each do |design, message|
+      expect(accepts?(design)).to be(false)
+      expect(event.errors.full_messages.join(" ")).to match(message)
+      expect(event.errors.full_messages.join(" ")).not_to include(ApprovedImageUrl::MESSAGE)
+    end
+    expect(accepts?({ gallery: [{ url: "https://example.invalid/unverified.webp", alt: "Stage" }] })).to be(false)
+    expect(event.errors.full_messages.join(" ")).to include(ApprovedImageUrl::MESSAGE)
+  end
 end

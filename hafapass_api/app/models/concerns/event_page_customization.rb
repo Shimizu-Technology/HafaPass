@@ -16,11 +16,11 @@ module EventPageCustomization
     @approved_page_image_urls = urls.empty? ? [] : ImageUploadReceipt.where(
       organization_id: organization_id, public_url: urls
     ).where.not(completed_at: nil).pluck(:public_url)
-    return if valid_accent?(data["accent"]) && valid_focal?(data["focal_point"]) &&
-      [nil, "plain", "markdown"].include?(data["description_format"]) &&
-      valid_gallery?(data["gallery"]) && valid_sections?(data["sections"])
-
-    errors.add(:page_customization, "is invalid; image URLs #{ApprovedImageUrl::MESSAGE}")
+    errors.add(:page_customization, "accent must be a six-digit hex color") unless valid_accent?(data["accent"])
+    errors.add(:page_customization, "focal point must have x and y between 0 and 100") unless valid_focal?(data["focal_point"])
+    errors.add(:page_customization, "description format must be plain or markdown") unless [nil, "plain", "markdown"].include?(data["description_format"])
+    validate_gallery_feedback(data["gallery"])
+    validate_sections_feedback(data["sections"])
   rescue JSON::GeneratorError
     errors.add(:page_customization, "is invalid")
   ensure
@@ -67,6 +67,81 @@ module EventPageCustomization
       valid_fields?(photo, required: %w[url alt], optional: %w[caption]) &&
         valid_image?(photo["url"]) && valid_text?(photo["alt"], 200, required: true) &&
         valid_text?(photo["caption"], 300)
+    end
+  end
+
+  def validate_gallery_feedback(gallery)
+    return if gallery.nil?
+    return errors.add(:page_customization, "gallery must be a list of at most 8 photos") unless gallery.is_a?(Array) && gallery.size <= 8
+
+    gallery.each_with_index do |photo, index|
+      label = "gallery photo #{index + 1}"
+      unless valid_fields?(photo, required: %w[url alt], optional: %w[caption])
+        errors.add(:page_customization, "#{label} has missing or unknown fields")
+        next unless photo.is_a?(Hash)
+      end
+      errors.add(:page_customization, "#{label} URL #{ApprovedImageUrl::MESSAGE}") unless valid_image?(photo["url"])
+      errors.add(:page_customization, "#{label} needs alt text (up to 200 characters)") unless valid_text?(photo["alt"], 200, required: true)
+      errors.add(:page_customization, "#{label} caption must be at most 300 characters") unless valid_text?(photo["caption"], 300)
+    end
+  end
+
+  def validate_sections_feedback(sections)
+    return if sections.nil?
+    return errors.add(:page_customization, "sections must be a list of at most #{SECTION_TYPES.size}") unless sections.is_a?(Array) && sections.size <= SECTION_TYPES.size
+
+    seen = []
+    sections.each_with_index do |section, index|
+      label = "section #{index + 1}"
+      unless section.is_a?(Hash) && SECTION_TYPES.include?(section["type"])
+        errors.add(:page_customization, "#{label} has an invalid type")
+        next
+      end
+      type = section["type"]
+      errors.add(:page_customization, "#{type} section is duplicated") if seen.include?(type)
+      seen << type
+      errors.add(:page_customization, "#{type} section must be enabled or disabled") unless [true, false].include?(section["enabled"])
+      if type == "video"
+        errors.add(:page_customization, "video section has missing or unknown fields") unless section.keys.sort == %w[enabled type url]
+        if section["enabled"] ? !valid_video?(section["url"]) : section["url"] != "" && !valid_video?(section["url"])
+          errors.add(:page_customization, "video URL must be a valid YouTube or Vimeo HTTPS link")
+        end
+        next
+      end
+      errors.add(:page_customization, "#{type} section has missing or unknown fields") unless section.keys.sort == %w[enabled items type]
+      items = section["items"]
+      unless items.is_a?(Array) && items.size <= 20
+        errors.add(:page_customization, "#{type} section must have at most 20 items")
+        next
+      end
+      if type == "gallery"
+        errors.add(:page_customization, "gallery section items must be empty; use the gallery photos") unless items.empty?
+        next
+      end
+      schema = {
+        "lineup" => [%w[name], %w[role photo_url url]], "schedule" => [%w[time title], %w[note]],
+        "faq" => [%w[question answer], []], "sponsors" => [%w[name logo_url], %w[url]],
+        "links" => [%w[label url kind], []]
+      }.fetch(type)
+      items.each_with_index do |item, item_index|
+        item_label = "#{type} item #{item_index + 1}"
+        unless valid_fields?(item, required: schema[0], optional: schema[1])
+          errors.add(:page_customization, "#{item_label} has missing or unknown fields")
+          next unless item.is_a?(Hash)
+        end
+        item.each do |key, value|
+          case key
+          when "url"
+            errors.add(:page_customization, "#{item_label} has an unsafe link; use an HTTPS URL") unless (schema[1].include?(key) && value.blank?) || valid_web?(value)
+          when "photo_url", "logo_url"
+            errors.add(:page_customization, "#{item_label} image URL #{ApprovedImageUrl::MESSAGE}") unless valid_image?(value)
+          when "kind"
+            errors.add(:page_customization, "#{item_label} has an invalid link kind") unless LINK_TYPES.include?(value)
+          else
+            errors.add(:page_customization, "#{item_label} #{key} is missing or too long") unless valid_text?(value, key == "answer" ? 1000 : 200, required: schema[0].include?(key))
+          end
+        end
+      end
     end
   end
 

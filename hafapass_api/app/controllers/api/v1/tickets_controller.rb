@@ -97,6 +97,7 @@ class Api::V1::TicketsController < ApplicationController
         doors_open_at: ticket.event.doors_open_at,
         timezone: ticket.event.timezone,
         cover_image_url: ticket.event.cover_image_url,
+        page_customization: ticket.event.page_customization.is_a?(Hash) ? ticket.event.page_customization.slice("focal_point") : {},
         image_asset_host: S3Service.public_asset_host
       },
       seller: SellerIdentity.for_event(ticket.event).as_json,

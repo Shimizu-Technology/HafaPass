@@ -9,7 +9,11 @@ class SendEventChangeNotificationJob < ApplicationJob
     change = EventChange.find_by(id: event_change_id)
     order = Order.find_by(id: order_id)
     delivery = MessageDelivery.find_by(id: delivery_id)
-    return unless change && EventChange::TYPES.include?(change.change_type) && order && delivery
+    return unless change && order && delivery
+    unless EventChange::TYPES.include?(change.change_type)
+      delivery.update!(status: :cancelled)
+      return
+    end
 
     delivery.update!(attempts: delivery.attempts + 1)
     EmailService.send_event_change_notification(change, order)

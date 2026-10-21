@@ -1,4 +1,4 @@
-import { approvedImageUrl } from '../utils/eventPageDesign'
+import { approvedImageUrl, focalPosition } from '../utils/eventPageDesign'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from '../components/MachineTranslationNotice'
 import { useTranslation } from 'react-i18next'
@@ -331,6 +331,7 @@ function TicketContent({ authContext }) {
                 src={event.cover_image_url}
                 alt={eventContent.title}
                 className="w-full h-full object-cover"
+                style={{ objectPosition: focalPosition(event.page_customization) }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
             </div>

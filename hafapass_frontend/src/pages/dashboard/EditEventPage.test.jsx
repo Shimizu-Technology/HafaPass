@@ -23,6 +23,18 @@ describe('published event content and schedule edits', () => {
     apiClient.put.mockResolvedValue({ data: event })
   })
 
+  it('shows specific page design validation feedback from the API', async () => {
+    apiClient.put.mockRejectedValueOnce({ response: { data: { errors: [
+      'Page customization gallery photo 2 needs alt text (up to 200 characters)',
+      'Page customization video URL must be a valid YouTube or Vimeo HTTPS link'
+    ] } } })
+    const user = userEvent.setup()
+    mount()
+    await user.type(await screen.findByLabelText(/Event Title/), ' Updated')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(await screen.findByText(/gallery photo 2 needs alt text/)).toHaveTextContent('video URL must be a valid YouTube or Vimeo HTTPS link')
+  })
+
   it('shows assigned scanner recovery on direct editor access without editing controls', async () => {
     apiClient.get.mockResolvedValue({ data: { ...event, permissions: { scan: true, edit_event_content: false } } })
     mount()

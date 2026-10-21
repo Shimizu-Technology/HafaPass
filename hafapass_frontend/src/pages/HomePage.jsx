@@ -132,7 +132,7 @@ export default function HomePage() {
 
           {showFeatured && (
             <article aria-label={t('buyer.Home.featuredEvent')} className="min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-              {approvedImageUrl(featuredEvent.cover_image_url, featuredEvent.image_asset_host) && <EventArtwork key={featuredEvent.cover_image_url} event={featuredEvent} priority backdrop className="aspect-[16/9] w-full !rounded-none" />}
+              <EventArtwork key={featuredEvent.cover_image_url || featuredEvent.id} event={featuredEvent} priority backdrop className="aspect-[16/9] w-full !rounded-none" />
               <div className="p-5 sm:p-6">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-800">{t('buyer.Home.featuredEvent')}</p>
                 <BuyerEventText event={featuredEvent} as="h2" className="break-words font-display text-2xl font-bold text-neutral-950" />
