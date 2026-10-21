@@ -503,19 +503,23 @@ module Commerce
       end
       subtotal_cents = ticket_subtotal_cents + catalog_subtotal_cents
       settings = SiteSetting.instance
-      # The flat part is charged per paid ticket: one whose selected unit price
-      # (tier or seat price, before any promo discount) is above zero. Free
-      # and complimentary tickets carry no fee. A promo-discounted ticket is
-      # still a paid ticket. MoneyAllocator below spreads the fee by subtotal,
-      # so free lines are allocated no fee and refunds prorate accordingly.
-      paid_ticket_count = selections.sum { |selection| selection[:unit_price_cents].positive? ? selection[:quantity] : 0 }
-      platform_fee_cents = if service_fee && ticket_subtotal_cents.positive?
-        (ticket_subtotal_cents * (settings.service_fee_percent / 100.0)).round +
-          (paid_ticket_count * settings.service_fee_flat_cents)
-      else
-        0
+      # Commerce::ServiceFee prices each ticket exactly as public listings
+      # advertise it: percent of the selected unit price (tier or seat price,
+      # before any promo discount) rounded per ticket, plus the flat fee per
+      # paid ticket, then the event's buyer share. Free and complimentary
+      # tickets carry no fee; a promo-discounted ticket is still a paid ticket.
+      # Orders created without a service fee (box office, comps) carry none.
+      fee_terms = ServiceFee.terms(settings)
+      selections.each do |selection|
+        selection[:fee_quote] = if service_fee
+          ServiceFee.for_event(event, selection[:unit_price_cents], terms: fee_terms)
+        else
+          ServiceFee.quote(unit_price_cents: 0, buyer_fee_percent: 0, terms: fee_terms)
+        end
       end
-      buyer_fee_cents = (platform_fee_cents * event.buyer_fee_percent / 100.0).round
+      paid_ticket_count = selections.sum { |selection| selection[:unit_price_cents].positive? ? selection[:quantity] : 0 }
+      platform_fee_cents = selections.sum { |selection| selection[:fee_quote].platform_fee_cents * selection[:quantity] }
+      buyer_fee_cents = selections.sum { |selection| selection[:fee_quote].buyer_fee_cents * selection[:quantity] }
       organizer_fee_cents = platform_fee_cents - buyer_fee_cents
       promo_code = locked_promo_code(ticket_subtotal_cents)
       discount_cents = promo_code ? promo_code.calculate_discount(ticket_subtotal_cents) : 0
@@ -556,8 +560,10 @@ module Commerce
     def create_ledger!(order, selections, catalog_selections, totals, expires_at)
       ticket_subtotals = selections.map { |selection| selection[:unit_price_cents] * selection[:quantity] }
       discounts = MoneyAllocator.call(totals[:discount_cents], ticket_subtotals)
-      buyer_fees = MoneyAllocator.call(totals[:service_fee_cents], ticket_subtotals)
-      organizer_fees = MoneyAllocator.call(totals[:organizer_fee_cents], ticket_subtotals)
+      # Each line carries exactly its own tickets' fees, so a refund of one
+      # ticket type returns the fee that was advertised and charged on it.
+      buyer_fees = selections.map { |selection| selection[:fee_quote].buyer_fee_cents * selection[:quantity] }
+      organizer_fees = selections.map { |selection| selection[:fee_quote].organizer_fee_cents * selection[:quantity] }
 
       selections.each_with_index do |selection, index|
         subtotal = ticket_subtotals[index]
@@ -622,6 +628,7 @@ module Commerce
           percent: totals[:service_fee_percent].to_s,
           flat_cents_per_ticket: totals[:service_fee_flat_cents],
           paid_ticket_count: totals[:paid_ticket_count],
+          rounding: ServiceFee::ROUNDING,
           processing_fee_bearer: totals[:processing_fee_bearer],
           fee_policy: event.fee_policy,
           buyer_paid_cents: totals[:service_fee_cents],

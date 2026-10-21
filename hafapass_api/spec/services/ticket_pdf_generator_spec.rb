@@ -96,7 +96,7 @@ RSpec.describe TicketPdfGenerator do
     expect(text.scan("東京").size).to eq(80)
     last = reader.pages.last
     expect(last.text).to include("HåfaPass", "TEST TICKET - REHEARSAL ONLY", "HP-T#{ticket.id}",
-      "For testing only - no real event admission", "Powered by HåfaPass")
+      "For testing only - no real event admission", "Sold by #{event.organizer_profile.business_name} · Tickets by HåfaPass")
     expect(last.xobjects.values.any? { |object| object.hash[:Subtype] == :Image }).to be(true)
   end
 end

@@ -16,7 +16,8 @@ import { FadeUp } from '../components/ui/ScrollReveal'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { eventBrowseReturn } from '../utils/browseReturn'
-import { formatTicketPrice, isTicketPurchasable, lowestPurchasablePrice, ticketPriceCents } from '../utils/ticketPricing'
+import { formatTicketPrice, lowestPurchasablePrice, purchasableAllInPrices } from '../utils/ticketPricing'
+import { AllInPriceNote, SellerLine } from '../components/PriceDisclosure'
 import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 // React 18 does not know `inert` and only renders it from a string (''), while React 19
@@ -188,7 +189,8 @@ function EventDetailContent() {
 
   const handleCheckout = (lineItems) => {
     if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
-    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, liveMoneyProof: isLiveMoneyProof, browseFrom } })
+    const offer = waitlistOfferToken && waitlistOffer && !waitlistOffer.error ? waitlistOffer : null
+    navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, waitlistOffer: offer, liveMoneyProof: isLiveMoneyProof, browseFrom } })
   }
 
   const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {
@@ -279,7 +281,8 @@ function EventDetailContent() {
 
   // Build JSON-LD structured data for the event
   const ticketTypes = event.ticket_types || []
-  const prices = ticketTypes.filter(isTicketPurchasable).map(ticketPriceCents).filter(price => price !== null).map(price => price / 100)
+  // Offers carry all-in prices (ticket + mandatory buyer fee), like every other display.
+  const prices = purchasableAllInPrices(ticketTypes).map(price => price / 100)
   const eventJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Event',
@@ -398,6 +401,9 @@ function EventDetailContent() {
                   <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                     <p className="text-sm font-semibold text-emerald-900">Your tickets are reserved</p>
                     <p className="mt-1 text-sm text-emerald-800">{waitlistOffer.quantity} × {waitlistOffer.ticket_type_name} until {new Date(waitlistOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>
+                    {Number.isSafeInteger(waitlistOffer.all_in_price_cents) && waitlistOffer.all_in_price_cents > 0 && (
+                      <p className="mt-1 text-sm font-semibold text-emerald-900">{formatTicketPrice(waitlistOffer.all_in_price_cents)} each, fees included</p>
+                    )}
                     <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>Claim waitlist offer</button>
                   </div>
                 )}
@@ -410,6 +416,11 @@ function EventDetailContent() {
                   ) : (
                     <p className="text-neutral-500 text-center py-4">No tickets available</p>
                   )}
+                  <div className="mt-4 space-y-1 border-t border-neutral-100 pt-3">
+                    <AllInPriceNote ticketTypes={event.ticket_types || []} includesProcessing={event.service_fee_includes_processing === true}
+                      platform={event.seller?.ticketing_service} />
+                    <SellerLine seller={event.seller} />
+                  </div>
                 </div>
                 {/* Waitlist form when all ticket types are sold out */}
                 {event.ticket_types?.length > 0 &&

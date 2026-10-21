@@ -92,6 +92,18 @@ RSpec.describe EmailService do
     expect(html).not_to include("Present your QR code")
   end
 
+  it "names the organizer as seller and the platform as the ticketing service on receipts and tickets" do
+    ticket = create(:ticket)
+    seller = ticket.event.organizer_profile.business_name
+    receipt = described_class.send(:build_order_confirmation_html, ticket.order, ticket.event, [ticket])
+    ticket_html = described_class.send(:build_ticket_email_html, ticket, ticket.event, ticket.ticket_type)
+
+    expect(receipt).to include("Sold by #{ERB::Util.html_escape(seller)} · Tickets by HåfaPass",
+      "Event seller: #{ERB::Util.html_escape(seller)}", "operated by ", "Shimizu Technology", "Service fee:", "Total paid:")
+    expect(receipt).not_to match(/tax/i)
+    expect(ticket_html).to include("Sold by #{ERB::Util.html_escape(seller)} · Tickets by HåfaPass")
+  end
+
   it "keeps the ticket table and entry instructions while the buyer holds tickets" do
     ticket = create(:ticket)
     html = described_class.send(:build_order_confirmation_html, ticket.order, ticket.event, [ticket])

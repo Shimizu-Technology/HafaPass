@@ -510,6 +510,7 @@ class EmailService
         HTML
       end
 
+      seller = SellerIdentity.for_event(event)
       email_wrapper(t("order_confirmation.title")) do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ht('order_confirmation.heading')}</h2>
@@ -518,15 +519,21 @@ class EmailService
           <div style="background: #f3f4f6; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
             <h3 style="color: #1f2937; margin: 0 0 8px;">#{h(event_title(event))}</h3>
             <p style="color: #6b7280; margin: 0 0 4px;">#{h(format_event_date(event))}</p>
-            <p style="color: #6b7280; margin: 0;">#{h(event.venue_name)}</p>
+            <p style="color: #6b7280; margin: 0 0 8px;">#{h(event.venue_name)}</p>
+            <p style="color: #6b7280; margin: 0; font-size: 13px;">#{h(seller.line)}</p>
           </div>
 
           <div style="margin-bottom: 28px;">
             <h3 style="color: #1f2937; margin: 0 0 12px;">#{ht('order_confirmation.summary')}</h3>
+            <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.reference', reference: order.reference)}</p>
             <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.subtotal', amount: money(order.subtotal_cents))}</p>
             #{discount_row}
             <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.service_fee', amount: money(order.service_fee_cents))}</p>
             <p style="color: #1f2937; font-weight: 600; margin: 0;"><strong>#{ht('order_confirmation.total', amount: money(order.total_cents))}</strong></p>
+            <p style="color: #9ca3af; margin: 12px 0 0; font-size: 12px; line-height: 1.5;">
+              #{ht('order_confirmation.seller_disclosure', seller: seller.seller_name, service: seller.ticketing_service,
+                operator: seller.operator_name)}
+            </p>
           </div>
 
           #{tickets_section}
@@ -553,6 +560,7 @@ class EmailService
             </p>
 
             <p style="color: #6b7280; font-size: 14px; margin: 0;">#{ht('ticket.entry_instructions')}</p>
+            <p style="color: #9ca3af; font-size: 12px; margin: 16px 0 0;">#{h(SellerIdentity.for_event(event).line)}</p>
             #{pdf_attachment_note(pdfs)}
           </div>
         HTML

@@ -44,7 +44,7 @@ RSpec.describe "Buyer email language" do
 
     expect(order.locale).to eq("en")
     expect(payload.fetch("subject")).to eq("Your HåfaPass Tickets - Sunset Fiesta")
-    expect(payload.fetch("html")).to include("Your tickets are confirmed!", "November 20, 2026 at 7:00 PM", "Total: $52.50")
+    expect(payload.fetch("html")).to include("Your tickets are confirmed!", "November 20, 2026 at 7:00 PM", "Total paid: $52.50")
   end
 
   it "localizes refunds from the order and writes transfers in English for the recipient" do

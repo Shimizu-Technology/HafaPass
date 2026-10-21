@@ -17,6 +17,7 @@ class TicketPdfGenerator
     @event = ticket.event
     @ticket_type = ticket.ticket_type
     @scan_credential = ticket.scan_credential
+    @seller = SellerIdentity.for_event(@event)
   end
 
   def generate
@@ -24,7 +25,7 @@ class TicketPdfGenerator
       # Picks fonts for every character before the QR is made; text no bundled
       # font can draw raises instead of printing missing-glyph boxes.
       PdfFonts.configure(pdf, texts: [@event.title, @event.venue_name, @event.venue_address, @ticket_type.name,
-        @ticket.seat_label], locale: @ticket.order&.locale)
+        @ticket.seat_label, @seller.line], locale: @ticket.order&.locale)
       # Reserve the header in the page margin so flowing text cannot overlap
       # repeated branding or rehearsal labels on continuation pages.
       pdf.repeat(:all, dynamic: true) do
@@ -150,7 +151,7 @@ class TicketPdfGenerator
     pdf.text Rails.env.production? ? "Present this QR code at the door" : "For testing only - no real event admission", align: :center
     pdf.move_down 4
     pdf.font "TicketSans", size: 7
-    pdf.text "Powered by HåfaPass", align: :center, color: "9CA3AF"
+    pdf.text @seller.line, align: :center, color: "6B7280"
   end
 
   def format_date(datetime)

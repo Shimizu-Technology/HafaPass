@@ -27,6 +27,16 @@ class ApplicationController < ActionController::API
     @request_locale ||= AppLocale.resolve(param: params[:locale], accept_language: request.headers["Accept-Language"])
   end
 
+  # One settings read per request for listings that show all-in prices and
+  # the seller line.
+  def listing_settings
+    @listing_settings ||= SiteSetting.instance
+  end
+
+  def listing_fee_terms
+    @listing_fee_terms ||= Commerce::ServiceFee.terms(listing_settings)
+  end
+
   def with_identity_verification_cache(&block)
     ClerkIdentity.with_request_cache(&block)
   end

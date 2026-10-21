@@ -12,6 +12,7 @@ import { formatEventDate } from '../../utils/eventTime'
 import { currentScannerOwner } from '../../utils/admissionStore'
 import { useOrganizerIdentity, useOrganizerPageVisit } from '../../hooks/useOrganizerContext'
 import DashboardSummary from './DashboardSummary'
+import OrganizerAgreementDialog from '../../components/OrganizerAgreementDialog'
 
 function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  const [businessName, setBusinessName] = useState('')
@@ -265,6 +266,7 @@ function DashboardSession({ authContext }) {
  const editorGeneration = useRef(0)
  const [profileContext, setProfileContext] = useState(null)
  const [readinessLoading, setReadinessLoading] = useState(false)
+ const [agreementOpen, setAgreementOpen] = useState(false)
  const [organizations, setOrganizations] = useState([])
  const [selectedOrganizationId, setSelectedOrganizationId] = useState(window.localStorage.getItem('hafapass_organization_id') || '')
  const listing = useOperationalListing(`events:${authContext?.userId || currentScannerOwner()}:${selectedOrganizationId}`)
@@ -576,16 +578,26 @@ function DashboardSession({ authContext }) {
     />
    )}
 
+   {canManageProfile && agreementOpen && !profile.policy_accepted && (
+    <OrganizerAgreementDialog version={profile.current_policy_version} reaccept={Boolean(profile.policy_version)}
+     busy={readinessLoading} error={error} onAccept={() => updateReadiness('accept_policy')} onClose={() => setAgreementOpen(false)} />
+   )}
+
    {canManageProfile && <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="organizer-readiness-title">
     <div className="flex items-start gap-3">
      <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5 text-brand-600" /></div>
      <div className="min-w-0 flex-1">
       <h2 id="organizer-readiness-title" className="font-semibold text-neutral-900">Organizer readiness</h2>
       <p className="text-sm text-neutral-500 mt-1">These platform checks protect attendees and are required before an event can be published.</p>
+      {profile.policy_version && !profile.policy_accepted && (
+       <p role="status" data-testid="agreement-update-notice" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        The organizer agreement was updated to version {profile.current_policy_version}. Review what changed and accept it to keep publishing events.
+       </p>
+      )}
       <ul className="mt-4 space-y-3">
        <li className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-neutral-700">{profile.policy_accepted ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} <Link className="inline-flex min-h-[44px] items-center underline" to="/policies/organizer-agreement" target="_blank">Organizer agreement</Link> {profile.policy_accepted ? 'accepted' : 'requires acceptance'}</span>
-        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => window.confirm(`I accept organizer agreement ${profile.current_policy_version} and agree to publish accurate event information and honor attendee purchases and refunds.`) && updateReadiness('accept_policy')} className="btn-secondary min-h-[44px] text-xs !py-2">Accept policy</button>}
+        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => setAgreementOpen(true)} className="btn-secondary min-h-[44px] text-xs !py-2">{profile.policy_version ? 'Review and accept' : 'Accept policy'}</button>}
        </li>
        <li className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-neutral-700">{profile.verification_status === 'verified' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Identity verification: <strong className="capitalize">{profile.verification_status}</strong></span>

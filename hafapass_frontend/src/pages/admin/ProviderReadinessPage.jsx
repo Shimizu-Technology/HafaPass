@@ -66,6 +66,9 @@ function CapabilityCard({ item, refresh, identity }) {
   const mutationBusy = useRef(false)
   const [form, setForm] = useState(initialForm)
   const [reason, setReason] = useState('')
+  const [draftAcknowledged, setDraftAcknowledged] = useState(false)
+  // Approving draft policies for launch is an explicit, recorded business call.
+  const draftAcknowledgment = item.policy_documents?.draft ? item.policy_documents.draft_acknowledgment : null
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
 
@@ -108,6 +111,32 @@ function CapabilityCard({ item, refresh, identity }) {
         <div>
           <h2 id={`${item.capability}-heading`} className="text-lg font-bold text-neutral-900">{item.label}</h2>
           <p className="mt-1 text-sm text-neutral-600">Setup {item.configured ? 'is complete' : 'is not finished'}. Credentials alone never turn this on; it also needs an approved review.</p>
+          {item.policy_documents && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="policy-register-draft">
+              <p className="font-semibold">
+                Version {item.policy_documents.version}
+                {item.policy_documents.status === 'approved' ? '' : ' · Draft pending legal review (not approved by counsel)'}
+              </p>
+              <p className="mt-1 text-amber-900">{item.policy_documents.documents.map(document => document.title).join(', ')}</p>
+              {item.policy_documents.approval_blockers?.length > 0 && (
+                <div className="mt-2 rounded-md bg-red-50 p-2 text-red-900" data-testid="policy-register-blockers">
+                  <p className="font-semibold">Fix these technical problems before approval:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                    {item.policy_documents.approval_blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
+                  </ul>
+                </div>
+              )}
+              {item.policy_documents.review_notes?.length > 0 && (
+                <details className="mt-2" data-testid="policy-register-review-notes">
+                  <summary className="min-h-11 cursor-pointer py-2 font-semibold">Outstanding legal-review items ({item.policy_documents.review_notes.length})</summary>
+                  <p className="text-amber-900">For counsel. These don’t block approval.</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                    {item.policy_documents.review_notes.map(note => <li key={`${note.document}-${note.section}-${note.note}`}><span className="font-medium">{note.title} · {note.section}:</span> {note.note}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
         </div>
         <StatusBadge item={item} />
       </div>
@@ -120,8 +149,14 @@ function CapabilityCard({ item, refresh, identity }) {
           <label className="block text-sm font-medium text-amber-950">Decision reason (required for reject)
             <input className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} />
           </label>
+          {draftAcknowledgment && (
+            <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-white p-3 text-sm text-amber-950">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={draftAcknowledged} onChange={event => setDraftAcknowledged(event.target.checked)} />
+              <span>{draftAcknowledgment}</span>
+            </label>
+          )}
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-primary" disabled={busy} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/approve`, undefined, config))}>Approve exact snapshot</button>
+            <button type="button" className="btn-primary" disabled={busy || (draftAcknowledgment && !draftAcknowledged)} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/approve`, draftAcknowledgment ? { draft_policies_acknowledged: true } : undefined, config))}>Approve exact snapshot</button>
             <button type="button" className="rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50" disabled={busy || !reason.trim()} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/reject`, { reason }, config))}>Reject</button>
           </div>
         </div>

@@ -20,7 +20,7 @@ class Api::V1::OrganizersController < ApplicationController
         { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
     render json: organizer_json(organization).merge(
-      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true) },
+      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true, fee_terms: listing_fee_terms) },
       meta: pagination_meta(pagy)
     )
   end

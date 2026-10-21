@@ -11,6 +11,7 @@ import TransferTicketDialog from '../components/TransferTicketDialog'
 import PendingTransfer from '../components/PendingTransfer'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
+import { SellerLine } from '../components/PriceDisclosure'
 
 const emailInFlightStatuses = new Set(['queued', 'sent'])
 const EMAIL_REFRESH_INTERVAL = 10_000
@@ -513,15 +514,22 @@ function OrderConfirmationContent() {
             <h2 className="mt-1 text-xl font-bold text-neutral-950">{event.title}</h2>
             <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
             <p className="text-sm text-neutral-600">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
+            <SellerLine seller={order.seller} className="mt-2" />
           </div>
           <div className="space-y-2 p-5 text-sm sm:p-6">
             {order.order_items.map(item => (
               <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
             ))}
-            <div className="flex justify-between gap-4 border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">Includes card processing</span>}</span><span>{formatPrice(order.service_fee_cents)}</span></div>
+            <div className="flex justify-between gap-4 border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">Includes card processing</span>}</span><span>{`$${((order.service_fee_cents || 0) / 100).toFixed(2)}`}</span></div>
             {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
             <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>Total</span><span>{formatPrice(order.total_cents)}</span></div>
             {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>Refunded</span><span>−{formatPrice(order.refunded_cents)}</span></div>}
+            {order.seller?.seller_name && (
+              <p className="border-t border-neutral-100 pt-3 text-xs leading-5 text-neutral-500" data-testid="receipt-seller">
+                Event seller: {order.seller.seller_name}. Ticketing service: {order.seller.ticketing_service}
+                {order.seller.operator_name ? `, operated by ${order.seller.operator_name},` : ''} which sells these tickets as the organizer’s agent and collects the service fee.
+              </p>
+            )}
           </div>
         </section>
 

@@ -159,9 +159,10 @@ RSpec.describe "Settlement processing-fee bearer" do
       [policy, order.reload]
     end
 
-    # 5% of $50.00 + 2 × $1.00 = $4.50 platform fee on each order.
+    # 5% of $50.00 + 2 × $1.00 = $4.50 platform fee on each order. The buyer's
+    # split share is rounded per ticket, as advertised: 50% of $2.25 = $1.13.
     expect(results.transform_values { |order| [order.service_fee_cents, order.organizer_fee_cents] })
-      .to eq(buyer_pays: [450, 0], organizer_absorbs: [0, 450], split_fees: [225, 225])
+      .to eq(buyer_pays: [450, 0], organizer_absorbs: [0, 450], split_fees: [226, 224])
     expect(results.values.map(&:processing_fee_bearer_snapshot).uniq).to eq(["platform"])
     expect(results[:buyer_pays].fee_components.find_by!(kind: "platform").metadata)
       .to include("percent" => "5.0", "flat_cents_per_ticket" => 100, "processing_fee_bearer" => "platform")

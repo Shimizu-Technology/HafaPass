@@ -78,7 +78,12 @@
     "regularPrice": "Regular price: {{price}}",
     "priceGoesUp": "Price goes up to {{price}} after {{date}}",
     "onlyLeft": "Only {{count}} left at this price!",
-    "endsIn": "Ends in {{days}} days"
+    "endsIn": "Ends in {{days}} days",
+    "ticketPlusFee": "{{price}} ticket + {{fee}} service fee",
+    "allInNote": "Prices include all mandatory fees. The service fee pays for {{platform}} ticketing and card processing.",
+    "allInNoteNoProcessing": "Prices include all mandatory fees. The service fee pays for {{platform}} ticketing.",
+    "noAddedFees": "No added fees. The price shown is the price you pay.",
+    "sellerLine": "Sold by {{seller}} · Tickets by {{platform}}"
   },
   "checkout": {
     "title": "Checkout",

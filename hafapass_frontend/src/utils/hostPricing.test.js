@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import parity from './__fixtures__/serviceFeeParity.json'
 import {
   calculateHostPayout, describeFee, formatPercent, parseHostPricing, parsePriceInput, parseQuantityInput, serviceFeeCents,
 } from './hostPricing'
@@ -92,5 +93,19 @@ describe('calculateHostPayout', () => {
     expect(result.organizerAbsorbs.organizerReceivesCents).toBe(0)
     expect(result.feeExceedsPrice).toBe(true)
     expect(result.buyerPays).toEqual({ buyerTotalCents: 153, organizerReceivesCents: 50 })
+  })
+})
+
+describe('parity with checkout (Commerce::ServiceFee)', () => {
+  it.each(parity.cases)('matches the server fee for $price_cents × $quantity at $service_fee_percent% + $service_fee_flat_cents', example => {
+    const pricing = parseHostPricing({ service_fee_percent: example.service_fee_percent, service_fee_flat_cents: example.service_fee_flat_cents })
+    const result = calculateHostPayout({ priceCents: example.price_cents, quantity: example.quantity, pricing })
+    expect(result.feeCents).toBe(example.platform_fee_cents)
+    if (example.buyer_fee_percent === 100) expect(result.buyerPays.buyerTotalCents).toBe(example.all_in_total_cents)
+    if (example.buyer_fee_percent === 0) expect(result.organizerAbsorbs.buyerTotalCents).toBe(example.all_in_total_cents)
+  })
+  it('charges 3 × $10.10 at 5% + $1.00 as $34.83, like checkout', () => {
+    const result = calculateHostPayout({ priceCents: 1010, quantity: 3, pricing: { basisPoints: 500, flatCents: 100 } })
+    expect(result.buyerPays.buyerTotalCents).toBe(3483)
   })
 })

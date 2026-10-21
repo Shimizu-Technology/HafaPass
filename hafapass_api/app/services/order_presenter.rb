@@ -41,6 +41,7 @@ class OrderPresenter
       ticket_access_blocked: order.ticket_access_blocked? || order.full_refund_pending?,
       promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,
       event: event_json,
+      seller: SellerIdentity.for_event(order.event).as_json,
       latest_event_change: latest_event_change_json,
       order_items: ordered_order_items.map { |item| order_item_json(item) },
       tickets: include_tickets ? presented_tickets.map { |ticket| ticket_json(ticket) } : []

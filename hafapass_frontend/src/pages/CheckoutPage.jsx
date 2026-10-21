@@ -11,7 +11,9 @@ import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { CheckoutAttemptConflict, checkoutBuyerIdentity, checkoutBuyerMatches, checkoutAttemptCurrent, activeCheckoutBuyerBound, recordCheckoutOutcome, checkoutDefinitelyRejected, clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout } from '../utils/orderAccess'
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
-import { parseFeeTerms, platformFeeCents as computePlatformFee } from '../utils/feeTerms'
+import { parseFeeTerms } from '../utils/feeTerms'
+import { SellerLine } from '../components/PriceDisclosure'
+import { estimateCheckoutLine } from '../utils/checkoutEstimate'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -69,6 +71,7 @@ function CheckoutContent({ buyerId }) {
   // Keep this checkout selection stable while a lazy confirmation route is loading.
   const [lineItems] = useState(() => navigationMatches ? location.state?.lineItems || null : null)
   const waitlistOfferToken = location.state?.waitlistOfferToken || null
+  const waitlistOffer = waitlistOfferToken ? location.state?.waitlistOffer || null : null
   const seatHoldToken = location.state?.seatHoldToken || null
   const seatHoldExpiresAt = location.state?.seatHoldExpiresAt || null
   const selectedSeats = location.state?.selectedSeats || []
@@ -289,11 +292,8 @@ function CheckoutContent({ buyerId }) {
   const handlePromoValidate = async () => {
     if (!promoInput.trim()) return
 
-    const orderLines = lineItems?.map(item => {
-      const tt = selectedTicketType(event, item.ticket_type_id)
-      return tt ? (tt.current_price_cents ?? tt.price_cents) * item.quantity : 0
-    }) || []
-    const currentSubtotal = orderLines.reduce((s, l) => s + l, 0)
+    const currentSubtotal = (lineItems || []).reduce((sum, item) =>
+      sum + (estimateCheckoutLine(event, item, { waitlistOffer, seats: selectedSeats })?.lineTotal || 0), 0)
 
     setPromoLoading(true)
     setPromoError(null)
@@ -473,38 +473,39 @@ function CheckoutContent({ buyerId }) {
     </div>
   )
 
-  // Never estimate a fee from a guessed rate: before an order exists, the
-  // server's current fee terms are required to show a total.
+  // Never estimate a fee from a guessed rate. Before an order exists, each
+  // ticket's buyer fee comes from the server (the same Commerce::ServiceFee
+  // code checkout charges with), so this summary equals the all-in prices the
+  // event page advertised. Missing fee data is an error, not a $0 fee.
   const feeTerms = parseFeeTerms(config)
-  if (!feeTerms && !orderData) return (
+  const orderLines = orderData ? (orderData.order_items || []).map(item => ({
+    ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents,
+  })) : lineItems.map(item => estimateCheckoutLine(event, item, { waitlistOffer, seats: selectedSeats })).filter(Boolean)
+  const feeDataMissing = !orderData && orderLines.some(line => line.feeCents === null)
+
+  // A stale event snapshot without fee data is reloaded from the API.
+  const retryFees = () => {
+    if (feeDataMissing) setEvent(null)
+    retryConfig()
+  }
+
+  if ((!feeTerms || feeDataMissing) && !orderData) return (
     <div className="max-w-2xl mx-auto px-4 py-16">
       <div className="card p-8 text-center" role="alert">
         <p className="text-red-600 mb-4">{t('checkout.feesUnavailable')}</p>
-        <button type="button" onClick={retryConfig} className="btn-primary mb-3">{t('checkout.retryFees')}</button>
+        <button type="button" onClick={retryFees} className="btn-primary mb-3">{t('checkout.retryFees')}</button>
         <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">{t('checkout.backToEvent')}</Link>
       </div>
     </div>
   )
 
-  const orderLines = orderData ? (orderData.order_items || []).map(item => ({
-    ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents,
-  })) : lineItems.map(item => {
-    const tt = selectedTicketType(event, item.ticket_type_id)
-    if (!tt) return null
-    const price = tt.current_price_cents ?? tt.price_cents
-    return { ...item, name: tt.name, price_cents: price, lineTotal: price * item.quantity, active_tier: tt.active_tier }
-  }).filter(Boolean)
-
-  // The flat fee applies per paid ticket only (unit price above zero).
-  const paidTickets = orderLines.reduce((s, l) => s + (l.price_cents > 0 ? l.quantity : 0), 0)
   const subtotalCents = orderLines.reduce((s, l) => s + l.lineTotal, 0)
   const catalogSubtotalCents = Object.entries(catalogSelections).reduce((sum, [id, selection]) => {
     const item = event.catalog_items?.find(candidate => candidate.id === Number(id))
     if (!item || !selection.quantity) return sum
     return sum + (item.kind === 'donation' ? (selection.amount_cents || 0) : item.price_cents) * selection.quantity
   }, 0)
-  const platformFeeCents = computePlatformFee(feeTerms, subtotalCents, paidTickets)
-  const serviceFeeCents = Math.round(platformFeeCents * ((event.buyer_fee_percent ?? 100) / 100))
+  const serviceFeeCents = orderData ? 0 : orderLines.reduce((sum, line) => sum + line.feeCents, 0)
   const discountCents = promoData?.discount_cents || 0
   const totalCents = Math.max(subtotalCents + catalogSubtotalCents + serviceFeeCents - discountCents, 0)
   const displayedSubtotal = orderData?.subtotal_cents ?? (subtotalCents + catalogSubtotalCents)
@@ -570,6 +571,7 @@ function CheckoutContent({ buyerId }) {
                 {event.venue_name}
               </p>
             )}
+            <SellerLine seller={orderData?.seller || event.seller} className="mt-1" />
           </div>
         </div>
 
@@ -609,7 +611,8 @@ function CheckoutContent({ buyerId }) {
                 {t('checkout.serviceFee')}
                 {feeIncludesProcessing && <span className="block text-xs text-neutral-500">{t('checkout.serviceFeeIncludesProcessing')}</span>}
               </span>
-              <span>{formatPrice(displayedFee)}</span>
+              {/* A fee is an amount, never "Free": absorbed fees show $0.00. */}
+              <span>{`$${(displayedFee / 100).toFixed(2)}`}</span>
             </div>
             {displayedDiscount > 0 && (
               <div className="flex justify-between text-emerald-600">
