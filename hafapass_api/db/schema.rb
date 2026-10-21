@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -391,6 +391,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.index ["active", "kind"], name: "index_distribution_partners_on_active_and_kind"
     t.index ["slug"], name: "index_distribution_partners_on_slug", unique: true
     t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3, 4])", name: "distribution_partners_kind_valid"
+  end
+
+  create_table "event_cancellation_refund_items", force: :cascade do |t|
+    t.bigint "event_cancellation_refund_run_id", null: false
+    t.bigint "order_id", null: false
+    t.integer "status", default: 0, null: false
+    t.integer "amount_cents", default: 0, null: false
+    t.integer "retry_generation", default: 0, null: false
+    t.text "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_cancellation_refund_run_id"], name: "index_cancellation_refund_items_on_run"
+    t.index ["order_id"], name: "index_event_cancellation_refund_items_on_order_id", unique: true
+  end
+
+  create_table "event_cancellation_refund_runs", force: :cascade do |t|
+    t.bigint "event_id", null: false
+    t.bigint "started_by_id", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_event_cancellation_refund_runs_on_event_id", unique: true
+    t.index ["started_by_id"], name: "index_event_cancellation_refund_runs_on_started_by_id"
   end
 
   create_table "event_change_responses", force: :cascade do |t|
@@ -947,6 +971,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "live_pilot_runs_status_valid"
   end
 
+  create_table "marketing_unsubscribes", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "email", null: false
+    t.datetime "unsubscribed_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "email"], name: "index_marketing_unsubscribes_on_organization_id_and_email", unique: true
+    t.index ["organization_id"], name: "index_marketing_unsubscribes_on_organization_id"
+  end
+
   create_table "marketplace_collection_events", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "event_id", null: false
@@ -1154,6 +1188,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.datetime "checkout_recovery_expires_at"
     t.string "processing_fee_bearer_snapshot"
     t.string "locale", default: "en", null: false
+    t.boolean "marketing_opt_in", default: false, null: false
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
@@ -1960,6 +1995,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.datetime "updated_at", null: false
     t.string "processing_fee_bearer", default: "platform", null: false
     t.string "payout_schedule_text", default: "within 3 business days after your event", null: false
+    t.text "business_mailing_address"
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying]::text[])", name: "site_settings_processing_fee_bearer_valid"
   end
@@ -2482,6 +2518,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
   add_foreign_key "distribution_links", "distribution_partners", on_delete: :restrict
   add_foreign_key "distribution_links", "events", on_delete: :restrict
   add_foreign_key "distribution_links", "users", column: "created_by_user_id", on_delete: :restrict
+  add_foreign_key "event_cancellation_refund_items", "event_cancellation_refund_runs"
+  add_foreign_key "event_cancellation_refund_items", "orders"
+  add_foreign_key "event_cancellation_refund_runs", "events"
+  add_foreign_key "event_cancellation_refund_runs", "users", column: "started_by_id"
   add_foreign_key "event_change_responses", "event_changes", on_delete: :restrict
   add_foreign_key "event_change_responses", "orders", on_delete: :restrict
   add_foreign_key "event_changes", "events", on_delete: :restrict
@@ -2568,6 +2608,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
   add_foreign_key "live_pilot_runs", "live_pilot_reviews", on_delete: :restrict
   add_foreign_key "live_pilot_runs", "users", column: "completed_by_user_id", on_delete: :restrict
   add_foreign_key "live_pilot_runs", "users", column: "started_by_user_id", on_delete: :restrict
+  add_foreign_key "marketing_unsubscribes", "organizations"
   add_foreign_key "marketplace_collection_events", "events", on_delete: :restrict
   add_foreign_key "marketplace_collection_events", "marketplace_collections", on_delete: :cascade
   add_foreign_key "marketplace_collections", "users", column: "created_by_user_id", on_delete: :restrict

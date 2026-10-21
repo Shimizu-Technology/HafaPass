@@ -2,11 +2,13 @@ module Api
   module V1
     module Organizer
       class EventsController < BaseController
+        include CancellationRefundActions
         include Paginatable
 
         before_action :set_event, only: [
           :show, :update, :destroy, :publish, :postpone, :resume, :cancel, :complete, :archive,
-          :clone, :generate_recurrences, :stats, :attendees, :slug_availability, :retranslate
+          :clone, :generate_recurrences, :stats, :attendees, :slug_availability, :retranslate,
+          :cancellation_refunds, :retry_cancellation_refunds, :mark_cash_refunded
         ]
 
         def index
@@ -169,6 +171,12 @@ module Api
         end
 
         def cancel
+          preview = EventCancellationRefunds.preview(@event)
+          if !params.key?(:refund_count) || !params.key?(:refund_total_cents) ||
+              params[:refund_count].to_i != preview[:count] || params[:refund_total_cents].to_i != preview[:total_cents]
+            return render json: { error: "Refund total changed. Review the current count and amount before cancelling.",
+              preview: preview }, status: :conflict
+          end
           transition_event(:cancel)
         end
 
@@ -348,7 +356,9 @@ module Api
         end
 
         def transition_event(action)
-          EventLifecycle.call(event: @event, action: action, actor: current_user, reason: params[:reason])
+          EventLifecycle.call(event: @event, action: action, actor: current_user, reason: params[:reason],
+            expected_refund_count: action == :cancel ? params[:refund_count].to_i : nil,
+            expected_refund_total_cents: action == :cancel ? params[:refund_total_cents].to_i : nil)
           render json: event_json(@event.reload, include_ticket_types: true)
         rescue EventLifecycle::TransitionError => e
           render json: { error: e.message, publish_checklist: e.checklist }, status: :unprocessable_entity
@@ -370,7 +380,8 @@ module Api
         def permission_for_action
           case action_name
           when "show" then :view_events
-          when "stats" then :view_finance
+          when "stats", "cancellation_refunds" then :view_finance
+          when "mark_cash_refunded" then :refund
           when "attendees" then :view_attendees
           when "update", "slug_availability", "retranslate" then :edit_event_content
           else :manage_events

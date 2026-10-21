@@ -2,7 +2,10 @@
 
 class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer::EventResourcesController
   def index
-    render json: { communication_campaigns: event.communication_campaigns.order(created_at: :desc).map { |item| serialize(item) } }
+    campaigns = event.communication_campaigns.order(created_at: :desc)
+    render json: { communication_campaigns: campaigns.map { |item| serialize(item) },
+      audience: campaigns.first ? CommunicationCampaigns::Sender.new(campaigns.first).audience_counts :
+        { attendees: 0, opted_in: 0, excluded: 0, eligible: 0 } }
   end
 
   def create
@@ -77,6 +80,8 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
 
   def serialize(campaign)
     campaign.as_json(only: [:id, :name, :subject, :body, :segment, :status, :scheduled_at,
-      :started_at, :sent_at, :recipient_count, :created_at])
+      :started_at, :sent_at, :recipient_count, :created_at]).merge(
+        audience: CommunicationCampaigns::Sender.new(campaign).audience_counts
+      )
   end
 end

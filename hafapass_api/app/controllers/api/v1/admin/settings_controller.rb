@@ -88,7 +88,8 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
 
   def settings_params
     params.permit(:payment_mode, :platform_name, :platform_email, :platform_phone,
-                  :service_fee_percent, :service_fee_flat_cents, :processing_fee_bearer, :payout_schedule_text)
+                  :service_fee_percent, :service_fee_flat_cents, :processing_fee_bearer, :payout_schedule_text,
+                  :business_mailing_address)
   end
 
   def settings_json(settings)
@@ -97,6 +98,7 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       platform_name: settings.platform_name,
       platform_email: settings.platform_email,
       platform_phone: settings.platform_phone,
+      business_mailing_address: settings.business_mailing_address,
       service_fee_percent: settings.service_fee_percent,
       service_fee_flat_cents: settings.service_fee_flat_cents,
       processing_fee_bearer: settings.processing_fee_bearer,

@@ -17,7 +17,7 @@ module Commerce
       new(**).call
     end
 
-    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, user: nil, promo_code_id: nil,
+    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, promo_code_id: nil,
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
@@ -29,6 +29,7 @@ module Commerce
       @buyer_email = buyer_email
       @buyer_name = buyer_name
       @buyer_phone = buyer_phone
+      @marketing_opt_in = marketing_opt_in
       @user = user
       @promo_code_id = promo_code_id
       @payment_required = payment_required
@@ -120,6 +121,7 @@ module Commerce
           buyer_email: buyer_email,
           buyer_name: buyer_name,
           buyer_phone: buyer_phone,
+          marketing_opt_in: @marketing_opt_in,
           locale: @locale,
           source: source,
           payment_method: payment_method,

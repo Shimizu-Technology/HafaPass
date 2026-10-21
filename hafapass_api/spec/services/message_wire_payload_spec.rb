@@ -46,18 +46,15 @@ RSpec.describe MessageWirePayload do
     expect(delivery.reload).to have_attributes(attempts: 4, provider_outcome_unknown: true, outbound_wire_body: nil)
   end
 
-  it "hydrates independently verified legacy bytes without changing the unknown request identity" do
+  it "hydrates independently verified legacy bytes but refuses promotional replay without organizer consent context" do
     original = delivery.attributes.except("outbound_wire_body", "wire_body_digest", "updated_at")
     hydrate(verified_wire_body: body.b)
     expect(delivery.reload.attributes.except("outbound_wire_body", "wire_body_digest", "updated_at")).to eq(original)
     expect(delivery).to have_attributes(outbound_wire_body: body, wire_body_digest: digest, provider_id: nil,
       provider_outcome_unknown: true)
-    MessageDeliveryJob.new.perform(delivery.id)
-    expect(delivery.reload).to have_attributes(provider_id: "synthetic-email", provider_outcome_unknown: false, attempts: 5)
-    expect(Resend::Emails).to have_received(:send) do |params, options:|
-      expect(params.to_json.b).to eq(body.b)
-      expect(options).to eq(idempotency_key: delivery.idempotency_key)
-    end
+    expect { MessageDeliveryJob.new.perform(delivery.id) }.to raise_error(described_class::Unavailable, /consent context/)
+    expect(delivery.reload).to have_attributes(provider_id: nil, provider_outcome_unknown: true, attempts: 4)
+    expect(Resend::Emails).not_to have_received(:send)
   end
 
   it "rejects an unverified digest" do

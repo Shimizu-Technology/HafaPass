@@ -3,7 +3,7 @@
 class Api::V1::OrdersController < ApplicationController
   CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id catalog_items
     registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
-    terms_accepted terms_version live_money_proof].freeze
+    terms_accepted terms_version live_money_proof marketing_opt_in].freeze
   skip_before_action :authenticate_user!, only: [
     :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
@@ -78,6 +78,7 @@ class Api::V1::OrdersController < ApplicationController
       buyer_email: params[:buyer_email],
       buyer_name: params[:buyer_name],
       buyer_phone: params[:buyer_phone],
+      marketing_opt_in: ActiveModel::Type::Boolean.new.cast(params[:marketing_opt_in]) == true,
       user: @current_user,
       promo_code_id: params[:promo_code_id],
       catalog_items: params[:catalog_items],

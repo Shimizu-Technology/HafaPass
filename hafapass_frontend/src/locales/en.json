@@ -345,6 +345,7 @@
       "ClassesWorkshops": "Classes & Workshops"
     },
     "Checkout": {
+      "marketingOptIn": "Send me news and offers from {{organizer}}. Optional; unsubscribe any time.",
       "preparingYourAccount": "Preparing your account…",
       "returnToTheAccountThatStartedThisSaved": "Return to the account that started this saved checkout before recovering it.",
       "anotherSavedCheckoutIsActiveRecoverItBefore": "Another saved checkout is active. Recover it before opening a different order.",

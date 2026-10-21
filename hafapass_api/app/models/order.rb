@@ -51,6 +51,7 @@ class Order < ApplicationRecord
 
   validates :locale, inclusion: { in: AppLocale::SUPPORTED }
   validates :buyer_email, presence: true
+  validates :marketing_opt_in, inclusion: { in: [true, false] }
   validates :buyer_name, presence: true
   validates :currency, presence: true, length: { is: 3 }
   validates :subtotal_cents, :service_fee_cents, :discount_cents, :total_cents, :refund_amount_cents,

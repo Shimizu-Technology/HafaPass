@@ -51,7 +51,15 @@ emails:
     heading: "내 티켓"
     view: "내 티켓 보기"
     entry_instructions: "입장 시 QR Code를 제시해 주세요."
+  event_cancelled:
+    subject: "이벤트 취소: %{event}"
+    heading: "%{event}가 취소되었습니다"
+    body: "서비스 수수료를 포함한 결제 금액 전액의 자동 환불을 준비하고 있습니다. 별도 신청은 필요하지 않습니다. 현금 구매자는 수동 환불 안내를 받게 됩니다."
+    view_order: "주문 보기"
   refund:
+    cancelled_subject: "이벤트 취소 — %{amount} 환불 진행 중"
+    cancelled_heading: "이벤트 취소 — 환불 진행 중"
+    cancelled_body: "%{event}가 취소되었습니다. 서비스 수수료를 포함한 %{amount} 환불이 진행 중입니다."
     subject: "환불 처리 완료 - %{event}"
     heading: "환불 처리 완료"
     body: "%{event} 티켓의 환불이 처리되었습니다."

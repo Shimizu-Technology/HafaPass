@@ -19,6 +19,15 @@ class Refund < ApplicationRecord
 
   after_save -> { Wallet::PassSync.tickets_changed(order.tickets.select(:id)) },
     if: -> { previously_new_record? || saved_change_to_status? }
+  after_commit :resume_event_cancellation_refunds,
+    if: -> { saved_change_to_status? && (succeeded? || failed? || cancelled?) }
+
+  def resume_event_cancellation_refunds
+    return unless idempotency_key.start_with?("event-cancellation/")
+
+    run = order.event.event_cancellation_refund_run
+    EventCancellationRefundJob.perform_later(run.id) if run
+  end
 
   attr_readonly :order_id, :payment_id, :requested_by_id, :provider, :idempotency_key, :amount_cents, :currency
 end

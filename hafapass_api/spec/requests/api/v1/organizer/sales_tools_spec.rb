@@ -25,8 +25,9 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
   end
 
   it "exports CRM records and queues a segmented campaign" do
+    SiteSetting.instance.update!(business_mailing_address: "123 Marine Drive, Hagåtña, GU 96910")
     type = create(:ticket_type, event: event)
-    order = create(:order, event: event)
+    order = create(:order, event: event, marketing_opt_in: true)
     item = create(:order_item, order: order, ticket_type: type)
     create(:ticket, order: order, event: event, ticket_type: type, order_item: item, holder_email: "guest@example.com")
 

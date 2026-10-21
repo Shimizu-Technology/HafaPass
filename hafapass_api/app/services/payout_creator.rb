@@ -105,6 +105,10 @@ class PayoutCreator
       return [validate_idempotent_replay!(existing), false] if existing
 
       raise PayoutError, "Settlement must be finalized" unless settlement.status_finalized?
+      if (settlement.event.cancelled? || settlement.event.event_cancellation_refund_run) &&
+          !settlement.event.event_cancellation_refund_run&.completed?
+        raise PayoutError, "Finish cancellation refunds before paying out this event"
+      end
       current_digest = Settlements::Calculator.call(settlement.event).attributes[:source_digest]
       if current_digest != settlement.source_digest
         raise PayoutError, "Financial activity changed; finalize a new settlement before paying out"

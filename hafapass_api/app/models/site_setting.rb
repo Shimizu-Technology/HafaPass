@@ -22,6 +22,7 @@ class SiteSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: MAX_SERVICE_FEE_FLAT_CENTS }
   validates :processing_fee_bearer, inclusion: { in: PROCESSING_FEE_BEARERS }
   validates :payout_schedule_text, presence: true, length: { maximum: MAX_PAYOUT_SCHEDULE_TEXT_LENGTH }
+  validates :business_mailing_address, length: { maximum: 500 }, allow_blank: true
   normalizes :payout_schedule_text, with: ->(text) { text.squish }
 
   # ── Singleton accessor ──────────────────────────────────────────────

@@ -16,6 +16,9 @@ Rails.application.routes.draw do
       get "health", to: "health#show"
       get "readiness", to: "health#readiness"
       get "config", to: "config#show"
+      get "marketing/unsubscribe/:token", to: "marketing_unsubscribes#show", as: :marketing_unsubscribe
+      post "marketing/unsubscribe/:token", to: "marketing_unsubscribes#create"
+      delete "marketing/unsubscribe/:token", to: "marketing_unsubscribes#destroy"
       get "me", to: "me#show"
       post "users/sync", to: "users#sync"
 
@@ -145,6 +148,9 @@ Rails.application.routes.draw do
             post :postpone
             post :resume
             post :cancel
+            get :cancellation_refunds
+            post :retry_cancellation_refunds
+            post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
             post :complete
             post :archive
             post :clone
@@ -235,6 +241,12 @@ Rails.application.routes.draw do
         resource :settings, only: [:show, :update]
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
+          member do
+            get :cancellation_refunds
+            post :cancel_and_refund
+            post :retry_cancellation_refunds
+            post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
+          end
           resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
           resource :sales_suspension, only: [:destroy], controller: "event_sales_suspensions"
           post :retranslate, on: :member

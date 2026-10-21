@@ -151,7 +151,8 @@ class EmailService
 
     def send_refund_notification_async(order, refund: nil)
       delivery = create_delivery(order: order, event: order.event, template: "refund_notification",
-        recipient: order.buyer_email, idempotency_key: refund ? "refund-notification/#{refund.id}" : nil)
+        recipient: order.buyer_email, metadata: refund ? { refund_id: refund.id } : {},
+        idempotency_key: refund ? "refund-notification/#{refund.id}" : nil)
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end
@@ -299,11 +300,27 @@ class EmailService
     def send_event_change_notification(change, order, delivery: nil)
       return unless change && EventChange::TYPES.include?(change.change_type)
 
+      if change.change_type == "cancelled"
+        html, subject = in_locale(order.locale) do
+          title = event_title(change.event)
+          heading = t("event_cancelled.heading", event: title)
+          [email_wrapper(heading) do
+            <<~HTML
+              <h2 style="color:#1f2937">#{h(heading)}</h2>
+              <p style="color:#6b7280">#{ht('event_cancelled.body')}</p>
+              <a href="#{order_access_url(order)}">#{ht('event_cancelled.view_order')}</a>
+            HTML
+          end, safe_subject(t("event_cancelled.subject", event: title))]
+        end
+        return deliver(to: order.buyer_email, subject: subject, html: html, tag: "event_change",
+          delivery: delivery, order_id: order.id)
+      end
+
       action = change.change_type.humanize.downcase
       html = email_wrapper("Event #{action}") do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ERB::Util.html_escape(change.event.title)} was #{action}</h2>
-          <p style="color: #6b7280; margin: 0 0 20px;">#{ERB::Util.html_escape(change.reason || 'The organizer updated this event.')}</p>
+          <p style="color: #6b7280; margin: 0 0 20px;">The organizer updated this event. Review the current schedule and your ticket options below.</p>
           <p style="color: #6b7280; margin: 0 0 24px;">Review the latest details and choose whether to keep your tickets or request an eligible refund.</p>
           <a href="#{order_access_url(order)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">Review order #{order.reference}</a>
         HTML
@@ -331,8 +348,15 @@ class EmailService
     # ── Refund Notification ─────────────────────────────────────────
     def send_refund_notification(order, delivery: nil)
       event = order.event
+      amount_cents = if event.cancelled? && delivery&.metadata&.key?("refund_id")
+        Refund.find_by(id: delivery.metadata["refund_id"], order_id: order.id)&.amount_cents || order.refund_amount_cents
+      else
+        order.refund_amount_cents
+      end
       html, subject = in_locale(order.locale) do
-        [build_refund_notification_html(order, event), safe_subject(t("refund.subject", event: event_title(event)))]
+        key = event.cancelled? ? "refund.cancelled_subject" : "refund.subject"
+        [build_refund_notification_html(order, event, amount_cents: amount_cents),
+          safe_subject(t(key, event: event_title(event), amount: money(amount_cents)))]
       end
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "refund_notification", delivery: delivery,
@@ -395,14 +419,22 @@ class EmailService
     end
 
     def send_communication_campaign(delivery)
+      organization = delivery.event.organization
+      token = MarketingUnsubscribe.token(organization: organization, email: delivery.recipient)
+      unsubscribe_url = "#{frontend_url}/unsubscribe/#{ERB::Util.url_encode(token)}"
+      one_click_url = "#{PublicSiteUrl.api || 'http://localhost:3000'}/api/v1/marketing/unsubscribe/#{ERB::Util.url_encode(token)}"
       html = email_wrapper(delivery.metadata.fetch("subject")) do
         <<~HTML
           <h2 style="color:#1f2937">#{h(delivery.metadata.fetch('subject'))}</h2>
           <div style="color:#4b5563;white-space:pre-wrap">#{h(delivery.metadata.fetch('body'))}</div>
+          <p style="color:#6b7280;font-size:13px">Sent by #{h(delivery.metadata.fetch('organizer_name'))} through HåfaPass.</p>
+          <p style="color:#6b7280;font-size:13px">#{h(delivery.metadata.fetch('mailing_address'))}</p>
+          <p><a href="#{h(unsubscribe_url)}">Unsubscribe from #{h(delivery.metadata.fetch('organizer_name'))} emails</a></p>
         HTML
       end
       deliver(to: delivery.recipient, subject: safe_subject(delivery.metadata.fetch("subject")), html: html,
-        tag: "communication_campaign", delivery: delivery, campaign_id: delivery.communication_campaign_id)
+        tag: "communication_campaign", delivery: delivery, campaign_id: delivery.communication_campaign_id,
+        unsubscribe_url: one_click_url)
     end
 
     def send_event_reminder(reminder, delivery: nil)
@@ -519,6 +551,10 @@ class EmailService
       params[:reply_to] = reply_to if reply_to
       params[:subject] = "[HåfaPass TEST] #{subject}" if ProviderRehearsal.enabled?
       params[:tags] = [{ name: "category", value: tag }] if tag.present?
+      if log_meta[:unsubscribe_url]
+        params[:headers] = { "List-Unsubscribe" => "<#{log_meta[:unsubscribe_url]}>",
+          "List-Unsubscribe-Post" => "List-Unsubscribe=One-Click" }
+      end
       return params.deep_stringify_keys if delivery&.preparing_outbound_payload
 
       deliver_payload(params, delivery: delivery)
@@ -698,11 +734,11 @@ class EmailService
       end
     end
 
-    def build_refund_notification_html(order, event)
-      amount_str = if order.refund_amount_cents >= order.total_cents
+    def build_refund_notification_html(order, event, amount_cents: order.refund_amount_cents)
+      amount_str = if amount_cents >= order.total_cents
         t("refund.full")
       else
-        t("refund.partial", amount: money(order.refund_amount_cents))
+        t("refund.partial", amount: money(amount_cents))
       end
       reason = if order.refund_reason.present?
         "<p style=\"color: #6b7280; margin: 0 0 12px;\"><strong>#{ht('refund.reason')}</strong> #{h(order.refund_reason)}</p>"
@@ -710,14 +746,15 @@ class EmailService
         ""
       end
 
-      email_wrapper(t("refund.heading")) do
+      heading = event.cancelled? ? t("refund.cancelled_heading") : t("refund.heading")
+      email_wrapper(heading) do
         <<~HTML
-          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ht('refund.heading')}</h2>
-          <p style="color: #6b7280; margin: 0 0 28px;">#{ht('refund.body', event: event_title(event))}</p>
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
+          <p style="color: #6b7280; margin: 0 0 28px;">#{event.cancelled? ? ht('refund.cancelled_body', event: event_title(event), amount: money(amount_cents)) : ht('refund.body', event: event_title(event))}</p>
 
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
             <p style="color: #166534; font-weight: 600; margin: 0 0 8px;">#{h(amount_str)}</p>
-            <p style="color: #166534; margin: 0;">#{ht('refund.returned', amount: money(order.refund_amount_cents))}</p>
+            <p style="color: #166534; margin: 0;">#{ht('refund.returned', amount: money(amount_cents))}</p>
           </div>
 
           #{reason}

@@ -1,6 +1,23 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
+  include CancellationRefundActions
+  before_action :set_cancellation_event, only: [:cancellation_refunds, :cancel_and_refund,
+    :retry_cancellation_refunds, :mark_cash_refunded]
+
+  def cancel_and_refund
+    preview = EventCancellationRefunds.preview(@event)
+    if !params.key?(:refund_count) || !params.key?(:refund_total_cents) ||
+        params[:refund_count].to_i != preview[:count] || params[:refund_total_cents].to_i != preview[:total_cents]
+      return render json: { error: "Refund total changed. Review the current count and amount before cancelling.",
+        preview: preview }, status: :conflict
+    end
+    EventLifecycle.call(event: @event, action: :cancel, actor: @current_user, reason: params[:reason],
+      expected_refund_count: params[:refund_count].to_i, expected_refund_total_cents: params[:refund_total_cents].to_i)
+    render json: cancellation_json, status: :accepted
+  rescue EventLifecycle::TransitionError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
   # GET /api/v1/admin/events
   def index
     events = Event.includes(:organizer_profile, :policy_hold_by_user, :ticket_types, :orders, :pilot_readiness_reviews,
@@ -49,6 +66,10 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   end
 
   private
+
+  def set_cancellation_event
+    @event = Event.find(params[:id])
+  end
 
   def event_params
     params.permit(:is_featured, :live_money_proof_candidate)

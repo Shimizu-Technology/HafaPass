@@ -11,6 +11,7 @@ import TicketTypeCRUD from '../../components/TicketTypeCRUD'
 import FeePolicyPanel from '../../components/FeePolicyPanel'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
+import CancellationRefundProgress from '../../components/CancellationRefundProgress'
 import FormErrorSummary from '../../components/FormErrorSummary'
 import { blocksPublishing, organizerChecklist } from '../../utils/organizerChecklist'
 import VerificationNotice from '../../components/VerificationNotice'
@@ -94,7 +95,6 @@ function EditEventSession({ id, identity }) {
   const [publishing, setPublishing] = useState(false)
 
   // Danger zone modals
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
   const [showPostponeConfirm, setShowPostponeConfirm] = useState(false)
@@ -379,7 +379,6 @@ function EditEventSession({ id, identity }) {
       const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined }, request.config)
       if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
-      setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
       setLifecycleReason('')
@@ -387,7 +386,6 @@ function EditEventSession({ id, identity }) {
     } catch (err) {
       if (!request.current()) return
       setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
-      setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
     } finally {
@@ -543,19 +541,6 @@ function EditEventSession({ id, identity }) {
       )}
 
       {/* Danger zone modals */}
-      {showCancelConfirm && (
-        <ConfirmModal
-          title="Cancel Event?"
-          message="Ticket sales and public discovery will stop immediately. The reason is retained in the event history."
-          confirmLabel="Yes, Cancel Event"
-          onConfirm={() => handleLifecycle('cancel', 'Event has been cancelled.')}
-          onCancel={() => { setShowCancelConfirm(false); setLifecycleReason('') }}
-          loading={dangerLoading}
-          reason={lifecycleReason}
-          onReasonChange={setLifecycleReason}
-          requireReason
-        />
-      )}
       {showDeleteConfirm && (
         <ConfirmModal
           title="Delete Event?"
@@ -908,14 +893,13 @@ function EditEventSession({ id, identity }) {
             {(event.status === 'published' || event.status === 'postponed') && (
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Cancel Event</p>
-                  <p className="text-xs text-neutral-500">Stop sales and remove the event from public discovery.</p>
+                  <p className="text-sm font-medium text-neutral-900">Cancel event and refund all buyers</p>
+                  <p className="text-xs text-neutral-500">Stop sales and refund card orders. Cash orders need a manual return.</p>
                 </div>
-                <button onClick={() => setShowCancelConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5">
-                  <XCircle className="w-4 h-4" /> Cancel Event
-                </button>
+                <CancellationRefundProgress eventId={id} status={event.status} canMarkCash={permissions.refund === true} onCancelled={() => { apiClient.get(`/organizer/events/${id}`).then(response => setEvent(response.data)); setSuccessMessage('Event cancelled. Refunds are processing.') }} />
               </div>
             )}
+            {event.status === 'cancelled' && <CancellationRefundProgress eventId={id} status={event.status} canMarkCash={permissions.refund === true} />}
             {event.status === 'published' && (
               <div className="flex items-center justify-between p-3 bg-orange-50 rounded-xl">
                 <div>

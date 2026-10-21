@@ -58,7 +58,15 @@ emails:
     heading: "Ang Iyong Tiket"
     view: "Tingnan ang Iyong Tiket"
     entry_instructions: "Ipakita ang iyong QR Code sa pasukan upang makapasok."
+  event_cancelled:
+    subject: "Kinansela ang event: %{event}"
+    heading: "Kinansela ang %{event}"
+    body: "Inihahanda namin ang awtomatikong refund ng buong binayad mo, kasama ang service fee. Hindi mo kailangang humiling nito. Makikipag-ugnayan kami sa mga nagbayad ng cash para sa manual na refund."
+    view_order: "Tingnan ang order"
   refund:
+    cancelled_subject: "Kinansela ang event — paparating ang refund na %{amount}"
+    cancelled_heading: "Kinansela ang event — paparating ang refund"
+    cancelled_body: "Kinansela ang %{event}. Pinoproseso ang refund na %{amount}, kasama ang service fee."
     subject: "Naproseso na ang Refund - %{event}"
     heading: "Naproseso na ang Refund"
     body: "Naproseso na ang iyong refund para sa %{event}."
