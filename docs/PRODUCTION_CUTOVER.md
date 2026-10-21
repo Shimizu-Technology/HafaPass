@@ -94,7 +94,7 @@ Add (if not already present):
 
 Keep as they are:
 
-- `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` on web and job services. All three are mandatory outside development/test; missing keys prevent boot. Keep them stable, backed up securely, and out of logs. Never rotate by replacing them without a data migration/key-rotation plan.
+- `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` on web and job services. All three are mandatory in production; missing keys prevent boot. Staging can boot without them but cannot store tax information. Keep them stable, backed up securely, and out of logs. Never rotate by replacing them without a data migration/key-rotation plan.
 - `DATABASE_URL` (pooled), `DATABASE_MIGRATION_URL` (direct), `SECRET_KEY_BASE`, `PUBLIC_API_URL` (only this host is accepted; change it only if the API gets its own domain), `ADMIN_EMAILS`, `ENABLE_FIRST_USER_ADMIN_BOOTSTRAP=false`, `HAFAPASS_LAUNCH_SCOPE=general_admission`, `HAFAPASS_RUNTIME=embedded`, `RAILS_MAX_THREADS=3`, `DB_POOL=10`
 
 Remove after the production deploy is healthy (unused in production):
@@ -202,3 +202,16 @@ dependent feature refuses to run.
 ## Note on earlier approvals
 
 The `stripe_live` capability fingerprint now covers `STRIPE_LIVE_PLATFORM_ACCOUNT_ID` and `STRIPE_LIVE_WEBHOOK_SECRET`. Any `stripe_live` approval recorded before this release no longer matches and must be submitted and approved again. No deployed environment was in live mode when this changed.
+
+## Legal/tax safeguards rollout
+
+Apply `20261022000100_create_organizer_tax_informations` before serving the new
+API. The new table is additive and does not populate or approve any organizer's
+W-9. Existing organizers need completed tax information before payout readiness;
+saving tax details invalidates all payout-method approval revisions.
+
+The draft policy version stays `2026-10-launch-draft`, but its content and registry
+digests change. Existing `policy_register` capability approvals no longer match.
+Review Provider readiness and complete the applicable policy-register review
+through the existing workflow before expecting paid-sale readiness. Engineering
+drafts and product controls do not constitute counsel/accountant approval.

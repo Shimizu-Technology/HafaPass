@@ -4,6 +4,11 @@ require "digest"
 
 module EncryptionConfiguration
   def self.keys(environment:, env: ENV)
+    names = %w[PRIMARY_KEY DETERMINISTIC_KEY KEY_DERIVATION_SALT].map { |suffix| "ACTIVE_RECORD_ENCRYPTION_#{suffix}" }
+    # Staging may run without tax collection configured. Do not substitute
+    # predictable keys there; an attempted encrypted write must fail closed.
+    return nil if environment.to_s == "staging" && names.any? { |name| env[name].blank? }
+
     %w[PRIMARY_KEY DETERMINISTIC_KEY KEY_DERIVATION_SALT].to_h do |suffix|
       name = "ACTIVE_RECORD_ENCRYPTION_#{suffix}"
       value = env[name].presence

@@ -299,7 +299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_000100) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
+    t.jsonb "segment", default: { "type" => "all_attendees" }, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false

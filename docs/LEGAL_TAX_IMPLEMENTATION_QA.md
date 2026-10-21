@@ -60,19 +60,22 @@ fonts. Production build bundles fonts and passes; check final typography during
 integration QA. Initial health probes failed against the default local API;
 subsequent UI checks used a synthetic adapter, with no API writes.
 
-Automated results before the final backend rerun: frontend lint passed; Vitest
-145 files / 1,473 tests passed; production frontend build passed; RuboCop 25
-changed Ruby files passed; Brakeman 0 errors / 0 warnings. The advisory Impeccable
+Automated results on the final working tree: frontend lint passed; Vitest
+145 files / 1,473 tests passed; production frontend build passed; RuboCop 26
+changed Ruby files passed; Brakeman 0 errors / 0 warnings; full RSpec 1,894
+examples / 0 failures. The advisory Impeccable
 scan returned no findings. Independent read-only review found no material blocker.
-Its missing test-only payout fixture was added. The full backend rerun and final
-commit are recorded in the completion entry below.
+Its missing test-only payout fixture was added. The final commit SHA is reported
+to the integrating lead.
 
 The first complete backend run had 1,867 examples / 5 failures: four production
 boot fixtures lacked the newly mandatory encryption keys, and the existing admin
 payout-approval fixture lacked a W-9. Those fixtures were updated. A subsequent
 focused run of 43 examples passed. A later full rerun was deliberately interrupted
 early to include a final CSV consistency regression and production missing-key
-boot test; it is not counted as a passing gate.
+boot test; it is not counted as a passing gate. The subsequent complete rerun
+passed. Staging now boots without encryption keys but cannot store W-9s until
+they are configured; production still refuses to boot without all three keys.
 
 Browser evidence artifacts (local T3 browser-artifacts directory):
 `browser-screenshot-127-0-0-1-mvhtw8yk-1929bf85.png` (390px tax form) and
@@ -84,3 +87,8 @@ The task-owned preview tab and Vite process were closed after browser QA;
 `dev-lifecycle status` reported no active owned resources. The test database is
 kept only until the backend gate finishes, then dropped. Shared Postgres, Redis,
 other sessions' services, and devices remain untouched.
+
+Rollout: policy content changes invalidate the digest-bound `policy_register`
+capability approval even with the unchanged draft version. Check the existing
+review workflow before paid launch; do not treat engineering drafts as
+professional approval. The additive migration creates no W-9s or approvals.
