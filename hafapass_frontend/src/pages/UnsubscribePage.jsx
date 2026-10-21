@@ -10,28 +10,31 @@ export default function UnsubscribePage() {
   useEffect(() => {
     let active = true
     apiClient.get(`/marketing/unsubscribe/${encodeURIComponent(token)}`)
-      .then(({ data }) => { if (active) setState({ organization: data.organization, unsubscribed: true }) })
+      .then(({ data }) => { if (active) setState({ organization: data.organization, unsubscribed: data.unsubscribed }) })
       .catch(() => { if (active) setState({ error: 'This unsubscribe link could not be used.' }) })
     return () => { active = false }
   }, [token])
 
-  async function resubscribe() {
+  async function unsubscribe() {
     setBusy(true)
     try {
-      await apiClient.delete(`/marketing/unsubscribe/${encodeURIComponent(token)}`)
-      setState(previous => ({ ...previous, unsubscribed: false }))
+      await apiClient.post(`/marketing/unsubscribe/${encodeURIComponent(token)}`, {})
+      setState(previous => ({ ...previous, unsubscribed: true, error: null }))
     } catch {
-      setState(previous => ({ ...previous, error: 'Could not resubscribe. Please try again.' }))
+      setState(previous => ({ ...previous, error: 'Could not unsubscribe. Please try again.' }))
     } finally { setBusy(false) }
   }
 
   return <main className="mx-auto max-w-xl px-4 py-16 sm:py-24">
     <h1 className="text-2xl font-semibold text-neutral-900">Email preferences</h1>
-    {state.loading ? <p role="status" className="mt-4">Updating your preference…</p>
-      : state.error ? <p role="alert" className="mt-4 text-red-700">{state.error}</p>
+    {state.error && <p role="alert" className="mt-4 text-red-700">{state.error}</p>}
+    {state.loading ? <p role="status" className="mt-4">Loading email preferences…</p>
+      : !state.organization ? null
         : state.unsubscribed ? <>
-          <p role="status" className="mt-4">You are unsubscribed from promotional emails from {state.organization}. Ticket and order updates will still arrive.</p>
-          <button type="button" disabled={busy} onClick={resubscribe} className="btn-secondary mt-6">{busy ? 'Saving…' : 'Resubscribe'}</button>
-        </> : <p role="status" className="mt-4">You are resubscribed to promotional emails from {state.organization}.</p>}
+          <p role="status" className="mt-4">You're unsubscribed from promotional emails from {state.organization}. Ticket and order updates will still arrive. To get updates again, opt in at your next checkout or in your account.</p>
+        </> : <>
+          <p className="mt-4">Unsubscribe from promotional emails from {state.organization}? Ticket and order updates will still arrive.</p>
+          <button type="button" disabled={busy} onClick={unsubscribe} className="btn-primary mt-6">{busy ? 'Saving…' : 'Unsubscribe'}</button>
+        </>}
   </main>
 }

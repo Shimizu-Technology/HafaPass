@@ -896,10 +896,10 @@ function EditEventSession({ id, identity }) {
                   <p className="text-sm font-medium text-neutral-900">Cancel event and refund all buyers</p>
                   <p className="text-xs text-neutral-500">Stop sales and refund card orders. Cash orders need a manual return.</p>
                 </div>
-                <CancellationRefundProgress eventId={id} status={event.status} canMarkCash={permissions.refund === true} onCancelled={() => { apiClient.get(`/organizer/events/${id}`).then(response => setEvent(response.data)); setSuccessMessage('Event cancelled. Refunds are processing.') }} />
+                <CancellationRefundProgress eventId={id} status={event.status} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={() => { apiClient.get(`/organizer/events/${id}`).then(response => setEvent(response.data)); setSuccessMessage('Event cancelled. Refunds are processing.') }} />
               </div>
             )}
-            {event.status === 'cancelled' && <CancellationRefundProgress eventId={id} status={event.status} canMarkCash={permissions.refund === true} />}
+            {event.status === 'cancelled' && <CancellationRefundProgress eventId={id} status={event.status} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} />}
             {event.status === 'published' && (
               <div className="flex items-center justify-between p-3 bg-orange-50 rounded-xl">
                 <div>

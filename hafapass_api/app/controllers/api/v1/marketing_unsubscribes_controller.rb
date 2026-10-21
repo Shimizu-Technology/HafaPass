@@ -7,6 +7,14 @@ class Api::V1::MarketingUnsubscribesController < ApplicationController
     organization, email = verified_identity
     return unless organization
 
+    render json: { organization: organization.name,
+      unsubscribed: MarketingUnsubscribe.exists?(organization: organization, email: email) }
+  end
+
+  def create
+    organization, email = verified_identity
+    return unless organization
+
     MarketingUnsubscribe.find_or_create_by!(organization: organization, email: email) do |record|
       record.unsubscribed_at = Time.current
     end
@@ -15,18 +23,6 @@ class Api::V1::MarketingUnsubscribesController < ApplicationController
     raise unless MarketingUnsubscribe.exists?(organization: organization, email: email)
 
     render json: { organization: organization.name, unsubscribed: true }
-  end
-
-  def create
-    show
-  end
-
-  def destroy
-    organization, email = verified_identity
-    return unless organization
-
-    MarketingUnsubscribe.where(organization: organization, email: email).delete_all
-    render json: { organization: organization.name, unsubscribed: false }
   end
 
   private

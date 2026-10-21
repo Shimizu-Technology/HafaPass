@@ -36,7 +36,7 @@ RSpec.describe EventCancellationRefundJob do
     expect(order.refunds.count).to eq(1)
   end
 
-  it "keeps cash orders manual and disputed orders skipped" do
+  it "keeps cash orders manual and disputed orders unresolved" do
     cash = paid_order(email: "cash@example.com", method: "door_cash")
     disputed = paid_order(email: "disputed@example.com")
     Dispute.create!(order: disputed, payment: disputed.payments.first, status: :open,
@@ -46,9 +46,75 @@ RSpec.describe EventCancellationRefundJob do
     run = event.reload.event_cancellation_refund_run
     described_class.perform_now(run.id)
     expect(run.items.find_by!(order: cash)).to be_needs_manual
-    expect(run.items.find_by!(order: disputed)).to be_skipped
+    expect(run.items.find_by!(order: disputed)).to be_waiting_on_dispute
+    expect(run.reload).to be_needs_attention
     expect(cash.refunds).to be_empty
     expect(disputed.refunds).to be_empty
+  end
+
+  it "waits for an individual refund, then refunds its balance when it fails" do
+    order = paid_order(email: "individual@example.com")
+    individual = create(:refund, order: order, payment: order.payments.first, amount_cents: order.total_cents,
+      status: :pending, succeeded_at: nil, provider_refund_id: "re_individual_pending")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    item = run.items.find_by!(order: order)
+    described_class.perform_now(run.id)
+    expect(item.reload).to be_waiting_on_pending_refund
+    expect(run.reload).not_to be_completed
+    expect { PayoutCreator.call(settlement: create(:settlement, event: event, organization: event.organization),
+      actor: actor, idempotency_key: "blocked-pending-individual") }.to raise_error(/Finish cancellation refunds/)
+
+    individual.update!(status: :failed, failed_at: Time.current, failure_message: "Card closed")
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_bulk_after_failure", status: "succeeded", amount: order.total_cents, currency: "usd"))
+    described_class.perform_now(run.id)
+    expect(item.reload).to be_refunded
+    expect(run.reload).to be_completed
+    expect(order.reload.refunded_cents).to eq(order.total_cents)
+  end
+
+  it "refunds a won dispute but resolves a lost dispute as a chargeback" do
+    won_order = paid_order(email: "won@example.com")
+    lost_order = paid_order(email: "lost@example.com")
+    disputes = [won_order, lost_order].each_with_index.map do |order, index|
+      Dispute.create!(order: order, payment: order.payments.first, status: :open,
+        provider: "stripe", provider_dispute_id: "dp-cancel-#{index}", amount_cents: order.total_cents,
+        currency: "usd", opened_at: Time.current)
+    end
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    described_class.perform_now(run.id)
+    expect(run.reload).not_to be_completed
+    expect { PayoutCreator.call(settlement: create(:settlement, event: event, organization: event.organization),
+      actor: actor, idempotency_key: "blocked-open-dispute") }.to raise_error(/Finish cancellation refunds/)
+    expect { disputes.first.update!(status: :won, closed_at: Time.current) }
+      .to have_enqueued_job(described_class).with(run.id)
+    expect { disputes.last.update!(status: :lost, closed_at: Time.current) }
+      .to have_enqueued_job(described_class).with(run.id)
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_won_dispute", status: "succeeded", amount: won_order.total_cents, currency: "usd"))
+    described_class.perform_now(run.id)
+    expect(run.items.find_by!(order: won_order)).to be_refunded
+    lost_item = run.items.find_by!(order: lost_order)
+    expect(lost_item).to be_skipped
+    expect(lost_item.last_error).to include("chargeback")
+    expect(lost_order.refunds).to be_empty
+    expect(run.reload).to be_completed
+  end
+
+  it "recalculates the remaining balance after another partial refund" do
+    order = paid_order(email: "partial@example.com")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    create(:refund, order: order, payment: order.payments.first, amount_cents: 1000)
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_remaining", status: "succeeded", amount: order.total_cents - 1000, currency: "usd"))
+    described_class.perform_now(run.id)
+    item = run.items.find_by!(order: order)
+    expect(item.amount_cents).to eq(order.total_cents - 1000)
+    expect(order.refunds.find_by(idempotency_key: item.refund_key).amount_cents).to eq(order.total_cents - 1000)
+    expect(AuditLog.where(action: "event.cancellation_refund_amount_changed", auditable: event)).to exist
   end
 
   it "does not count a provider-pending refund as completed" do
@@ -61,7 +127,7 @@ RSpec.describe EventCancellationRefundJob do
 
     described_class.perform_now(run.id)
 
-    expect(item.reload).to be_pending
+    expect(item.reload).to be_waiting_on_pending_refund
     expect(run.reload).to be_needs_attention
     expect { Settlements::Finalizer.call(event: event, actor: actor) }.to raise_error(/Finish cancellation refunds/)
   end

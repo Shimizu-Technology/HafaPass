@@ -23,10 +23,8 @@ class Refund < ApplicationRecord
     if: -> { saved_change_to_status? && (succeeded? || failed? || cancelled?) }
 
   def resume_event_cancellation_refunds
-    return unless idempotency_key.start_with?("event-cancellation/")
-
     run = order.event.event_cancellation_refund_run
-    EventCancellationRefundJob.perform_later(run.id) if run
+    EventCancellationRefundJob.perform_later(run.id) if run && run.items.where(order_id: order_id).exists?
   end
 
   attr_readonly :order_id, :payment_id, :requested_by_id, :provider, :idempotency_key, :amount_cents, :currency

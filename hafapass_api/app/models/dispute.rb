@@ -13,6 +13,12 @@ class Dispute < ApplicationRecord
 
   after_save -> { Wallet::PassSync.tickets_changed(order.tickets.select(:id)) },
     if: -> { previously_new_record? || saved_change_to_status? }
+  after_commit :resume_event_cancellation_refunds, if: :saved_change_to_status?
+
+  def resume_event_cancellation_refunds
+    run = order.event.event_cancellation_refund_run
+    EventCancellationRefundJob.perform_later(run.id) if run && run.items.where(order_id: order_id).exists?
+  end
 
   attr_readonly :order_id, :payment_id, :provider, :provider_dispute_id, :amount_cents, :currency, :opened_at
 end

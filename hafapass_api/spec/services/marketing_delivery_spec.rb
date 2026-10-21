@@ -27,6 +27,9 @@ RSpec.describe "Marketing delivery" do
     expect(payload.fetch("html")).to include("123 Marine Drive", "Unsubscribe", event.organization.name)
     expect(payload.dig("headers", "List-Unsubscribe")).to include("/api/v1/marketing/unsubscribe/")
     expect(payload.dig("headers", "List-Unsubscribe-Post")).to eq("List-Unsubscribe=One-Click")
+    one_click_path = URI(payload.dig("headers", "List-Unsubscribe").delete_prefix("<").delete_suffix(">")).path
+    expect(Rails.application.routes.recognize_path(one_click_path, method: :post))
+      .to include(controller: "api/v1/marketing_unsubscribes", action: "create")
   end
 
   it "blocks missing mailing address and respects unsubscribe and provider complaints" do

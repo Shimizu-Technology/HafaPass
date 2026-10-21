@@ -18,7 +18,6 @@ Rails.application.routes.draw do
       get "config", to: "config#show"
       get "marketing/unsubscribe/:token", to: "marketing_unsubscribes#show", as: :marketing_unsubscribe
       post "marketing/unsubscribe/:token", to: "marketing_unsubscribes#create"
-      delete "marketing/unsubscribe/:token", to: "marketing_unsubscribes#destroy"
       get "me", to: "me#show"
       post "users/sync", to: "users#sync"
 

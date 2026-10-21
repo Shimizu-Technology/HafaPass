@@ -11,19 +11,30 @@ class EventCancellationRefunds
   def self.prepare!(event:, actor:)
     run = event.event_cancellation_refund_run || event.create_event_cancellation_refund_run!(started_by: actor)
     event.orders.where(status: [:completed, :partially_refunded, :refunded]).find_each do |order|
-      disputed = order.disputes.where(status: [:open, :lost]).exists?
+      open_dispute = order.disputes.open.exists?
+      lost_dispute = order.disputes.lost.exists?
       amount = order.refundable_cents
-      status = if disputed || amount.zero?
+      pending_refund = order.refunds.pending.exists?
+      status = if open_dispute
+        :waiting_on_dispute
+      elsif lost_dispute && pending_refund
+        :waiting_on_pending_refund
+      elsif lost_dispute || (amount.zero? && !pending_refund)
         :skipped
+      elsif amount.zero?
+        :waiting_on_pending_refund
       elsif order.payment_method == "door_cash"
         :needs_manual
       else
         :pending
       end
       run.items.find_or_create_by!(order: order) do |item|
-        item.amount_cents = disputed ? 0 : amount
+        item.amount_cents = amount
         item.status = status
-        item.last_error = "Disputed order" if disputed
+        item.last_error = "Waiting for dispute resolution" if open_dispute
+        item.last_error = "Dispute lost; buyer refunded by chargeback" if lost_dispute && !pending_refund
+        item.last_error = "Waiting for an existing refund" if status == :waiting_on_pending_refund
+        item.last_error = "Order already fully refunded" if status == :skipped && !lost_dispute
       end
     end
     AuditLogger.record!(action: "event.cancellation_refunds_started", auditable: event, actor: actor,

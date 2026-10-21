@@ -59,4 +59,57 @@ RSpec.describe "Cancellation refund permissions", type: :request do
     expect(order.reload).to be_refunded
     expect(AuditLog.where(action: "event.cancellation_cash_refunded", auditable: event)).to exist
   end
+
+  it "denies a manager cancellation, retry, and cash return while allowing a progress view" do
+    manager = create(:user)
+    create(:organization_membership, organization: event.organization, user: manager, role: :manager)
+    get "#{base}/cancellation_refunds", headers: auth_headers(manager)
+    expect(response).to have_http_status(:ok)
+    post "#{base}/cancel", params: { reason: "Storm", refund_count: 0, refund_total_cents: 0 },
+      headers: auth_headers(manager)
+    expect(response).to have_http_status(:forbidden)
+    expect(event.reload).to be_published
+
+    EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
+    post "#{base}/retry_cancellation_refunds", headers: auth_headers(manager)
+    expect(response).to have_http_status(:forbidden)
+    post "#{base}/cancellation_refunds/123/mark_cash_refunded",
+      params: { reference: "receipt", returned_at: Time.current.iso8601 }, headers: auth_headers(manager)
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "advances the key for a terminal failed provider refund with an ID" do
+    order = create(:order, event: event)
+    type = create(:ticket_type, event: event)
+    create(:order_item, order: order, ticket_type: type, quantity: 2, subtotal_cents: 5000,
+      fee_cents: 250, organizer_proceeds_cents: 5000)
+    payment = create(:payment, :succeeded, order: order, provider: "stripe", provider_payment_id: "sim_pi_retry")
+    EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
+    item = event.event_cancellation_refund_run.items.find_by!(order: order)
+    create(:refund, order: order, payment: payment, amount_cents: item.amount_cents, status: :failed,
+      succeeded_at: nil, provider_refund_id: "re_failed_with_id", idempotency_key: item.refund_key)
+    item.update!(status: :failed)
+    post "#{base}/retry_cancellation_refunds", headers: auth_headers(profile.user)
+    expect(response).to have_http_status(:accepted)
+    expect(item.reload.retry_generation).to eq(1)
+    expect(item).to be_pending
+  end
+
+  it "retains the key for an uncertain pending provider result" do
+    order = create(:order, event: event)
+    type = create(:ticket_type, event: event)
+    create(:order_item, order: order, ticket_type: type, quantity: 2, subtotal_cents: 5000,
+      fee_cents: 250, organizer_proceeds_cents: 5000)
+    payment = create(:payment, :succeeded, order: order, provider: "stripe", provider_payment_id: "sim_pi_unknown")
+    EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
+    item = event.event_cancellation_refund_run.items.find_by!(order: order)
+    create(:refund, order: order, payment: payment, amount_cents: item.amount_cents, status: :pending,
+      succeeded_at: nil, provider_refund_id: nil, failure_code: "provider_result_unknown",
+      idempotency_key: item.refund_key)
+    item.update!(status: :failed)
+    post "#{base}/retry_cancellation_refunds", headers: auth_headers(profile.user)
+    expect(response).to have_http_status(:accepted)
+    expect(item.reload.retry_generation).to eq(0)
+    expect(item).to be_pending
+  end
 end

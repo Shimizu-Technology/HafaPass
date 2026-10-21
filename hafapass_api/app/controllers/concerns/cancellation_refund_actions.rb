@@ -16,7 +16,7 @@ module CancellationRefundActions
         refund = item.order.refunds.find_by(idempotency_key: item.refund_key)
         # An uncertain provider result must stay on its original key so the
         # provider can be reconciled without a second money movement.
-        generation = refund&.failed? && refund.provider_refund_id.blank? ? item.retry_generation + 1 : item.retry_generation
+        generation = (refund&.failed? || refund&.cancelled?) ? item.retry_generation + 1 : item.retry_generation
         item.update!(status: :pending, retry_generation: generation, last_error: nil)
       end
     end

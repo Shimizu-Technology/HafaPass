@@ -50,3 +50,24 @@ it('explains cash-return permissions to an organizer manager', async () => {
   expect(await screen.findByText('Ask an owner or finance teammate to record the cash return.')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Mark refunded in cash' })).not.toBeInTheDocument()
 })
+
+it('offers a retry when the first progress load fails', async () => {
+  const user = userEvent.setup()
+  apiClient.get.mockRejectedValueOnce(new Error('network down')).mockResolvedValueOnce({
+    data: { preview: { count: 0, total_cents: 0, cash_count: 0 }, run: null },
+  })
+  render(<CancellationRefundProgress eventId={7} status="published" />)
+  await user.click(screen.getByRole('button', { name: 'Review cancellation and refunds' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Refund progress could not be loaded')
+  expect(screen.queryByText('Loading refund details…')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Retry loading refund details' }))
+  expect(await screen.findByText('0 orders · $0.00 including service fees.')).toBeInTheDocument()
+})
+
+it('explains the refund-authority requirement to managers', async () => {
+  const user = userEvent.setup()
+  render(<CancellationRefundProgress eventId={7} status="published" canRefund={false} />)
+  await user.click(screen.getByRole('button', { name: 'Review cancellation and refunds' }))
+  expect(await screen.findByText(/Ask an owner to cancel/)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Cancel event and refund all buyers' })).not.toBeInTheDocument()
+})

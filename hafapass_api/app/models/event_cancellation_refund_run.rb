@@ -12,7 +12,9 @@ class EventCancellationRefundRun < ApplicationRecord
     { id: id, status: status, total_orders: items.count, total_cents: items.sum(:amount_cents),
       refunded: counts.fetch("refunded", 0), pending: counts.fetch("pending", 0),
       failed: counts.fetch("failed", 0), needs_manual: counts.fetch("needs_manual", 0),
-      skipped: counts.fetch("skipped", 0), completed_at: completed_at,
+      skipped: counts.fetch("skipped", 0),
+      waiting_on_pending_refund: counts.fetch("waiting_on_pending_refund", 0),
+      waiting_on_dispute: counts.fetch("waiting_on_dispute", 0), completed_at: completed_at,
       items: items.includes(:order).order(:id).map { |item| {
         id: item.id, order_id: item.order_id, order_reference: item.order.reference,
         status: item.status, amount_cents: item.amount_cents, error: item.last_error

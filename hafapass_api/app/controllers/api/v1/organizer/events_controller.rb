@@ -374,14 +374,16 @@ module Api
           @event = find_organization_event(params[:id])
           return unless @event
 
-          authorize_organization!(permission_for_action, event: @event)
+          return unless authorize_organization!(permission_for_action, event: @event)
+
+          authorize_organization!(:manage_events, event: @event) if action_name == "cancel"
         end
 
         def permission_for_action
           case action_name
           when "show" then :view_events
           when "stats", "cancellation_refunds" then :view_finance
-          when "mark_cash_refunded" then :refund
+          when "cancel", "retry_cancellation_refunds", "mark_cash_refunded" then :refund
           when "attendees" then :view_attendees
           when "update", "slug_availability", "retranslate" then :edit_event_content
           else :manage_events

@@ -64,6 +64,12 @@ class Order < ApplicationRecord
 
   before_validation :assign_reference, on: :create
   after_update -> { Wallet::PassSync.tickets_changed(tickets.select(:id)) }, if: :saved_change_to_status?
+  after_update :restore_marketing_opt_in, if: -> { saved_change_to_status? && completed? && marketing_opt_in? }
+
+  def restore_marketing_opt_in
+    MarketingUnsubscribe.where(organization_id: event.organization_id,
+      email: buyer_email.to_s.strip.downcase).delete_all
+  end
 
   def guest_access_valid?(version:, at: Time.current)
     user_id.nil? && guest_access_revoked_at.nil? && guest_access_expires_at.present? &&
