@@ -154,23 +154,20 @@ function FinancesSession({ identity }) {
     return (
       <WorkspacePage>
         {header(null)}
-        <div role="alert"><NoAccessNotice title="Finances aren’t part of your role" detail="Your role in this organization does not include finances. Owners, managers and finance members can see this page." /></div>
+        <NoAccessNotice title="Finances aren’t part of your role" detail="Your role in this organization does not include finances. Owners, managers and finance members can see this page." />
       </WorkspacePage>
     )
   }
 
   if (state.status === 'error') {
-    const message = state.error === 'denied'
-      ? 'Your role in this organization does not include finances. Owners, managers and finance members can see this page.'
-      : state.error === 'signed-out' ? 'Please sign in again to see your finances.'
-        : 'Finances could not be loaded. Check your connection and try again.'
+    const message = state.error === 'signed-out' ? 'Please sign in again to see your finances.'
+      : 'Finances could not be loaded. Check your connection and try again.'
     return (
       <WorkspacePage>
         {header(null)}
         <div role="alert" className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-neutral-700">
           <p>{message}</p>
           {state.error === 'failed' && <button type="button" onClick={load} className="btn-secondary mt-4 !px-4 !py-2.5 text-sm">Try again</button>}
-          {state.error === 'denied' && <Link to="/dashboard" className="btn-secondary mt-4 !px-4 !py-2.5 text-sm">Back to dashboard</Link>}
         </div>
       </WorkspacePage>
     )

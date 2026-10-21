@@ -36,6 +36,16 @@ RSpec.describe "Check payout method", type: :request do
     expect(response.parsed_body["payout_details"]).not_to have_key("mailing_address")
   end
 
+  it "rejects creating a check method without a payee or with a malformed payee" do
+    expect(organization.connected_accounts).to be_empty
+    post "/api/v1/organizer/connected_accounts", params: { provider: "check" }, headers: headers
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to include("who the check is for")
+    post "/api/v1/organizer/connected_accounts", params: { provider: "check", payout_details: "Ambros" }, headers: headers
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(organization.connected_accounts.reload).to be_empty
+  end
+
   it "invalidates an earlier readiness approval when the payee changes" do
     account = create(:connected_account, organization: organization, provider: "check",
       provider_account_id: nil, payout_details: details.stringify_keys)
@@ -193,15 +203,5 @@ RSpec.describe "Check payee changes while a payout is in flight", type: :request
     patch "/api/v1/admin/payouts/#{payout.id}", params: paid, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)
     expect(response.parsed_body["error"]).to eq("That check number is already recorded")
-  end
-
-  it "rejects a check method without a payee or with a malformed payee" do
-    headers = auth_headers(owner).merge("X-Organization-Id" => organization.id.to_s)
-    account.destroy! if account.payouts.none?
-    post "/api/v1/organizer/connected_accounts", params: { provider: "check" }, headers: headers
-    expect(response).to have_http_status(:unprocessable_entity)
-    post "/api/v1/organizer/connected_accounts", params: { provider: "check", payout_details: "Ambros" }, headers: headers
-    expect(response).to have_http_status(:unprocessable_entity)
-    expect(response.parsed_body["error"]).to include("who the check is for")
   end
 end

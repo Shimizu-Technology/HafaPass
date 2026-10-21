@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "Platform staff invitations", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:admin) { create(:user, :admin, email: "admin@example.com") }
 
   def invite(email, role)
@@ -53,9 +55,51 @@ RSpec.describe "Platform staff invitations", type: :request do
     expect(response.parsed_body).to include("role" => "attendee")
   end
 
-  it "never lowers a role and refuses people who already have it" do
+  it "refuses to invite someone who already has that role" do
     invite(admin.email, "support")
     expect(response).to have_http_status(:unprocessable_entity)
+  end
+
+  it "never lowers a role when an Admin accepts an older Support invitation" do
+    body = invite("helper@example.com", "support")
+    token = Rack::Utils.parse_query(URI(body["accept_url"]).query).fetch("token")
+    helper = create(:user, email: "helper@example.com", role: :admin) # became an admin another way
+
+    post "/api/v1/platform_invitations/accept", params: { token: token }, headers: auth_headers(helper)
+
+    expect(response).to have_http_status(:ok)
+    expect(helper.reload).to be_admin
+    expect(PlatformInvitation.find(body["id"])).to be_status_accepted
+  end
+
+  it "rejects an expired invitation link" do
+    body = invite("helper@example.com", "support")
+    token = Rack::Utils.parse_query(URI(body["accept_url"]).query).fetch("token")
+    helper = create(:user, email: "helper@example.com")
+
+    travel_to(PlatformInvitation::LIFETIME.from_now + 1.hour) do
+      post "/api/v1/platform_invitations/accept", params: { token: token }, headers: auth_headers(helper)
+    end
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to eq("Invitation is invalid or expired")
+    expect(helper.reload).to be_attendee
+  end
+
+  it "works when a different admin resends after the original inviter lost admin access" do
+    body = invite("helper@example.com", "support")
+    admin.update_column(:role, User.roles[:support])
+    other_admin = create(:user, :admin)
+
+    post "/api/v1/admin/platform_invitations/#{body['id']}/resend", headers: auth_headers(other_admin)
+    expect(response).to have_http_status(:ok)
+    expect(PlatformInvitation.find(body["id"]).invited_by_user).to eq(other_admin)
+    token = Rack::Utils.parse_query(URI(response.parsed_body["accept_url"]).query).fetch("token")
+
+    helper = create(:user, email: "helper@example.com")
+    post "/api/v1/platform_invitations/accept", params: { token: token }, headers: auth_headers(helper)
+    expect(response).to have_http_status(:ok)
+    expect(helper.reload).to be_support
   end
 
   it "resends with a new link and revokes pending invitations" do

@@ -96,4 +96,19 @@ RSpec.describe OrganizationInvitation do
     expect(OrganizationAuthorization.allowed?(user: invitee, organization: organization, permission: :scan, event: event))
       .to be(true)
   end
+
+  it "reactivates an old revoked event assignment without its past end date" do
+    profile = create(:organizer_profile, organization: organization)
+    event = create(:event, organizer_profile: profile)
+    create(:event_staff_assignment, organization: organization, event: event, user: invitee, role: :scanner,
+      status: :revoked, expires_at: 2.days.ago)
+    membership.update!(role: :scanner, pending_event_assignments: [{ "event_id" => event.id, "role" => "scanner" }])
+    token = described_class.issue!(membership)
+
+    described_class.accept!(token: token, user: invitee)
+
+    assignment = event.event_staff_assignments.find_by!(user: invitee, role: :scanner)
+    expect(assignment).to have_attributes(status: "active", expires_at: nil)
+    expect(assignment).to be_effective
+  end
 end

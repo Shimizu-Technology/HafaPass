@@ -1,5 +1,5 @@
 import { CheckCircle2, Loader2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import apiClient from '../api/client'
 import { roleDescription, roleLabel } from '../utils/roles'
@@ -10,9 +10,13 @@ export default function PlatformInvitationAcceptPage() {
   const [searchParams] = useSearchParams()
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  // A token is single use: StrictMode replays effects, so submit it once.
+  const submitted = useRef(null)
 
   useEffect(() => {
     const token = searchParams.get('token')
+    if (token && submitted.current === token) return
+    submitted.current = token
     if (!token) {
       setError('This invitation link is missing its secure token. Open the link from your invitation email again.')
       return

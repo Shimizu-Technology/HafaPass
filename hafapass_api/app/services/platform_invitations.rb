@@ -44,8 +44,10 @@ class PlatformInvitations
       invitation.with_lock do
         raise InvitationError, "Only pending or expired invitations can be resent" unless invitation.status_pending?
 
+        # The resending admin becomes the inviter, so the link works even if
+        # the original inviter has since lost admin access.
         invitation.update!(invited_at: Time.current, expires_at: PlatformInvitation::LIFETIME.from_now,
-          invitation_version: invitation.invitation_version + 1)
+          invitation_version: invitation.invitation_version + 1, invited_by_user: actor)
       end
       AuditLogger.record!(action: "platform.invitation_resent", auditable: invitation, actor: actor,
         after_data: invitation_snapshot(invitation), request: request)
@@ -79,6 +81,10 @@ class PlatformInvitations
       payload = SignedCredential.verify(namespace: NAMESPACE, token: token)
       invitation = payload && PlatformInvitation.find_by(id: payload["invitation_id"])
       raise InvitationError, "Invitation is invalid or expired" unless invitation
+      # Ask Clerk before taking the row lock; the checks below repeat under it.
+      unless ClerkIdentity.email_matches?(user: user, email: invitation.email)
+        raise InvitationError, "Sign in with the verified email address that received this invitation and try again."
+      end
 
       invitation.with_lock do
         unless invitation.display_status == "pending" && invitation.invitation_version == payload["version"].to_i
@@ -86,9 +92,6 @@ class PlatformInvitations
         end
         unless inviter_still_admin?(invitation)
           raise InvitationError, "This invitation is no longer valid. Ask a HåfaPass admin to send a new one."
-        end
-        unless ClerkIdentity.email_matches?(user: user, email: invitation.email)
-          raise InvitationError, "Sign in with the verified email address that received this invitation and try again."
         end
 
         apply!(invitation, user, request: request)

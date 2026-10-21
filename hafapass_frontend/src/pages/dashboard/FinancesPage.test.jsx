@@ -112,7 +112,8 @@ describe('FinancesPage', () => {
   it('explains a role without finance access instead of offering a retry', async () => {
     apiClient.get.mockRejectedValue({ response: { status: 403 } })
     mount()
-    expect(await screen.findByRole('alert')).toHaveTextContent('does not include finances')
+    expect(await screen.findByText(/does not include finances/)).toBeInTheDocument()
+    expect(screen.getByText('Ask your organization owner if you need it.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Orders CSV' })).not.toBeInTheDocument()
   })

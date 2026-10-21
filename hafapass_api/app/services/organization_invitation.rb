@@ -113,7 +113,9 @@ class OrganizationInvitation
         next unless event
 
         assignment = event.event_staff_assignments.find_or_initialize_by(user: membership.user, role: entry["role"])
-        assignment.update!(organization: membership.organization, status: :active,
+        # A reused old assignment may carry a past end date; event invites
+        # grant open-ended access, like assigning an existing member.
+        assignment.update!(organization: membership.organization, status: :active, expires_at: nil,
           assigned_by_user_id: entry["assigned_by_user_id"] || membership.invited_by_user_id)
       end
       membership.update!(pending_event_assignments: [])

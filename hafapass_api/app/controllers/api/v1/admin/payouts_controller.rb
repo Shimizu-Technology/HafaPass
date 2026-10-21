@@ -9,7 +9,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   def index
     scope = filtered_payouts
     counts = scope.unscope(:order).group(:status).count
-    payouts, meta = admin_page(scope.includes(:organization, :event, :settlement, connected_account: :payment_readiness_reviews)
+    payouts, meta = admin_page(scope.includes(:organization, :event, :settlement, :connected_account)
       .order(created_at: :desc, id: :desc))
     audits = AuditLog.includes(:actor_user).where(auditable_type: "Payout", auditable_id: payouts.map(&:id),
       action: RECONCILIATION_ACTIONS).order(:id).group_by(&:auditable_id)
@@ -75,6 +75,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
 
   def payout_list_json(payout, audits)
     reconciliation = audits.reverse.find { |audit| audit.action == "payout.reconciled" }
+    # Compared in memory (snapshot vs. details on file), once per payout.
+    payee_changed = payout.provider == "check" && !payout.payee_matches_approval?
     conflict = audits.reverse.find { |audit| audit.action == "payout.provider_result_conflict" }
     payout.attributes.slice(
       "id", "provider", "provider_payout_id", "amount_cents", "currency", "status", "failure_code",
@@ -86,8 +88,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       # For checks, who to write it to; the check number is the transfer ID
       # and the date on the check is the confirmation time.
       payee: payout.provider == "check" ? payout.payee_snapshot : nil,
-      payee_changed: payout.provider == "check" && !payout.payee_matches_approval?,
-      current_payee: payout.provider == "check" && !payout.payee_matches_approval? ? payout.connected_account.check_payee : nil,
+      payee_changed: payee_changed,
+      current_payee: payee_changed ? payout.connected_account.check_payee : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,
       conflict: payout.failure_code == "provider_result_conflict" && conflict ? {

@@ -408,6 +408,8 @@ function DashboardSession({ authContext }) {
   requests.current.clear()
   closeEditor(editorRef.current)
   setReadinessLoading(false)
+  // An earlier organization's setup error must not look like this one's.
+  setActionError(null)
   const requestedOrganization = window.localStorage.getItem('hafapass_organization_id')
   loadingOrganization.current = requestedOrganization || ''
   if (profileContext?.organizationId !== requestedOrganization) {

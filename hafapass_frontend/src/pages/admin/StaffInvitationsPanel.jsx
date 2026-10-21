@@ -90,6 +90,8 @@ export default function StaffInvitationsPanel({ beginRequest }) {
       {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
       {notice && <p role="status" className="mt-4 rounded-lg border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900">{notice}</p>}
       {link && <InvitationLinkPanel url={link.url} email={link.email} onDismiss={() => setLink(null)} />}
+      {status === 'loading' && <p role="status" className="mt-4 text-sm text-content-muted">Loading staff invitations…</p>}
+      {status === 'ready' && invitations.length === 0 && <p className="mt-4 text-sm text-content-muted">No staff invitations yet.</p>}
       {status === 'error' && <p role="alert" className="mt-4 text-sm text-red-800">Staff invitations could not be loaded. <button type="button" onClick={load} className="min-h-11 font-semibold underline">Try again</button></p>}
       {waiting.length > 0 && (
         <ul className="mt-5 divide-y divide-neutral-100 border-t border-neutral-100" aria-label="Open staff invitations">

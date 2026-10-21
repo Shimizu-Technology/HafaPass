@@ -43,4 +43,14 @@ describe('StaffInvitationsPanel', () => {
     await userEvent.click(list.getByRole('button', { name: 'Resend' }))
     expect(apiClient.post).toHaveBeenCalledWith('/admin/platform_invitations/1/resend', {}, expect.anything())
   })
+
+  it('shows loading and empty states once opened', async () => {
+    let finish
+    apiClient.get.mockReturnValue(new Promise(resolve => { finish = resolve }))
+    show()
+    await userEvent.click(screen.getByRole('button', { name: 'Invite staff' }))
+    expect(screen.getByText('Loading staff invitations…')).toBeInTheDocument()
+    finish({ data: { invitations: [] } })
+    expect(await screen.findByText('No staff invitations yet.')).toBeInTheDocument()
+  })
 })

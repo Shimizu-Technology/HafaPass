@@ -15,6 +15,11 @@ class AddInvitationSubjectsToMessageDeliveries < ActiveRecord::Migration[8.1]
   end
 
   def down
+    if select_value("SELECT 1 FROM message_deliveries WHERE order_id IS NULL AND ticket_id IS NULL AND event_id IS NULL LIMIT 1")
+      raise ActiveRecord::IrreversibleMigration,
+        "Invitation-only email deliveries exist; archive or remove them before rolling back"
+    end
+
     remove_check_constraint :message_deliveries, name: "message_deliveries_subject_present"
     add_check_constraint :message_deliveries, "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL",
       name: "message_deliveries_subject_present"

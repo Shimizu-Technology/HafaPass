@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -33,5 +34,13 @@ describe('invitation acceptance', () => {
     expect(await screen.findByRole('heading', { name: 'Welcome to the HåfaPass team' })).toBeInTheDocument()
     expect(apiClient.post).toHaveBeenCalledWith('/platform_invitations/accept', { token: 'abc' })
     expect(screen.getByRole('link', { name: 'Open support' })).toHaveAttribute('href', '/support')
+  })
+
+  it('submits a one-time token once even when StrictMode replays the effect', async () => {
+    apiClient.post.mockResolvedValue({ data: { role: 'support', invited_role: 'support', role_label: 'Support', role_description: 'helps buyers' } })
+    render(<StrictMode><MemoryRouter initialEntries={['/platform-invitations/accept?token=once']}><PlatformInvitationAcceptPage /></MemoryRouter></StrictMode>)
+    expect(await screen.findByRole('heading', { name: 'Welcome to the HåfaPass team' })).toBeInTheDocument()
+    expect(apiClient.post).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Invitation unavailable')).not.toBeInTheDocument()
   })
 })
