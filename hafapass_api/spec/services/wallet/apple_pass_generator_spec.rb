@@ -22,6 +22,20 @@ RSpec.describe Wallet::ApplePassGenerator do
     expect(pass.dig("eventTicket", "headerFields", 0, "value")).to eq("Valid")
   end
 
+  it "uses the bundled icon and its retina variants from a path relative to the app root" do
+    configure_apple_wallet
+    stub_const("ENV", ENV.to_h.merge("APPLE_PASS_ICON_PATH" => "app/assets/wallet/icon.png"))
+    ticket = wallet_ticket
+
+    archive = Zip::File.open_buffer(described_class.call(ticket))
+    bundled = Rails.root.join("app/assets/wallet")
+
+    expect(archive.read("icon.png")).to eq(File.binread(bundled.join("icon.png")))
+    expect(archive.read("icon@2x.png")).to eq(File.binread(bundled.join("icon@2x.png")))
+    expect(archive.read("icon@3x.png")).to eq(File.binread(bundled.join("icon@3x.png")))
+    expect(JSON.parse(archive.read("manifest.json")).keys).to include("icon@3x.png")
+  end
+
   it "registers the pass for updates with a per-copy token that is stored only as a digest" do
     configure_apple_wallet
     ticket = wallet_ticket
