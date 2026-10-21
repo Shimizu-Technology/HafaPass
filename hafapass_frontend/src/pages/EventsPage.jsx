@@ -39,7 +39,7 @@ export default function EventsPage() {
   const [price, setPrice] = useState(searchParams.get('price') || 'all')
   const [village, setVillage] = useState(searchParams.get('village') || '')
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
-  const categories = useEventCategories()
+  const categories = useEventCategories().map(category => ({ ...category, label: t(`buyer.categories.${category.value}`, { defaultValue: category.label }) }))
   const reducedMotion = useReducedMotion()
   const ResultsContainer = reducedMotion ? 'div' : StaggerContainer
   const ResultItem = reducedMotion ? 'div' : StaggerItem

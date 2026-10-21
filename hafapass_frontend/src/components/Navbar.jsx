@@ -85,13 +85,13 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   const navLinks = [
     { to: '/events', label: t('nav.events'), icon: CalendarDays },
-    { to: '/discover', label: 'Discover', icon: Compass },
+    { to: '/discover', label: t('nav.discover'), icon: Compass },
     // Signed-in accounts reach organizer tools through Dashboard once they
     // belong to an organization; everyone else gets the setup path.
     ...(!isSignedIn ? [{ to: '/host', label: t('nav.hostEvent'), icon: CalendarPlus }] : []),
     ...(isSignedIn ? [
       { to: '/my-tickets', label: t('nav.myTickets'), icon: Ticket },
-      { to: '/saved', label: 'Saved', icon: Heart },
+      { to: '/saved', label: t('nav.saved'), icon: Heart },
       ...(showScanner ? [{ to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine }] : []),
       ...(showDashboard ? [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard }]
         : workspace ? [{ to: '/dashboard', label: t('nav.hostEvent'), icon: CalendarPlus }] : []),

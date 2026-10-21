@@ -63,7 +63,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     expect(new URL(calendar.href).searchParams.get('dates')).toBe('20261011T131400Z/20261011T171400Z')
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /Increase quantity for/ }))
-    await user.click(screen.getByRole('button', { name: /Buy\ Tickets/ }))
+    await user.click(screen.getByRole('button', { name: /Buy Tickets/ }))
     expect(screen.getByTestId('route')).toHaveTextContent('/checkout/event-a')
     expect(apiClient.post).not.toHaveBeenCalled()
   })
@@ -79,19 +79,19 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     await user.click(screen.getByRole('button', { name: /Increase quantity for/ }))
     await user.click(screen.getByRole('link', { name: 'Open event B' }))
     await waitFor(() => expect(finishB).toBeDefined())
-    const staleBuy = screen.queryByRole('button', { name: /Buy\ Tickets/ })
+    const staleBuy = screen.queryByRole('button', { name: /Buy Tickets/ })
     if (staleBuy) await user.click(staleBuy)
     else {
       await act(async () => finishB())
       await screen.findByRole('heading', { name: b.title })
       await user.click(screen.getByRole('button', { name: /Increase quantity for/ }))
-      await user.click(screen.getByRole('button', { name: /Buy\ Tickets/ }))
+      await user.click(screen.getByRole('button', { name: /Buy Tickets/ }))
     }
     expect(screen.getByTestId('route')).toHaveTextContent('/checkout/event-b')
     await user.type(await screen.findByLabelText("Full Name"), 'Synthetic Buyer')
     await user.type(screen.getByLabelText("Email Address"), 'buyer@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
+    await user.click(screen.getByRole('button', { name: /Place Order/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.anything()))
     await act(async () => finishB())
     expect(apiClient.post.mock.calls.find(([url]) => url === '/orders')[1]).toMatchObject({
@@ -111,7 +111,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     await user.click(screen.getByRole('button', { name: /Increase quantity for/ }))
     await act(async () => finishA())
     expect(screen.getByRole('heading', { name: b.title })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Buy\ Tickets/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Buy Tickets/ })).toBeInTheDocument()
   })
 
   it('does not navigate back to A when its earlier seat reservation finishes after leaving', async () => {
@@ -147,7 +147,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
       await user.type(name, 'Synthetic Buyer')
       await user.type(screen.getByLabelText("Email Address"), 'buyer@example.invalid')
       await user.click(screen.getByRole('checkbox'))
-      await user.click(await screen.findByRole('button', { name: /Place\ Order/ }))
+      await user.click(await screen.findByRole('button', { name: /Place Order/ }))
     }
     await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('/events/event-b'))
     expect(apiClient.post).not.toHaveBeenCalled()
@@ -165,7 +165,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     await user.type(screen.getByLabelText("Full Name"), 'Current B Buyer')
     await user.type(screen.getByLabelText("Email Address"), 'current-b@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
+    await user.click(screen.getByRole('button', { name: /Place Order/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.anything()))
     expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 42, buyer_name: 'Current B Buyer',
       line_items: [{ ticket_type_id: 222, quantity: 3 }] })
@@ -190,7 +190,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     await screen.findByLabelText("Full Name")
     expect(screen.getByText('event-b admission')).toBeInTheDocument()
     expect(screen.getAllByText('$50.00').length).toBeGreaterThan(0)
-    await user.click(screen.getByRole('button', { name: /Have\ a\ promo\ code\?/ }))
+    await user.click(screen.getByRole('button', { name: /Have a promo code\?/ }))
     await user.type(screen.getByLabelText('Promo code'), 'SAVE')
     await user.click(screen.getByRole('button', { name: "Apply" }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/promo_codes/validate', {
@@ -199,7 +199,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     await user.type(screen.getByLabelText("Full Name"), 'Current B Buyer')
     await user.type(screen.getByLabelText("Email Address"), 'buyer@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
+    await user.click(screen.getByRole('button', { name: /Place Order/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.objectContaining({
       event_id: 42, line_items: [{ ticket_type_id: selectedId, quantity: 2 }],
     })))

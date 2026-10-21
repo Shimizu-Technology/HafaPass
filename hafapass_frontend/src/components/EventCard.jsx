@@ -69,7 +69,7 @@ export default function EventCard({ event }) {
         {/* Category badge */}
         {event.category && event.category !== 'other' && (
           <span className="inline-block text-xs font-semibold text-brand-700 uppercase tracking-wider mb-2">
-            {event.category_label || event.category}
+            {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
           </span>
         )}
 

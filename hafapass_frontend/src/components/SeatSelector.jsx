@@ -117,12 +117,12 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
                       const unavailable = seat.status !== 'available' || map.suspended
                       const accessible = seat.accessibility_kind !== 'standard'
                       const description = [
-                        `${section.name}, row ${row.label}, seat ${seat.label}`,
+                        t('buyer.SeatSelector.seatLabel', { section: section.name, row: row.label, seat: seat.label }),
                         seat.ticket_type_name,
                         money(seatPrice(seat)),
-                        accessible ? seat.accessibility_kind.replace('_', ' ') : null,
+                        accessible ? t(`buyer.SeatSelector.accessibility.${seat.accessibility_kind}`, { defaultValue: seat.accessibility_kind.replace('_', ' ') }) : null,
                         seat.obstructed_view ? t('buyer.SeatSelector.obstructedView', { value1: seat.view_note ? `: ${seat.view_note}` : '' }) : null,
-                        unavailable ? seat.status : 'available',
+                        t(`buyer.SeatSelector.status.${unavailable ? seat.status : 'available'}`),
                       ].filter(Boolean).join(', ')
                       return (
                         <button
@@ -166,7 +166,7 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
             </div>
             <div className="text-right">
               <p className="font-semibold text-neutral-900">{money(totalCents)}</p>
-              {totalFeeCents > 0 && <p className="text-xs text-neutral-500">{t('buyer.SeatSelector.includes')}{money(totalFeeCents)}{t('buyer.SeatSelector.serviceFee')}</p>}
+              {totalFeeCents > 0 && <p className="text-xs text-neutral-500">{t('buyer.SeatSelector.feeIncluded', { fee: money(totalFeeCents) })}</p>}
             </div>
           </div>
           {requiresAttestation && (
@@ -184,7 +184,7 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
           >
             {reserving ? t('buyer.SeatSelector.reserving') : (reserveLabel || t('buyer.SeatSelector.reserve'))}
           </button>
-          <p className="mt-2 text-center text-xs text-neutral-500">{t('buyer.SeatSelector.seatsAreHeldFor')}{Math.round((map?.hold_duration_seconds || 600) / 60)}{t('buyer.SeatSelector.minutesAfterReservation')}</p>
+          <p className="mt-2 text-center text-xs text-neutral-500">{t('buyer.SeatSelector.holdDuration', { minutes: Math.round((map?.hold_duration_seconds || 600) / 60) })}</p>
         </div>
       )}
       {error && selected.length === 0 && <p className="mt-3 text-sm text-red-700" role="alert">{error}</p>}

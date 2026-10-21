@@ -1,10 +1,11 @@
+import useContentLanguage from '../hooks/useContentLanguage'
 import BuyerEventText from '../components/BuyerEventText'
 import BuyerTicketTypeText from '../components/BuyerTicketTypeText'
 import { formatMoneyCents } from '../utils/money'
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Tag, X, Loader2, Calendar, MapPin, Timer } from 'lucide-react'
 import apiClient from '../api/client'
 import StripeProvider from '../components/StripeProvider'
@@ -74,6 +75,8 @@ function CheckoutContent({ buyerId }) {
   translation.current = t
   const navigationMatches = !location.state?.event || location.state.event.slug === slug
   const [event, setEvent] = useState(navigationMatches ? location.state?.event || null : null)
+  const contentLanguage = useContentLanguage()
+  const loadedLanguage = useRef(contentLanguage)
   const [loading, setLoading] = useState(!navigationMatches || !location.state?.event)
   // Keep this checkout selection stable while a lazy confirmation route is loading.
   const [lineItems] = useState(() => navigationMatches ? location.state?.lineItems || null : null)
@@ -118,6 +121,17 @@ function CheckoutContent({ buyerId }) {
   const [recovering, setRecovering] = useState(false)
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
+  useEffect(() => {
+    if (loadedLanguage.current === contentLanguage) return undefined
+    loadedLanguage.current = contentLanguage
+    if (!event || orderData) return undefined
+    let active = true
+    apiClient.get(`/events/${slug}`, { params: liveMoneyProof ? { live_money_proof: true } : {} })
+      .then(response => { if (active && response.data.slug === slug) setEvent(response.data) })
+      .catch(() => { /* Keep the current selection and retry on the next navigation. */ })
+    return () => { active = false }
+  }, [contentLanguage, event, orderData, slug, liveMoneyProof])
+
   const [checkoutRecovered, setCheckoutRecovered] = useState(false)
   const [step, setStep] = useState('info')
   const [secondsRemaining, setSecondsRemaining] = useState(null)
@@ -762,7 +776,7 @@ function CheckoutContent({ buyerId }) {
                   <div key={waiver.id} className="rounded-xl border border-neutral-200 p-4">
                     <p className="text-sm font-semibold text-neutral-900">{waiver.title}</p>
                     <div className="my-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-600">{waiver.body}</div>
-                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input id={`waiver-${waiver.id}`} type="checkbox" required={waiver.required} aria-invalid={Boolean(formErrors[`waiver_${waiver.id}`])} aria-describedby={formErrors[`waiver_${waiver.id}`] ? `waiver-${waiver.id}-error` : undefined} disabled={submitting} checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => { setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked })); setFormErrors(previous => ({ ...previous, [`waiver_${waiver.id}`]: null })) }} className="mt-0.5" />{t('buyer.Checkout.iAcceptVersion')}{waiver.version}{waiver.required && ' *'}</label>
+                    <label className="flex items-start gap-2 text-sm text-neutral-700"><input id={`waiver-${waiver.id}`} type="checkbox" required={waiver.required} aria-invalid={Boolean(formErrors[`waiver_${waiver.id}`])} aria-describedby={formErrors[`waiver_${waiver.id}`] ? `waiver-${waiver.id}-error` : undefined} disabled={submitting} checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => { setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked })); setFormErrors(previous => ({ ...previous, [`waiver_${waiver.id}`]: null })) }} className="mt-0.5" />{t('buyer.Checkout.acceptVersion', { version: waiver.version })}{waiver.required && ' *'}</label>
                     {formErrors[`waiver_${waiver.id}`] && <p id={`waiver-${waiver.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`waiver_${waiver.id}`]}</p>}
                   </div>
                 ))}
@@ -781,10 +795,11 @@ function CheckoutContent({ buyerId }) {
                       className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
                       disabled={submitting}
                     />
-                    <span>{t('buyer.Checkout.iAgreeToThe')}<Link className="text-brand-700 underline" to="/policies/buyer-terms" target="_blank">{t('buyer.Checkout.buyerTerms')}</Link>,{' '}
-                      <Link className="text-brand-700 underline" to="/policies/refunds" target="_blank">{t('buyer.Checkout.refundAndCancellationPolicy')}</Link>{t('buyer.Checkout.and')}{' '}
-                      <Link className="text-brand-700 underline" to="/policies/privacy" target="_blank">{t('buyer.Checkout.privacyPolicy')}</Link>.
-                    </span>
+                    <span><Trans t={t} i18nKey="buyer.Checkout.termsAgreement" components={{
+                      buyerTerms: <Link className="text-brand-700 underline" to="/policies/buyer-terms" target="_blank" />,
+                      refundPolicy: <Link className="text-brand-700 underline" to="/policies/refunds" target="_blank" />,
+                      privacyPolicy: <Link className="text-brand-700 underline" to="/policies/privacy" target="_blank" />,
+                    }} /></span>
                   </label>
                   {formErrors.terms && <p id="buyer-terms-error" className="text-red-700 text-xs mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
@@ -793,7 +808,7 @@ function CheckoutContent({ buyerId }) {
               <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
                 {submitting
                   ? (isSimulate ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
-                  : (isSimulate ? `${t('checkout.placeOrder')} \u2014 ${formatPrice(displayedTotal)}` : `${t('checkout.continueToPayment')} \u2014 ${formatPrice(displayedTotal)}`)}
+                  : t('buyer.Checkout.placeOrderTotal', { action: isSimulate ? t('checkout.placeOrder') : t('checkout.continueToPayment'), total: formatPrice(displayedTotal) })}
               </button>
               </PaidCheckoutGate>
             </form>

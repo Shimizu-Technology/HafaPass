@@ -20,7 +20,9 @@
     "searchEvents": "Search events",
     "toggleMenu": "Toggle menu",
     "accountAccessFailed": "Account access couldn’t load.",
-    "retryAccountAccess": "Retry account access"
+    "retryAccountAccess": "Retry account access",
+    "discover": "Discover",
+    "saved": "Saved"
   },
   "home": {
     "hero": "Your Pass to Every Event on Guam",
@@ -233,7 +235,7 @@
       "chooseTickets": "Choose tickets",
       "yourTicketsAreReserved": "Your tickets are reserved",
       "until": " until ",
-      "eachFeesIncluded": " each, fees included",
+      "eachFeesIncluded": "{{price}} each, fees included",
       "claimWaitlistOffer": "Claim waitlist offer",
       "noTicketsAvailable": "No tickets available",
       "addToCalendar": "Add to Calendar",
@@ -252,7 +254,9 @@
       "location": "Location",
       "directions": "Directions",
       "opensGoogleMapsInANewTab": "(opens Google Maps in a new tab)",
-      "offerUnavailable": "This waitlist offer is no longer available."
+      "offerUnavailable": "This waitlist offer is no longer available.",
+      "doorsAt": "Doors {{time}}",
+      "reservedUntil": "{{quantity}} × {{ticket}} until {{time}}."
     },
     "Events": {
       "browseEvents": "Browse Events",
@@ -386,7 +390,10 @@
       "ticketsHeldFor": "Tickets held for {{value1}}",
       "answerRequired": "This answer is required",
       "waiverRequired": "You must accept this waiver",
-      "termsLabel": "Buyer terms"
+      "termsLabel": "Buyer terms",
+      "acceptVersion": "I accept version {{version}}",
+      "placeOrderTotal": "{{action}} — {{total}}",
+      "termsAgreement": "I agree to the <buyerTerms>Buyer Terms</buyerTerms>, <refundPolicy>refund and cancellation policy</refundPolicy>, and <privacyPolicy>Privacy Policy</privacyPolicy>."
     },
     "TicketTypesSection": {
       "salesUnavailable": "Sales unavailable",
@@ -397,7 +404,15 @@
       "failedToJoinWaitlist": "Failed to join waitlist",
       "removeYourselfFromTheWaitlist": "Remove yourself from the waitlist?",
       "failedToLeaveWaitlist": "Failed to leave waitlist",
-      "noWaitlistEntriesFoundForThisEmail": "No waitlist entries found for this email."
+      "noWaitlistEntriesFoundForThisEmail": "No waitlist entries found for this email.",
+      "status": {
+        "waiting": "waiting",
+        "notified": "notified",
+        "offered": "offered",
+        "converted": "converted",
+        "expired": "expired",
+        "cancelled": "cancelled"
+      }
     },
     "WhosGoing": {
       "whosGoing": "Who's Going",
@@ -473,7 +488,26 @@
       "reserving": "Reserving seats…",
       "reserve": "Reserve selected seats",
       "seatsSelected_one": "{{count}} seat selected",
-      "seatsSelected_other": "{{count}} seats selected"
+      "seatsSelected_other": "{{count}} seats selected",
+      "seatLabel": "{{section}}, row {{row}}, seat {{seat}}",
+      "accessibility": {
+        "wheelchair": "wheelchair",
+        "companion": "companion",
+        "wheelchair_space": "wheelchair space",
+        "accessible": "accessible",
+        "limited_mobility": "limited mobility"
+      },
+      "status": {
+        "available": "available",
+        "held": "held",
+        "sold": "sold",
+        "blocked": "blocked",
+        "reserved": "reserved",
+        "unavailable": "unavailable",
+        "house_hold": "house hold"
+      },
+      "feeIncluded": "Includes {{fee}} service fee",
+      "holdDuration": "Seats are held for {{minutes}} minutes after reservation."
     },
     "TestPaymentBadge": {
       "paidWithAStripeTestCardNoReal": "Paid with a Stripe test card. No real money moved.",
@@ -487,6 +521,37 @@
       "tryAgain": "Try again",
       "reloadHafaPass": "Reload HåfaPass",
       "developmentDetails": "Development details"
+    },
+    "service": {
+      "checking": "Checking HåfaPass services…",
+      "degraded": "We’re having trouble reaching HåfaPass. Some actions may not work right now.",
+      "retry": "Try again"
+    },
+    "environment": {
+      "testPayments": "Test payments.",
+      "testPaymentDetail": " Only Stripe test cards work; no real card is charged. Tickets bought now are for testing.",
+      "testEnvironment": "Test environment.",
+      "testEnvironmentDetail": " Use test information and test payment methods. These tickets are for testing."
+    },
+    "qr": {
+      "entryCode": "Ticket entry QR code"
+    },
+    "categories": {
+      "nightlife": "Nightlife",
+      "concert": "Music & Concerts",
+      "festival": "Festivals & Culture",
+      "dining": "Food & Drink",
+      "sports": "Sports & Fitness",
+      "workshop": "Classes & Workshops",
+      "fundraiser": "Fundraisers & Nonprofits",
+      "family": "Family",
+      "business": "Business & Networking",
+      "other": "Other"
+    },
+    "layout": {
+      "skip": "Skip to main content",
+      "loading": "Loading page",
+      "loaded": "Page loaded"
     }
   },
   "buyerDiscovery": {

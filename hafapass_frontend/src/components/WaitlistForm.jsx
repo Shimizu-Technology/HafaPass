@@ -1,10 +1,12 @@
+import MachineTranslationNotice from './MachineTranslationNotice'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, CheckCircle, XCircle, ClipboardList } from 'lucide-react'
 import apiClient from '../api/client'
 
-export default function WaitlistForm({ event, ticketTypes = [] }) {
+export default function WaitlistForm({ event, ticketTypes = [], showOriginal = false }) {
   const { t } = useTranslation()
+  const [originalTickets, setOriginalTickets] = useState(false)
   const [form, setForm] = useState({ email: '', name: '', phone: '', ticket_type_id: '', quantity: 1 })
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState(null) // { position, status } or null
@@ -111,6 +113,7 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
             className="input"
           />
 
+          {soldOutTypes.some(tt => tt.machine_translated) && <MachineTranslationNotice showingOriginal={showOriginal || originalTickets} onToggle={() => setOriginalTickets(value => !value)} />}
           {soldOutTypes.length > 0 && (
             <select
               value={form.ticket_type_id}
@@ -119,7 +122,7 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
             >
               <option value="">{t('waitlist.anyTicketType')}</option>
               {soldOutTypes.map(tt => (
-                <option key={tt.id} value={tt.id}>{tt.name}</option>
+                <option key={tt.id} value={tt.id}>{(showOriginal || originalTickets) && tt.original_name ? tt.original_name : tt.name}</option>
               ))}
             </select>
           )}
@@ -176,7 +179,7 @@ export default function WaitlistForm({ event, ticketTypes = [] }) {
                     <span className="text-neutral-700">
                       {t('waitlist.position')} <span className="font-bold text-brand-600">#{entry.position}</span>
                       {entry.status !== 'waiting' && (
-                        <span className="ml-2 text-xs font-medium text-neutral-500 uppercase">{entry.status}</span>
+                        <span className="ml-2 text-xs font-medium text-neutral-500 uppercase">{t(`buyer.WaitlistForm.status.${entry.status}`, { defaultValue: entry.status })}</span>
                       )}
                     </span>
                     {(entry.status === 'waiting' || entry.status === 'notified') && (

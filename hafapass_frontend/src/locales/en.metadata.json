@@ -352,6 +352,12 @@
       },
       "offerUnavailable": {
         "context": "Buyer-facing EventDetail interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "doorsAt": {
+        "context": "Buyer-facing buyer.EventDetail copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "reservedUntil": {
+        "context": "Buyer-facing buyer.EventDetail copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
       }
     },
     "Events": {
@@ -742,6 +748,15 @@
       },
       "termsLabel": {
         "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "acceptVersion": {
+        "context": "Buyer-facing buyer.Checkout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "placeOrderTotal": {
+        "context": "Buyer-facing buyer.Checkout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "termsAgreement": {
+        "context": "Buyer-facing buyer.Checkout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
       }
     },
     "TicketTypesSection": {
@@ -767,6 +782,26 @@
       },
       "noWaitlistEntriesFoundForThisEmail": {
         "context": "Buyer-facing WaitlistForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "status": {
+        "waiting": {
+          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "notified": {
+          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "offered": {
+          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "converted": {
+          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "expired": {
+          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "cancelled": {
+          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        }
       }
     },
     "WhosGoing": {
@@ -967,6 +1002,55 @@
       },
       "seatsSelected_other": {
         "context": "Buyer-facing SeatSelector interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "seatLabel": {
+        "context": "Buyer-facing buyer.SeatSelector copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "accessibility": {
+        "wheelchair": {
+          "context": "Buyer-facing buyer.SeatSelector.accessibility copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "companion": {
+          "context": "Buyer-facing buyer.SeatSelector.accessibility copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "wheelchair_space": {
+          "context": "Buyer-facing buyer.SeatSelector.accessibility copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "accessible": {
+          "context": "Buyer-facing buyer.SeatSelector.accessibility copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "limited_mobility": {
+          "context": "Buyer-facing buyer.SeatSelector.accessibility copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        }
+      },
+      "status": {
+        "available": {
+          "context": "Buyer-facing buyer.SeatSelector.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "held": {
+          "context": "Buyer-facing buyer.SeatSelector.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "sold": {
+          "context": "Buyer-facing buyer.SeatSelector.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "blocked": {
+          "context": "Buyer-facing buyer.SeatSelector.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "reserved": {
+          "context": "Buyer-facing buyer.SeatSelector.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "unavailable": {
+          "context": "Buyer-facing buyer.SeatSelector.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        },
+        "house_hold": {
+          "context": "Buyer-facing buyer.SeatSelector.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+        }
+      },
+      "feeIncluded": {
+        "context": "Buyer-facing buyer.SeatSelector copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "holdDuration": {
+        "context": "Buyer-facing buyer.SeatSelector copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
       }
     },
     "TestPaymentBadge": {
@@ -998,6 +1082,79 @@
       },
       "developmentDetails": {
         "context": "Buyer-facing ErrorFallback interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      }
+    },
+    "service": {
+      "checking": {
+        "context": "Buyer-facing buyer.service copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "degraded": {
+        "context": "Buyer-facing buyer.service copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "retry": {
+        "context": "Buyer-facing buyer.service copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      }
+    },
+    "environment": {
+      "testPayments": {
+        "context": "Buyer-facing buyer.environment copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "testPaymentDetail": {
+        "context": "Buyer-facing buyer.environment copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "testEnvironment": {
+        "context": "Buyer-facing buyer.environment copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "testEnvironmentDetail": {
+        "context": "Buyer-facing buyer.environment copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      }
+    },
+    "qr": {
+      "entryCode": {
+        "context": "Buyer-facing buyer.qr copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      }
+    },
+    "categories": {
+      "nightlife": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "concert": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "festival": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "dining": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "sports": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "workshop": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "fundraiser": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "family": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "business": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "other": {
+        "context": "Buyer-facing buyer.categories copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      }
+    },
+    "layout": {
+      "skip": {
+        "context": "Buyer-facing buyer.layout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "loading": {
+        "context": "Buyer-facing buyer.layout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "loaded": {
+        "context": "Buyer-facing buyer.layout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
       }
     }
   },

@@ -5,7 +5,6 @@ import TicketTypesSection from './TicketTypesSection'
 vi.mock('../utils/workspace', () => ({ useAccountRole: () => null }))
 const config = vi.hoisted(() => ({ adminOnly: false }))
 vi.mock('../hooks/usePaidCheckoutAdminOnly', () => ({ default: enabled => enabled && config.adminOnly }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key, options) => options ? `${key} ${JSON.stringify(options)}` : key }) }))
 
 describe('ticket selection with changing availability', () => {
   it('clears closed selections from the displayed total and checkout request', async () => {
@@ -16,11 +15,11 @@ describe('ticket selection with changing availability', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Increase quantity for VIP table admission' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Standard entry' }))
-    expect(screen.getByRole('button', { name: /eventDetail.buyTickets/ })).toHaveTextContent('$17.50')
+    expect(screen.getByRole('button', { name: /Buy Tickets/ })).toHaveTextContent('$17.50')
     rerender(<TicketTypesSection ticketTypes={[{ ...a, on_sale: false }, b]} onCheckout={checkout} />)
     expect(screen.queryByRole('button', { name: 'Increase quantity for VIP table admission' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /eventDetail.buyTickets/ })).toHaveTextContent('$5.00')
-    await user.click(screen.getByRole('button', { name: /eventDetail.buyTickets/ }))
+    expect(screen.getByRole('button', { name: /Buy Tickets/ })).toHaveTextContent('$5.00')
+    await user.click(screen.getByRole('button', { name: /Buy Tickets/ }))
     expect(checkout).toHaveBeenCalledWith([{ ticket_type_id: 2, quantity: 1 }])
   })
   it('clamps selected inventory after availability falls, and removes the action when all tickets sell out', async () => {
@@ -31,10 +30,10 @@ describe('ticket selection with changing availability', () => {
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Entry' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Entry' }))
     rerender(<TicketTypesSection ticketTypes={[{ ...ticket, quantity_remaining: 1 }]} onCheckout={checkout} />)
-    await user.click(screen.getByRole('button', { name: /eventDetail.buyTickets/ }))
+    await user.click(screen.getByRole('button', { name: /Buy Tickets/ }))
     expect(checkout).toHaveBeenCalledWith([{ ticket_type_id: 1, quantity: 1 }])
     rerender(<TicketTypesSection ticketTypes={[{ ...ticket, quantity_remaining: 0 }]} onCheckout={checkout} />)
-    expect(screen.queryByRole('button', { name: /eventDetail.buyTickets/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Buy Tickets/ })).not.toBeInTheDocument()
   })
   it('shows ticket prices in neutral text rather than an alert color', () => {
     render(<TicketTypesSection ticketTypes={[
@@ -54,12 +53,12 @@ describe('ticket selection with changing availability', () => {
       { id: 2, name: 'Child', price_cents: 0, current_price_cents: 0, all_in_price_cents: 0, service_fee_cents: 0, quantity_remaining: 9, on_sale: true },
     ]} onCheckout={checkout} />)
     expect(screen.getByText('$21.99')).toHaveClass('font-semibold')
-    expect(screen.getByText(/pricing.ticketPlusFee/)).toHaveTextContent('"price":"$19.99","fee":"$2.00"')
+    expect(screen.getByText('$19.99 ticket + $2.00 service fee')).toBeInTheDocument()
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Increase quantity for General' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for General' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Child' }))
-    expect(screen.getByRole('button', { name: /eventDetail.buyTickets/ })).toHaveTextContent('$43.98')
+    expect(screen.getByRole('button', { name: /Buy Tickets/ })).toHaveTextContent('$43.98')
     expect(screen.queryByTestId('buy-total-fee')).not.toBeInTheDocument()
   })
   it('shows the ticket price alone, with no fee line, when the organizer absorbs the fee', () => {
@@ -85,11 +84,11 @@ describe('ticket selection with changing availability', () => {
     render(<TicketTypesSection ticketTypes={[paid, free]} onCheckout={checkout} />)
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Kids' }))
-    await user.click(screen.getByRole('button', { name: /eventDetail.buyTickets/ }))
+    await user.click(screen.getByRole('button', { name: /Buy Tickets/ }))
     expect(checkout).toHaveBeenCalledWith([{ ticket_type_id: 2, quantity: 1 }])
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Entry' }))
-    expect(screen.getByRole('status')).toHaveTextContent('eventDetail.paidSalesOpenSoon')
-    expect(screen.queryByRole('button', { name: /eventDetail.buyTickets/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent("Paid ticket sales open soon")
+    expect(screen.queryByRole('button', { name: /Buy Tickets/ })).not.toBeInTheDocument()
     config.adminOnly = false
   })
 })

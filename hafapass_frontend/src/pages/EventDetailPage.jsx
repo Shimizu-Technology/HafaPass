@@ -354,7 +354,7 @@ function EventDetailContent() {
 
             {event.category && event.category !== 'other' && (
               <span className="block text-xs font-medium text-brand-400 uppercase tracking-wider mb-2">
-                {event.category_label || event.category}
+                {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
               </span>
             )}
             <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3 break-words">{content.title}</h1>
@@ -403,9 +403,9 @@ function EventDetailContent() {
                 {waitlistOffer && !waitlistOffer.error && (
                   <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                     <p className="text-sm font-semibold text-emerald-900">{t('buyer.EventDetail.yourTicketsAreReserved')}</p>
-                    <p className="mt-1 text-sm text-emerald-800">{waitlistOffer.quantity} × {waitlistOffer.ticket_type_name}{t('buyer.EventDetail.until')}{formatEventTime(waitlistOffer.expires_at, event.timezone)}.</p>
+                    <p className="mt-1 text-sm text-emerald-800">{t('buyer.EventDetail.reservedUntil', { quantity: waitlistOffer.quantity, ticket: waitlistOffer.ticket_type_name, time: formatEventTime(waitlistOffer.expires_at, event.timezone) })}</p>
                     {Number.isSafeInteger(waitlistOffer.all_in_price_cents) && waitlistOffer.all_in_price_cents > 0 && (
-                      <p className="mt-1 text-sm font-semibold text-emerald-900">{formatTicketPrice(waitlistOffer.all_in_price_cents)}{t('buyer.EventDetail.eachFeesIncluded')}</p>
+                      <p className="mt-1 text-sm font-semibold text-emerald-900">{t('buyer.EventDetail.eachFeesIncluded', { price: formatTicketPrice(waitlistOffer.all_in_price_cents) })}</p>
                     )}
                     <button className="btn-primary mt-4 w-full" onClick={() => handleCheckout([{ ticket_type_id: waitlistOffer.ticket_type_id, quantity: waitlistOffer.quantity }])}>{t('buyer.EventDetail.claimWaitlistOffer')}</button>
                   </div>
@@ -430,7 +430,7 @@ function EventDetailContent() {
                   event.status === 'published' &&
                   event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
                   <div className="mt-4">
-                    <WaitlistForm event={event} ticketTypes={event.ticket_types} />
+                    <WaitlistForm event={event} ticketTypes={event.ticket_types} showOriginal={content.showingOriginal} />
                   </div>
                 )}
               </div>
@@ -479,7 +479,7 @@ function EventDetailContent() {
                 )}
                 {event.doors_open_at && (
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
-                    <Clock className="w-3 h-3" />{t('buyer.EventDetail.doors')}{formatEventTime(event.doors_open_at, event.timezone)}
+                    <Clock className="w-3 h-3" />{t('buyer.EventDetail.doorsAt', { time: formatEventTime(event.doors_open_at, event.timezone) })}
                   </span>
                 )}
               </div>
