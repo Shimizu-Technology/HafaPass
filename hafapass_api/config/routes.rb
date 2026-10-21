@@ -119,6 +119,7 @@ Rails.application.routes.draw do
 
       # Organizer events (protected)
       namespace :organizer do
+        resource :tax_information, only: [:show, :update]
         resource :organization, only: [:show], controller: "organizations"
         resource :finances, only: [:show], controller: "organization_finances" do
           get :orders_export
@@ -225,6 +226,12 @@ Rails.application.routes.draw do
 
       # Admin endpoints
       namespace :admin do
+        resource :tax_reports, only: [:show] do
+          get :organizers_export
+          get :receipts_export
+          post :preparation_export
+        end
+        post "organizations/:organization_id/tax_information/reveal", to: "tax_informations#reveal"
         resource :settings, only: [:show, :update]
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do

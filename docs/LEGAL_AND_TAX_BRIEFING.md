@@ -114,6 +114,61 @@ The rule took effect 2025-05-12 and covers live-event tickets, including third-p
 - [ ] Shimizu Technology's Guam BPT filings and business license(s)
 - [ ] Bank account structure (whether organizer funds are segregated)
 
+## What the product now does
+
+Engineering implementation based on `7c77bb6` (2026-10-21):
+
+- Organizer and buyer drafts state that Shimizu Technology, operating HåfaPass,
+  accepts ticket payments as the organizer's limited agent; payment fully
+  discharges the buyer's obligation to the organizer. The organizer is the seller
+  and bears event and ticket-sale tax duties. The drafts address checks, holds,
+  offsets, refund shortfalls, W-9s, and indemnity. They retain their draft status.
+- Settings → Payouts collects legal/business names, federal classification,
+  SSN/EIN, tax address, optional exempt-payee code, and a separate tax certification
+  with typed signature and server timestamp. TINs use Active Record encryption;
+  ordinary responses show only the last four digits. Nine-digit validation is not
+  IRS TIN matching. The substitute certification and electronic-signature process
+  still need professional review; no tax-authority verification occurs.
+- A completed tax record is required for payout readiness. Saving tax details
+  invalidates every payout-method approval. Check payouts in pending/processing
+  status lock tax edits under the same organization lock used for payout creation.
+- Admin → Money → Tax reports shows annual organizer collections/refunds/fees
+  and paid payouts, plus monthly service fees less refunded fees. Masked CSVs
+  are standard; explicit admin POST actions audit full-TIN reveals and the CSV
+  for 1099 preparation before releasing sensitive data. Nothing is filed or sent
+  to tax authorities. Full-TIN CSV columns must be imported as text to preserve
+  leading zeroes. Reveals expire from the screen after 30 seconds.
+
+Report definitions: Guam calendar periods; USD orders with captured live-mode
+payment evidence only. Stripe test, simulated, and unknown environments are
+excluded in every environment. Door cash retained by organizers is excluded.
+Gross ticket proceeds are ticket line subtotals less discounts before fees;
+non-ticket items are excluded from that gross. Refund totals cover all refunded
+buyer amounts on eligible orders, including fees and any non-ticket lines.
+Fees use platform fee components, including absorbed organizer fees; refunded
+fees use the recorded buyer and organizer fee allocations. Collections use
+order completion time (creation time only for legacy missing timestamps);
+refunds use success time (creation time for legacy missing timestamps). A refund
+of a prior-year sale is counted in the refund year; negative months are retained.
+Actual processing costs are shown separately against the collection period and
+can change as evidence arrives. They are not deducted from gross receipts.
+
+Payout totals use only currently paid payouts by `paid_at` for events with live
+collections; pending, processing, failed, reversed, and test-only event payouts
+are excluded. These are actual payout amounts, not a recomputed allocation of
+a mixed-event settlement. Each payout is attributed to the W-9 snapshotted on
+that payout when it was created, never to the organizer's current W-9; an
+organizer whose identity changed during the year appears on one row per
+identity. Legacy payouts created before W-9 collection are flagged "No W-9 on
+file at payout" with a blank TIN in every export. W-9 changes are locked while
+any payout is pending or processing. Reconcile identities and mixed payment
+history before filing. Reports do not decide 1099 form type, thresholds, backup
+withholding, BPT rate, or legal eligibility.
+
+All open professional questions above remain open. The controls document the
+chosen agent model; they do not establish a money-transmission exemption or
+professional approval. See the [policy review register](POLICY_REVIEW_REGISTER.md).
+
 ## Sources
 
 "Verified" means we opened the page and checked the cited point on 2026-10-21. "Search only" means we saw the cited point in search results but did not open the page.

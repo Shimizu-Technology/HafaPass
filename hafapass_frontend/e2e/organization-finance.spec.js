@@ -5,6 +5,7 @@ function json(route, body, status = 200) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/organizer/tax_information', route => json(route, { tax_information: null, edit_locked: false, certification: 'Under penalties of perjury, I certify.' }))
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
 })
 

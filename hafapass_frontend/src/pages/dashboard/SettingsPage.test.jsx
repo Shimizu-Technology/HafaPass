@@ -31,6 +31,7 @@ describe('SettingsPage', () => {
       if (path === '/config') return Promise.resolve({ data: {} })
       if (path === '/organizer/organization') return Promise.resolve({ data: organization })
       if (path === '/organizer/memberships') return Promise.resolve({ data: memberships })
+      if (path === '/organizer/tax_information') return Promise.resolve({ data: { tax_information: null, edit_locked: false, certification: 'Under penalties of perjury, I certify.' } })
       if (path === '/organizer/connected_accounts') return Promise.resolve({ data: accounts })
       return Promise.reject(new Error(`Unexpected path ${path}`))
     })

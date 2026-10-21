@@ -9,6 +9,7 @@ import TeamManager from '../../components/team/TeamManager'
 import { usePlatformIdentity, usePlatformRequests, usePlatformVisit } from '../../hooks/usePlatformContext'
 import { resetOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import { TEAM_ROLES } from '../../utils/roles'
+import { taxClassificationLabel } from '../../utils/taxInformation'
 import { adminLabel } from './adminLabels'
 
 function AdminOrganizationSession({ id, identity }) {
@@ -94,6 +95,18 @@ function AdminOrganizationSession({ id, identity }) {
               </div>
             </div>
             <p className="mt-4 text-sm text-content-muted">Opening the dashboard lets you work inside this organization as an admin. Everything you change is recorded in the audit log.</p>
+          </section>
+          <section aria-labelledby="organization-tax-heading" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
+            <h2 id="organization-tax-heading" className="text-lg font-semibold">Tax information (W-9)</h2>
+            {organization.tax_information ? <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+              {[
+                ['Legal name', organization.tax_information.legal_name],
+                ['Classification', taxClassificationLabel(organization.tax_information.tax_classification)],
+                ['TIN', organization.tax_information.masked_tin],
+                ['Certified by', organization.tax_information.signer_name],
+                ['Tax mailing address', organization.tax_information.mailing_address],
+              ].map(([label, value]) => <div key={label} className="[overflow-wrap:anywhere]"><dt className="text-content-muted">{label}</dt><dd className="whitespace-pre-line font-medium">{value}</dd></div>)}
+            </dl> : <p className="mt-2 text-sm text-neutral-700">No W-9 on file. Required before paid payouts.</p>}
           </section>
           <TeamManager key={organization.id} basePath={`/admin/organizations/${id}/memberships`} request={teamRequest} canTransfer
             heading="Team" inviteRoles={hasOwner ? TEAM_ROLES : ['owner', ...TEAM_ROLES]}

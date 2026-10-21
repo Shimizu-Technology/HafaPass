@@ -91,6 +91,7 @@ Add (if not already present):
 - `SENTRY_DSN`; optional `SENTRY_ENVIRONMENT`
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET`, `AWS_REGION`
 - `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` (RSA ≥ 2048-bit)
+- `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`: required before the production deploy, on the web service and any job service, even before any W-9 is collected; production refuses to boot without them. Generate each as a random 32-character value, keep them stable and backed up securely, never log them, and never replace them without a key-rotation plan. Staging can boot without them but cannot store tax information.
 
 Keep as they are:
 
@@ -193,11 +194,25 @@ A production boot stops on:
 - `DB_POOL` smaller than the request/job threads, or an unknown `HAFAPASS_RUNTIME`
 - `REDIS_URL` missing when `HAFAPASS_RUNTIME` is `sidekiq` (not the case with `embedded`)
 - `SECRET_KEY_BASE` missing
+- `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, or `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` missing in production
 
-Everything else (Clerk, Sentry, Resend, Stripe, S3, admission signing) is a
-readiness check: the service boots, `/api/v1/readiness` names the gap, and the
+The other listed integrations (Clerk, Sentry, Resend, Stripe, S3, admission signing) are
+readiness checks: the service boots, `/api/v1/readiness` names the gap, and the
 dependent feature refuses to run.
 
 ## Note on earlier approvals
 
 The `stripe_live` capability fingerprint now covers `STRIPE_LIVE_PLATFORM_ACCOUNT_ID` and `STRIPE_LIVE_WEBHOOK_SECRET`. Any `stripe_live` approval recorded before this release no longer matches and must be submitted and approved again. No deployed environment was in live mode when this changed.
+
+## Legal/tax safeguards rollout
+
+Apply `20261022000100_create_organizer_tax_informations` before serving the new
+API. The new table is additive and does not populate or approve any organizer's
+W-9. Existing organizers need completed tax information before payout readiness;
+saving tax details invalidates all payout-method approval revisions.
+
+The draft policy version stays `2026-10-launch-draft`, but its content and registry
+digests change. Existing `policy_register` capability approvals no longer match.
+Review Provider readiness and complete the applicable policy-register review
+through the existing workflow before expecting paid-sale readiness. Engineering
+drafts and product controls do not constitute counsel/accountant approval.

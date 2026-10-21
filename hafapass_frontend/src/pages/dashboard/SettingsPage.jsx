@@ -6,6 +6,7 @@ import apiClient from '../../api/client'
 import NoAccessNotice from '../../components/NoAccessNotice'
 import TeamManager from '../../components/team/TeamManager'
 import PayoutMethodSection from './PayoutMethodSection'
+import TaxInformationSection from './TaxInformationSection'
 import { roleDescription, roleLabel } from '../../utils/roles'
 
 function StatusPill({ ready, children }) {
@@ -171,6 +172,9 @@ function SettingsPageSession({ identity }) {
         <div className="mt-8 space-y-8">
           {canManageTeam && <TeamManager basePath="/organizer/memberships" request={teamRequest} canTransfer={canTransfer} heading="Organization team"
             memberships={memberships} onMembershipsChange={setMemberships} />}
+          {canManagePayouts && <TaxInformationSection request={teamRequest}
+            mailingAddress={accounts.find(account => account.provider === 'check')?.payout_details?.mailing_address || ''}
+            onSaved={() => { setOrganization(value => ({ ...value, payout_ready: false })); setAccounts(items => items.map(account => ({ ...account, payout_ready: false }))) }} />}
           {canManagePayouts && <PayoutMethodSection organizationId={organization.id} accounts={accounts} busy={busy} onSave={savePayout} error={payoutError} notice={notice} />}
         </div>
       )}

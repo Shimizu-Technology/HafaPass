@@ -299,7 +299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
+    t.jsonb "segment", default: { "type" => "all_attendees" }, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false
@@ -1256,6 +1256,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.index ["verified_by_user_id"], name: "index_organizer_profiles_on_verified_by_user_id"
   end
 
+  create_table "organizer_tax_informations", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "legal_name", null: false
+    t.string "business_name"
+    t.string "tax_classification", null: false
+    t.string "tin_type", null: false
+    t.text "tin", null: false
+    t.string "tin_last_four", limit: 4, null: false
+    t.text "mailing_address", null: false
+    t.string "exempt_payee_code"
+    t.string "signer_name", null: false
+    t.datetime "certified_at", null: false
+    t.string "certification_version", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id"], name: "index_organizer_tax_informations_on_organization_id", unique: true
+  end
+
   create_table "payment_events", force: :cascade do |t|
     t.integer "amount_cents"
     t.datetime "created_at", null: false
@@ -1350,6 +1368,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.datetime "updated_at", null: false
     t.jsonb "payee_snapshot", default: {}, null: false
     t.string "payee_approval_digest"
+    t.jsonb "tax_information_snapshot", default: {}, null: false
+    t.text "tax_information_tin"
+    t.string "tax_approval_digest"
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
     t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
@@ -1359,6 +1380,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
     t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
     t.check_constraint "char_length(currency::text) = 3", name: "payouts_currency_length"
     t.check_constraint "jsonb_typeof(payee_snapshot) = 'object'::text", name: "payouts_payee_snapshot_object"
+    t.check_constraint "jsonb_typeof(tax_information_snapshot) = 'object'::text", name: "payouts_tax_snapshot_object"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "payouts_status_valid"
   end
 
@@ -2576,6 +2598,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
   add_foreign_key "organizer_profiles", "organizations", on_delete: :restrict
   add_foreign_key "organizer_profiles", "users"
   add_foreign_key "organizer_profiles", "users", column: "verified_by_user_id"
+  add_foreign_key "organizer_tax_informations", "organizations"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict
   add_foreign_key "payment_readiness_reviews", "connected_accounts", on_delete: :restrict
