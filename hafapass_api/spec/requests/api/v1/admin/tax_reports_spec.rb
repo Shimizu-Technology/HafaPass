@@ -134,6 +134,25 @@ RSpec.describe "Admin tax reporting", type: :request do
     end
   end
 
+  it "counts trailing-slash and format-suffix routes against the same budget" do
+    freeze_time do
+      headers = auth_headers(admin)
+      reveal = "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal"
+      export = "/api/v1/admin/tax_reports/preparation_export"
+      variants = [reveal, "#{reveal}/", "#{reveal}.json", export, "#{export}/", "#{export}.json"]
+      9.times do |index|
+        path = variants[index % variants.size]
+        post path, params: (path.start_with?(export) ? { year: 2026 } : {}), headers: headers
+        expect(response).not_to have_http_status(:too_many_requests)
+      end
+      post "#{reveal}.json", headers: headers
+      expect(response).not_to have_http_status(:too_many_requests)
+      post "#{export}/", params: { year: 2026 }, headers: headers
+      expect(response).to have_http_status(:too_many_requests)
+      expect(response.body).not_to include(tax.tin)
+    end
+  end
+
   it "applies the admin budget across IPs" do
     freeze_time do
       headers = auth_headers(admin)

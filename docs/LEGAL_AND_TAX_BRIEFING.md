@@ -156,8 +156,12 @@ can change as evidence arrives. They are not deducted from gross receipts.
 Payout totals use only currently paid payouts by `paid_at` for events with live
 collections; pending, processing, failed, reversed, and test-only event payouts
 are excluded. These are actual payout amounts, not a recomputed allocation of
-a mixed-event settlement. W-9 identity is current information, while historical
-check payees remain in payout snapshots. Reconcile identities and mixed payment
+a mixed-event settlement. Each payout is attributed to the W-9 snapshotted on
+that payout when it was created, never to the organizer's current W-9; an
+organizer whose identity changed during the year appears on one row per
+identity. Legacy payouts created before W-9 collection are flagged "No W-9 on
+file at payout" with a blank TIN in every export. W-9 changes are locked while
+any payout is pending or processing. Reconcile identities and mixed payment
 history before filing. Reports do not decide 1099 form type, thresholds, backup
 withholding, BPT rate, or legal eligibility.
 
