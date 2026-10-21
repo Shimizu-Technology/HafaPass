@@ -107,11 +107,14 @@ for (const width of [390, 1440]) {
         order_number: 'HP-DEMO7', ticket_type: 'Entry', status: 'issued' }],
       meta: { total_count: 1, total_pages: 1 }
     }))
-    await page.route('**/api/v1/organizer/events/601/sales_exports', route => route.fulfill({
-      status: 200, contentType: 'text/csv; charset=utf-8',
-      headers: { 'Content-Disposition': 'attachment; filename="sales.csv"' },
-      body: '\uFEFF"Name","Order #"\n"Mina Cruz","HP-DEMO7"\n'
-    }))
+    await page.route('**/api/v1/organizer/events/601/sales_exports', route => {
+      if (route.request().method() !== 'POST') return json(route, { exports: [] })
+      return route.fulfill({
+        status: 200, contentType: 'text/csv; charset=utf-8',
+        headers: { 'Content-Disposition': 'attachment; filename="sales.csv"' },
+        body: '\uFEFF"Name","Order #"\n"Mina Cruz","HP-DEMO7"\n'
+      })
+    })
     await page.goto('/dashboard/events/601/attendees')
     await expect(page.getByRole('status').filter({ hasText: '1 attendee' })).toBeVisible()
     await page.getByRole('button', { name: 'Filters & sort' }).click()

@@ -51,10 +51,12 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
   end
 
   it "filters order view with the same query and sorts by amount" do
-    sale(name: "Mina", type: vip)
-    sale(name: "Ana")
+    mina, = sale(name: "Mina", type: vip)
+    ana, = sale(name: "Ana")
+    mina.update!(subtotal_cents: 5_750, total_cents: 6_000)
+    ana.update!(subtotal_cents: 2_750, total_cents: 3_000)
     expect(names(view: "orders", ticket_type: vip.id)).to eq(["Buyer Mina"])
-    expect(names(view: "orders", sort: "amount", direction: "asc")).to contain_exactly("Buyer Ana", "Buyer Mina")
+    expect(names(view: "orders", sort: "amount", direction: "asc")).to eq(["Buyer Ana", "Buyer Mina"])
   end
 
   it "supports the remaining status, channel, and sort choices" do
@@ -108,6 +110,11 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     get "#{base}/attendees", params: { view: "orders" }, headers: auth_headers(finance)
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.fetch("attendees").first).to include("amount_cents" => 5250)
+    expect(response.parsed_body.fetch("attendees").first.keys).not_to include(
+      "attendee_name", "attendee_email", "buyer_name", "buyer_email", "checked_in_at")
+    get "#{base}/attendees", headers: auth_headers(finance)
+    expect(response.parsed_body.fetch("attendees").first.keys).not_to include(
+      "attendee_name", "attendee_email", "buyer_name", "buyer_email", "checked_in_at")
     box = create(:user)
     create(:organization_membership, organization: event.organization, user: box, role: :box_office)
     create(:event_staff_assignment, event: event, user: box, role: :box_office)
@@ -156,6 +163,30 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(AuditLog.where(action: "sales.export_downloaded").last.metadata["outcome"]).to eq("downloaded")
   end
 
+  it "keeps a completed CSV valid when its completion audit fails" do
+    sale(name: "Mina")
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "sales.export_generated"))
+      .and_raise("synthetic audit failure")
+    allow(Rails.logger).to receive(:error).and_call_original
+    post "#{base}/sales_exports", params: { columns: %w[name] }, headers: headers
+    expect(response.body).to include("Mina")
+    expect(response.body).not_to include(SpreadsheetExport::INCOMPLETE_MARKER)
+    expect(Rails.logger).to have_received(:error).with(/completion callback failed/)
+  end
+
+  it "marks a broken CSV incomplete even when its error audit also fails" do
+    sale(name: "Mina")
+    allow_any_instance_of(OrganizerSalesQuery).to receive(:each_batch).and_raise("synthetic row failure")
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "sales.export_failed"))
+      .and_raise("synthetic audit failure")
+    allow(Rails.logger).to receive(:error).and_call_original
+    post "#{base}/sales_exports", params: { columns: %w[name] }, headers: headers
+    expect(response.body).to include(SpreadsheetExport::INCOMPLETE_MARKER)
+    expect(Rails.logger).to have_received(:error).with(/stopped early: RuntimeError: synthetic row failure/)
+  end
+
   it "prints only filtered door rows with order numbers and audits the PDF" do
     order, = sale(name: "Mina")
     sale(name: "Ana", status: :cancelled)
@@ -167,6 +198,9 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(text).to include("Mina", order.reference, "Check in")
     expect(text).not_to include("Ana", "mina@example.test")
     expect(AuditLog.where(action: "sales.door_list_exported").last.metadata).to include("row_count" => 1)
+    get "#{base}/sales_exports/door_list", headers: headers
+    all_statuses = PDF::Reader.new(StringIO.new(response.body)).pages.map(&:text).join("\n")
+    expect(all_statuses).to include("Status", "cancelled", "Ana")
   end
 
   it "summarizes check-in and accepted transfers on order-level CSV rows" do
@@ -226,6 +260,64 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(request_record.reload).to have_attributes(status: "ready", row_count: 1)
     expect(request_record.storage_key).to start_with("private/sales-exports/")
     expect(AuditLog.where(action: "sales.export_generated").last.metadata).to include("row_count" => 1)
+  end
+
+  it "claims a pending request only once" do
+    sale(name: "Mina")
+    request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], row_count: 1, status: "processing")
+    expect(Aws::S3::Client).not_to receive(:new)
+    OrganizerSalesExportJob.perform_now(request_record.id)
+    expect(request_record.reload.status).to eq("processing")
+  end
+
+  it "sweeps old unassociated uploads even when a request remains processing" do
+    processing = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], row_count: 1, status: "processing")
+    associated = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], row_count: 1, status: "ready",
+      storage_key: "private/sales-exports/associated.csv", expires_at: 1.day.from_now)
+    allow(S3Service).to receive(:configured?).and_return(true)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    object = Struct.new(:key, :last_modified)
+    page = Struct.new(:contents, :is_truncated, :next_continuation_token)
+    allow(client).to receive(:list_objects_v2).and_return(page.new([
+      object.new("private/sales-exports/orphan.csv", 3.days.ago),
+      object.new(associated.storage_key, 3.days.ago),
+      object.new("private/sales-exports/recent.csv", 1.hour.ago)
+    ], false, nil))
+    expect(client).to receive(:delete_object).once.with(bucket: "synthetic-sales-exports",
+      key: "private/sales-exports/orphan.csv")
+    OrganizerSalesExportOrphanSweepJob.perform_now
+    expect(processing.reload.status).to eq("processing")
+  end
+
+  it "enforces queued export status and nonnegative row counts in the database" do
+    record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], row_count: 1)
+    [{ status: "unknown" }, { row_count: -1 }].each do |attributes|
+      expect do
+        OrganizerSalesExportRequest.transaction(requires_new: true) { record.update_columns(attributes) }
+      end.to raise_error(ActiveRecord::StatementInvalid)
+    end
+  end
+
+  it "keeps order tax export queries bounded per batch" do
+    3.times { |index| sale(name: "Buyer#{index}") }
+    query = OrganizerSalesQuery.new(event: event, params: { view: "orders" })
+    sql = []
+    subscription = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+      sql << payload[:sql] unless payload[:cached]
+    end
+    begin
+      OrganizerSalesExport.new(query: query, columns: %w[tax], finance: true, attendees: false).each_row.to_a
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscription)
+    end
+    expect(sql.grep(/SUM\(.*order_items.*tax_cents/i)).to be_empty
   end
 
   it "deletes an expired private export before removing its download key" do
@@ -363,15 +455,19 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(failed.metadata).to include("export_request_id" => item.id, "outcome" => "stream_failed")
   end
 
-  it "matches the sales-export throttle for trailing slash and format-suffixed door lists" do
-    throttle = Rack::Attack.throttles.fetch("sales-exports/ip")
+  it "separates higher-volume door-list throttling from export requests" do
+    export_throttle = Rack::Attack.throttles.fetch("sales-exports/ip")
+    door_throttle = Rack::Attack.throttles.fetch("door-lists/ip")
+    expect(door_throttle.limit).to be > export_throttle.limit
     ["/sales_exports", "/sales_exports/", "/sales_exports.csv",
       "/sales_exports/door_list", "/sales_exports/door_list.pdf", "/sales_exports/door_list.pdf/",
       "/admissions/door_list.pdf", "/admissions/door_list/"].each do |suffix|
       path = "#{base}#{suffix}"
       method = suffix.start_with?("/sales_exports") && !suffix.include?("door_list") ? "POST" : "GET"
       rack_request = Rack::Attack::Request.new(Rack::MockRequest.env_for(path, method: method, "REMOTE_ADDR" => "203.0.113.1"))
-      expect(throttle.block.call(rack_request)).to eq("203.0.113.1"), path
+      matched = method == "POST" ? export_throttle : door_throttle
+      expect(matched.block.call(rack_request)).to eq("203.0.113.1"), path
+      expect((method == "POST" ? door_throttle : export_throttle).block.call(rack_request)).to be_nil
     end
   end
   it "rechecks attendee access before listing or downloading a queued PII export" do

@@ -35,8 +35,9 @@ module Admissions
           pdf.table(table_rows, header: true, width: pdf.bounds.width, cell_style: { size: 8, padding: 5 }) do |table|
             table.row(0).font_style = :bold
             table.row(0).background_color = "E5E7EB"
-            table.columns(0).width = @tickets ? 175 : 72
-            table.columns(3).width = 70
+            table.columns(0).width = @tickets ? 145 : 72
+            table.columns(@tickets ? 4 : 3).width = 70
+            table.columns(3).width = 80 if @tickets
           end
         end
         pdf.number_pages "Page <page> of <total>", at: [pdf.bounds.left, 0], align: :center, size: 7
@@ -65,13 +66,14 @@ module Admissions
     end
 
     def header
-      @tickets ? ["Attendee", "Type", "Order #", "Check in"] :
+      @tickets ? ["Attendee", "Type", "Order #", "Status", "Check in"] :
         ["Ticket", "Attendee", "Type", "Status", "Door mark"]
     end
 
     def row(ticket)
       if @tickets
-        [ticket.attendee_name.presence || "Guest", ticket.ticket_type.name, ticket.order.reference, "________"]
+        [ticket.attendee_name.presence || "Guest", ticket.ticket_type.name, ticket.order.reference,
+          OrganizerTicketSalesStatus.for(ticket), "________"]
       else
         ["HP-T#{ticket.id}", ticket.attendee_name.presence || "Guest",
           [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "), ticket.status.humanize, "________"]

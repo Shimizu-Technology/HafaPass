@@ -56,7 +56,7 @@ beforeEach(() => {
   window.localStorage.setItem('hafapass_organization_id', '1'); bind()
   apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: fixtures(url, config) }))
 })
-afterEach(() => { binders.splice(0).forEach(clear => clear()); vi.unstubAllEnvs(); vi.restoreAllMocks() })
+afterEach(() => { binders.splice(0).forEach(clear => clear()); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 describe('organization settings authority', () => {
   it.each(['success', 'error'])('does not expose an Alpha invitation %s after organization replacement', async outcome => {
@@ -343,6 +343,23 @@ for (const [Page, tool, kind] of [[BoxOfficePage, 'box-office', 'box-office'], [
 }
 
 describe('attendee list totals and export', () => {
+  it('shows blob API errors and a useful door-list rate-limit message', async () => {
+    apiClient.post.mockImplementation(url => url.endsWith('/sales_exports')
+      ? Promise.reject({ response: { status: 422,
+        data: new Blob([JSON.stringify({ error: 'Invalid export columns' })], { type: 'application/json' }) } })
+      : Promise.resolve({ data: {} }))
+    apiClient.get.mockImplementation((url, config) => url.includes('/sales_exports/door_list?')
+      ? Promise.reject({ response: { status: 429, data: new Blob(['{}']) } })
+      : Promise.resolve({ data: fixtures(url, config) }))
+    mount(AttendeesPage, 'attendees')
+    await screen.findAllByText('Attendee 37')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid export columns')
+    await userEvent.click(screen.getByRole('button', { name: 'Print door list' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Try again later')
+  })
+
   it('shows the API total count and notes when filters narrow it', async () => {
     apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: url.includes('/attendees?')
       ? { attendees: [{ id: 1, attendee_name: 'Attendee one', status: 'issued', ticket_type: 'Entry' }], meta: { total_pages: 1, total_count: url.includes('status=checked_in') ? 1 : 17 } }
@@ -370,7 +387,6 @@ describe('attendee list totals and export', () => {
     expect(call[2]).toMatchObject({ responseType: 'blob', organizationId: '1', authContext: { userId: 'actor-a' } })
     expect(createObjectURL).toHaveBeenCalledWith(blob)
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:attendees')
-    vi.unstubAllGlobals()
   })
 
   it('keeps a pending export alive across a filter change but cancels it when access is withdrawn', async () => {
@@ -404,6 +420,5 @@ describe('attendee list totals and export', () => {
     expect(secondExport.signal.aborted).toBe(true)
     await act(async () => exportRead.resolve({ data: blob, status: 200 }))
     expect(click).toHaveBeenCalledTimes(1)
-    vi.unstubAllGlobals()
   })
 })

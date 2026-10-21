@@ -68,7 +68,7 @@ class OrganizerSalesExport
     when "ticket_price" then money(ticket ? allocated(item, ticket, :subtotal_cents) : order.subtotal_cents)
     when "discount" then money(ticket ? allocated(item, ticket, :discount_cents) : order.discount_cents)
     when "fee" then money(ticket ? allocated(item, ticket, :fee_cents) : order.service_fee_cents)
-    when "tax" then money(ticket ? allocated(item, ticket, :tax_cents) : order.order_items.sum(:tax_cents))
+    when "tax" then money(ticket ? allocated(item, ticket, :tax_cents) : order.order_items.sum(&:tax_cents))
     when "total_paid", "price_paid" then money(ticket ? ticket_total(item, ticket) : order.total_cents)
     when "discount_promo" then [money(ticket ? allocated(item, ticket, :discount_cents) : order.discount_cents), order.promo_code&.code].compact.join(" / ")
     when "channel" then FinanceExports.channel(order)

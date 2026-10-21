@@ -43,12 +43,23 @@ module SpreadsheetExport
         output << "\uFEFF" if bom
         output << CSV.generate_line(header, force_quotes: true)
         rows.each { |row| output << CSV.generate_line(row.map { |value| spreadsheet_safe(value) }, force_quotes: true) }
-        on_complete&.call
       rescue StandardError => e
-        on_error&.call
+        begin
+          on_error&.call
+        rescue StandardError => callback_error
+          Rails.logger.error("[csv_export] #{filename} error callback failed: #{callback_error.class}: #{callback_error.message}")
+          Sentry.capture_exception(callback_error) if defined?(Sentry)
+        end
         Rails.logger.error("[csv_export] #{filename} stopped early: #{e.class}: #{e.message}")
         Sentry.capture_exception(e) if defined?(Sentry)
         output << CSV.generate_line([INCOMPLETE_MARKER], force_quotes: true)
+        next
+      end
+      begin
+        on_complete&.call
+      rescue StandardError => e
+        Rails.logger.error("[csv_export] #{filename} completion callback failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
       end
     end
   end

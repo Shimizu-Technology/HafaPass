@@ -61,7 +61,8 @@ class OrganizerSalesQuery
       break if ids.empty?
 
       batch = relation.where(id: ids).includes(view == "orders" ?
-        [:promo_code, :registration_responses, :support_notes, { tickets: [:ticket_type, :ticket_transfers] }] :
+        [:promo_code, :registration_responses, :support_notes, :order_items,
+          { tickets: [:ticket_type, :ticket_transfers] }] :
         [:ticket_type, { order_item: :tickets }, :ticket_transfers, :support_notes,
           { order: [:promo_code, :registration_responses, :support_notes] }]).to_a
       batch.each { |record| yield record }

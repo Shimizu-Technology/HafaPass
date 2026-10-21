@@ -13,5 +13,10 @@ class CreateOrganizerSalesExportRequests < ActiveRecord::Migration[8.0]
     end
     add_index :organizer_sales_export_requests, [:actor_user_id, :created_at],
       name: "index_sales_exports_on_actor_and_created_at"
+    add_check_constraint :organizer_sales_export_requests,
+      "status IN ('pending', 'processing', 'ready', 'failed', 'expired')",
+      name: "organizer_sales_export_requests_status_valid"
+    add_check_constraint :organizer_sales_export_requests, "row_count >= 0",
+      name: "organizer_sales_export_requests_row_count_nonnegative"
   end
 end

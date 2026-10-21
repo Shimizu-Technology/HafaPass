@@ -8,8 +8,10 @@ class OrganizerSalesExportJob < ApplicationJob
 
   def perform(export_id)
     uploaded = false
+    return unless OrganizerSalesExportRequest.where(id: export_id, status: "pending")
+      .update_all(status: "processing", updated_at: Time.current) == 1
+
     export_request = OrganizerSalesExportRequest.find(export_id)
-    export_request.update!(status: "processing")
     query = OrganizerSalesQuery.new(event: export_request.event, params: export_request.filters)
     org = export_request.event.organization
     finance = OrganizationAuthorization.allowed?(user: export_request.actor_user, organization: org,

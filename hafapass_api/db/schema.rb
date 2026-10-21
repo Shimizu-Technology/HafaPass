@@ -1270,6 +1270,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_110000) do
     t.index ["actor_user_id", "created_at"], name: "index_sales_exports_on_actor_and_created_at"
     t.index ["actor_user_id"], name: "index_organizer_sales_export_requests_on_actor_user_id"
     t.index ["event_id"], name: "index_organizer_sales_export_requests_on_event_id"
+    t.check_constraint "row_count >= 0", name: "organizer_sales_export_requests_row_count_nonnegative"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'ready'::character varying, 'failed'::character varying, 'expired'::character varying]::text[])", name: "organizer_sales_export_requests_status_valid"
   end
 
   create_table "organizer_tax_informations", force: :cascade do |t|

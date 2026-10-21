@@ -307,29 +307,33 @@ module Api
         def attendees
           query = OrganizerSalesQuery.new(event: @event, params: params)
           pagy, records = paginate(query.relation, items: params.fetch(:per_page, 25).to_i.clamp(1, 100))
+          can_view_finance = OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
+            permission: :view_finance, event: @event)
+          can_view_attendees = @can_view_attendees
           response.headers["Cache-Control"] = "no-store"
           render json: {
             attendees: records.includes(query.view == "orders" ? [{ tickets: :ticket_type }, :promo_code] : [:ticket_type, { order: :payments }]).map { |record|
               if record.is_a?(Order)
-                row = { id: record.id, attendee_name: record.buyer_name, attendee_email: record.buyer_email,
+                row = { id: record.id,
                   order_number: record.reference, ticket_type: record.tickets.map { |ticket| ticket.ticket_type.name }.uniq.join(", "),
                   status: record.status, purchase_date: record.completed_at || record.created_at,
                   channel: FinanceExports.channel(record), ticket_count: record.tickets.size,
-                  checked_in_count: record.tickets.count(&:checked_in?),
-                  checked_in_at: record.tickets.filter_map(&:checked_in_at).max }
-                if OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
-                  permission: :view_finance, event: @event)
-                  row[:amount_cents] = record.total_cents
-                end
+                  checked_in_count: record.tickets.count(&:checked_in?) }
+                row.merge!(attendee_name: record.buyer_name, attendee_email: record.buyer_email,
+                  checked_in_at: record.tickets.filter_map(&:checked_in_at).max) if can_view_attendees
+                row[:amount_cents] = record.total_cents if can_view_finance
                 row
               else
                 sales_status = OrganizerTicketSalesStatus.for(record)
-                { id: record.id, attendee_name: record.attendee_name, attendee_email: record.holder_email.presence || record.attendee_email,
+                row = { id: record.id,
                   ticket_type: record.ticket_type.name, status: record.status, sales_status: sales_status,
-                  checked_in_at: record.checked_in_at,
                   order_id: record.order_id, order_number: record.order.reference,
                   purchase_date: record.order.completed_at || record.order.created_at,
                   channel: FinanceExports.channel(record.order), test_payment: record.order.test_payment? }
+                row.merge!(attendee_name: record.attendee_name,
+                  attendee_email: record.holder_email.presence || record.attendee_email,
+                  checked_in_at: record.checked_in_at) if can_view_attendees
+                row
               end
             },
             meta: pagination_meta(pagy)
@@ -384,8 +388,10 @@ module Api
           case action_name
           when "show" then :view_events
           when "stats" then :view_finance
-          when "attendees" then OrganizationAuthorization.allowed?(user: current_user,
-            organization: current_organization, permission: :view_finance, event: @event) ? :view_finance : :view_attendees
+          when "attendees" then
+            @can_view_attendees = OrganizationAuthorization.allowed?(user: current_user,
+              organization: current_organization, permission: :view_attendees, event: @event)
+            @can_view_attendees ? :view_attendees : :view_finance
           when "update", "slug_availability", "retranslate" then :edit_event_content
           else :manage_events
           end

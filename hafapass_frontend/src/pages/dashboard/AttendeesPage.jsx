@@ -21,6 +21,22 @@ const STATUS_STYLES = {
 
 const RESENDABLE_STATUSES = new Set(['issued', 'checked_in'])
 
+async function exportFailureMessage(error, fallback) {
+  if (error?.response?.status === 429) return 'Too many exports. Try again later.'
+  const data = error?.response?.data
+  try {
+    const content = data instanceof Blob ? (typeof data.text === 'function' ? await data.text() :
+      await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(reader.error)
+        reader.readAsText(data)
+      })) : null
+    const body = content == null ? data : JSON.parse(content)
+    return body?.error || fallback
+  } catch { return fallback }
+}
+
 function formatDate(iso, timeZone) {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('en-US', { timeZone: timeZone || 'Pacific/Guam', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -204,12 +220,10 @@ function AttendeesPageSession({ id, identity }) {
         setExportOpen(false)
         return
       }
-      const url = window.URL.createObjectURL(response.data)
-      try { const link = document.createElement('a'); link.href = url; link.download = `${event?.slug || `event-${id}`}-attendees.csv`; link.click() }
-      finally { window.URL.revokeObjectURL(url) }
+      saveBlob(response.data, `${event?.slug || `event-${id}`}-attendees.csv`)
       setExportOpen(false)
     } catch (exportFailure) {
-      if (exportFailure?.name !== 'AbortError' && current()) setExportError('Unable to export attendees. Try again when your connection is available.')
+      if (exportFailure?.name !== 'AbortError' && current()) setExportError(await exportFailureMessage(exportFailure, 'Unable to export attendees. Try again when your connection is available.'))
     } finally { if (current()) setExporting(false) }
   }
   const checkQueuedExport = async (downloadUrl = queuedExport) => {
@@ -218,12 +232,10 @@ function AttendeesPageSession({ id, identity }) {
     try {
       const response = await requestOutsideList(config => apiClient.get(downloadUrl.replace('/api/v1', ''), { responseType: 'blob', ...config }))
       if (response.status === 202) { setActionNotice('Your export is still being prepared. Check again shortly.'); refreshRecentExports(); return }
-      const url = URL.createObjectURL(response.data)
-      try { const link = document.createElement('a'); link.href = url; link.download = `${event?.slug || `event-${id}`}-sales.csv`; link.click() }
-      finally { URL.revokeObjectURL(url) }
+      saveBlob(response.data, `${event?.slug || `event-${id}`}-sales.csv`)
       setQueuedExport(null)
       refreshRecentExports()
-    } catch { setExportError('The export could not be downloaded. Try again shortly.') }
+    } catch (error) { if (current()) setExportError(await exportFailureMessage(error, 'The export could not be downloaded. Try again shortly.')) }
     finally { if (current()) setExporting(false) }
   }
 
@@ -297,7 +309,7 @@ function AttendeesPageSession({ id, identity }) {
         {event && <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setFiltersOpen(true)} className="btn-secondary min-h-11 gap-1.5 !px-4 !py-2.5 text-sm"><SlidersHorizontal className="h-4 w-4" /> Filters & sort</button>
           {canExport && <button type="button" onClick={() => setExportOpen(true)} className="btn-secondary min-h-11 gap-1.5 !px-4 !py-2.5 text-sm"><Download className="h-4 w-4" /> Export this list</button>}
-          {permissions.view_attendees === true && <button type="button" onClick={async () => { try { const response = await requestOutsideList(config => apiClient.get(`/organizer/events/${id}/sales_exports/door_list?${activeQuery()}`, { responseType: 'blob', ...config })); saveBlob(response.data, `${event?.slug || `event-${id}`}-door-list.pdf`) } catch { setExportError('Unable to prepare the door list.') } }} className="btn-secondary min-h-11 gap-1.5 !px-4 !py-2.5 text-sm"><Printer className="h-4 w-4" /> Print door list</button>}
+          {permissions.view_attendees === true && <button type="button" onClick={async () => { try { const response = await requestOutsideList(config => apiClient.get(`/organizer/events/${id}/sales_exports/door_list?${activeQuery()}`, { responseType: 'blob', ...config })); saveBlob(response.data, `${event?.slug || `event-${id}`}-door-list.pdf`) } catch (error) { if (current()) setExportError(await exportFailureMessage(error, 'Unable to prepare the door list.')) } }} className="btn-secondary min-h-11 gap-1.5 !px-4 !py-2.5 text-sm"><Printer className="h-4 w-4" /> Print door list</button>}
         </div>}
       </div>
       {activeFilters.length > 0 && <div role="region" className="mb-4 flex flex-wrap items-center gap-2" aria-label="Active filters">{activeFilters.map(([key, value]) => <button key={key} type="button" onClick={() => changeFilter(key, '')} className="rounded-full bg-brand-50 px-3 py-1 text-sm text-brand-900">{key.replaceAll('_', ' ')}: {chipValue(key, value)} ×</button>)}<button type="button" className="text-sm font-medium underline" onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}>Clear filters</button></div>}
