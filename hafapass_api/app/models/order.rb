@@ -76,6 +76,16 @@ class Order < ApplicationRecord
     disputes.where(status: [:open, :lost]).exists?
   end
 
+  def buyer_status
+    return "disputed" if ticket_access_blocked?
+    return "refunded" if refunded?
+    return "partially_refunded" if partially_refunded?
+    return "cancelled_event" if event.cancelled?
+    return "cancelled" if cancelled?
+
+    "paid"
+  end
+
   def full_refund_pending?
     return false unless total_cents.positive?
 

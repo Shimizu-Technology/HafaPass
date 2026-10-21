@@ -82,10 +82,8 @@ class ReceiptPdfGenerator
       return I18n.t("emails.receipt.payment_method", method: method)
     end
 
-    payload = payment.provider_payload.to_h
-    brand = payload["cardType"] || payload["card_brand"]
-    last4 = payload["last4"] || payload["card_last4"]
-    method = if brand.to_s.match?(/\A[a-zA-Z0-9 -]{1,24}\z/) && last4.to_s.match?(/\A\d{4}\z/)
+    brand, last4 = payment.card_summary.values_at(:brand, :last4)
+    method = if brand && last4
       I18n.t("emails.receipt.card", brand: brand, last4: last4)
     else
       I18n.t("emails.receipt.payment_type.#{payment.provider}",

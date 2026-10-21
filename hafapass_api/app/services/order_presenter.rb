@@ -39,7 +39,7 @@ class OrderPresenter
       payment_state: latest_payment&.provider_payload.to_h["status"],
       payment_method: payment_method_json,
       refund_history: refund_history_json,
-      buyer_status: buyer_status,
+      buyer_status: order.buyer_status,
       payment_resumable: order.pending? && latest_payment&.provider == "stripe" &&
         latest_payment&.provider_payment_id.present? && latest_payment&.pending? &&
         order.expires_at&.future? && latest_payment&.provider_payload.to_h["status"] != "processing",
@@ -174,11 +174,7 @@ class OrderPresenter
     return unless payment
 
     # Only the card summary already saved by the provider is safe to expose.
-    payload = payment.provider_payload.to_h
-    brand = payload["cardType"] || payload["card_brand"]
-    last4 = payload["last4"] || payload["card_last4"]
-    brand = nil unless brand.to_s.match?(/\A[a-zA-Z0-9 -]{1,24}\z/)
-    last4 = nil unless last4.to_s.match?(/\A\d{4}\z/)
+    brand, last4 = payment.card_summary.values_at(:brand, :last4)
     { type: payment.provider, card_brand: brand, last4: last4 }.compact
   end
 
@@ -187,16 +183,6 @@ class OrderPresenter
       { id: refund.id, amount_cents: refund.amount_cents, status: refund.status,
         requested_at: refund.created_at, succeeded_at: refund.succeeded_at }
     end
-  end
-
-  def buyer_status
-    return "disputed" if order.disputes.to_a.any? { |dispute| dispute.open? || dispute.lost? }
-    return "refunded" if order.refunded?
-    return "partially_refunded" if order.partially_refunded?
-    return "cancelled_event" if order.event.cancelled?
-    return "cancelled" if order.cancelled?
-
-    "paid"
   end
 
   def confirmation_delivery

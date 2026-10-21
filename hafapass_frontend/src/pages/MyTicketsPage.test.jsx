@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode } from 'react'
 import apiClient from '../api/client'
 import MyTicketsPage from './MyTicketsPage'
 
@@ -159,6 +160,22 @@ describe('MyTicketsPage orders tab', () => {
     expect(await screen.findByText('Island workshop')).toBeInTheDocument()
     expect(finishSecond).toBeTypeOf('function')
     finishSecond({ data: { tickets: [], meta: {} } })
+  })
+
+  it('ignores an older ticket request after a newer request has completed', async () => {
+    let finishOlder
+    let ticketCalls = 0
+    apiClient.get.mockImplementation(url => {
+      if (url !== '/me/tickets') return Promise.resolve({ data: { orders: [], meta: {} } })
+      ticketCalls += 1
+      return ticketCalls === 1 ? new Promise(resolve => { finishOlder = resolve })
+        : Promise.resolve({ data: { tickets: [ticket], meta: {} } })
+    })
+    render(<StrictMode><HelmetProvider><MemoryRouter><MyTicketsPage /></MemoryRouter></HelmetProvider></StrictMode>)
+    expect(await screen.findByText('Island workshop')).toBeInTheDocument()
+    await act(async () => finishOlder({ data: { tickets: [], meta: { next_page: 2 } } }))
+    expect(screen.getByText('Island workshop')).toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledTimes(2)
   })
 
   it('loads Orders while a ticket page is unresolved', async () => {

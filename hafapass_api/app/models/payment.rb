@@ -33,4 +33,13 @@ class Payment < ApplicationRecord
   def refunded_cents
     refunds.succeeded.sum(:amount_cents)
   end
+
+  def card_summary
+    payload = provider_payload.to_h
+    brand = payload["cardType"] || payload["card_brand"]
+    last4 = payload["last4"] || payload["card_last4"]
+    brand = nil unless brand.to_s.match?(/\A[a-zA-Z0-9 -]{1,24}\z/)
+    last4 = nil unless last4.to_s.match?(/\A\d{4}\z/)
+    { brand: brand, last4: last4 }
+  end
 end

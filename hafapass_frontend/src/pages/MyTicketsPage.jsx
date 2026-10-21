@@ -49,16 +49,19 @@ function MyTicketsContent({ refreshSession, signOut }) {
   const [ticketsCapped, setTicketsCapped] = useState(false)
   const tab = new URLSearchParams(location.search).get('tab') === 'orders' ? 'orders' : 'tickets'
   const activeTab = useRef(tab)
-  activeTab.current = tab
+  useEffect(() => { activeTab.current = tab }, [tab])
   const [purchases, setPurchases] = useState([])
   const [purchaseMeta, setPurchaseMeta] = useState(null)
   const [purchaseLoading, setPurchaseLoading] = useState(false)
   const [purchaseError, setPurchaseError] = useState(false)
   const purchaseRequest = useRef(0)
+  const ticketRequest = useRef(0)
   const firstPageLoaded = useRef(false)
   const capabilities = useLaunchCapabilities()
 
   const loadAllTickets = useCallback(async (onPage = () => {}) => {
+    const request = ++ticketRequest.current
+    const current = () => request === ticketRequest.current
     setTicketsCapped(false)
     const all = []
     let page = 1
@@ -69,16 +72,24 @@ function MyTicketsContent({ refreshSession, signOut }) {
       try {
         response = await apiClient.get('/me/tickets', { params: { page, per_page: TICKETS_PER_PAGE } })
       } catch (err) {
+        if (!current()) return
         if (err.response?.status !== 401 || !refreshSession) throw err
-        await refreshSession().catch(() => { throw new Error('Session refresh failed') })
+        try {
+          await refreshSession()
+        } catch {
+          if (!current()) return
+          throw new Error('Session refresh failed')
+        }
+        if (!current()) return
         response = await apiClient.get('/me/tickets', { params: { page, per_page: TICKETS_PER_PAGE } })
       }
+      if (!current()) return
       all.push(...(response.data.tickets || []))
       onPage(all)
       const next = Number(response.data.meta?.next_page)
       page = Number.isInteger(next) && next > page && !seen.has(next) ? next : null
     }
-    if (page && seen.size === MAX_TICKET_PAGES) setTicketsCapped(true)
+    if (current() && page && seen.size === MAX_TICKET_PAGES) setTicketsCapped(true)
     return all
   }, [refreshSession])
 

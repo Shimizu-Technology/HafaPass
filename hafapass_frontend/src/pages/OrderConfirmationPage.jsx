@@ -253,11 +253,17 @@ function OrderConfirmationContent() {
   const orderHeaders = () => orderAccessHeaders(id)
 
   async function downloadReceipt() {
+    const generation = lifecycle.current.generation
     const buyerId = checkoutBuyerIdentity()
+    const route = currentRoute.current
+    const guestAccess = getOrderAccess(id)
+    const current = () => lifecycle.current.active && lifecycle.current.generation === generation
+      && currentRoute.current.id === route.id && currentRoute.current.pathname === route.pathname
+      && checkoutBuyerIdentity() === buyerId && getOrderAccess(id) === guestAccess
     setReceiptState('loading')
     try {
-      const response = await apiClient.get(`/orders/${id}/receipt`, { headers: orderHeaders(), responseType: 'blob' })
-      if (checkoutBuyerIdentity() !== buyerId) return
+      const response = await apiClient.get(`/orders/${id}/receipt`, { headers: orderAccessHeaders(id, guestAccess), responseType: 'blob' })
+      if (!current()) return
       const url = URL.createObjectURL(response.data)
       const link = document.createElement('a')
       link.href = url
@@ -268,7 +274,7 @@ function OrderConfirmationContent() {
       URL.revokeObjectURL(url)
       setReceiptState('idle')
     } catch {
-      if (checkoutBuyerIdentity() === buyerId) setReceiptState('error')
+      if (current()) setReceiptState('error')
     }
   }
 

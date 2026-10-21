@@ -162,6 +162,25 @@ describe('receipt download', () => {
     expect(createObjectURL).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:receipt')
   })
+
+  it('discards a receipt response after the guest credential changes', async () => {
+    const order = { id: 922, reference: 'HP-922', status: 'completed', total_cents: 0, order_items: [], tickets: [],
+      event: { slug: 'receipt-event', title: 'Receipt Event', status: 'published' } }
+    let finishReceipt
+    apiClient.get.mockImplementation(url => url === '/config' ? Promise.resolve({ data: { launch_capabilities: {} } })
+      : url.endsWith('/receipt') ? new Promise(resolve => { finishReceipt = resolve }) : Promise.resolve({ data: order }))
+    const createObjectURL = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation?guest_token=first-token']}><Routes>
+      <Route path='/orders/:id/confirmation' element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Receipt Event')
+    await userEvent.click(screen.getByRole('button', { name: 'Download receipt (PDF)' }))
+    await waitFor(() => expect(finishReceipt).toBeTypeOf('function'))
+    window.sessionStorage.setItem('hafapass:order-access:922', 'new-token')
+    await act(async () => finishReceipt({ data: new Blob(['pdf'], { type: 'application/pdf' }) }))
+    expect(createObjectURL).not.toHaveBeenCalled()
+  })
 })
 
 describe('buyer refund outcomes and terminal retries', () => {
@@ -374,6 +393,23 @@ describe('confirmation ticket hierarchy and outcome', () => {
     const tickets = document.getElementById('order-tickets')
     const email = screen.getByRole('heading', { name: 'Ticket email' })
     expect(tickets.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+  it.each([
+    [{ type: 'stripe', card_brand: 'Visa', last4: '4242' }, 'Payment method: Visa ending in 4242'],
+    [{ type: 'clover' }, 'Payment method: Card at door'],
+    [{ type: 'door_cash' }, 'Payment method: Cash at door'],
+  ])('shows the translated payment method label for %j', async (payment_method, label) => {
+    mount({ ...order, payment_method })
+    expect(await screen.findByText(label)).toBeInTheDocument()
+  })
+  it('shows translated pending and confirmed refund rows', async () => {
+    mount({ ...order, refund_history: [
+      { id: 1, amount_cents: 500, status: 'pending', requested_at: '2030-01-01T00:00:00Z' },
+      { id: 2, amount_cents: 250, status: 'succeeded', requested_at: '2030-01-02T00:00:00Z' },
+    ] })
+    await screen.findByRole('heading', { name: 'Refund history' })
+    expect(screen.getByText('$5.00 · Pending')).toBeInTheDocument()
+    expect(screen.getByText('$2.50 · Confirmed')).toBeInTheDocument()
   })
   it.each([['cancelled', 'Order cancelled'], ['expired', 'Reservation expired'], ['refunded', 'Your order was refunded']])('does not display a confirmed outcome for %s', async (status, title) => {
     mount({ ...order, status, tickets: [] })

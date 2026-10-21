@@ -7,7 +7,7 @@ class OrderCardPresenter
       id: order.id,
       reference: order.reference,
       status: order.status,
-      buyer_status: buyer_status(order),
+      buyer_status: order.buyer_status,
       completed_at: order.completed_at,
       created_at: order.created_at,
       event: {
@@ -27,16 +27,4 @@ class OrderCardPresenter
       receipt_available: order.receipt_available?
     }
   end
-
-  def self.buyer_status(order)
-    return "disputed" if order.disputes.any? { |dispute| dispute.open? || dispute.lost? }
-    return "refunded" if order.refunded?
-    return "partially_refunded" if order.partially_refunded?
-    return "cancelled_event" if order.event.cancelled?
-    return "cancelled" if order.cancelled?
-
-    "paid"
-  end
-
-  private_class_method :buyer_status
 end
