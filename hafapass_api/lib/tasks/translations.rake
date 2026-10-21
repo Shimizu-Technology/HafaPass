@@ -1,21 +1,31 @@
 # frozen_string_literal: true
 
 namespace :translations do
-  desc "Machine translate events and ticket types that have no current translation (safe to re-run)"
+  desc "Machine translate public events and ticket types without a current translation (safe to re-run)"
   task backfill: :environment do
-    abort "Set GT_API_KEY and GT_PROJECT_ID first." unless GtTranslationService.configured?
+    unless GtTranslationService.enabled?
+      abort "Set HAFAPASS_MACHINE_TRANSLATION=true, GT_API_KEY and GT_PROJECT_ID first."
+    end
 
+    # Runs the job's work directly (not perform_now), so a General Translation
+    # error is reported here instead of being swallowed into a queued retry.
+    job = TranslateRecordJob.new
     failures = 0
     [Event, TicketType].each do |model|
-      scope = model.where(translation_status: %w[untranslated failed])
-      puts "#{model.name}: #{scope.count} to translate"
+      scope = model.where(translation_status: %w[untranslated failed unavailable])
+      puts "#{model.name}: #{scope.count} to check"
       scope.find_each do |record|
-        TranslateRecordJob.perform_now(model.name, record.id, nil, false)
+        next unless record.machine_translation_eligible?
+
+        job.perform(model.name, record.id, nil, false)
         status = record.reload.translation_status
         failures += 1 unless status == "translated"
         puts "  #{model.name}##{record.id} #{status}"
+      rescue GtTranslationService::Unavailable => e
+        abort "General Translation is unavailable (#{e.message}); nothing more was sent. Re-run later."
       rescue GtTranslationService::TranslationError => e
         failures += 1
+        record.update_column(:translation_status, "failed")
         puts "  #{model.name}##{record.id} failed: #{e.message}"
       end
     end

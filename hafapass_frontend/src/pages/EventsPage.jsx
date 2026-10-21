@@ -8,6 +8,7 @@ import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
 import useEventCategories from '../hooks/useEventCategories'
+import useContentLanguage from '../hooks/useContentLanguage'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { categoryIcon } from '../utils/categoryIcons'
 
@@ -29,6 +30,7 @@ export default function EventsPage() {
   const [meta, setMeta] = useState({ current_page: 1, total_pages: 1, total_count: 0 })
   const onListingRoute = Boolean(useMatch('/events'))
   const [searchParams, setSearchParams] = useSearchParams()
+  const contentLanguage = useContentLanguage()
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [activeCategory, setActiveCategory] = useState(searchParams.get('category') || 'all')
   const [dateRange, setDateRange] = useState(searchParams.get('date') || 'upcoming')
@@ -78,7 +80,7 @@ export default function EventsPage() {
     }, 250)
 
     return () => { active = false; clearTimeout(timer) }
-  }, [search, activeCategory, dateRange, price, village, page, retry, onListingRoute])
+  }, [search, activeCategory, dateRange, price, village, page, retry, onListingRoute, contentLanguage])
 
   useEffect(() => {
     if (!onListingRoute) return

@@ -1,9 +1,13 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import i18next from 'i18next'
 import LanguageSwitcher from './LanguageSwitcher'
+import { configureEnabledLanguages } from '../utils/locale'
+
+beforeEach(() => configureEnabledLanguages('ko,ja,zh-Hant,zh,tl'))
+afterEach(() => configureEnabledLanguages('en'))
 
 async function renderSwitcher(lng = 'en') {
   const i18n = i18next.createInstance()
@@ -52,4 +56,17 @@ it('offers the six buyer languages by native name and hides CHamoru until it is 
 
   await user.keyboard('{End}{Enter}')
   expect(screen.getByRole('button', { name: 'Change language, Filipino' })).toBeInTheDocument()
+})
+
+it('only lists enabled languages and is hidden while English is the only one', async () => {
+  configureEnabledLanguages('ko')
+  const user = userEvent.setup()
+  const { unmount } = render(<I18nextProvider i18n={await (async () => { const i18n = i18next.createInstance(); await i18n.init({ lng: 'en', resources: {} }); return i18n })()}><LanguageSwitcher /></I18nextProvider>)
+  await user.click(screen.getByRole('button', { name: 'Change language, English' }))
+  expect(within(screen.getByRole('group')).getAllByRole('button').map(option => option.getAttribute('data-language'))).toEqual(['en', 'ko'])
+  unmount()
+
+  configureEnabledLanguages('en')
+  await renderSwitcher()
+  expect(screen.queryByRole('button', { name: /Change language/ })).not.toBeInTheDocument()
 })

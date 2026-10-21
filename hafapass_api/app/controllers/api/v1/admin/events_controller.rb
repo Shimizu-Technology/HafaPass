@@ -39,8 +39,10 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   # POST /api/v1/admin/events/:id/retranslate
   def retranslate
     event = Event.find(params[:id])
-    unless Event.retranslate_with_ticket_types(event)
-      return render json: { error: "Automatic translation is not set up yet." }, status: :unprocessable_entity
+    outcome = Event.retranslate_with_ticket_types(event)
+    unless outcome == :queued
+      message, status = Event::RETRANSLATE_REFUSALS.fetch(outcome)
+      return render json: { error: message, code: outcome.to_s }, status: status
     end
 
     render json: { translation_status: event.reload.translation_status }, status: :accepted

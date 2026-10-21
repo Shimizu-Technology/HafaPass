@@ -8,6 +8,7 @@ RSpec.describe "Buyer email language" do
   end
   let(:ticket_type) { create(:ticket_type, event: event, name: "General Admission") }
 
+  before { with_locales_enabled(AppLocale::SUPPORTED, machine_translation: true) }
   after { I18n.reload! }
 
   def store_korean_copy
@@ -32,7 +33,7 @@ RSpec.describe "Buyer email language" do
 
     expect(payload.fetch("subject")).to eq("HåfaPass 티켓 - ko:Sunset Fiesta")
     expect(payload.fetch("html")).to include('<html lang="ko">', "티켓이 확정되었습니다!", "합계: $52.50",
-      "2026년 11월 20일 오후 07:00", "ko:Sunset Fiesta")
+      "2026년 11월 20일 오후 7:00", "ko:Sunset Fiesta")
   end
 
   it "keeps legacy and staff-created orders in English" do
@@ -43,10 +44,10 @@ RSpec.describe "Buyer email language" do
 
     expect(order.locale).to eq("en")
     expect(payload.fetch("subject")).to eq("Your HåfaPass Tickets - Sunset Fiesta")
-    expect(payload.fetch("html")).to include("Your tickets are confirmed!", "November 20, 2026 at 07:00 PM", "Total: $52.50")
+    expect(payload.fetch("html")).to include("Your tickets are confirmed!", "November 20, 2026 at 7:00 PM", "Total: $52.50")
   end
 
-  it "localizes refund and transfer emails from their own records" do
+  it "localizes refunds from the order and writes transfers in English for the recipient" do
     store_korean_copy
     order = create(:order, event: event, locale: "ko", status: :refunded, refund_amount_cents: 5250)
     refund = EmailService.prepare_delivery_payload(create(:message_delivery, order: order, template: "refund_notification"))
@@ -58,7 +59,21 @@ RSpec.describe "Buyer email language" do
     delivery = create(:message_delivery, order: ticket.order, ticket: ticket, template: "ticket_transfer",
       recipient: "friend@example.com", metadata: { ticket_transfer_id: transfer.id })
     payload = EmailService.prepare_delivery_payload(delivery)
-    expect(payload.fetch("html")).to include('<html lang="ja">', "ja:Sunset Fiesta", "friend@example.com")
+    expect(payload.fetch("html")).to include('<html lang="en">', "Sunset Fiesta", "friend@example.com",
+      "November 19, 2026 at 7:00 PM ChST")
+    expect(payload.fetch("html")).not_to include("ja:Sunset Fiesta")
+  end
+
+  it "uses the organizer's own ticket names on issued tickets in every language" do
+    ticket_type.update_columns(translations: { "name" => AppLocale::TRANSLATION_TARGETS.index_with { |locale| "#{locale}:GA" }
+      .merge("_digest" => Translatable.digest("General Admission")) })
+    order = create(:order, event: event, locale: "ko")
+    create(:ticket, order: order, event: event, ticket_type: ticket_type)
+
+    html = EmailService.prepare_delivery_payload(create(:message_delivery, order: order)).fetch("html")
+
+    expect(html).to include("General Admission")
+    expect(html).not_to include("ko:GA")
   end
 
   it "escapes buyer text inside translated sentences while keeping trusted links" do

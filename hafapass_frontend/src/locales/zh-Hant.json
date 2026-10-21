@@ -32,11 +32,11 @@
     "serviceFeeIncludesProcessing": "含刷卡手續費",
     "settingUpPayment": "正在準備付款……",
     "subtotal": "小計",
-    "termsNotice": "完成本次購買，即表示你同意 HåfaPass 服務條款。",
+    "termsNotice": "完成本次購買，即表示您同意 HåfaPass 服務條款。",
     "title": "結帳",
     "total": "總計",
-    "yourInfo": "你的資料",
-    "yourInformation": "你的資料"
+    "yourInfo": "您的資料",
+    "yourInformation": "您的資料"
   },
   "common": {
     "back": "返回",
@@ -52,7 +52,7 @@
     "view": "查看"
   },
   "eventDetail": {
-    "about": "關於我們",
+    "about": "活動介紹",
     "addToCalendar": "加入行事曆",
     "allEvents": "所有活動",
     "browseEvents": "瀏覽活動",
@@ -74,10 +74,10 @@
     "learnMore": "了解更多",
     "noEventsDesc": "關島的活動將顯示在這裡。搶先建立活動，讓全島熱鬧起來！",
     "noEventsYet": "目前尚無活動",
-    "noMatchDesc": "試著調整搜尋或篩選條件，找出你感興趣的活動。",
+    "noMatchDesc": "試著調整搜尋或篩選條件，找出您感興趣的活動。",
     "noMatchingEvents": "沒有符合條件的活動",
     "noResults": "找不到活動",
-    "pastEvent": "歷屆活動",
+    "pastEvent": "已結束",
     "search": "搜尋活動、場地……",
     "soldOut": "已售罄",
     "subtitle": "探索關島的精彩活動",
@@ -107,7 +107,7 @@
     "beTheFirst": "搶先在關島舉辦活動",
     "browseEvents": "瀏覽活動",
     "createProfile": "建立主辦單位檔案，幾分鐘內即可開始售票。",
-    "curatedGuide": "精選活動指南，帶你掌握島上大小活動。",
+    "curatedGuide": "精選活動指南，帶您掌握島上大小活動。",
     "discoverEvents": "探索精彩活動，盡在",
     "exploreByCategory": "依類別探索",
     "featured": "精選活動",
@@ -171,7 +171,7 @@
     "googleWallet": "Google 錢包",
     "myTickets": "我的票券",
     "noTickets": "目前尚無票券",
-    "past": "歷屆",
+    "past": "已結束",
     "presentQr": "入場時請出示此 QR Code",
     "shareTicket": "分享票券",
     "subtitle": "所有活動票券，集中管理",
@@ -192,16 +192,16 @@
     "check": "查詢",
     "emailAddress": "電子郵件地址",
     "enterYourEmail": "輸入您的電子郵件地址",
-    "getNotified": "票券開放購買時，將通知你。",
+    "getNotified": "票券開放購買時，將通知您。",
     "join": "加入候補名單",
     "joinTitle": "加入候補名單",
     "leave": "退出",
-    "onWaitlist": "你已加入候補名單！",
+    "onWaitlist": "您已加入候補名單！",
     "phone": "電話（選填）",
     "position": "順位",
     "positionInLine": "您的候補順位為第 {{position}} 位",
     "quantity": "數量",
     "willEmail": "有票券釋出時，我們會寄送電子郵件至 {{email}} 通知您。",
-    "yourName": "你的姓名"
+    "yourName": "您的姓名"
   }
 }

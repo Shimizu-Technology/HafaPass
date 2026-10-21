@@ -8,6 +8,9 @@
 # sent in, so nothing already delivered changes.
 class AddTranslationsAndLocales < ActiveRecord::Migration[8.1]
   def change
+    # Adding defaulted columns is metadata-only in PostgreSQL, but each needs a
+    # brief exclusive lock; give up rather than queue behind live checkouts.
+    reversible { |direction| direction.up { execute "SET LOCAL lock_timeout = '5s'" } }
     %i[events ticket_types].each do |table|
       add_column table, :translations, :jsonb, default: {}, null: false
       add_column table, :translation_status, :string, default: "untranslated", null: false

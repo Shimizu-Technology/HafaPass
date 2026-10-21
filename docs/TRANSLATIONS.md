@@ -30,10 +30,50 @@ three places, all following the pattern used by Marianas Open:
 | --- | --- | --- |
 | `GT_API_KEY` | Netlify (frontend build), Render API service, and any Render worker that runs jobs | Interface/email translation at build time; event text translation jobs. |
 | `GT_PROJECT_ID` | Same places as `GT_API_KEY` | Same. |
+| `VITE_ENABLED_LOCALES` | Netlify | Comma list of buyer languages offered in the app (default `en`). With only English the language switcher is hidden. |
+| `HAFAPASS_ENABLED_LOCALES` | Render API and worker | Comma list of languages the API answers in (event text, the language saved on orders). Default `en`; keep it in step with `VITE_ENABLED_LOCALES`. |
+| `HAFAPASS_MACHINE_TRANSLATION` | Render API and worker | `true` to send organizer event text to GT and serve the results. Default off. |
 
-Without both variables nothing is sent to GT: builds use the committed locale
+## Rollout gates (current state)
+
+Until phase 2 extracts the remaining page copy, a buyer who picks 한국어 would
+see translated navigation around English pages. So everything is off by
+default:
+
+- **Frontend:** only languages in `VITE_ENABLED_LOCALES` can be chosen or
+  detected from the browser. A saved choice of a language that is not enabled
+  becomes English. With one language the switcher is hidden. The organizer,
+  admin and support workspace never shows the switcher, and its dates and
+  amounts always use en-US formatting.
+- **Browser translation:** `index.html` does not set `translate="no"` for now,
+  so buyers can use Chrome or Safari page translation. Phase 2 can restore it
+  once HåfaPass translates every page itself.
+- **API:** languages outside `HAFAPASS_ENABLED_LOCALES` read as English.
+  Organizer wording is served for enabled languages the organizer turned on.
+  Nothing calls GT and no machine translation is served unless
+  `HAFAPASS_MACHINE_TRANSLATION=true` and both GT variables are set.
+- **Credit:** if GT answers out of credit or rate limited (HTTP 402/429 or a
+  credit error), the record is marked `unavailable`, nothing retries, buyers see
+  English and organizers see "paused" rather than a failure.
+
+To turn a language on: set it in both `VITE_ENABLED_LOCALES` and
+`HAFAPASS_ENABLED_LOCALES`; set `HAFAPASS_MACHINE_TRANSLATION=true` once the GT
+account has credit, then run `bin/rails translations:backfill`.
+
+Without the GT variables nothing is sent to GT: builds use the committed locale
 files, event text stays English in every language, and the organizer page says
 automatic translation is not set up.
+
+## Privacy
+
+General Translation is a subprocessor when machine translation is on: it
+receives the English title, short description and description of **published,
+publicly visible** events and the names and descriptions of their ticket
+types. Drafts, hidden (policy-held) events and live-money proof events are never
+sent, and nothing about buyers (names, emails, orders) is sent. The interface and
+email copy sent by the `gt` CLI contains no personal data. The privacy policy's
+subprocessor list should name General Translation before the switch is turned
+on (policy text is maintained separately).
 
 Use a GT project that belongs to HåfaPass. GT applies project-level context to
 every request; the first locale files were generated in the Marianas Open
@@ -56,8 +96,14 @@ Files, all in `hafapass_frontend/`:
   translate (JSON and the API's email YAML).
 - `gt-lock.json` — the CLI's record of what was translated. Commit it with the
   locale files.
-- `scripts/translate-safe.mjs` — runs `gt translate` when the credentials are
-  present, and never fails the build.
+- `scripts/translate-safe.mjs` (logic in `scripts/translate-safe-lib.mjs`) —
+  runs `gt translate` when the credentials are present, with a 120-second
+  timeout. Afterwards every generated JSON file must parse and keep each key's
+  `{{placeholders}}`, and every email YAML file must keep the `emails:` root and
+  the same `%{placeholders}`. On a failure, a timeout or invalid output, all
+  translation files and `gt-lock.json` are restored to the committed versions
+  and the build continues. It never fails the build and never ships
+  unvalidated JSON.
 
 Commands:
 
@@ -77,8 +123,9 @@ what was deployed.
 Runtime (`src/i18n.js`): react-i18next with English bundled and the other
 languages as separate chunks loaded on demand. Detection order is the saved
 choice (`localStorage` key `i18nextLng`), then the browser languages, then
-English. Changing the language updates `<html lang>`. `index.html` sets
-`translate="no"` so browser auto-translation does not rewrite the React DOM.
+English, limited to enabled languages (see Rollout gates). Changing the
+language updates `<html lang>`, and the home, event list and event pages reload
+their event text in the new language (`src/hooks/useContentLanguage.js`).
 
 Dates and money: `src/utils/eventTime.js` and `src/utils/money.js` format with
 the active language through `Intl`, always in the event's own time zone
@@ -113,19 +160,28 @@ created it:
 | --- | --- | --- |
 | `orders` | `locale` | Online checkout (`POST /orders`). Box office, cash and guest-list orders stay English. |
 | `waitlist_entries` | `locale` | Joining a waitlist. |
-| `ticket_transfers` | `locale` | The sender's language when starting a transfer. |
+| `ticket_transfers` | `locale` | The sender's language when starting a transfer (recorded only; see below). |
 
 Existing rows were given `en`, so emails about earlier purchases are unchanged.
-Event titles and ticket names in these emails use the record's language too.
+Event titles in these emails use the record's language too. Ticket transfer
+emails go to the recipient, whose language is unknown, so they are always
+English. Deadlines (transfer and waitlist-offer expiry) include the time zone.
+
+Issued tickets use the organizer's own ticket names everywhere (emails, PDFs,
+My Tickets, the ticket page and door lists) so buyers and door staff see the
+same words. Only the event page shows translated ticket names, with "Show
+original".
 
 There is no build step on Render: generate the email translations with
 `npm run translate` in `hafapass_frontend` and commit the YAML files.
 
 ## Organizer event text (API)
 
-Organizers write in English. When General Translation is configured, saving
-an event or ticket type queues `TranslateRecordJob` (queue `low`) for the
-fields that changed:
+Organizers write in English. When machine translation is on (see Rollout
+gates), saving a published, publicly visible event or its ticket types queues
+`TranslateRecordJob` (queue `low`) for the fields that changed. Publishing an
+event queues every field of the event and its ticket types; drafts are never
+sent:
 
 | Model | Translated | Left as written |
 | --- | --- | --- |
@@ -135,20 +191,24 @@ fields that changed:
 How it works:
 
 - `Translatable` (`app/models/concerns/translatable.rb`) records the changed
-  fields before save and queues the job after commit. Without credentials it
-  does nothing.
+  fields before save and queues the job after commit. Without the switch and
+  credentials it does nothing.
 - `GtTranslationService` posts each field to
   `https://runtime2.gtx.dev/v2/translate`, one request per target locale, with
   context telling GT to keep names of people, venues, villages, brands and
   CHamoru words as written.
 - Results are stored in the record's `translations` JSONB column as
   `{ field => { "_digest" => <hash of the English>, locale => text } }`, and
-  `translation_status` becomes `translated`, `pending` or `failed`.
+  `translation_status` becomes `translated`, `pending`, `failed` or
+  `unavailable` (GT out of credit or rate limited).
 - A translation is only shown while its digest matches the current English,
   so an edit never shows an outdated translation while the new one is made.
-- The job is idempotent: unchanged fields are not re-sent unless forced, and a
-  result is discarded if the English changed again while it was in flight. GT
-  errors retry 4 times with back-off, then mark the record `failed`.
+- The job works locale by locale and is idempotent: only locales missing a
+  current translation are requested (unless forced); results merge into the
+  existing translations, so a locale GT does not return keeps its previous
+  good translation; and a result is discarded if the English changed again
+  while it was in flight. GT errors retry 4 times with back-off, then mark the
+  record `failed`, but never over a translation another job already completed.
 
 What buyers see (`GET /events`, `GET /events/:slug`), in this order of
 precedence:
@@ -172,10 +232,16 @@ Retranslation and backfill:
   (`POST /api/v1/organizer/events/:id/retranslate`, needs edit-content
   permission).
 - Platform admins: `POST /api/v1/admin/events/:id/retranslate`.
-- Both retranslate the event and its ticket types from scratch.
+- Both retranslate the event and its ticket types. They are refused for drafts,
+  for 5 minutes after the last request, and while a request is still pending
+  (up to 30 minutes), returning HTTP 429 `recently_requested`.
+- The organizer page polls the status every 5 seconds while a translation is
+  pending. Organizer wording remembers which English it was written for and is
+  marked "English changed since you wrote this" when that English is edited.
 - `bin/rails translations:backfill` translates every event and ticket type that
-  is `untranslated` or `failed` (run once after first setting the credentials;
-  safe to re-run). `bin/rails translations:status` counts records by status.
+  is `untranslated`, `failed` or `unavailable` and public (run once after
+  turning machine translation on; safe to re-run; it stops at the first
+  out-of-credit answer). `bin/rails translations:status` counts records by status.
 
 ## PDFs
 
@@ -207,6 +273,8 @@ policy pages say that the English version governs
    `gt-lock.json`.
 5. Run `bin/rails translations:backfill` so existing events get the new
    language.
+6. Turn it on for buyers by adding it to `VITE_ENABLED_LOCALES` (Netlify) and
+   `HAFAPASS_ENABLED_LOCALES` (Render).
 
 ## CHamoru plan
 

@@ -106,6 +106,7 @@ class Event < ApplicationRecord
   validate :live_money_candidate_flag_immutable_after_orders
 
   before_validation :assign_slug
+  before_save :record_localized_content_sources, if: :will_save_change_to_localized_content?
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
   after_update -> { Wallet::PassSync.event_changed(self) }, if: :wallet_visible_change?
 
@@ -214,19 +215,31 @@ class Event < ApplicationRecord
     event_seating_configuration&.status_active? || false
   end
 
-  # Queues a full machine re-translation of the event and its ticket types.
-  # False when General Translation is not configured.
-  def self.retranslate_with_ticket_types(event)
-    return false unless event.retranslate!
+  RETRANSLATE_REFUSALS = {
+    unavailable: ["Automatic translation is not available right now. Buyers see your English text.", :unprocessable_entity],
+    not_public: ["Automatic translation starts when the event is published.", :unprocessable_entity],
+    recently_requested: ["A translation was requested in the last few minutes. Try again shortly.", :too_many_requests]
+  }.freeze
 
-    event.ticket_types.find_each(&:retranslate!)
-    true
+  # Queues a full machine re-translation of the event and its ticket types.
+  # Returns :queued or the reason it was refused (see Translatable#retranslate!).
+  def self.retranslate_with_ticket_types(event)
+    outcome = event.retranslate!
+    event.ticket_types.find_each { |ticket_type| ticket_type.queue_translation!(nil, force: true) } if outcome == :queued
+    outcome
+  end
+
+  # Only text buyers can already see is sent for machine translation.
+  def machine_translation_eligible?(status_value = status, hold = policy_hold_scope, proof = live_money_proof_candidate)
+    %w[published completed].include?(status_value.to_s) && !proof && hold != "hidden"
   end
 
   # Public text in a buyer's language: the organizer's own translation first,
-  # then a current machine translation, then the English original.
+  # then a current machine translation, then the English original. Languages
+  # not enabled on the server (HAFAPASS_ENABLED_LOCALES) read as English.
   def content_for(locale)
-    code = AppLocale.normalize(locale) || AppLocale::DEFAULT
+    code = AppLocale.normalize(locale)
+    code = AppLocale::DEFAULT unless code && AppLocale.enabled?(code)
     provided = supported_locales.include?(code) ? localized_content.fetch(code, {}) : {}
     machine_translated = false
     content = CONTENT_FIELDS.to_h do |field|
@@ -237,6 +250,18 @@ class Event < ApplicationRecord
       [field.to_sym, value]
     end
     content.merge(locale: code, machine_translated: machine_translated)
+  end
+
+  # { locale => [fields] } of organizer wording written for English that has
+  # since changed, so the organizer can review it.
+  def stale_localized_content
+    localized_content.each_with_object({}) do |(locale, fields), stale|
+      changed = fields.keys.select do |field|
+        source = localized_content_sources.dig(locale, field)
+        source.present? && source != Translatable.digest(self[field])
+      end
+      stale[locale] = changed if changed.any?
+    end
   end
 
   def has_available_inventory?(at: Time.current)
@@ -422,6 +447,28 @@ class Event < ApplicationRecord
     errors.add(:buyer_fee_percent, "must be 0 when the organizer absorbs fees") if organizer_absorbs? && buyer_fee_percent != 0
     if split_fees? && !buyer_fee_percent.between?(1, 99)
       errors.add(:buyer_fee_percent, "must be between 1 and 99 for split fees")
+    end
+  end
+
+  def translation_became_eligible?
+    machine_translation_eligible? &&
+      !machine_translation_eligible?(status_in_database, policy_hold_scope_in_database, live_money_proof_candidate_in_database)
+  end
+
+  # Ticket types were not sent while the event was private.
+  def translation_cascade
+    ticket_types.find_each { |ticket_type| ticket_type.queue_translation!(nil) }
+  end
+
+  # Remembers which English each piece of organizer wording was written for.
+  def record_localized_content_sources
+    before = localized_content_in_database || {}
+    self.localized_content_sources = localized_content.to_h do |locale, fields|
+      kept = localized_content_sources.fetch(locale, {})
+      [locale, fields.to_h do |field, value|
+        unchanged = before.dig(locale, field) == value && kept[field].present?
+        [field, unchanged ? kept[field] : Translatable.digest(self[field])]
+      end]
     end
   end
 

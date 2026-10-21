@@ -124,8 +124,10 @@ module Api
         # Re-runs machine translation for the event and its ticket types, for
         # example after General Translation was first configured.
         def retranslate
-          unless Event.retranslate_with_ticket_types(@event)
-            return render json: { error: "Automatic translation is not set up yet." }, status: :unprocessable_entity
+          outcome = Event.retranslate_with_ticket_types(@event)
+          unless outcome == :queued
+            message, status = Event::RETRANSLATE_REFUSALS.fetch(outcome)
+            return render json: { error: message, code: outcome.to_s }, status: status
           end
 
           render json: { translation_status: @event.reload.translation_status }, status: :accepted
@@ -531,7 +533,8 @@ module Api
             supported_locales: event.supported_locales,
             localized_content: event.localized_content,
             translation_status: event.translation_status,
-            automatic_translation_available: GtTranslationService.configured?,
+            automatic_translation_available: GtTranslationService.enabled?,
+            localized_content_stale: event.stale_localized_content,
             created_at: event.created_at,
             updated_at: event.updated_at
           }

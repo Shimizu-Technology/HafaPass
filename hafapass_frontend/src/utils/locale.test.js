@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { activeIntlLocale, getActiveLanguage, languageFor, normalizeLanguage, setActiveLanguage } from './locale'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { activeIntlLocale, configureEnabledLanguages, getActiveLanguage, languageFor, normalizeLanguage, setActiveLanguage } from './locale'
 
 describe('locale helpers', () => {
-  afterEach(() => setActiveLanguage('en'))
+  beforeEach(() => configureEnabledLanguages('ko,ja,zh-Hant,zh,tl'))
+  afterEach(() => { setActiveLanguage('en'); configureEnabledLanguages('en') })
 
   it('maps browser and stored tags to the supported languages', () => {
     expect(['en-US', 'ko-KR', 'ja', 'tl', 'fil-PH'].map(normalizeLanguage)).toEqual(['en', 'ko', 'ja', 'tl', 'tl'])

@@ -4,7 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector'
 
 import en from './locales/en.json'
 import {
-  DEFAULT_LANGUAGE, SUPPORTED_LANGUAGE_CODES, languageFor, normalizeLanguage, setActiveLanguage,
+  DEFAULT_LANGUAGE, enabledLanguageCode, getEnabledLanguages, languageFor, sanitizeStoredLanguage, setActiveLanguage,
 } from './utils/locale'
 
 // English ships in the main bundle; the other languages are separate chunks
@@ -29,6 +29,7 @@ function applyLanguage(language) {
 }
 
 i18n.on('languageChanged', applyLanguage)
+if (typeof window !== 'undefined') sanitizeStoredLanguage(window.localStorage)
 
 i18n
   .use(lazyLocales)
@@ -37,7 +38,8 @@ i18n
   .init({
     resources: { en: { translation: en } },
     partialBundledLanguages: true,
-    supportedLngs: SUPPORTED_LANGUAGE_CODES,
+    // Only languages enabled with VITE_ENABLED_LOCALES can be chosen or detected.
+    supportedLngs: getEnabledLanguages().map(language => language.code),
     // "zh-Hant" must not fall back through Simplified Chinese ("zh").
     load: 'currentOnly',
     fallbackLng: DEFAULT_LANGUAGE,
@@ -47,8 +49,8 @@ i18n
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
-      // Unsupported tags pass through unchanged so i18next skips to the next preference.
-      convertDetectedLanguage: tag => normalizeLanguage(tag) || tag,
+      // Tags that are not enabled pass through unchanged so i18next skips to the next preference.
+      convertDetectedLanguage: tag => enabledLanguageCode(tag) || tag,
     },
   })
 

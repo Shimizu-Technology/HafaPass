@@ -6,8 +6,16 @@
 #
 # Codes match the frontend locale files. "tl" is Filipino (Tagalog); General
 # Translation calls it "fil". CHamoru ("ch") is planned with human
-# translators, so it is accepted for organizer-written content that already
-# exists but is not offered to buyers or machine translated yet.
+# translators: organizer-written CHamoru content that already exists stays
+# valid, but it is never served, emailed or machine translated until it is
+# added to SUPPORTED.
+#
+# Two switches gate what buyers get while page copy is still being extracted
+# (docs/TRANSLATIONS.md):
+#   HAFAPASS_ENABLED_LOCALES     comma list, default "en" — languages the API
+#                                answers in (event text, saved order language).
+#   HAFAPASS_MACHINE_TRANSLATION "true" to call General Translation and serve
+#                                its translations; off by default.
 module AppLocale
   DEFAULT = "en"
   SUPPORTED = %w[en ko ja zh-Hant zh tl].freeze
@@ -28,9 +36,23 @@ module AppLocale
     end
   end
 
-  # An explicit ?locale= wins over the Accept-Language header; English otherwise.
+  # An explicit ?locale= wins over the Accept-Language header; English
+  # otherwise. Only enabled languages are chosen.
   def resolve(param: nil, accept_language: nil)
-    normalize(param) || from_accept_language(accept_language) || DEFAULT
+    [normalize(param)].find { |code| enabled?(code) } || from_accept_language(accept_language) || DEFAULT
+  end
+
+  def enabled
+    configured = ENV.fetch("HAFAPASS_ENABLED_LOCALES", DEFAULT).split(",").filter_map { |code| normalize(code) }
+    SUPPORTED & ([DEFAULT] + configured)
+  end
+
+  def enabled?(code)
+    enabled.include?(code)
+  end
+
+  def machine_translation_enabled?
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch("HAFAPASS_MACHINE_TRANSLATION", "false")) == true
   end
 
   def from_accept_language(header)
@@ -42,7 +64,7 @@ module AppLocale
     end
     ranges.sort_by { |_, weight, index| [-weight, index] }.each do |tag, _, _|
       code = normalize(tag)
-      return code if code
+      return code if code && enabled?(code)
     end
     nil
   end

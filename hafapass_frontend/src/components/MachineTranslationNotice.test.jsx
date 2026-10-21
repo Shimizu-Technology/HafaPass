@@ -7,6 +7,7 @@ import en from '../locales/en.json'
 import MachineTranslationNotice from './MachineTranslationNotice'
 import PolicyLanguageNotice from './PolicyLanguageNotice'
 import useTranslatedContent from '../hooks/useTranslatedContent'
+import { configureEnabledLanguages } from '../utils/locale'
 
 async function setup(lng = 'en') {
   const i18n = i18next.createInstance()
@@ -46,6 +47,8 @@ it('says the English policy governs only when the app is in another language', a
   const { unmount } = render(<I18nextProvider i18n={await setup('en')}><PolicyLanguageNotice /></I18nextProvider>)
   expect(screen.queryByRole('note')).not.toBeInTheDocument()
   unmount()
+  configureEnabledLanguages('ja')
   render(<I18nextProvider i18n={await setup('ja')}><PolicyLanguageNotice /></I18nextProvider>)
   expect(screen.getByRole('note')).toHaveTextContent('The English version governs')
+  configureEnabledLanguages('en')
 })

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { getApiAuthContext, monitoringPath, setAuthTokenGetter, subscribeApiAuthContext } from './client'
-import { setActiveLanguage } from '../utils/locale'
+import { configureEnabledLanguages, setActiveLanguage } from '../utils/locale'
 
 describe('monitoringPath', () => {
   it('removes query data and opaque identifiers from monitored paths', () => {
@@ -126,7 +126,9 @@ describe('session-bound API requests', () => {
 
 describe('request language', () => {
   const originalAdapter = apiClient.defaults.adapter
+  beforeEach(() => configureEnabledLanguages('ko,ja,zh-Hant,zh,tl'))
   afterEach(() => {
+    configureEnabledLanguages('en')
     apiClient.defaults.adapter = originalAdapter
     setActiveLanguage('en')
   })

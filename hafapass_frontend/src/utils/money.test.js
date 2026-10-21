@@ -1,8 +1,9 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import { formatMoneyCents } from './money'
-import { setActiveLanguage } from './locale'
+import { configureEnabledLanguages, setActiveLanguage } from './locale'
 
-afterEach(() => setActiveLanguage('en'))
+beforeEach(() => configureEnabledLanguages('ko,ja,zh-Hant,zh,tl'))
+afterEach(() => { setActiveLanguage('en'); configureEnabledLanguages('en') })
 
 it('always shows US dollars, formatted for the selected language', () => {
   expect(formatMoneyCents(123456)).toBe('$1,234.56')

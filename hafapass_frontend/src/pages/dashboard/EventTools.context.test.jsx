@@ -310,3 +310,28 @@ it('hides CHamoru for events that never used it and explains when translation is
   expect(within(section).getByRole('status')).toHaveTextContent('Automatic translation is not set up yet')
   expect(within(section).queryByRole('button', { name: 'Translate again' })).not.toBeInTheDocument()
 })
+
+it('polls while translating, explains a paused service and flags wording whose English changed', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    rows[11] = { ...rows[11], supported_locales: ['en', 'ko'], localized_content: { ko: { title: '선셋' } },
+      localized_content_stale: { ko: ['title'] }, automatic_translation_available: true, translation_status: 'pending' }
+    mount(tools[1]); await tools[1].ready()
+    const section = screen.getByRole('heading', { name: 'Public languages' }).closest('section')
+    expect(within(section).getByRole('group', { name: 'Use your own wording for:' })).toBeInTheDocument()
+    expect(within(section).getByText('English changed since you wrote this. Review it before saving.')).toBeInTheDocument()
+    expect(within(section).getByRole('status')).toHaveTextContent('Translating your latest changes')
+    const eventLoads = () => apiClient.get.mock.calls.filter(([path]) => path === '/organizer/events/11').length
+    const before = eventLoads()
+
+    rows[11] = { ...rows[11], translation_status: 'unavailable' }
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    await waitFor(() => expect(eventLoads()).toBe(before + 1))
+    expect(within(section).getByRole('status')).toHaveTextContent('Automatic translation is paused for now')
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+    expect(eventLoads()).toBe(before + 1)
+  } finally {
+    vi.useRealTimers()
+  }
+})

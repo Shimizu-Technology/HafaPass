@@ -281,14 +281,15 @@ class EmailService
     def send_ticket_transfer(transfer, delivery: nil)
       url = "#{frontend_url}/ticket-transfers/accept?token=#{ERB::Util.url_encode(TicketTransferCredential.issue(transfer))}"
       event = transfer.ticket.event
-      html, subject = in_locale(transfer.locale) do
+      # The recipient's language is unknown (the transfer records the sender's), so English.
+      html, subject = in_locale(AppLocale::DEFAULT) do
         body = email_wrapper(t("transfer.title")) do
           <<~HTML
             <h2 style="color:#1f2937">#{ht('transfer.heading')}</h2>
             <p style="color:#6b7280">#{h(event_title(event))} — #{h(ticket_type_name(transfer.ticket.ticket_type))}</p>
             <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{ht('transfer.accept')}</a></p>
             <p style="color:#6b7280;font-size:14px">#{ht('transfer.sign_in', email: transfer.recipient_email,
-              expires_at: format_local_datetime(transfer.expires_at, event.timezone))}</p>
+              expires_at: format_local_datetime(transfer.expires_at, event.timezone, with_zone: true))}</p>
           HTML
         end
         [body, safe_subject(t("transfer.subject", event: event_title(event)))]
@@ -308,7 +309,7 @@ class EmailService
               ticket_type: ticket_type_name(offer.ticket_type), event: event_title(event))}</p>
             <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{ht('waitlist_offer.cta')}</a></p>
             <p style="color:#6b7280;font-size:14px">#{ht('waitlist_offer.expires',
-              expires_at: format_local_datetime(offer.expires_at, event.timezone))}</p>
+              expires_at: format_local_datetime(offer.expires_at, event.timezone, with_zone: true))}</p>
           HTML
         end
         [body, safe_subject(t("waitlist_offer.subject", event: event_title(event)))]
@@ -679,16 +680,18 @@ class EmailService
       format_local_datetime(event.starts_at, event.timezone)
     end
 
-    # "October 05, 2026 at 07:00 PM" in English; word order, month names and
-    # AM/PM come from the email copy of the current language.
-    def format_local_datetime(time, zone)
+    # "October 5, 2026 at 7:00 PM" in English; word order, month names and
+    # AM/PM come from the email copy of the current language. Deadlines add
+    # the zone ("ChST") so a buyer elsewhere is not misled.
+    def format_local_datetime(time, zone, with_zone: false)
       return nil unless time
 
       local = time.in_time_zone(zone.presence || "Pacific/Guam")
-      I18n.t("emails.formats.event_datetime",
-        month_name: Array(I18n.t("emails.formats.month_names"))[local.month - 1], day: local.strftime("%d"),
-        year: local.year, hour: local.strftime("%I"), minute: local.strftime("%M"),
+      text = I18n.t("emails.formats.event_datetime",
+        month_name: Array(I18n.t("emails.formats.month_names"))[local.month - 1], day: local.day,
+        year: local.year, hour: local.strftime("%-I"), minute: local.strftime("%M"),
         meridiem: I18n.t(local.hour < 12 ? "emails.formats.am" : "emails.formats.pm"))
+      with_zone ? "#{text} #{local.strftime('%Z')}" : text
     end
 
     # Buyer emails are written in the language recorded on the order, waitlist
@@ -713,8 +716,10 @@ class EmailService
       event.content_for(I18n.locale)[:title]
     end
 
+    # Issued tickets (emails, PDFs, My Tickets, door lists) all use the
+    # organizer's own ticket names so buyers and door staff see the same words.
     def ticket_type_name(ticket_type)
-      ticket_type.content_for(I18n.locale)[:name]
+      ticket_type.name
     end
 
     def money(cents)

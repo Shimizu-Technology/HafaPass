@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import useContentLanguage from '../hooks/useContentLanguage'
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Calendar, MapPin, ArrowRight, Clock, Search } from 'lucide-react'
@@ -51,6 +52,7 @@ function EventArtwork({ event, className, priority = false, backdrop = false }) 
 
 export default function HomePage() {
   const { t } = useTranslation()
+  const contentLanguage = useContentLanguage()
   const navigate = useNavigate()
   const [events, setEvents] = useState([])
   const [search, setSearch] = useState('')
@@ -71,7 +73,7 @@ export default function HomePage() {
       .catch(() => { if (active) setLoadError(true) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [loadAttempt])
+  }, [loadAttempt, contentLanguage])
 
   const featuredEvent = useMemo(() => events
     .filter(event => event.is_featured && new Date(event.starts_at) > new Date())

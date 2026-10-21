@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useRef, useEffect, useId } from 'react'
 import { Globe, ChevronDown, Check } from 'lucide-react'
-import { LANGUAGES, languageFor } from '../utils/locale'
+import { getEnabledLanguages, languageFor } from '../utils/locale'
 
 export default function LanguageSwitcher({ isDarkMode = false }) {
   const { t, i18n } = useTranslation()
@@ -10,6 +10,7 @@ export default function LanguageSwitcher({ isDarkMode = false }) {
   const trigger = useRef(null)
   const id = useId()
   const currentLang = languageFor(i18n.language)
+  const languages = getEnabledLanguages()
 
   useEffect(() => {
     const outside = event => { if (!ref.current?.contains(event.target)) setOpen(false) }
@@ -17,6 +18,8 @@ export default function LanguageSwitcher({ isDarkMode = false }) {
     return () => document.removeEventListener('pointerdown', outside)
   }, [])
   const close = () => { setOpen(false); trigger.current?.focus() }
+  // Nothing to choose until a second language is enabled (VITE_ENABLED_LOCALES).
+  if (languages.length < 2) return null
 
   return <div ref={ref} className="relative" onBlur={event => {
     if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
@@ -39,7 +42,7 @@ export default function LanguageSwitcher({ isDarkMode = false }) {
       <ChevronDown className="h-3 w-3" aria-hidden="true" />
     </button>
     {open && <div id={id} role="group" aria-label={t('language.available', { defaultValue: 'Available languages' })} className="absolute right-0 top-full z-50 mt-1 max-h-[min(24rem,calc(100dvh-6rem))] w-56 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-neutral-200 bg-white py-1 shadow-lg">
-      {LANGUAGES.map(lang => {
+      {languages.map(lang => {
         const selected = lang.code === currentLang.code
         return <button key={lang.code} type="button" data-language={lang.code}
           aria-pressed={selected} lang={lang.html}

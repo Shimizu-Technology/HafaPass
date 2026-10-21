@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { setActiveLanguage } from './locale'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { configureEnabledLanguages, setActiveLanguage } from './locale'
 import { formatEventDate, formatEventDateTime, formatEventTime, formatEventTimeRange, toEventLocalInput } from './eventTime'
 
 describe('event time formatting', () => {
@@ -41,7 +41,8 @@ describe('event time formatting', () => {
 })
 
 describe('event time formatting in the active language', () => {
-  afterEach(() => setActiveLanguage('en'))
+  beforeEach(() => configureEnabledLanguages('ko,ja,zh-Hant,zh,tl'))
+  afterEach(() => { setActiveLanguage('en'); configureEnabledLanguages('en') })
 
   it('keeps the Guam venue time while following the selected language', () => {
     const start = '2026-10-21T09:00:00Z'

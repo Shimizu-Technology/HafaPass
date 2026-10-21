@@ -11,16 +11,26 @@ class GtTranslationService
   TIMEOUT_SECONDS = 15
 
   class TranslationError < StandardError; end
+  # Out of credit or rate limited: not the content's fault, so callers show
+  # English quietly instead of a failure.
+  class Unavailable < TranslationError; end
+
+  UNAVAILABLE_STATUSES = %w[402 429].freeze
 
   def self.configured?
     ENV["GT_API_KEY"].present? && ENV["GT_PROJECT_ID"].present?
+  end
+
+  # Credentials alone never cause a call: HAFAPASS_MACHINE_TRANSLATION must be on.
+  def self.enabled?
+    AppLocale.machine_translation_enabled? && configured?
   end
 
   # Translates { key => English text } into each target locale and returns
   # { key => { locale => text } }. Keys the service did not translate are
   # left out so callers can fall back to English for them.
   def translate(fields, context: nil, locales: AppLocale::TRANSLATION_TARGETS)
-    raise TranslationError, "General Translation is not configured" unless self.class.configured?
+    raise TranslationError, "General Translation is not enabled" unless self.class.enabled?
 
     requests = fields.each_with_object({}) do |(key, text), entries|
       next if text.blank?
@@ -51,6 +61,9 @@ class GtTranslationService
 
     response = Net::HTTP.start(ENDPOINT.host, ENDPOINT.port, use_ssl: true,
       open_timeout: TIMEOUT_SECONDS, read_timeout: TIMEOUT_SECONDS) { |http| http.request(request) }
+    if UNAVAILABLE_STATUSES.include?(response.code) || (!response.is_a?(Net::HTTPSuccess) && response.body.to_s.match?(/credit/i))
+      raise Unavailable, "General Translation is unavailable (HTTP #{response.code})"
+    end
     raise TranslationError, "General Translation returned HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
 
     parsed = JSON.parse(response.body)

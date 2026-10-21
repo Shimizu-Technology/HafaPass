@@ -32,7 +32,9 @@ const TRANSLATION_STATUS = {
   pending: 'Translating your latest changes. This usually takes under a minute.',
   failed: 'Automatic translation did not finish. Try again.',
   untranslated: 'Not translated yet.',
+  unavailable: 'Automatic translation is paused for now, so buyers see your English text. It resumes on its own.',
 }
+const TRANSLATION_POLL_MS = 5000
 
 const addButtonClass = 'btn-secondary min-h-11 gap-1.5 self-end whitespace-nowrap px-4 py-2.5 text-sm'
 
@@ -171,6 +173,29 @@ function SalesToolsSession({ eventId, identity }) {
     if (!current() || busyRef.current || !reviewed) return
     if (clearPending()) setError(null)
   }
+  // While a translation runs, check its status every few seconds (status only;
+  // drafts on this page are untouched).
+  const [statusPoll, setStatusPoll] = useState(0)
+  const translating = event?.automatic_translation_available === true && event?.translation_status === 'pending'
+  useEffect(() => {
+    if (!translating) return undefined
+    const timer = setTimeout(async () => {
+      const request = beginRequest()
+      if (!request) return
+      try {
+        const response = await apiClient.get(`/organizer/events/${eventId}`, request.config)
+        if (request.current()) {
+          setEvent(previous => previous && { ...previous, translation_status: response.data.translation_status,
+            localized_content_stale: response.data.localized_content_stale })
+        }
+      } catch { /* The next check or a manual refresh shows the status. */ }
+      finally {
+        request.release()
+        setStatusPoll(value => value + 1)
+      }
+    }, TRANSLATION_POLL_MS)
+    return () => clearTimeout(timer)
+  }, [translating, statusPoll, eventId, beginRequest])
   if (loading) return <div role="status" aria-label="Loading sales tools" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
   if (!event) return <div className="mx-auto max-w-xl p-8"><p role="alert" className="text-red-700">{error || 'Sales tools could not be loaded.'}</p><button disabled={refreshing} className="btn-secondary mt-4" onClick={load}>Retry sales tools</button></div>
   if (capabilities.advanced_sales_tools !== true) return <EventAccessNotice event={event} message="Advanced sales tools are not enabled for this platform." />
@@ -192,8 +217,8 @@ function SalesToolsSession({ eventId, identity }) {
         <p className="min-w-0 flex-1">{event.automatic_translation_available ? TRANSLATION_STATUS[event.translation_status] || TRANSLATION_STATUS.untranslated : 'Automatic translation is not set up yet, so buyers see your English text.'}</p>
         {event.automatic_translation_available && <button type="button" className="btn-secondary min-h-11 px-4 py-2 text-sm" disabled={event.translation_status === 'pending'} onClick={retranslate}>Translate again</button>}
       </div>
-      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">{contentLanguages.map(({ code, label }) => <label key={code} className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={settings.supported_locales.includes(code)} onChange={e => setSettings({ ...settings, supported_locales: e.target.checked ? [...settings.supported_locales, code] : settings.supported_locales.filter(value => value !== code) })} />{label}</label>)}</div>
-      {contentLanguages.filter(({ code }) => settings.supported_locales.includes(code)).map(({ code, label }) => <div key={code} className="mt-4 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2"><p className="text-sm font-semibold sm:col-span-2">{label} public content</p>{[['title', 'Translated title', 'input'], ['short_description', 'Translated short description', 'input'], ['description', 'Translated description', 'textarea']].map(([field, fieldLabel, kind]) => { const props = { className: 'input font-normal', value: settings.localized_content?.[code]?.[field] || '', onChange: e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [code]: { ...settings.localized_content?.[code], [field]: e.target.value } } }) }; return <Field key={field} label={fieldLabel} className={kind === 'textarea' ? 'sm:col-span-2' : ''}>{kind === 'textarea' ? <textarea rows={4} {...props} /> : <input {...props} />}</Field> })}</div>)}
+      <fieldset className="mt-4 min-w-0"><legend className="text-sm font-medium text-neutral-700">Use your own wording for:</legend><div className="mt-1 flex flex-wrap gap-x-5 gap-y-2 text-sm">{contentLanguages.map(({ code, label }) => <label key={code} className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={settings.supported_locales.includes(code)} onChange={e => setSettings({ ...settings, supported_locales: e.target.checked ? [...settings.supported_locales, code] : settings.supported_locales.filter(value => value !== code) })} />{label}</label>)}</div></fieldset>
+      {contentLanguages.filter(({ code }) => settings.supported_locales.includes(code)).map(({ code, label }) => <div key={code} className="mt-4 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2"><p className="text-sm font-semibold sm:col-span-2">{label} public content</p>{[['title', 'Translated title', 'input'], ['short_description', 'Translated short description', 'input'], ['description', 'Translated description', 'textarea']].map(([field, fieldLabel, kind]) => { const props = { className: 'input font-normal', value: settings.localized_content?.[code]?.[field] || '', onChange: e => setSettings({ ...settings, localized_content: { ...settings.localized_content, [code]: { ...settings.localized_content?.[code], [field]: e.target.value } } }) }; const stale = event.localized_content_stale?.[code]?.includes(field) && props.value === (savedSettings?.localized_content?.[code]?.[field] || ''); return <Field key={field} label={fieldLabel} className={kind === 'textarea' ? 'sm:col-span-2' : ''}>{kind === 'textarea' ? <textarea rows={4} {...props} /> : <input {...props} />}{stale && <span className="text-xs font-normal text-amber-800">English changed since you wrote this. Review it before saving.</span>}</Field> })}</div>)}
       <button className="btn-primary mt-4" onClick={saveSettings}>Save languages</button>
     </Section>)}
 

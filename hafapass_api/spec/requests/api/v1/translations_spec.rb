@@ -1,6 +1,8 @@
 require "rails_helper"
 
 RSpec.describe "Event translations and buyer language", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:organizer) { create(:user, :organizer) }
   let!(:organizer_profile) { create(:organizer_profile, user: organizer) }
   let(:event) do
@@ -18,6 +20,7 @@ RSpec.describe "Event translations and buyer language", type: :request do
 
   describe "public event text" do
     before do
+      with_locales_enabled(AppLocale::SUPPORTED, machine_translation: true)
       machine_translate!(event, Event::CONTENT_FIELDS)
       machine_translate!(ticket_type, %w[name description])
     end
@@ -43,6 +46,16 @@ RSpec.describe "Event translations and buyer language", type: :request do
       expect(listed).to include("title" => "Sunset Fiesta", "machine_translated" => false, "original_content" => nil)
     end
 
+    it "serves English while the server has not enabled the language or machine translation" do
+      with_locales_enabled(%w[en])
+      get "/api/v1/events/#{event.slug}", headers: { "Accept-Language" => "ko" }
+      expect(response.parsed_body).to include("title" => "Sunset Fiesta", "content_locale" => "en", "machine_translated" => false)
+
+      with_locales_enabled(%w[ko], machine_translation: false)
+      get "/api/v1/events/#{event.slug}", headers: { "Accept-Language" => "ko" }
+      expect(response.parsed_body).to include("title" => "Sunset Fiesta", "content_locale" => "ko", "machine_translated" => false)
+    end
+
     it "prefers the organizer's own translation over machine translation" do
       event.update!(supported_locales: %w[en ko], localized_content: { "ko" => { "title" => "선셋 피에스타" } })
 
@@ -63,13 +76,18 @@ RSpec.describe "Event translations and buyer language", type: :request do
       expect(response).to have_http_status(:ok)
       expect(event.reload.localized_content).to eq("zh-Hant" => { "title" => "日落節", "description" => "請帶椅子" },
         "tl" => { "title" => "Pista" })
-      expect(response.parsed_body).to include("translation_status" => "untranslated", "automatic_translation_available" => false)
+      expect(response.parsed_body).to include("translation_status" => "untranslated", "automatic_translation_available" => false,
+        "localized_content_stale" => {})
+
+      patch "/api/v1/organizer/events/#{event.id}", headers: headers, params: { title: "Sunrise Fiesta" }
+      expect(response.parsed_body["localized_content_stale"]).to eq("zh-Hant" => ["title"], "tl" => ["title"])
     end
 
     it "refuses retranslation until General Translation is configured" do
       post "/api/v1/organizer/events/#{event.id}/retranslate", headers: headers
       expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error"]).to eq("Automatic translation is not set up yet.")
+      expect(response.parsed_body).to include("code" => "unavailable",
+        "error" => "Automatic translation is not available right now. Buyers see your English text.")
     end
 
     it "queues a forced retranslation of the event and its ticket types" do
@@ -80,6 +98,27 @@ RSpec.describe "Event translations and buyer language", type: :request do
         .and have_enqueued_job(TranslateRecordJob).with("TicketType", ticket_type.id, nil, true)
       expect(response).to have_http_status(:accepted)
       expect(response.parsed_body).to eq("translation_status" => "pending")
+    end
+
+    it "rejects repeat requests for a few minutes and drafts entirely" do
+      with_gt_credentials
+      post "/api/v1/organizer/events/#{event.id}/retranslate", headers: headers
+      expect(response).to have_http_status(:accepted)
+
+      expect { post "/api/v1/organizer/events/#{event.id}/retranslate", headers: headers }
+        .not_to have_enqueued_job(TranslateRecordJob)
+      expect(response).to have_http_status(:too_many_requests)
+      expect(response.parsed_body["code"]).to eq("recently_requested")
+
+      travel_to(6.minutes.from_now) do
+        event.update_column(:translation_status, "translated")
+        post "/api/v1/organizer/events/#{event.id}/retranslate", headers: headers
+        expect(response).to have_http_status(:accepted)
+      end
+
+      draft = create(:event, organizer_profile: organizer_profile)
+      post "/api/v1/organizer/events/#{draft.id}/retranslate", headers: headers
+      expect(response.parsed_body["code"]).to eq("not_public")
     end
 
     it "does not let another organization retranslate the event" do
@@ -105,6 +144,8 @@ RSpec.describe "Event translations and buyer language", type: :request do
   end
 
   describe "remembering the buyer's language" do
+    before { with_locales_enabled }
+
     it "stores the checkout language on the order" do
       free = create(:ticket_type, event: event, name: "Free", price_cents: 0, quantity_available: 10)
       post "/api/v1/orders", headers: { "Content-Type" => "application/json", "Accept-Language" => "ja-JP" },

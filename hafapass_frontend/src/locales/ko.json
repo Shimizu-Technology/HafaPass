@@ -72,7 +72,7 @@
     "free": "무료",
     "from": "최저",
     "learnMore": "자세히 알아보기",
-    "noEventsDesc": "Guam에서 열리는 이벤트가 여기에 표시됩니다. 가장 먼저 이벤트를 만들고 섬에 활기를 더해 보세요!",
+    "noEventsDesc": "괌에서 열리는 이벤트가 여기에 표시됩니다. 가장 먼저 이벤트를 만들고 섬에 활기를 더해 보세요!",
     "noEventsYet": "아직 이벤트가 없습니다",
     "noMatchDesc": "검색어나 필터를 변경해 원하는 행사를 찾아보세요.",
     "noMatchingEvents": "조건에 맞는 이벤트가 없습니다",
@@ -80,7 +80,7 @@
     "pastEvent": "지난 이벤트",
     "search": "이벤트, 장소 검색...",
     "soldOut": "매진",
-    "subtitle": "Guam에서 열리는 행사를 만나보세요",
+    "subtitle": "괌에서 열리는 행사를 만나보세요",
     "ticketsAvailable": "티켓 구매 가능",
     "title": "이벤트"
   },
@@ -103,8 +103,8 @@
     "tagline": "괌의 모든 행사를 만나는 곳. 괌 최고의 즐길 거리를 찾고, 예약하고, 직접 경험하세요."
   },
   "home": {
-    "aboutToTakeOff": "Guam의 행사 문화가 이제",
-    "beTheFirst": "Guam에서 가장 먼저 행사를 주최해 보세요",
+    "aboutToTakeOff": "괌의 행사 문화가 이제",
+    "beTheFirst": "괌에서 가장 먼저 행사를 주최해 보세요",
     "browseEvents": "이벤트 둘러보기",
     "createProfile": "주최자 프로필을 만들고 몇 분 만에 티켓 판매를 시작하세요.",
     "curatedGuide": "섬 곳곳의 소식을 엄선해 전하는 안내서.",
@@ -112,18 +112,18 @@
     "exploreByCategory": "카테고리별 둘러보기",
     "featured": "추천 이벤트",
     "getTickets": "티켓 구매하기",
-    "guam": "Guam",
-    "hero": "Guam의 모든 이벤트를 만나는 입장권",
-    "nextUp": "곧 열리는 Guam 행사",
+    "guam": "괌",
+    "hero": "괌의 모든 이벤트를 만나는 입장권",
+    "nextUp": "곧 열리는 괌 행사",
     "noEventsYet": "아직 이벤트가 없습니다 — 곧 다시 확인해 주세요!",
     "platformHere": "섬의 새로운 티켓 예매 플랫폼이 문을 열었습니다. 곧 다양한 이벤트가 찾아옵니다.",
     "startHosting": "행사 주최하기",
     "subtitle": "휴대전화로 이벤트 검색부터 티켓 구매, 입장까지 한 번에 해결하세요",
     "takeOff": "도약합니다",
-    "thisWeek": "이번 주 Guam 소식",
+    "thisWeek": "이번 주 괌 소식",
     "viewAll": "전체 보기",
     "viewAllEvents": "모든 이벤트 보기",
-    "wantToBring": "Guam에서 행사를 개최하고 싶으신가요?"
+    "wantToBring": "괌에서 행사를 개최하고 싶으신가요?"
   },
   "language": {
     "available": "사용 가능한 언어",

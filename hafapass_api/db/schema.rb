@@ -635,6 +635,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_090000) do
     t.bigint "policy_hold_by_user_id"
     t.jsonb "translations", default: {}, null: false
     t.string "translation_status", default: "untranslated", null: false
+    t.datetime "translation_requested_at"
+    t.jsonb "localized_content_sources", default: {}, null: false
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"

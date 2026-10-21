@@ -44,6 +44,24 @@ RSpec.describe GtTranslationService, :webmock do
       .to raise_error(described_class::TranslationError, /request failed/)
   end
 
+  it "reports exhausted credit and rate limits as unavailable" do
+    stub_request(:post, endpoint).to_return(status: 402, body: "insufficient credit")
+    expect { described_class.new.translate({ "title" => "x" }, locales: %w[ko]) }.to raise_error(described_class::Unavailable)
+
+    stub_request(:post, endpoint).to_return(status: 429)
+    expect { described_class.new.translate({ "title" => "x" }, locales: %w[ko]) }.to raise_error(described_class::Unavailable)
+
+    stub_request(:post, endpoint).to_return(status: 400, body: { error: "Your account's credit balance is insufficient" }.to_json)
+    expect { described_class.new.translate({ "title" => "x" }, locales: %w[ko]) }.to raise_error(described_class::Unavailable)
+  end
+
+  it "makes no request while the machine translation switch is off" do
+    with_gt_credentials(machine_translation: false)
+    expect(described_class).not_to be_enabled
+    expect { described_class.new.translate({ "title" => "x" }) }.to raise_error(described_class::TranslationError, /not enabled/)
+    expect(a_request(:post, endpoint)).not_to have_been_made
+  end
+
   it "refuses to run without credentials" do
     stub_const("ENV", ENV.to_h.merge("GT_API_KEY" => ""))
     expect(described_class).not_to be_configured

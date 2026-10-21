@@ -23,9 +23,12 @@ class TicketType < ApplicationRecord
   validate :door_allocation_within_capacity
   validate :chronological_sales_window
 
+  delegate :machine_translation_eligible?, to: :event
+
   # Name and description in a buyer's language, falling back to English.
   def content_for(locale)
-    code = AppLocale.normalize(locale) || AppLocale::DEFAULT
+    code = AppLocale.normalize(locale)
+    code = AppLocale::DEFAULT unless code && AppLocale.enabled?(code)
     name_text, name_machine = translated_value(:name, code)
     description_text, description_machine = translated_value(:description, code)
     { name: name_text, description: description_text, machine_translated: name_machine || description_machine }
