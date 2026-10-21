@@ -17,6 +17,7 @@ const navGroups = [
     { to: '/admin/marketplace', label: 'Marketplace', icon: Compass },
   ] },
   { label: 'Money', items: [
+    { to: '/admin/tax-reports', label: 'Tax reports', icon: ScrollText },
     { to: '/admin/payouts', label: 'Payouts', icon: Landmark },
     { to: '/admin/disputes', label: 'Disputes', icon: Scale },
   ] },

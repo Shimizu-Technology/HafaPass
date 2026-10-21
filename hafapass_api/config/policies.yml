@@ -5,18 +5,22 @@ status: draft-pending-legal-review
 # Keep docs/POLICY_REVIEW_REGISTER.md in step with this list.
 review_notes:
   buyer-terms:
+    - section: Who we are and who sells your ticket
+      note: Counsel to confirm seller responsibility and that payment to the agent fully discharges the buyer.
     - section: Limits on our responsibility
       note: Lawyer to confirm limitation wording and any consumer-law carve-outs.
     - section: Governing law and disputes
       note: Lawyer to confirm governing law and venue.
   privacy:
+    - section: Information we collect
+      note: Counsel to confirm TIN collection, encryption, audited admin disclosure, tax-authority sharing, retention and breach response.
     - section: How long we keep it
       note: Lawyer and accountant to confirm the retention period (at least 7 years proposed).
   organizer-agreement:
     - section: Our role as your limited agent
-      note: Lawyer to confirm agency and funds-handling language.
+      note: Counsel to confirm agent-of-payee appointment and buyer discharge, check disbursements under FinCEN FIN-2014-R009 and Guam 11 GCA Ch. 109, fund custody, withholding and offsets, and whether licensing or segregated accounts are required.
     - section: Tax information
-      note: Accountant to confirm tax treatment and reporting.
+      note: Accountant to confirm fee-only BPT treatment and current rate, organizer gross receipts, 1099 form and filer, backup withholding, Guam reporting, and electronic substitute W-9 certification and retention. Product collection is not TIN matching or a filed return.
     - section: Chargebacks and negative balances
       note: Lawyer to confirm payment terms and dispute-fee allocation.
     - section: Indemnity and limitation of liability
@@ -36,7 +40,7 @@ documents:
         body: |-
           {{platform_name}} is a ticketing service run by {{operator_name}}. These terms are an agreement between you and {{operator_name}}.
 
-          The event organizer is the seller of your ticket. The organizer appoints {{operator_name}} as its limited agent to list the event, sell tickets, and collect payment on its behalf. When you pay {{platform_name}} for a ticket, that payment satisfies what you owe the organizer for it.
+          The event organizer is the seller of your ticket. The organizer appoints {{operator_name}}, operating {{platform_name}}, as its limited agent solely to accept buyer payments for its tickets. Your payment to {{platform_name}} is payment to the organizer and fully discharges your payment obligation for the ticket. The organizer is responsible for the event and your ticket contract; {{operator_name}} is not a party to that ticket contract.
 
           {{platform_name}} sells its own ticketing service separately and charges a service fee for it. Your receipt and ticket show both roles, for example "Sold by Island Nights · Tickets by {{platform_name}}".
       - heading: Prices and the service fee
@@ -149,6 +153,8 @@ documents:
 
           Technical and security data: IP address, device and browser information, security signals used to prevent fraud and abuse, and error diagnostics.
 
+          Organizer tax information: legal and business names, federal tax classification, tax identification number (SSN or EIN), address, exemption details, and signed tax certification. We use this for payout and tax reporting duties and share it with tax authorities as legally required. Tax identification numbers are encrypted at rest, masked in normal screens, and accessible in full only through audited admin actions.
+
           We do not store your card number. Card details are entered into and handled by our payment processor, Stripe.
       - heading: How we use it
         body: |-
@@ -216,11 +222,11 @@ documents:
           You are responsible for the content you publish, including images and descriptions.
       - heading: Our role as your limited agent
         body: |-
-          You are the seller of the tickets to your event. You appoint {{operator_name}} as your limited agent to market and sell tickets on {{platform_name}} and to collect payment from buyers on your behalf. A buyer's payment to {{platform_name}} satisfies the buyer's payment obligation to you for the ticket.
+          You are the seller of the tickets to your event. You appoint {{operator_name}}, operating {{platform_name}}, as your limited agent solely to accept buyer payments for your tickets. A buyer's payment to {{platform_name}} is payment to you and fully discharges the buyer's payment obligation to you. Your ticket contract is between you and the buyer; {{operator_name}} is not a party to it.
 
           {{operator_name}} sells its ticketing service to buyers and to you, and charges the service fee for that service. Receipts and tickets will name you as the seller ("Sold by" followed by your organizer name, then "Tickets by {{platform_name}}").
 
-          Buyer card payments are processed through {{operator_name}}'s payment account and received into its business account. We record your ticket proceeds separately from our service fees.
+          Buyer card payments are processed through {{operator_name}}'s payment account and received into its business account. We hold collected ticket proceeds for you and record them separately from our service fees. After the event, we pay you by check or the other payout method on file, net of service fees, refunds, chargebacks, and adjustments. We may withhold or offset amounts for refunds, chargebacks, cancelled or postponed events, and suspected fraud. You remain responsible for refunds beyond the funds we hold, including after a payout.
       - heading: Service fees
         body: |-
           The current service fee is {{fee_schedule}}.
@@ -237,9 +243,9 @@ documents:
           We may delay or hold some or all of a payout while refunds or disputes are open, if an event is cancelled or changed, or during a risk or compliance review. We will tell you why and release the hold when the issue is resolved.
       - heading: Tax information
         body: |-
-          Before we pay you, you must give us a completed IRS Form W-9 (or the equivalent form that applies to you) and accurate payee details. We may issue IRS Form 1099 information returns where required.
+          Before any paid payout, you must provide accurate tax information, a completed W-9, and accurate payee details. You must update them when they change. We may issue IRS Form 1099 information returns where required.
 
-          You are responsible for taxes on your ticket proceeds, including Guam Business Privilege Tax on your gross receipts. {{operator_name}} is responsible for taxes on its own service fee. The service fee is not a tax, and you must not describe it as one.
+          You are solely responsible for your own taxes on ticket sales, including Guam Business Privilege Tax on your gross receipts. {{operator_name}} is responsible for taxes on its own service fee. The service fee is not a tax, and you must not describe it as one.
       - heading: Refunds, cancellations, and postponements
         body: |-
           Refunds are funded from your event proceeds. You agree to honor your stated refund policy and our Refund & Cancellation Policy.

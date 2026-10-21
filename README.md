@@ -194,6 +194,9 @@ Query params: `?page=2&per_page=10`
 |----------|----------|-------------|
 | `CLERK_SECRET_KEY` | Yes | Clerk backend API key for JWT verification |
 | `CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
+| `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY` | Deployed environments | Active Record encryption primary key for organizer TINs |
+| `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` | Deployed environments | Active Record encryption deterministic key |
+| `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` | Deployed environments | Active Record encryption derivation salt |
 | `DATABASE_URL` | Production | PostgreSQL connection string (uses local DB in dev) |
 | `REDIS_URL` | Production | Redis URL for Sidekiq (e.g., `redis://localhost:6379/0`) |
 | `ALLOWED_ORIGINS` | Staging/production | Comma-separated CORS origins (e.g., `https://tickets.example.com`); required in every deployed environment |

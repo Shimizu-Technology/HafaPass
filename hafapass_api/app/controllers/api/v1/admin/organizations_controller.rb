@@ -19,6 +19,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
   end
 
   def show
+    response.headers["Cache-Control"] = "no-store"
     organization = Organization.find(params[:id])
     render json: organization_detail(organization)
   rescue ActiveRecord::RecordNotFound
@@ -85,6 +86,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
   def organization_detail(organization)
     profile = organization.organizer_profile
     organization_summary(organization).merge(
+      tax_information: organization.organizer_tax_information&.safe_json,
       timezone: organization.timezone,
       events_count: organization.events.count,
       organizer_profile: profile && {

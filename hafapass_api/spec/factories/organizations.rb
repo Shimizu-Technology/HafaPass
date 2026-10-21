@@ -40,9 +40,13 @@ FactoryBot.define do
 
     transient do
       with_readiness_approval { true }
+      with_tax_information { true }
     end
 
     after(:create) do |account, evaluator|
+      if evaluator.with_tax_information && !account.organization.organizer_tax_information
+        create(:organizer_tax_information, organization: account.organization)
+      end
       next unless evaluator.with_readiness_approval && account.status_ready?
 
       submitter = create(:user, :admin)

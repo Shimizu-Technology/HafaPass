@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_000100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1253,6 +1253,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id", unique: true
     t.index ["verification_status"], name: "index_organizer_profiles_on_verification_status"
     t.index ["verified_by_user_id"], name: "index_organizer_profiles_on_verified_by_user_id"
+  end
+
+  create_table "organizer_tax_informations", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "legal_name", null: false
+    t.string "business_name"
+    t.string "tax_classification", null: false
+    t.string "tin_type", null: false
+    t.text "tin", null: false
+    t.string "tin_last_four", limit: 4, null: false
+    t.text "mailing_address", null: false
+    t.string "exempt_payee_code"
+    t.string "signer_name", null: false
+    t.datetime "certified_at", null: false
+    t.string "certification_version", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id"], name: "index_organizer_tax_informations_on_organization_id", unique: true
   end
 
   create_table "payment_events", force: :cascade do |t|
@@ -2574,6 +2592,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
   add_foreign_key "organizer_profiles", "organizations", on_delete: :restrict
   add_foreign_key "organizer_profiles", "users"
   add_foreign_key "organizer_profiles", "users", column: "verified_by_user_id"
+  add_foreign_key "organizer_tax_informations", "organizations"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict
   add_foreign_key "payment_readiness_reviews", "connected_accounts", on_delete: :restrict
