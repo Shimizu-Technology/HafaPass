@@ -90,6 +90,73 @@ RSpec.describe "Buyer orders and receipts", type: :request do
     expect(response.parsed_body).to include("payment_environment" => "test", "receipt_available" => true)
   end
 
+  it "returns compact cards with ticket, add-on, and merchandise counts and all purchased items" do
+    type = create(:ticket_type, event: event)
+    create(:order_item, order: order, ticket_type: type, quantity: 2, name: "Admission")
+    %i[add_on merchandise].each do |kind|
+      catalog_item = create(:catalog_item, event: event, kind: kind)
+      create(:order_item, order: order, ticket_type: nil, catalog_item: catalog_item,
+        item_kind: kind, name: catalog_item.name, quantity: 3)
+    end
+    get "/api/v1/me/orders", headers: auth_headers(buyer)
+    card = response.parsed_body.fetch("orders").find { |entry| entry.fetch("id") == order.id }
+    expect(card.fetch("item_counts")).to eq("ticket" => 2, "add_on" => 3, "merchandise" => 3)
+    expect(card.fetch("order_items").pluck("name")).to eq(["Admission", "Event add-on 1", "Event add-on 2"])
+    expect(card).to include("subtotal_cents" => 5000, "service_fee_cents" => 250,
+      "discount_cents" => 500, "total_cents" => 4750, "refunded_cents" => 0,
+      "receipt_available" => true, "refund_pending" => false)
+    expect(card).not_to have_key("tickets")
+    expect(card).not_to have_key("confirmation_delivery")
+    get "/api/v1/me/orders/#{order.id}", headers: auth_headers(buyer)
+    expect(response.parsed_body).to have_key("tickets")
+  end
+
+  it "keeps SQL queries bounded for 20 order cards with three tickets each" do
+    type = create(:ticket_type, event: event)
+    20.times do
+      purchase = create(:order, event: event, user: buyer)
+      item = create(:order_item, order: purchase, ticket_type: type, quantity: 3)
+      3.times { create(:ticket, order: purchase, order_item: item, event: event, ticket_type: type) }
+    end
+    queries = []
+    subscriber = lambda do |*, payload|
+      queries << payload[:sql] if payload[:sql]&.match?(/\ASELECT\b/i) && !payload[:cached] && payload[:name] != "SCHEMA"
+    end
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      get "/api/v1/me/orders", params: { per_page: 20 }, headers: auth_headers(buyer)
+    end
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("orders").size).to eq(20)
+    expect(queries.size).to be <= 10
+  end
+
+  it "localizes receipt dates and uses the payment capture when completion time is absent" do
+    order.update!(locale: "ko", completed_at: nil)
+    create(:payment, :succeeded, order: order, succeeded_at: Time.utc(2030, 1, 1, 15, 30))
+    get "/api/v1/orders/#{order.id}/receipt", headers: auth_headers(buyer)
+    text = PDF::Reader.new(StringIO.new(response.body)).pages.first.text
+    expect(text).to include("2030년 1월 2일 01:30 ChST", "2030년 1월 2일 18:00 ChST")
+    expect(text).not_to include("January")
+  end
+
+  it "uses English date formatting when a saved locale is unsupported" do
+    order.update_column(:locale, "fr")
+    get "/api/v1/orders/#{order.id}/receipt", headers: auth_headers(buyer)
+    text = PDF::Reader.new(StringIO.new(response.body)).pages.first.text
+    expect(text).to include("January 2, 2030 1:30 AM ChST")
+  end
+
+  it "falls back to creation time, omits zero discount, and shows the refunded total on PDFs" do
+    order.update!(completed_at: nil, discount_cents: 0, total_cents: 5250)
+    payment = create(:payment, :succeeded, order: order, succeeded_at: nil)
+    create(:refund, order: order, payment: payment, amount_cents: 1000, status: :succeeded)
+    get "/api/v1/orders/#{order.id}/receipt", headers: auth_headers(buyer)
+    text = PDF::Reader.new(StringIO.new(response.body)).pages.first.text
+    expect(text).to include("Refunded $10.00")
+    expect(text).not_to include("Discount:")
+    expect(text).to include(I18n.l(order.created_at.in_time_zone(event.timezone), format: :receipt))
+  end
+
   it "allows a valid guest token to download only its own order receipt" do
     guest = create(:order, event: event, user: nil)
     token = GuestOrderAccess.issue!(guest)

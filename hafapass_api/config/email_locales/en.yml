@@ -17,6 +17,7 @@ emails:
     service_fee: "Service fee: %{amount}"
     discount: "Discount: -%{amount}"
     total_paid: "Total paid: %{amount}"
+    refunded_amount: "Refunded %{amount}"
     payment_method: "Payment method: %{method}"
     not_recorded: "Not recorded"
     card: "%{brand} ending in %{last4}"

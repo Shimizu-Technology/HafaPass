@@ -29,13 +29,15 @@ class ReceiptPdfGenerator
   def receipt_lines
     seller = SellerIdentity.for_event(@order.event)
     time_zone = @order.event.timezone.presence || "Pacific/Guam"
-    purchased_at = (@order.completed_at || @order.created_at).in_time_zone(time_zone)
+    capture_at = @order.payments.where(status: [:succeeded, :partially_refunded, :refunded])
+      .where.not(succeeded_at: nil).order(id: :desc).pick(:succeeded_at) unless @order.completed_at
+    purchased_at = (@order.completed_at || capture_at || @order.created_at).in_time_zone(time_zone)
     event_at = @order.event.starts_at&.in_time_zone(time_zone)
     lines = [
       I18n.t("emails.receipt.order_number", reference: @order.reference),
-      I18n.t("emails.receipt.order_date", date: purchased_at.strftime("%B %-d, %Y %-I:%M %p %Z")),
+      I18n.t("emails.receipt.order_date", date: I18n.l(purchased_at, format: :receipt)),
       I18n.t("emails.receipt.event", title: @order.event.title,
-        date: event_at&.strftime("%B %-d, %Y %-I:%M %p %Z") || ""),
+        date: event_at ? I18n.l(event_at, format: :receipt) : ""),
       I18n.t("emails.receipt.seller_line", seller: seller.seller_name, service: seller.ticketing_service),
       I18n.t("emails.order_confirmation.seller_disclosure", seller: seller.seller_name,
         service: seller.ticketing_service, operator: seller.operator_name)
@@ -47,7 +49,7 @@ class ReceiptPdfGenerator
     end
     lines << I18n.t("emails.receipt.subtotal", amount: money(@order.subtotal_cents))
     lines << I18n.t("emails.receipt.service_fee", amount: money(@order.service_fee_cents))
-    lines << I18n.t("emails.receipt.discount", amount: money(@order.discount_cents))
+    lines << I18n.t("emails.receipt.discount", amount: money(@order.discount_cents)) if @order.discount_cents.positive?
     lines << if @order.total_cents.zero?
       I18n.t("emails.receipt.complimentary")
     elsif %w[test simulated].include?(@order.payment_environment)
@@ -55,6 +57,7 @@ class ReceiptPdfGenerator
     else
       I18n.t("emails.receipt.total_paid", amount: money(@order.total_cents))
     end
+    lines << I18n.t("emails.receipt.refunded_amount", amount: money(@order.refunded_cents)) if @order.refunded_cents.positive?
     lines << payment_method_line
     refunds = @order.refunds.order(created_at: :asc, id: :asc)
     if refunds.empty?
@@ -63,7 +66,7 @@ class ReceiptPdfGenerator
       refunds.each do |refund|
         lines << I18n.t("emails.receipt.refund", amount: money(refund.amount_cents),
           status: I18n.t("emails.receipt.refund_status.#{refund.status}"),
-          date: refund.created_at.in_time_zone(time_zone).strftime("%B %-d, %Y %-I:%M %p %Z"))
+          date: I18n.l(refund.created_at.in_time_zone(time_zone), format: :receipt))
       end
     end
     lines

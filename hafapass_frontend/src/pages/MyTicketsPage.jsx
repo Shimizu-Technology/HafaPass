@@ -93,7 +93,14 @@ function MyTicketsContent({ refreshSession, signOut }) {
     setPurchaseLoading(true)
     setPurchaseError(false)
     try {
-      const response = await apiClient.get('/me/orders', { params: { page } })
+      let response
+      try {
+        response = await apiClient.get('/me/orders', { params: { page } })
+      } catch (err) {
+        if (err.response?.status !== 401 || !refreshSession) throw err
+        await refreshSession().catch(() => { throw new Error('Session refresh failed') })
+        response = await apiClient.get('/me/orders', { params: { page } })
+      }
       if (request !== purchaseRequest.current) return
       setPurchases(response.data.orders || [])
       setPurchaseMeta(response.data.meta || null)
@@ -102,7 +109,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
     } finally {
       if (request === purchaseRequest.current) setPurchaseLoading(false)
     }
-  }, [])
+  }, [refreshSession])
 
   const recoverGuestPurchases = useCallback(async () => {
     setRecovering(true)
@@ -305,14 +312,16 @@ function MyTicketsContent({ refreshSession, signOut }) {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-800">{t(`buyerAccount.myTicketsPage.orderStatus.${purchase.buyer_status || purchase.status}`)}</span>
-                  {purchase.refund_history?.some(refund => refund.status === 'pending') && <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">{t('buyerAccount.myTicketsPage.refundPending')}</span>}
+                  {purchase.refund_pending && <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">{t('buyerAccount.myTicketsPage.refundPending')}</span>}
                 </div>
               </div>
-              <ul className="mt-4 space-y-1 text-sm text-neutral-700">{purchase.order_items.filter(item => item.item_kind === 'ticket').map(item => <li key={item.id}>{item.name} × {item.quantity}</li>)}</ul>
+              <ul className="mt-4 space-y-1 text-sm text-neutral-700">{purchase.order_items.map(item => <li key={item.id}>{item.name} × {item.quantity}</li>)}</ul>
               <div className="mt-4 grid grid-cols-2 gap-2 border-t border-neutral-200 pt-3 text-sm sm:grid-cols-3">
+                <span>{t('buyerAccount.myTicketsPage.subtotal')}: {formatMoneyCents(purchase.subtotal_cents)}</span>
                 <span>{t('buyerAccount.myTicketsPage.serviceFee')}: {formatMoneyCents(purchase.service_fee_cents)}</span>
-                <span>{t('buyerAccount.myTicketsPage.discount')}: {purchase.discount_cents > 0 ? '−' : ''}{formatMoneyCents(purchase.discount_cents)}</span>
+                {purchase.discount_cents > 0 && <span>{t('buyerAccount.myTicketsPage.discount')}: −{formatMoneyCents(purchase.discount_cents)}</span>}
                 <span className="font-semibold">{purchase.receipt_available === false ? t('buyerAccount.myTicketsPage.noCharge') : ['test', 'simulate', 'simulated'].includes(purchase.payment_environment) ? t('buyerAccount.myTicketsPage.testTotal') : purchase.total_cents === 0 ? t('buyerAccount.myTicketsPage.complimentary') : t('buyerAccount.myTicketsPage.totalPaid')}{purchase.receipt_available === false ? '' : `: ${formatMoneyCents(purchase.total_cents)}`}</span>
+                {purchase.refunded_cents > 0 && <span>{t('buyerAccount.myTicketsPage.refundedAmount', { amount: formatMoneyCents(purchase.refunded_cents) })}</span>}
               </div>
             </Link>)}
             {!purchaseLoading && (purchaseMeta?.prev_page || purchaseMeta?.next_page) && <nav aria-label={t('buyerAccount.myTicketsPage.ordersPages')} className="flex items-center justify-between gap-3 pt-2">

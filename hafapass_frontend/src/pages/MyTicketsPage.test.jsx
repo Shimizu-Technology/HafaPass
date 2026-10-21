@@ -80,8 +80,8 @@ describe('MyTicketsPage orders tab', () => {
     id: 9, reference: 'HP-9', buyer_status: 'partially_refunded', completed_at: '2030-01-01T01:00:00Z',
     event: { id: 1, title: 'Island workshop', timezone: 'Pacific/Guam', starts_at: '2030-01-02T08:00:00Z' },
     order_items: [{ id: 4, item_kind: 'ticket', name: 'General admission', quantity: 2 }],
-    refund_history: [{ id: 10, status: 'pending', amount_cents: 1000 }],
-    service_fee_cents: 250, discount_cents: 100, total_cents: 5150,
+    refund_pending: true, refunded_cents: 1000,
+    subtotal_cents: 5000, service_fee_cents: 250, discount_cents: 100, total_cents: 5150,
   }
 
   beforeEach(() => {
@@ -101,10 +101,27 @@ describe('MyTicketsPage orders tab', () => {
     expect(screen.getByText('Partially refunded')).toBeInTheDocument()
     expect(screen.getByText('Refund pending')).toBeInTheDocument()
     expect(screen.getByText('General admission × 2')).toBeInTheDocument()
+    expect(screen.getByText('Subtotal: $50.00')).toBeInTheDocument()
+    expect(screen.getByText('Refunded $10.00')).toBeInTheDocument()
     expect(screen.getByText(/Total paid: \$51.50/)).toBeInTheDocument()
     expect(screen.getByText('Island workshop').closest('a')).toHaveAttribute('href', '/orders/9/confirmation')
     await userEvent.click(screen.getByRole('button', { name: 'Next' }))
     expect(apiClient.get).toHaveBeenCalledWith('/me/orders', { params: { page: 2 } })
+  })
+
+  it('shows every purchased item, including an add-on-only order, and hides zero discount and refund rows', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/me/orders'
+      ? { orders: [{ ...purchase, order_items: [
+        { id: 5, item_kind: 'add_on', name: 'Meal voucher', quantity: 2 },
+        { id: 6, item_kind: 'merchandise', name: 'Festival shirt', quantity: 1 },
+      ], discount_cents: 0, refunded_cents: 0, refund_pending: false }], meta: {} }
+      : { tickets: [] } }))
+    renderPage()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Orders' }))
+    expect(await screen.findByText('Meal voucher × 2')).toBeInTheDocument()
+    expect(screen.getByText('Festival shirt × 1')).toBeInTheDocument()
+    expect(screen.queryByText(/Discount:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Refunded \$/)).not.toBeInTheDocument()
   })
 
   it('shows loading, empty and retry states for orders', async () => {
