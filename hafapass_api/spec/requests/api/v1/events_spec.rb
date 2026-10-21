@@ -123,6 +123,16 @@ RSpec.describe "Api::V1::Events", type: :request do
       expect(response.parsed_body["localized_content"]).to have_key("ja")
     end
 
+    it "serializes the event design and organizer logo to buyers" do
+      event = create(:event, :published, organizer_profile: organizer_profile,
+        page_customization: { "accent" => "#123456", "focal_point" => { "x" => 25, "y" => 70 } })
+      organizer_profile.update!(logo_url: "https://example.invalid/logo.webp")
+      get "/api/v1/events/#{event.slug}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["page_customization"]).to include("accent" => "#123456")
+      expect(response.parsed_body["organizer"]["logo_url"]).to eq("https://example.invalid/logo.webp")
+    end
+
     it "returns a published event with ticket types" do
       event = create(:event, :published, organizer_profile: organizer_profile, starts_at: 5.days.from_now)
       ga = create(:ticket_type, event: event, name: "General Admission", price_cents: 2500, sort_order: 0)

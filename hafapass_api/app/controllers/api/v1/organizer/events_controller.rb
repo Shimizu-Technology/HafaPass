@@ -87,7 +87,7 @@ module Api
               user: current_user, organization: current_organization, permission: :manage_events, event: @event
             )
             unless can_manage
-              attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category")
+              attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category", "page_customization")
             end
             attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
             reschedule = reschedule?(attributes)
@@ -98,7 +98,13 @@ module Api
             end
 
             before_data = event_change_snapshot(@event) if reschedule
+            previous_design = @event.page_customization.deep_dup if attributes.key?("page_customization")
             updated = @event.update(attributes)
+            if updated && previous_design && previous_design != @event.page_customization
+              @event.event_changes.create!(actor_user: current_user, change_type: "customized",
+                before_data: { page_customization: previous_design },
+                after_data: { page_customization: @event.page_customization }, occurred_at: Time.current)
+            end
             if updated && reschedule
               event_change = @event.event_changes.create!(
                 actor_user: current_user,
@@ -376,7 +382,8 @@ module Api
             :category, :age_restriction, :max_capacity,
             :recurrence_rule, :recurrence_end_date, :show_attendees,
             :fee_policy, :buyer_fee_percent, :transfers_enabled, supported_locales: [],
-            localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS }
+            localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS },
+            page_customization: {}
           )
         end
 
@@ -414,7 +421,7 @@ module Api
 
         def clone_event(source, overrides = {})
           attrs = source.attributes.slice(
-            "title", "description", "short_description", "cover_image_url",
+            "title", "description", "short_description", "cover_image_url", "page_customization",
             "venue_name", "venue_address", "venue_city", "timezone",
             "category", "age_restriction", "max_capacity",
             "show_attendees"
@@ -508,6 +515,9 @@ module Api
             description: event.description,
             short_description: event.short_description,
             cover_image_url: event.cover_image_url,
+            page_customization: event.page_customization,
+            seller: SellerIdentity.for_event(event, platform_name: SiteSetting.instance.platform_name).as_json,
+            service_fee_includes_processing: SiteSetting.instance.platform_bears_processing?,
             venue_name: event.venue_name,
             venue_address: event.venue_address,
             venue_city: event.venue_city,
@@ -555,11 +565,19 @@ module Api
 
           if include_ticket_types
             json[:ticket_types] = event.ticket_types.order(:sort_order, :id).map do |tt|
+              price = tt.current_price_cents
+              fee = Commerce::ServiceFee.for_event(event, price)
               {
                 id: tt.id,
                 name: tt.name,
                 description: tt.description,
                 price_cents: tt.price_cents,
+                current_price_cents: price,
+                all_in_price_cents: fee.all_in_price_cents,
+                service_fee_cents: fee.buyer_fee_cents,
+                regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents).all_in_price_cents,
+                quantity_remaining: tt.available_quantity,
+                on_sale: tt.on_sale?,
                 quantity_available: tt.quantity_available,
                 quantity_sold: tt.quantity_sold,
                 door_allocation: tt.door_allocation,

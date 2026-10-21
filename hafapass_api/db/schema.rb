@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -639,6 +639,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_001000) do
     t.string "translation_status", default: "untranslated", null: false
     t.datetime "translation_requested_at"
     t.jsonb "localized_content_sources", default: {}, null: false
+    t.jsonb "page_customization", default: {}, null: false
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"

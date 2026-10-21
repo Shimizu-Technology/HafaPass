@@ -9,6 +9,9 @@ import TicketTypesSection from '../components/TicketTypesSection'
 import SeatSelector from '../components/SeatSelector'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
+import EventDescription from '../components/EventDescription'
+import EventPageSections from '../components/EventPageSections'
+import { accentStyle, focalPosition } from '../utils/eventPageDesign'
 import MachineTranslationNotice from '../components/MachineTranslationNotice'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import useContentLanguage from '../hooks/useContentLanguage'
@@ -287,6 +290,7 @@ function EventDetailContent() {
   const ticketTypes = event.ticket_types || []
   // Offers carry all-in prices (ticket + mandatory buyer fee), like every other display.
   const prices = purchasableAllInPrices(ticketTypes).map(price => price / 100)
+  const lineup = event.page_customization?.sections?.find(section => section.type === 'lineup' && section.enabled)
   const eventJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Event',
@@ -295,6 +299,7 @@ function EventDetailContent() {
     ...(event.ends_at && { endDate: event.ends_at }),
     description: truncatedDescription,
     ...(event.cover_image_url && { image: event.cover_image_url }),
+    ...(lineup?.items?.length && { performer: lineup.items.map(item => ({ '@type': 'Person', name: item.name })) }),
     url: eventUrl,
     ...(event.venue_name && {
       location: {
@@ -322,7 +327,7 @@ function EventDetailContent() {
   }
 
   return (
-    <div>
+    <div className={event.page_customization?.accent ? 'event-customized' : undefined} style={accentStyle(event.page_customization?.accent)}>
       <SEO
         title={event.title}
         description={truncatedDescription}
@@ -337,7 +342,9 @@ function EventDetailContent() {
           <img
             src={event.cover_image_url}
             alt={event.title}
+            width="1600" height="900"
             className="absolute inset-0 w-full h-full object-cover"
+            style={{ objectPosition: focalPosition(event.page_customization) }}
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-brand-900 to-neutral-950" />
@@ -495,11 +502,13 @@ function EventDetailContent() {
               {content.description && (
                 <FadeUp><div className="prose prose-neutral max-w-none mb-8">
                   <h2 className="text-lg font-semibold text-neutral-900 mb-3">{t('buyer.EventDetail.about')}</h2>
-                  <p className="text-neutral-600 leading-relaxed whitespace-pre-wrap">{content.description}</p>
+                  <EventDescription text={content.description} format={event.page_customization?.description_format} />
                 </div></FadeUp>
               )}
 
-              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button></div></div></FadeUp>}
+              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3">{event.organizer.logo_url && <img src={event.organizer.logo_url} alt="" loading="lazy" width="48" height="48" className="h-12 w-12 rounded-xl object-contain" />}<Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button></div></div></FadeUp>}
+
+              <EventPageSections design={event.page_customization} />
 
               {/* Venue Location Section */}
               {event.venue_address && (

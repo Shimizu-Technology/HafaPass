@@ -164,4 +164,23 @@ describe('EventDetailPage buyer polish', () => {
     expect(within(location).getByRole('link', { name: 'Tumon Bay Pavilion' })).toHaveAttribute('href', '/venues/tumon-bay-pavilion')
     expect(within(location).getByRole('link', { name: /Directions/ })).toHaveAttribute('href', expect.stringContaining('google.com/maps'))
   })
+  it('renders design around the fixed ticket box and includes lineup in structured data', async () => {
+    const cover = 'https://example.invalid/cover.webp'
+    mount({ ...baseEvent, cover_image_url: cover, description: 'Plain first line\nPlain second line',
+      organizer: { business_name: 'Island Studio', slug: 'island-studio', logo_url: 'https://example.invalid/logo.webp' },
+      seller: { seller_name: 'Island Studio', ticketing_service: 'HåfaPass' },
+      page_customization: { accent: '#123456', focal_point: { x: 25, y: 70 },
+        sections: [{ type: 'lineup', enabled: true, items: [{ name: 'Mia Cruz', role: 'Singer' }] },
+          { type: 'faq', enabled: true, items: [{ question: 'When?', answer: 'Tonight' }] }] } })
+    await screen.findByRole('heading', { name: 'Reef Night' })
+    expect(document.querySelector(`img[src="${cover}"]`)).toHaveStyle({ objectPosition: '25% 70%' })
+    expect(screen.getByText(/Plain first line/)).toHaveClass('whitespace-pre-wrap')
+    expect(screen.getByRole('heading', { name: 'Lineup' })).toBeInTheDocument()
+    expect(screen.getByText('Mia Cruz')).toBeInTheDocument()
+    expect(screen.getByText('When?')).toBeInTheDocument()
+    expect(screen.getByTestId('seller-line')).toBeInTheDocument()
+    expect(document.querySelector('img[src="https://example.invalid/logo.webp"]')).toBeInTheDocument()
+    expect(seo.props.jsonLd.performer).toEqual([{ '@type': 'Person', name: 'Mia Cruz' }])
+  })
+
 })

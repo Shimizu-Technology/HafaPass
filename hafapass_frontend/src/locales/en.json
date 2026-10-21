@@ -222,6 +222,14 @@
   },
   "buyer": {
     "EventDetail": {
+      "design": { "lineup": "Lineup", "schedule": "Schedule", "faq": "FAQ", "sponsors": "Sponsors & partners", "video": "Video", "links": "Links", "gallery": "Photos" },
+      "openPhoto": "Open photo {{number}}",
+      "photoGallery": "Photo gallery",
+      "closePhoto": "Close photo",
+      "previousPhoto": "Previous photo",
+      "nextPhoto": "Next photo",
+      "eventVideo": "Event video",
+      "playVideo": "Play video",
       "getTickets": "Get tickets ",
       "eventNotFound": "Event not found.",
       "thisEventCouldntLoadPleaseTryAgain": "This event couldn’t load. Please try again.",

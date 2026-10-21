@@ -6,7 +6,7 @@ import { uploadScope, uploadScopeCurrent } from '../utils/uploadRecovery'
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
-export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eventId }) {
+export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eventId, focalPoint, onFocalChange, label = 'Cover image' }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
@@ -79,12 +79,12 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
 
   return (
     <div>
-      <label className="block text-sm font-medium text-neutral-700 mb-1">Cover Image</label>
+      <label className="block text-sm font-medium text-neutral-700 mb-1">{label}</label>
 
       {displayUrl ? (
         <div className="relative rounded-xl overflow-hidden border border-neutral-200">
-          <img src={displayUrl} alt="Cover" className="w-full h-48 object-cover" />
-          <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center opacity-100 sm:opacity-0 sm:hover:opacity-100 focus-within:opacity-100">
+          {onFocalChange ? <button type="button" aria-label="Set cover focal point" className="block w-full" onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); onFocalChange({ x: Math.round((event.clientX - rect.left) / rect.width * 100), y: Math.round((event.clientY - rect.top) / rect.height * 100) }) }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); onFocalChange({ x: Math.max(0, Math.min(100, (focalPoint?.x ?? 50) + (event.key === 'ArrowLeft' ? -5 : event.key === 'ArrowRight' ? 5 : 0))), y: Math.max(0, Math.min(100, (focalPoint?.y ?? 50) + (event.key === 'ArrowUp' ? -5 : event.key === 'ArrowDown' ? 5 : 0))) }) } }}><img src={displayUrl} alt="Cover" className="w-full h-48 object-cover" style={{ objectPosition: `${focalPoint?.x ?? 50}% ${focalPoint?.y ?? 50}%` }} /><span className="pointer-events-none absolute rounded-full border-2 border-white bg-black/30 w-5 h-5 -translate-x-1/2 -translate-y-1/2" style={{ left: `${focalPoint?.x ?? 50}%`, top: `${focalPoint?.y ?? 50}%` }} /></button> : <img src={displayUrl} alt="Cover" className="w-full h-48 object-cover" />}
+          <div className="absolute right-2 top-2 flex items-center justify-center">
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
@@ -104,7 +104,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
         <div
           role="button"
           tabIndex={disabled || uploading ? -1 : 0}
-          aria-label="Upload cover image"
+          aria-label={`Upload ${label.toLowerCase()}`}
           onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); inputRef.current?.click() } }}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}

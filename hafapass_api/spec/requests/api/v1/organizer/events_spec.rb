@@ -268,6 +268,39 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
   describe "PUT /api/v1/organizer/events/:id" do
     let!(:event) { create(:event, organizer_profile: organizer_profile, title: "Original Title") }
 
+    it "saves and audits page design through event edit permission" do
+      ImageUploadReceipt.create!(user: user, organization: event.organization, event: event,
+        source_key: "pending/test/page", final_key: "uploads/test/page.webp",
+        public_url: "https://example.invalid/p.webp", completed_at: Time.current)
+      design = { accent: "#123456", gallery: [{ url: "https://example.invalid/p.webp", alt: "Stage" }],
+        sections: [{ type: "gallery", enabled: true, items: [] }] }
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: design }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization).to include("accent" => "#123456")
+      expect(response.parsed_body["page_customization"]["gallery"].first["alt"]).to eq("Stage")
+      expect(event.event_changes.last).to have_attributes(change_type: "customized")
+      expect(response.parsed_body["seller"]["seller_name"]).to be_present
+    end
+
+    it "allows content editors and platform admins to change design" do
+      membership = event.organization.organization_memberships.find_by!(user: user)
+      membership.update!(role: :marketer)
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "#123456" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization["accent"]).to eq("#123456")
+      user.update!(role: :admin)
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "#654321" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization["accent"]).to eq("#654321")
+    end
+
+    it "rejects invalid page design without persisting or auditing it" do
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "url(javascript:evil)" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(event.reload.page_customization).to eq({})
+      expect(event.event_changes).to be_empty
+    end
+
     it "updates the event" do
       put "/api/v1/organizer/events/#{event.id}", params: { title: "Updated Title" }, headers: headers
 

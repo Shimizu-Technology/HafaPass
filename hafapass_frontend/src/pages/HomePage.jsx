@@ -1,3 +1,4 @@
+import { focalPosition } from '../utils/eventPageDesign'
 import BuyerEventText from '../components/BuyerEventText'
 import { useTranslation } from 'react-i18next'
 import useContentLanguage from '../hooks/useContentLanguage'
@@ -37,9 +38,9 @@ function EventArtwork({ event, className, priority = false, backdrop = false }) 
     <div className={`relative overflow-hidden rounded-lg bg-neutral-100 ${className}`}>
       {event.cover_image_url && !failed ? (
         <>
-          {backdrop && <img src={event.cover_image_url} alt="" aria-hidden="true" data-testid="artwork-backdrop"
+          {backdrop && <img src={event.cover_image_url} alt="" aria-hidden="true" style={{ objectPosition: focalPosition(event.page_customization) }} data-testid="artwork-backdrop"
             className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl" />}
-          <img src={event.cover_image_url} alt={t('buyer.Home.artworkFor', { value1: event.title })} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
+          <img src={event.cover_image_url} alt={t('buyer.Home.artworkFor', { value1: event.title })} style={{ objectPosition: focalPosition(event.page_customization) }} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
             onError={() => setFailed(true)} className="absolute inset-0 h-full w-full object-contain" />
         </>
       ) : (

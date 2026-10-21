@@ -1,6 +1,7 @@
 class Event < ApplicationRecord
   include PublicSlug
   include Translatable
+  include EventPageCustomization
 
   CONTENT_FIELDS = %w[title short_description description].freeze
   translates(*CONTENT_FIELDS, context: "Public listing for an event sold on HåfaPass, a ticketing site in Guam. " \
@@ -104,6 +105,7 @@ class Event < ApplicationRecord
   validate :valid_iana_timezone
   validate :chronological_event_times
   validate :live_money_candidate_flag_immutable_after_orders
+  validate :page_customization_is_valid
 
   before_validation :assign_slug
   before_save :record_localized_content_sources, if: :will_save_change_to_localized_content?

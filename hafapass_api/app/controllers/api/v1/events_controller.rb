@@ -242,6 +242,7 @@ module Api
           machine_translated: content[:machine_translated],
           original_content: content[:locale] == AppLocale::DEFAULT ? nil : event.slice(*Event::CONTENT_FIELDS),
           cover_image_url: event.cover_image_url,
+          page_customization: event.page_customization,
           venue_name: event.venue_name,
           venue_address: event.venue_address,
           venue_city: event.venue_city,
