@@ -85,7 +85,7 @@ RSpec.describe PolicyRegistry do
   end
 
   it "serves the launch draft, clearly marked as pending legal review" do
-    expect(described_class.version).to eq("2026-10-launch-draft")
+    expect(described_class.version).to eq("2026-10-counsel-draft-2")
     expect(described_class.status).to eq("draft-pending-legal-review")
     expect(described_class.public_documents.keys).to include(
       "buyer-terms", "refunds", "privacy", "organizer-agreement", "acceptable-use", "retention", "cookies", "accessibility"
@@ -136,7 +136,7 @@ RSpec.describe PolicyRegistry do
 
     expect(profile.reload).not_to be_policy_accepted
     expect(described_class.buyer_terms[:digest]).not_to eq(buyer_digest)
-    expect(described_class.buyer_terms[:version]).to eq("2026-10-launch-draft")
+    expect(described_class.buyer_terms[:version]).to eq("2026-10-counsel-draft-2")
   end
 
   it "treats acceptance of the previous pilot draft as stale" do

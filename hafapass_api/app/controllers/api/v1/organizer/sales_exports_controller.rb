@@ -60,7 +60,8 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
     OrganizerSalesExportRequest.where(event: @event, actor_user: current_user).fail_expired_processing!
     response.headers["Cache-Control"] = "no-store"
     exports = OrganizerSalesExportRequest.where(event: @event, actor_user: current_user)
-      .where(created_at: 1.day.ago..).order(created_at: :desc).limit(10)
+      .where("expires_at > :now OR (expires_at IS NULL AND created_at > :pending_cutoff)",
+        now: Time.current, pending_cutoff: 1.day.ago).order(created_at: :desc).limit(10)
     render json: { exports: exports.filter_map { |item|
       next if item.status == "expired" || (item.expires_at && item.expires_at <= Time.current)
       begin

@@ -278,6 +278,7 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect { OrganizerSalesExportJob.perform_now(request_record.id) }
       .to have_enqueued_job(OrganizerSalesExportCleanupJob)
     expect(request_record.reload).to have_attributes(status: "ready", row_count: 1)
+    expect(request_record.expires_at).to be_within(1.minute).of(2.days.from_now)
     expect(request_record.storage_key).to start_with("private/sales-exports/")
     expect(AuditLog.where(action: "sales.export_generated").last.metadata).to include("row_count" => 1)
   end
@@ -609,7 +610,7 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
 
   it "lists only the actor's unexpired recent exports and keeps the response private" do
     mine = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
-      filters: {}, columns: %w[name], status: "ready", expires_at: 1.hour.from_now)
+      filters: {}, columns: %w[name], status: "ready", expires_at: 1.hour.from_now, created_at: 36.hours.ago)
     other = create(:user)
     OrganizerSalesExportRequest.create!(event: event, actor_user: other,
       filters: {}, columns: %w[name], status: "ready", expires_at: 1.hour.from_now)

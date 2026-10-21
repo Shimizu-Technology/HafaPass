@@ -52,7 +52,7 @@ class OrganizerSalesExportJob < ApplicationJob
       actor: export_request.actor_user, organization: org,
       metadata: { export_request_id: export_request.id, filters: query.filters,
         columns: builder.columns, row_count: count, outcome: "generated" })
-    expires_at = 1.day.from_now
+    expires_at = 2.days.from_now
     saved = OrganizerSalesExportRequest.where(id: export_id, status: "processing", claimed_at: claimed_at)
       .update_all(status: "ready", storage_key: key, row_count: count, expires_at: expires_at, updated_at: Time.current)
     raise "Export lease expired or was superseded" unless saved == 1

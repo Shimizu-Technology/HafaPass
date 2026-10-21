@@ -47,7 +47,7 @@ Attendee identity, contact, check-in, transfer, and notes/answers columns
 require `view_attendees`. Queued exports are private S3 objects under
 `private/sales-exports/<organization_id>/`. The bucket policy grants public reads
 only under `uploads/`, so these objects remain private without an object ACL.
-The authenticated actor can download them through the event API for one day.
+The authenticated actor can download them through the event API for two days.
 The daily orphan sweep deletes unassociated objects after two days, including
 uploads from workers that stopped while a request was still processing.
 The worker's S3 credentials need `ListBucket` for that prefix and `DeleteObject`.
