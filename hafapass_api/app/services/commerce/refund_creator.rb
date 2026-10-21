@@ -158,7 +158,14 @@ module Commerce
           raise RefundError, "Simulated payments cannot be refunded in production"
         end
         payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
-        remaining = [order.refundable_cents, payment_remaining].min
+        order_remaining = if Payment.live_or_legacy_capture.where(id: payment.id).exists?
+          live_payments = order.payments.merge(Payment.live_or_legacy_capture)
+          live_refunds = order.refunds.where(payment_id: live_payments.select(:id), status: [:pending, :succeeded]).sum(:amount_cents)
+          [[order.total_cents, live_payments.sum(:amount_cents)].min - live_refunds, 0].max
+        else
+          order.refundable_cents
+        end
+        remaining = [order_remaining, payment_remaining].min
         amount = requested_amount_cents || selected_tickets&.sum(&:refundable_cents) || remaining
         if selected_tickets && requested_amount_cents && requested_amount_cents != selected_tickets.sum(&:refundable_cents)
           raise RefundError, "Ticket refunds must match the selected ticket value"
@@ -360,7 +367,11 @@ module Commerce
         allocate_items!(refund)
         record_promoter_commission_reversal!(refund)
 
-        succeeded_total = refund.order.refunds.succeeded.sum(:amount_cents)
+        succeeded_refunds = refund.order.refunds.succeeded
+        if Payment.live_or_legacy_capture.where(id: refund.payment_id).exists?
+          succeeded_refunds = succeeded_refunds.where(payment_id: refund.order.payments.merge(Payment.live_or_legacy_capture).select(:id))
+        end
+        succeeded_total = succeeded_refunds.sum(:amount_cents)
         full_refund = succeeded_total >= refund.order.total_cents
         refund.order.update!(
           status: full_refund ? :refunded : :partially_refunded,
@@ -394,6 +405,10 @@ module Commerce
       refund.order.order_items.order(:id).each do |item|
         successful_allocations = RefundItem.joins(:refund)
           .where(order_item: item, refunds: { status: Refund.statuses[:succeeded] })
+        if Payment.live_or_legacy_capture.where(id: refund.payment_id).exists?
+          successful_allocations = successful_allocations.where(
+            refunds: { payment_id: refund.order.payments.merge(Payment.live_or_legacy_capture).select(:id) })
+        end
         organizer_remaining = item.organizer_proceeds_cents - successful_allocations.sum(:organizer_proceeds_cents)
         fee_remaining = item.fee_cents - successful_allocations.sum(:fee_cents)
         organizer_fee_remaining = item.organizer_fee_cents - successful_allocations.sum(:organizer_fee_cents)

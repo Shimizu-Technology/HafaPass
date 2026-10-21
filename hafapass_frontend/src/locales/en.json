@@ -778,6 +778,7 @@
       "cancelledCardRefunded": "Refunded {{amount}} to your card on {{date}}.",
       "cancelledCashRefunded": "{{amount}} was returned in cash on {{date}}.",
       "cancelledRefundProcessing": "Your refund is processing.",
+      "cancelledRefundNotStarted": "Your refund is being arranged.",
       "cancelledCashReturnPending": "The organizer will return your cash payment.",
       "cancelledCardReturnPending": "HåfaPass is waiting for confirmation that your card payment was returned.",
       "cancelledRefundComplete": "Your refund is complete.",

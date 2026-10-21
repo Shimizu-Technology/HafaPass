@@ -41,6 +41,30 @@ RSpec.describe Commerce::RefundCreator do
     expect(payment.reload).to be_partially_refunded
   end
 
+  it "does not let a test refund reduce a live payment's refundable balance" do
+    live_payment = create(:payment, :succeeded, order: order, amount_cents: 5250,
+      provider_environment: "live")
+    allow(StripeService).to receive(:refund_payment) do |_payment_id, amount_cents:, payment:, **|
+      OpenStruct.new(id: "re_#{payment.id}_#{amount_cents}", status: "succeeded",
+        amount: amount_cents, currency: "usd")
+    end
+    described_class.call(order: order, payment: payment, amount_cents: 500,
+      idempotency_key: "test-before-live")
+
+    refund = described_class.call(order: order, payment: live_payment, amount_cents: 5250,
+      idempotency_key: "live-after-test-refund")
+
+    expect(refund).to be_succeeded
+    expect(refund.payment).to eq(live_payment)
+    expect(refund.amount_cents).to eq(5250)
+    expect do
+      expect do
+        described_class.call(order: order, payment: live_payment, amount_cents: 1,
+          idempotency_key: "live-overpayment")
+      end.to raise_error(Commerce::RefundCreator::RefundError)
+    end.not_to change(Refund, :count)
+  end
+
   it "pauses cumulative full-value unknown refunds, recognizes returned money and retains only occupied capacity" do
     used, unused = order.tickets.order(:id).to_a
     used.check_in!

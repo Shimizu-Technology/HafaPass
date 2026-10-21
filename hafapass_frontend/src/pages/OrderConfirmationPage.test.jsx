@@ -54,6 +54,17 @@ describe('guest order recovery actions', () => {
     expect(screen.queryByRole('button', { name: 'Keep my tickets' })).not.toBeInTheDocument()
   })
 
+  it('shows a legacy cancelled order before its refund run starts', async () => {
+    const order = { id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
+      order_items: [], tickets: [], cancellation_refund: { status: 'not_started' },
+      event: { slug: 'cancelled-event', title: 'Cancelled Event', status: 'cancelled', timezone: 'Pacific/Guam' } }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes><Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+
+    expect(await screen.findByText('Your refund is being arranged.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Request refund' })).not.toBeInTheDocument()
+  })
+
   it('labels a manual card return without describing it as cash', async () => {
     const order = { id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
       order_items: [], tickets: [], cancellation_refund: { status: 'needs_card_return', amount_cents: 5250 },

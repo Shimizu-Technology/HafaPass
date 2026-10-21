@@ -35,7 +35,14 @@ class EventCancellationRefundJob < ApplicationJob
     return nil unless item.pending? || item.waiting_on_pending_refund? || item.waiting_on_dispute?
 
     order = item.order
-    if order.disputes.open.exists?
+    live_payment_ids = Payment.live_or_legacy_capture.where(order_id: order.id).select(:id)
+    disputes = order.disputes
+    pending_refunds = order.refunds.pending
+    if Rails.env.production?
+      disputes = disputes.where(payment_id: live_payment_ids)
+      pending_refunds = pending_refunds.where(payment_id: live_payment_ids)
+    end
+    if disputes.open.exists?
       item.update!(status: :waiting_on_dispute, last_error: "Waiting for dispute resolution")
       return nil
     end
@@ -48,7 +55,7 @@ class EventCancellationRefundJob < ApplicationJob
       item.update!(status: :waiting_on_pending_refund, last_error: "Refund pending provider confirmation")
       return nil
     end
-    if order.refunds.pending.where.not(id: existing&.id).exists?
+    if pending_refunds.where.not(id: existing&.id).exists?
       item.update!(status: :waiting_on_pending_refund, last_error: "Another refund is awaiting provider confirmation")
       return nil
     end
@@ -68,7 +75,7 @@ class EventCancellationRefundJob < ApplicationJob
     if amount.zero?
       message = if existing&.succeeded?
         nil
-      elsif order.disputes.lost.exists?
+      elsif disputes.lost.exists?
         "Dispute lost; buyer refunded by chargeback"
       else
         "Buyer balance already resolved"
@@ -106,7 +113,6 @@ class EventCancellationRefundJob < ApplicationJob
       # A timeout remains reserved; retry_cancellation_refunds keeps its key.
       error = e.message
     end
-    recalculate = false
     item.with_lock do
       refund = item.order.refunds.find_by(idempotency_key: item.refund_key)
       if refund&.succeeded?
@@ -114,14 +120,12 @@ class EventCancellationRefundJob < ApplicationJob
       elsif refund&.failed? || refund&.cancelled?
         item.update!(status: :failed, last_error: refund.failure_message || error || "Provider refund failed")
       elsif error == "Refund amount exceeds refundable balance" && refund.nil?
-        item.update!(status: :pending, last_error: "Refund balance changed; recalculating")
-        recalculate = true
+        item.update!(status: :failed, last_error: "Refund amount exceeds refundable balance; finance review is required")
       elsif error
         item.update!(status: :failed, last_error: error)
       else
         item.update!(status: :waiting_on_pending_refund, last_error: "Refund pending provider confirmation")
       end
     end
-    EventCancellationRefundJob.perform_later(run.id) if recalculate
   end
 end

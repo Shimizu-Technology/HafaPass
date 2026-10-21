@@ -256,7 +256,7 @@ function OrderConfirmationContent() {
     (event?.status !== 'cancelled' || change.change_type === 'cancelled')
   const cancelledRefund = event?.status === 'cancelled' ? (order?.cancellation_refund || (order?.status === 'refunded'
     ? { status: 'refunded', amount_cents: order.refunded_cents, payment_method: order.payment_method } : null)) : null
-  const showCancelledRefundStatus = cancelledRefund && ['refunded', 'processing', 'needs_cash_return', 'needs_card_return', 'needs_attention', 'awaiting_dispute', 'resolved'].includes(cancelledRefund.status)
+  const showCancelledRefundStatus = cancelledRefund && ['refunded', 'processing', 'not_started', 'needs_cash_return', 'needs_card_return', 'needs_attention', 'awaiting_dispute', 'resolved'].includes(cancelledRefund.status)
   const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
   // Recovery links import credentials after mount. Read the current credential for every action.
   const orderHeaders = () => orderAccessHeaders(id)
@@ -452,7 +452,8 @@ function OrderConfirmationContent() {
               ? cancelledRefund.refunded_at
                 ? t(cancelledRefund.payment_method === 'door_cash' ? 'buyerAccount.orderConfirmationPage.cancelledCashRefunded' : 'buyerAccount.orderConfirmationPage.cancelledCardRefunded', { amount: formatMoneyCents(cancelledRefund.amount_cents || 0), date: formatEventDate(cancelledRefund.refunded_at, event.timezone) })
                 : t('buyerAccount.orderConfirmationPage.cancelledRefundComplete')
-              : t({ needs_cash_return: 'buyerAccount.orderConfirmationPage.cancelledCashReturnPending',
+              : t({ not_started: 'buyerAccount.orderConfirmationPage.cancelledRefundNotStarted',
+                needs_cash_return: 'buyerAccount.orderConfirmationPage.cancelledCashReturnPending',
                 needs_card_return: 'buyerAccount.orderConfirmationPage.cancelledCardReturnPending',
                 needs_attention: 'buyerAccount.orderConfirmationPage.cancelledRefundNeedsAttention',
                 awaiting_dispute: 'buyerAccount.orderConfirmationPage.cancelledRefundAwaitingDispute',

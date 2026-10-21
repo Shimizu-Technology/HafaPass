@@ -1,6 +1,13 @@
 require "rails_helper"
 
 RSpec.describe OrderPresenter do
+  it "presents a paid legacy cancellation before a refund run starts" do
+    order = create(:order, event: create(:event, :cancelled))
+    create(:payment, :succeeded, order: order, provider_environment: "live")
+
+    expect(described_class.call(order)[:cancellation_refund]).to include(status: "not_started")
+  end
+
   it "presents a cancelled order's pending and completed refund status to the buyer" do
     event = create(:event, :cancelled)
     order = create(:order, event: event)

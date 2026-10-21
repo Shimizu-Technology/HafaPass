@@ -41,6 +41,75 @@ RSpec.describe EventCancellationRefundJob do
     expect(order.refunds.count).to eq(1)
   end
 
+  it "refunds the full live capture despite a test refund on the same order" do
+    allow(Rails.env).to receive(:production?).and_return(true)
+    order = paid_order(email: "mixed@example.com")
+    live_payment = order.payments.first
+    live_payment.update_columns(provider_payment_id: "pi_live_mixed_#{order.id}")
+    test_payment = create(:payment, :succeeded, order: order, amount_cents: 2000,
+      provider_environment: "test")
+    create(:refund, order: order, payment: test_payment, amount_cents: 500)
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_live_mixed", status: "succeeded", amount: 5250, currency: "usd"))
+
+    described_class.perform_now(run.id)
+    first_item = run.items.find_by!(order: order)
+    expect([first_item.status, first_item.last_error]).to eq(["refunded", nil])
+    described_class.perform_now(run.id)
+
+    item = run.items.find_by!(order: order)
+    expect([item.status, item.last_error]).to eq(["refunded", nil])
+    expect(order.refunds.where(payment: live_payment).succeeded.sum(:amount_cents)).to eq(5250)
+    expect(run.reload).to be_completed
+    expect(OrderPresenter.call(order.reload)[:cancellation_refund][:amount_cents]).to eq(5250)
+    expect(StripeService).to have_received(:refund_payment).once
+  end
+
+  [:pending_refund, :dispute].each do |obstacle|
+    it "ignores a test-only #{obstacle} when refunding a live capture" do
+      allow(Rails.env).to receive(:production?).and_return(true)
+      order = paid_order(email: "test-#{obstacle}@example.com")
+      order.payments.first.update_columns(provider_payment_id: "pi_live_#{obstacle}_#{order.id}")
+      test_payment = create(:payment, :succeeded, order: order, amount_cents: 2000,
+        provider_environment: "test")
+      if obstacle == :pending_refund
+        create(:refund, order: order, payment: test_payment, amount_cents: 500,
+          status: :pending, succeeded_at: nil)
+      else
+        Dispute.create!(order: order, payment: test_payment, status: :open,
+          provider: "stripe", provider_dispute_id: "dp_test_#{order.id}", amount_cents: 500,
+          currency: "usd", opened_at: Time.current)
+      end
+      EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+      run = event.reload.event_cancellation_refund_run
+      expect(run.items.find_by!(order: order)).to be_pending
+      allow(StripeService).to receive(:refund_payment).and_return(
+        OpenStruct.new(id: "re_live_#{obstacle}", status: "succeeded", amount: 5250, currency: "usd"))
+
+      described_class.perform_now(run.id)
+
+      expect(run.items.find_by!(order: order)).to be_refunded
+      expect(order.refunds.where(payment: order.payments.first).succeeded.sum(:amount_cents)).to eq(5250)
+    end
+  end
+
+  it "marks a deterministic balance rejection for attention without re-enqueuing" do
+    order = paid_order(email: "changed-balance@example.com")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    allow(Commerce::RefundCreator).to receive(:call).and_raise(
+      Commerce::RefundCreator::RefundError, "Refund amount exceeds refundable balance")
+
+    expect { described_class.perform_now(run.id) }.not_to have_enqueued_job(described_class)
+
+    item = run.items.find_by!(order: order)
+    expect(item).to be_failed
+    expect(item.last_error).to include("finance review")
+    expect(run.reload).to be_needs_attention
+  end
+
   it "keeps cash orders manual and disputed orders unresolved" do
     cash = paid_order(email: "cash@example.com", method: "door_cash")
     disputed = paid_order(email: "disputed@example.com")
