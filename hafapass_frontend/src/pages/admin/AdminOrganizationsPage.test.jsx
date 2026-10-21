@@ -40,6 +40,15 @@ describe('Admin organizations', () => {
     expect(done.getByRole('link', { name: 'Open Ambros Events' })).toHaveAttribute('href', '/admin/organizations/3')
   })
 
+  it('shows a masked W-9 before the organization has sales', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/memberships') ? detail.memberships : { ...detail,
+      tax_information: { legal_name: 'Ambros Events LLC', tax_classification: 'llc_c', masked_tin: '***-**-5678', signer_name: 'Alex Owner', mailing_address: 'PO Box 1' } } }))
+    render(<MemoryRouter initialEntries={['/admin/organizations/3']}><Routes><Route path="/admin/organizations/:id" element={<AdminOrganizationPage />} /></Routes></MemoryRouter>)
+    expect(await screen.findByText('***-**-5678')).toBeInTheDocument()
+    expect(screen.getByText('LLC taxed as C corporation')).toBeInTheDocument()
+    expect(screen.queryByText('012345678')).not.toBeInTheDocument()
+  })
+
   it('manages any organization’s team and opens its dashboard as an admin', async () => {
     render(<MemoryRouter initialEntries={['/admin/organizations/3']}><Routes>
       <Route path="/admin/organizations/:id" element={<AdminOrganizationPage />} />

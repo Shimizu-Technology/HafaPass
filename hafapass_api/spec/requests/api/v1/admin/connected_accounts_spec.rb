@@ -11,6 +11,7 @@ RSpec.describe "Admin connected accounts and payout controls", type: :request do
   let(:headers) { auth_headers(admin) }
 
   it "keeps readiness blocked until an admin approves complete evidence, even the submitter" do
+    create(:organizer_tax_information, organization: organization)
     patch "/api/v1/admin/connected_accounts/#{account.id}", params: {
       provider_account_id: "paypal-merchant-verified",
       charges_enabled: true,

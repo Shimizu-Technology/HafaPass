@@ -45,3 +45,26 @@ These are kept out of the public text. The same list lives under `review_notes` 
 | Organizer Agreement | Indemnity and limitation of liability | Lawyer to confirm indemnity and the 12-month fee liability cap. |
 | Organizer Agreement | Governing law and changes | Lawyer to confirm governing law and venue. |
 | Data Retention Schedule | Financial, order, and audit records | Lawyer and accountant to confirm the retention period (at least 7 years proposed). |
+
+## Agent-of-payee and tax safeguards review (2026-10-21)
+
+These points mirror `review_notes` in `config/policies.yml`. The public drafts
+keep their existing version and draft banner; this work is not professional approval.
+
+- Counsel: confirm the limited appointment solely to accept ticket payments, buyer
+  discharge, organizer as seller, and exclusion of HåfaPass from the ticket contract.
+  Confirm check disbursements under FinCEN FIN-2014-R009 and Guam 11 GCA Ch. 109;
+  the wording alone does not establish a licensing exemption. Review custody,
+  segregated accounts, withholding, offsets, refund shortfalls, and indemnity.
+- Accountant: confirm fee-only BPT treatment, the current rate, organizer gross
+  receipts, form/filer/thresholds for 1099 reporting, Guam filing, and backup withholding.
+- Counsel/accountant: review the electronic substitute W-9, signer authority,
+  certification wording, U.S.-person eligibility, disregarded LLC treatment,
+  tax-record retention, and handling of people subject to backup withholding or
+  needing another form. The product validates nine digits, not the TIN/name match.
+- Privacy counsel: confirm collection of organizer TINs, encryption, audited admin
+  reveals and full-TIN exports, legally required tax-authority sharing, retention,
+  and breach response. Current W-9 identity can differ from historical check payees.
+
+Reference for the substitute-form review: [IRS requester instructions](https://www.irs.gov/instructions/iw9),
+including electronic submission and certification requirements (checked 2026-10-21).

@@ -14,11 +14,12 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
         q: like_pattern(term)
       )
     end
-    organizations, meta = admin_page(scope.includes(:organizer_profile, organization_memberships: :user))
+    organizations, meta = admin_page(scope.includes(:organizer_profile, :organizer_tax_information, organization_memberships: :user))
     render json: { organizations: organizations.map { |organization| organization_summary(organization) }, meta: meta }
   end
 
   def show
+    response.headers["Cache-Control"] = "no-store"
     organization = Organization.find(params[:id])
     render json: organization_detail(organization)
   rescue ActiveRecord::RecordNotFound
@@ -85,6 +86,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
   def organization_detail(organization)
     profile = organization.organizer_profile
     organization_summary(organization).merge(
+      tax_information: organization.organizer_tax_information&.safe_json,
       timezone: organization.timezone,
       events_count: organization.events.count,
       organizer_profile: profile && {

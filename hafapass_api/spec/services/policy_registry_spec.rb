@@ -95,6 +95,17 @@ RSpec.describe PolicyRegistry do
     end
   end
 
+  it "states the agent-of-payee, refund liability and tax roles without public drafting notes" do
+    documents = described_class.public_documents
+    organizer = documents.fetch("organizer-agreement").to_json
+    buyer = documents.fetch("buyer-terms").to_json
+    expect(organizer).to include("solely to accept buyer payments", "fully discharges", "not a party",
+      "pay you by check", "refunds beyond the funds", "Business Privilege Tax", "W-9", "indemnify")
+    expect(buyer).to include("fully discharges", "organizer is responsible for the event")
+    expect(documents.fetch("privacy").to_json).to include("tax identification number", "encrypted at rest", "tax authorities")
+    expect(documents.values.flat_map { |document| document.fetch("sections").map { |section| section.fetch("body") } }.join).not_to match(/\[[^\]]+\]/)
+  end
+
   it "fills platform, operator, support and fee placeholders from current settings" do
     SiteSetting.instance.update!(platform_name: "HåfaPass", platform_email: "help@example.test",
       service_fee_percent: 4.5, service_fee_flat_cents: 75, processing_fee_bearer: "platform",

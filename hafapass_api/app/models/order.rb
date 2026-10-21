@@ -37,7 +37,9 @@ class Order < ApplicationRecord
   # cash and box-office orders stay. Outside production nothing is excluded.
   scope :excluding_test_payments, -> {
     if Rails.env.production?
-      where.not(id: Payment.where(provider: "stripe", provider_environment: "test").select(:order_id))
+      live_capture = Payment.live_or_legacy_capture.select(:order_id)
+      nonlive_stripe = Payment.nonlive_stripe.select(:order_id)
+      where.not(id: nonlive_stripe).or(where(id: live_capture))
     else
       all
     end

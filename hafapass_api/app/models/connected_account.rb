@@ -21,7 +21,7 @@ class ConnectedAccount < ApplicationRecord
   validate :check_payee_details, if: -> { provider == "check" }
 
   def payout_ready?
-    externally_ready? && active_payment_readiness_approval.present?
+    organization.organizer_tax_information&.certified_at.present? && externally_ready? && active_payment_readiness_approval.present?
   end
 
   def externally_ready?
