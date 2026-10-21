@@ -3,6 +3,7 @@ import { Link, Navigate, useParams } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
+import PolicyLanguageNotice from '../components/PolicyLanguageNotice'
 
 export default function PolicyPage() {
   const { policy } = useParams()
@@ -48,6 +49,7 @@ export default function PolicyPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-800">{draft ? 'Draft policy' : 'Policy'} · version {registry.version}</p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-neutral-950">{content.title}</h1>
         <p className="mt-4 text-base leading-7 text-neutral-600">{content.summary}</p>
+        <PolicyLanguageNotice className="mt-5" />
         {draft && (
           <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900" role="note">
             Draft pending legal review. This text has not yet been approved by Guam or US counsel, and notes in square brackets mark points still to be confirmed.

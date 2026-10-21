@@ -73,6 +73,8 @@ export default function EventCard({ event }) {
         <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-600 transition-colors duration-200 line-clamp-2 min-h-[3.5rem]">
           {event.title}
         </h3>
+        {/* Cards link to the event, so the "Show original" switch lives on the event page. */}
+        {event.machine_translated && <p className="-mt-2 mb-3 text-xs text-neutral-500">{t('translation.automatic')}</p>}
 
         <div className="space-y-1.5 mb-4 flex-1">
           {event.starts_at && (

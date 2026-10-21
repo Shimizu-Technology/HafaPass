@@ -1,11 +1,13 @@
+import { useTranslation } from 'react-i18next'
 import { useAccountRole } from '../utils/workspace'
 
 function AdminOnly({ children }) {
   const role = useAccountRole()
+  const { t } = useTranslation()
   if (role === 'admin') return children
   return <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-    <p className="font-semibold">Paid ticket sales open soon</p>
-    <p className="mt-1">You can’t buy paid tickets for this event yet. Free tickets work as usual.</p>
+    <p className="font-semibold">{t('eventDetail.paidSalesOpenSoon')}</p>
+    <p className="mt-1">{t('eventDetail.paidSalesOpenSoonDetail')}</p>
   </div>
 }
 

@@ -90,7 +90,8 @@ class Api::V1::OrdersController < ApplicationController
       buyer_terms_version: buyer_terms[:version],
       buyer_terms_digest: buyer_terms[:digest],
       buyer_terms_accepted_at: Time.current,
-      live_money_proof_authorization: proof_authorization
+      live_money_proof_authorization: proof_authorization,
+      locale: request_locale
     )
 
     response_payload = OrderPresenter.call(
@@ -259,7 +260,8 @@ class Api::V1::OrdersController < ApplicationController
       ticket: ticket,
       recipient_email: params[:recipient_email],
       recipient_name: params[:recipient_name],
-      initiated_by: @current_user
+      initiated_by: @current_user,
+      locale: request_locale
     )
     render json: transfer_json(transfer), status: :created
   rescue TicketTransfers::Manager::TransferError => e

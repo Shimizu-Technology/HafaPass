@@ -45,6 +45,37 @@ RSpec.describe TicketPdfGenerator do
       TicketPdfGenerator::UnsupportedCharacterError, "Ticket PDF fonts do not support U+10FFFF")
   end
 
+  {
+    "Korean" => ["서울 재즈 페스티벌 괌", "일반 입장", "ko", "TicketKorean"],
+    "Japanese" => ["グアム花火大会", "大人", "ja", "TicketJapanese"],
+    "Traditional Chinese" => ["關島夏日音樂會", "一般入場", "zh-Hant", "TicketChineseTraditional"],
+    "Simplified Chinese" => ["关岛夏日音乐会", "普通门票", "zh", "TicketChineseSimplified"]
+  }.each do |language, (title, type_name, locale, font)|
+    it "renders a #{language} event title with the #{language} font first" do
+      event.update!(title: title, venue_name: "Tumon Bay", venue_address: "Tumon")
+      ticket_type.update!(name: type_name)
+      order.update!(locale: locale)
+      fallbacks = nil
+      allow(PdfFonts).to receive(:configure).and_wrap_original do |original, pdf, **options|
+        original.call(pdf, **options).tap { fallbacks = pdf.fallback_fonts }
+      end
+
+      text = read_pdf.pages.map(&:text).join("\n")
+
+      expect(text).to include(title, type_name)
+      expect(fallbacks.first).to eq(font)
+    end
+  end
+
+  it "loads no CJK font for Latin-only tickets" do
+    event.update!(title: "Hafa Adai Night", venue_name: "Hagåtña", venue_address: "Hagåtña")
+    ticket_type.update!(name: "General")
+    pdf = Prawn::Document.new
+
+    expect(PdfFonts.configure(pdf, texts: [event.title, ticket_type.name])).to be_empty
+    expect(pdf.fallback_fonts).to be_empty
+  end
+
   it "uses the current admission credential for the QR, never the public display link" do
     expect(RQRCode::QRCode).to receive(:new).with(ticket.scan_credential, level: :m).and_call_original
     expect(read_pdf.pages).not_to be_empty

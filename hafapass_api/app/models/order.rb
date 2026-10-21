@@ -47,6 +47,7 @@ class Order < ApplicationRecord
     payments.any? { |payment| payment.provider == "stripe" && payment.provider_environment == "test" }
   end
 
+  validates :locale, inclusion: { in: AppLocale::SUPPORTED }
   validates :buyer_email, presence: true
   validates :buyer_name, presence: true
   validates :currency, presence: true, length: { is: 3 }

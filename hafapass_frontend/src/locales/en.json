@@ -60,6 +60,8 @@
     "from": "From"
   },
   "eventDetail": {
+    "paidSalesOpenSoon": "Paid ticket sales open soon",
+    "paidSalesOpenSoonDetail": "You can’t buy paid tickets for this event yet. Free tickets work as usual.",
     "allEvents": "All Events",
     "addToCalendar": "Add to Calendar",
     "share": "Share",
@@ -195,5 +197,18 @@
     "festival": "Community",
     "nightlife": "Nightlife",
     "other": "Other"
+  },
+  "language": {
+    "change": "Change language, {{language}}",
+    "available": "Available languages"
+  },
+  "translation": {
+    "automatic": "Translated automatically",
+    "original": "Original text",
+    "showOriginal": "Show original",
+    "showTranslation": "Show translation"
+  },
+  "policy": {
+    "englishGoverns": "This policy is written in English. The English version governs if a translation differs."
   }
 }

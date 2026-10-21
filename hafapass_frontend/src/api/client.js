@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { Sentry } from '../monitoring'
 import { monitoringPath } from '../utils/telemetryPrivacy'
+import { getActiveLanguage } from '../utils/locale'
 export { monitoringPath } from '../utils/telemetryPrivacy'
 
 const apiClient = axios.create({
@@ -37,6 +38,9 @@ function assertCurrentOrganization(config) {
 
 // Request interceptor to attach auth token when available
 apiClient.interceptors.request.use(async (config) => {
+  // The API answers in the language chosen in the app (event text, and the
+  // language saved on orders for their emails), not the browser default.
+  if (!config.headers['Accept-Language']) config.headers['Accept-Language'] = getActiveLanguage()
   // Account-sensitive callers can bind a request to the installed Clerk session.
   // A token that resolves after a session change must never reach the transport.
   assertCurrentAuth(config.authContext)
