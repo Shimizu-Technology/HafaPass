@@ -85,10 +85,7 @@ module Settlements
     def orders
       @orders ||= begin
         scope = event.orders.where(status: [:completed, :partially_refunded, :refunded])
-        if Rails.env.production?
-          scope = scope.where.not(id: Payment.where(provider: "stripe").where.not(provider_environment: "live")
-            .select(:order_id))
-        end
+        scope = scope.excluding_test_payments
         scope.order(:id).to_a
       end
     end

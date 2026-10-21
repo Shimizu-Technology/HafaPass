@@ -24,6 +24,6 @@ class Api::V1::Organizer::TaxInformationsController < Api::V1::Organizer::BaseCo
   private
 
   def edit_locked?
-    current_organization.payouts.where(provider: "check", status: [:pending, :processing]).exists?
+    current_organization.payouts.where(status: [:pending, :processing]).exists?
   end
 end

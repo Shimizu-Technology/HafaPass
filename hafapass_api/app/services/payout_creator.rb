@@ -112,6 +112,8 @@ class PayoutCreator
 
       account = settlement.organization.payout_account
       raise PayoutError, "A payout-ready connected account is required" unless account
+      tax = settlement.organization.organizer_tax_information
+      raise PayoutError, "A certified W-9 is required before payout" unless tax&.certified_at
 
       available = [
         settlement.available_to_payout_cents,
@@ -131,7 +133,9 @@ class PayoutCreator
         currency: settlement.currency,
         status: :pending,
         payee_snapshot: account.check_payee,
-        payee_approval_digest: account.provider == "check" ? account.readiness_state_digest : nil
+        payee_approval_digest: account.provider == "check" ? account.readiness_state_digest : nil,
+        tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax.tin,
+        tax_approval_digest: account.readiness_state_digest
       )
       [payout, true]
     end

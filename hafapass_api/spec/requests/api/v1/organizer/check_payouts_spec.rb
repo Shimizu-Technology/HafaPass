@@ -173,11 +173,12 @@ RSpec.describe "Check payee changes while a payout is in flight", type: :request
     expect(response.parsed_body["error"]).to include("Confirm you wrote this check to the approved payee")
     expect(payout.reload).to be_status_processing
 
-    confirmed = paid.deep_merge(evidence: { approved_payee_confirmed: "true" })
+    confirmed = paid.deep_merge(evidence: { approved_payee_confirmed: "true", approved_tax_payee_confirmed: "true" })
     patch "/api/v1/admin/payouts/#{payout.id}", params: confirmed, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     audit = AuditLog.where(auditable: payout, action: "payout.reconciled").last
     expect(audit.metadata.dig("reconciliation", "approved_payee_confirmed")).to be(true)
+    expect(audit.metadata.dig("reconciliation", "approved_tax_payee_confirmed")).to be(true)
   end
 
   it "snapshots the approved payee when PayoutCreator reserves the payout" do
@@ -192,6 +193,13 @@ RSpec.describe "Check payee changes while a payout is in flight", type: :request
     expect(record.payee_snapshot).to eq("payee_name" => "Ambros Inc.", "delivery_method" => "mail", "mailing_address" => "PO Box 1")
     expect(record.payee_approval_digest).to eq(account.readiness_state_digest)
     expect(record).to be_payee_matches_approval
+    expect(record.tax_information_snapshot).to include("legal_name" => "Island Events LLC",
+      "masked_tin" => "***-**-5678", "tin_last_four" => "5678",
+      "tax_information_id" => organization.organizer_tax_information.id)
+    expect(record.tax_information_tin).to eq("012345678")
+    expect(record.read_attribute_before_type_cast(:tax_information_tin)).not_to include("012345678")
+    expect(record.to_json).not_to include("012345678")
+    expect(AuditLog.where(auditable: record).map(&:metadata).to_json).not_to include("012345678")
   end
 
   it "says a duplicate check number is already recorded" do

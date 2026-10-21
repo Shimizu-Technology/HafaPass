@@ -39,6 +39,24 @@ class Rack::Attack
     req.ip if req.path == "/api/v1/users/sync" && req.post?
   end
 
+  # Full-TIN actions have a separate, tighter budget. Resolve a verified
+  # Clerk subject before using an admin ID; unverified requests only consume
+  # the IP budget and never create a user during rate-limit evaluation.
+  sensitive_tax_request = lambda do |req|
+    req.post? && (req.path == "/api/v1/admin/tax_reports/preparation_export" ||
+      req.path.match?(%r{\A/api/v1/admin/organizations/\d+/tax_information/reveal\z}))
+  end
+  throttle("tax-sensitive/ip", limit: 10, period: 1.hour) do |req|
+    req.ip if sensitive_tax_request.call(req)
+  end
+  throttle("tax-sensitive/admin", limit: 10, period: 1.hour) do |req|
+    next unless sensitive_tax_request.call(req)
+
+    token = req.get_header("HTTP_AUTHORIZATION").to_s.match(/\ABearer (\S+)\z/i)&.captures&.first
+    payload = ClerkAuthenticator.verify(token) if token
+    User.where(clerk_id: payload["sub"], role: User.roles[:admin]).pick(:id) if payload&.dig("sub")
+  end
+
   # ─── Order Creation Throttles ─────────────────────────────────────────────
 
   # Throttle order creation by IP (10 orders per minute)
@@ -178,7 +196,8 @@ class Rack::Attack
     }
 
     body = {
-      error: "Rate limit exceeded",
+      error: req.env["rack.attack.matched"].to_s.start_with?("tax-sensitive/") ?
+        "Too many full-TIN requests. Please try again later." : "Rate limit exceeded",
       retry_after: headers["Retry-After"].to_i
     }.to_json
 

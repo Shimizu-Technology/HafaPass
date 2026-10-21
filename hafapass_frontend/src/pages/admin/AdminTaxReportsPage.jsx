@@ -62,21 +62,29 @@ function TaxReportsSession({ identity }) {
       {report && <>
         <section aria-labelledby="annual-tax-heading" className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6">
           <h2 id="annual-tax-heading" className="text-lg font-semibold">Annual organizer payouts · {report.year}</h2>
-          <p className="mt-2 text-sm text-neutral-700">Ticket gross is after discounts, before fees. Refunds include amounts returned to buyers. Each collection, refund and paid payout is counted on its own date. W-9 details are current; confirm historical payees before filing.</p>
+          <p className="mt-2 text-sm text-neutral-700">Gross amounts are after discounts. Refund and fee components are shown separately. Each payout uses its W-9 at payout time; legacy payouts are flagged without a TIN. Activity is allocated among an organizer’s payout identities by paid amount. Adjustments bridge timing, reserves, processing costs and unpaid balances.</p>
           <div className="my-4 flex flex-wrap gap-3"><button disabled={busy} className="btn-secondary" onClick={() => action('organizers_export')}>Export masked CSV</button><button disabled={busy} className="btn-secondary" onClick={() => action('preparation_export')}>Export full TINs for 1099 preparation (audited)</button></div>
           <p className="mb-4 text-xs text-content-muted">Full-TIN files contain sensitive tax data. Store them securely and import TIN columns as text to preserve leading zeroes. Reveals are audited and hide after 30 seconds.</p>
           {report.organizers.length === 0 && <p>No live financial activity for this year.</p>}
-          <div className="space-y-4">{report.organizers.map(row => <article key={row.organization_id} className="rounded-xl border border-neutral-200 p-4">
+          <div className="space-y-4">{report.organizers.map((row, index) => <article key={`${row.organization_id}:${row.tax_snapshot_payout_id || index}`} className="rounded-xl border border-neutral-200 p-4">
             <h3 className="font-semibold [overflow-wrap:anywhere]">{row.organization_name}</h3>
+            <p className="mt-1 text-sm text-content-muted">{row.tax_snapshot_status}</p>
             <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
               {[
                 ['Legal name', row.tax_information?.legal_name || 'Not provided'], ['Classification', taxClassificationLabel(row.tax_information?.tax_classification)],
-                ['W-9 on file', row.w9_on_file ? 'Yes' : 'No'], ['TIN', revealed?.id === row.organization_id ? revealed.tin : row.tax_information?.masked_tin || 'Not provided'],
-                ['Gross ticket proceeds', money(row.gross_ticket_proceeds_cents)], ['Refunds', money(row.refunds_cents)],
-                ['HåfaPass fees collected', money(row.fees_collected_cents)], ['HåfaPass fees refunded', money(row.fees_refunded_cents)], ['Net paid out', money(row.net_paid_cents)],
+                [row.tax_snapshot_status === 'No paid payout' ? 'Current W-9 on file' : 'W-9 at payout', row.w9_on_file ? 'Yes' : 'No'], ['TIN', row.tax_information?.masked_tin || 'Not provided'],
+                ['Gross ticket proceeds', money(row.gross_ticket_proceeds_cents)], ['Gross add-ons', money(row.gross_add_on_proceeds_cents)],
+                ['Gross donations', money(row.gross_donation_proceeds_cents)], ['Gross other sales', money(row.gross_other_proceeds_cents)],
+                ['Ticket refunds', money(row.ticket_refunds_cents)], ['Other refunds', money(row.non_ticket_refunds_cents)],
+                ['Unallocated refunds', money(row.unallocated_refunds_cents)],
+                ['Fee refunds', money(row.fee_refunds_cents)], ['HåfaPass fees collected', money(row.fees_collected_cents)],
+                ['Reconciliation adjustments', money(row.reconciliation_adjustments_cents)], ['Net paid out', money(row.net_paid_cents)],
               ].map(([label, value]) => <div key={label} className="[overflow-wrap:anywhere]"><dt className="text-content-muted">{label}</dt><dd className="font-medium">{value}</dd></div>)}
             </dl>
-            {row.w9_on_file && <button disabled={busy} className="btn-secondary mt-3" onClick={() => revealed?.id === row.organization_id ? setRevealed(null) : action('reveal', row.organization_id)} aria-label={`${revealed?.id === row.organization_id ? 'Hide' : 'Reveal'} TIN for ${row.organization_name}`}>{revealed?.id === row.organization_id ? 'Hide TIN' : 'Reveal TIN (audited)'}</button>}
+            {row.current_w9_on_file && <div className="mt-3 border-t border-neutral-200 pt-3 text-sm">
+              <p>Current W-9 TIN (may differ from this payout snapshot): {revealed?.id === row.organization_id ? revealed.tin : 'Hidden'}</p>
+              <button disabled={busy} className="btn-secondary mt-2" onClick={() => revealed?.id === row.organization_id ? setRevealed(null) : action('reveal', row.organization_id)} aria-label={`${revealed?.id === row.organization_id ? 'Hide' : 'Reveal'} current W-9 TIN for ${row.organization_name}`}>{revealed?.id === row.organization_id ? 'Hide current TIN' : 'Reveal current TIN (audited)'}</button>
+            </div>}
           </article>)}</div>
         </section>
         <section aria-labelledby="bpt-heading" className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6">

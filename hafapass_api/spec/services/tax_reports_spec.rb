@@ -81,4 +81,47 @@ RSpec.describe TaxReports do
   it "validates the selected calendar year" do
     ["garbage", "2026junk", 1900, 2101].each { |value| expect { described_class.new(value) }.to raise_error(ArgumentError) }
   end
+
+  it "counts a successful live capture even when a failed test attempt exists" do
+    at = Time.utc(2026, 10, 2)
+    order = sale(at: at)
+    create(:payment, order: order, status: :failed, provider_environment: "test")
+    simulated = sale(at: at, environment: "simulate")
+    allow(Rails.env).to receive(:production?).and_return(true)
+    expect(Order.excluding_test_payments).to include(order)
+    expect(Order.excluding_test_payments).not_to include(simulated)
+    expect(Settlements::Calculator.new(event).send(:orders)).to include(order)
+    expect(described_class.new(2026).organizers.sole[:gross_ticket_proceeds_cents]).to eq(2400)
+  end
+
+  it "reconciles ticket, add-on and donation gross with a partial refund and paid payout" do
+    at = Time.utc(2026, 10, 2)
+    order = create(:order, :completed, event: event, completed_at: at, subtotal_cents: 4000,
+      service_fee_cents: 225, total_cents: 4225)
+    ticket = create(:order_item, order: order, unit_price_cents: 2500, subtotal_cents: 2500,
+      fee_cents: 225, organizer_proceeds_cents: 2275)
+    addon = create(:order_item, order: order, ticket_type: nil, catalog_item: create(:catalog_item, event: event),
+      item_kind: :add_on, name: "Add-on", unit_price_cents: 1000, subtotal_cents: 1000, fee_cents: 0)
+    create(:order_item, order: order, ticket_type: nil, catalog_item: create(:catalog_item, :donation, event: event),
+      item_kind: :donation, name: "Donation", unit_price_cents: 500, subtotal_cents: 500, fee_cents: 0)
+    payment = create(:payment, :succeeded, order: order, provider_environment: "live")
+    create(:fee_component, order: order, kind: "platform", amount_cents: 225)
+    returned = create(:refund, order: order, payment: payment, succeeded_at: at, amount_cents: 900)
+    create(:refund_item, refund: returned, order_item: ticket, amount_cents: 500,
+      organizer_proceeds_cents: 450, fee_cents: 50)
+    create(:refund_item, refund: returned, order_item: addon, amount_cents: 400,
+      organizer_proceeds_cents: 400, fee_cents: 0)
+    account = create(:connected_account, organization: organization)
+    create(:payout, event: event, organization: organization, connected_account: account,
+      settlement: create(:settlement, event: event, organization: organization), status: :paid,
+      amount_cents: 2925, paid_at: at)
+    row = described_class.new(2026).organizers.sole
+    expect(row).to include(gross_ticket_proceeds_cents: 2500, gross_add_on_proceeds_cents: 1000,
+      gross_donation_proceeds_cents: 500, gross_non_ticket_proceeds_cents: 1500,
+      ticket_refunds_cents: 500, non_ticket_refunds_cents: 400, fee_refunds_cents: 50,
+      unallocated_refunds_cents: 0, fees_collected_cents: 225, reconciliation_adjustments_cents: 0, net_paid_cents: 2925)
+    expect(row[:gross_ticket_proceeds_cents] + row[:gross_non_ticket_proceeds_cents] -
+      row[:ticket_refunds_cents] - row[:non_ticket_refunds_cents] - row[:unallocated_refunds_cents] - row[:fees_collected_cents] +
+      row[:fee_refunds_cents] + row[:reconciliation_adjustments_cents]).to eq(row[:net_paid_cents])
+  end
 end

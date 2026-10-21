@@ -26,7 +26,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -89,6 +89,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       # and the date on the check is the confirmation time.
       payee: payout.provider == "check" ? payout.payee_snapshot : nil,
       payee_changed: payee_changed,
+      tax_approval_changed: !payout.tax_approval_matches?,
+      tax_information_snapshot: payout.tax_information_snapshot,
       current_payee: payee_changed ? payout.connected_account.check_payee : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,

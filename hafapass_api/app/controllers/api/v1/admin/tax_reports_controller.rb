@@ -4,7 +4,7 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
   include SpreadsheetExport
   before_action :prepare_report
 
-  ORGANIZER_HEADER = %w[organization legal_name business_name classification tin_type masked_tin tax_mailing_address exempt_payee_code w9_on_file gross_ticket_proceeds refunds fees_collected fees_refunded net_paid currency].freeze
+  ORGANIZER_HEADER = %w[organization snapshot_status legal_name business_name classification tin_type masked_tin tax_mailing_address exempt_payee_code w9_on_file gross_ticket_proceeds gross_add_on_proceeds gross_donation_proceeds gross_other_proceeds gross_non_ticket_proceeds ticket_refunds non_ticket_refunds unallocated_refunds fee_refunds fees_collected reconciliation_adjustments net_paid currency].freeze
   RECEIPTS_HEADER = %w[month service_fees_collected service_fees_refunded gross_receipts card_processing_costs currency].freeze
 
   def show
@@ -42,14 +42,14 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
     audit_export!(full_tin ? "1099_preparation_full_tin" : "organizer_payouts")
     # Build sensitive rows before streaming so errors cannot log secret content.
     rows = @report.organizers.map do |row|
-      record = OrganizerTaxInformation.find_by(organization_id: row[:organization_id]) if full_tin
-      # Identity and TIN come from the same row read, even if an organizer
-      # updates their W-9 after the report's masked summary was calculated.
-      tax = record ? record.safe_json : row[:tax_information] || {}
-      values = [row[:organization_name], *tax.values_at("legal_name", "business_name", "tax_classification", "tin_type", "masked_tin", "mailing_address", "exempt_payee_code"), row[:w9_on_file],
-        *row.values_at(:gross_ticket_proceeds_cents, :refunds_cents, :fees_collected_cents, :fees_refunded_cents, :net_paid_cents).map { |value| FinanceExports.money(value) }, "USD"]
+      tax = row[:tax_information] || {}
+      values = [row[:organization_name], row[:tax_snapshot_status], *tax.values_at("legal_name", "business_name", "tax_classification", "tin_type", "masked_tin", "mailing_address", "exempt_payee_code"), row[:w9_on_file],
+        *row.values_at(:gross_ticket_proceeds_cents, :gross_add_on_proceeds_cents, :gross_donation_proceeds_cents,
+          :gross_other_proceeds_cents, :gross_non_ticket_proceeds_cents, :ticket_refunds_cents,
+          :non_ticket_refunds_cents, :unallocated_refunds_cents, :fee_refunds_cents, :fees_collected_cents, :reconciliation_adjustments_cents,
+          :net_paid_cents).map { |value| FinanceExports.money(value) }, "USD"]
       if full_tin
-        values << record&.tin
+        values << (Payout.find(row[:tax_snapshot_payout_id]).tax_information_tin if row[:tax_snapshot_status] == "W-9 snapshotted at payout")
       end
       values
     end

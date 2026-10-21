@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_000100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_000200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1367,6 +1367,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_000100) do
     t.datetime "updated_at", null: false
     t.jsonb "payee_snapshot", default: {}, null: false
     t.string "payee_approval_digest"
+    t.jsonb "tax_information_snapshot", default: {}, null: false
+    t.text "tax_information_tin"
+    t.string "tax_approval_digest"
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
     t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
@@ -1376,6 +1379,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_000100) do
     t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
     t.check_constraint "char_length(currency::text) = 3", name: "payouts_currency_length"
     t.check_constraint "jsonb_typeof(payee_snapshot) = 'object'::text", name: "payouts_payee_snapshot_object"
+    t.check_constraint "jsonb_typeof(tax_information_snapshot) = 'object'::text", name: "payouts_tax_snapshot_object"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "payouts_status_valid"
   end
 

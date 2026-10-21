@@ -5,7 +5,12 @@ class OrganizerTaxInformationUpdater
 
   def self.call(organization:, attributes:, actor:, request: nil)
     organization.with_lock do
-      ConnectedAccounts::Manager.ensure_no_check_in_flight!(organization)
+      if organization.payouts.where(status: [:pending, :processing]).exists?
+        raise TaxError, "A payout is in progress. You can change tax information after HåfaPass records it."
+      end
+      if EncryptionConfiguration.keys(environment: Rails.env).nil?
+        raise TaxError, "Tax information is unavailable until secure encryption is configured. Please try again later."
+      end
       values = attributes.to_h.symbolize_keys
       unless ActiveModel::Type::Boolean.new.cast(values.delete(:certified)) == true
         raise TaxError, "Confirm the tax certification before saving"

@@ -15,21 +15,62 @@ class TaxReports
   end
 
   def organizers
-    @organizers ||= Organization.includes(:organizer_tax_information).order(:id).filter_map do |organization|
+    @organizers ||= Organization.includes(:organizer_tax_information).order(:id).flat_map do |organization|
       event_ids = organization.events.select(:id)
       collected = collected_orders.where(event_id: event_ids)
       refunds = period_refunds.where(order_id: live_orders.where(event_id: event_ids).select(:id))
-      paid = paid_payouts.where(organization_id: organization.id).sum(:amount_cents)
-      next unless collected.exists? || refunds.exists? || paid.positive?
+      payouts = paid_payouts.where(organization_id: organization.id).order(:id).to_a
+      next [] unless collected.exists? || refunds.exists? || payouts.any?
 
-      tax = organization.organizer_tax_information
-      { organization_id: organization.id, organization_name: organization.name,
-        gross_ticket_proceeds_cents: OrderItem.item_ticket.where(order_id: collected.select(:id))
+      order_ids = collected.select(:id)
+      refund_ids = refunds.select(:id)
+      refund_lines = RefundItem.joins(:order_item).where(refund_id: refund_ids)
+      activity = {
+        gross_ticket_proceeds_cents: OrderItem.item_ticket.where(order_id: order_ids).sum("subtotal_cents - discount_cents"),
+        gross_add_on_proceeds_cents: OrderItem.item_add_on.where(order_id: order_ids).sum("subtotal_cents - discount_cents"),
+        gross_donation_proceeds_cents: OrderItem.item_donation.where(order_id: order_ids).sum("subtotal_cents - discount_cents"),
+        gross_other_proceeds_cents: OrderItem.where(order_id: order_ids, item_kind: [:merchandise, :concession])
           .sum("subtotal_cents - discount_cents"),
-        refunds_cents: refunds.sum(:amount_cents),
-        fees_collected_cents: fees(collected).sum(:amount_cents),
-        fees_refunded_cents: refunded_fees(refunds),
-        net_paid_cents: paid, tax_information: tax&.safe_json, w9_on_file: tax&.certified_at.present? }
+        gross_non_ticket_proceeds_cents: OrderItem.where(order_id: order_ids).where.not(item_kind: :ticket)
+          .sum("subtotal_cents - discount_cents"),
+        ticket_refunds_cents: refund_lines.where(order_items: { item_kind: OrderItem.item_kinds[:ticket] })
+          .sum("refund_items.amount_cents"),
+        non_ticket_refunds_cents: refund_lines.where.not(order_items: { item_kind: OrderItem.item_kinds[:ticket] })
+          .sum("refund_items.amount_cents"),
+        unallocated_refunds_cents: refunds.sum(:amount_cents) - RefundItem.where(refund_id: refund_ids).sum(:amount_cents),
+        fee_refunds_cents: refunded_fees(refunds),
+        fees_collected_cents: fees(collected).sum(:amount_cents)
+      }
+      groups = payouts.group_by(&:tax_information_snapshot)
+      groups = { nil => [] } if groups.empty?
+      total_paid = payouts.sum(&:amount_cents)
+      remainder = activity.dup
+      groups.to_a.each_with_index.map do |(snapshot, group), index|
+        paid = group.sum(&:amount_cents)
+        share = if index == groups.length - 1
+          remainder.dup
+        else
+          activity.transform_values { |amount| total_paid.positive? ? amount * paid / total_paid : 0 }
+        end
+        share.each { |key, amount| remainder[key] -= amount }
+        tax = if snapshot.nil?
+          organization.organizer_tax_information&.safe_json
+        elsif snapshot.present?
+          snapshot
+        end
+        adjustments = paid - share[:gross_ticket_proceeds_cents] - share[:gross_non_ticket_proceeds_cents] +
+          share[:ticket_refunds_cents] + share[:non_ticket_refunds_cents] + share[:unallocated_refunds_cents] +
+          share[:fees_collected_cents] -
+          share[:fee_refunds_cents]
+        { organization_id: organization.id, organization_name: organization.name,
+          tax_snapshot_status: snapshot.nil? ? "No paid payout" : snapshot.blank? ? "No W-9 on file at payout" : "W-9 snapshotted at payout",
+          tax_information: tax, w9_on_file: tax.present?, tax_snapshot_payout_id: group.first&.id,
+          current_w9_on_file: organization.organizer_tax_information&.certified_at.present?,
+          net_paid_cents: paid, refunds_cents: share[:ticket_refunds_cents] + share[:non_ticket_refunds_cents] +
+            share[:unallocated_refunds_cents],
+          fees_refunded_cents: share[:fee_refunds_cents], reconciliation_adjustments_cents: adjustments,
+          **share }
+      end
     end
   end
 
@@ -59,9 +100,8 @@ class TaxReports
   def live_orders
     # The shared scope is production-only; enforce live evidence in every env.
     captured = Payment.where(provider_environment: "live", status: [:succeeded, :partially_refunded, :refunded])
-    nonlive_stripe = Payment.where(provider: "stripe").where("provider_environment IS NULL OR provider_environment != ?", "live")
     Order.excluding_test_payments.where(status: [:completed, :partially_refunded, :refunded], currency: "usd")
-      .where(id: captured.select(:order_id)).where.not(id: nonlive_stripe.select(:order_id))
+      .where(id: captured.select(:order_id))
   end
 
   def collected_orders

@@ -56,13 +56,32 @@ RSpec.describe "Organizer tax information", type: :request do
       payout.update!(status: status)
       patch "/api/v1/organizer/tax_information", params: { tax_information: values }, headers: headers
       expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error"]).to include("check payout is in progress")
+      expect(response.parsed_body["error"]).to include("A payout is in progress")
       get "/api/v1/organizer/tax_information", headers: headers
       expect(response.parsed_body["edit_locked"]).to be(true)
     end
     payout.update!(status: :paid)
     patch "/api/v1/organizer/tax_information", params: { tax_information: values }, headers: headers
     expect(response).to have_http_status(:ok)
+  end
+
+  it "also blocks W-9 edits during a non-check payout" do
+    account = create(:connected_account, organization: organization, provider: "manual")
+    event = create(:event, organization: organization, organizer_profile: profile)
+    payout = create(:payout, organization: organization, event: event, connected_account: account,
+      settlement: create(:settlement, organization: organization, event: event), status: :processing)
+    patch "/api/v1/organizer/tax_information", params: { tax_information: values }, headers: headers
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to eq("A payout is in progress. You can change tax information after HåfaPass records it.")
+    expect(payout.reload).to be_status_processing
+  end
+
+  it "returns a clear error when staging encryption is not configured" do
+    allow(EncryptionConfiguration).to receive(:keys).and_return(nil)
+    patch "/api/v1/organizer/tax_information", params: { tax_information: values }, headers: headers
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("secure encryption is configured")
+    expect(organization.reload.organizer_tax_information).to be_nil
   end
 
   it "requires payout-management permission and does not allow choosing another organization by payload" do

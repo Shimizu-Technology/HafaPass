@@ -113,6 +113,27 @@ describe('AdminPayoutsPage', () => {
     }), expect.anything())
   })
 
+  it('requires confirmation for a changed W-9 approval before recording paid', async () => {
+    const user = userEvent.setup()
+    apiClient.patch.mockResolvedValue({ data: {} })
+    respond({ payouts: [{ ...payout, tax_approval_changed: true,
+      tax_information_snapshot: { legal_name: 'Original Payee', masked_tin: '***-**-5678' } }] })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/Original Payee/)).toBeInTheDocument()
+    await user.type(dialog.getByLabelText(/Transfer ID/), 'BOG-TRX-991')
+    await user.type(dialog.getByLabelText('Confirmation reference'), 'Statement line 4')
+    await user.type(dialog.getByLabelText('How you confirmed it'), 'Matched the transfer')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).not.toHaveBeenCalled()
+    await user.click(dialog.getByRole('checkbox', { name: 'This payout was already sent to the approved payee shown above' }))
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', expect.objectContaining({
+      evidence: expect.objectContaining({ approved_tax_payee_confirmed: true }),
+    }), expect.anything())
+  })
+
   it('shows an empty state for a filtered list', async () => {
     respond({ payouts: [] })
     renderAt('/admin/payouts?status=failed')

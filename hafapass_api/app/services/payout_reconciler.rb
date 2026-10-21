@@ -20,6 +20,7 @@ class PayoutReconciler
       # reservation and reserving a new payout cannot use competing snapshots.
       payout.organization.lock!
       payout.lock!
+      payout.connected_account.lock! if status == "paid"
       if payout.failure_code == "provider_result_conflict"
         conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
         unless conflict && normalized["conflict_audit_id"] == conflict.id
@@ -62,6 +63,9 @@ class PayoutReconciler
       if status == "paid" && !payout.payee_matches_approval? && normalized["approved_payee_confirmed"] != true
         raise ReconciliationError, Payout::PAYEE_CHANGED_MESSAGE
       end
+      if status == "paid" && !payout.tax_approval_matches? && normalized["approved_tax_payee_confirmed"] != true
+        raise ReconciliationError, Payout::TAX_APPROVAL_CHANGED_MESSAGE
+      end
 
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
       payout.update!(status: status, provider_payout_id: external_id,
@@ -102,6 +106,9 @@ class PayoutReconciler
     # from the approved payee the admin wrote the check to.
     if ActiveModel::Type::Boolean.new.cast(values["approved_payee_confirmed"])
       normalized["approved_payee_confirmed"] = true
+    end
+    if ActiveModel::Type::Boolean.new.cast(values["approved_tax_payee_confirmed"])
+      normalized["approved_tax_payee_confirmed"] = true
     end
     normalized
   rescue ArgumentError
