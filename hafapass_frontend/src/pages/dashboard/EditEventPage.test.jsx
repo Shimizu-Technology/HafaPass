@@ -213,6 +213,25 @@ it('shows organizer verification as one checklist step with a request action, an
   window.localStorage.removeItem('hafapass_organization_id')
 })
 
+it('lets an unverified organizer publish when verification only holds back sales, and says when tickets go on sale', async () => {
+  const draft = { ...event, organization_id: 1, status: 'draft', slug: 'workshop', publish_checklist: [
+    { code: 'title', label: 'Title', complete: true, required_to_publish: true },
+    { code: 'organizer_verified', label: 'Organizer identity verified', complete: false, required_to_publish: false },
+  ] }
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer_profile'
+    ? { verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z', organization: { role: 'owner' } } : draft }))
+  const user = userEvent.setup()
+  mount()
+  const checklist = await screen.findByRole('list', { name: 'Publishing checklist' })
+  expect(checklist).toHaveTextContent('You can publish now. Tickets go on sale once HåfaPass verifies your organization.')
+  expect(await within(checklist).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+  const publish = screen.getByRole('button', { name: 'Publish Event' })
+  expect(publish).toBeEnabled()
+  await user.click(publish)
+  expect(screen.getByRole('dialog')).toHaveTextContent('Tickets go on sale once HåfaPass verifies your organization.')
+  expect(screen.getByRole('dialog')).not.toHaveTextContent('purchase tickets')
+})
+
 describe('canonical saved event form', () => {
   const readyDraft = { ...event, status: 'draft', venue_city: 'Tamuning', max_capacity: 300,
     description: 'Keep this event description', ticket_types: [{ id: 4, name: 'Saved admission' }],

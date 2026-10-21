@@ -35,12 +35,11 @@ class LivePilot
     event.live_pilot_reviews.approvals.order(created_at: :desc).first
   end
 
-  def self.current_run(event, at: Time.current)
-    approval = active_approval(event, at: at)
-    return unless approval
-
-    event.live_pilot_runs.where(live_pilot_review_id: approval.id, status: [:active, :paused])
-      .order(created_at: :desc).first
+  # The open run is found by its own status. Gate I approvals are optional
+  # records that can lapse (deploys, event edits); a run an admin started must
+  # stay manageable (pause, resume, complete) regardless.
+  def self.current_run(event, **)
+    event.live_pilot_runs.where(status: [:active, :paused]).order(created_at: :desc).first
   end
 
   def self.active_run(event, at: Time.current)

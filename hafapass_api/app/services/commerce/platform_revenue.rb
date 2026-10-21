@@ -22,7 +22,7 @@ module Commerce
     end
 
     def initialize(orders)
-      @orders = orders.where(status: SETTLED_STATUSES)
+      @orders = orders.excluding_test_payments.where(status: SETTLED_STATUSES)
     end
 
     def call

@@ -63,7 +63,7 @@ class OrganizationFinanceSummary
   # Events with any money activity. Calculating every draft would add work
   # without adding a row an organizer can act on.
   def financial_events
-    settled = Order.where(status: SETTLED_ORDER_STATUSES).select(:event_id)
+    settled = Order.excluding_test_payments.where(status: SETTLED_ORDER_STATUSES).select(:event_id)
     organization.events
       .where(id: settled).or(organization.events.where(id: organization.settlements.select(:event_id)))
       .or(organization.events.where(id: organization.payouts.select(:event_id)))
@@ -78,7 +78,7 @@ class OrganizationFinanceSummary
     payouts = organization.payouts.where(event_id: ids).group(:event_id, :status).sum(:amount_cents)
     @sales = item_sales(ids)
     @refunded_proceeds = refunded_proceeds(ids)
-    @buyer_fees = Order.where(event_id: ids, status: SETTLED_ORDER_STATUSES).group(:event_id).sum(:service_fee_cents)
+    @buyer_fees = Order.excluding_test_payments.where(event_id: ids, status: SETTLED_ORDER_STATUSES).group(:event_id).sum(:service_fee_cents)
     events.map { |event| event_row(event, latest[event.id], payouts) }
   end
 
@@ -86,6 +86,7 @@ class OrganizationFinanceSummary
   # organizer proceeds are built from, so the breakdown reconciles.
   def item_sales(event_ids)
     OrderItem.joins(:order).where(orders: { event_id: event_ids, status: SETTLED_ORDER_STATUSES })
+      .merge(Order.excluding_test_payments)
       .group("orders.event_id").pluck(Arel.sql("orders.event_id, SUM(order_items.subtotal_cents), SUM(order_items.discount_cents)"))
       .to_h { |event_id, subtotal, discount| [event_id, [subtotal.to_i, discount.to_i]] }
   end
@@ -93,6 +94,7 @@ class OrganizationFinanceSummary
   def refunded_proceeds(event_ids)
     RefundItem.joins(refund: :order)
       .where(refunds: { status: Refund.statuses[:succeeded] }, orders: { event_id: event_ids, status: SETTLED_ORDER_STATUSES })
+      .merge(Order.excluding_test_payments)
       .group("orders.event_id").sum(:organizer_proceeds_cents)
   end
 
@@ -266,7 +268,7 @@ class OrganizationFinanceSummary
   # Settled orders with no line items (the ledger backfill skipped orders
   # with no tickets). Statements cannot include them; the page says so.
   def orders_without_items_count
-    Order.where(event_id: organization.events.select(:id), status: SETTLED_ORDER_STATUSES)
+    Order.excluding_test_payments.where(event_id: organization.events.select(:id), status: SETTLED_ORDER_STATUSES)
       .where.not(id: OrderItem.select(:order_id)).count
   end
 
@@ -279,7 +281,7 @@ class OrganizationFinanceSummary
   # creation-time snapshot. NULL means an order from before the snapshot,
   # when processing was deducted from organizer proceeds.
   def processing_fee_bearers
-    counts = Order.where(event_id: organization.events.select(:id), status: SETTLED_ORDER_STATUSES)
+    counts = Order.excluding_test_payments.where(event_id: organization.events.select(:id), status: SETTLED_ORDER_STATUSES)
       .group(:processing_fee_bearer_snapshot).count
     { platform: counts.fetch("platform", 0), organizer: counts.fetch("organizer", 0), legacy: counts.fetch(nil, 0) }
   end

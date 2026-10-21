@@ -39,7 +39,15 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
 
     # The row lock serializes concurrent switches and edits; the slower
     # readiness and Stripe checks above run before taking it.
+    refusal = nil
     saved = settings.with_lock do
+      # with_lock reloaded the row. A mode change that was not checked above
+      # (someone else switched meanwhile) or simulate in production is refused.
+      if requested_mode && requested_mode != settings.payment_mode &&
+          (!switching || (requested_mode == "simulate" && Rails.env.production?))
+        refusal = "The payment mode changed while you were saving. Reload the page and try again."
+        next false
+      end
       settings.assign_attributes(settings_params)
       changes = settings.changes.except("updated_at")
       fee_changes = changes.slice(*FEE_TERM_FIELDS)
@@ -65,7 +73,9 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       end
       true
     end
-    if saved
+    if refusal
+      render json: { error: refusal }, status: :conflict
+    elsif saved
       mode_label = { "simulate" => "Simulate", "test" => "Test (Stripe Sandbox)", "live" => "Live (Real Money)" }
       Rails.logger.info "\U0001f527 Payment mode changed to: #{mode_label[settings.payment_mode]} by #{@current_user.email}"
       render json: settings_json(settings)

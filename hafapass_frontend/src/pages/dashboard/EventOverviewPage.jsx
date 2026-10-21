@@ -27,9 +27,9 @@ const statusCopy = {
 // verification state to show if the organizer profile cannot be loaded.
 const verificationReasons = { organizer_not_verified: 'unverified', organizer_verification_requested: 'pending', organizer_paused: 'suspended' }
 
-// The server message may repeat the "Visible but not on sale yet" headline.
+// The server message may repeat the headline shown above it.
 const salesDetail = message => {
-  const detail = (message || '').replace(/^Visible but not on sale yet[:.]?\s*/i, '')
+  const detail = (message || '').replace(/^(Visible but not on sale yet|Sales paused by HåfaPass)[:.]?\s*/i, '')
   return detail && detail[0].toUpperCase() + detail.slice(1)
 }
 
@@ -159,7 +159,7 @@ function EventOverviewSession({ id, identity }) {
   // Older servers send no sales_status; their published events are on sale.
   const salesStatus = event.sales_status
   const onSale = !salesStatus || salesStatus.on_sale === true
-  const salesPaused = salesStatus?.reason === 'event_paused'
+  const salesPaused = ['event_paused', 'sales_paused'].includes(salesStatus?.reason)
   const verificationState = verificationReasons[salesStatus?.reason]
   const verificationProfile = verificationState && (profile.status === 'ready' ? profile.data
     : profile.status === 'error' ? { verification_status: verificationState } : null)
@@ -224,9 +224,10 @@ function EventOverviewSession({ id, identity }) {
             ? <p className="mt-1 flex items-center gap-2 text-sm text-neutral-700"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-emerald-600" />Your event is live. Share it and get ready for the door.</p>
             : <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
               <p className="flex items-start gap-2 font-semibold"><CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{salesPaused ? 'Sales paused by HåfaPass.' : 'Visible but not on sale yet.'}</p>
-              {salesPaused
-                ? event.policy_hold?.reason && <p className="mt-1 whitespace-pre-wrap pl-6 [overflow-wrap:anywhere]">{event.policy_hold.reason}</p>
-                : salesDetail(salesStatus.message) && <p className="mt-1 pl-6">{salesDetail(salesStatus.message)}</p>}
+              {(() => {
+                const detail = salesStatus.reason === 'event_paused' && event.policy_hold?.reason ? event.policy_hold.reason : salesDetail(salesStatus.message)
+                return detail && <p className="mt-1 whitespace-pre-wrap pl-6 [overflow-wrap:anywhere]">{detail}</p>
+              })()}
               {verificationProfile && <VerificationNotice profile={verificationProfile} beginRequest={beginRequest} showSummary={false} inline className="mt-2 pl-6" />}
             </div>}
           <div className="mt-4 flex flex-wrap gap-2">

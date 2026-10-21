@@ -16,6 +16,7 @@ vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/StripeProvider', () => ({ default: ({ children }) => children }))
 vi.mock('../components/PaymentForm', () => ({ default: () => <p>Payment form</p> }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }))
+vi.mock('../utils/workspace', async importOriginal => ({ ...(await importOriginal()), useAccountRole: () => null }))
 vi.mock('../utils/marketplaceAttribution', () => ({ anonymousId: () => 'test-anonymous', currentAttribution: () => ({}), trackFunnel: vi.fn() }))
 
 function RetainedRoute() {
@@ -96,6 +97,36 @@ describe('checkout navigation', () => {
     // 5% of $50.00 + 2 × $1.00 = $4.50, so the buyer total is $54.50.
     expect(screen.getByText('$4.50')).toBeInTheDocument()
     expect(screen.getByText('$54.50')).toBeInTheDocument()
+  })
+
+  it('tells non-admin buyers that paid ticket sales open soon while production is in test mode', async () => {
+    const event = { id: 40, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, service_fee_cents: 0, all_in_price_cents: 2500 }] }
+    apiClient.get.mockImplementation(url => url === '/config'
+      ? Promise.resolve({ data: { payment_mode: 'test', paid_checkout_admin_only: true, buyer_terms_version: 'buyer-v1', service_fee_percent: '0', service_fee_flat_cents: 0, processing_fee_bearer: 'platform' } })
+      : new Promise(() => {}))
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+    expect(await screen.findByText('Paid ticket sales open soon')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /checkout.continueToPayment/ })).not.toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
+  it('shows the server refusal plainly when paid checkout is not open yet', async () => {
+    const event = { id: 40, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, service_fee_cents: 0, all_in_price_cents: 2500 }] }
+    apiClient.get.mockImplementation(url => url === '/config'
+      ? Promise.resolve({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_percent: '0', service_fee_flat_cents: 0, processing_fee_bearer: 'platform' } })
+      : new Promise(() => {}))
+    apiClient.post.mockRejectedValue({ response: { status: 422, data: { error: 'Paid ticket sales open soon' } } })
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+    await user.type(await screen.findByLabelText(/checkout.fullName|name/i), 'Ana Cruz')
+    await user.type(screen.getByLabelText(/email/i), 'ana@example.test')
+    for (const box of screen.queryAllByRole('checkbox')) await user.click(box)
+    await user.click(screen.getByRole('button', { name: /checkout.continueToPayment/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Paid ticket sales open soon')
   })
 
   it('charges the flat fee only on paid tickets in a mixed order', async () => {

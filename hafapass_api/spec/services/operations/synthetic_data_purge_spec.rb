@@ -192,13 +192,26 @@ RSpec.describe Operations::SyntheticDataPurge do
     end
 
     it "deletes pending and failed queue jobs but keeps recurring tasks and their jobs" do
-      pending = SolidQueue::Job.create!(queue_name: "default", class_name: "MessageDeliveryJob", arguments: { "arguments" => [1] })
+      pending = SolidQueue::Job.create!(queue_name: "default", class_name: "MessageDeliveryJob", arguments: { "arguments" => [1] },
+        concurrency_key: "MessageDeliveryJob/1")
       recurring_job = SolidQueue::Job.create!(queue_name: "default", class_name: "RuntimeRecoveryJob", arguments: {})
       SolidQueue::RecurringExecution.create!(job_id: recurring_job.id, task_key: "runtime_recovery", run_at: Time.current)
       task = SolidQueue::RecurringTask.create!(key: "runtime_recovery_spec", schedule: "every minute", class_name: "RuntimeRecoveryJob")
 
+      SolidQueue::Semaphore.find_or_create_by!(key: "MessageDeliveryJob/1") do |semaphore|
+        semaphore.value = 0
+        semaphore.expires_at = 1.hour.from_now
+      end
+      unless SolidQueue::BlockedExecution.exists?(job_id: pending.id)
+        SolidQueue::ReadyExecution.where(job_id: pending.id).delete_all
+        SolidQueue::BlockedExecution.create!(job_id: pending.id, queue_name: "default", priority: 0,
+          concurrency_key: "MessageDeliveryJob/1", expires_at: 1.hour.from_now)
+      end
+
       result = purge
 
+      expect(SolidQueue::BlockedExecution.count).to eq(0)
+      expect(SolidQueue::Semaphore.count).to eq(0)
       expect(SolidQueue::Job.where(id: pending.id)).to be_empty
       expect(SolidQueue::Job.where(id: recurring_job.id)).to exist
       expect(SolidQueue::RecurringTask.where(id: task.id)).to exist

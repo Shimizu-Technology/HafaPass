@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { organizerChecklist } from './organizerChecklist'
+import { blocksPublishing, organizerChecklist } from './organizerChecklist'
 
 describe('organizer launch checklist', () => {
   it('keeps concrete steps and drops retired or unknown review codes', () => {
@@ -18,7 +18,13 @@ describe('organizer launch checklist', () => {
   })
 
   it('uses plain payout copy', () => {
-    expect(organizerChecklist([{ code: 'payout', complete: false }])[0]).toMatchObject({ label: 'Add payout details for paid tickets', href: '/dashboard/settings' })
+    expect(organizerChecklist([{ code: 'payout', complete: false }])[0]).toMatchObject({ label: 'Add your payout details in Settings → Payouts', href: '/dashboard/settings' })
     expect(organizerChecklist([{ code: 'payout', complete: true }])[0].label).toBe('Payout details on file, or not needed for free tickets')
+  })
+
+  it('only lets items marked not required to publish through', () => {
+    expect(blocksPublishing({ code: 'organizer_verified', required_to_publish: false })).toBe(false)
+    expect(blocksPublishing({ code: 'organizer_verified', required_to_publish: true })).toBe(true)
+    expect(blocksPublishing({ code: 'title' })).toBe(true)
   })
 })

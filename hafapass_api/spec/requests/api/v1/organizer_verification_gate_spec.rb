@@ -22,11 +22,11 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
     allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
   end
 
-  def checkout
+  def checkout(headers: {})
     post "/api/v1/orders", params: {
       event_id: event.id, buyer_email: "buyer@example.com", buyer_name: "Jane Buyer", terms_accepted: true,
       terms_version: PolicyRegistry.buyer_terms[:version], line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }]
-    }.to_json, headers: { "Content-Type" => "application/json" }
+    }.to_json, headers: { "Content-Type" => "application/json" }.merge(headers)
   end
 
   it "goes from requested to selling with one admin action, and pauses with an optional note" do
@@ -58,7 +58,11 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
       .and_return(OpenStruct.new(id: "pi_test_production_qa", client_secret: "pi_test_production_qa_secret_x",
         allowed_payment_method_types: ["card"], payment_method_types: ["card"]))
     allow(StripeService).to receive(:publishable_key).and_return("pk_test_qa")
+    # Production test mode is a QA tool: only platform admins buy paid tickets.
     checkout
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to eq("Paid ticket sales open soon")
+    checkout(headers: auth_headers(admin))
     expect(response).to have_http_status(:created), response.body
     expect(Order.last.payments.sole).to have_attributes(provider_environment: "test",
       provider_platform_account_id: "acct_testplatform")
@@ -79,7 +83,10 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
     expect(setup.find { |item| item["key"] == "policy_register" }).to include("configured" => true,
       "message" => "Checkout is off until you approve the production policy register.")
 
-    post "/api/v1/admin/platform_capabilities/policy_register/quick_approve", headers: auth_headers(admin)
+    item = setup.find { |entry| entry["key"] == "policy_register" }
+    expect(item).to include("requires_draft_acknowledgment" => PolicyRegistry.draft?)
+    post "/api/v1/admin/platform_capabilities/policy_register/quick_approve", params: { draft_policies_acknowledged: true },
+      headers: auth_headers(admin)
     expect(response).to have_http_status(:created), response.body
     expect(PlatformCapabilities.enabled?("policy_register")).to be(true)
     expect(AuditLog.where(action: %w[platform_capability.submitted platform_capability.approved], actor_user: admin).count)

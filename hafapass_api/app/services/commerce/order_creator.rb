@@ -8,6 +8,7 @@ module Commerce
     SETUP_LEASE_DURATION = 1.minute
     PROVIDER_REQUEST_TIMEOUT = 30.seconds
 
+    PAID_SALES_OPEN_SOON = "Paid ticket sales open soon"
     class CheckoutError < StandardError; end
 
     Result = Data.define(:order, :payment, :payment_intent, :guest_access_token)
@@ -243,9 +244,14 @@ module Commerce
       unless requires_payment
         raise CheckoutError, "A recorded payment is required for paid tickets"
       end
-      if (payment_provider.blank? || payment_provider == "stripe") && SiteSetting.instance.simulate_mode?
+      stripe = payment_provider.blank? || payment_provider == "stripe"
+      if stripe && SiteSetting.instance.simulate_mode?
         raise CheckoutError, "Paid tickets are not on sale yet: HåfaPass has not turned on payments"
       end
+      # Production test mode is a QA tool: only platform admins buy paid
+      # tickets with test cards, so no one else holds a test-paid ticket that
+      # a door would admit. Free tickets stay open to everyone.
+      raise CheckoutError, PAID_SALES_OPEN_SOON if stripe && SiteSetting.instance.test_mode? && !user&.admin?
       unless event.organization.payout_ready?
         raise CheckoutError, "Paid tickets are not on sale until the organizer adds payout details"
       end

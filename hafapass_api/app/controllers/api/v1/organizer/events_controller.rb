@@ -11,7 +11,8 @@ module Api
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(:organization, :event_seating_configuration, ticket_types: :pricing_tiers).order(created_at: :desc, id: :desc)
+            .includes(:organization, :organizer_profile, :event_seating_configuration, ticket_types: :pricing_tiers)
+            .order(created_at: :desc, id: :desc)
           if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
             assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner]).select(:event_id)
             events = events.where(id: assigned_ids)
@@ -225,7 +226,7 @@ module Api
 
         def stats
           tickets = @event.tickets
-          orders = @event.orders.where(status: [:completed, :partially_refunded, :refunded])
+          orders = @event.orders.excluding_test_payments.where(status: [:completed, :partially_refunded, :refunded])
           financials = Commerce::LedgerTotals.call(orders)
 
           total_tickets_sold = tickets.where.not(status: :cancelled).count
@@ -283,7 +284,7 @@ module Api
         end
 
         def attendees
-          tickets = @event.tickets.includes(:ticket_type, :order).order(created_at: :desc)
+          tickets = @event.tickets.includes(:ticket_type, order: :payments).order(created_at: :desc)
           pagy, paginated_tickets = paginate(tickets)
 
           render json: {
@@ -295,7 +296,8 @@ module Api
                 ticket_type: ticket.ticket_type.name,
                 status: ticket.status,
                 checked_in_at: ticket.checked_in_at,
-                order_id: ticket.order_id
+                order_id: ticket.order_id,
+                test_payment: ticket.order.test_payment?
               }
             },
             meta: pagination_meta(pagy)
@@ -518,7 +520,7 @@ module Api
             transfers_enabled: event.transfers_available?,
             assigned_seating: event.assigned_seating?,
             policy_hold: event.policy_hold_summary,
-            sales_status: event.sales_status,
+            sales_status: event.sales_status(context: (@sales_context ||= Event.sales_context)),
             supported_locales: event.supported_locales,
             localized_content: event.localized_content,
             created_at: event.created_at,

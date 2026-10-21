@@ -70,7 +70,7 @@ class EventLifecycle
   def validate_action!
     if %i[publish resume].include?(action)
       checklist = event.publish_checklist(at: at)
-      unless checklist.all? { |item| item[:complete] }
+      unless checklist.all? { |item| item[:complete] || !item[:required_to_publish] }
         raise TransitionError.new("Complete the publishing checklist before publishing", checklist: checklist)
       end
     end

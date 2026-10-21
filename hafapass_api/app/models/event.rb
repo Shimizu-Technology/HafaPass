@@ -204,10 +204,17 @@ class Event < ApplicationRecord
 
   # Why a published event is not selling, in organizer language. nil when the
   # event can sell. Checked in the order buyers and organizers would fix them.
-  def sales_blocker(at: Time.current)
+  # Platform facts read once per request when many events are serialized.
+  def self.sales_context
+    { policy_approved: !Rails.env.production? || PolicyRegistry.production_approved?,
+      stripe_enabled: SiteSetting.instance.stripe_enabled?, payout_ready: {} }
+  end
+
+  def sales_blocker(at: Time.current, context: nil)
     return :not_published unless published?
     return :event_paused if policy_hold?
-    return :sales_closed if sales_suspended_at.present? || (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
+    return :sales_paused if sales_suspended_at.present?
+    return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
 
     unless organizer_sales_verified?
       return :organizer_paused if organizer_profile.verification_status_suspended?
@@ -215,10 +222,15 @@ class Event < ApplicationRecord
 
       return :organizer_not_verified
     end
-    return :platform_setup if Rails.env.production? && !PolicyRegistry.production_approved?
+    context ||= self.class.sales_context
+    return :platform_setup unless context[:policy_approved]
     return nil unless paid_event?
-    return :payments_off if Rails.env.production? && !SiteSetting.instance.stripe_enabled?
-    return :payout_details_missing unless organization.payout_ready?
+    return :payments_off if Rails.env.production? && !context[:stripe_enabled]
+
+    payout_ready = context[:payout_ready].fetch(organization_id) do
+      context[:payout_ready][organization_id] = organization.payout_ready?
+    end
+    return :payout_details_missing unless payout_ready
 
     nil
   end
@@ -226,18 +238,31 @@ class Event < ApplicationRecord
   SALES_STATUS_MESSAGES = {
     not_published: "Not on sale: the event is not published.",
     event_paused: "Visible but not on sale: sales paused by HåfaPass.",
-    sales_closed: "Not on sale: sales are closed or paused for this event.",
+    sales_closed: "Not on sale: sales for this event have ended.",
     organizer_not_verified: "Visible but not on sale yet: waiting for HåfaPass to verify your organization before tickets go on sale.",
     organizer_verification_requested: "Visible but not on sale yet: verification requested. HåfaPass will review it soon.",
     organizer_paused: "Visible but not on sale: HåfaPass paused sales for your organization.",
     platform_setup: "Visible but not on sale yet: HåfaPass is finishing platform setup.",
     payments_off: "Visible but not on sale yet: HåfaPass has not turned on payments.",
-    payout_details_missing: "Visible but not on sale yet: add payout details (a check payee and mailing address) for paid tickets."
+    payout_details_missing: "Visible but not on sale yet: add your payout details in Settings → Payouts for paid tickets."
   }.freeze
 
-  def sales_status(at: Time.current)
-    reason = sales_blocker(at: at)
-    { on_sale: reason.nil?, reason: reason&.to_s, message: reason ? SALES_STATUS_MESSAGES.fetch(reason) : "On sale." }
+  GATE_I_SUSPENSION_PREFIX = "[GATE I] "
+
+  def sales_status(at: Time.current, context: nil)
+    reason = sales_blocker(at: at, context: context)
+    { on_sale: reason.nil?, reason: reason&.to_s, message: sales_status_message(reason) }
+  end
+
+  # Gate I pauses are placed by HåfaPass; seating pauses by the organizer.
+  def sales_status_message(reason)
+    return "On sale." unless reason
+    return SALES_STATUS_MESSAGES.fetch(reason) unless reason == :sales_paused
+
+    text = sales_suspension_reason.to_s
+    by_hafapass = text.start_with?(GATE_I_SUSPENSION_PREFIX)
+    detail = text.delete_prefix(GATE_I_SUSPENSION_PREFIX).strip.presence
+    [by_hafapass ? "Sales paused by HåfaPass" : "Sales paused", detail].compact.join(": ") + "."
   end
 
   def policy_hold?
@@ -295,7 +320,11 @@ class Event < ApplicationRecord
     configured_inventory = ticket_types.sum(&:quantity_available)
     [
       checklist_item("launch_scope", "Event features supported for this release", LaunchCapabilities.event_supported?(self)),
-      checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?),
+      # In production an unverified organizer may publish (to preview and
+      # share); tickets go on sale once HåfaPass verifies them. Elsewhere
+      # verification is still required to publish.
+      checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?,
+        required_to_publish: !Rails.env.production?),
       checklist_item("policy_accepted", "Organizer policy accepted", organizer_profile.policy_accepted?),
       checklist_item("title", "Event title added", title.present?),
       checklist_item("description", "Event description added", description.present?),
@@ -313,7 +342,7 @@ class Event < ApplicationRecord
   end
 
   def ready_to_publish?(at: Time.current)
-    publish_checklist(at: at).all? { |item| item[:complete] }
+    publish_checklist(at: at).all? { |item| item[:complete] || !item[:required_to_publish] }
   end
 
   def live_money_proof_candidate_configured?
@@ -420,8 +449,8 @@ class Event < ApplicationRecord
     errors.add(:localized_content, "has an invalid translation shape") unless valid
   end
 
-  def checklist_item(code, label, complete)
-    { code: code, label: label, complete: !!complete }
+  def checklist_item(code, label, complete, required_to_publish: true)
+    { code: code, label: label, complete: !!complete, required_to_publish: required_to_publish }
   end
 
   def valid_ticket_sales_windows?(at: Time.current)

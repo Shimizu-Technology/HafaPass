@@ -23,9 +23,9 @@ Related: [Changing the public domain](DOMAIN_CUTOVER.md),
 | Provider rehearsal | `HAFAPASS_PROVIDER_REHEARSAL` turns on Stripe test / Resend allowlists | Ignored, and **boot fails** if it is true. |
 | Email | Simulated, or Resend to rehearsal recipients | Real Resend email, but only after the `resend_production` capability is approved. Until then every email fails as "Production email is disabled". |
 | Checkout | Open | Refused until the production policy register is approved (one click on the admin dashboard). |
-| Selling | Not gated beyond publishing | One gate: HåfaPass **verifies the organizer** (one admin action on the admin dashboard). Organizers press **Request verification**; admins get an email and see the request on the dashboard. Setting the organizer to suspended ("Pause all sales") stops every event of theirs from selling; an admin can also pause a single event. Paid tickets also need test or live payments turned on and the organizer's payout details on file. Verification is not tied to deploys or event edits. |
+| Selling | Verification required to publish | One gate: HåfaPass **verifies the organizer** (one admin action on the admin dashboard). Unverified organizers may publish, but tickets don't sell until verified. Organizers press **Request verification**; admins get an email and see the request on the dashboard. Setting the organizer to suspended ("Pause all sales") stops every event of theirs from selling; an admin can also pause a single event. Paid tickets also need test or live payments turned on and the organizer's payout details on file. Verification is not tied to deploys or event edits. |
 | Launch-gate reviews (Gates E–J) | Optional | Still available as optional records in the admin pages; they never block publishing or sales. |
-| Paid test-mode tickets | Valid for QA | Work end to end with Stripe test cards (real cards are declined in test mode), including at the door, while payments stay in test mode. After the switch to live they stop working at the door, and they are never counted in settlements or payouts. |
+| Paid test-mode tickets | Valid for QA | Only platform admins can buy them (with Stripe test cards). They work at the door while payments stay in test mode, stop working after the switch to live, and are never counted in revenue, analytics, exports, settlements or payouts. |
 | Ticket PDFs | "TEST TICKET - REHEARSAL ONLY" | "EVENT TICKET" |
 | "Test" banner | Always shown | Shown only while payments are in test mode; hidden once live. |
 | Clerk | Requires `pk_test_`/`sk_test_` | Accepts either. Use the Clerk **production** instance (`pk_live_`/`sk_live_`). `CLERK_AUTHORIZED_PARTIES` must be set explicitly (no fallback to `ALLOWED_ORIGINS`) and contain only HTTPS origins. |
@@ -133,7 +133,7 @@ CONFIRM=PURGE_SYNTHETIC_DATA KEEP_USER_EMAILS=shimizutechnology@gmail.com bin/ra
 ```
 
 Run it after the admin has signed in once through the production Clerk
-instance (step 2), so the admin's new user row exists; rows sharing a kept
+instance (step 2), so the admin's new user row exists. Run it before the approvals and the test-mode purchase below, so that only real data remains; rows sharing a kept
 email are all kept. It empties every business table in one transaction and keeps
 `schema_migrations`, `ar_internal_metadata`, `site_settings`, queue/runtime
 tables and the listed users. It refuses, changing nothing, if any payment was
@@ -149,26 +149,37 @@ files in S3 and Clerk accounts of deleted users are not touched.
 The admin dashboard shows a red banner for each item that still blocks
 production, with an **Approve now** button (one admin, one click, audited):
 
-1. **Production policy register**: checkout is off until approved. A new policy version needs a new approval.
+1. **Production policy register**: checkout is off until approved. While the policies are still drafts, tick the acknowledgment ("I'm approving these draft policies for launch before legal review…"); it is recorded on the approval and in the audit log. Unfilled placeholders block approval. A new policy version needs a new approval.
 2. **Production email (Resend)**: ticket and order emails are off until approved. The button stays disabled until the Resend variables are set.
+
+These one-click approvals last a year. Thirty days before they expire, the
+dashboard shows an amber banner and `/api/v1/readiness` reports
+`expiring_soon`; approve again then.
 
 **Stripe live payments** (`stripe_live`) keeps its evidence form in Admin →
 Provider readiness. Submit and approve it yourself once every live Stripe
 variable is set and the service runs as production.
 
-### 9. Verify organizers
+### 9. Test-mode QA purchase (admin only)
 
-1. Organizers press **Request verification** (on their dashboard or event page). Admins get an email, and the organizer appears under **Organizers waiting for verification** on the admin dashboard.
+1. **Admin → Settings → Payment mode** → **Switch to test mode**.
+2. While in test mode only platform admins can buy paid tickets; everyone else sees "Paid ticket sales open soon". Free tickets work for everyone.
+3. As the admin, buy a paid ticket with a Stripe test card (for example 4242 4242 4242 4242; real cards are declined in test mode) and scan it at the door. Test tickets are admitted while the platform stays in test mode.
+4. Test-paid orders appear in order lists marked **Test** and are never counted in revenue, analytics, exports, settlements or payouts.
+
+### 10. Switch to live payments
+
+1. When the live checklist is all green (use **Check again** after changing Render settings), choose **Switch to live payments** and confirm. Every switch is audited with the admin, time and platform account.
+2. From then on real cards are charged, and tickets bought with test cards stop working at the door.
+3. **Door staff: refresh the scanner (re-download the event) after every mode switch.** The offline manifest records the payment mode, so a switch produces a new manifest version.
+4. Orders keep the mode they were charged in. Refunds, fee lookups and webhooks for an old test order keep using test credentials, and the reverse.
+
+### 11. Verify real organizers
+
+1. Organizers can publish before they are verified (to preview and share); their events show "Visible but not on sale yet" and cannot sell. They press **Request verification**; admins get an email (sent once a day at most) and see them under **Organizers waiting for verification** on the admin dashboard, which is the source of truth (an organizer with no events yet appears there but is not emailed).
 2. Press **Verify** (optional note). Their published events can sell right away; free events follow the same rule.
-3. **Pause all sales** on a verified organizer stops all their events from selling (the events stay visible) until you verify them again. Pause a single event from Admin → Events (**Pause sales** / **Resume sales**).
-4. Paid tickets also need payout details on file for the organization.
-
-### 10. Payment mode
-
-1. **Admin → Settings → Payment mode** shows the current mode and a checklist for the other mode, with a **Check again** button.
-2. Switch to **test mode** first and buy a paid ticket with a Stripe test card (for example 4242 4242 4242 4242). Real cards are declined in test mode. The ticket works at the door while you stay in test mode.
-3. When the live checklist is all green, choose **Switch to live payments** and confirm. From then on real cards are charged, and tickets bought with test cards stop working at the door. Every switch is audited with the admin, time and platform account.
-4. Orders keep the mode they were charged in. Refunds, fee lookups and webhooks for an old test order keep using test credentials after the switch, and the reverse. Switching back to test mode keeps paid events selling, but only test cards work.
+3. **Pause all sales** on a verified organizer stops every event of theirs from selling (events stay visible); they appear under **Sales paused** with **Resume sales**. Pause a single event from Admin → Events (**Pause sales** / **Resume sales**). Admin → Events also shows **Resume sales** for any event whose sales a bounded-pilot run paused.
+4. Paid tickets also need payout details on file (Settings → Payouts).
 
 ## Boot failures
 

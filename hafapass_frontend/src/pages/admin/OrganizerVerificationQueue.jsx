@@ -13,6 +13,7 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const pausing = action === 'pause'
+  const resuming = action === 'resume'
   const name = organizer.business_name
 
   const submit = async submitEvent => {
@@ -24,7 +25,7 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
     const body = { verification_status: pausing ? 'suspended' : 'verified', ...(note.trim() ? { verification_notes: note.trim() } : {}) }
     try {
       await apiClient.patch(`/admin/organizer_profiles/${organizer.profile_id}`, body, request.config)
-      if (request.current()) onSaved(pausing ? `All sales are paused for ${name}.` : `${name} is verified. Their published events can sell tickets.`)
+      if (request.current()) onSaved(pausing ? `All sales are paused for ${name}.` : resuming ? `Sales resumed for ${name}.` : `${name} is verified. Their published events can sell tickets.`)
     } catch (failure) {
       if (request.handleError(failure) || !request.current()) return
       setError(errorMessage(failure, 'Nothing changed. Check your connection and try again.'))
@@ -33,11 +34,11 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
 
   return <Dialog labelledBy={titleId} busy={busy} onClose={onClose} className="max-w-lg">
     <form noValidate onSubmit={submit}>
-      <h2 id={titleId} className="text-lg font-semibold text-neutral-900 [overflow-wrap:anywhere]">{pausing ? `Pause all sales for ${name}?` : `Verify ${name}?`}</h2>
+      <h2 id={titleId} className="text-lg font-semibold text-neutral-900 [overflow-wrap:anywhere]">{pausing ? `Pause all sales for ${name}?` : resuming ? `Resume sales for ${name}?` : `Verify ${name}?`}</h2>
       {pausing
         ? <p className="mt-2 text-sm text-neutral-700">Their events stay visible but stop selling until you verify them again. Tickets already sold stay valid.</p>
         : <>
-          <p className="mt-2 text-sm text-neutral-700">Their published events can sell tickets right away.</p>
+          <p className="mt-2 text-sm text-neutral-700">{resuming ? 'Their published events can sell tickets again right away.' : 'Their published events can sell tickets right away.'}</p>
           {organizer.payout_ready === false && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">They have not added payout details yet. Paid tickets won’t sell until they do; free tickets can.</p>}
         </>}
       <label className="mt-4 block text-sm font-medium text-neutral-900">
@@ -48,7 +49,7 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
       <p className="mt-3 text-xs text-content-muted">Recorded in the audit log under your name.</p>
       <div className="mt-6 flex flex-wrap justify-end gap-3">
         <button type="button" disabled={busy} onClick={onClose} className="btn-secondary">Cancel</button>
-        <button type="submit" disabled={busy} className={pausing ? 'btn-danger' : 'btn-primary'}>{busy ? 'Saving…' : pausing ? 'Pause all sales' : 'Verify'}</button>
+        <button type="submit" disabled={busy} className={pausing ? 'btn-danger' : 'btn-primary'}>{busy ? 'Saving…' : pausing ? 'Pause all sales' : resuming ? 'Resume sales' : 'Verify'}</button>
       </div>
     </form>
   </Dialog>
@@ -56,7 +57,7 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
 
 // Organizers waiting for HåfaPass verification, and those already verified.
 // Self-contained so it can move to its own admin page later.
-export default function OrganizerVerificationQueue({ awaiting = [], verified = [], beginRequest, onChanged }) {
+export default function OrganizerVerificationQueue({ awaiting = [], verified = [], suspended = [], beginRequest, onChanged }) {
   const [dialog, setDialog] = useState(null)
   const [notice, setNotice] = useState('')
 
@@ -71,7 +72,7 @@ export default function OrganizerVerificationQueue({ awaiting = [], verified = [
     {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 lg:col-span-2">{notice}</p>}
     <section aria-labelledby="awaiting-verification-title" className="card min-w-0 p-5">
       <h2 id="awaiting-verification-title" className="font-semibold text-neutral-900">Organizers waiting for verification</h2>
-      <p className="mt-1 text-sm text-content-muted">Their events can be published, but tickets don’t sell until you verify them.</p>
+      <p className="mt-1 text-sm text-content-muted">Their events can be published, but tickets don’t go on sale until you verify them.</p>
       {awaiting.length === 0
         ? <p className="mt-4 text-sm text-content-muted">No organizers are waiting.</p>
         : <ul className="mt-4 space-y-3">
@@ -103,6 +104,22 @@ export default function OrganizerVerificationQueue({ awaiting = [], verified = [
           </li>)}
         </ul>}
     </section>
+
+    {suspended.length > 0 && <section aria-labelledby="suspended-organizers-title" className="card min-w-0 p-5 lg:col-span-2">
+      <h2 id="suspended-organizers-title" className="font-semibold text-neutral-900">Sales paused</h2>
+      <p className="mt-1 text-sm text-content-muted">Their events stay visible but don’t sell until you resume sales.</p>
+      <ul className="mt-4 divide-y divide-neutral-100">
+        {suspended.map(organizer => <li key={organizer.profile_id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 text-sm">
+            <p className="font-medium text-neutral-900 [overflow-wrap:anywhere]">{organizer.business_name}</p>
+            {organizer.owner_email && <p className="text-neutral-700 [overflow-wrap:anywhere]">Owner: {organizer.owner_email}</p>}
+            {organizer.suspended_at && <p className="text-content-muted">Paused {formatDateTime(organizer.suspended_at)}</p>}
+            {organizer.verification_notes && <p className="mt-1 whitespace-pre-wrap text-neutral-700 [overflow-wrap:anywhere]">{organizer.verification_notes}</p>}
+          </div>
+          <button type="button" onClick={() => open('resume', organizer)} className="btn-primary min-h-11 shrink-0 text-sm">Resume sales<span className="sr-only"> for {organizer.business_name}</span></button>
+        </li>)}
+      </ul>
+    </section>}
 
     {dialog && <VerificationDialog {...dialog} beginRequest={beginRequest} onClose={() => setDialog(null)} onSaved={saved} />}
   </div>

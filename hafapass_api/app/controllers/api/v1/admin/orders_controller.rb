@@ -51,6 +51,7 @@ class Api::V1::Admin::OrdersController < Api::V1::Admin::BaseController
       organizer_proceeds_cents: o.organizer_proceeds_cents,
       currency: o.currency,
       status: o.status,
+      test_payment: o.test_payment?,
       created_at: o.created_at,
       event_id: o.event_id,
       event_title: o.event&.title,

@@ -3,7 +3,7 @@ import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive, Link2 } from 'lucide-react'
+import { AlertTriangle, Clock3, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive, Link2 } from 'lucide-react'
 import EventAccessNotice from '../../components/EventAccessNotice'
 import apiClient from '../../api/client'
 import CoverImageUpload from '../../components/CoverImageUpload'
@@ -12,7 +12,7 @@ import FeePolicyPanel from '../../components/FeePolicyPanel'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
 import FormErrorSummary from '../../components/FormErrorSummary'
-import { organizerChecklist } from '../../utils/organizerChecklist'
+import { blocksPublishing, organizerChecklist } from '../../utils/organizerChecklist'
 import VerificationNotice from '../../components/VerificationNotice'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
@@ -430,7 +430,9 @@ function EditEventSession({ id, identity }) {
   const remainingTicketCapacity = event?.max_capacity == null ? null : Math.max(0,
     Number(event.max_capacity) - (event.ticket_types || []).reduce((sum, ticket) => sum + Number(ticket.quantity_available || 0), 0))
   const organizerSteps = organizerChecklist(publishChecklist)
-  const readyToPublish = publishChecklist.length > 0 && publishChecklist.every(item => item.complete)
+  const readyToPublish = publishChecklist.length > 0 && publishChecklist.filter(blocksPublishing).every(item => item.complete)
+  // Verification that only holds back ticket sales, not publishing.
+  const salesWaitOnVerification = publishChecklist.some(item => item.code === 'organizer_verified' && !item.complete && !blocksPublishing(item))
 
   if (loading) {
     return (
@@ -510,9 +512,10 @@ function EditEventSession({ id, identity }) {
           <ul className="grid sm:grid-cols-2 gap-2 mt-4" aria-label="Publishing checklist">
             {organizerSteps.map(item => (
               <li key={item.code} className={`flex items-center gap-2 text-xs ${item.complete ? 'text-emerald-700' : 'text-neutral-600'}`}>
-                {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : blocksPublishing(item) ? <XCircle className="w-4 h-4 shrink-0" /> : <Clock3 aria-hidden="true" className="w-4 h-4 shrink-0 text-amber-700" />}
                 <div className="min-w-0">{item.href && !item.complete ? <a href={item.href} className="underline underline-offset-2">{item.label}</a> : item.label}
                   {item.detail && <p className="mt-1 text-xs font-normal text-neutral-600">{item.detail}</p>}
+                  {item.requestVerification && !blocksPublishing(item) && <p className="mt-1 text-xs font-normal text-neutral-700">You can publish now. Tickets go on sale once HåfaPass verifies your organization.</p>}
                   {item.requestVerification && <VerificationNotice profile={organizerProfile} beginRequest={beginRequest} showSummary={false} className="mt-2" />}
                 </div>
               </li>
@@ -525,7 +528,9 @@ function EditEventSession({ id, identity }) {
       {showPublishConfirm && (
         <ConfirmModal
           title="Publish Event?"
-          message={`Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
+          message={salesWaitOnVerification
+            ? `Publish the saved event “${event.title}”? Attendees will be able to find it. Tickets go on sale once HåfaPass verifies your organization.`
+            : `Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
           confirmLabel={publishing ? 'Publishing...' : 'Yes, Publish'}
           confirmClass="bg-action-teal hover:bg-action-teal-hover"
           onConfirm={handlePublish}

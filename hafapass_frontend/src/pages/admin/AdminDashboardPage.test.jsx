@@ -75,6 +75,31 @@ describe('AdminDashboardPage', () => {
     expect(apiClient.get).toHaveBeenCalledTimes(2)
   })
 
+  it('requires the draft-policy acknowledgment before a quick approval and warns about expiring approvals in amber', async () => {
+    const user = userEvent.setup()
+    const setup = [
+      { key: 'policy_register', label: 'Production policy register', message: 'Checkout is off until you approve the production policy register.', configured: true, help: null,
+        requires_draft_acknowledgment: true, acknowledgment_text: 'I approve launching on draft policies and accept the business risk.', expires_at: null, expiring_soon: false },
+      { key: 'resend_production', label: 'Production email (Resend)', message: 'The production email approval expires on Nov 10, 2026. Approve again to keep email on.', configured: true, help: null,
+        requires_draft_acknowledgment: false, expires_at: '2026-11-10T00:00:00Z', expiring_soon: true },
+    ]
+    apiClient.get.mockResolvedValue({ data: { ...dashboard, setup_required: setup } })
+    apiClient.post.mockResolvedValue({ data: { capability: 'policy_register', approved: true } })
+    render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
+    const outage = await screen.findByRole('alert')
+    expect(outage).toHaveClass('bg-red-50')
+    const expiring = screen.getByText(/expires on Nov 10, 2026/).closest('[role="status"]')
+    expect(expiring).toHaveClass('bg-amber-50')
+    expect(within(expiring).getByRole('button', { name: /Approve again/ })).toBeEnabled()
+    await user.click(within(outage).getByRole('button', { name: /Approve now/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Approve Production policy register?' })
+    const confirm = within(dialog).getByRole('button', { name: 'Approve' })
+    expect(confirm).toBeDisabled()
+    await user.click(within(dialog).getByRole('checkbox', { name: 'I approve launching on draft policies and accept the business risk.' }))
+    await user.click(confirm)
+    expect(apiClient.post).toHaveBeenCalledWith('/admin/platform_capabilities/policy_register/quick_approve', { draft_policies_acknowledged: true }, expect.anything())
+  })
+
   it('verifies a waiting organizer with an optional note, then refreshes', async () => {
     const user = userEvent.setup()
     const waiting = { profile_id: 4, business_name: 'Reef Nights', organization_id: 9, owner_email: 'owner@reef.test', requested_at: '2026-10-20T22:00:00Z', verification_status: 'pending', payout_ready: false, event_count: 2 }
@@ -115,6 +140,20 @@ describe('AdminDashboardPage', () => {
     expect(apiClient.patch).toHaveBeenLastCalledWith('/admin/organizer_profiles/4', { verification_status: 'suspended', verification_notes: 'Refund complaints' }, expect.anything())
     expect(await screen.findByText('All sales are paused for Reef Nights.')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('lists organizers whose sales are paused and resumes them with an optional note', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockResolvedValue({ data: { ...dashboard, suspended_organizers: [{ profile_id: 6, business_name: 'Night Market', owner_email: 'owner@market.test', suspended_at: null, verification_notes: 'Refund complaints.' }] } })
+    apiClient.patch.mockResolvedValue({ data: { id: 6, verification_status: 'verified' } })
+    render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
+    const section = await screen.findByRole('region', { name: 'Sales paused' })
+    expect(section).toHaveTextContent('Refund complaints.')
+    await user.click(within(section).getByRole('button', { name: 'Resume sales for Night Market' }))
+    const dialog = screen.getByRole('dialog', { name: 'Resume sales for Night Market?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Resume sales' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/6', { verification_status: 'verified' }, expect.anything())
+    expect(await screen.findByText('Sales resumed for Night Market.')).toBeInTheDocument()
   })
 
   it('says when no organizers are waiting', async () => {

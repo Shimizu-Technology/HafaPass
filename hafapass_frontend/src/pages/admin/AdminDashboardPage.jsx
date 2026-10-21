@@ -32,18 +32,22 @@ function SetupRequired({ items, beginRequest, onApproved }) {
   const [confirming, setConfirming] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [acknowledged, setAcknowledged] = useState(false)
   if (!items?.length) return null
 
-  const close = () => { if (!busy) { setConfirming(null); setError('') } }
+  const needsAcknowledgment = Boolean(confirming?.requires_draft_acknowledgment)
+  const close = () => { if (!busy) { setConfirming(null); setError(''); setAcknowledged(false) } }
   const approve = async () => {
     const request = beginRequest()
     if (!request) return
     setBusy(true)
     setError('')
     try {
-      await apiClient.post(`/admin/platform_capabilities/${confirming.key}/quick_approve`, {}, request.config)
+      // Approving draft policies for launch is an explicit, recorded business call.
+      await apiClient.post(`/admin/platform_capabilities/${confirming.key}/quick_approve`, needsAcknowledgment ? { draft_policies_acknowledged: true } : {}, request.config)
       if (!request.current()) return
       setConfirming(null)
+      setAcknowledged(false)
       onApproved()
     } catch (failure) {
       if (request.handleError(failure) || !request.current()) return
@@ -52,7 +56,8 @@ function SetupRequired({ items, beginRequest, onApproved }) {
   }
 
   return <div className="mb-8 space-y-3">
-    {items.map(item => <div key={item.key} role="alert" className="flex flex-col gap-3 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between">
+    {/* An approval that still works but expires soon is a warning, not an outage. */}
+    {items.map(item => <div key={item.key} role={item.expiring_soon ? 'status' : 'alert'} className={`flex flex-col gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-center sm:justify-between ${item.expiring_soon ? 'border-amber-300 bg-amber-50 text-amber-950' : 'border-red-300 bg-red-50 text-red-900'}`}>
       <div className="flex min-w-0 items-start gap-2">
         <CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="min-w-0">
@@ -60,15 +65,19 @@ function SetupRequired({ items, beginRequest, onApproved }) {
           {!item.configured && item.help && <p className="mt-1 [overflow-wrap:anywhere]">{item.help}</p>}
         </div>
       </div>
-      <button type="button" disabled={!item.configured} onClick={() => { setError(''); setConfirming(item) }} className="btn-danger min-h-11 shrink-0 text-sm">Approve now<span className="sr-only">: {item.label}</span></button>
+      <button type="button" disabled={!item.configured} onClick={() => { setError(''); setAcknowledged(false); setConfirming(item) }} className={`${item.expiring_soon ? 'btn-secondary' : 'btn-danger'} min-h-11 shrink-0 text-sm`}>{item.expiring_soon ? 'Approve again' : 'Approve now'}<span className="sr-only">: {item.label}</span></button>
     </div>)}
     {confirming && <Dialog labelledBy={titleId} busy={busy} onClose={close} className="max-w-md">
       <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Approve {confirming.label}?</h2>
       <p className="mt-2 text-sm text-neutral-700">This records your approval in the audit log.</p>
+      {needsAcknowledgment && <label className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+        <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />
+        <span>{confirming.acknowledgment_text}</span>
+      </label>}
       {error && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
       <div className="mt-6 flex flex-wrap justify-end gap-3">
         <button type="button" disabled={busy} onClick={close} className="btn-secondary">Cancel</button>
-        <button type="button" disabled={busy} onClick={approve} className="btn-primary">{busy ? 'Approving…' : 'Approve'}</button>
+        <button type="button" disabled={busy || (needsAcknowledgment && !acknowledged)} onClick={approve} className="btn-primary">{busy ? 'Approving…' : 'Approve'}</button>
       </div>
     </Dialog>}
   </div>
@@ -195,7 +204,7 @@ function AdminDashboardSession({ identity }) {
         </div>
       </div>
 
-      <OrganizerVerificationQueue awaiting={data.organizers_awaiting_verification} verified={data.verified_organizers} beginRequest={beginRequest} onChanged={refreshQuietly} />
+      <OrganizerVerificationQueue awaiting={data.organizers_awaiting_verification} verified={data.verified_organizers} suspended={data.suspended_organizers} beginRequest={beginRequest} onChanged={refreshQuietly} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Events */}

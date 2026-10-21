@@ -196,6 +196,7 @@ module Operations
     end
 
     # Queued, scheduled, claimed, blocked or failed jobs may name purged rows.
+    # Recurring jobs never carry business IDs.
     # Jobs created by recurring tasks are kept (with the task definitions);
     # execution rows cascade with their job.
     def delete_pending_jobs!
@@ -205,7 +206,14 @@ module Operations
       if connection.table_exists?("solid_queue_recurring_executions")
         sql += " WHERE id NOT IN (SELECT job_id FROM solid_queue_recurring_executions)"
       end
-      connection.delete(sql)
+      deleted = connection.delete(sql)
+      # Concurrency semaphores count claims of the deleted jobs; clear them so
+      # no concurrency key stays blocked. Blocked/ready/claimed/failed
+      # executions cascade with their jobs.
+      if connection.table_exists?("solid_queue_semaphores")
+        connection.delete("DELETE FROM #{connection.quote_table_name('solid_queue_semaphores')}")
+      end
+      deleted
     end
 
     def row_counts(tables)

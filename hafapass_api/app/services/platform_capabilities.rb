@@ -93,6 +93,12 @@ class PlatformCapabilities
       nil
     end
 
+    EXPIRY_WARNING = 30.days
+
+    def expiring_soon?(approval, at: Time.current)
+      approval.present? && approval.expires_at <= at + EXPIRY_WARNING
+    end
+
     def enabled?(name, at: Time.current)
       configured?(name) && active_approval(name, at: at).present?
     end
@@ -119,6 +125,8 @@ class PlatformCapabilities
         approved: approval.present?,
         enabled: configured && approval.present?,
         status: capability_status(configured, approval),
+        expires_at: approval&.expires_at,
+        expiring_soon: expiring_soon?(approval),
         required_controls: required_controls(name),
         configuration_digest: configuration_digest(name),
         pending_submission: pending_submission(name),
@@ -134,7 +142,9 @@ class PlatformCapabilities
       {
         ready: ready,
         status: ready ? "approved" : "approval_required",
-        capabilities: statuses.transform_values { |item| item.slice(:configured, :approved, :enabled, :status) }
+        capabilities: statuses.transform_values do |item|
+          item.slice(:configured, :approved, :enabled, :status, :expires_at, :expiring_soon)
+        end
       }
     end
 

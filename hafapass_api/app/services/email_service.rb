@@ -199,14 +199,15 @@ class EmailService
     # Tells every platform administrator an organizer asked to be verified,
     # which is what lets their published events sell in production.
     # Deliveries are stored against an event, so the notice rides on the
-    # organizer's latest event; with none yet, the admin dashboard queue alone
-    # shows the request.
+    # organizer's latest event. The admin dashboard's verification queue is the
+    # source of truth: an organizer with no events yet appears there only.
     def send_verification_request_async(profile)
       requested_at = profile.verification_requested_at || Time.current
       event = profile.events.order(created_at: :desc).first
       return unless event
 
-      User.where(role: :admin).where.not(email: [nil, ""]).find_each do |admin|
+      admins = User.where(role: :admin).where.not(email: [nil, ""]).order(:id).to_a.uniq { |admin| admin.email.downcase }
+      admins.each do |admin|
         delivery = nil
         delivery = create_delivery(event: event, requested_by: profile.user, template: "verification_request",
           recipient: admin.email,

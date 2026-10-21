@@ -5,6 +5,7 @@ import { Loader2, Search, ChevronLeft, ChevronRight, Download, Mail, ScanLine } 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
+import TestPaymentBadge from '../../components/TestPaymentBadge'
 import { pluralize } from '../../utils/eventToolFormat'
 
 const STATUS_STYLES = {
@@ -301,7 +302,7 @@ function AttendeesPageSession({ id, identity }) {
                   const style = STATUS_STYLES[att.status] || { label: att.status, className: 'bg-neutral-100 text-neutral-800' }
                   return (
                     <tr key={att.id}>
-                      <td className="min-w-32 px-4 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</td>
+                      <td className="min-w-32 px-4 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}<TestPaymentBadge order={att} /></td>
                       <td className="max-w-56 break-words px-4 py-3 text-sm text-neutral-600">{att.attendee_email || '—'}</td>
                       <td className="px-4 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
                       <td className="px-4 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span></td>
@@ -322,7 +323,7 @@ function AttendeesPageSession({ id, identity }) {
               return (
                 <div key={att.id} className="bg-white rounded-xl border border-neutral-200 p-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</span>
+                    <span className="text-sm font-medium text-neutral-900">{att.attendee_name || '—'}<TestPaymentBadge order={att} /></span>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span>
                   </div>
                   <p className="text-xs text-neutral-500 mt-1">{att.attendee_email || '—'}</p>

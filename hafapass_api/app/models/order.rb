@@ -32,6 +32,21 @@ class Order < ApplicationRecord
   enum :status, { pending: 0, completed: 1, refunded: 2, cancelled: 3, partially_refunded: 4, expired: 5 }
   enum :fee_policy_snapshot, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }, prefix: :fee
 
+  # Production finance counts real money only: orders paid in Stripe test
+  # mode (admin QA) are left out of revenue, analytics and exports. Free,
+  # cash and box-office orders stay. Outside production nothing is excluded.
+  scope :excluding_test_payments, -> {
+    if Rails.env.production?
+      where.not(id: Payment.where(provider: "stripe", provider_environment: "test").select(:order_id))
+    else
+      all
+    end
+  }
+
+  def test_payment?
+    payments.any? { |payment| payment.provider == "stripe" && payment.provider_environment == "test" }
+  end
+
   validates :buyer_email, presence: true
   validates :buyer_name, presence: true
   validates :currency, presence: true, length: { is: 3 }
@@ -66,7 +81,8 @@ class Order < ApplicationRecord
     reserved.any?(&:pending?) && reserved.sum(&:amount_cents) >= total_cents
   end
 
-  def ticket_fulfilled?
+  # payment_mode lets bulk callers (scanner manifests) read the setting once.
+  def ticket_fulfilled?(payment_mode: nil)
     return false unless completed? || partially_refunded?
     return true unless Rails.env.production? && total_cents.positive?
 
@@ -74,7 +90,7 @@ class Order < ApplicationRecord
       payments.where(status: [:succeeded, :partially_refunded]).to_a
     # Stripe test-mode tickets admit people only while the platform itself is
     # in test mode (production QA). Once payments are live they stop working.
-    admissible_environments = SiteSetting.instance.test_mode? ? %w[live test] : %w[live]
+    admissible_environments = (payment_mode || SiteSetting.instance.payment_mode) == "test" ? %w[live test] : %w[live]
     captured.any? do |payment|
       payment.amount_cents >= total_cents && payment.currency == currency && payment.provider_payment_id.present? &&
         (payment.provider != "stripe" || (admissible_environments.include?(payment.provider_environment) &&

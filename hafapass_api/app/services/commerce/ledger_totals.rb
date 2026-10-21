@@ -11,7 +11,7 @@ module Commerce
     end
 
     def call
-      settled_orders = orders.where(status: [:completed, :partially_refunded, :refunded])
+      settled_orders = orders.excluding_test_payments.where(status: [:completed, :partially_refunded, :refunded])
       order_ids = settled_orders.select(:id)
       gross = settled_orders.sum(:subtotal_cents)
       discount = settled_orders.sum(:discount_cents)

@@ -126,6 +126,7 @@ describe('AdminSettingsPage', () => {
     expect(dialog).toHaveTextContent('charged real money')
     expect(dialog).toHaveTextContent('Orders already paid in test mode stay test orders')
     expect(dialog).toHaveTextContent('Tickets bought with test cards stop working at the door.')
+    expect(dialog).toHaveTextContent('Door staff: refresh the scanner (re-download the event) after this switch so it uses the new mode.')
     expect(apiClient.patch).not.toHaveBeenCalled()
     await user.click(within(dialog).getByRole('button', { name: 'Yes, take real payments' }))
 
@@ -146,6 +147,7 @@ describe('AdminSettingsPage', () => {
     await user.click(within(section).getByRole('button', { name: 'Switch to test mode' }))
     const dialog = screen.getByRole('dialog', { name: 'Switch to test payments?' })
     expect(dialog).toHaveTextContent('Live orders already paid stay live.')
+    expect(dialog).toHaveTextContent('Door staff: refresh the scanner (re-download the event) after this switch so it uses the new mode.')
     expect(dialog).toHaveTextContent('Paid events keep selling, but only Stripe test cards work. Real buyers can’t pay until you switch back to live.')
     await user.click(within(dialog).getByRole('button', { name: 'Switch to test mode' }))
 
@@ -159,6 +161,7 @@ describe('AdminSettingsPage', () => {
     renderPage()
     const section = await screen.findByRole('region', { name: 'Payment mode' })
     expect(section).toHaveTextContent('Only Stripe test cards work (for example 4242 4242 4242 4242); real cards are declined and nothing is charged.')
+    expect(section).toHaveTextContent('While in test mode only HåfaPass admins can buy paid tickets; everyone else sees “Paid ticket sales open soon.” Free tickets work for everyone.')
     expect(section).not.toHaveTextContent('reload this page')
     await user.type(screen.getByLabelText('Support phone', { exact: false }), '9')
     apiClient.get.mockResolvedValue({ data: { ...settings, payment_mode_readiness: { ...settings.payment_mode_readiness, live: liveReady } } })

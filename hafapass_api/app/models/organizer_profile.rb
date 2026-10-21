@@ -17,8 +17,10 @@ class OrganizerProfile < ApplicationRecord
     policy_accepted_at.present? && policy_version == current[:version] && policy_digest == current[:digest]
   end
 
+  # Production lets unverified organizers publish (tickets sell only once
+  # verified); elsewhere verification is still needed to publish.
   def ready_to_publish_free_events?
-    verification_status_verified? && policy_accepted?
+    (verification_status_verified? || Rails.env.production?) && policy_accepted?
   end
 
   def ready_to_publish_paid_events?

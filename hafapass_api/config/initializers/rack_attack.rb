@@ -82,6 +82,11 @@ class Rack::Attack
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/resend\z}) && req.post?
   end
 
+  # Requesting organizer verification emails every admin.
+  throttle("organizer-verification/ip", limit: 5, period: 1.hour) do |req|
+    req.ip if req.post? && req.path == "/api/v1/organizer_profile/submit_verification"
+  end
+
   throttle("payment-resume/ip", limit: 20, period: 1.minute) do |req|
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/payment_resume\z}) && req.post?
   end

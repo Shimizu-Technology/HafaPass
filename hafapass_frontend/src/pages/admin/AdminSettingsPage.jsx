@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 import AdminSessionGate from './AdminSessionGate'

@@ -6,12 +6,14 @@ import Dialog from '../../components/Dialog'
 
 const MODES = {
   simulate: { label: 'Simulated payments', tone: 'bg-neutral-100 text-neutral-900 ring-neutral-300', body: 'Checkout runs end to end without contacting Stripe. No card is charged.' },
-  test: { label: 'Test payments', tone: 'bg-amber-100 text-amber-950 ring-amber-300', body: 'Payments go to Stripe’s test mode. Only Stripe test cards work (for example 4242 4242 4242 4242); real cards are declined and nothing is charged. Tickets bought with test cards work at the door while you stay in test mode.' },
+  test: { label: 'Test payments', tone: 'bg-amber-100 text-amber-950 ring-amber-300', body: 'Payments go to Stripe’s test mode. Only Stripe test cards work (for example 4242 4242 4242 4242); real cards are declined and nothing is charged. Tickets bought with test cards work at the door while you stay in test mode. While in test mode only HåfaPass admins can buy paid tickets; everyone else sees “Paid ticket sales open soon.” Free tickets work for everyone.' },
   // Production never offers simulated checkout; a server left in that mode
   // simply has paid checkout turned off.
   off: { label: 'Paid sales are off', tone: 'bg-red-50 text-red-900 ring-red-300', body: 'Paid checkout is turned off until you switch to test or live payments. Free events still work.' },
   live: { label: 'Live payments', tone: 'bg-emerald-100 text-emerald-950 ring-emerald-300', body: 'Buyers’ cards are charged real money through Shimizu Technology’s Stripe account.' },
 }
+
+const DOOR_STAFF = 'Door staff: refresh the scanner (re-download the event) after this switch so it uses the new mode.'
 
 const TARGETS = {
   live: {
@@ -22,6 +24,7 @@ const TARGETS = {
       'Checkouts already in progress finish in the mode they started in.',
       'Tickets bought with test cards stop working at the door.',
       'The “Test payments” banner disappears for visitors.',
+      DOOR_STAFF,
     ],
   },
   test: {
@@ -30,7 +33,9 @@ const TARGETS = {
       'Paid events keep selling, but only Stripe test cards work. Real buyers can’t pay until you switch back to live.',
       'Live orders already paid stay live. Their refunds and fee lookups keep using live Stripe.',
       'Checkouts already in progress finish in the mode they started in.',
+      'Only HåfaPass admins can buy paid tickets; everyone else sees “Paid ticket sales open soon.” Free tickets work for everyone.',
       'Visitors see a “Test payments” banner until you switch back.',
+      DOOR_STAFF,
     ],
   },
 }

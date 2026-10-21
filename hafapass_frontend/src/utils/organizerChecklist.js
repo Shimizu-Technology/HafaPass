@@ -9,7 +9,7 @@ const organizerSteps = {
   tickets: ['Add at least one ticket type', '#ticket-types'],
   capacity: ['Set capacity and ticket quantities that fit', '#max_capacity'],
   sales_window: ['Set valid ticket sales dates', '#ticket-types'],
-  payout: ['Add payout details for paid tickets', '/dashboard/settings'],
+  payout: ['Add your payout details in Settings → Payouts', '/dashboard/settings'],
 }
 
 const completeLabels = {
@@ -30,3 +30,7 @@ export function organizerChecklist(checklist) {
   }))
 }
 
+// Whether an item holds back publishing. The server marks items that only
+// hold back ticket sales (for example organizer verification in production)
+// with `required_to_publish: false`; older servers omit it and every item blocks.
+export const blocksPublishing = item => item.required_to_publish !== false

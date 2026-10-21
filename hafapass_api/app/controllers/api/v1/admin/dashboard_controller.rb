@@ -28,23 +28,40 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
       recent_orders: recent_orders_json,
       setup_required: setup_required_json,
       organizers_awaiting_verification: organizers_awaiting_verification_json,
-      verified_organizers: verified_organizers_json
+      verified_organizers: verified_organizers_json,
+      suspended_organizers: suspended_organizers_json
     }
   end
 
   private
 
-  # One-time production setup an admin approves with one click.
+  # One-time production setup an admin approves with one click, plus a
+  # warning when a current approval expires within 30 days.
   def setup_required_json
     return [] unless Rails.env.production?
 
     SETUP_ITEMS.filter_map do |key, (label, message)|
-      next if PlatformCapabilities.enabled?(key)
+      approval = PlatformCapabilities.active_approval(key)
+      enabled = approval && PlatformCapabilities.configured?(key)
+      expiring = enabled && PlatformCapabilities.expiring_soon?(approval)
+      next if enabled && !expiring
 
       configured = PlatformCapabilities.configured?(key)
       missing = PlatformCapabilities.definition(key).fetch(:required_env).reject { |name| ENV[name].present? }
       help = configured ? nil : "Set #{missing.presence&.join(', ') || 'the provider settings'} on the API service first."
-      { key: key, label: label, message: message, configured: configured, help: help }
+      blockers = key == "policy_register" ? PolicyRegistry.approval_blockers : []
+      if blockers.any?
+        configured = false
+        help = "Fix the policy text first: #{blockers.join('; ')}"
+      end
+      draft = key == "policy_register" && PolicyRegistry.draft?
+      if expiring
+        message = "The #{label.downcase} approval expires on #{approval.expires_at.to_date.to_fs(:long)}. " \
+          "Approve again before then to keep it on."
+      end
+      { key: key, label: label, message: message, configured: configured, help: help,
+        expires_at: approval&.expires_at, expiring_soon: expiring ? true : false,
+        requires_draft_acknowledgment: draft, acknowledgment_text: draft ? PolicyRegistry::DRAFT_ACKNOWLEDGMENT : nil }
     end
   end
 
@@ -63,6 +80,16 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
           verification_status: profile.verification_status, payout_ready: profile.organization.payout_ready?,
           event_count: profile.events.count
         }
+      end
+  end
+
+  # "Sales paused" organizers; resuming re-verifies them.
+  def suspended_organizers_json
+    OrganizerProfile.verification_status_suspended.includes(:user, organization: { organization_memberships: :user })
+      .order(updated_at: :desc).limit(100).map do |profile|
+        owner = profile.organization.organization_memberships.find { |membership| membership.role == "owner" }&.user
+        { profile_id: profile.id, business_name: profile.business_name, owner_email: owner&.email || profile.user&.email,
+          suspended_at: profile.updated_at, verification_notes: profile.verification_notes }
       end
   end
 

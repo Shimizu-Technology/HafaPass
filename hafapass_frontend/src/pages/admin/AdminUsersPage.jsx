@@ -13,33 +13,41 @@ const userEmail = (user, fallback = 'Email unavailable') => user.email?.trim() |
 const userLabel = user => userEmail(user, `User #${user.id}`)
 const userName = user => [user.first_name, user.last_name].filter(name => name?.trim()).join(' ') || `User #${user.id}`
 const verificationStatuses = ['unverified', 'pending', 'verified', 'rejected', 'suspended']
-const needsReviewNote = status => ['rejected', 'suspended'].includes(status)
+// Rejecting needs a fresh note (the backend requires one); pausing sales
+// (suspended) takes an optional one.
+const needsReviewNote = status => status === 'rejected'
+const offersReviewNote = status => ['rejected', 'suspended'].includes(status)
+// Suspending an organizer pauses all of its ticket sales.
+const verificationLabel = status => status === 'suspended' ? 'Sales paused' : adminLabel(status)
 
 // Every role or verification change is confirmed here. The selects stay bound to the
 // saved value, so cancelling leaves them showing what the server last confirmed.
-// Rejected and suspended need a fresh note (the backend requires one), so the field
-// starts empty rather than carrying an earlier review's wording into the new status.
+// The note field starts empty rather than carrying an earlier review's wording
+// into the new status.
 function ConfirmChangeDialog({ change, busy, onCancel, onConfirm }) {
   const [note, setNote] = useState('')
   const noteRequired = change.kind === 'verification' && needsReviewNote(change.to)
+  const noteOffered = change.kind === 'verification' && offersReviewNote(change.to)
   const noteMissing = noteRequired && !note.trim()
+  const label = change.kind === 'verification' ? verificationLabel : adminLabel
   const subject = change.kind === 'role' ? userLabel(change.user) : change.user.organizer_profile?.business_name || userLabel(change.user)
   return (
     <Dialog labelledBy="confirm-change-title" onClose={onCancel} busy={busy} className="max-w-md">
       <h2 id="confirm-change-title" className="text-lg font-semibold text-neutral-900">{change.kind === 'role' ? 'Change platform role?' : 'Change verification status?'}</h2>
       <p className="mt-2 break-words text-sm text-content-muted">{subject}</p>
       <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-neutral-800">
-        <span className="rounded-full bg-neutral-100 px-2.5 py-1 font-medium">{adminLabel(change.from)}</span>
+        <span className="rounded-full bg-neutral-100 px-2.5 py-1 font-medium">{label(change.from)}</span>
         <span aria-hidden="true">→</span>
         <span className="sr-only">to</span>
-        <span className="rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-800">{adminLabel(change.to)}</span>
+        <span className="rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-800">{label(change.to)}</span>
       </p>
       {change.kind === 'role' && change.to === 'admin' && <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">This grants full platform access.</p>}
-      {noteRequired && (
+      {change.kind === 'verification' && change.to === 'suspended' && <p className="mt-4 text-sm text-neutral-700">Their events stay visible but stop selling until you verify them again.</p>}
+      {noteOffered && (
         <label className="mt-4 block text-sm font-medium text-neutral-800">
-          Review note
-          <span id="review-note-help" className="block font-normal text-content-muted">Required. Explain what the organizer must address.</span>
-          <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} required aria-required="true" aria-describedby="review-note-help" disabled={busy} className="input mt-1 !text-sm" />
+          {noteRequired ? 'Review note' : 'Review note (optional)'}
+          <span id="review-note-help" className="block font-normal text-content-muted">{noteRequired ? 'Required. Explain what the organizer must address.' : 'Shown to the organizer.'}</span>
+          <textarea value={note} onChange={event => setNote(event.target.value)} rows={3} required={noteRequired} aria-required={noteRequired ? 'true' : undefined} aria-describedby="review-note-help" disabled={busy} className="input mt-1 !text-sm" />
         </label>
       )}
       <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -62,7 +70,7 @@ function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount,
       <p className="break-words font-medium text-neutral-800">{profile.business_name}</p>
       <select value={profile.verification_status} disabled={busy} onChange={event => reviewOrganizer(user, event.target.value)}
         aria-label={`Verification status for ${profile.business_name || userLabel(user)}`} className="input min-h-11 !text-sm">
-        {verificationStatuses.map(status => <option key={status} value={status}>{adminLabel(status)}</option>)}
+        {verificationStatuses.map(status => <option key={status} value={status}>{verificationLabel(status)}</option>)}
       </select>
       {account ? (
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm">
@@ -180,8 +188,9 @@ function AdminUsersPageSession({ identity, resourcePath }) {
     if (!change) return
     if (change.kind === 'role') await changeRole(change.user, change.to)
     else {
-      const verificationNotes = needsReviewNote(change.to) ? note : change.note
-      if (needsReviewNote(change.to) && !verificationNotes) return
+      if (needsReviewNote(change.to) && !note) return
+      // An optional pause note replaces the old one only when given.
+      const verificationNotes = offersReviewNote(change.to) && note ? note : change.note
       await updateOrganizer(change.user, { verification_status: change.to, verification_notes: verificationNotes })
     }
     setPendingChange(null)

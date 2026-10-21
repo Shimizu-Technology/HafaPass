@@ -2,6 +2,9 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import TicketTypesSection from './TicketTypesSection'
+vi.mock('../utils/workspace', () => ({ useAccountRole: () => null }))
+const config = vi.hoisted(() => ({ adminOnly: false }))
+vi.mock('../hooks/usePaidCheckoutAdminOnly', () => ({ default: enabled => enabled && config.adminOnly }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key, options) => options ? `${key} ${JSON.stringify(options)}` : key }) }))
 
 describe('ticket selection with changing availability', () => {
@@ -72,5 +75,21 @@ describe('ticket selection with changing availability', () => {
       next_tier: { name: 'Regular', price_cents: 2000, all_in_price_cents: 2200 }, quantity_remaining: 5, on_sale: true }]} onCheckout={vi.fn()} />)
     expect(screen.getAllByText(/\$22\.00/)).toHaveLength(1)
     expect(screen.queryByText(/pricing.regularPrice/)).not.toBeInTheDocument()
+  })
+
+  it('keeps free tickets buyable but says paid sales open soon when paid checkout is locked', async () => {
+    const checkout = vi.fn()
+    const paid = { id: 1, name: 'Entry', price_cents: 1250, quantity_remaining: 3, on_sale: true }
+    const free = { id: 2, name: 'Kids', price_cents: 0, quantity_remaining: 3, on_sale: true }
+    config.adminOnly = true
+    render(<TicketTypesSection ticketTypes={[paid, free]} onCheckout={checkout} />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Increase quantity for Kids' }))
+    await user.click(screen.getByRole('button', { name: /eventDetail.buyTickets/ }))
+    expect(checkout).toHaveBeenCalledWith([{ ticket_type_id: 2, quantity: 1 }])
+    await user.click(screen.getByRole('button', { name: 'Increase quantity for Entry' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Paid ticket sales open soon')
+    expect(screen.queryByRole('button', { name: /eventDetail.buyTickets/ })).not.toBeInTheDocument()
+    config.adminOnly = false
   })
 })

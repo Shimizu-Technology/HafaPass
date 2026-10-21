@@ -166,6 +166,15 @@ describe('event overview', () => {
     expect(await within(next).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
   })
 
+  it('shows the server reason when HåfaPass suspended sales for the event', async () => {
+    mount({ ...base, sales_status: { on_sale: false, reason: 'sales_paused', message: 'Sales paused by HåfaPass: Chargeback review.' } },
+      { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
+    const next = await screen.findByRole('region', { name: 'Next steps' })
+    expect(next).toHaveTextContent('Sales paused by HåfaPass.Chargeback review.')
+    expect(next).not.toHaveTextContent('Visible but not on sale yet')
+    expect(requested('/organizer_profile')).toBe(false)
+  })
+
   it('does not load the organizer profile when the event is on sale', async () => {
     mount({ ...base, sales_status: { on_sale: true, reason: null, message: null } }, { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
     expect(await screen.findByText('Your event is live. Share it and get ready for the door.')).toBeInTheDocument()
