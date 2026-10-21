@@ -115,5 +115,7 @@ RSpec.describe "Organizer event-day admissions", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.media_type).to eq("application/pdf")
     expect(response.body).to start_with("%PDF")
+    expect(response.headers["Cache-Control"]).to eq("no-store")
+    expect(AuditLog.where(action: "sales.emergency_door_list_exported").last.metadata).to include("row_count" => event.tickets.count)
   end
 end

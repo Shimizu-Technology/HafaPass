@@ -23,6 +23,11 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
   def door_list
     return unless authorize_organization!(:manage_attendees, event: @event)
 
+    AuditLogger.record!(action: "sales.emergency_door_list_exported", auditable: @event, actor: current_user,
+      organization: current_organization,
+      metadata: { filters: {}, columns: %w[ticket attendee type status door_mark], row_count: @event.tickets.count },
+      request: request)
+    response.headers["Cache-Control"] = "no-store"
     send_data Admissions::DoorListPdf.new(@event).generate,
       filename: "hafapass-door-list-#{@event.slug}.pdf",
       type: "application/pdf",

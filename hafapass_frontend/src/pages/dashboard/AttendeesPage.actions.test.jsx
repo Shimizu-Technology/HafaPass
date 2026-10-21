@@ -3,10 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { setAuthTokenGetter } from '../../api/client'
+import { saveBlob } from '../../utils/download'
 import AttendeesPage from './AttendeesPage'
 
 vi.mock('../../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children }) => <div>{children}</div> }))
+vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
 
 const baseEvent = { id: 37, organization_id: 1, title: 'Full Moon Party', status: 'published', ticket_types: [] }
 const attendees = [
@@ -21,11 +23,11 @@ function ScannerProbe() {
   return <p>Scanner at {location.pathname}{location.search}</p>
 }
 
-function mount(permissions, event = {}) {
+function mount(permissions, event = {}, initialUrl = '/dashboard/events/37/attendees') {
   apiClient.get.mockImplementation(url => Promise.resolve({ data: url.includes('/attendees')
     ? { attendees, meta: { total_pages: 1, total_count: attendees.length } }
     : { ...baseEvent, ...event, permissions: { view_attendees: true, ...permissions } } }))
-  return render(<MemoryRouter initialEntries={['/dashboard/events/37/attendees']}><Routes>
+  return render(<MemoryRouter initialEntries={[initialUrl]}><Routes>
     <Route path="/dashboard/events/:id/attendees" element={<AttendeesPage />} />
     <Route path="/dashboard/scanner" element={<ScannerProbe />} />
   </Routes></MemoryRouter>)
@@ -125,5 +127,77 @@ describe('attendee row actions', () => {
     expect(await screen.findByText('Please sign in.')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText('Mina Cruz')).not.toBeInTheDocument()
+  })
+})
+
+describe('sales list controls', () => {
+  it('restores URL filters, shows chips, and clears them', async () => {
+    mount({}, { ticket_types: [{ id: 4, name: 'Entry' }] }, '/dashboard/events/37/attendees?status=checked_in&ticket_type=4')
+    await screen.findAllByText('Mina Cruz')
+    expect(screen.getByRole('region', { name: 'Active filters' })).toHaveTextContent('checked in')
+    expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining('status=checked_in'), expect.any(Object))
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Active filters' })).not.toBeInTheDocument())
+  })
+
+  it('provides cards for phones and an export dialog with the filtered scope', async () => {
+    mount({ view_finance: true })
+    await screen.findAllByText('Mina Cruz')
+    expect(document.querySelector('.sm\\:hidden')).toHaveTextContent('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    const dialog = screen.getByRole('dialog', { name: 'Export this list' })
+    expect(within(dialog).getByText(/3 attendees match/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('checkbox', { name: 'Price paid' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Download CSV' })).toBeEnabled()
+  })
+
+  it('updates the URL when filters change and hides financial export columns from box office', async () => {
+    mount({ view_finance: false })
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Sales channel' }), 'box_office')
+    expect(screen.getByRole('button', { name: /channel: box office/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show results' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    expect(screen.queryByRole('checkbox', { name: 'Price paid' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Phone' })).not.toBeInTheDocument()
+  })
+
+  it('shows a follow-up download control for a queued large export', async () => {
+    apiClient.post.mockResolvedValue({ status: 202, data: { text: async () => JSON.stringify({ download_url: '/api/v1/organizer/events/37/sales_exports/9' }) } })
+    mount({})
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    expect(await screen.findByRole('button', { name: 'Check download' })).toBeInTheDocument()
+    apiClient.get.mockImplementation(url => Promise.resolve({ status: 202, data: url.includes('sales_exports/9') ? new Blob(['{"status":"processing"}']) : { ...baseEvent, permissions: { view_attendees: true } } }))
+    await userEvent.click(screen.getByRole('button', { name: 'Check download' }))
+    expect(apiClient.get).toHaveBeenCalledWith('/organizer/events/37/sales_exports/9', expect.objectContaining({ responseType: 'blob' }))
+  })
+
+  it('downloads the filtered door list as a printable PDF', async () => {
+    mount({})
+    await screen.findAllByText('Mina Cruz')
+    const pdf = new Blob(['synthetic-pdf'], { type: 'application/pdf' })
+    apiClient.get.mockResolvedValueOnce({ data: pdf })
+    await userEvent.click(screen.getByRole('button', { name: 'Print door list' }))
+    await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(pdf, 'event-37-door-list.pdf'))
+  })
+
+  it('shows order totals and check-in counts in the order view', async () => {
+    mount({ view_finance: true })
+    await screen.findAllByText('Mina Cruz')
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url.includes('/attendees')
+      ? { attendees: [{ id: 3, attendee_name: 'Buyer Mina', attendee_email: 'buyer@example.invalid',
+        order_number: 'HP-ORDER3', ticket_type: 'Entry', status: 'completed',
+        purchase_date: '2026-10-20T10:00:00Z', amount_cents: 5250, ticket_count: 2, checked_in_count: 1 }],
+        meta: { total_pages: 1, total_count: 1 } }
+      : { ...baseEvent, permissions: { view_attendees: true, view_finance: true } } }))
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'View sales as' }), 'orders')
+    await userEvent.click(screen.getByRole('button', { name: 'Show results' }))
+    expect(await screen.findByRole('heading', { name: 'Sales orders' })).toBeInTheDocument()
+    expect(screen.getAllByText('$52.50').length).toBeGreaterThan(0)
+    expect(screen.getByText('1/2 checked in')).toBeInTheDocument()
   })
 })
