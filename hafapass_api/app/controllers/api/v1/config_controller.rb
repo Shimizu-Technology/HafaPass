@@ -10,6 +10,8 @@ class Api::V1::ConfigController < ApplicationController
 
     render json: {
       payment_mode: settings.payment_mode,
+      # Production test mode: only platform admins may complete paid checkout.
+      paid_checkout_admin_only: Rails.env.production? && settings.test_mode?,
       environment: Rails.env.to_s,
       provider_rehearsal: ProviderRehearsal.enabled?,
       launch_capabilities: LaunchCapabilities.public_configuration,

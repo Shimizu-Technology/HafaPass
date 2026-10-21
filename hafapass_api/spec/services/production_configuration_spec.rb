@@ -28,7 +28,8 @@ RSpec.describe ProductionConfiguration do
     "STRIPE_TEST_SECRET_KEY" => nil, "STRIPE_TEST_PUBLISHABLE_KEY" => nil,
     "STRIPE_TEST_PLATFORM_ACCOUNT_ID" => nil, "STRIPE_LIVE_SECRET_KEY" => nil,
     "STRIPE_LIVE_PUBLISHABLE_KEY" => nil, "STRIPE_LIVE_PLATFORM_ACCOUNT_ID" => nil,
-    "STRIPE_SECRET_KEY" => nil, "STRIPE_PUBLISHABLE_KEY" => nil
+    "STRIPE_SECRET_KEY" => nil, "STRIPE_PUBLISHABLE_KEY" => nil,
+    "STRIPE_WEBHOOK_SECRET" => nil, "STRIPE_LIVE_WEBHOOK_SECRET" => nil
   }.freeze
 
   around do |example|
@@ -80,6 +81,9 @@ RSpec.describe ProductionConfiguration do
       expect(described_class.call).to include(ready: false)
       expect(described_class.call[:checks][:stripe_payment_context]).to be(false)
       ENV["STRIPE_#{mode.upcase}_PLATFORM_ACCOUNT_ID"] = "acct_fixture"
+      # Each mode also needs the signing secret of its own webhook endpoint.
+      expect(described_class.call[:checks][:stripe_payment_context]).to be(false)
+      ENV[mode == "live" ? "STRIPE_LIVE_WEBHOOK_SECRET" : "STRIPE_WEBHOOK_SECRET"] = "whsec_#{mode}_fixture"
       expect(described_class.call[:checks][:stripe_payment_context]).to be(true)
       ENV["STRIPE_#{mode.upcase}_SECRET_KEY"] = mode == "test" ? "sk_live_wrong" : "sk_test_wrong"
       expect(described_class.call[:checks][:stripe_payment_context]).to be(false)

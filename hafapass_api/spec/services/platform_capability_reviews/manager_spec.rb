@@ -43,14 +43,11 @@ RSpec.describe PlatformCapabilityReviews::Manager do
     expect(PlatformCapabilities.enabled?("policy_register")).to be(false)
   end
 
-  it "requires a second administrator before enabling an exact evidence snapshot" do
+  it "lets the submitting administrator approve an exact evidence snapshot" do
     submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
 
-    expect do
-      described_class.approve!(submission: submission, actor: submitter)
-    end.to raise_error(described_class::ReviewError, /cannot approve their own/)
-
-    approval = described_class.approve!(submission: submission, actor: approver)
+    approval = described_class.approve!(submission: submission, actor: submitter)
+    expect(approval.actor_user).to eq(submitter)
 
     expect(approval).to be_active
     expect(PlatformCapabilities.enabled?("policy_register")).to be(true)
@@ -95,5 +92,31 @@ RSpec.describe PlatformCapabilityReviews::Manager do
   ensure
     original_base.nil? ? ENV.delete("CLOVER_REST_PAY_BASE_URL") : ENV["CLOVER_REST_PAY_BASE_URL"] = original_base
     original_revision.nil? ? ENV.delete("PROVIDER_CONFIGURATION_REVISION") : ENV["PROVIDER_CONFIGURATION_REVISION"] = original_revision
+  end
+
+  describe ".quick_approve!" do
+    it "needs the draft-policy acknowledgment and records it the same way as the full review" do
+      allow(PolicyRegistry).to receive(:draft?).and_return(true)
+
+      expect do
+        described_class.quick_approve!(capability: "policy_register", actor: submitter)
+      end.to raise_error(described_class::ReviewError, /approving draft policies for launch before legal review/)
+      expect(PlatformCapabilityReview.where(capability: "policy_register")).to be_empty
+
+      approval = described_class.quick_approve!(capability: "policy_register", actor: submitter,
+        draft_policies_acknowledged: true)
+      expect(approval).to be_active
+      expect(approval.reason).to eq(PolicyRegistry::DRAFT_ACKNOWLEDGMENT)
+      log = AuditLog.find_by!(auditable: approval, action: "platform_capability.approved")
+      expect(log.metadata).to include("draft_policies_acknowledged" => true)
+    end
+
+    it "refuses a second approval while one is active" do
+      described_class.quick_approve!(capability: "policy_register", actor: submitter)
+
+      expect { described_class.quick_approve!(capability: "policy_register", actor: approver) }
+        .to raise_error(described_class::ReviewError, /Already approved/)
+      expect(PlatformCapabilityReview.where(capability: "policy_register").approvals.count).to eq(1)
+    end
   end
 end

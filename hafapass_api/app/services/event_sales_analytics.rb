@@ -36,7 +36,7 @@ class EventSalesAnalytics
   end
 
   def orders
-    @orders ||= event.orders.where(status: SETTLED_ORDER_STATUSES)
+    @orders ||= event.orders.excluding_test_payments.where(status: SETTLED_ORDER_STATUSES)
   end
 
   def order_rows
@@ -102,7 +102,7 @@ class EventSalesAnalytics
 
   def traffic_sources(funnel)
     views = normalized(funnel.where(stage: %i[landing event_view]).group(:source, :medium).distinct.count(:visitor_hash))
-    attributed = event.orders.where(status: SETTLED_ORDER_STATUSES).joins(:acquisition_attribution)
+    attributed = event.orders.excluding_test_payments.where(status: SETTLED_ORDER_STATUSES).joins(:acquisition_attribution)
       .group("acquisition_attributions.source", "acquisition_attributions.medium")
     order_counts = normalized(attributed.count)
     order_amounts = normalized(attributed.sum(:total_cents))

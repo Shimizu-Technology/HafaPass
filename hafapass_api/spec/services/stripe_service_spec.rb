@@ -42,7 +42,7 @@ RSpec.describe StripeService do
 
     expect do
       described_class.refund_payment("pi_live", idempotency_key: "refund-live-unapproved")
-    end.to raise_error(described_class::PaymentError, /disabled until current provider evidence/)
+    end.to raise_error(described_class::PaymentError, /disabled until current Stripe live evidence/)
   end
 
   it "maps internal refund notes to Stripe's supported reason enum" do

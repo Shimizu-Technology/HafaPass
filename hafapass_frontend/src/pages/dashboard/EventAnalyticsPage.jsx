@@ -4,6 +4,7 @@ import { CheckCircle2, CircleAlert, Download, Loader2, WalletCards } from 'lucid
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
+import TestPaymentBadge from '../../components/TestPaymentBadge'
 import FeeTermsNote from '../../components/FeeTermsNote'
 import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
 import EventSalesInsights from './EventSalesInsights'
@@ -395,7 +396,7 @@ function EventAnalyticsPageSession({ id, identity }) {
         <tbody className="divide-y divide-neutral-200">
          {(stats.recent_orders || []).map((order) => (
           <tr key={order.id}>
-           <td className="px-5 py-3 text-sm font-medium text-neutral-900">{order.buyer_name}</td>
+           <td className="px-5 py-3 text-sm font-medium text-neutral-900">{order.buyer_name}<TestPaymentBadge order={order} /></td>
            <td className="px-5 py-3 text-sm text-neutral-600">{order.buyer_email}</td>
            <td className="px-5 py-3 text-sm text-neutral-600 text-right">{order.ticket_count}</td>
            <td className="px-5 py-3 text-sm text-neutral-900 text-right font-medium">{formatCents(order.total_cents)}</td>
@@ -410,7 +411,7 @@ function EventAnalyticsPageSession({ id, identity }) {
        {(stats.recent_orders || []).map((order) => (
         <div key={order.id} className="px-4 py-3">
          <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-neutral-900">{order.buyer_name}</span>
+          <span className="text-sm font-medium text-neutral-900">{order.buyer_name}<TestPaymentBadge order={order} /></span>
           <span className="text-sm font-medium text-neutral-900">{formatCents(order.total_cents)}</span>
          </div>
          <div className="flex items-center justify-between mt-1">

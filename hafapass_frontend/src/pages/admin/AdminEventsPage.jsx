@@ -13,6 +13,7 @@ import LivePilotOperationsDialog from '../../components/LivePilotOperationsDialo
 import PilotCloseoutDialog from '../../components/PilotCloseoutDialog'
 import { adminLabel } from './adminLabels'
 import EventPolicyHoldDialog from './EventPolicyHoldDialog'
+import EventSalesSuspensionDialog from './EventSalesSuspensionDialog'
 import { POLICY_HOLD_SCOPES } from './adminOperations'
 
 const statuses = ['', 'draft', 'published', 'cancelled', 'completed']
@@ -58,6 +59,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
   const [category, setCategory] = useState('')
   const [heldOnly, setHeldOnly] = useState(false)
   const [policyEvent, setPolicyEvent] = useState(null)
+  const [resumeEvent, setResumeEvent] = useState(null)
   const [notice, setNotice] = useState('')
   const [page, setPage] = useState(1)
   const [actionError, setActionError] = useState('')
@@ -203,12 +205,19 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                         {event.organizer_name}
                         {event.category && <span className="capitalize xl:hidden">{event.organizer_name ? ' · ' : ''}{event.category}</span>}
                       </p>
+                      {event.sales_suspended && <div className="mt-1.5 max-w-sm text-xs text-red-800">
+                        <p className="inline-flex rounded-full bg-red-50 px-2 py-0.5 font-medium ring-1 ring-red-200">Sales paused by HåfaPass</p>
+                        {event.sales_suspension_reason && <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{event.sales_suspension_reason}</p>}
+                      </div>}
                       {event.policy_hold && <p className="mt-1.5 inline-flex rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-200">{POLICY_HOLD_SCOPES[event.policy_hold.scope]?.badge || 'On policy hold'}</p>}
                       <div className="mt-1 flex flex-wrap gap-x-3 text-xs font-semibold">
                         <Link to={`/admin/payouts?event_id=${event.id}`} className="inline-flex min-h-11 items-center text-brand-700 underline-offset-2 hover:underline sm:min-h-8">Payouts<span className="sr-only"> for {event.title}</span></Link>
                         <button type="button" onClick={() => { setNotice(''); setPolicyEvent(event) }} className={`inline-flex min-h-11 items-center underline-offset-2 hover:underline sm:min-h-8 ${event.policy_hold ? 'text-brand-700' : 'text-red-700'}`}>
                           {event.policy_hold ? 'Restore' : 'Pause or hide'}<span className="sr-only"> {event.title}</span>
                         </button>
+                        {event.sales_suspended && <button type="button" onClick={() => { setNotice(''); setResumeEvent(event) }} className="inline-flex min-h-11 items-center text-brand-700 underline-offset-2 hover:underline sm:min-h-8">
+                          Resume sales<span className="sr-only"> for {event.title}</span>
+                        </button>}
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-3 py-3">
@@ -253,6 +262,8 @@ function AdminEventsPageSession({ identity, resourcePath }) {
       )}
       {policyEvent && <EventPolicyHoldDialog event={policyEvent} beginRequest={beginRequest} onClose={() => setPolicyEvent(null)}
         onSaved={message => { setPolicyEvent(null); setNotice(message); refreshAfterAction() }} />}
+      {resumeEvent && <EventSalesSuspensionDialog event={resumeEvent} beginRequest={beginRequest} onClose={() => setResumeEvent(null)}
+        onSaved={message => { setResumeEvent(null); setNotice(message); refreshAfterAction() }} />}
     </AdminLayout>
   )
 }

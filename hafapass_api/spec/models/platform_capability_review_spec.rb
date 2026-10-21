@@ -38,14 +38,21 @@ RSpec.describe PlatformCapabilityReview do
     expect(review.destroy).to be(false)
   end
 
-  it "requires an independent approver and an exact parent snapshot" do
+  it "requires an exact parent snapshot" do
     submission = described_class.create!(attributes)
     approval = described_class.new(attributes.merge(
       decision: :approval, parent_review: submission, evidence_reference: "different"
     ))
 
     expect(approval).not_to be_valid
-    expect(approval.errors[:actor_user]).to include("must be independent from the evidence submitter")
     expect(approval.errors[:base]).to include("Evidence snapshot must match the parent review")
+  end
+
+  it "lets the submitting administrator approve their own exact snapshot" do
+    submission = described_class.create!(attributes)
+    approval = described_class.new(attributes.merge(decision: :approval, parent_review: submission))
+
+    expect(approval).to be_valid
+    expect(approval.actor_user).to eq(submission.actor_user)
   end
 end

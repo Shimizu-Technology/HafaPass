@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 import AdminSessionGate from './AdminSessionGate'
@@ -9,6 +9,7 @@ import FormErrorSummary from '../../components/FormErrorSummary'
 import { usePlatformRequests } from '../../hooks/usePlatformContext'
 import { feeExample, feeRateLabel, platformFeeCents } from '../../utils/feeTerms'
 import { money } from './adminOperations'
+import PaymentModeSwitch from './PaymentModeSwitch'
 
 // Mirrors SiteSetting validation so most mistakes are caught before saving;
 // the server stays the authority and its messages are shown the same way.
@@ -26,12 +27,6 @@ const BEARERS = {
   platform: { title: 'HåfaPass covers card processing', body: 'Card processing on tickets is paid out of the service fee. Organizers keep the full ticket price.' },
   organizer: { title: 'Deducted from organizer proceeds', body: 'The actual card processing cost of each order is taken out of the organizer’s payout.' },
 }
-const MODES = {
-  simulate: { label: 'Simulate', body: 'Checkout runs end to end without contacting Stripe. No card is charged.' },
-  test: { label: 'Test (Stripe sandbox)', body: 'Payments go to Stripe’s sandbox with test cards. No real money moves.' },
-  live: { label: 'Live (real money)', body: 'Buyers are charged real money through Stripe.' },
-}
-
 const toForm = settings => ({
   platform_name: settings.platform_name || '',
   platform_email: settings.platform_email || '',
@@ -163,14 +158,16 @@ function AdminSettingsSession({ identity, resourcePath }) {
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(null)
 
-  const load = useCallback(() => {
+  // `keepForm` re-checks the saved settings (for example payment readiness)
+  // without discarding edits the admin has not saved yet.
+  const load = useCallback(({ keepForm = false } = {}) => {
     const request = beginRequest()
-    if (!request) return
+    if (!request) return Promise.resolve()
     pendingLoad.current?.abort()
     pendingLoad.current = request
     setLoadError('')
-    apiClient.get('/admin/settings', request.config)
-      .then(response => { if (request.current()) { setSaved(response.data); setForm(toForm(response.data)) } })
+    return apiClient.get('/admin/settings', request.config)
+      .then(response => { if (request.current()) { setSaved(response.data); if (!keepForm) setForm(toForm(response.data)) } })
       .catch(failure => { if (request.current() && !request.handleError(failure)) setLoadError('Settings could not be loaded. Nothing has changed.') })
       .finally(() => request.release())
   }, [beginRequest])
@@ -231,7 +228,6 @@ function AdminSettingsSession({ identity, resourcePath }) {
   if (!form) return <AdminLayout><div className="flex justify-center py-20"><Loader2 aria-label="Loading settings" className="h-8 w-8 animate-spin text-brand-500" /></div></AdminLayout>
 
   const summaryErrors = Object.fromEntries(Object.entries(errors).filter(([field, message]) => message && field !== 'form'))
-  const mode = MODES[saved.payment_mode] || { label: saved.payment_mode, body: '' }
   const inputClass = field => `input ${errors[field] ? 'input-error' : ''}`
 
   return (
@@ -308,17 +304,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
         </div>
       </form>
 
-      <section aria-labelledby="payment-mode-title" className="card mt-8 p-5 sm:p-6">
-        <h2 id="payment-mode-title" className="text-lg font-semibold text-neutral-900">Payment mode</h2>
-        <p className="mt-2"><span className="rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-200">{mode.label}</span></p>
-        <p className="mt-3 text-sm text-neutral-700">{mode.body}</p>
-        <p className="mt-3 text-sm text-neutral-700">The payment mode is not changed from this screen. Live mode needs both of these, and an independent approval of current Stripe evidence:</p>
-        <ul className="mt-2 space-y-1 text-sm">
-          <li className="flex gap-2"><span aria-hidden="true">{saved.stripe_live_configured ? '✓' : '–'}</span><span>Stripe live keys configured: <strong>{saved.stripe_live_configured ? 'Yes' : 'No'}</strong></span></li>
-          <li className="flex gap-2"><span aria-hidden="true">{saved.stripe_live_approved ? '✓' : '–'}</span><span>Live provider evidence independently approved: <strong>{saved.stripe_live_approved ? 'Yes' : 'No'}</strong></span></li>
-        </ul>
-        <Link to="/admin/provider-readiness" className="mt-4 inline-flex min-h-11 items-center font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-900">Review provider readiness</Link>
-      </section>
+      <PaymentModeSwitch settings={saved} beginRequest={beginRequest} onChanged={data => setSaved(previous => ({ ...previous, ...data }))} onRefresh={() => load({ keepForm: true })} />
 
       {confirming && <Dialog labelledBy={confirmTitle} busy={saving} onClose={() => setConfirming(null)} className="max-w-lg">
         <h2 id={confirmTitle} className="text-lg font-semibold text-neutral-900">Change fee terms for new orders?</h2>

@@ -181,50 +181,15 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
     end
 
-    it "fails closed in production when event-specific pilot readiness is absent" do
+    it "refuses checkout in production until HåfaPass verifies the organizer" do
       allow(Rails.env).to receive(:production?).and_return(true)
       allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
+      organizer_profile.update!(verification_status: :pending, verification_requested_at: Time.current)
 
       post_json "/api/v1/orders", params: valid_params
 
       expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to include("current pilot readiness approval")
-      expect(Order.count).to eq(0)
-    end
-
-    it "fails closed in production when Gate F candidate validation is absent" do
-      allow(Rails.env).to receive(:production?).and_return(true)
-      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
-      allow_any_instance_of(Event).to receive(:production_release_gate_status).and_return(:pilot_validation)
-
-      post_json "/api/v1/orders", params: valid_params
-
-      expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to include("current Gate F validation approval")
-      expect(Order.count).to eq(0)
-    end
-
-    it "fails closed in production when Gate G event-day rehearsal approval is absent" do
-      allow(Rails.env).to receive(:production?).and_return(true)
-      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
-      allow_any_instance_of(Event).to receive(:production_release_gate_status).and_return(:event_day_rehearsal)
-
-      post_json "/api/v1/orders", params: valid_params
-
-      expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to include("current Gate G rehearsal approval")
-      expect(Order.count).to eq(0)
-    end
-
-    it "fails closed in production when Gate H live-money approval is absent" do
-      allow(Rails.env).to receive(:production?).and_return(true)
-      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
-      allow_any_instance_of(Event).to receive(:production_release_gate_status).and_return(:live_money)
-
-      post_json "/api/v1/orders", params: valid_params
-
-      expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to include("current Gate H live-money approval")
+      expect(response.parsed_body.fetch("error")).to eq("Tickets for this event are not on sale yet")
       expect(Order.count).to eq(0)
     end
 

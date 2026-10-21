@@ -1,7 +1,7 @@
 require "rails_helper"
 
 RSpec.describe LiveMoneyProofAuthorizations::Manager do
-  it "requires independent approval and consumes one exact hidden proof order" do
+  it "lets the requesting administrator approve and consumes one exact hidden proof order" do
     stub_live_money_provider_ready
     profile = create(:organizer_profile, :payout_ready)
     event = create(:event, :published, organizer_profile: profile, organization: profile.organization,
@@ -12,11 +12,8 @@ RSpec.describe LiveMoneyProofAuthorizations::Manager do
     authorization = described_class.request!(event: event, buyer_email: "proof@example.com",
       max_amount_cents: 200, expires_at: 1.hour.from_now, actor: requester)
 
-    expect do
-      described_class.approve!(authorization: authorization, actor: requester)
-    end.to raise_error(described_class::AuthorizationError, /cannot approve/)
-
-    described_class.approve!(authorization: authorization, actor: create(:user, :admin))
+    described_class.approve!(authorization: authorization, actor: requester)
+    expect(authorization.reload).to have_attributes(requested_by_user_id: requester.id, approved_by_user_id: requester.id)
     expect(described_class.find_available(event: event, user: requester, buyer_email: "proof@example.com"))
       .to eq(authorization)
     expect do

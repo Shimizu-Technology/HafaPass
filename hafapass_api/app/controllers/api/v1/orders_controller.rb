@@ -45,29 +45,10 @@ class Api::V1::OrdersController < ApplicationController
       return render_checkout_rejection("Checkout is unavailable until the current policy register is approved", status: :service_unavailable)
     end
 
-    release_gate = event.production_release_gate_status
-    if release_gate == :pilot_readiness
-      return render_checkout_rejection("Checkout is unavailable until this event has a current pilot readiness approval", status: :service_unavailable)
-    end
-
-    if release_gate == :pilot_validation
-      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate F validation approval", status: :service_unavailable)
-    end
-
-    if release_gate == :event_day_rehearsal
-      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate G rehearsal approval", status: :service_unavailable)
-    end
-
-    if release_gate == :live_money
-      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate H live-money approval", status: :service_unavailable)
-    end
-
-    if release_gate == :live_pilot
-      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate I bounded-pilot approval", status: :service_unavailable)
-    end
-
-    if release_gate == :live_pilot_operation
-      return render_checkout_rejection("Checkout is unavailable while the bounded live-pilot sales window is inactive", status: :service_unavailable)
+    # Production's one sales gate: HåfaPass verified the organizer and has not
+    # paused the event. Not tied to deploys or event edits.
+    if !existing_order && !event.organizer_sales_verified?
+      return render_checkout_rejection("Tickets for this event are not on sale yet", status: :service_unavailable)
     end
 
     unless existing_order

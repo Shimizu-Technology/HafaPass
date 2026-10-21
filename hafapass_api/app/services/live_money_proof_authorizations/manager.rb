@@ -17,7 +17,7 @@ module LiveMoneyProofAuthorizations
         account = event.organization.payout_account
         raise AuthorizationError, "A current payout-ready connected account is required" unless account
         unless LiveMoneyProof.provider_ready?(account)
-          raise AuthorizationError, "Live Stripe and payout capabilities must be configured and independently approved"
+          raise AuthorizationError, "Live Stripe and payout capabilities must be configured and approved"
         end
         rehearsal = EventDayRehearsal.active_approval(event)
         raise AuthorizationError, "A current Gate G rehearsal approval is required" unless rehearsal
@@ -55,8 +55,6 @@ module LiveMoneyProofAuthorizations
     def self.approve!(authorization:, actor:, request: nil)
       authorization.with_lock do
         raise AuthorizationError, "Only an administrator can approve a proof authorization" unless actor&.admin?
-        raise AuthorizationError, "The requester cannot approve their own proof authorization" if
-          authorization.requested_by_user_id == actor.id
         raise AuthorizationError, "This proof authorization is already approved" if authorization.approved?
         raise AuthorizationError, "This proof authorization is expired, revoked, or consumed" if
           authorization.expires_at <= Time.current || authorization.revoked? || authorization.consumed?

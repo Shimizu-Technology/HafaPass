@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import EventOverviewPage from './EventOverviewPage'
 
-vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
+vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn() } }))
 const launch = vi.hoisted(() => ({}))
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => launch }))
 
@@ -59,10 +59,12 @@ describe('event overview', () => {
 
   it('walks a draft through its open publish checks with a link to finish setup', async () => {
     mount({ ...base, status: 'draft', permissions: { view_events: true, manage_events: true, edit_event_content: true },
-      publish_checklist: [{ code: 'title', label: 'Event title added', complete: true }, { code: 'tickets', label: 'At least one ticket type added', complete: false }] })
+      publish_checklist: [{ code: 'title', label: 'Event title added', complete: true }, { code: 'tickets', label: 'At least one ticket type added', complete: false },
+        { code: 'retired_launch_gate', label: 'Internal review', complete: false }] })
     const next = await screen.findByRole('region', { name: 'Next steps' })
     expect(next).toHaveTextContent('1 of 2 publish checks done.')
-    expect(next).toHaveTextContent('At least one ticket type added')
+    expect(next).toHaveTextContent('Add at least one ticket type')
+    expect(next).not.toHaveTextContent('Internal review')
     expect(within(next).getByRole('link', { name: 'Finish setup' })).toHaveAttribute('href', '/dashboard/events/37/edit')
     expect(screen.queryByRole('link', { name: 'View public page' })).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Sales so far' })).not.toHaveTextContent('Revenue')
@@ -144,5 +146,48 @@ describe('event overview', () => {
     const input = screen.getByRole('textbox', { name: 'Event link' })
     expect(input).toHaveAttribute('readonly')
     await waitFor(() => expect(input.value).toMatch(/\/events\/synthetic-reef-night$/))
+  })
+  it('never calls a published event live while HåfaPass has not verified the organizer', async () => {
+    const user = userEvent.setup()
+    apiClient.post.mockResolvedValue({ data: { verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z', organization: { role: 'owner' } } })
+    mount({ ...base, sales_status: { on_sale: false, reason: 'organizer_not_verified', message: 'Visible but not on sale yet: waiting for HåfaPass to verify your organization.' } }, {
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+      '/organizer_profile': { verification_status: 'unverified', organization: { role: 'owner' } },
+    })
+    const next = await screen.findByRole('region', { name: 'Next steps' })
+    expect(next).toHaveTextContent('Visible but not on sale yet.')
+    expect(next).toHaveTextContent('Waiting for HåfaPass to verify your organization.')
+    expect(next).not.toHaveTextContent('Your event is live')
+    expect(screen.getByRole('region', { name: 'Overview' })).toHaveTextContent('tickets are not on sale yet')
+    expect(within(next).getByRole('link', { name: 'View public page' })).toBeInTheDocument()
+    expect(within(next).getByRole('link', { name: 'Scan tickets' })).toBeInTheDocument()
+    await user.click(await within(next).findByRole('button', { name: 'Request verification' }))
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', {}, expect.objectContaining({ organizationId: '1' }))
+    expect(await within(next).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+  })
+
+  it('shows the server reason when HåfaPass suspended sales for the event', async () => {
+    mount({ ...base, sales_status: { on_sale: false, reason: 'sales_paused', message: 'Sales paused by HåfaPass: Chargeback review.' } },
+      { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
+    const next = await screen.findByRole('region', { name: 'Next steps' })
+    expect(next).toHaveTextContent('Sales paused by HåfaPass.Chargeback review.')
+    expect(next).not.toHaveTextContent('Visible but not on sale yet')
+    expect(requested('/organizer_profile')).toBe(false)
+  })
+
+  it('does not load the organizer profile when the event is on sale', async () => {
+    mount({ ...base, sales_status: { on_sale: true, reason: null, message: null } }, { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
+    expect(await screen.findByText('Your event is live. Share it and get ready for the door.')).toBeInTheDocument()
+    expect(requested('/organizer_profile')).toBe(false)
+  })
+
+  it('says HåfaPass paused sales for the event and shows the reason', async () => {
+    mount({ ...base, sales_status: { on_sale: false, reason: 'event_paused', message: 'Sales are paused.' }, policy_hold: { scope: 'sales', reason: 'Venue permit under review.' } },
+      { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
+    const next = await screen.findByRole('region', { name: 'Next steps' })
+    expect(next).toHaveTextContent('Sales paused by HåfaPass.')
+    expect(next).toHaveTextContent('Venue permit under review.')
+    expect(next).not.toHaveTextContent('Your event is live')
+    expect(within(next).queryByRole('button', { name: /Request approval/ })).not.toBeInTheDocument()
   })
 })

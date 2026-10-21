@@ -14,6 +14,7 @@ import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketpla
 import { parseFeeTerms } from '../utils/feeTerms'
 import { SellerLine } from '../components/PriceDisclosure'
 import { estimateCheckoutLine } from '../utils/checkoutEstimate'
+import PaidCheckoutGate from '../components/PaidCheckoutGate'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -515,6 +516,9 @@ function CheckoutContent({ buyerId }) {
   const feeIncludesProcessing = feeBearer === 'platform' && displayedFee > 0
   const displayedDiscount = orderData?.discount_cents ?? discountCents
   const displayedTotal = orderData?.total_cents ?? totalCents
+  // While production payments are in Stripe test mode only platform admins may
+  // buy paid tickets; the API refuses everyone else. Free orders stay open.
+  const paidCheckoutAdminOnly = config?.paid_checkout_admin_only === true && totalCents > 0
   const checkoutExpired = secondsRemaining === 0
   const countdownLabel = secondsRemaining === null
     ? null
@@ -671,7 +675,7 @@ function CheckoutContent({ buyerId }) {
           <div className="card p-5 sm:p-6 mb-6">
             <h2 className="text-base font-semibold text-neutral-900 mb-4">{t('checkout.yourInformation')}</h2>
             {submitError && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+              <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
                 <p className="text-red-700 text-sm">{submitError}</p>
                 {checkoutNeedsRecovery && <button type="button" onClick={retrySavedCheckout} className="mt-2 font-semibold underline">Recover earlier checkout</button>}
                 {canStartNewCheckout && <button type="button" onClick={startNewCheckout} className="mt-2 font-semibold underline">Start a new checkout</button>}
@@ -780,11 +784,13 @@ function CheckoutContent({ buyerId }) {
                   {formErrors.terms && <p id="buyer-terms-error" className="text-red-700 text-xs mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
               </div>
+              <PaidCheckoutGate active={paidCheckoutAdminOnly}>
               <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
                 {submitting
                   ? (isSimulate ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
                   : (isSimulate ? `${t('checkout.placeOrder')} \u2014 ${formatPrice(displayedTotal)}` : `${t('checkout.continueToPayment')} \u2014 ${formatPrice(displayedTotal)}`)}
               </button>
+              </PaidCheckoutGate>
             </form>
           </div>
         )}

@@ -81,6 +81,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       pilot_closeout: PilotCloseout.list_summary(e),
       organization_id: e.organization_id,
       sales_suspended: e.sales_suspended_at.present?,
+      sales_suspension_reason: e.sales_suspension_reason,
       policy_hold: e.policy_hold_summary(include_actor: true)
     }
   end

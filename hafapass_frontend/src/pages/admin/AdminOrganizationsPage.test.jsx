@@ -52,11 +52,11 @@ describe('Admin organizations', () => {
     expect(screen.queryByRole('radio', { name: /^Owner/ })).not.toBeInTheDocument()
 
     apiClient.patch.mockResolvedValue({ data: {} })
-    await userEvent.click(screen.getByRole('button', { name: 'Unverify' }))
-    const confirm = within(screen.getByRole('dialog', { name: 'Unverify Ambros Events?' }))
-    expect(confirm.getByText(/can’t go on sale until they are verified again/)).toBeInTheDocument()
-    await userEvent.click(confirm.getByRole('button', { name: 'Unverify' }))
-    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/4', { verification_status: 'unverified' }, expect.anything())
+    await userEvent.click(screen.getByRole('button', { name: 'Pause all sales' }))
+    const confirm = within(screen.getByRole('dialog', { name: 'Pause all sales for Ambros Events?' }))
+    expect(confirm.getByText(/stop selling until you verify them again/)).toBeInTheDocument()
+    await userEvent.click(confirm.getByRole('button', { name: 'Pause all sales' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/4', { verification_status: 'suspended' }, expect.anything())
 
     await userEvent.click(screen.getByRole('button', { name: 'Open its dashboard' }))
     expect(window.localStorage.getItem('hafapass_organization_id')).toBe('3')

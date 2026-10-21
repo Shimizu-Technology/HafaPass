@@ -172,7 +172,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
           <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="payment-readiness-title" className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-stone-50 shadow-2xl sm:max-w-3xl sm:rounded-3xl">
             <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-200 bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-600">Gate B · two-person control</p>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-600">Gate B · evidence review</p>
                 <h2 id="payment-readiness-title" className="mt-1 text-2xl font-bold tracking-tight text-neutral-950">
                   {account.provider} payment readiness
                 </h2>
@@ -236,7 +236,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
                   </fieldset>
 
                   <div className="flex flex-col-reverse gap-3 border-t border-stone-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-xs leading-relaxed text-neutral-500">A different administrator must approve this exact snapshot.</p>
+                    <p className="text-xs leading-relaxed text-neutral-500">An administrator, including you, approves this exact snapshot next.</p>
                     <button type="submit" disabled={busy || !allControlsChecked} className="btn-primary min-h-11 disabled:cursor-not-allowed disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />} Submit evidence</button>
                   </div>
                 </form>
@@ -245,8 +245,8 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
               {mode === 'pending' && (
                 <div className="space-y-7">
                   <div className="border-l-4 border-amber-400 bg-amber-50 p-4">
-                    <p className="font-semibold text-amber-900">Independent approval required</p>
-                    <p className="mt-1 text-sm leading-relaxed text-amber-800">Admin #{pending.actor_user_id} submitted this snapshot. The API rejects approval by that same administrator.</p>
+                    <p className="font-semibold text-amber-900">Approval required</p>
+                    <p className="mt-1 text-sm leading-relaxed text-amber-800">Admin #{pending.actor_user_id} submitted this snapshot. Any administrator, including the submitter, can approve it after checking the exact evidence below.</p>
                   </div>
                   <ReferenceList review={pending} />
                   <div>
@@ -264,7 +264,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
 
               {mode === 'approved' && (
                 <form onSubmit={revoke} className="space-y-7">
-                  <div className="flex items-start gap-3 border-l-4 border-emerald-500 bg-emerald-50 p-4"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div><p className="font-semibold text-emerald-900">Current independent approval</p><p className="mt-1 text-sm text-emerald-800">Approved by admin #{approval.actor_user_id}; expires {formatDate(approval.expires_at)}.</p></div></div>
+                  <div className="flex items-start gap-3 border-l-4 border-emerald-500 bg-emerald-50 p-4"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div><p className="font-semibold text-emerald-900">Current approval</p><p className="mt-1 text-sm text-emerald-800">Approved by admin #{approval.actor_user_id}; expires {formatDate(approval.expires_at)}.</p></div></div>
                   <ReferenceList review={approval} />
                   <label className="block text-sm font-semibold text-neutral-800">Revocation reason<input required value={reason} onChange={event => setReason(event.target.value)} className="input mt-2" placeholder="What changed or became invalid?" /></label>
                   <div className="flex justify-end border-t border-stone-200 pt-6"><button type="submit" disabled={busy || !reason.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-red-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />} Revoke readiness</button></div>

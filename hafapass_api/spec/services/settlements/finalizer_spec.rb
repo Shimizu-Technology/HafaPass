@@ -135,7 +135,9 @@ RSpec.describe Settlements::Finalizer do
   end
 
   it "cannot clear an existing liability with a simulated production payout after a mode change" do
-    record_sale!(event)
+    order, = record_sale!(event)
+    # Production settles live Stripe money only.
+    order.payments.update_all(provider_environment: "live")
     create(:connected_account, organization: organization)
     settlement = described_class.call(event: event, actor: actor)
     SiteSetting.instance.update!(payment_mode: "simulate")

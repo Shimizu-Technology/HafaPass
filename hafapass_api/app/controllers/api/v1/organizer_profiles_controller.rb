@@ -61,6 +61,8 @@ module Api
         render json: profile_json(profile)
       end
 
+      VERIFICATION_NOTICE_INTERVAL = 24.hours
+
       def submit_verification
         profile = current_profile
         return render json: { error: "Organizer profile not found" }, status: :not_found unless profile
@@ -76,9 +78,16 @@ module Api
             status: :unprocessable_entity
         end
 
-        profile.update!(verification_status: :pending, verification_requested_at: Time.current, verification_notes: nil)
+        # Admins are emailed only when the profile moves into pending, and at
+        # most once a day per profile, so repeated clicks cannot flood inboxes.
+        previously_requested_at = profile.verification_requested_at
+        notify = !profile.verification_status_pending? || previously_requested_at.nil? ||
+          previously_requested_at < VERIFICATION_NOTICE_INTERVAL.ago
+        profile.update!(verification_status: :pending, verification_requested_at: notify ? Time.current : previously_requested_at,
+          verification_notes: nil)
         AuditLogger.record!(action: "organizer.verification_requested", auditable: profile, actor: current_user,
           request: request)
+        EmailService.send_verification_request_async(profile) if notify
         render json: profile_json(profile)
       end
 

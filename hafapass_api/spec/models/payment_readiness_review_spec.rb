@@ -8,13 +8,12 @@ RSpec.describe PaymentReadinessReview do
   let(:approver) { create(:user, :admin) }
   let(:submission) { create(:payment_readiness_review, :submission, connected_account: account, actor_user: submitter) }
 
-  it "enforces independent approval even outside the workflow service" do
+  it "allows the submitting administrator to approve the exact snapshot" do
     review = build(:payment_readiness_review, :approval, connected_account: account,
       parent_review: submission, actor_user: submitter,
       **PaymentReadinessReviews::Manager.send(:snapshot, submission))
 
-    expect(review).not_to be_valid
-    expect(review.errors.full_messages).to include(/independent from the evidence submitter/)
+    expect(review).to be_valid
   end
 
   it "rejects an approval whose evidence differs from its submission" do

@@ -177,4 +177,20 @@ describe('AdminEventsPage', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: 'On policy hold' }))
     await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/events', expect.objectContaining({ params: expect.objectContaining({ policy_hold: 'true' }) })))
   })
+
+  it('shows why HåfaPass paused sales and resumes them with an optional note', async () => {
+    const suspended = { ...proofEvent, id: 8, title: 'Reef Fest', status: 'published', sales_suspended: true, sales_suspension_reason: 'Chargeback review.' }
+    apiClient.get.mockResolvedValueOnce({ data: { events: [suspended], meta: { page: 1, total_pages: 1 } } })
+      .mockResolvedValue({ data: { events: [{ ...suspended, sales_suspended: false, sales_suspension_reason: null }], meta: { page: 1, total_pages: 1 } } })
+    apiClient.delete.mockResolvedValue({ data: { id: 8, sales_suspended: false, sales_status: { on_sale: true } } })
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+    expect((await screen.findAllByText('Chargeback review.')).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Resume sales for Reef Fest' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Resume sales for Reef Fest?' }))
+    fireEvent.change(dialog.getByRole('textbox', { name: /Note/ }), { target: { value: 'Resolved with the bank.' } })
+    fireEvent.click(dialog.getByRole('button', { name: 'Resume sales' }))
+    await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith('/admin/events/8/sales_suspension', expect.objectContaining({ data: { note: 'Resolved with the bank.' } })))
+    expect(await screen.findByText('Sales resumed for Reef Fest.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Resume sales for Reef Fest' })).not.toBeInTheDocument())
+  })
 })

@@ -18,17 +18,14 @@ RSpec.describe PilotValidationReviews::Manager do
     end.to raise_error(described_class::ReviewError, /Gate E/)
   end
 
-  it "independently approves evidence for the exact Gate E candidate" do
+  it "lets the submitting administrator approve evidence for the exact Gate E candidate" do
     readiness = create_pilot_readiness_approval(event: event)
     submission = described_class.submit!(
       event: event, attributes: valid_pilot_validation_attributes(event: event), actor: submitter
     )
 
-    expect do
-      described_class.approve!(submission: submission, actor: submitter)
-    end.to raise_error(described_class::ReviewError, /cannot approve their own/)
-
-    approval = described_class.approve!(submission: submission, actor: approver)
+    approval = described_class.approve!(submission: submission, actor: submitter)
+    expect(approval.actor_user).to eq(submitter)
     expect(approval.pilot_readiness_review).to eq(readiness)
     expect(PilotValidation.active_approval(event)).to eq(approval)
     expect(AuditLog.where(auditable: approval, action: "pilot_validation.approved")).to exist

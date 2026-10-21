@@ -145,7 +145,7 @@ function CapabilityCard({ item, refresh, identity }) {
 
       {pending ? (
         <div className="mt-5 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <div className="flex gap-3"><Clock3 className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><p className="font-semibold text-amber-950">Independent decision required</p><p className="text-sm text-amber-900">Admin #{pending.actor_user_id} submitted evidence {pending.evidence_reference}. A different administrator must approve it.</p></div></div>
+          <div className="flex gap-3"><Clock3 className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><p className="font-semibold text-amber-950">Decision required</p><p className="text-sm text-amber-900">Admin #{pending.actor_user_id} submitted evidence {pending.evidence_reference}. Any administrator, including the submitter, can approve it.</p></div></div>
           <label className="block text-sm font-medium text-amber-950">Decision reason (required for reject)
             <input className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} />
           </label>
@@ -217,7 +217,7 @@ function ProviderReadinessSession({ identity }) {
   }, [beginRequest])
   useEffect(() => { refresh(); return () => pendingRead.current?.abort() }, [refresh])
 
-  return <AdminLayout><div className="mb-6 flex items-start gap-3"><ShieldCheck className="mt-1 h-7 w-7 text-brand-600" /><div><h2 className="text-2xl font-bold text-neutral-900">Provider and policy readiness</h2><p className="mt-1 max-w-3xl text-neutral-600">Credentials show that an integration can connect. Independent, current evidence determines whether HåfaPass may use it in production.</p></div></div>{error && <p className="rounded-xl bg-red-50 p-4 text-red-800" role="alert">{error} <button type="button" onClick={refresh} className="min-h-11 px-2 font-semibold underline">Retry provider readiness</button></p>}{!items && !error ? <Loader2 className="mx-auto mt-16 h-8 w-8 animate-spin text-brand-500" /> : <div className="space-y-5">{items?.map(item => <CapabilityCard key={item.capability} item={item} refresh={refresh} identity={identity} />)}</div>}</AdminLayout>
+  return <AdminLayout><div className="mb-6 flex items-start gap-3"><ShieldCheck className="mt-1 h-7 w-7 text-brand-600" /><div><h2 className="text-2xl font-bold text-neutral-900">Provider and policy readiness</h2><p className="mt-1 max-w-3xl text-neutral-600">Credentials show that an integration can connect. Current, approved evidence determines whether HåfaPass may use it in production.</p></div></div>{error && <p className="rounded-xl bg-red-50 p-4 text-red-800" role="alert">{error} <button type="button" onClick={refresh} className="min-h-11 px-2 font-semibold underline">Retry provider readiness</button></p>}{!items && !error ? <Loader2 className="mx-auto mt-16 h-8 w-8 animate-spin text-brand-500" /> : <div className="space-y-5">{items?.map(item => <CapabilityCard key={item.capability} item={item} refresh={refresh} identity={identity} />)}</div>}</AdminLayout>
 }
 
 

@@ -81,7 +81,7 @@ module Admissions
     attr_reader :event, :actor
 
     def manifest_tickets
-      event.tickets.includes(:ticket_type, :inventory_retention, :pending_refund_tickets, { order: [:disputes, :refunds] },
+      event.tickets.includes(:ticket_type, :inventory_retention, :pending_refund_tickets, { order: [:disputes, :refunds, :payments] },
         event_seat: { venue_seat: { seating_row: :seating_section } }).order(:id).map do |ticket|
         {
           ticket_id: ticket.id,
@@ -115,7 +115,7 @@ module Admissions
       return "inventory_retained" if ticket.inventory_retained?
       return "payment_blocked" if ticket.order.ticket_access_blocked?
       return "refund_pending" if ticket.refund_pending?
-      return "unfulfilled" unless ticket.order.ticket_fulfilled?
+      return "unfulfilled" unless ticket.order.ticket_fulfilled?(payment_mode: payment_mode)
       return "admitted" if ticket.checked_in?
       return "valid" if ticket.issued?
 
@@ -134,8 +134,14 @@ module Admissions
       }
     end
 
+    # The payment mode decides whether test-card tickets admit people, so a
+    # mode switch yields a new manifest version and scanners re-download it.
     def source_payload(tickets)
-      { event: event_payload, tickets: tickets }
+      { event: event_payload, payment_mode: payment_mode, tickets: tickets }
+    end
+
+    def payment_mode
+      @payment_mode ||= SiteSetting.instance.payment_mode
     end
 
     def digest_for(value)

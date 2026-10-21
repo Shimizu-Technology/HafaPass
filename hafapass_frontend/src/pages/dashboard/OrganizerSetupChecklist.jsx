@@ -9,7 +9,7 @@ const VERIFICATION = {
   pending: { done: false, status: 'Submitted — HåfaPass is reviewing it', next: 'Nothing to do right now. HåfaPass contacts you if anything is missing.' },
   verified: { done: true, status: 'Verified by HåfaPass' },
   rejected: { done: false, status: 'Changes needed', next: 'Read the review note, update your profile, then submit again.' },
-  suspended: { done: false, status: 'Suspended', next: 'Contact the HåfaPass team to resolve this.' },
+  suspended: { done: false, status: 'Sales paused by HåfaPass', next: 'Your events stay visible but can’t sell. Contact the HåfaPass team to resolve this.' },
 }
 
 // The organizer's guided setup: one list, in order, with the next action

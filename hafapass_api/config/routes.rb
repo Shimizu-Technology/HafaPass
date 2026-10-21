@@ -229,6 +229,7 @@ Rails.application.routes.draw do
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
           resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
+          resource :sales_suspension, only: [:destroy], controller: "event_sales_suspensions"
           post :retranslate, on: :member
         end
         get "events/:event_id/pilot_readiness", to: "pilot_readiness_reviews#show"
@@ -333,6 +334,7 @@ Rails.application.routes.draw do
         end
         resources :platform_capabilities, only: [:index]
         post "platform_capabilities/:capability/reviews", to: "platform_capability_reviews#create"
+        post "platform_capabilities/:capability/quick_approve", to: "platform_capability_reviews#quick_approve"
         resources :platform_capability_reviews, only: [] do
           member do
             post :approve

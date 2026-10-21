@@ -73,6 +73,57 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(response).to have_http_status(:bad_request)
   end
 
+  describe "test and live signing secrets" do
+    def signed_post(secret, livemode:, event_id:)
+      timestamp = Time.current.to_i
+      body = { id: event_id, type: "customer.created", created: timestamp, data: { object: { id: "cus_1" } } }
+      body[:livemode] = livemode unless livemode.nil?
+      payload = body.to_json
+      signature = OpenSSL::HMAC.hexdigest("SHA256", secret, "#{timestamp}.#{payload}")
+      post "/webhooks/stripe", params: payload,
+        headers: { "Content-Type" => "application/json", "Stripe-Signature" => "t=#{timestamp},v1=#{signature}" }
+    end
+
+    before do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("STRIPE_WEBHOOK_SECRET").and_return("whsec_test_endpoint")
+      allow(ENV).to receive(:[]).with("STRIPE_LIVE_WEBHOOK_SECRET").and_return("whsec_live_endpoint")
+    end
+
+    it "verifies live events with the live secret and test events with the test secret" do
+      signed_post("whsec_live_endpoint", livemode: true, event_id: "evt_live_signed")
+      expect(response).to have_http_status(:ok)
+      signed_post("whsec_test_endpoint", livemode: false, event_id: "evt_test_signed")
+      expect(response).to have_http_status(:ok)
+
+      expect(WebhookEvent.where(provider_event_id: %w[evt_live_signed evt_test_signed]).count).to eq(2)
+      expect(WebhookEvent.find_by!(provider_event_id: "evt_live_signed").payload).to include("livemode" => true)
+    end
+
+    it "rejects a live event signed with the test secret" do
+      expect do
+        signed_post("whsec_test_endpoint", livemode: true, event_id: "evt_live_forged")
+      end.not_to change(WebhookEvent, :count)
+      expect(response).to have_http_status(:bad_request)
+      expect(response.parsed_body).to eq("error" => "Invalid signature")
+    end
+
+    it "rejects a signed live event when only the test secret is configured" do
+      allow(ENV).to receive(:[]).with("STRIPE_LIVE_WEBHOOK_SECRET").and_return(nil)
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("development"))
+
+      signed_post("whsec_test_endpoint", livemode: true, event_id: "evt_live_without_secret")
+      expect(response).to have_http_status(:bad_request)
+      expect(response.parsed_body).to eq("error" => "Webhook secret not configured for this Stripe mode")
+    end
+
+    it "tries both secrets when the event does not state its mode" do
+      signed_post("whsec_test_endpoint", livemode: nil, event_id: "evt_modeless")
+      expect(response).to have_http_status(:ok)
+    end
+  end
+
   it "releases ticket type and pricing tier inventory when payment fails" do
     order = create(:order, :pending, event: event, stripe_payment_intent_id: "pi_failed")
     ticket = create(:ticket, order: order, event: event, ticket_type: ticket_type, pricing_tier: pricing_tier)

@@ -10,15 +10,19 @@ class OrganizerProfile < ApplicationRecord
 
   validates :business_name, presence: true
   validates :user_id, uniqueness: true, allow_nil: true
-  validates :verification_notes, presence: true, if: -> { verification_status_rejected? || verification_status_suspended? }
+  # A rejection tells the organizer what to fix. Suspending ("Pause all sales")
+  # is one admin action; its note is optional.
+  validates :verification_notes, presence: true, if: -> { verification_status_rejected? }
 
   def policy_accepted?
     current = PolicyRegistry.organizer_agreement
     policy_accepted_at.present? && policy_version == current[:version] && policy_digest == current[:digest]
   end
 
+  # Production lets unverified organizers publish (tickets sell only once
+  # verified); elsewhere verification is still needed to publish.
   def ready_to_publish_free_events?
-    verification_status_verified? && policy_accepted?
+    (verification_status_verified? || Rails.env.production?) && policy_accepted?
   end
 
   def ready_to_publish_paid_events?

@@ -28,7 +28,7 @@ Status: **not approved for production**. The served text is `2026-10-launch-draf
 
 The content-bound digest is technical evidence of which text was served, not proof of legal approval. Before launch, replace draft copy with approved text, update the version, run checkout/publication regression tests, and record the approval evidence.
 
-After professional approval, submit the controlled record reference and SHA-256 digest through `/admin/provider-readiness` under **Production policy register**. A second administrator must approve the exact snapshot. The resulting application approval expires and is automatically invalidated by any policy version or content change. See [Gate D Provider and Policy Evidence](GATE_D_PROVIDER_POLICY_EVIDENCE.md).
+After professional approval, submit the controlled record reference and SHA-256 digest through `/admin/provider-readiness` under **Production policy register**. An administrator (the submitter may approve) must approve the exact snapshot. While policies are still drafts, the approval requires the explicit draft-launch acknowledgment; the one-click **Approve now** on the admin dashboard asks for the same acknowledgment. The resulting application approval expires and is automatically invalidated by any policy version or content change. See [Gate D Provider and Policy Evidence](GATE_D_PROVIDER_POLICY_EVIDENCE.md).
 
 ## Outstanding legal-review items
 

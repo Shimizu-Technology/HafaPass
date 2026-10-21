@@ -71,6 +71,9 @@ class EmailService
       when "event_reminder"
         reminder = EventReminder.find(delivery.metadata.fetch("event_reminder_id"))
         send_event_reminder(reminder, delivery: delivery)
+      when "verification_request"
+        profile = OrganizerProfile.find(delivery.metadata.fetch("organizer_profile_id"))
+        send_verification_request(profile, delivery.recipient, delivery: delivery)
       when "organization_invitation"
         send_organization_invitation(delivery.organization_membership, delivery: delivery)
       when "platform_invitation"
@@ -195,6 +198,43 @@ class EmailService
     rescue StandardError => e
       record_enqueue_failure(delivery, e)
       raise
+    end
+
+    # Tells every platform administrator an organizer asked to be verified,
+    # which is what lets their published events sell in production.
+    # Deliveries are stored against an event, so the notice rides on the
+    # organizer's latest event. The admin dashboard's verification queue is the
+    # source of truth: an organizer with no events yet appears there only.
+    def send_verification_request_async(profile)
+      requested_at = profile.verification_requested_at || Time.current
+      event = profile.events.order(created_at: :desc).first
+      return unless event
+
+      admins = User.where(role: :admin).where.not(email: [nil, ""]).order(:id).to_a.uniq { |admin| admin.email.downcase }
+      admins.each do |admin|
+        delivery = nil
+        delivery = create_delivery(event: event, requested_by: profile.user, template: "verification_request",
+          recipient: admin.email,
+          metadata: { organizer_profile_id: profile.id, requested_at: requested_at.iso8601(6) },
+          idempotency_key: "verification-request/#{profile.id}/#{requested_at.to_i}/#{admin.id}")
+        MessageDeliveryJob.perform_later(delivery.id)
+      rescue StandardError => e
+        record_enqueue_failure(delivery, e) if delivery
+        Rails.logger.error("[VerificationRequest] Unable to queue profile=#{profile.id}: #{e.class}")
+      end
+    end
+
+    def send_verification_request(profile, recipient, delivery: nil)
+      name = ERB::Util.html_escape(profile.business_name)
+      html = <<~HTML
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #1f2937; margin: 0 0 12px; font-size: 20px;">#{name} asked to be verified</h2>
+          <p style="color: #4b5563; margin: 0 0 20px;">Verify the organizer on the HåfaPass admin dashboard so their published events can sell tickets.</p>
+          <p><a href="#{frontend_url}/admin" style="display:inline-block;background:#0e7c7b;color:white;padding:12px 24px;border-radius:10px;text-decoration:none">Open the admin dashboard</a></p>
+        </div>
+      HTML
+      deliver(to: recipient, subject: safe_subject("Verification requested: #{profile.business_name}"), html: html,
+        tag: "verification_request", delivery: delivery, organizer_profile_id: profile.id)
     end
 
     # Invitations are best-effort mail: the invitation itself is already saved
@@ -486,7 +526,7 @@ class EmailService
       end
       unless configured?
         if Rails.env.production? || (delivery&.provider == "resend" && delivery.outbound_payload.present?)
-          raise ProviderDisabled, "Production email is disabled until current Resend evidence is independently approved"
+          raise ProviderDisabled, "Production email is disabled until current Resend evidence is approved"
         end
         Rails.logger.info("[EmailService SIMULATE] delivery=#{delivery&.id} template=#{delivery&.template}")
         return { simulated: true }

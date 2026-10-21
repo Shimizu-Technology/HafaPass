@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
+import TestPaymentBadge from '../../components/TestPaymentBadge'
 import SupportLink from '../../components/SupportLink'
 import { partialRefundCents, refundConfirmLabel, ticketCountLabel } from '../../utils/eventToolFormat'
 
@@ -289,7 +290,7 @@ function RefundsPageSession({ eventId, identity }) {
           <DollarSign className="w-5 h-5 text-brand-500" />
          </div>
          <div className="min-w-0">
-          <p className="font-medium text-neutral-900 break-words">{order.reference || `Order #${order.id}`} &middot; {order.buyer_name}</p>
+          <p className="font-medium text-neutral-900 break-words">{order.reference || `Order #${order.id}`} &middot; {order.buyer_name}<TestPaymentBadge order={order} /></p>
           <p className="text-sm text-neutral-600 break-words">
            {order.buyer_email} &middot; {ticketCountLabel(order.ticket_count)} &middot; ${(order.total_cents / 100).toFixed(2)}
            {order.refunded_cents > 0 && <> &middot; ${(order.refunded_cents / 100).toFixed(2)} refunded</>}

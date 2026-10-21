@@ -63,4 +63,11 @@ describe('AdminOrdersPage', () => {
     expect(screen.getByText(/payment amount mismatch/)).toBeInTheDocument()
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/admin/orders', expect.objectContaining({ params: { page: 1, per_page: 20 } })))
   })
+
+  it('marks orders paid in Stripe test mode', async () => {
+    const original = (await apiClient.get.getMockImplementation()?.()) || (await apiClient.get())
+    apiClient.get.mockResolvedValue({ data: { ...original.data, orders: original.data.orders.map(order => ({ ...order, test_payment: true })) } })
+    render(<MemoryRouter initialEntries={['/admin/orders']}><AdminOrdersPage /></MemoryRouter>)
+    expect(await screen.findByText('Test')).toHaveTextContent('Test payment')
+  })
 })

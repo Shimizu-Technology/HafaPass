@@ -20,7 +20,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('mobile administrator user controls', () => {
-  it('exposes verification and independent readiness review in the phone card', async () => {
+  it('exposes verification and readiness review in the phone card', async () => {
     show(); const mobile = await card()
     expect(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })).toBeEnabled()
     expect(mobile.getByRole('button', { name: 'Record provider status' })).toBeEnabled()
@@ -43,11 +43,11 @@ describe('mobile administrator user controls', () => {
     expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'verified', verification_notes: '' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await waitFor(() => expect(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })).toHaveValue('verified'))
   })
-  it('keeps capability sync confirmation separate from independent approval', async () => {
+  it('keeps capability sync confirmation separate from evidence approval', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     show(); const mobile = await card()
     await userEvent.click(mobile.getByRole('button', { name: 'Record provider status' }))
-    expect(confirm).toHaveBeenCalledWith('Record the provider capability sync? Independent Gate B evidence approval will still be required.')
+    expect(confirm).toHaveBeenCalledWith('Record the provider capability sync? Gate B evidence approval will still be required.')
     expect(apiClient.patch).not.toHaveBeenCalled()
     confirm.mockReturnValue(true)
     apiClient.patch.mockResolvedValue({ data: { ...organizer.organizer_profile.connected_account, charges_enabled: true, payouts_enabled: true, details_submitted: true, payout_ready: false, requirements_due: ['independent_readiness_approval'] } })
@@ -82,9 +82,9 @@ describe('mobile administrator user controls', () => {
   })
   it('requires a fresh, non-blank review note before rejecting an organizer', async () => {
     apiClient.get.mockResolvedValue({ data: { users: [{ ...structuredClone(organizer), organizer_profile: { ...organizer.organizer_profile, verification_notes: 'Old rejection wording.' } }], meta: {} } })
-    apiClient.patch.mockResolvedValue({ data: { verification_status: 'suspended', verification_notes: 'Refund disputes open.' } })
+    apiClient.patch.mockResolvedValue({ data: { verification_status: 'rejected', verification_notes: 'Refund disputes open.' } })
     show(); const mobile = await card()
-    await userEvent.selectOptions(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' }), 'suspended')
+    await userEvent.selectOptions(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' }), 'rejected')
     const dialog = within(screen.getByRole('dialog', { name: 'Change verification status?' }))
     const note = dialog.getByRole('textbox', { name: /Review note/ })
     expect(note).toHaveValue('')
@@ -95,7 +95,22 @@ describe('mobile administrator user controls', () => {
     expect(dialog.getByRole('button', { name: 'Change status' })).toBeDisabled()
     await userEvent.type(note, 'Refund disputes open.  ')
     await userEvent.click(dialog.getByRole('button', { name: 'Change status' }))
-    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'suspended', verification_notes: 'Refund disputes open.' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'rejected', verification_notes: 'Refund disputes open.' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
+  it('pauses sales for an organizer with an optional note', async () => {
+    apiClient.get.mockResolvedValue({ data: { users: [structuredClone(organizer)], meta: {} } })
+    apiClient.patch.mockResolvedValue({ data: { verification_status: 'suspended' } })
+    show(); const mobile = await card()
+    const select = mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })
+    expect(within(select).getByRole('option', { name: 'Sales paused' })).toHaveValue('suspended')
+    await userEvent.selectOptions(select, 'suspended')
+    const dialog = within(screen.getByRole('dialog', { name: 'Change verification status?' }))
+    expect(dialog.getByText('Their events stay visible but stop selling until you verify them again.')).toBeInTheDocument()
+    const note = dialog.getByRole('textbox', { name: /Review note \(optional\)/ })
+    expect(note).not.toBeRequired()
+    await userEvent.type(note, 'Chargeback review.')
+    await userEvent.click(dialog.getByRole('button', { name: 'Change status' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/9', { verification_status: 'suspended', verification_notes: 'Chargeback review.' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
   it('sends the saved notes unchanged when moving a rejected organizer to verified', async () => {
     apiClient.get.mockResolvedValue({ data: { users: [{ ...structuredClone(organizer), organizer_profile: { ...organizer.organizer_profile, verification_status: 'rejected', verification_notes: 'Needed a venue contract.' } }], meta: {} } })

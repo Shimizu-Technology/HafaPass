@@ -3,6 +3,7 @@ import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Loader2, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import apiClient from '../../api/client'
+import TestPaymentBadge from '../../components/TestPaymentBadge'
 import AdminLayout from './AdminLayout'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 
@@ -108,7 +109,7 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
                         </button>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3">
-                        <p className="font-mono text-xs text-neutral-500">#{order.id}</p>
+                        <p className="font-mono text-xs text-neutral-500">#{order.id}<TestPaymentBadge order={order} className="font-sans" /></p>
                         <p className="text-xs text-neutral-500 xl:hidden">Date: {new Date(order.created_at).toLocaleDateString()}</p>
                       </td>
                       <td className="min-w-[12rem] px-3 py-3">

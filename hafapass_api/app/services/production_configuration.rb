@@ -30,17 +30,9 @@ class ProductionConfiguration
       }
     end
 
+    # Secret, publishable key, platform account and webhook secret for the mode.
     def stripe_mode_configured?(mode)
-      return false unless %w[test live].include?(mode)
-
-      secret = ENV["STRIPE_#{mode.upcase}_SECRET_KEY"].presence
-      public_key = ENV["STRIPE_#{mode.upcase}_PUBLISHABLE_KEY"].presence
-      if mode == "test"
-        secret ||= ENV["STRIPE_SECRET_KEY"]
-        public_key ||= ENV["STRIPE_PUBLISHABLE_KEY"]
-      end
-      secret.to_s.match?(/\A(?:sk|rk)_#{mode}_/) && public_key.to_s.start_with?("pk_#{mode}_") &&
-        ENV["STRIPE_#{mode.upcase}_PLATFORM_ACCOUNT_ID"].to_s.match?(/\Aacct_[a-zA-Z0-9]+\z/)
+      StripeCredentials.configured?(mode)
     end
 
     private

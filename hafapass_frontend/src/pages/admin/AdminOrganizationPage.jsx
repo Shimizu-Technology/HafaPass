@@ -80,7 +80,7 @@ function AdminOrganizationSession({ id, identity }) {
                 <h2 id="organization-name" className="text-xl font-bold text-neutral-900 [overflow-wrap:anywhere]">{organization.name}</h2>
                 <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                   <div><dt className="inline text-content-muted">Owner: </dt><dd className="inline [overflow-wrap:anywhere]">{organization.owner?.email || 'none yet'}</dd></div>
-                  <div><dt className="inline text-content-muted">Verification: </dt><dd className="inline">{adminLabel(organization.organizer_profile?.verification_status) || 'No profile'}</dd></div>
+                  <div><dt className="inline text-content-muted">Verification: </dt><dd className="inline">{organization.organizer_profile?.verification_status === 'suspended' ? 'Sales paused' : adminLabel(organization.organizer_profile?.verification_status) || 'No profile'}</dd></div>
                   <div><dt className="inline text-content-muted">Agreement: </dt><dd className="inline">{organization.organizer_profile?.policy_accepted ? 'Accepted' : 'Not accepted'}</dd></div>
                   <div><dt className="inline text-content-muted">Events: </dt><dd className="inline">{organization.events_count}</dd></div>
                   <div><dt className="inline text-content-muted">Payouts: </dt><dd className="inline">{organization.payout_ready ? 'Ready' : 'Not ready'}</dd></div>
@@ -89,8 +89,8 @@ function AdminOrganizationSession({ id, identity }) {
               <div className="flex shrink-0 flex-col gap-2 sm:items-end">
                 <button type="button" onClick={openWorkspace} className="btn-primary gap-2"><LayoutDashboard aria-hidden="true" className="h-4 w-4" />Open its dashboard</button>
                 {organization.organizer_profile && (organization.organizer_profile.verification_status === 'verified'
-                  ? <button type="button" onClick={() => setVerifying({ profileId: organization.organizer_profile.id, to: 'unverified' })} className="btn-secondary">Unverify</button>
-                  : <button type="button" onClick={() => setVerifying({ profileId: organization.organizer_profile.id, to: 'verified' })} className="btn-secondary gap-2"><BadgeCheck aria-hidden="true" className="h-4 w-4" />Verify organization</button>)}
+                  ? <button type="button" onClick={() => setVerifying({ profileId: organization.organizer_profile.id, to: 'suspended' })} className="btn-secondary">Pause all sales</button>
+                  : <button type="button" onClick={() => setVerifying({ profileId: organization.organizer_profile.id, to: 'verified' })} className="btn-secondary gap-2"><BadgeCheck aria-hidden="true" className="h-4 w-4" />{organization.organizer_profile.verification_status === 'suspended' ? 'Resume sales' : 'Verify organization'}</button>)}
               </div>
             </div>
             <p className="mt-4 text-sm text-content-muted">Opening the dashboard lets you work inside this organization as an admin. Everything you change is recorded in the audit log.</p>
@@ -103,14 +103,14 @@ function AdminOrganizationSession({ id, identity }) {
       )}
       {verifying && organization && (
         <Dialog labelledBy="verify-title" onClose={() => setVerifying(null)} busy={Boolean(verifying.busy)} className="max-w-md">
-          <h2 id="verify-title" className="text-lg font-semibold text-neutral-900">{verifying.to === 'verified' ? `Verify ${organization.name}?` : `Unverify ${organization.name}?`}</h2>
+          <h2 id="verify-title" className="text-lg font-semibold text-neutral-900">{verifying.to === 'verified' ? `Verify ${organization.name}?` : `Pause all sales for ${organization.name}?`}</h2>
           <p className="mt-2 text-sm text-neutral-700">{verifying.to === 'verified'
-            ? 'Verified organizations can put tickets on sale once their other checks are complete. This is recorded in the audit log.'
-            : 'Their events can’t go on sale until they are verified again. This is recorded in the audit log.'}</p>
+            ? 'Their published events can sell tickets right away. This is recorded in the audit log.'
+            : 'Their events stay visible but stop selling until you verify them again. This is recorded in the audit log.'}</p>
           {verifying.error && <p role="alert" className="mt-3 text-sm text-red-800">{verifying.error}</p>}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" onClick={() => setVerifying(null)} disabled={verifying.busy} className="btn-secondary">Cancel</button>
-            <button type="button" onClick={changeVerification} disabled={verifying.busy} className={verifying.to === 'verified' ? 'btn-primary' : 'btn-danger'}>{verifying.busy ? 'Saving…' : verifying.to === 'verified' ? 'Verify' : 'Unverify'}</button>
+            <button type="button" onClick={changeVerification} disabled={verifying.busy} className={verifying.to === 'verified' ? 'btn-primary' : 'btn-danger'}>{verifying.busy ? 'Saving…' : verifying.to === 'verified' ? 'Verify' : 'Pause all sales'}</button>
           </div>
         </Dialog>
       )}

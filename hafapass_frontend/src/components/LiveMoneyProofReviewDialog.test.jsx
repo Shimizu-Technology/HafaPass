@@ -21,7 +21,7 @@ describe('LiveMoneyProofReviewDialog', () => {
     expect(await screen.findByText(/Normal events cannot be used to bypass Gate H/)).toBeInTheDocument()
   })
 
-  it('lets a different administrator approve a one-time authorization', async () => {
+  it('lets an administrator approve a one-time authorization', async () => {
     const details = { event, authorization: { id: 71, requested_by_user_id: 9, approved_at: null,
       order_id: null, max_amount_cents: 500, expires_at: new Date(Date.now() + 3600000).toISOString() },
     live_money_proof: { approved: false } }

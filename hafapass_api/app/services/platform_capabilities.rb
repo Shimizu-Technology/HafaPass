@@ -7,7 +7,8 @@ class PlatformCapabilities
   DEFINITIONS = {
     "stripe_live" => {
       label: "Stripe live payments",
-      required_env: %w[STRIPE_LIVE_SECRET_KEY STRIPE_LIVE_PUBLISHABLE_KEY STRIPE_WEBHOOK_SECRET PROVIDER_CONFIGURATION_REVISION],
+      required_env: %w[STRIPE_LIVE_SECRET_KEY STRIPE_LIVE_PUBLISHABLE_KEY STRIPE_LIVE_PLATFORM_ACCOUNT_ID
+        STRIPE_LIVE_WEBHOOK_SECRET PROVIDER_CONFIGURATION_REVISION],
       controls: %w[territory_and_entity_approved signed_webhooks_tested sandbox_matrix_complete
         reconciliation_zero_variance refunds_and_disputes_tested browser_loss_and_idempotency_tested]
     },
@@ -92,6 +93,12 @@ class PlatformCapabilities
       nil
     end
 
+    EXPIRY_WARNING = 30.days
+
+    def expiring_soon?(approval, at: Time.current)
+      approval.present? && approval.expires_at <= at + EXPIRY_WARNING
+    end
+
     def enabled?(name, at: Time.current)
       configured?(name) && active_approval(name, at: at).present?
     end
@@ -118,6 +125,8 @@ class PlatformCapabilities
         approved: approval.present?,
         enabled: configured && approval.present?,
         status: capability_status(configured, approval),
+        expires_at: approval&.expires_at,
+        expiring_soon: expiring_soon?(approval),
         required_controls: required_controls(name),
         configuration_digest: configuration_digest(name),
         pending_submission: pending_submission(name),
@@ -133,7 +142,9 @@ class PlatformCapabilities
       {
         ready: ready,
         status: ready ? "approved" : "approval_required",
-        capabilities: statuses.transform_values { |item| item.slice(:configured, :approved, :enabled, :status) }
+        capabilities: statuses.transform_values do |item|
+          item.slice(:configured, :approved, :enabled, :status, :expires_at, :expiring_soon)
+        end
       }
     end
 
@@ -147,6 +158,7 @@ class PlatformCapabilities
     end
 
     def provider_specific_configuration_valid?(name)
+      return StripeCredentials.configured?("live") if name == "stripe_live"
       return ENV["GOOGLE_WALLET_CLASS_REVIEW_STATUS"] == "APPROVED" if name == "google_wallet"
       # Saved passes can only be updated or voided through the HTTPS web service.
       return Wallet::ApplePassGenerator.web_service_url.present? if name == "apple_wallet"
@@ -164,7 +176,7 @@ class PlatformCapabilities
 
     def public_identifiers(name)
       keys = case name
-      when "stripe_live" then %w[STRIPE_LIVE_PUBLISHABLE_KEY]
+      when "stripe_live" then %w[STRIPE_LIVE_PUBLISHABLE_KEY STRIPE_LIVE_PLATFORM_ACCOUNT_ID]
       when "resend_production" then %w[MAILER_FROM_EMAIL]
       when "apple_wallet" then %w[APPLE_PASS_TYPE_IDENTIFIER APPLE_TEAM_IDENTIFIER APPLE_PASS_ICON_PATH PUBLIC_API_URL]
       when "google_wallet" then %w[GOOGLE_WALLET_ISSUER_ID GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL GOOGLE_WALLET_CLASS_REVIEW_STATUS]

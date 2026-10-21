@@ -13,7 +13,6 @@ class PlatformCapabilityReview < ApplicationRecord
   validates :evidence_digest, :configuration_digest, format: { with: /\A[0-9a-f]{64}\z/ }
   validate :complete_control_snapshot
   validate :valid_parent_relationship
-  validate :independent_approver
   validate :parent_snapshot_matches
   validate :reason_present_for_negative_decision
   validate :valid_effective_window
@@ -58,12 +57,6 @@ class PlatformCapabilityReview < ApplicationRecord
     elsif parent_review.capability != capability
       errors.add(:parent_review, "must belong to the same capability")
     end
-  end
-
-  def independent_approver
-    return unless decision_approval? && parent_review && actor_user_id == parent_review.actor_user_id
-
-    errors.add(:actor_user, "must be independent from the evidence submitter")
   end
 
   def parent_snapshot_matches

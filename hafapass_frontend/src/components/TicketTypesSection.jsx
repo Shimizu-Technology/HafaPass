@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Minus, Plus, ShoppingCart, Clock, Zap } from 'lucide-react'
+import PaidCheckoutGate from './PaidCheckoutGate'
+import usePaidCheckoutAdminOnly from '../hooks/usePaidCheckoutAdminOnly'
 import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFeeCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
 
 // Rows and the buy button lead with all-in prices (ticket + the buyer's
 // service fee), with the breakdown as a smaller secondary line.
+// In production test mode free tickets stay buyable for everyone but paid
+// ones only for platform admins.
 // `showOriginal` follows the event page's "Show original" switch for
 // machine-translated ticket names.
 export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false }) {
@@ -22,6 +26,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
 
   const totalSelected = ticketTypes.reduce((sum, tt) => sum + getClampedQty(tt), 0)
   const totalCents = ticketTypes.reduce((sum, tt) => sum + (getClampedQty(tt) * ticketAllInCents(tt)), 0)
+  const paidAdminOnly = usePaidCheckoutAdminOnly(totalCents > 0)
 
   const handleCheckout = () => {
     const lineItems = ticketTypes
@@ -142,12 +147,12 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
         })}
       </div>
 
-      {totalSelected > 0 && (
+      {totalSelected > 0 && <PaidCheckoutGate active={paidAdminOnly && totalCents > 0}>
         <button onClick={handleCheckout} className="w-full mt-5 btn-primary text-base !py-4 gap-2">
           <ShoppingCart className="w-5 h-5" />
           {t('eventDetail.buyTickets')} &mdash; {formatPrice(totalCents)}
         </button>
-      )}
+      </PaidCheckoutGate>}
     </div>
   )
 }

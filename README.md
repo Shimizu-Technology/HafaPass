@@ -12,7 +12,7 @@ HafaPass is a ticketing platform designed for Guam's hospitality industry. It en
 - **Frontend:** React 18 with Vite
 - **Authentication:** Clerk
 - **Database:** PostgreSQL
-- **Payments:** Provider-neutral local ledger; Stripe sandbox adapter; PayPal/manual payout paths with fail-closed two-person evidence approval (see `docs/GUAM_PAYMENT_AND_PAYOUT_DECISION.md` and `docs/GATE_B_PAYMENT_READINESS_OPERATIONS.md`)
+- **Payments:** Provider-neutral local ledger; Stripe sandbox adapter; PayPal/manual payout paths with fail-closed evidence approval (one administrator may submit and approve) (see `docs/GUAM_PAYMENT_AND_PAYOUT_DECISION.md` and `docs/GATE_B_PAYMENT_READINESS_OPERATIONS.md`)
 - **Background Jobs:** Sidekiq + Redis
 - **Rate Limiting:** Rack::Attack
 - **Email:** Resend
@@ -56,11 +56,12 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
 - [Platform Completion Audit](docs/PLATFORM_COMPLETION_AUDIT.md) — requirement evidence, market revalidation, honest production-readiness verdict, and ordered launch plan.
 - [Release Candidate Operations](docs/RELEASE_CANDIDATE_OPERATIONS.md) — exact-commit Gate A capture, private evidence register, protected-branch freeze, approvals, and immutable candidate tags.
 - [Gate D Provider and Policy Evidence](docs/GATE_D_PROVIDER_POLICY_EVIDENCE.md) — fail-closed provider/policy enablement, immutable evidence, independent approval, expiry, configuration binding, and remaining external proof.
-- [Gate E Pilot Readiness Evidence](docs/GATE_E_PILOT_READINESS_EVIDENCE.md) — event-bound operating evidence, named command ownership, independent approval, configuration-drift invalidation, and production sales enforcement.
-- [Gate F Validation Evidence](docs/GATE_F_VALIDATION_EVIDENCE.md) — candidate-bound device, representative-user, accessibility, and expected-onsale load evidence with independent approval and fail-closed production enforcement.
+- **Selling in production:** an admin verifies each organizer from the admin dashboard (one action, audited) and can pause all of an organizer's sales or a single event. Gates E–J below are optional records; they no longer block publishing or sales. See [Production cutover](docs/PRODUCTION_CUTOVER.md).
+- [Gate E Pilot Readiness Evidence](docs/GATE_E_PILOT_READINESS_EVIDENCE.md) — event-bound operating evidence, named command ownership, independent approval, and configuration-drift invalidation (optional record).
+- [Gate F Validation Evidence](docs/GATE_F_VALIDATION_EVIDENCE.md) — candidate-bound device, representative-user, accessibility, and expected-onsale load evidence (optional record).
 - [Gate G Event-Day Rehearsal Evidence](docs/GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md) — candidate-bound signed-manifest, three-device offline, incident, door-sale, staffing, alert, and zero-variance rehearsal evidence.
 - [Gate H Low-Value Live-Money Proof](docs/GATE_H_LIVE_MONEY_PROOF.md) — hidden one-use charge authorization plus real refund, settlement, payout, bank-receipt, negative-balance, communication, and cent-exact approval evidence.
-- [Gate I Bounded Live-Pilot Operations](docs/GATE_I_BOUNDED_LIVE_PILOT.md) — two-person bounded-inventory approval, active sales window, monitoring checkpoints, automatic safety pauses, incident evidence, and reconciled post-event exit.
+- [Gate I Bounded Live-Pilot Operations](docs/GATE_I_BOUNDED_LIVE_PILOT.md) — approved bounded-inventory plan, active sales window, monitoring checkpoints, automatic safety pauses, incident evidence, and reconciled post-event exit.
 - [Gate J Pilot Closeout and Expansion Decision](docs/GATE_J_PILOT_CLOSEOUT.md) — exact-state closeout metrics, reconciliation/cleanup evidence, retrospective actions, independent approval, and deliberately bounded Guam-only expansion.
 - [Pilot Manual Test Plan](docs/MVP_TEST_PLAN.md) — the end-to-end release-candidate validation.
 - [Event-Day Operations](docs/EVENT_DAY_OPERATIONS.md) — signed offline scanning, device drills, door sales, Clover gates, reconciliation, and fallback procedures.
@@ -196,9 +197,9 @@ Query params: `?page=2&per_page=10`
 | `DATABASE_URL` | Production | PostgreSQL connection string (uses local DB in dev) |
 | `REDIS_URL` | Production | Redis URL for Sidekiq (e.g., `redis://localhost:6379/0`) |
 | `ALLOWED_ORIGINS` | Staging/production | Comma-separated CORS origins (e.g., `https://tickets.example.com`); required in every deployed environment |
-| `STRIPE_SECRET_KEY` | No | Stripe API key (mock checkout without it) |
-| `STRIPE_PUBLISHABLE_KEY` | No | Stripe frontend key |
-| `STRIPE_WEBHOOK_SECRET` | Production | Stripe webhook signing secret |
+| `STRIPE_TEST_SECRET_KEY`, `STRIPE_TEST_PUBLISHABLE_KEY`, `STRIPE_TEST_PLATFORM_ACCOUNT_ID` | Test payments | Stripe sandbox keys and account ID (simulated checkout without them). `STRIPE_SECRET_KEY`/`STRIPE_PUBLISHABLE_KEY` are a deprecated test-only fallback |
+| `STRIPE_WEBHOOK_SECRET` | Test payments | Signing secret of the test-mode webhook endpoint |
+| `STRIPE_LIVE_SECRET_KEY`, `STRIPE_LIVE_PUBLISHABLE_KEY`, `STRIPE_LIVE_PLATFORM_ACCOUNT_ID`, `STRIPE_LIVE_WEBHOOK_SECRET` | Live payments | Live keys, account ID and live-mode webhook secret; production only. Admins switch modes in Admin → Settings |
 | `ADMISSION_MANIFEST_PRIVATE_KEY_PEM` | Production | Stable RSA private key used to sign offline scanner manifests |
 | `CLOVER_REST_PAY_BASE_URL` | Card-present pilot | Approved Clover cloud `/connect` base URL |
 | `CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_<id>` | Card-present pilot | Encrypted Clover OAuth token scoped to one HåfaPass organization |
@@ -231,7 +232,7 @@ Query params: `?page=2&per_page=10`
 
 Set the support email (admin `platform_email`, or the `VITE_SUPPORT_EMAIL` override) and `MAILER_REPLY_TO` to a mailbox the operator can actually receive and monitor before deploying customer recovery flows. Sender-domain verification for `MAILER_FROM_EMAIL` proves permission to send; it does not create a receiving inbox. These support settings do not create mailboxes or confirm delivery. Email retries retain the reply address saved with the original provider request even after configuration changes. Rebuild the frontend after changing a `VITE_` setting.
 
-Netlify edge functions (share previews and the `/sitemap.xml` proxy) read the API origin from the Netlify environment variable `HAFAPASS_API_ORIGIN`. Every domain is configuration; see [Changing the public domain](docs/DOMAIN_CUTOVER.md) for the full list of settings to change when the site moves.
+Netlify edge functions (share previews and the `/sitemap.xml` proxy) read the API origin from the Netlify environment variable `HAFAPASS_API_ORIGIN`. Every domain is configuration; see [Changing the public domain](docs/DOMAIN_CUTOVER.md) for the full list of settings to change when the site moves. Moving the Render service from staging to production, the test/live payment switch and the synthetic-data purge are covered in [Production cutover](docs/PRODUCTION_CUTOVER.md).
 
 ## Seed Data
 

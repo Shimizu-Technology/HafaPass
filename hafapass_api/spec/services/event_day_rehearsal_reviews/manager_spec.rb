@@ -18,17 +18,14 @@ RSpec.describe EventDayRehearsalReviews::Manager do
     end.to raise_error(described_class::ReviewError, /Gate F/)
   end
 
-  it "independently approves the exact Gate F candidate" do
+  it "lets the submitting administrator approve the exact Gate F candidate" do
     validation = create_pilot_validation_approval(event: event)
     submission = described_class.submit!(
       event: event, attributes: valid_event_day_rehearsal_attributes(event: event), actor: submitter
     )
 
-    expect do
-      described_class.approve!(submission: submission, actor: submitter)
-    end.to raise_error(described_class::ReviewError, /cannot approve their own/)
-
-    approval = described_class.approve!(submission: submission, actor: approver)
+    approval = described_class.approve!(submission: submission, actor: submitter)
+    expect(approval.actor_user).to eq(submitter)
     expect(approval.pilot_validation_review).to eq(validation)
     expect(EventDayRehearsal.active_approval(event)).to eq(approval)
     expect(AuditLog.where(auditable: approval, action: "event_day_rehearsal.approved")).to exist

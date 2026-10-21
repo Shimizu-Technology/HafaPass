@@ -50,7 +50,7 @@ module FinanceExports
     events.each do |event|
       processing = Settlements::Calculator.new(event).processing_by_order
       timezone = ActiveSupport::TimeZone[event.timezone.to_s] || Time.zone
-      event.orders.where(status: SETTLED_ORDER_STATUSES)
+      event.orders.excluding_test_payments.where(status: SETTLED_ORDER_STATUSES)
         .includes(:order_items, refunds: :refund_items)
         .find_each(batch_size: BATCH_SIZE) do |order|
         yield order_row(event, order, processing.fetch(order.id, [0, 0]), timezone)
