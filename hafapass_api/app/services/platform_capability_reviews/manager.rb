@@ -26,7 +26,7 @@ module PlatformCapabilityReviews
       raise ReviewError, error_message(e)
     end
 
-    def self.approve!(submission:, actor:, request: nil)
+    def self.approve!(submission:, actor:, request: nil, draft_policies_acknowledged: false)
       review = nil
       SiteSetting.instance.with_lock do
         submission.reload
@@ -39,9 +39,22 @@ module PlatformCapabilityReviews
         if PlatformCapabilities.active_approval(submission.capability)
           raise ReviewError, "Revoke the current approval before approving another"
         end
+        acknowledgment = nil
+        if submission.capability == "policy_register"
+          blockers = PolicyRegistry.approval_blockers
+          raise ReviewError, "Policy text has technical problems: #{blockers.join('; ')}" if blockers.any?
+          # Launching on draft policies is the operator's call, made explicitly
+          # and recorded on the approval and in the audit log.
+          if PolicyRegistry.draft?
+            unless draft_policies_acknowledged
+              raise ReviewError, "Confirm that you are approving draft policies for launch before legal review"
+            end
+            acknowledgment = PolicyRegistry::DRAFT_ACKNOWLEDGMENT
+          end
+        end
 
         review = PlatformCapabilityReview.create!(snapshot(submission).merge(
-          decision: :approval, parent_review: submission, actor_user: actor
+          decision: :approval, parent_review: submission, actor_user: actor, reason: acknowledgment
         ))
         record!(review, "platform_capability.approved", actor, request)
       end
@@ -108,6 +121,8 @@ module PlatformCapabilityReviews
           "id", "parent_review_id", "actor_user_id", "capability", "decision", "evidence_reference",
           "evidence_digest", "configuration_digest", "controls", "effective_at", "expires_at", "reason"
         ),
+        metadata: review.decision_approval? && review.reason == PolicyRegistry::DRAFT_ACKNOWLEDGMENT ?
+          { "draft_policies_acknowledged" => true, "policy_version" => PolicyRegistry.version } : {},
         request: request
       )
     end

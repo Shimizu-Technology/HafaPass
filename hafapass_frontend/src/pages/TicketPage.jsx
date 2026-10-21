@@ -7,6 +7,7 @@ import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
+import { SellerLine } from '../components/PriceDisclosure'
 
 function AddToHomeScreenInstructions() {
   const [expanded, setExpanded] = useState(false)
@@ -408,6 +409,7 @@ function TicketContent({ authContext }) {
                 </div>
               )}
             </div>
+            <SellerLine seller={ticket.seller} className="mt-3 font-sans" />
 
           </div>
 

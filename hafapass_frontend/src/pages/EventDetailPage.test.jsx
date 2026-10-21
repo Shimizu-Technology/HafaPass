@@ -7,7 +7,8 @@ import apiClient from '../api/client'
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ isLoaded: true, userId: null }) }))
 vi.mock('framer-motion', async original => ({ ...(await original()), useReducedMotion: () => true }))
-vi.mock('../components/SEO', () => ({ default: () => null }))
+const seo = vi.hoisted(() => ({ props: null }))
+vi.mock('../components/SEO', () => ({ default: props => { seo.props = props; return null } }))
 vi.mock('../components/ui/ScrollReveal', () => ({ FadeUp: ({ children }) => children }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }))
 vi.mock('../utils/marketplaceAttribution', () => ({ captureQueryAttribution: vi.fn(), trackFunnel: vi.fn() }))
@@ -38,6 +39,37 @@ function mount(event) {
     <Route path="/events/:slug" element={<EventDetailPage />} />
   </Routes></MemoryRouter>)
 }
+
+describe('EventDetailPage all-in pricing and seller identity', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    observers = []
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('advertises all-in prices in the buy bar and structured data and names the seller', async () => {
+    mount({
+      ...baseEvent,
+      service_fee_includes_processing: true,
+      seller: { seller_name: 'Island Nights', ticketing_service: 'HåfaPass', line: 'Sold by Island Nights · Tickets by HåfaPass' },
+      ticket_types: [
+        { id: 1, name: 'VIP', price_cents: 4500, current_price_cents: 4500, all_in_price_cents: 4825, service_fee_cents: 325, on_sale: true, quantity_remaining: 5 },
+        { id: 2, name: 'General', price_cents: 1500, current_price_cents: 1500, all_in_price_cents: 1675, service_fee_cents: 175, on_sale: true, quantity_remaining: 20 },
+      ],
+    })
+    await screen.findByRole('heading', { name: 'Reef Night' })
+    await waitFor(() => {
+      reportAllOutOfView()
+      expect(screen.getByTestId('mobile-buy-bar')).toHaveAttribute('data-visible', 'true')
+    })
+    expect(within(screen.getByTestId('mobile-buy-bar')).getByText('From $16.75')).toBeInTheDocument()
+    expect(screen.getByText('$48.25')).toBeInTheDocument()
+    expect(screen.getByTestId('seller-line')).toHaveTextContent('pricing.sellerLine')
+    expect(screen.getByTestId('all-in-note')).toHaveTextContent('pricing.allInNote')
+    expect(seo.props.jsonLd.offers).toMatchObject({ lowPrice: '16.75', highPrice: '48.25', priceCurrency: 'USD' })
+  })
+})
 
 describe('EventDetailPage buyer polish', () => {
   beforeEach(() => {

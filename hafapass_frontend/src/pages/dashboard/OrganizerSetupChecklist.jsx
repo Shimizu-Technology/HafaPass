@@ -1,7 +1,7 @@
-import { CheckCircle2, Circle, ExternalLink, ListChecks } from 'lucide-react'
+import { CheckCircle2, Circle, ListChecks } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import Dialog from '../../components/Dialog'
+import OrganizerAgreementDialog from '../../components/OrganizerAgreementDialog'
 import SupportLink from '../../components/SupportLink'
 
 const VERIFICATION = {
@@ -12,29 +12,10 @@ const VERIFICATION = {
   suspended: { done: false, status: 'Suspended', next: 'Contact the HåfaPass team to resolve this.' },
 }
 
-function AgreementDialog({ version, busy, onCancel, onAccept }) {
-  const [agreed, setAgreed] = useState(false)
-  return (
-    <Dialog labelledBy="agreement-title" onClose={onCancel} busy={busy} className="max-w-lg">
-      <h2 id="agreement-title" className="text-lg font-semibold text-neutral-900">Organizer agreement{version ? ` (${version})` : ''}</h2>
-      <p className="mt-2 text-sm text-neutral-700">By accepting, you agree to publish accurate event information and to honor attendee purchases and refunds. HåfaPass sells tickets on your behalf and pays you after each event settles.</p>
-      <Link to="/policies/organizer-agreement" target="_blank" rel="noopener" className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-action-teal underline">Read the full agreement<ExternalLink aria-hidden="true" className="h-3.5 w-3.5" /><span className="sr-only">(opens in a new tab)</span></Link>
-      <label className="mt-3 flex min-h-11 items-start gap-3 text-sm text-neutral-900">
-        <input type="checkbox" checked={agreed} onChange={event => setAgreed(event.target.checked)} disabled={busy} className="mt-1 h-4 w-4 accent-brand-600" />
-        I have read the organizer agreement and accept it for my organization.
-      </label>
-      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <button type="button" onClick={onCancel} disabled={busy} className="btn-secondary">Not now</button>
-        <button type="button" onClick={onAccept} disabled={busy || !agreed} className="btn-primary">{busy ? 'Saving…' : 'Accept agreement'}</button>
-      </div>
-    </Dialog>
-  )
-}
-
 // The organizer's guided setup: one list, in order, with the next action
 // and what HåfaPass does at each step. Only the owner can accept the
 // agreement or submit for review; an admin viewing the workspace sees status.
-export default function OrganizerSetupChecklist({ profile, canCreate, adminView = false, busy, onEditProfile, onAcceptPolicy, onSubmitVerification }) {
+export default function OrganizerSetupChecklist({ profile, canCreate, adminView = false, busy, error = null, onEditProfile, onAcceptPolicy, onSubmitVerification }) {
   const [agreementOpen, setAgreementOpen] = useState(false)
   const progress = profile.setup_progress || {}
   const verification = VERIFICATION[profile.verification_status] || VERIFICATION.unverified
@@ -87,6 +68,11 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
         <h2 id="organizer-setup-title" className="flex items-center gap-2 text-lg font-semibold text-neutral-900"><ListChecks aria-hidden="true" className="h-5 w-5 text-brand-600" />Get ready to sell tickets</h2>
         <p className="text-sm font-medium text-content-muted">{doneCount} of {steps.length} done</p>
       </div>
+      {profile.policy_version && !profile.policy_accepted && (
+        <p role="status" data-testid="agreement-update-notice" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          The organizer agreement was updated to version {profile.current_policy_version}. Review what changed and accept it to keep publishing events.
+        </p>
+      )}
       {adminView && <p className="mt-2 text-sm text-amber-900">You’re viewing as a HåfaPass admin. Only the owner can accept the agreement or submit for review.</p>}
       <ol className="mt-4 space-y-2">
         {steps.map((step, index) => {
@@ -110,8 +96,9 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
           )
         })}
       </ol>
-      {agreementOpen && <AgreementDialog version={profile.current_policy_version} busy={busy}
-        onCancel={() => setAgreementOpen(false)}
+      {agreementOpen && !profile.policy_accepted && <OrganizerAgreementDialog version={profile.current_policy_version}
+        reaccept={Boolean(profile.policy_version)} busy={busy} error={error}
+        onClose={() => setAgreementOpen(false)}
         onAccept={async () => { if (await onAcceptPolicy()) setAgreementOpen(false) }} />}
     </section>
   )

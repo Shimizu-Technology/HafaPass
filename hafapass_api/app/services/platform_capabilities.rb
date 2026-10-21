@@ -122,7 +122,7 @@ class PlatformCapabilities
         configuration_digest: configuration_digest(name),
         pending_submission: pending_submission(name),
         latest_approval: latest_approval(name)
-      }
+      }.merge(name == "policy_register" ? { policy_documents: PolicyRegistry.review_summary } : {})
     end
 
     def readiness

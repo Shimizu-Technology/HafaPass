@@ -602,7 +602,7 @@ function DashboardSession({ authContext }) {
     <button type="button" onClick={leaveAdminView} className="btn-secondary shrink-0 !px-4 !py-2 text-sm">Leave this organization</button>
    </div>}
 
-   {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading}
+   {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading} error={actionError}
     onEditProfile={openEditor}
     onAcceptPolicy={() => updateReadiness('accept_policy')}
     onSubmitVerification={() => updateReadiness('submit_verification')} />}

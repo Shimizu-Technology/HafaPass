@@ -26,16 +26,20 @@ describe('OrganizerSetupChecklist', () => {
     expect(within(steps[3]).getByRole('link', { name: 'Choose check or bank transfer' })).toHaveAttribute('href', '/dashboard/settings')
   })
 
-  it('accepts the agreement in a dialog with an explicit checkbox, never window.confirm', async () => {
+  it('accepts the agreement in the shared agreement dialog, never window.confirm', async () => {
     const confirm = vi.spyOn(window, 'confirm')
     const { onAcceptPolicy } = show()
     await userEvent.click(screen.getByRole('button', { name: 'Review and accept' }))
-    const dialog = within(screen.getByRole('dialog', { name: 'Organizer agreement (2026-10)' }))
-    expect(dialog.getByRole('button', { name: 'Accept agreement' })).toBeDisabled()
-    await userEvent.click(dialog.getByRole('checkbox'))
-    await userEvent.click(dialog.getByRole('button', { name: 'Accept agreement' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Accept the organizer agreement' }))
+    expect(dialog.getByText(/Payouts are made by check/)).toBeInTheDocument()
+    await userEvent.click(dialog.getByRole('button', { name: 'Accept version 2026-10' }))
     expect(onAcceptPolicy).toHaveBeenCalled()
     expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it('flags an updated agreement that needs re-acceptance', () => {
+    show({ ...base, policy_version: '2026-07' })
+    expect(screen.getByTestId('agreement-update-notice')).toHaveTextContent('updated to version 2026-10')
   })
 
   it('explains what HåfaPass does next while verification and payouts are under review', () => {

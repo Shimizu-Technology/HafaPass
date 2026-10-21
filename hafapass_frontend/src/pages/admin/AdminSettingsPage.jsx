@@ -262,6 +262,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
         <section aria-labelledby="fees-title" className="card p-5 sm:p-6">
           <h2 id="fees-title" className="text-lg font-semibold text-neutral-900">Fees and payouts</h2>
           <p className="mt-1 text-sm text-content-muted">Applies to new orders only. Existing orders keep their terms.</p>
+          <p className="mt-2 text-sm text-amber-900">These terms are part of the organizer agreement. Changing them asks every organizer to accept again and needs a new policy register approval. The platform name and support contact can change at any time without that.</p>
           <div className="mt-4 grid gap-5 md:grid-cols-2">
             <Field id="service_fee_percent" label="Service fee percentage" hint={`Of each paid ticket’s price, 0 to ${MAX_FEE_PERCENT}%.`} error={errors.service_fee_percent}>
               <div className="relative">
@@ -322,6 +323,13 @@ function AdminSettingsSession({ identity, resourcePath }) {
       {confirming && <Dialog labelledBy={confirmTitle} busy={saving} onClose={() => setConfirming(null)} className="max-w-lg">
         <h2 id={confirmTitle} className="text-lg font-semibold text-neutral-900">Change fee terms for new orders?</h2>
         <p className="mt-2 text-sm text-neutral-700">These changes apply to orders placed after you save. Existing orders, settlements and payouts keep the terms they were sold with. The change is recorded in the audit log under your name.</p>
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" data-testid="policy-terms-effect">
+          <p className="font-semibold">This also changes the organizer agreement.</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            <li>Every organizer must accept the updated agreement before publishing again.</li>
+            <li>Any production policy register approval stops applying; it needs a new approval in <Link to="/admin/provider-readiness" className="font-semibold underline">provider readiness</Link>.</li>
+          </ul>
+        </div>
         <dl className="mt-4 space-y-3 text-sm">
           {confirming.map(field => (
             <div key={field} className="rounded-lg bg-neutral-50 p-3 ring-1 ring-neutral-200">
