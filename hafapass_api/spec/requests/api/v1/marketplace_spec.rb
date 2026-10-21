@@ -33,6 +33,23 @@ RSpec.describe "Marketplace discovery", type: :request do
     expect(response.parsed_body.fetch("events").first.fetch("slug")).to eq(event.slug)
   end
 
+  it "passes the buyer language through collection, venue, and organizer listings" do
+    with_locales_enabled(%w[en ko], machine_translation: true)
+    event.update_columns(translations: { "title" => { "ko" => "ko:#{event.title}",
+      "_digest" => Translatable.digest(event.title) } })
+    collection = create(:marketplace_collection)
+    collection.marketplace_collection_events.create!(event: event, position: 0)
+
+    ["/api/v1/marketplace_collections/#{collection.slug}", "/api/v1/venues/#{venue.slug}",
+      "/api/v1/organizers/#{profile.organization.slug}"].each do |path|
+      get path, headers: { "Accept-Language" => "ko-KR" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("events").first).to include("title" => "ko:#{event.title}",
+        "content_locale" => "ko", "machine_translated" => true)
+    end
+  end
+
   it "filters paginated inventory by family, village, and transparent price bands" do
     get "/api/v1/events", params: { category: "family", village: "tamuning", price: "under_25", per_page: 1 }
 

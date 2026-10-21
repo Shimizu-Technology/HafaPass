@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams, useMatch } from 'react-router-dom'
 import { Search, CalendarPlus, Ticket } from 'lucide-react'
@@ -15,7 +16,7 @@ import { categoryIcon } from '../utils/categoryIcons'
 const GUAM_VILLAGES = ['Agana Heights','Asan-Maina','Barrigada','Chalan Pago-Ordot','Dededo','Hagåtña','Humåtak','Inalåhan','Mangilao','Malesso’','Mongmong-Toto-Maite','Piti','Sånta Rita-Sumai','Sinajana','Talo’fo’fo','Tamuning-Tumon-Harmon','Yigo','Yona']
 
 function guamDate(offsetDays = 0) {
-  const parts = new Intl.DateTimeFormat('en-US', {
+  const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Pacific/Guam', year: 'numeric', month: '2-digit', day: '2-digit'
   }).formatToParts(new Date())
   const value = type => Number(parts.find(part => part.type === type)?.value)
@@ -23,6 +24,7 @@ function guamDate(offsetDays = 0) {
 }
 
 export default function EventsPage() {
+  const { t } = useTranslation()
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -37,7 +39,7 @@ export default function EventsPage() {
   const [price, setPrice] = useState(searchParams.get('price') || 'all')
   const [village, setVillage] = useState(searchParams.get('village') || '')
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
-  const categories = useEventCategories()
+  const categories = useEventCategories().map(category => ({ ...category, label: t(`buyer.categories.${category.value}`, { defaultValue: category.label }) }))
   const reducedMotion = useReducedMotion()
   const ResultsContainer = reducedMotion ? 'div' : StaggerContainer
   const ResultItem = reducedMotion ? 'div' : StaggerItem
@@ -104,30 +106,30 @@ export default function EventsPage() {
   return (
     <div className="min-h-screen bg-stone-50">
       <SEO
-        title="Browse Events"
-        description="Discover what's happening on Guam. Browse concerts, nightlife, festivals, dining, sports, and more."
+        title={t('buyer.Events.browseEvents')}
+        description={t('buyer.Events.discoverWhatsHappeningOnGuamBrowseConcertsNightlife')}
         url={`${PUBLIC_WEB_URL}/events`}
       />
       {/* Event guide header */}
       <div className="border-b border-neutral-200 bg-stone-50 py-8 sm:py-10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div>
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950 mb-2">Events</h1>
-            <p className="text-content-muted text-base">Discover what's happening on Guam</p>
-          </div><Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">For event organizers</Link></div>
+            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950 mb-2">{t('buyer.Events.events')}</h1>
+            <p className="text-content-muted text-base">{t('buyer.Events.discoverWhatsHappeningOnGuam')}</p>
+          </div><Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Events.forEventOrganizers')}</Link></div>
 
           {/* Search bar */}
           <div className="max-w-2xl">
-            <label htmlFor="browse-event-search" className="mb-2 block text-sm font-medium text-neutral-800">Search events and venues</label>
+            <label htmlFor="browse-event-search" className="mb-2 block text-sm font-medium text-neutral-800">{t('buyer.Events.searchEventsAndVenues')}</label>
             <div className="relative">
               <Search aria-hidden="true" className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
               <input
                 id="browse-event-search"
                 type="text"
-                aria-label="Search events and venues"
+                aria-label={t('buyer.Events.searchEventsAndVenues')}
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                placeholder="Search events, venues..."
+                placeholder={t('buyer.Events.searchEventsVenues')}
                 className="input min-h-12 !pl-12"
               />
             </div>
@@ -141,7 +143,7 @@ export default function EventsPage() {
           {/* Responsive discovery filters */}
           <div className="flex flex-col gap-4 mb-8">
            <div className="hidden sm:flex sm:flex-wrap gap-2">
-            {[{ value: 'all', label: 'All Events' }, ...categories].map(({ value, label }) => {
+            {[{ value: 'all', label: t('buyer.Events.allEvents') }, ...categories].map(({ value, label }) => {
               const Icon = value === 'all' ? Ticket : categoryIcon(value)
               return (
               <button
@@ -161,43 +163,43 @@ export default function EventsPage() {
            </div>
            <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]">
             <div className="col-span-2 min-w-0 sm:hidden">
-             <label htmlFor="event-category" className="mb-1 block text-sm font-medium text-neutral-600">Category</label>
+             <label htmlFor="event-category" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.category')}</label>
              <select id="event-category" value={activeCategory} onChange={event => changeCategory(event.target.value)} className="input min-h-11 !py-2 text-base !px-3">
-              <option value="all">All Events</option>
+              <option value="all">{t('buyer.Events.allEvents')}</option>
               {categories.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
              </select>
             </div>
             <div className="min-w-0">
-             <label htmlFor="event-date-range" className="mb-1 block text-sm font-medium text-neutral-600">When</label>
+             <label htmlFor="event-date-range" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.when')}</label>
              <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !px-2 sm:!px-4">
-             <option value="upcoming">All upcoming</option>
-             <option value="today">Today</option>
-             <option value="tonight">Tonight</option>
-             <option value="weekend">This weekend</option>
-             <option value="week">Next 7 days</option>
+             <option value="upcoming">{t('buyer.Events.allUpcoming')}</option>
+             <option value="today">{t('buyer.Events.today')}</option>
+             <option value="tonight">{t('buyer.Events.tonight')}</option>
+             <option value="weekend">{t('buyer.Events.thisWeekend')}</option>
+             <option value="week">{t('buyer.Events.next7Days')}</option>
              </select>
             </div>
             <div className="min-w-0">
-             <label htmlFor="event-price" className="mb-1 block text-sm font-medium text-neutral-600">Price</label>
-             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !px-2 sm:!px-4"><option value="all">Any price</option><option value="free">Free</option><option value="under_25">Under $25</option><option value="under_50">Under $50</option></select>
+             <label htmlFor="event-price" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.price')}</label>
+             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !px-2 sm:!px-4"><option value="all">{t('buyer.Events.anyPrice')}</option><option value="free">{t('buyer.Events.free')}</option><option value="under_25">{t('buyer.Events.under25')}</option><option value="under_50">{t('buyer.Events.under50')}</option></select>
             </div>
             <div className="min-w-0 col-span-2 lg:col-span-1">
-             <label htmlFor="event-village" className="mb-1 block text-sm font-medium text-neutral-600">Village</label>
-             <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="">All villages</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
+             <label htmlFor="event-village" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.village')}</label>
+             <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
             </div>
            </div>
-           {!loading && !loadError && <span role="status" className="text-sm text-content-muted">{meta.total_count} event{meta.total_count === 1 ? '' : 's'}</span>}
+           {!loading && !loadError && <span role="status" className="text-sm text-content-muted">{t('buyer.Events.eventCount', { count: meta.total_count })}</span>}
           </div>
 
           {loading ? (
-            <div role="status" aria-label="Loading events"><p className="sr-only">Loading events…</p><div aria-hidden="true" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div role="status" aria-label={t('buyer.Events.loadingEvents')}><p className="sr-only">{t('buyer.Events.loadingEvents2')}</p><div aria-hidden="true" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {Array.from({ length: 6 }).map((_, i) => <EventCardSkeleton key={i} />)}
             </div></div>
           ) : loadError ? (
             <div role="alert" className="rounded-2xl border border-neutral-200 bg-white p-6 sm:p-10 text-center">
-              <h2 className="text-xl font-bold text-neutral-900 mb-2">Couldn't load events</h2>
-              <p className="text-neutral-600 mb-6">Your filters are saved. Try again to see the matching events.</p>
-              <button type="button" onClick={() => setRetry(value => value + 1)} className="btn-primary">Try again</button>
+              <h2 className="text-xl font-bold text-neutral-900 mb-2">{t('buyer.Events.couldntLoadEvents')}</h2>
+              <p className="text-neutral-600 mb-6">{t('buyer.Events.yourFiltersAreSavedTryAgainToSee')}</p>
+              <button type="button" onClick={() => setRetry(value => value + 1)} className="btn-primary">{t('buyer.Events.tryAgain')}</button>
             </div>
           ) : events.length === 0 ? (
             <motion.div
@@ -208,12 +210,12 @@ export default function EventsPage() {
               <Ticket aria-hidden="true" className="mx-auto mb-4 h-8 w-8 text-brand-800" />
 
               <h2 className="text-xl font-bold text-neutral-900 mb-2">
-                {search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village ? 'No matching events' : 'No events yet'}
+                {search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village ? t('buyer.Events.noMatchingEvents') : t('buyer.Events.noEventsYet')}
               </h2>
               <p className="text-neutral-600 max-w-md mx-auto mb-8">
                 {!search && activeCategory === 'all' && dateRange === 'upcoming' && price === 'all' && !village
-                  ? "There are no upcoming events listed right now. Check back for new dates, or set up your own event."
-                  : "Try adjusting your search or filters to find what you're looking for."
+                  ? t('buyer.Events.thereAreNoUpcomingEventsListedRightNow')
+                  : t('buyer.Events.tryAdjustingYourSearchOrFiltersToFind')
                 }
               </p>
 
@@ -223,15 +225,11 @@ export default function EventsPage() {
                     to="/dashboard"
                     className="inline-flex min-h-11 items-center gap-2 px-5 py-3 bg-action text-white rounded-lg font-semibold hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
                   >
-                    <CalendarPlus aria-hidden="true" className="w-4 h-4" />
-                    Create an Event
-                  </Link>
+                    <CalendarPlus aria-hidden="true" className="w-4 h-4" />{t('buyer.Events.createAnEvent')}</Link>
                   <Link
                     to="/"
                     className="inline-flex min-h-11 items-center rounded text-content-muted hover:text-brand-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
-                  >
-                    Back to event guide
-                  </Link>
+                  >{t('buyer.Events.backToEventGuide')}</Link>
                 </div>
               )}
 
@@ -239,9 +237,7 @@ export default function EventsPage() {
                 <button
                   onClick={clearFilters}
                   className="min-h-11 rounded px-3 text-brand-800 hover:bg-brand-50 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
-                >
-                  Clear filters
-                </button>
+                >{t('buyer.Events.clearFilters')}</button>
               )}
             </motion.div>
           ) : (
@@ -250,10 +246,10 @@ export default function EventsPage() {
             </ResultsContainer>
           )}
           {!loading && !loadError && meta.total_pages > 1 && (
-            <nav className="mt-10 flex items-center justify-center gap-3" aria-label="Event results pages">
-              <button type="button" className="btn-secondary" disabled={!meta.prev_page} onClick={() => setPage(meta.prev_page)}>Previous</button>
-              <span className="text-sm text-neutral-600">Page {meta.current_page} of {meta.total_pages}</span>
-              <button type="button" className="btn-secondary" disabled={!meta.next_page} onClick={() => setPage(meta.next_page)}>Next</button>
+            <nav className="mt-10 flex items-center justify-center gap-3" aria-label={t('buyer.Events.eventResultsPages')}>
+              <button type="button" className="btn-secondary" disabled={!meta.prev_page} onClick={() => setPage(meta.prev_page)}>{t('buyer.Events.previous')}</button>
+              <span className="text-sm text-neutral-600">{t('buyer.Events.pageOf', { page: meta.current_page, total: meta.total_pages })}</span>
+              <button type="button" className="btn-secondary" disabled={!meta.next_page} onClick={() => setPage(meta.next_page)}>{t('buyer.Events.next')}</button>
             </nav>
           )}
         </div>

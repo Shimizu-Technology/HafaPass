@@ -68,7 +68,7 @@ module Translatable
   end
 
   # True when the field has a current translation in `locale` (or every target).
-  def machine_translation_current?(field, source = self[field.to_s], snapshot = translations, locales: AppLocale::TRANSLATION_TARGETS)
+  def machine_translation_current?(field, source = self[field.to_s], snapshot = translations, locales: AppLocale.enabled - [AppLocale::DEFAULT])
     entry = snapshot.is_a?(Hash) ? snapshot[field.to_s] : nil
     entry.is_a?(Hash) && entry[DIGEST_KEY] == Translatable.digest(source) &&
       Array(locales).all? { |locale| entry[locale].present? }
@@ -94,7 +94,7 @@ module Translatable
 
   def queue_translation!(fields, force: false)
     columns = { translation_status: "pending" }
-    columns[:translation_requested_at] = Time.current if has_attribute?(:translation_requested_at)
+    columns[:translation_requested_at] = Time.current
     update_columns(columns)
     TranslateRecordJob.perform_later(self.class.name, id, fields, force)
   end

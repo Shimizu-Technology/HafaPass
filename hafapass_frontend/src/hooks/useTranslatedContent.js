@@ -9,7 +9,8 @@ import { useState } from 'react'
 //   <MachineTranslationNotice {...content.notice} />
 export default function useTranslatedContent(record, fields = ['title', 'short_description', 'description']) {
   const [showOriginal, setShowOriginal] = useState(false)
-  const original = record?.original_content
+  const original = record?.original_content || (record?.machine_translated
+    ? Object.fromEntries(fields.map(field => [field, record?.[`original_${field}`]])) : null)
   const translated = Boolean(record?.machine_translated && original)
   const content = Object.fromEntries(fields.map(field => [
     field, translated && showOriginal ? original[field] : record?.[field],

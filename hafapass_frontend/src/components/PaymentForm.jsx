@@ -1,3 +1,5 @@
+import { formatMoneyCents } from '../utils/money'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import {
@@ -7,12 +9,13 @@ import {
 } from '@stripe/react-stripe-js'
 
 export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError, submitting, setSubmitting }) {
+  const { t } = useTranslation()
   const stripe = useStripe()
   const elements = useElements()
   const [paymentError, setPaymentError] = useState(null)
   const [statusMessage, setStatusMessage] = useState(null)
 
-  const formatPrice = (cents) => `$${(cents / 100).toFixed(2)}`
+  const formatPrice = (cents) => formatMoneyCents(cents)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -37,7 +40,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       if (error.type === 'card_error' || error.type === 'validation_error') {
         setPaymentError(error.message)
       } else {
-        setPaymentError('An unexpected error occurred. Please try again.')
+        setPaymentError(t('buyer.PaymentForm.anUnexpectedErrorOccurredPleaseTryAgain'))
       }
       setSubmitting(false)
       if (onError) onError(error)
@@ -47,7 +50,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       // the order instead of leaving them on a form they might submit twice.
       if (onSuccess) onSuccess(paymentIntent)
     } else {
-      setStatusMessage('We could not confirm the payment status. Please refresh before trying again.')
+      setStatusMessage(t('buyer.PaymentForm.weCouldNotConfirmThePaymentStatusPlease'))
       setSubmitting(false)
     }
   }
@@ -86,11 +89,9 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       >
         {submitting ? (
           <span className="flex items-center justify-center gap-2">
-            <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none h-5 w-5" />
-            Processing Payment...
-          </span>
+            <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none h-5 w-5" />{t('buyer.PaymentForm.processingPayment')}</span>
         ) : (
-          `Pay ${formatPrice(totalCents)}`
+          t('buyer.PaymentForm.pay', { value1: formatPrice(totalCents) })
         )}
       </button>
 
@@ -98,7 +99,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
         <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
-        <span>Secured by Stripe. Your payment info never touches our servers.</span>
+        <span>{t('buyer.PaymentForm.securedByStripeYourPaymentInfoNeverTouches')}</span>
       </div>
     </form>
   )

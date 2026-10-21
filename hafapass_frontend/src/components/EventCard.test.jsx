@@ -8,7 +8,7 @@ function mount(tickets) { render(<MemoryRouter><EventCard event={{ ...event, tic
 describe('event card availability and prices', () => {
   it('distinguishes unopened or paused sales from exhausted inventory', () => {
     mount([{ price_cents: 1250, quantity_remaining: 20, on_sale: false }])
-    expect(screen.getByText('Sales unavailable')).toBeInTheDocument()
+    expect(screen.getByText('events.salesUnavailable')).toBeInTheDocument()
     expect(screen.queryByText('events.soldOut')).not.toBeInTheDocument()
     expect(screen.queryByText(/\$12.50/)).not.toBeInTheDocument()
   })

@@ -1,3 +1,6 @@
+import useTranslatedContent from '../hooks/useTranslatedContent'
+import MachineTranslationNotice from '../components/MachineTranslationNotice'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -28,6 +31,7 @@ export default function MyTicketsPage() {
 }
 
 function MyTicketsContent({ refreshSession, signOut }) {
+  const { t } = useTranslation()
   const location = useLocation()
   const [signedOut, setSignedOut] = useState(false)
   const [orders, setOrders] = useState([])
@@ -47,11 +51,11 @@ function MyTicketsContent({ refreshSession, signOut }) {
       const response = await apiClient.get('/me/tickets')
       setOrders((response.data.tickets || []).map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
     } catch {
-      setRecoveryError('We could not check for guest purchases yet. Please try again shortly.')
+      setRecoveryError(t('buyerAccount.myTicketsPage.weCouldNotCheckForGuestPurchasesYet'))
     } finally {
       setRecovering(false)
     }
-  }, [])
+  }, [t])
 
   const fetchOrders = useCallback(async () => {
     setError(null)
@@ -82,12 +86,12 @@ function MyTicketsContent({ refreshSession, signOut }) {
         // An expired session is not a failure; invite the visitor to sign in again.
         setSignedOut(true)
       } else {
-        setError('We couldn’t load your tickets. Try again.')
+        setError(t('buyerAccount.myTicketsPage.weCouldnTLoadYourTicketsTryAgain'))
       }
     } finally {
       setLoading(false)
     }
-  }, [recoverGuestPurchases, refreshSession])
+  }, [recoverGuestPurchases, refreshSession, t])
 
   useEffect(() => {
     fetchOrders()
@@ -100,17 +104,17 @@ function MyTicketsContent({ refreshSession, signOut }) {
       const response = await apiClient.get('/me/tickets')
       setOrders((response.data.tickets || []).map(ticket => ({ id: ticket.order_id, event: ticket.event, tickets: [ticket] })))
     } catch {
-      setTicketNotice('We couldn’t refresh your tickets. Reload the page to see the latest status.')
+      setTicketNotice(t('buyerAccount.myTicketsPage.weCouldnTRefreshYourTicketsReloadThe'))
     }
-  }, [])
+  }, [t])
 
   const recoveryNotice = (
     <div className="mb-5 text-sm" role="status">
       {ticketNotice && <p className="rounded-xl border border-brand-200 bg-brand-50 p-4 text-brand-900">{ticketNotice}</p>}
-      {recovering && <p className="text-neutral-600">Checking for purchases made before you signed in…</p>}
+      {recovering && <p className="text-neutral-600">{t('buyerAccount.myTicketsPage.checkingForPurchasesMadeBeforeYouSignedIn')}</p>}
       {recoveryError && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
         <p>{recoveryError}</p>
-        <button onClick={recoverGuestPurchases} disabled={recovering} className="mt-2 min-h-11 font-semibold underline">Retry guest purchase recovery</button>
+        <button onClick={recoverGuestPurchases} disabled={recovering} className="mt-2 min-h-11 font-semibold underline">{t('buyerAccount.myTicketsPage.retryGuestPurchaseRecovery')}</button>
       </div>}
     </div>
   )
@@ -126,14 +130,14 @@ function MyTicketsContent({ refreshSession, signOut }) {
   if (signedOut) {
     return (
       <div className="max-w-md mx-auto px-4 py-12">
-        <SEO title="My Tickets" />
+        <SEO title={t('buyerAccount.myTicketsPage.myTickets')} />
         <div className="card p-6 sm:p-8 text-center">
           <Ticket aria-hidden="true" className="mx-auto h-10 w-10 text-brand-700" />
-          <h1 className="mt-4 text-xl font-semibold text-neutral-900">Your session expired</h1>
-          <p className="mt-2 text-neutral-600">Sign in again to see your tickets.</p>
+          <h1 className="mt-4 text-xl font-semibold text-neutral-900">{t('buyerAccount.myTicketsPage.yourSessionExpired')}</h1>
+          <p className="mt-2 text-neutral-600">{t('buyerAccount.myTicketsPage.signInAgainToSeeYourTickets')}</p>
           {signOut
-            ? <button type="button" onClick={() => signOut({ redirectUrl: signInDestination(location) })} className="btn-primary mt-6 w-full sm:w-auto">Sign in again</button>
-            : <Link to={signInDestination(location)} className="btn-primary mt-6 w-full sm:w-auto">Sign in again</Link>}
+            ? <button type="button" onClick={() => signOut({ redirectUrl: signInDestination(location) })} className="btn-primary mt-6 w-full sm:w-auto">{t('buyerAccount.myTicketsPage.signInAgain')}</button>
+            : <Link to={signInDestination(location)} className="btn-primary mt-6 w-full sm:w-auto">{t('buyerAccount.myTicketsPage.signInAgain')}</Link>}
         </div>
       </div>
     )
@@ -144,9 +148,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
       <div className="max-w-2xl mx-auto px-4 py-12">
         <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
           <p className="text-red-700">{error}</p>
-          <button type="button" onClick={fetchOrders} className="btn-secondary mt-4">
-            Try again
-          </button>
+          <button type="button" onClick={fetchOrders} className="btn-secondary mt-4">{t('buyerAccount.myTicketsPage.tryAgain')}</button>
         </div>
       </div>
     )
@@ -186,13 +188,13 @@ function MyTicketsContent({ refreshSession, signOut }) {
   if (eventGroups.length === 0) {
     return (
       <div>
-        <SEO title="My Tickets" />
+        <SEO title={t('buyerAccount.myTicketsPage.myTickets')} />
         {/* Dark header */}
         <div className="bg-neutral-950 pt-8 pb-12 relative">
           <NoiseOverlay />
           <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center relative z-[2]">
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">My Tickets</h1>
-            <p className="text-neutral-400">Your event passes, all in one place</p>
+            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">{t('buyerAccount.myTicketsPage.myTickets')}</h1>
+            <p className="text-neutral-400">{t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')}</p>
           </div>
         </div>
         <div className="h-px bg-gradient-to-r from-transparent via-brand-500/20 to-transparent" />
@@ -205,15 +207,13 @@ function MyTicketsContent({ refreshSession, signOut }) {
             {recoveryNotice}
             <div className="card p-8">
               <Ticket className="mx-auto h-16 w-16 text-neutral-300" />
-              <h2 className="mt-4 text-xl font-semibold text-neutral-800">{recovering ? 'Looking for your tickets' : recoveryError ? 'Guest purchases need another check' : 'No tickets yet'}</h2>
-              <p className="mt-2 text-neutral-500">Purchases made with a verified email on your account appear here after recovery.</p>
-              <Link to="/orders/recover" className="mt-3 inline-block min-h-11 font-semibold text-brand-600 underline">Recover an order by email</Link>
+              <h2 className="mt-4 text-xl font-semibold text-neutral-800">{recovering ? t('buyerAccount.myTicketsPage.lookingForYourTickets') : recoveryError ? t('buyerAccount.myTicketsPage.guestPurchasesNeedAnotherCheck') : t('buyerAccount.myTicketsPage.noTicketsYet')}</h2>
+              <p className="mt-2 text-neutral-500">{t('buyerAccount.myTicketsPage.purchasesMadeWithAVerifiedEmailOnYour')}</p>
+              <Link to="/orders/recover" className="mt-3 inline-block min-h-11 font-semibold text-brand-600 underline">{t('buyerAccount.myTicketsPage.recoverAnOrderByEmail')}</Link>
               <Link
                 to="/events"
                 className="mt-6 inline-block btn-primary px-6 py-3"
-              >
-                Browse Events
-              </Link>
+              >{t('buyerAccount.myTicketsPage.browseEvents')}</Link>
             </div>
           </motion.div>
         </div>
@@ -232,13 +232,13 @@ function MyTicketsContent({ refreshSession, signOut }) {
   function getStatusBadge(status) {
     switch (status) {
       case 'issued':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700">Valid</span>
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700">{t('buyerAccount.myTicketsPage.valid')}</span>
       case 'checked_in':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600">Used</span>
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600">{t('buyerAccount.myTicketsPage.used')}</span>
       case 'cancelled':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Cancelled</span>
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{t('buyerAccount.myTicketsPage.cancelled')}</span>
       case 'transferred':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Transferred</span>
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">{t('buyerAccount.myTicketsPage.transferred')}</span>
       default:
         return null
     }
@@ -251,13 +251,13 @@ function MyTicketsContent({ refreshSession, signOut }) {
 
   return (
     <div>
-      <SEO title="My Tickets" />
+      <SEO title={t('buyerAccount.myTicketsPage.myTickets')} />
       {/* Dark header */}
       <div className="bg-neutral-950 pt-8 pb-12 relative">
         <NoiseOverlay />
         <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center relative z-[2]">
-          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">My Tickets</h1>
-          <p className="text-neutral-400">Your event passes, all in one place</p>
+          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">{t('buyerAccount.myTicketsPage.myTickets')}</h1>
+          <p className="text-neutral-400">{t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')}</p>
         </div>
       </div>
       <div className="h-px bg-gradient-to-r from-transparent via-brand-500/20 to-transparent" />
@@ -286,12 +286,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
                   <div className={`px-4 sm:px-5 py-4 border-b ${isPast ? 'bg-neutral-50' : 'bg-brand-50'}`}>
                     <div className="flex items-start justify-between">
                       <div>
-                        <Link
-                          to={`/events/${event.slug}`}
-                          className="text-lg font-semibold text-neutral-900 hover:text-brand-600 transition-colors"
-                        >
-                          {event.title}
-                        </Link>
+                        <TranslatedEventHeading event={event} />
                         <p className="text-sm text-neutral-600 mt-0.5 flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5" />
                           {formatDate(event.starts_at, event)}
@@ -306,7 +301,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
                         )}
                       </div>
                       {isPast && (
-                        <span className="text-xs font-medium text-neutral-500 bg-neutral-200 px-2 py-1 rounded-xl">Past</span>
+                        <span className="text-xs font-medium text-neutral-500 bg-neutral-200 px-2 py-1 rounded-xl">{t('buyerAccount.myTicketsPage.past')}</span>
                       )}
                     </div>
                   </div>
@@ -332,11 +327,11 @@ function MyTicketsContent({ refreshSession, signOut }) {
                         </Link>
                         <div className="flex items-center space-x-2">
                           {getStatusBadge(ticket.status)}
-                          {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast && <button type="button" onClick={() => setTransferTarget({ ticket, event })} className="min-h-11 px-2 text-xs font-semibold text-brand-700 rounded-lg transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-brand-50">Transfer</button>}
+                          {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast && <button type="button" onClick={() => setTransferTarget({ ticket, event })} className="min-h-11 px-2 text-xs font-semibold text-brand-700 rounded-lg transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-brand-50">{t('buyerAccount.myTicketsPage.transfer')}</button>}
                           <Link
                             to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
                             className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
-                            title="Open ticket to download"
+                            title={t('buyerAccount.myTicketsPage.openTicketToDownload')}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Download className="h-4 w-4" />
@@ -365,11 +360,21 @@ function MyTicketsContent({ refreshSession, signOut }) {
       </div>
       {transferTarget && (
         <TransferTicketDialog
-          ticketLabel={`your ${transferTarget.ticket.ticket_type.name} ticket for ${transferTarget.event.title}`}
+          ticketLabel={t('buyerAccount.myTicketsPage.yourTicketFor', { name: transferTarget.ticket.ticket_type.name, title: transferTarget.event.title })}
           onSend={sendTransfer(transferTarget.ticket)}
           onClose={() => setTransferTarget(null)}
         />
       )}
     </div>
   )
+}
+
+// Each event has an independent original/translation toggle. Issued ticket
+// type names stay as printed on the ticket and on the organizer's door list.
+function TranslatedEventHeading({ event }) {
+  const content = useTranslatedContent(event)
+  return <>
+    <Link to={`/events/${event.slug}`} className="text-lg font-semibold text-neutral-900 hover:text-brand-600 transition-colors">{content.title}</Link>
+    <MachineTranslationNotice {...content.notice} />
+  </>
 }

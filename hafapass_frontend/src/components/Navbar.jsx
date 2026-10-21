@@ -85,13 +85,13 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   const navLinks = [
     { to: '/events', label: t('nav.events'), icon: CalendarDays },
-    { to: '/discover', label: 'Discover', icon: Compass },
+    { to: '/discover', label: t('nav.discover'), icon: Compass },
     // Signed-in accounts reach organizer tools through Dashboard once they
     // belong to an organization; everyone else gets the setup path.
     ...(!isSignedIn ? [{ to: '/host', label: t('nav.hostEvent'), icon: CalendarPlus }] : []),
     ...(isSignedIn ? [
       { to: '/my-tickets', label: t('nav.myTickets'), icon: Ticket },
-      { to: '/saved', label: 'Saved', icon: Heart },
+      { to: '/saved', label: t('nav.saved'), icon: Heart },
       ...(showScanner ? [{ to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine }] : []),
       ...(showDashboard ? [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard }]
         : workspace ? [{ to: '/dashboard', label: t('nav.hostEvent'), icon: CalendarPlus }] : []),
@@ -129,7 +129,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
           </Link>
 
           {/* Desktop Nav */}
-          <nav aria-label="Primary navigation" className="hidden xl:flex items-center gap-1">
+          <nav aria-label={t('nav.primaryNavigation')} className="hidden xl:flex items-center gap-1">
             {navLinks.map(link => (
               <Link
                 key={link.to}
@@ -188,7 +188,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
                     ? 'text-neutral-300 hover:text-white hover:bg-white/10'
                     : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100/80'
                 }`}
-                aria-label="Search events"
+                aria-label={t('nav.searchEvents')}
               >
                 <Search className="w-4.5 h-4.5" />
               </button>
@@ -227,7 +227,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
                 ? 'text-neutral-300 hover:text-white hover:bg-white/10'
                 : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100/80'
             }`}
-            aria-label="Toggle menu"
+            aria-label={t('nav.toggleMenu')}
             aria-expanded={mobileMenuOpen}
             aria-controls="primary-mobile-navigation"
           >
@@ -239,14 +239,14 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
       {roleAlert && (
         <div role="alert" className={`flex flex-wrap items-center justify-end gap-2 px-4 py-2 text-sm ${isDarkMode ? 'text-white' : 'text-neutral-700'}`}>
-          <span>Account access couldn’t load.</span>
-          <button className="rounded px-2 py-1 font-semibold underline underline-offset-2" onClick={() => setRoleAttempt(attempt => attempt + 1)}>Retry account access</button>
+          <span>{t('nav.accountAccessFailed')}</span>
+          <button className="rounded px-2 py-1 font-semibold underline underline-offset-2" onClick={() => setRoleAttempt(attempt => attempt + 1)}>{t('nav.retryAccountAccess')}</button>
         </div>
       )}
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <nav onKeyDown={event => { if (event.key === 'Escape') { setMobileMenuOpen(false); menuTrigger.current?.focus() } }} id="primary-mobile-navigation" aria-label="Mobile navigation" className={`mobile-nav xl:hidden overflow-y-auto border-t ${
+        <nav onKeyDown={event => { if (event.key === 'Escape') { setMobileMenuOpen(false); menuTrigger.current?.focus() } }} id="primary-mobile-navigation" aria-label={t('nav.mobileNavigation')} className={`mobile-nav xl:hidden overflow-y-auto border-t ${
           isDarkMode
             ? 'border-white/10 bg-neutral-950/95 backdrop-blur-2xl'
             : 'border-neutral-200/50 bg-white/90 backdrop-blur-2xl'

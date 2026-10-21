@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import ClerkProviderWrapper from './components/ClerkProviderWrapper'
@@ -36,6 +37,7 @@ function rememberHealth(available) {
 }
 
 function ServiceGate() {
+  const { t } = useTranslation()
   const [visible, setVisible] = useState(false)
   useEffect(() => {
     const timer = window.setTimeout(() => setVisible(true), GATE_DELAY_MS)
@@ -46,7 +48,7 @@ function ServiceGate() {
     <main className="flex min-h-screen items-center justify-center bg-neutral-50 px-6 text-center" role="status">
       <div>
         <div aria-hidden="true" className="mx-auto h-9 w-9 rounded-full border-4 border-brand-100 border-t-brand-500 motion-safe:animate-spin" />
-        <p className="mt-4 font-semibold text-neutral-700">Checking HåfaPass services…</p>
+        <p className="mt-4 font-semibold text-neutral-700">{t('buyer.service.checking')}</p>
       </div>
     </main>
   )
@@ -55,13 +57,14 @@ function ServiceGate() {
 // Once the application has rendered it is never unmounted for a later failed
 // check: typed checkout and form state must survive. A banner explains instead.
 function ConnectedApp({ owner, onMount, degraded, onRetry }) {
+  const { t } = useTranslation()
   // Forget the owner on unmount: an app removed during an outage is not revived
   // with a degraded banner; nothing-rendered-yet rules apply again.
   useEffect(() => { onMount(owner); return () => onMount(undefined) }, [onMount, owner])
   return <>
     {degraded ? <div className="flex flex-wrap items-center justify-center gap-x-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950" role="alert">
-      <span>We’re having trouble reaching HåfaPass. Some actions may not work right now.</span>
-      <button type="button" onClick={onRetry} className="inline-flex min-h-11 items-center font-semibold underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Try again</button>
+      <span>{t('buyer.service.degraded')}</span>
+      <button type="button" onClick={onRetry} className="inline-flex min-h-11 items-center font-semibold underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{t('buyer.service.retry')}</button>
     </div> : null}
     <App />
   </>

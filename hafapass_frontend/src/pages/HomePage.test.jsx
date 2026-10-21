@@ -9,7 +9,6 @@ const auth = vi.hoisted(() => ({ isLoaded: true, isSignedIn: false }))
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/ui/ScrollReveal', () => ({ FadeUp: ({ children }) => <div>{children}</div> }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => ({ 'events.free': 'Free', 'events.from': 'From' }[key] || key) }) }))
 vi.mock('@clerk/clerk-react', () => ({
   useAuth: () => auth,
   SignIn: function MockSignIn({ signUpUrl, forceRedirectUrl }) {
@@ -56,7 +55,7 @@ function mount() {
 const entryLink = async entry => {
   await screen.findByRole('heading', { name: /No upcoming events listed/ })
   return entry === 'footer'
-    ? screen.getByRole('link', { name: 'footer.forOrganizers' })
+    ? screen.getByRole('link', { name: "For Organizers" })
     : screen.getAllByRole('link', { name: 'Start Hosting' })[entry === 'hero' ? 0 : 1]
 }
 
@@ -83,9 +82,9 @@ describe('hosting entry navigation', () => {
   it('keeps event browsing separate while preserving the organizer call to action', async () => {
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 37, slug: 'workshop', title: 'Workshop', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
-    expect(await screen.findByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
+    expect(await screen.findAllByRole('link', { name: 'Browse Events' }).then(links => links[0])).toHaveAttribute('href', '/events')
     screen.getAllByRole('link', { name: 'Start Hosting' }).forEach(link => expect(link).toHaveAttribute('href', '/host'))
-    expect(screen.getByRole('link', { name: 'footer.signIn' })).toHaveAttribute('href', '/sign-in')
+    expect(screen.getByRole('link', { name: "Sign In" })).toHaveAttribute('href', '/sign-in')
   })
 
   it('keeps browsing available during a slow load without declaring the event list empty', async () => {
@@ -93,7 +92,7 @@ describe('hosting entry navigation', () => {
     apiClient.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('Loading upcoming events')
-    expect(screen.getByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
+    expect(screen.getAllByRole('link', { name: 'Browse Events' })[0]).toHaveAttribute('href', '/events')
     expect(screen.queryByText('Check back for new dates, or start setting up your own event.')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /No upcoming events listed/ })).not.toBeInTheDocument()
     await act(async () => finish({ data: { events: [] } }))
@@ -108,7 +107,7 @@ describe('hosting entry navigation', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Events couldn’t load')
     expect(screen.queryByText('Check back for new dates, or start setting up your own event.')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /No upcoming events listed/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
+    expect(screen.getAllByRole('link', { name: 'Browse Events' })[0]).toHaveAttribute('href', '/events')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Retry events' }))
     expect(await screen.findByRole('link', { name: /Recovered event/ })).toHaveAttribute('href', '/events/recovered-event')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

@@ -1,6 +1,16 @@
 require "rails_helper"
 
 RSpec.describe EmailService do
+  it "groups large USD amounts in English and localized receipt emails" do
+    order = create(:order, subtotal_cents: 1_000_00, service_fee_cents: 11_345_67, total_cents: 12_345_67)
+    english = I18n.with_locale(:en) { described_class.send(:build_order_confirmation_html, order, order.event, []) }
+    korean = I18n.with_locale(:ko) { described_class.send(:build_order_confirmation_html, order, order.event, []) }
+
+    expect(english).to include("$1,000.00", "$12,345.67")
+    expect(korean).to include("US$1,000.00", "US$12,345.67")
+    expect(english).not_to include("$1000.00", "$12345.67")
+  end
+
   it "rejects an unprepared direct delivery before networking" do
     order = create(:order, user: nil)
     delivery = create(:message_delivery, order: order)

@@ -58,7 +58,7 @@ class TranslateRecordJob < ApplicationJob
   # { field => { locale => text } } for the locales each field still needs.
   def request_translations(record, sources, force)
     service = GtTranslationService.new
-    AppLocale::TRANSLATION_TARGETS.each_with_object({}) do |locale, results|
+    (AppLocale.enabled - [AppLocale::DEFAULT]).each_with_object({}) do |locale, results|
       needed = sources.select do |field, text|
         text.present? && (force || !record.machine_translation_current?(field, text, locales: locale))
       end
@@ -90,9 +90,11 @@ class TranslateRecordJob < ApplicationJob
       done = sources.keys.all? do |field|
         record[field].blank? || record.machine_translation_current?(field, record[field], merged)
       end
-      # Fields outside this job (still queued elsewhere) do not make it a failure.
+      # A completed partial job must remain eligible for backfill if other fields
+      # have no current translation. A newer edit still owns its pending job.
       status = if record.translation_complete?(merged) then "translated"
-      elsif superseded || done then record.translation_status
+      elsif superseded then record.translation_status
+      elsif done then "untranslated"
       else "failed"
       end
       record.update_columns(translations: merged, translation_status: status)

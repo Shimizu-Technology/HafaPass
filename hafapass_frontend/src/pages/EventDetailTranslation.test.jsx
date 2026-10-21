@@ -64,3 +64,21 @@ it('reloads the event text when the language changes and offers the original', a
   await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2))
   expect(within(document.body).getByRole('button', { name: 'Show translation' })).toHaveAttribute('aria-pressed', 'true')
 })
+
+it('switches both ticket name and description when only ticket content was translated', async () => {
+  const i18n = i18next.createInstance()
+  await i18n.init({ lng: 'en', resources: { en: { translation: en } } })
+  apiClient.get.mockResolvedValue({ data: {
+    ...english,
+    ticket_types: [{ ...english.ticket_types[0], name: '일반', description: '입장',
+      original_name: 'General', original_description: 'One admission', machine_translated: true }],
+  } })
+  render(<I18nextProvider i18n={i18n}><MemoryRouter initialEntries={['/events/reef-night']}><Routes>
+    <Route path="/events/:slug" element={<EventDetailPage />} />
+  </Routes></MemoryRouter></I18nextProvider>)
+  expect(await screen.findByText('입장')).toBeInTheDocument()
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Show original' }))
+  expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument()
+  expect(screen.getByText('One admission')).toBeInTheDocument()
+  expect(screen.queryByText('입장')).not.toBeInTheDocument()
+})

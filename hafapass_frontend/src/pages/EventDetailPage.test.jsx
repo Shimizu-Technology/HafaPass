@@ -10,7 +10,6 @@ vi.mock('framer-motion', async original => ({ ...(await original()), useReducedM
 const seo = vi.hoisted(() => ({ props: null }))
 vi.mock('../components/SEO', () => ({ default: props => { seo.props = props; return null } }))
 vi.mock('../components/ui/ScrollReveal', () => ({ FadeUp: ({ children }) => children }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }))
 vi.mock('../utils/marketplaceAttribution', () => ({ captureQueryAttribution: vi.fn(), trackFunnel: vi.fn() }))
 
 const baseEvent = {
@@ -65,8 +64,8 @@ describe('EventDetailPage all-in pricing and seller identity', () => {
     })
     expect(within(screen.getByTestId('mobile-buy-bar')).getByText('From $16.75')).toBeInTheDocument()
     expect(screen.getByText('$48.25')).toBeInTheDocument()
-    expect(screen.getByTestId('seller-line')).toHaveTextContent('pricing.sellerLine')
-    expect(screen.getByTestId('all-in-note')).toHaveTextContent('pricing.allInNote')
+    expect(screen.getByTestId('seller-line')).toHaveTextContent('Tickets by')
+    expect(screen.getByTestId('all-in-note')).toHaveTextContent('Prices include all mandatory fees.')
     expect(seo.props.jsonLd.offers).toMatchObject({ lowPrice: '16.75', highPrice: '48.25', priceCurrency: 'USD' })
   })
 })

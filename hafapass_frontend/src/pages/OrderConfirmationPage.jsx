@@ -1,3 +1,7 @@
+import useTranslatedContent from '../hooks/useTranslatedContent'
+import MachineTranslationNotice from '../components/MachineTranslationNotice'
+import { formatMoneyCents } from '../utils/money'
+import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -18,20 +22,6 @@ const EMAIL_REFRESH_INTERVAL = 10_000
 const EMAIL_REFRESH_LIMIT = 6
 
 const finalStatuses = new Set(['completed', 'partially_refunded', 'refunded', 'cancelled', 'expired'])
-const refundNotice = attempt => ({
-  pending: 'Refund pending — waiting for the payment provider. Check this saved request; a refund has not been confirmed.',
-  unconfirmed: 'The refund outcome is not confirmed. Check this saved request before starting another refund.',
-  failed: 'Refund failed. No refund was confirmed. You can try again.',
-  cancelled: 'Refund cancelled. No refund was confirmed. You can try again.',
-  rejected: 'The refund request was rejected. No refund was confirmed. Contact support or retry this request.',
-  succeeded: attempt?.simulated ? 'Test refund complete. No real money was returned.' : 'Refund confirmed by the payment provider.',
-  finance_review: 'The payment records need a finance review. Contact support before requesting another refund. Check this saved request for updates.',
-}[attempt?.status])
-const refundNeedsStatusCheck = attempt => ['pending', 'unconfirmed', 'finance_review'].includes(attempt?.status)
-const refundButton = (attempt, initial = 'Refund') => ['failed', 'cancelled'].includes(attempt?.status)
-  ? 'Try refund again'
-  : refundNeedsStatusCheck(attempt) ? 'Check refund status'
-    : attempt?.status === 'rejected' ? 'Retry refund request' : initial
 
 export default function OrderConfirmationPage() {
   const { id } = useParams()
@@ -39,17 +29,35 @@ export default function OrderConfirmationPage() {
 }
 
 function AuthenticatedOrderConfirmation() {
+  const { t } = useTranslation()
   const { isLoaded, userId } = useAuth()
-  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">{t('buyerAccount.orderConfirmationPage.preparingYourAccount')}</div>
   return <OrderConfirmationContent key={userId || 'guest'} />
 }
 
 function OrderConfirmationContent() {
+  const { t } = useTranslation()
+  const refundNotice = attempt => ({
+    pending: t('buyerAccount.orderConfirmationPage.refundPendingWaitingForThePaymentProviderCheck'),
+    unconfirmed: t('buyerAccount.orderConfirmationPage.theRefundOutcomeIsNotConfirmedCheckThis'),
+    failed: t('buyerAccount.orderConfirmationPage.refundFailedNoRefundWasConfirmedYouCan'),
+    cancelled: t('buyerAccount.orderConfirmationPage.refundCancelledNoRefundWasConfirmedYouCan'),
+    rejected: t('buyerAccount.orderConfirmationPage.theRefundRequestWasRejectedNoRefundWas'),
+    succeeded: attempt?.simulated ? t('buyerAccount.orderConfirmationPage.testRefundCompleteNoRealMoneyWasReturned') : t('buyerAccount.orderConfirmationPage.refundConfirmedByThePaymentProvider'),
+    finance_review: t('buyerAccount.orderConfirmationPage.thePaymentRecordsNeedAFinanceReviewContact'),
+  }[attempt?.status])
+  const refundNeedsStatusCheck = attempt => ['pending', 'unconfirmed', 'finance_review'].includes(attempt?.status)
+  const refundButton = (attempt, initial = t('buyerAccount.orderConfirmationPage.refund')) => ['failed', 'cancelled'].includes(attempt?.status)
+    ? t('buyerAccount.orderConfirmationPage.tryRefundAgain')
+    : refundNeedsStatusCheck(attempt) ? t('buyerAccount.orderConfirmationPage.checkRefundStatus')
+      : attempt?.status === 'rejected' ? t('buyerAccount.orderConfirmationPage.retryRefundRequest') : initial
+
   const { id } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
   const capabilities = useLaunchCapabilities()
   const [order, setOrder] = useState(null)
+  const eventContent = useTranslatedContent(order?.event)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [resendState, setResendState] = useState('idle')
@@ -125,17 +133,17 @@ function OrderConfirmationContent() {
     } catch (err) {
       if (!current()) return
       if (preserveOrder && err.response?.status !== 404 && err.response?.status !== 401 && err.response?.status !== 403) {
-        setDeliveryRefreshError('Unable to refresh email status right now. Your saved order details are still shown. Try Refresh status when connected.')
+        setDeliveryRefreshError(t('buyerAccount.orderConfirmationPage.unableToRefreshEmailStatusRightNowYour'))
         return
       }
       setError(err.response?.status === 404
-        ? 'We could not securely open this order. Use the recovery page with your order reference and email.'
-        : 'Unable to refresh this order right now. Please try again.')
+        ? t('buyerAccount.orderConfirmationPage.weCouldNotSecurelyOpenThisOrderUse')
+        : t('buyerAccount.orderConfirmationPage.unableToRefreshThisOrderRightNowPlease'))
     } finally {
       if (preserveOrder) { deliveryRefreshInFlight.current = null; finishRefresh() }
       if (current()) { setLoading(false); setDeliveryRefreshing(false) }
     }
-  }, [id])
+  }, [id, t])
 
   useEffect(() => {
     fetchOrder()
@@ -195,13 +203,13 @@ function OrderConfirmationContent() {
 
   const refreshDeliveryStatus = () => {
     if (navigator.onLine === false) {
-      setDeliveryRefreshError('Connect to the internet, then use Refresh status. Your saved order details are still shown.')
+      setDeliveryRefreshError(t('buyerAccount.orderConfirmationPage.connectToTheInternetThenUseRefreshStatus'))
       return
     }
     return fetchOrder({ preserveOrder: true })
   }
 
-  const formatPrice = (cents = 0) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
+  const formatPrice = (cents = 0) => cents === 0 ? t('buyerAccount.orderConfirmationPage.free') : formatMoneyCents(cents)
   const event = order?.event
   // Transfers close when the event starts, matching the server and My Tickets.
   const transfersOpen = Boolean(event?.starts_at) && new Date(event.starts_at) > new Date()
@@ -215,24 +223,24 @@ function OrderConfirmationContent() {
   const deliveryUnconfirmed = !delivery?.simulated && delivery?.reconciliation_required === true
   const deliveryFailed = !delivery?.simulated && !deliveryUnconfirmed && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
   const deliveryMessage = delivery?.simulated
-    ? usableTickets ? 'Email is simulated in this test environment. Open or download your tickets on this page.' : 'Email is simulated in this test environment. Check your order and ticket statuses on this page.'
+    ? usableTickets ? t('buyerAccount.orderConfirmationPage.emailIsSimulatedInThisTestEnvironmentOpen') : t('buyerAccount.orderConfirmationPage.emailIsSimulatedInThisTestEnvironmentCheck')
     : delivery?.status === 'delivered'
-      ? 'Your ticket email was delivered.'
+      ? t('buyerAccount.orderConfirmationPage.yourTicketEmailWasDelivered')
       : deliveryUnconfirmed
-        ? 'A ticket email request still has an unconfirmed outcome. Check your tickets and use Refresh status or contact support before requesting another email.'
+        ? t('buyerAccount.orderConfirmationPage.aTicketEmailRequestStillHasAnUnconfirmed')
       : delivery?.status === 'sent'
-        ? 'Your ticket email was accepted for delivery. Delivery has not been confirmed.'
+        ? t('buyerAccount.orderConfirmationPage.yourTicketEmailWasAcceptedForDeliveryDelivery')
         : delivery?.status === 'delayed'
-          ? 'Your ticket email is delayed. Delivery has not been confirmed. You can open or download your tickets on this page.'
+          ? t('buyerAccount.orderConfirmationPage.yourTicketEmailIsDelayedDeliveryHasNot')
           : delivery?.status === 'queued'
-          ? 'Your ticket email is queued for delivery. You can open or download your tickets on this page.'
+          ? t('buyerAccount.orderConfirmationPage.yourTicketEmailIsQueuedForDeliveryYou')
           : delivery?.status === 'cancelled'
-            ? 'This ticket email request was cancelled. Check your order and ticket statuses on this page.'
+            ? t('buyerAccount.orderConfirmationPage.thisTicketEmailRequestWasCancelledCheckYour')
             : deliveryFailed
-            ? 'Your ticket email delivery needs attention. Open or download your tickets on this page, or contact support.'
+            ? t('buyerAccount.orderConfirmationPage.yourTicketEmailDeliveryNeedsAttentionOpenOr')
             : usableTickets
-              ? 'Your tickets are ready. You can request a confirmation email using Resend.'
-              : 'You can view your order and ticket statuses here. Email delivery will appear when a confirmation is available.'
+              ? t('buyerAccount.orderConfirmationPage.yourTicketsAreReadyYouCanRequestA')
+              : t('buyerAccount.orderConfirmationPage.youCanViewYourOrderAndTicketStatuses')
   const change = order?.latest_event_change
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
     ticket.status === 'issued' && ticket.refundable_cents >= 0
@@ -295,7 +303,7 @@ function OrderConfirmationContent() {
     const operation = `ticket:${ticket.id}`
     const isPaidRefund = ticket.refundable_cents > 0 || Boolean(getBuyerRefundAttempt(id, operation))
     const checkingSavedRefund = isPaidRefund && refundNeedsStatusCheck(getBuyerRefundAttempt(id, operation))
-    if (!checkingSavedRefund && !window.confirm(isPaidRefund ? `Request a refund for this ${ticket.ticket_type.name} ticket? Cancellation follows a confirmed refund.` : `Cancel this ${ticket.ticket_type.name} ticket? This cannot be undone.`)) return
+    if (!checkingSavedRefund && !window.confirm(isPaidRefund ? t('buyerAccount.orderConfirmationPage.requestARefundForThisTicketCancellationFollows', { name: ticket.ticket_type.name }) : t('buyerAccount.orderConfirmationPage.cancelThisTicketThisCannotBeUndone', { name: ticket.ticket_type.name }))) return
     setCancellingTicketId(ticket.id)
     setTicketActionError(null)
     try {
@@ -307,7 +315,7 @@ function OrderConfirmationContent() {
       await fetchOrder()
     } catch (err) {
       if (isPaidRefund) recordBuyerRefundOutcome(id, operation, err.response?.data)
-      setTicketActionError(err.response?.data?.error || 'Unable to cancel this ticket. Please refresh before retrying.')
+      setTicketActionError(err.response?.data?.error || t('buyerAccount.orderConfirmationPage.unableToCancelThisTicketPleaseRefreshBefore'))
     } finally {
       refreshRefundAttempts(value => value + 1)
       setCancellingTicketId(null)
@@ -315,13 +323,13 @@ function OrderConfirmationContent() {
   }
 
   async function rotateTicket(ticket) {
-    if (!window.confirm('Replace this ticket’s entry QR? Any saved copy of the old QR will stop working.')) return
+    if (!window.confirm(t('buyerAccount.orderConfirmationPage.replaceThisTicketSEntryQRAnySaved'))) return
     setRotatingTicketId(ticket.id)
     try {
       await apiClient.post(`/orders/${id}/tickets/${ticket.id}/rotate_scan`, {}, { headers: orderHeaders() })
       await fetchOrder()
     } catch (err) {
-      setTicketActionError(err.response?.data?.error || 'Unable to replace the QR. Please refresh before retrying.')
+      setTicketActionError(err.response?.data?.error || t('buyerAccount.orderConfirmationPage.unableToReplaceTheQRPleaseRefreshBefore'))
     } finally {
       setRotatingTicketId(null)
     }
@@ -341,7 +349,7 @@ function OrderConfirmationContent() {
       const response = await apiClient.get(`/events/${event.slug}/seating`)
       setExchangeMap(response.data)
     } catch (err) {
-      setTicketActionError(err.response?.data?.error || 'Unable to load available seats.')
+      setTicketActionError(err.response?.data?.error || t('buyerAccount.orderConfirmationPage.unableToLoadAvailableSeats'))
       setExchangeTicketId(null)
     }
   }
@@ -358,7 +366,7 @@ function OrderConfirmationContent() {
       setExchangeMap(null)
       await fetchOrder()
     } catch (err) {
-      setTicketActionError(err.response?.data?.error || 'The seat could not be changed.')
+      setTicketActionError(err.response?.data?.error || t('buyerAccount.orderConfirmationPage.theSeatCouldNotBeChanged'))
     }
   }
 
@@ -370,7 +378,7 @@ function OrderConfirmationContent() {
         <div className="card p-8 text-center">
           <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-500" />
           <p className="mb-5 text-neutral-700">{error}</p>
-          <Link to="/orders/recover" className="btn-primary">Recover my order</Link>
+          <Link to="/orders/recover" className="btn-primary">{t('buyerAccount.orderConfirmationPage.recoverMyOrder')}</Link>
         </div>
       </div>
     )
@@ -378,56 +386,56 @@ function OrderConfirmationContent() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <SEO title={`Order ${order.reference}`} />
+      <SEO title={t('buyerAccount.orderConfirmationPage.order', { reference: order.reference })} />
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         <div className="mb-7 text-center">
           <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing || isPartiallyRefunded ? 'bg-amber-100' : isClosed || isRefunded ? 'bg-neutral-100' : 'bg-emerald-100'}`}>
-            {isProcessing ? <Clock3 aria-label="Payment pending" className="h-8 w-8 text-amber-700" /> : isClosed ? <XCircle aria-label="Order closed" className="h-8 w-8 text-neutral-600" /> : isRefunded ? <RotateCcw aria-label="Order refunded" className="h-8 w-8 text-neutral-600" /> : isPartiallyRefunded ? <AlertTriangle aria-label="Order partially refunded" className="h-8 w-8 text-amber-700" /> : <CheckCircle aria-label="Order confirmed" className="h-8 w-8 text-emerald-700" />}
+            {isProcessing ? <Clock3 aria-label={t('buyerAccount.orderConfirmationPage.paymentPending')} className="h-8 w-8 text-amber-700" /> : isClosed ? <XCircle aria-label={t('buyerAccount.orderConfirmationPage.orderClosed')} className="h-8 w-8 text-neutral-600" /> : isRefunded ? <RotateCcw aria-label={t('buyerAccount.orderConfirmationPage.orderRefunded')} className="h-8 w-8 text-neutral-600" /> : isPartiallyRefunded ? <AlertTriangle aria-label={t('buyerAccount.orderConfirmationPage.orderPartiallyRefunded')} className="h-8 w-8 text-amber-700" /> : <CheckCircle aria-label={t('buyerAccount.orderConfirmationPage.orderConfirmed')} className="h-8 w-8 text-emerald-700" />}
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-neutral-950">
-            {awaitingPayment ? 'Your payment is not complete' : isProcessing ? 'Payment is processing' : order.status === 'refunded' ? 'Your order was refunded' : order.status === 'partially_refunded' ? 'Your order was partially refunded' : order.status === 'cancelled' ? 'Order cancelled' : order.status === 'expired' ? 'Reservation expired' : 'Your order is confirmed'}
+            {awaitingPayment ? t('buyerAccount.orderConfirmationPage.yourPaymentIsNotComplete') : isProcessing ? t('buyerAccount.orderConfirmationPage.paymentIsProcessing') : order.status === 'refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasRefunded') : order.status === 'partially_refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasPartiallyRefunded') : order.status === 'cancelled' ? t('buyerAccount.orderConfirmationPage.orderCancelled') : order.status === 'expired' ? t('buyerAccount.orderConfirmationPage.reservationExpired') : t('buyerAccount.orderConfirmationPage.yourOrderIsConfirmed')}
           </h1>
-          <p className="mt-2 break-words text-neutral-600">Order {order.reference} · {order.buyer_email}</p>
+          <p className="mt-2 break-words text-neutral-600">{t('buyerAccount.orderConfirmationPage.order2', { reference: order.reference, email: order.buyer_email })}</p>
           {awaitingPayment ? <div className="mt-3">
-            <p className="mb-3 text-sm text-amber-700">Your tickets are held until {new Date(order.expires_at).toLocaleTimeString()}. Resume the original checkout to pay.</p>
-            <Link to={`/checkout/${event.slug}?resume=${order.id}`} className="btn-primary">Resume payment</Link>
-          </div> : isProcessing && <p className="mt-2 text-sm text-amber-700">This page refreshes automatically. Do not submit another payment.</p>}
+            <p className="mb-3 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.yourTicketsAreHeldUntilResumeTheOriginal', { time: formatEventTime(order.expires_at, event.timezone, { second: '2-digit' }) })}</p>
+            <Link to={`/checkout/${event.slug}?resume=${order.id}`} className="btn-primary">{t('buyerAccount.orderConfirmationPage.resumePayment')}</Link>
+          </div> : isProcessing && <p className="mt-2 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.thisPageRefreshesAutomaticallyDoNotSubmitAnother')}</p>}
         </div>
 
         {change && (
           <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <h2 className="font-semibold text-amber-950">Event {change.change_type}</h2>
-            <p className="mt-1 text-sm text-amber-900">{change.reason || 'The organizer changed this event. Review the updated details below.'}</p>
-            {change.response && <p className="mt-3 text-sm font-medium text-amber-950">Your response: {change.response.replace('_', ' ')}</p>}
+            <h2 className="font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.event', { change: t(`buyerAccount.orderConfirmationPage.eventStatus.${change.change_type}`, { defaultValue: change.change_type }) })}</h2>
+            <p className="mt-1 text-sm text-amber-900">{change.reason || t('buyerAccount.orderConfirmationPage.theOrganizerChangedThisEventReviewTheUpdated')}</p>
+            {change.response && <p className="mt-3 text-sm font-medium text-amber-950">{t('buyerAccount.orderConfirmationPage.yourResponse', { response: t(`buyerAccount.orderConfirmationPage.changeResponse.${change.response}`, { defaultValue: change.response.replace('_', ' ') }) })}</p>}
             {canRespondToChange && (
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 {!change.response && (
-                  <button className="btn-secondary" disabled={decisionBusy} onClick={() => respondToChange('accepted')}>Keep my tickets</button>
+                  <button className="btn-secondary" disabled={decisionBusy} onClick={() => respondToChange('accepted')}>{t('buyerAccount.orderConfirmationPage.keepMyTickets')}</button>
                 )}
-                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy || eventRefundAttempt?.status === 'succeeded'} onClick={() => respondToChange('refund_requested')}>{refundButton(eventRefundAttempt, refundNeedsRetry ? 'Retry refund' : 'Request refund')}</button>
+                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy || eventRefundAttempt?.status === 'succeeded'} onClick={() => respondToChange('refund_requested')}>{refundButton(eventRefundAttempt, refundNeedsRetry ? t('buyerAccount.orderConfirmationPage.retryRefund') : t('buyerAccount.orderConfirmationPage.requestRefund'))}</button>
               </div>
             )}
             {eventRefundAttempt && <p role="status" className="mt-3 text-sm text-amber-950">{refundNotice(eventRefundAttempt)}</p>}
-            {eventRefundAttempt?.status === 'finance_review' && <SupportLink subject={`Refund review for order ${order.reference}`} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</SupportLink>}
-            {decisionState === 'error' && !eventRefundAttempt && <p className="mt-3 text-sm text-red-700">We could not save that choice. Please try again.</p>}
+            {eventRefundAttempt?.status === 'finance_review' && <SupportLink subject={t('buyerAccount.orderConfirmationPage.refundReviewForOrder', { reference: order.reference })} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.contactSupport')}</SupportLink>}
+            {decisionState === 'error' && !eventRefundAttempt && <p className="mt-3 text-sm text-red-700">{t('buyerAccount.orderConfirmationPage.weCouldNotSaveThatChoicePleaseTry')}</p>}
           </section>
         )}
 
         {ticketsAvailable && (
           <section id="order-tickets" className="card mb-6 scroll-mt-24 p-5 sm:p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-semibold text-neutral-950">Tickets ({order.tickets.length})</h2>
+              <h2 className="font-semibold text-neutral-950">{t('buyerAccount.orderConfirmationPage.tickets', { count: order.tickets.length })}</h2>
               {['completed', 'partially_refunded'].includes(order.status) && (
-                <button onClick={resend} disabled={resendState === 'sending' || resendState === 'uncertain' || deliveryUnconfirmed} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700"><Mail className="h-4 w-4" /> Resend</button>
+                <button onClick={resend} disabled={resendState === 'sending' || resendState === 'uncertain' || deliveryUnconfirmed} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700"><Mail className="h-4 w-4" />{t('buyerAccount.orderConfirmationPage.resend')}</button>
               )}
             </div>
-            {resendState === 'requested' && <p className="mb-3 text-sm text-neutral-700">Your email request was saved. Check the delivery status below.</p>}
-            {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">An email request was made recently. Please wait two minutes.</p>}
-            {resendState === 'uncertain' && <p className="mb-3 text-sm text-amber-700">A previous ticket email is still unconfirmed. Use Refresh status or contact support before requesting another email.</p>}
-            {resendState === 'error' && <p className="mb-3 text-sm text-red-700">Unable to resend right now.</p>}
+            {resendState === 'requested' && <p className="mb-3 text-sm text-neutral-700">{t('buyerAccount.orderConfirmationPage.yourEmailRequestWasSavedCheckTheDelivery')}</p>}
+            {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.anEmailRequestWasMadeRecentlyPleaseWait')}</p>}
+            {resendState === 'uncertain' && <p className="mb-3 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.aPreviousTicketEmailIsStillUnconfirmedUse')}</p>}
+            {resendState === 'error' && <p className="mb-3 text-sm text-red-700">{t('buyerAccount.orderConfirmationPage.unableToResendRightNow')}</p>}
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             {ticketActionNotice && <p role="status" className="mb-3 text-sm text-brand-800">{ticketActionNotice}</p>}
-            {transferTarget && <TransferTicketDialog ticketLabel={`your ${transferTarget.ticket_type.name} ticket`} onSend={sendTransfer(transferTarget)} onClose={() => setTransferTarget(null)} />}
+            {transferTarget && <TransferTicketDialog ticketLabel={t('buyerAccount.orderConfirmationPage.transferTicketLabel', { name: transferTarget.ticket_type.name })} onSend={sendTransfer(transferTarget)} onClose={() => setTransferTarget(null)} />}
             <div className="divide-y divide-neutral-100">
               {order.tickets.map(ticket => {
                 const canOpenTicket = ticket.status === 'issued' && usableTickets && ticket.admission_allowed === true && !ticket.admission_block_reason
@@ -442,7 +450,7 @@ function OrderConfirmationContent() {
                   <div className="min-w-0 flex-1">
                     <p className="break-words font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                     {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
-                    <p className="text-xs capitalize text-neutral-600">{ticket.attendee_name || 'New holder'} · {ticket.status.replace('_', ' ')}</p>
+                    <p className="text-xs capitalize text-neutral-600">{ticket.attendee_name || t('buyerAccount.orderConfirmationPage.newHolder')} · {t(`buyerAccount.orderConfirmationPage.ticketStatus.${ticket.status}`, { defaultValue: ticket.status.replace('_', ' ') })}</p>
                     {ticket.admission_block_reason && <p className="mt-1 text-sm text-amber-800">{ticket.admission_block_reason}</p>}
                     {ticket.status === 'issued' && ticket.pending_transfer && <PendingTransfer transfer={ticket.pending_transfer} timeZone={event.timezone}
                       onCancel={() => apiClient.delete(`/orders/${id}/tickets/${ticket.id}/transfer`, { headers: orderHeaders() })}
@@ -451,40 +459,39 @@ function OrderConfirmationContent() {
                   <div className="flex flex-wrap items-center gap-2">
                     {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`}
                       className={canOpenTicket ? 'btn-primary min-h-11 gap-2' : 'btn-secondary min-h-11 gap-2'}
-                      aria-label={canOpenTicket ? `Open ticket: ${ticket.ticket_type.name}` : 'View ticket'}>
-                      <Ticket aria-hidden="true" className="h-4 w-4" />{canOpenTicket ? 'Open ticket' : 'View ticket status'}
+                      aria-label={canOpenTicket ? t('buyerAccount.orderConfirmationPage.openTicket', { name: ticket.ticket_type.name }) : t('buyerAccount.orderConfirmationPage.viewTicket')}>
+                      <Ticket aria-hidden="true" className="h-4 w-4" />{canOpenTicket ? t('buyerAccount.orderConfirmationPage.openTicket2') : t('buyerAccount.orderConfirmationPage.viewTicketStatus')}
                     </Link>}
                     {ticket.status === 'issued' && (
-                      <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? 'Refreshing…' : 'Refresh QR'}</button>
+                      <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.refreshing') : t('buyerAccount.orderConfirmationPage.refreshQR')}</button>
                     )}
                     {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) || refundNeedsStatusCheck(ticketRefundAttempt)) && (
-                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? 'Checking…' : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : 'Cancel'}</button>
+                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.checking') : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : t('buyerAccount.orderConfirmationPage.cancel')}</button>
                     )}
                     {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && transfersOpen && (
-                      <button type="button" onClick={() => { setTicketActionError(null); setTransferTarget(ticket) }} className="min-h-11 px-2 text-xs font-semibold text-brand-700">Transfer</button>
+                      <button type="button" onClick={() => { setTicketActionError(null); setTransferTarget(ticket) }} className="min-h-11 px-2 text-xs font-semibold text-brand-700">{t('buyerAccount.orderConfirmationPage.transfer')}</button>
                     )}
                     {ticket.status === 'issued' && ticket.seat && (
-                      <button onClick={() => openSeatExchange(ticket)} className="min-h-11 px-2 text-xs font-semibold text-brand-700">Change seat</button>
+                      <button onClick={() => openSeatExchange(ticket)} className="min-h-11 px-2 text-xs font-semibold text-brand-700">{t('buyerAccount.orderConfirmationPage.changeSeat')}</button>
                     )}
 
                   </div>
                 </div>
                 {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
-                {ticketRefundAttempt?.status === 'finance_review' && <SupportLink subject={`Refund review for order ${order.reference}`} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline">Contact support</SupportLink>}
+                {ticketRefundAttempt?.status === 'finance_review' && <SupportLink subject={t('buyerAccount.orderConfirmationPage.refundReviewForOrder', { reference: order.reference })} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.contactSupport')}</SupportLink>}
                 {exchangeTicketId === ticket.id && (
                   <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
-                    <label className="block text-sm font-medium text-neutral-800">Available equivalent seats
-                      <select className="input mt-1" value={exchangeSeatId} onChange={eventValue => setExchangeSeatId(eventValue.target.value)}>
-                        <option value="">Choose a seat</option>
+                    <label className="block text-sm font-medium text-neutral-800">{t('buyerAccount.orderConfirmationPage.availableEquivalentSeats')}<select className="input mt-1" value={exchangeSeatId} onChange={eventValue => setExchangeSeatId(eventValue.target.value)}>
+                        <option value="">{t('buyerAccount.orderConfirmationPage.chooseASeat')}</option>
                         {exchangeOptions.map(seat => <option key={seat.id} value={seat.id}>{seat.display_label}</option>)}
                       </select>
                     </label>
                     {selectedExchangeSeat?.requires_accessibility_attestation && (
-                      <label className="mt-3 flex items-start gap-2 text-sm text-neutral-700"><input type="checkbox" className="mt-1" checked={exchangeAttested} onChange={eventValue => setExchangeAttested(eventValue.target.checked)} />I attest that this party needs an accessible seating location.</label>
+                      <label className="mt-3 flex items-start gap-2 text-sm text-neutral-700"><input type="checkbox" className="mt-1" checked={exchangeAttested} onChange={eventValue => setExchangeAttested(eventValue.target.checked)} />{t('buyerAccount.orderConfirmationPage.iAttestThatThisPartyNeedsAnAccessible')}</label>
                     )}
                     <div className="mt-3 flex gap-2">
-                      <button className="btn-primary !px-3 !py-2 text-sm" disabled={!exchangeSeatId || (selectedExchangeSeat?.requires_accessibility_attestation && !exchangeAttested)} onClick={() => exchangeSeat(ticket)}>Confirm seat change</button>
-                      <button className="btn-secondary !px-3 !py-2 text-sm" onClick={() => setExchangeTicketId(null)}>Cancel</button>
+                      <button className="btn-primary !px-3 !py-2 text-sm" disabled={!exchangeSeatId || (selectedExchangeSeat?.requires_accessibility_attestation && !exchangeAttested)} onClick={() => exchangeSeat(ticket)}>{t('buyerAccount.orderConfirmationPage.confirmSeatChange')}</button>
+                      <button className="btn-secondary !px-3 !py-2 text-sm" onClick={() => setExchangeTicketId(null)}>{t('buyerAccount.orderConfirmationPage.cancel')}</button>
                     </div>
                   </div>
                 )}
@@ -495,23 +502,24 @@ function OrderConfirmationContent() {
         )}
 
         <section className={`mb-6 rounded-xl border p-4 text-sm ${deliveryFailed || deliveryUnconfirmed ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-neutral-200 bg-white text-neutral-700'}`} aria-labelledby="confirmation-delivery-title">
-          <h2 id="confirmation-delivery-title" className="font-semibold">Ticket email</h2>
+          <h2 id="confirmation-delivery-title" className="font-semibold">{t('buyerAccount.orderConfirmationPage.ticketEmail')}</h2>
           <p className="mt-1" role="status">{deliveryMessage}</p>
-          {deliveryUnconfirmed && delivery?.status === 'delivered' && <p className="mt-2" role="status">A previous ticket email request still has an unconfirmed outcome. Use Refresh status or contact support before requesting another email.</p>}
-          {!delivery?.simulated && <button onClick={refreshDeliveryStatus} disabled={deliveryRefreshing} className="mt-2 inline-flex min-h-11 items-center gap-1.5 font-semibold text-brand-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" />{deliveryRefreshing ? 'Refreshing status…' : 'Refresh status'}</button>}
+          {deliveryUnconfirmed && delivery?.status === 'delivered' && <p className="mt-2" role="status">{t('buyerAccount.orderConfirmationPage.aPreviousTicketEmailRequestStillHasAn')}</p>}
+          {!delivery?.simulated && <button onClick={refreshDeliveryStatus} disabled={deliveryRefreshing} className="mt-2 inline-flex min-h-11 items-center gap-1.5 font-semibold text-brand-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" />{deliveryRefreshing ? t('buyerAccount.orderConfirmationPage.refreshingStatus') : t('buyerAccount.orderConfirmationPage.refreshStatus')}</button>}
           {deliveryRefreshError && <p className="mt-1 text-amber-800" role="alert">{deliveryRefreshError}</p>}
-          {emailUpdatesPaused && emailInFlightStatuses.has(delivery?.status) && <p className="mt-1 text-neutral-600">Automatic email updates have paused. Use Refresh status to check again.</p>}
+          {emailUpdatesPaused && emailInFlightStatuses.has(delivery?.status) && <p className="mt-1 text-neutral-600">{t('buyerAccount.orderConfirmationPage.automaticEmailUpdatesHavePausedUseRefreshStatus')}</p>}
           {(deliveryFailed || deliveryUnconfirmed) && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
-            {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open or download tickets</a>}
-            <SupportLink subject={`Ticket email for order ${order.reference}`} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact support</SupportLink>
+            {usableTickets && <a href="#order-tickets" className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.openOrDownloadTickets')}</a>}
+            <SupportLink subject={t('buyerAccount.orderConfirmationPage.ticketEmailForOrder', { reference: order.reference })} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.contactSupport')}</SupportLink>
           </div>}
         </section>
 
 
         <section className="card mb-6 overflow-hidden">
           <div className="border-b border-neutral-100 p-5 sm:p-6">
-            <p className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wider text-brand-700">{event.status}</p>
-            <h2 className="mt-1 text-xl font-bold text-neutral-950">{event.title}</h2>
+            <p className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wider text-brand-700">{t(`buyerAccount.orderConfirmationPage.eventStatus.${event.status}`, { defaultValue: event.status })}</p>
+            <h2 className="mt-1 text-xl font-bold text-neutral-950">{eventContent.title}</h2>
+            <MachineTranslationNotice {...eventContent.notice} />
             <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
             <p className="text-sm text-neutral-600">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
             <SellerLine seller={order.seller} className="mt-2" />
@@ -520,24 +528,21 @@ function OrderConfirmationContent() {
             {order.order_items.map(item => (
               <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
             ))}
-            <div className="flex justify-between gap-4 border-t border-neutral-100 pt-3 text-neutral-600"><span>Service fee{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">Includes card processing</span>}</span><span>{`$${((order.service_fee_cents || 0) / 100).toFixed(2)}`}</span></div>
-            {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatPrice(order.discount_cents)}</span></div>}
-            <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>Total</span><span>{formatPrice(order.total_cents)}</span></div>
-            {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>Refunded</span><span>−{formatPrice(order.refunded_cents)}</span></div>}
+            <div className="flex justify-between gap-4 border-t border-neutral-100 pt-3 text-neutral-600"><span>{t('buyerAccount.orderConfirmationPage.serviceFee')}{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">{t('buyerAccount.orderConfirmationPage.includesCardProcessing')}</span>}</span><span>{formatMoneyCents(order.service_fee_cents || 0)}</span></div>
+            {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>{t('buyerAccount.orderConfirmationPage.discount')}</span><span>−{formatPrice(order.discount_cents)}</span></div>}
+            <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>{t('buyerAccount.orderConfirmationPage.total')}</span><span>{formatPrice(order.total_cents)}</span></div>
+            {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>{t('buyerAccount.orderConfirmationPage.refunded')}</span><span>−{formatPrice(order.refunded_cents)}</span></div>}
             {order.seller?.seller_name && (
-              <p className="border-t border-neutral-100 pt-3 text-xs leading-5 text-neutral-500" data-testid="receipt-seller">
-                Event seller: {order.seller.seller_name}. Ticketing service: {order.seller.ticketing_service}
-                {order.seller.operator_name ? `, operated by ${order.seller.operator_name},` : ''} which sells these tickets as the organizer’s agent and collects the service fee.
-              </p>
+              <p className="border-t border-neutral-100 pt-3 text-xs leading-5 text-neutral-500" data-testid="receipt-seller">{t(order.seller.operator_name ? 'buyerAccount.orderConfirmationPage.sellerWithOperator' : 'buyerAccount.orderConfirmationPage.seller', { seller: order.seller.seller_name, service: order.seller.ticketing_service, operator: order.seller.operator_name })}</p>
             )}
           </div>
         </section>
 
 
         <div className="flex items-center justify-center gap-5 text-sm font-medium">
-          <button onClick={fetchOrder} className="inline-flex items-center gap-1.5 text-neutral-600"><RefreshCw className="h-4 w-4" /> Refresh</button>
-          <Link to="/events" className="text-brand-700">Browse events</Link>
-          {!getOrderAccess(id) && <Link to="/my-tickets" className="text-brand-700">My tickets</Link>}
+          <button onClick={fetchOrder} className="inline-flex items-center gap-1.5 text-neutral-600"><RefreshCw className="h-4 w-4" />{t('buyerAccount.orderConfirmationPage.refresh')}</button>
+          <Link to="/events" className="text-brand-700">{t('buyerAccount.orderConfirmationPage.browseEvents')}</Link>
+          {!getOrderAccess(id) && <Link to="/my-tickets" className="text-brand-700">{t('buyerAccount.orderConfirmationPage.myTickets')}</Link>}
         </div>
       </div>
     </div>

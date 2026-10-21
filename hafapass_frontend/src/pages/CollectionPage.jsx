@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
@@ -8,6 +9,7 @@ import SEO from '../components/SEO'
 import NotFound from '../components/NotFound'
 
 export default function CollectionPage() {
+  const { t } = useTranslation()
   const { slug } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const page = Math.max(Number(searchParams.get('page')) || 1, 1)
@@ -23,7 +25,7 @@ export default function CollectionPage() {
 
   if (!data) return <Loader2 className="mx-auto mt-24 h-8 w-8 animate-spin text-brand-500" />
   if (data.error === 'missing') return <NotFound kind="collection" />
-  if (data.error) return <div className="py-24 text-center"><p role="alert" className="text-neutral-700">This collection couldn’t load. Please try again.</p><button type="button" className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>Retry</button></div>
+  if (data.error) return <div className="py-24 text-center"><p role="alert" className="text-neutral-700">{t('buyerDiscovery.collection.thisCollectionCouldnTLoadPleaseTry')}</p><button type="button" className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>{t('buyerDiscovery.collection.retry')}</button></div>
 
   return <div className="mx-auto max-w-6xl px-4 py-10">
     <SEO title={data.seo_title || data.title} description={data.seo_description || data.description} />

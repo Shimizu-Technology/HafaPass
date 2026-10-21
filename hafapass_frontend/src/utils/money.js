@@ -7,6 +7,6 @@ export function formatMoneyCents(cents, currency = 'USD') {
   try {
     return new Intl.NumberFormat(activeIntlLocale(), { style: 'currency', currency }).format(safe / 100)
   } catch {
-    return `$${(safe / 100).toFixed(2)}`
+    return `$${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safe / 100)}`
   }
 }

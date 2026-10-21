@@ -292,3 +292,13 @@ CHamoru should be translated by people, not machine translation. The plan:
    overwrites human work.
 4. Organizers can already enter their own CHamoru wording for events that had
    it enabled; that content stays valid and is shown once `ch` is offered.
+
+## Turning on languages
+
+After translation credit is restored:
+
+- Set `VITE_ENABLED_LOCALES` and `HAFAPASS_ENABLED_LOCALES` to the same language list.
+- Set `HAFAPASS_MACHINE_TRANSLATION=true` on the API and worker.
+- In `hafapass_frontend`, run `npm run translate -- --force`, review the generated files, and commit them with `gt-lock.json`.
+- In `hafapass_api`, run `bin/rails translations:backfill`.
+- Spot-check discovery, event details, checkout, ticket recovery, confirmation, and ticket transfers in each language on desktop and mobile.

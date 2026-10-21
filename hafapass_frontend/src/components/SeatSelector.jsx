@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { formatMoneyCents } from '../utils/money'
+import { useTranslation } from 'react-i18next'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { Accessibility, EyeOff, Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
 
-const money = (cents) => cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`
-
-export default function SeatSelector({ event, onReserved, source = 'online', reserveLabel = 'Reserve selected seats' }) {
+export default function SeatSelector({ event, onReserved, source = 'online', reserveLabel }) {
+  const { t } = useTranslation()
+  const translation = useRef(t)
+  translation.current = t
+  const money = cents => cents === 0 ? t('events.free') : formatMoneyCents(cents)
   const [map, setMap] = useState(null)
   const [selectedIds, setSelectedIds] = useState([])
   const [attested, setAttested] = useState(false)
@@ -19,7 +23,7 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
       .then(response => { if (active) { setMap(response.data); setLoading(false) } })
       .catch(err => {
         if (active) {
-          setError(err.response?.data?.error || 'Unable to load the seat map.')
+          setError(err.response?.data?.error || translation.current('buyer.SeatSelector.unableToLoadTheSeatMap'))
           setLoading(false)
         }
       })
@@ -69,33 +73,32 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
         seats: selected,
       })
     } catch (err) {
-      setError(err.response?.data?.error || 'Those seats could not be reserved. Refresh the map and try again.')
+      setError(err.response?.data?.error || t('buyer.SeatSelector.thoseSeatsCouldNotBeReservedRefreshThe'))
     } finally {
       setReserving(false)
     }
   }
 
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-brand-600" aria-label="Loading seat map" /></div>
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-brand-600" aria-label={t('buyer.SeatSelector.loadingSeatMap')} /></div>
   if (error && !map) return <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700" role="alert">{error}</p>
 
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-neutral-900">Choose your seats</h2>
-        <p className="mt-1 text-sm text-neutral-600">Every seat is available through the same keyboard-friendly list and row map.</p>
+        <h2 className="text-lg font-semibold text-neutral-900">{t('buyer.SeatSelector.chooseYourSeats')}</h2>
+        <p className="mt-1 text-sm text-neutral-600">{t('buyer.SeatSelector.everySeatIsAvailableThroughTheSameKeyboardfriendly')}</p>
       </div>
 
       {map?.suspended && (
-        <p className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
-          Sales are temporarily paused. {map.suspension_reason}
+        <p className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">{t('buyer.SeatSelector.salesAreTemporarilyPaused')}{map.suspension_reason}
         </p>
       )}
 
-      <div className="mb-4 flex flex-wrap gap-3 text-xs text-neutral-600" aria-label="Seat map legend">
-        <span><span className="mr-1 inline-block h-3 w-3 rounded-full border border-brand-500 bg-white" />Available</span>
-        <span><span className="mr-1 inline-block h-3 w-3 rounded-full bg-brand-600" />Selected</span>
-        <span><span className="mr-1 inline-block h-3 w-3 rounded-full bg-neutral-300" />Unavailable</span>
-        <span className="inline-flex items-center gap-1"><Accessibility className="h-3.5 w-3.5" />Accessible</span>
+      <div className="mb-4 flex flex-wrap gap-3 text-xs text-neutral-600" aria-label={t('buyer.SeatSelector.seatMapLegend')}>
+        <span><span className="mr-1 inline-block h-3 w-3 rounded-full border border-brand-500 bg-white" />{t('buyer.SeatSelector.available')}</span>
+        <span><span className="mr-1 inline-block h-3 w-3 rounded-full bg-brand-600" />{t('buyer.SeatSelector.selected')}</span>
+        <span><span className="mr-1 inline-block h-3 w-3 rounded-full bg-neutral-300" />{t('buyer.SeatSelector.unavailable')}</span>
+        <span className="inline-flex items-center gap-1"><Accessibility className="h-3.5 w-3.5" />{t('buyer.SeatSelector.accessible')}</span>
       </div>
 
       <div className="max-h-[32rem] space-y-6 overflow-auto rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
@@ -108,18 +111,18 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
               {section.rows.map(row => (
                 <div key={row.id} className="flex items-center gap-3">
                   <span className="w-8 shrink-0 text-center text-xs font-semibold text-neutral-500" aria-hidden="true">{row.label}</span>
-                  <div className="flex flex-wrap gap-2" role="group" aria-label={`${section.name}, row ${row.label}`}>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label={t('buyer.SeatSelector.row', { value1: section.name, value2: row.label })}>
                     {row.seats.map(seat => {
                       const isSelected = selectedIds.includes(seat.id)
                       const unavailable = seat.status !== 'available' || map.suspended
                       const accessible = seat.accessibility_kind !== 'standard'
                       const description = [
-                        `${section.name}, row ${row.label}, seat ${seat.label}`,
+                        t('buyer.SeatSelector.seatLabel', { section: section.name, row: row.label, seat: seat.label }),
                         seat.ticket_type_name,
                         money(seatPrice(seat)),
-                        accessible ? seat.accessibility_kind.replace('_', ' ') : null,
-                        seat.obstructed_view ? `obstructed view${seat.view_note ? `: ${seat.view_note}` : ''}` : null,
-                        unavailable ? seat.status : 'available',
+                        accessible ? t(`buyer.SeatSelector.accessibility.${seat.accessibility_kind}`, { defaultValue: seat.accessibility_kind.replace('_', ' ') }) : null,
+                        seat.obstructed_view ? t('buyer.SeatSelector.obstructedView', { value1: seat.view_note ? `: ${seat.view_note}` : '' }) : null,
+                        t(`buyer.SeatSelector.status.${unavailable ? seat.status : 'available'}`),
                       ].filter(Boolean).join(', ')
                       return (
                         <button
@@ -156,20 +159,20 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
         <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4" aria-live="polite">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="font-semibold text-neutral-900">{selected.length} seat{selected.length === 1 ? '' : 's'} selected</p>
+              <p className="font-semibold text-neutral-900">{t('buyer.SeatSelector.seatsSelected', { count: selected.length })}</p>
               <ul className="mt-1 text-sm text-neutral-600">
                 {selected.map(seat => <li key={seat.id}>{seat.display_label} · {money(seatPrice(seat))}</li>)}
               </ul>
             </div>
             <div className="text-right">
               <p className="font-semibold text-neutral-900">{money(totalCents)}</p>
-              {totalFeeCents > 0 && <p className="text-xs text-neutral-500">Includes {money(totalFeeCents)} service fee</p>}
+              {totalFeeCents > 0 && <p className="text-xs text-neutral-500">{t('buyer.SeatSelector.feeIncluded', { fee: money(totalFeeCents) })}</p>}
             </div>
           </div>
           {requiresAttestation && (
             <label className="mt-4 flex items-start gap-3 rounded-xl bg-blue-50 p-3 text-sm text-blue-950">
               <input type="checkbox" checked={attested} onChange={event => setAttested(event.target.checked)} className="mt-1 h-4 w-4" />
-              <span>I attest that an accessible seating location is needed for this party. No medical proof is required.</span>
+              <span>{t('buyer.SeatSelector.iAttestThatAnAccessibleSeatingLocationIs')}</span>
             </label>
           )}
           {error && <p className="mt-3 text-sm text-red-700" role="alert">{error}</p>}
@@ -179,9 +182,9 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
             disabled={reserving || map?.suspended || (requiresAttestation && !attested)}
             className="btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {reserving ? 'Reserving seats…' : reserveLabel}
+            {reserving ? t('buyer.SeatSelector.reserving') : (reserveLabel || t('buyer.SeatSelector.reserve'))}
           </button>
-          <p className="mt-2 text-center text-xs text-neutral-500">Seats are held for {Math.round((map?.hold_duration_seconds || 600) / 60)} minutes after reservation.</p>
+          <p className="mt-2 text-center text-xs text-neutral-500">{t('buyer.SeatSelector.holdDuration', { minutes: Math.round((map?.hold_duration_seconds || 600) / 60) })}</p>
         </div>
       )}
       {error && selected.length === 0 && <p className="mt-3 text-sm text-red-700" role="alert">{error}</p>}
