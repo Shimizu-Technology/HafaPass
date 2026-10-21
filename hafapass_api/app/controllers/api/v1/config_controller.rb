@@ -24,6 +24,7 @@ class Api::V1::ConfigController < ApplicationController
       public_web_url: PublicSiteUrl.base,
       buyer_terms_version: PolicyRegistry.buyer_terms[:version],
       policies: PolicyRegistry.public_documents,
+      policy_status: PolicyRegistry.status,
       event_categories: Event::CATEGORY_LABELS.map { |value, label| { value: value, label: label } }
     }
   end

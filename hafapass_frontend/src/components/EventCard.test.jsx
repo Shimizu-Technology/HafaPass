@@ -23,4 +23,10 @@ describe('event card availability and prices', () => {
     expect(screen.getByText('events.from $12.50')).toBeInTheDocument()
     expect(screen.getByText('events.ticketsAvailable')).toBeInTheDocument()
   })
+  it('leads with the lowest all-in price including the buyer service fee', () => {
+    mount([{ price_cents: 2000, current_price_cents: 2000, all_in_price_cents: 2200, service_fee_cents: 200, quantity_remaining: 3, on_sale: true },
+      { price_cents: 1900, current_price_cents: 1900, all_in_price_cents: 2295, service_fee_cents: 395, quantity_remaining: 3, on_sale: true }])
+    expect(screen.getByText('events.from $22.00')).toBeInTheDocument()
+    expect(screen.queryByText(/\$19.00|\$20.00/)).not.toBeInTheDocument()
+  })
 })

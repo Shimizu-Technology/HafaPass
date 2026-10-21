@@ -19,6 +19,10 @@ module Seating
         venue_seat: [:seating_price_zone, { seating_row: :seating_section }]
       ).to_a
       @prices = PriceResolver.call(ticket_types: event_seats.map(&:ticket_type), at: at)
+      fee_terms = Commerce::ServiceFee.terms
+      @fees = @prices.transform_values do |price_cents|
+        Commerce::ServiceFee.for_event(configuration.event, price_cents, terms: fee_terms)
+      end
       {
         event_id: configuration.event_id,
         configuration_id: configuration.id,
@@ -68,6 +72,8 @@ module Seating
         label: venue_seat.label,
         display_label: venue_seat.display_label,
         price_cents: @prices.fetch(seat.ticket_type_id),
+        all_in_price_cents: @fees.fetch(seat.ticket_type_id).all_in_price_cents,
+        service_fee_cents: @fees.fetch(seat.ticket_type_id).buyer_fee_cents,
         ticket_type_id: seat.ticket_type_id,
         ticket_type_name: seat.ticket_type.name,
         price_zone: {

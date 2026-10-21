@@ -78,7 +78,7 @@ describe('checkout navigation', () => {
   })
 
   it('shows a retryable error instead of a guessed fee, then the all-in fee from the server', async () => {
-    const event = { id: 38, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500 }] }
+    const event = { id: 38, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, service_fee_cents: 225, all_in_price_cents: 2725 }] }
     const configs = [
       { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1' },
       { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' },
@@ -99,7 +99,7 @@ describe('checkout navigation', () => {
   })
 
   it('charges the flat fee only on paid tickets in a mixed order', async () => {
-    const event = { id: 40, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500 }, { id: 9, name: 'Child', price_cents: 0 }] }
+    const event = { id: 40, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, service_fee_cents: 225, all_in_price_cents: 2725 }, { id: 9, name: 'Child', price_cents: 0, service_fee_cents: 0, all_in_price_cents: 0 }] }
     apiClient.get.mockImplementation(url => url === '/config'
       ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' } })
       : new Promise(() => {}))
@@ -112,8 +112,26 @@ describe('checkout navigation', () => {
     expect(screen.getByText('$54.50')).toBeInTheDocument()
   })
 
+  it('uses the server per-ticket fee and reloads an event snapshot that has none', async () => {
+    const stale = { id: 41, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 50, ticket_types: [{ id: 8, name: 'Admission', price_cents: 1999 }] }
+    const fresh = { ...stale, ticket_types: [{ id: 8, name: 'Admission', price_cents: 1999, current_price_cents: 1999, service_fee_cents: 100, all_in_price_cents: 2099 }] }
+    apiClient.get.mockImplementation(url => url === '/config'
+      ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' } })
+      : url === '/events/paid-event' ? Promise.resolve({ data: fresh }) : new Promise(() => {}))
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event: stale, lineItems: [{ ticket_type_id: 8, quantity: 3 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+
+    expect(await screen.findByText('checkout.feesUnavailable')).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.retryFees' }))
+    // Three advertised all-in tickets at $20.99 = $62.97: $59.97 + $3.00 fee.
+    expect(await screen.findByText('$3.00')).toBeInTheDocument()
+    expect(screen.getByText('$62.97')).toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledWith('/events/paid-event', expect.anything())
+  })
+
   it('does not claim the fee includes card processing when the organizer bears it', async () => {
-    const event = { id: 39, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500 }] }
+    const event = { id: 39, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, service_fee_cents: 225, all_in_price_cents: 2725 }] }
     apiClient.get.mockImplementation(url => url === '/config'
       ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'organizer' } })
       : new Promise(() => {}))
@@ -282,7 +300,7 @@ describe('checkout navigation', () => {
   })
 
   it('keeps the original selection and buyer form when cancelling a payment created in the current visit', async () => {
-    const event = { id: 37, slug: 'paid-event', title: 'Paid event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000 }] }
+    const event = { id: 37, slug: 'paid-event', title: 'Paid event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000, service_fee_cents: 30, all_in_price_cents: 1030 }] }
     apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockResolvedValueOnce({ data: { id: 923, client_secret: 'new-secret', stripe_publishable_key: 'pk_test', guest_access_token: 'new-buyer-token' } })
     apiClient.post.mockResolvedValueOnce({ data: { status: 'cancelled' } })
@@ -495,7 +513,7 @@ describe('checkout navigation', () => {
   })
 
   it('shows the server buyer when a paid recovery follows local edits after a lost response', async () => {
-    const event = { id: 37, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000 }] }
+    const event = { id: 37, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000, service_fee_cents: 30, all_in_price_cents: 1030 }] }
     apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
     apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
