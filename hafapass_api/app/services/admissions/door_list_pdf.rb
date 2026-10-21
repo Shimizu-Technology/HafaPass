@@ -76,7 +76,8 @@ module Admissions
           OrganizerTicketSalesStatus.label(OrganizerTicketSalesStatus.for(ticket)), "________"]
       else
         ["HP-T#{ticket.id}", ticket.attendee_name.presence || "Guest",
-          [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "), ticket.status.humanize, "________"]
+          [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
+          OrganizerTicketSalesStatus.label(OrganizerTicketSalesStatus.for(ticket)), "________"]
       end
     end
 

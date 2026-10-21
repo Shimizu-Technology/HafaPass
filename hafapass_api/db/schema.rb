@@ -1265,6 +1265,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_110000) do
     t.string "status", default: "pending", null: false
     t.string "storage_key"
     t.datetime "expires_at"
+    t.datetime "claimed_at"
+    t.string "failure_reason"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["actor_user_id", "created_at"], name: "index_sales_exports_on_actor_and_created_at"

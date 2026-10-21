@@ -9,6 +9,8 @@ class CreateOrganizerSalesExportRequests < ActiveRecord::Migration[8.0]
       t.string :status, null: false, default: "pending"
       t.string :storage_key
       t.datetime :expires_at
+      t.datetime :claimed_at
+      t.string :failure_reason
       t.timestamps
     end
     add_index :organizer_sales_export_requests, [:actor_user_id, :created_at],

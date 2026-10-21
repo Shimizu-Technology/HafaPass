@@ -12,6 +12,7 @@ class OrganizerSalesExportOrphanSweepJob < ApplicationJob
   GRACE_PERIOD = 2.days
 
   def perform
+    OrganizerSalesExportRequest.fail_expired_processing!
     return unless S3Service.configured?
 
     client = Aws::S3::Client.new(region: ENV.fetch("AWS_REGION", "us-west-2"),
@@ -24,11 +25,19 @@ class OrganizerSalesExportOrphanSweepJob < ApplicationJob
       candidates = page.contents.select { |object| object.key.start_with?(PREFIX) && object.last_modified < cutoff }
       associated = OrganizerSalesExportRequest.where(storage_key: candidates.map(&:key)).pluck(:storage_key).to_set
       candidates.each do |object|
-        client.delete_object(bucket: bucket, key: object.key) unless associated.include?(object.key)
+        next if associated.include?(object.key)
+
+        begin
+          client.delete_object(bucket: bucket, key: object.key)
+        rescue Aws::S3::Errors::ServiceError => error
+          Rails.logger.error("Sales export orphan sweep: DeleteObject permission or service access failed (#{error.class})")
+        end
       end
       break unless page.is_truncated
 
       token = page.next_continuation_token
     end
+  rescue Aws::S3::Errors::ServiceError => error
+    Rails.logger.error("Sales export orphan sweep: ListBucket permission or service access failed (#{error.class})")
   end
 end

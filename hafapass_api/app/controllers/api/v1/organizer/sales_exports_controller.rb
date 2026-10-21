@@ -57,6 +57,7 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
   def index
     return unless can_view_sales?
 
+    OrganizerSalesExportRequest.where(event: @event, actor_user: current_user).fail_expired_processing!
     response.headers["Cache-Control"] = "no-store"
     exports = OrganizerSalesExportRequest.where(event: @event, actor_user: current_user)
       .where(created_at: 1.day.ago..).order(created_at: :desc).limit(10)
@@ -76,10 +77,11 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
   def show
     return unless can_view_sales?
 
+    OrganizerSalesExportRequest.where(id: params[:id], event: @event, actor_user: current_user).fail_expired_processing!
     export_request = OrganizerSalesExportRequest.find_by!(id: params[:id], event: @event, actor_user: current_user)
     response.headers["Cache-Control"] = "no-store"
     return head :gone if export_request.status == "expired"
-    return render json: { status: "failed", error: "Export failed. Please try again." }, status: :unprocessable_entity if export_request.status == "failed"
+    return render json: { status: "failed", error: export_request.failure_reason || "Export failed. Run it again." }, status: :unprocessable_entity if export_request.status == "failed"
     return render json: { status: export_request.status }, status: :accepted unless export_request.status == "ready"
     return head :gone if export_request.expires_at <= Time.current
 

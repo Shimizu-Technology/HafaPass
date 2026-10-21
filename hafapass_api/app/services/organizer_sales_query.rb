@@ -50,8 +50,8 @@ class OrganizerSalesQuery
     relation.offset((number - 1) * per_page).limit(per_page)
   end
 
-  def each_batch(size: 500)
-    return enum_for(:each_batch, size: size) unless block_given?
+  def each_batch(size: 500, on_batch: nil)
+    return enum_for(:each_batch, size: size, on_batch: on_batch) unless block_given?
 
     offset = 0
     loop do
@@ -63,8 +63,9 @@ class OrganizerSalesQuery
       batch = relation.where(id: ids).includes(view == "orders" ?
         [:promo_code, :registration_responses, :support_notes, :order_items,
           { tickets: [:ticket_type, :ticket_transfers] }] :
-        [:ticket_type, { order_item: :tickets }, :ticket_transfers, :support_notes,
-          { order: [:promo_code, :registration_responses, :support_notes] }]).to_a
+        [:ticket_type, :order_item, :ticket_transfers, :support_notes,
+          { order: [:promo_code, :registration_responses, :support_notes, :order_items] }]).to_a
+      on_batch&.call
       batch.each { |record| yield record }
       offset += ids.length
     end

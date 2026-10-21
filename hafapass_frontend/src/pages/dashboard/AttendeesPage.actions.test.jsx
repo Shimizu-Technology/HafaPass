@@ -206,6 +206,21 @@ describe('sales list controls', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/organizer/events/37/sales_exports/9', expect.objectContaining({ responseType: 'blob' }))
   })
 
+  it('shows failed exports with a retry action after a denied download', async () => {
+    apiClient.post.mockResolvedValue({ status: 202, data: { text: async () => JSON.stringify({ download_url: '/api/v1/organizer/events/37/sales_exports/9' }) } })
+    mount({})
+    await screen.findAllByText('Mina Cruz')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    apiClient.get.mockImplementation(url => url.includes('sales_exports/9')
+      ? Promise.reject({ response: { status: 422, data: new Blob(['{"status":"failed"}']) } })
+      : Promise.resolve({ data: { ...baseEvent, permissions: { view_attendees: true } } }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Check download' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This export failed — run it again')
+    await userEvent.click(screen.getByRole('button', { name: 'Run again' }))
+    expect(screen.getByRole('dialog', { name: 'Export this list' })).toBeInTheDocument()
+  })
+
   it('downloads the filtered door list as a printable PDF', async () => {
     mount({})
     await screen.findAllByText('Mina Cruz')

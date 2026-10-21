@@ -271,6 +271,38 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(request_record.reload.status).to eq("processing")
   end
 
+  it "reclaims an expired processing lease and completes the export" do
+    sale(name: "Mina")
+    request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], row_count: 1, status: "processing", claimed_at: 31.minutes.ago)
+    allow(S3Service).to receive(:configured?).and_return(true)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    allow(client).to receive(:put_object)
+    OrganizerSalesExportJob.perform_now(request_record.id)
+    expect(request_record.reload).to have_attributes(status: "ready", failure_reason: nil)
+    expect(request_record.claimed_at).to be > 1.minute.ago
+  end
+
+  it "fails an expired lease in the download endpoint instead of polling forever" do
+    request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], status: "processing", claimed_at: 31.minutes.ago)
+    get "#{base}/sales_exports/#{request_record.id}", headers: headers
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body).to include("status" => "failed", "error" => OrganizerSalesExportRequest::LEASE_FAILURE_REASON)
+    expect(request_record.reload).to have_attributes(status: "failed", failure_reason: OrganizerSalesExportRequest::LEASE_FAILURE_REASON)
+  end
+
+  it "fails expired processing rows during the orphan sweep even without storage" do
+    request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], status: "processing", claimed_at: 31.minutes.ago)
+    allow(S3Service).to receive(:configured?).and_return(false)
+    OrganizerSalesExportOrphanSweepJob.perform_now
+    expect(request_record.reload).to have_attributes(status: "failed", failure_reason: OrganizerSalesExportRequest::LEASE_FAILURE_REASON)
+  end
+
   it "sweeps old unassociated uploads even when a request remains processing" do
     processing = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
       filters: {}, columns: %w[name], row_count: 1, status: "processing")
@@ -293,6 +325,38 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
       key: "private/sales-exports/orphan.csv")
     OrganizerSalesExportOrphanSweepJob.perform_now
     expect(processing.reload.status).to eq("processing")
+  end
+
+  it "logs ListBucket denial and ends the sweep cleanly" do
+    allow(S3Service).to receive(:configured?).and_return(true)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    allow(client).to receive(:list_objects_v2).and_raise(Aws::S3::Errors::AccessDenied.new(nil, "denied"))
+    allow(Rails.logger).to receive(:error).and_call_original
+    expect { OrganizerSalesExportOrphanSweepJob.perform_now }.not_to raise_error
+    expect(Rails.logger).to have_received(:error).with(/Sales export orphan sweep: ListBucket permission/)
+  end
+
+  it "logs DeleteObject denial and continues to another orphan" do
+    allow(S3Service).to receive(:configured?).and_return(true)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    object = Struct.new(:key, :last_modified)
+    page = Struct.new(:contents, :is_truncated, :next_continuation_token)
+    allow(client).to receive(:list_objects_v2).and_return(page.new([
+      object.new("private/sales-exports/first.csv", 3.days.ago),
+      object.new("private/sales-exports/second.csv", 3.days.ago)
+    ], false, nil))
+    allow(client).to receive(:delete_object).with(bucket: "synthetic-sales-exports", key: "private/sales-exports/first.csv")
+      .and_raise(Aws::S3::Errors::AccessDenied.new(nil, "denied"))
+    expect(client).to receive(:delete_object).with(bucket: "synthetic-sales-exports", key: "private/sales-exports/second.csv")
+    allow(Rails.logger).to receive(:error).and_call_original
+    OrganizerSalesExportOrphanSweepJob.perform_now
+    expect(Rails.logger).to have_received(:error).with(/Sales export orphan sweep: DeleteObject permission/)
   end
 
   it "enforces queued export status and nonnegative row counts in the database" do
@@ -412,6 +476,42 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
       expect(rows.sum { |row| (BigDecimal(row[column]) * 100).to_i }).to eq(cents)
       expect(rows.map { |row| row[column] }).to all(be_present)
     end
+  end
+
+  it "allocates only residual cents to legacy tickets in a mixed order" do
+    order = create(:order, event: event, subtotal_cents: 10_000, discount_cents: 100,
+      service_fee_cents: 300, total_cents: 10_200)
+    type = create(:ticket_type, event: event)
+    item = create(:order_item, order: order, ticket_type: type, unit_price_cents: 5_000,
+      quantity: 1, discount_cents: 40, fee_cents: 120)
+    create(:ticket, event: event, order: order, order_item: item, ticket_type: type, attendee_name: "Item")
+    create(:ticket, event: event, order: order, order_item: nil, ticket_type: type, attendee_name: "Legacy")
+    post "#{base}/sales_exports", params: { columns: %w[name ticket_price discount fee tax total_paid] }, headers: headers
+    rows = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).index_by { |row| row["Name"] }
+    expect(rows["Item"]["Ticket price"]).to eq("50.00")
+    expect(rows["Legacy"]["Ticket price"]).to eq("50.00")
+    { "Ticket price" => 10_000, "Discount" => 100, "Fee" => 300, "Tax" => 0, "Total paid" => 10_200 }.each do |column, cents|
+      expect(rows.values.sum { |row| (BigDecimal(row[column]) * 100).to_i }).to eq(cents)
+    end
+  end
+
+  it "queries legacy ticket ids once for a large order in a batch" do
+    order = create(:order, event: event, subtotal_cents: 10_000, service_fee_cents: 0, total_cents: 10_000)
+    type = create(:ticket_type, event: event)
+    100.times { create(:ticket, event: event, order: order, ticket_type: type) }
+    sql = []
+    subscription = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+      sql << payload[:sql] unless payload[:cached]
+    end
+    begin
+      query = OrganizerSalesQuery.new(event: event, params: {})
+      OrganizerSalesExport.new(query: query, columns: %w[ticket_price discount fee tax total_paid],
+        finance: true, attendees: false).each_row.to_a
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscription)
+    end
+    # One batch preload and one order-level allocation query, regardless of ticket count.
+    expect(sql.grep(/SELECT.*"order_item_id".*FROM "tickets"/i).length).to be <= 2
   end
 
   it "uses one ticket status for screen, filter, and CSV after a partial refund" do

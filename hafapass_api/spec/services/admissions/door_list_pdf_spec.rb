@@ -27,6 +27,12 @@ RSpec.describe Admissions::DoorListPdf do
 
     expect(text).to include("Ana ?")
   end
+
+  it "uses the same sales status label on the emergency and filtered door lists" do
+    ticket = create(:ticket, event: event, ticket_type: ticket_type, status: :issued)
+    expect(text_of(described_class.new(event).generate)).to include("Valid")
+    expect(text_of(described_class.new(event, tickets: [ticket]).generate)).to include("Valid")
+  end
   it "prints in bounded batches and enforces the explicit ticket cap" do
     stub_const("Admissions::DoorListPdf::BATCH_SIZE", 1)
     stub_const("Admissions::DoorListPdf::MAX_TICKETS", 2)

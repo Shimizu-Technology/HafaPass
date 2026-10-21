@@ -40,8 +40,7 @@ class OrganizerSalesExport
   def each_row
     return enum_for(:each_row) unless block_given?
 
-    @query.each_batch do |record|
-      @allocation_cache = {}
+    @query.each_batch(on_batch: -> { @allocation_cache = {} }) do |record|
       yield columns.map { |column| value(record, column) }
     end
   end
@@ -81,13 +80,14 @@ class OrganizerSalesExport
   end
 
   def allocated(item, ticket, component)
-    source = item || ticket.order
-    @allocation_cache[[source.class.name, source.id, component]] ||= begin
-      tickets = item ? item.tickets : ticket.order.tickets.where(order_item_id: nil)
-      ticket_ids = tickets.loaded? ? tickets.sort_by(&:id).map(&:id) : tickets.order(:id).pluck(:id)
-      cents = item ? item.public_send(component) : legacy_order_cents(source, component)
-      Commerce::MoneyAllocator.call(cents, Array.new(ticket_ids.length, 1))[ticket_ids.index(ticket.id)]
+    order = ticket.order
+    key = [order.id, item&.id, component]
+    allocations = @allocation_cache[key] ||= begin
+      ticket_ids = order_ticket_groups(order).fetch(item&.id, [])
+      cents = item ? item.public_send(component) : legacy_residual(order, component)
+      ticket_ids.zip(Commerce::MoneyAllocator.call(cents, Array.new(ticket_ids.length, 1))).to_h
     end
+    allocations.fetch(ticket.id)
   end
 
   def ticket_total(item, ticket)
@@ -95,12 +95,20 @@ class OrganizerSalesExport
       allocated(item, ticket, :fee_cents) + allocated(item, ticket, :tax_cents)
   end
 
-  def legacy_order_cents(order, component)
-    case component
+  def order_ticket_groups(order)
+    @allocation_cache[[order.id, :ticket_groups]] ||= order.tickets.order(:id).pluck(:id, :order_item_id)
+      .group_by(&:last).transform_values { |pairs| pairs.map(&:first) }
+  end
+
+  def legacy_residual(order, component)
+    total = case component
     when :fee_cents then order.service_fee_cents
     when :tax_cents then order.total_cents - order.subtotal_cents + order.discount_cents - order.service_fee_cents
     else order.public_send(component)
     end
+    linked_item_ids = order_ticket_groups(order).keys.compact
+    attributed = order.order_items.sum { |item| linked_item_ids.include?(item.id) ? item.public_send(component) : 0 }
+    [total - attributed, 0].max
   end
 
   def money(cents)

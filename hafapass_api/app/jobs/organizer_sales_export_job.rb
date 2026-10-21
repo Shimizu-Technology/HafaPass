@@ -8,8 +8,11 @@ class OrganizerSalesExportJob < ApplicationJob
 
   def perform(export_id)
     uploaded = false
-    return unless OrganizerSalesExportRequest.where(id: export_id, status: "pending")
-      .update_all(status: "processing", updated_at: Time.current) == 1
+    claimed_at = Time.current
+    return unless OrganizerSalesExportRequest.where(id: export_id)
+      .where("status = 'pending' OR (status = 'processing' AND COALESCE(claimed_at, updated_at) <= ?)",
+        OrganizerSalesExportRequest::LEASE_DURATION.ago)
+      .update_all(status: "processing", claimed_at: claimed_at, failure_reason: nil, updated_at: claimed_at) == 1
 
     export_request = OrganizerSalesExportRequest.find(export_id)
     query = OrganizerSalesQuery.new(event: export_request.event, params: export_request.filters)
@@ -44,12 +47,15 @@ class OrganizerSalesExportJob < ApplicationJob
           content_type: "text/csv; charset=utf-8", cache_control: "no-store")
       uploaded = true
     end
-    export_request.update!(status: "ready", storage_key: key, row_count: count, expires_at: 1.day.from_now)
     AuditLogger.record!(action: "sales.export_generated", auditable: export_request.event,
       actor: export_request.actor_user, organization: org,
       metadata: { export_request_id: export_request.id, filters: query.filters,
         columns: builder.columns, row_count: count, outcome: "generated" })
-    OrganizerSalesExportCleanupJob.set(wait_until: export_request.expires_at).perform_later(export_request.id)
+    expires_at = 1.day.from_now
+    saved = OrganizerSalesExportRequest.where(id: export_id, status: "processing", claimed_at: claimed_at)
+      .update_all(status: "ready", storage_key: key, row_count: count, expires_at: expires_at, updated_at: Time.current)
+    raise "Export lease expired or was superseded" unless saved == 1
+    OrganizerSalesExportCleanupJob.set(wait_until: expires_at).perform_later(export_request.id)
   rescue StandardError
     if uploaded
       begin
@@ -60,7 +66,9 @@ class OrganizerSalesExportJob < ApplicationJob
         Rails.logger.error("Sales export cleanup failed for request #{export_id}: #{cleanup_error.class}")
       end
     end
-    export_request&.update!(status: "failed", storage_key: nil, expires_at: nil)
+    OrganizerSalesExportRequest.where(id: export_id, status: %w[processing ready], claimed_at: claimed_at)
+      .update_all(status: "failed", storage_key: nil, expires_at: nil,
+        failure_reason: "Export generation failed. Run it again.", updated_at: Time.current) if claimed_at
     raise
   end
 end
