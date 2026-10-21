@@ -3,7 +3,7 @@
 class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   include CancellationRefundActions
   before_action :set_cancellation_event, only: [:cancellation_refunds, :cancel_and_refund,
-    :start_cancellation_refunds, :retry_cancellation_refunds, :mark_cash_refunded]
+    :start_cancellation_refunds, :retry_cancellation_refunds, :mark_cash_refunded, :mark_card_refunded]
 
   def cancel_and_refund
     preview = EventCancellationRefunds.preview(@event)

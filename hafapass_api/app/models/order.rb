@@ -64,7 +64,7 @@ class Order < ApplicationRecord
 
   before_validation :assign_reference, on: :create
   after_update -> { Wallet::PassSync.tickets_changed(tickets.select(:id)) }, if: :saved_change_to_status?
-  after_update :restore_marketing_opt_in, if: -> { saved_change_to_status? && completed? && marketing_opt_in? }
+  after_update_commit :restore_marketing_opt_in, if: -> { saved_change_to_status? && completed? && marketing_opt_in? }
 
   def restore_marketing_opt_in
     event.organization.with_lock do

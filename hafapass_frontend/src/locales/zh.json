@@ -1,4 +1,14 @@
 {
+  "unsubscribe": {
+    "heading": "电子邮件偏好设置",
+    "loading": "正在加载电子邮件偏好设置…",
+    "linkError": "此退订链接无法使用。",
+    "requestError": "退订失败，请重试。",
+    "prompt": "要退订来自{{organization}}的促销邮件吗？您仍会收到门票和订单通知。",
+    "saving": "正在保存…",
+    "action": "退订",
+    "unsubscribedConfirmation": "您已退订来自{{organization}}的促销邮件。您仍会收到门票和订单通知。如需再次接收促销邮件，请在下次结账时选择同意。"
+  },
   "categories": {
     "all": "所有活动",
     "concert": "音乐",

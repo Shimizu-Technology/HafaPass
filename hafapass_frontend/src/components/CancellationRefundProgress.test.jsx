@@ -106,9 +106,26 @@ it('shows only nonzero human-readable counts and the amount refunded to card', a
         { id: 2, order_id: 5, order_reference: 'HP-CASH', amount_cents: 4250, status: 'needs_manual', payment_method: 'door_cash' }] } } })
   render(<CancellationRefundProgress eventId={7} status="cancelled" canMarkCash />)
   await user.click(screen.getByRole('button', { name: 'View cancellation refunds' }))
-  expect(await screen.findByText('1 refunded · 1 Needs cash return')).toBeInTheDocument()
+  expect(await screen.findByText('1 refunded · 1 Needs manual return')).toBeInTheDocument()
   expect(screen.getByText('$37.75 refunded to card')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Mark refunded in cash' })).toHaveClass('btn-secondary')
+})
+
+it('routes an admin manual card return to the card evidence action', async () => {
+  const user = userEvent.setup()
+  const item = { id: 2, order_id: 5, order_reference: 'HP-CARD', amount_cents: 4250,
+    status: 'needs_manual', payment_method: 'door_card', order_created_at: new Date(Date.now() - 3600000).toISOString() }
+  apiClient.get.mockResolvedValue({ data: { preview: { count: 1, total_cents: 4250, cash_count: 0 },
+    run: { status: 'needs_attention', total_orders: 1, refunded: 0, pending: 0, failed: 0, needs_manual: 1, skipped: 0, items: [item] } } })
+  apiClient.post.mockResolvedValue({ data: {} })
+  render(<CancellationRefundProgress eventId={7} status="cancelled" admin />)
+  await user.click(screen.getByRole('button', { name: 'View cancellation refunds' }))
+  await user.click(await screen.findByRole('button', { name: 'Record card return' }))
+  const dialog = within(screen.getByRole('dialog'))
+  await user.type(dialog.getByLabelText('Provider return reference'), 'Clover return 42')
+  await user.click(dialog.getByRole('button', { name: 'Record card return' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/admin/events/7/cancellation_refunds/5/mark_card_refunded',
+    expect.objectContaining({ reference: 'Clover return 42', returned_at: expect.any(String) }))
 })
 
 it('loads the next page of order details without loading every refund row', async () => {

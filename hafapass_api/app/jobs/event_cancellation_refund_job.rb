@@ -1,11 +1,22 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 class EventCancellationRefundJob < ApplicationJob
+  class RunDeadlineExceeded < StandardError; end
+
+  RUN_DEADLINE = 30.minutes
   queue_as :default
-  limits_concurrency to: 1, key: ->(run_id) { run_id }, group: self.name
+  limits_concurrency to: 1, key: ->(run_id) { run_id }, duration: RUN_DEADLINE + 5.minutes, group: self.name
   retry_on StandardError, wait: :polynomially_longer, attempts: 10
 
   def perform(run_id)
+    Timeout.timeout(RUN_DEADLINE, RunDeadlineExceeded) { process_run(run_id) }
+  end
+
+  private
+
+  def process_run(run_id)
     run = EventCancellationRefundRun.find(run_id)
     run.items.where(status: [:pending, :waiting_on_pending_refund, :waiting_on_dispute]).find_each do |item|
       # Match RefundCreator's organization -> order lock order. Read the
@@ -19,8 +30,6 @@ class EventCancellationRefundJob < ApplicationJob
     end
     run.reconcile_status!
   end
-
-  private
 
   def prepare_item(item, run)
     return nil unless item.pending? || item.waiting_on_pending_refund? || item.waiting_on_dispute?
@@ -69,13 +78,16 @@ class EventCancellationRefundJob < ApplicationJob
       return nil
     end
 
-    payment = order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).first
+    eligible_payments = order.payments.where(status: [:succeeded, :partially_refunded])
+    eligible_payments = eligible_payments.merge(Payment.live_or_legacy_capture) if Rails.env.production?
+    payment = eligible_payments.order(:id).first
     if order.payment_method == "door_cash" || payment&.provider == "door_cash"
       item.update!(status: :needs_manual, last_error: "Return cash to buyer, then record the return")
       return nil
     end
     unless payment&.provider == "stripe"
-      item.update!(status: :failed, last_error: "No refundable card payment; finance review required")
+      item.update!(status: :needs_manual,
+        last_error: "Return the card payment through its provider, then record the return with a reference")
       return nil
     end
 
@@ -86,7 +98,9 @@ class EventCancellationRefundJob < ApplicationJob
   def submit_refund(item, run, amount)
     error = nil
     begin
-      Commerce::RefundCreator.call(order: item.order, amount_cents: amount,
+      payment = item.order.payments.where(status: [:succeeded, :partially_refunded])
+      payment = payment.merge(Payment.live_or_legacy_capture) if Rails.env.production?
+      Commerce::RefundCreator.call(order: item.order, payment: payment.order(:id).first, amount_cents: amount,
         reason: "event_cancelled", requested_by: run.started_by, idempotency_key: item.refund_key)
     rescue Commerce::RefundCreator::RefundError => e
       # A timeout remains reserved; retry_cancellation_refunds keeps its key.

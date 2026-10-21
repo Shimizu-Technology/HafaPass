@@ -3,12 +3,20 @@
 class EventCancellationRefunds
   PAID_STATUSES = [:completed, :partially_refunded, :refunded].freeze
 
-  # A cash return is a succeeded Refund with cash_return evidence, so it is
-  # included once in the succeeded-refund total.
+  # A recorded manual return is a succeeded Refund, so it is included once
+  # in the succeeded-refund total.
   def self.balance_cents(order)
-    captured = order.payments.where(status: [:succeeded, :partially_refunded, :refunded]).sum(:amount_cents)
-    reserved_or_returned = order.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
-    chargebacks = order.disputes.lost.sum(:amount_cents)
+    captured_payments = order.payments.where(status: [:succeeded, :partially_refunded, :refunded])
+    captured_payments = captured_payments.merge(Payment.live_or_legacy_capture) if Rails.env.production?
+    captured = captured_payments.sum(:amount_cents)
+    refunds = order.refunds.where(status: [:pending, :succeeded])
+    disputes = order.disputes.lost
+    if Rails.env.production?
+      refunds = refunds.where(payment_id: captured_payments.select(:id))
+      disputes = disputes.where(payment_id: captured_payments.select(:id))
+    end
+    reserved_or_returned = refunds.sum(:amount_cents)
+    chargebacks = disputes.sum(:amount_cents)
     [captured - reserved_or_returned - chargebacks, 0].max
   end
 
@@ -32,8 +40,13 @@ class EventCancellationRefunds
     return [] if ids.empty?
 
     captured_statuses = Payment.statuses.values_at("succeeded", "partially_refunded", "refunded").join(", ")
+    capture_filter = "status IN (#{captured_statuses})"
+    if exclude_nonlive
+      capture_filter += " AND (provider_environment = 'live' OR (provider_environment IS NULL AND " \
+        "provider_payload->>'livemode' IS DISTINCT FROM 'false' AND provider_payload->>'simulated' IS DISTINCT FROM 'true'))"
+    end
     payments = Payment.where(order_id: ids).group(:order_id).pluck(:order_id,
-      Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE status IN (#{captured_statuses})), 0)"),
+      Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE #{capture_filter}), 0)"),
       Arel.sql("COALESCE(BOOL_OR(provider = 'stripe' AND (provider_environment IN ('test', 'simulate') OR (provider_environment IS NULL AND (provider_payload->>'livemode' = 'false' OR provider_payload->>'simulated' = 'true')))), false)"),
       Arel.sql("COALESCE(BOOL_OR(status IN (#{captured_statuses}) AND (provider_environment = 'live' OR (provider_environment IS NULL AND provider_payload->>'livemode' IS DISTINCT FROM 'false' AND provider_payload->>'simulated' IS DISTINCT FROM 'true'))), false)"))
       .index_by(&:first)
@@ -44,11 +57,16 @@ class EventCancellationRefunds
     end
 
     refund_statuses = Refund.statuses.values_at("pending", "succeeded").join(", ")
-    refunds = Refund.where(order_id: ids).group(:order_id).pluck(:order_id,
+    live_payment_ids = Payment.live_or_legacy_capture.select(:id)
+    refund_scope = Refund.where(order_id: ids)
+    refund_scope = refund_scope.where(payment_id: live_payment_ids) if exclude_nonlive
+    refunds = refund_scope.group(:order_id).pluck(:order_id,
       Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE status IN (#{refund_statuses})), 0)"),
       Arel.sql("COALESCE(BOOL_OR(status = #{Refund.statuses.fetch('pending')}), false)"))
       .index_by(&:first)
-    disputes = Dispute.where(order_id: ids).group(:order_id).pluck(:order_id,
+    dispute_scope = Dispute.where(order_id: ids)
+    dispute_scope = dispute_scope.where(payment_id: live_payment_ids) if exclude_nonlive
+    disputes = dispute_scope.group(:order_id).pluck(:order_id,
       Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE status = #{Dispute.statuses.fetch('lost')}), 0)"),
       Arel.sql("COALESCE(BOOL_OR(status = #{Dispute.statuses.fetch('open')}), false)"))
       .index_by(&:first)
@@ -124,9 +142,12 @@ class EventCancellationRefunds
         next unless payout.status_pending? || payout.status_processing?
 
         before_data = payout.attributes.slice("status", "failure_code", "failure_message")
-        payout.update!(status: :held,
-          failure_code: payout.failure_code == "provider_result_conflict" ? payout.failure_code : "event_cancellation",
-          failure_message: "Hold payment while cancellation refunds are unresolved")
+        preserve_code = %w[provider_result_conflict provider_result_unknown].include?(payout.failure_code)
+        hold_message = "Hold payment while cancellation refunds are unresolved"
+        hold_message += "; provider result remains unknown" if payout.failure_code == "provider_result_unknown"
+        payout.update!(status: :held, held_from_status: payout.status,
+          failure_code: preserve_code ? payout.failure_code : "event_cancellation",
+          failure_message: hold_message)
         AuditLogger.record!(action: "payout.held_for_cancellation", auditable: payout, actor: actor,
           organization: event.organization, before_data: before_data,
           after_data: payout.attributes.slice("status", "failure_code", "failure_message"),

@@ -1,4 +1,14 @@
 {
+  "unsubscribe": {
+    "heading": "電子郵件偏好設定",
+    "loading": "正在載入電子郵件偏好設定…",
+    "linkError": "此取消訂閱連結無法使用。",
+    "requestError": "取消訂閱失敗，請再試一次。",
+    "prompt": "要取消訂閱來自{{organization}}的促銷郵件嗎？您仍會收到門票和訂單通知。",
+    "saving": "正在儲存…",
+    "action": "取消訂閱",
+    "unsubscribedConfirmation": "您已取消訂閱來自{{organization}}的促銷郵件。您仍會收到門票和訂單通知。如需再次收到促銷郵件，請在下次結帳時選擇同意。"
+  },
   "categories": {
     "all": "所有活動",
     "concert": "音樂",

@@ -1,4 +1,14 @@
 {
+  "unsubscribe": {
+    "heading": "이메일 수신 설정",
+    "loading": "이메일 수신 설정을 불러오는 중…",
+    "linkError": "이 수신 거부 링크를 사용할 수 없습니다.",
+    "requestError": "수신 거부에 실패했습니다. 다시 시도해 주세요.",
+    "prompt": "{{organization}}의 홍보 이메일 수신을 거부하시겠습니까? 티켓 및 주문 관련 안내는 계속 받게 됩니다.",
+    "saving": "저장 중…",
+    "action": "수신 거부",
+    "unsubscribedConfirmation": "{{organization}}의 홍보 이메일 수신을 거부했습니다. 티켓 및 주문 관련 안내는 계속 받게 됩니다. 다시 받으려면 다음 결제 시 수신에 동의해 주세요."
+  },
   "categories": {
     "all": "모든 이벤트",
     "concert": "음악",

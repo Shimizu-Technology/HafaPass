@@ -13,9 +13,9 @@ export default function UnsubscribePage() {
     let active = true
     apiClient.get(`/marketing/unsubscribe/${encodeURIComponent(token)}`)
       .then(({ data }) => { if (active) setState({ organization: data.organization, unsubscribed: data.unsubscribed }) })
-      .catch(() => { if (active) setState({ error: 'This unsubscribe link could not be used.' }) })
+      .catch(() => { if (active) setState({ error: t('unsubscribe.linkError') }) })
     return () => { active = false }
-  }, [token])
+  }, [token, t])
 
   async function unsubscribe() {
     setBusy(true)
@@ -23,20 +23,20 @@ export default function UnsubscribePage() {
       await apiClient.post(`/marketing/unsubscribe/${encodeURIComponent(token)}`, {})
       setState(previous => ({ ...previous, unsubscribed: true, error: null }))
     } catch {
-      setState(previous => ({ ...previous, error: 'Could not unsubscribe. Please try again.' }))
+      setState(previous => ({ ...previous, error: t('unsubscribe.requestError') }))
     } finally { setBusy(false) }
   }
 
   return <main className="mx-auto max-w-xl px-4 py-16 sm:py-24">
-    <h1 className="text-2xl font-semibold text-neutral-900">Email preferences</h1>
+    <h1 className="text-2xl font-semibold text-neutral-900">{t('unsubscribe.heading')}</h1>
     {state.error && <p role="alert" className="mt-4 text-red-700">{state.error}</p>}
-    {state.loading ? <p role="status" className="mt-4">Loading email preferences…</p>
+    {state.loading ? <p role="status" className="mt-4">{t('unsubscribe.loading')}</p>
       : !state.organization ? null
         : state.unsubscribed ? <>
           <p role="status" className="mt-4">{t('unsubscribe.unsubscribedConfirmation', { organization: state.organization })}</p>
         </> : <>
-          <p className="mt-4">Unsubscribe from promotional emails from {state.organization}? Ticket and order updates will still arrive.</p>
-          <button type="button" disabled={busy} onClick={unsubscribe} className="btn-primary mt-6">{busy ? 'Saving…' : 'Unsubscribe'}</button>
+          <p className="mt-4">{t('unsubscribe.prompt', { organization: state.organization })}</p>
+          <button type="button" disabled={busy} onClick={unsubscribe} className="btn-primary mt-6">{busy ? t('unsubscribe.saving') : t('unsubscribe.action')}</button>
         </>}
   </main>
 }

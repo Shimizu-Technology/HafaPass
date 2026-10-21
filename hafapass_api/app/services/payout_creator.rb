@@ -39,6 +39,9 @@ class PayoutCreator
   attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request
 
   def submit_payout!(payout)
+    payout.with_lock do
+      raise PayoutError, "Payout was held before submission" unless payout.status_pending?
+    end
     PayoutGateway.submit(payout)
   rescue PayoutGateway::PayoutError => e
     record_submission_error!(
@@ -48,6 +51,8 @@ class PayoutCreator
       failure_message: e.message
     )
     raise PayoutError, e.message
+  rescue PayoutError
+    raise
   rescue StandardError => e
     # A timeout or unexpected adapter exception can leave the provider result
     # ambiguous. Keep the amount committed until finance reconciles it so a
@@ -79,8 +84,16 @@ class PayoutCreator
       action = "payout.#{attributes.fetch(:status)}"
       if payout.status_held?
         if incoming_paid
-          payout.update!(failure_code: "provider_result_conflict",
+          payout.update!(provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
+            initiated_at: attributes[:initiated_at] || payout.initiated_at,
+            failure_code: "provider_result_conflict",
             failure_message: "Provider reported payment after cancellation hold; reconcile before recording")
+          action = "payout.provider_result_conflict"
+        elsif attributes[:provider_payout_id].present? || attributes[:status].to_s == "processing"
+          payout.update!(provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
+            initiated_at: attributes[:initiated_at] || payout.initiated_at,
+            failure_code: "provider_result_conflict",
+            failure_message: "Provider reported an in-flight transfer after cancellation hold; reconcile before releasing")
           action = "payout.provider_result_conflict"
         else
           action = "payout.late_result_held"

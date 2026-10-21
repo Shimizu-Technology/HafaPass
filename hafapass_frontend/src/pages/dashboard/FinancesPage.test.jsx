@@ -51,6 +51,20 @@ beforeEach(() => {
 afterEach(() => { clearAuth?.(); vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 describe('FinancesPage', () => {
+  it('separates cancellation holds from payouts in progress', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...summary,
+      breakdown: { ...summary.breakdown, held_cents: 1000, balance_cents: 8449, owed_cents: 8449 },
+      totals: { ...summary.totals, held_cents: 1000 },
+      events: [{ ...summary.events[0], held_cents: 1000, payout_state: 'on_hold', owed_cents: 3632 }],
+      payouts: [{ ...summary.payouts[0], status: 'held' }],
+    } })
+    mount()
+    const breakdown = await screen.findByRole('region', { name: 'How the total adds up' })
+    expect(within(breakdown).getByText('On hold — event cancelled, refunds in progress').closest('div')).toHaveTextContent('−$10.00')
+    expect(screen.getAllByText('On hold — event cancelled, refunds in progress').length).toBeGreaterThan(1)
+    expect(screen.queryByText('Payouts in progress')).not.toBeInTheDocument()
+  })
+
   it('shows what is owed, how it adds up and payout timing for the selected organization', async () => {
     mount()
     expect(await screen.findByText('$94.49', { selector: 'p' })).toBeInTheDocument()

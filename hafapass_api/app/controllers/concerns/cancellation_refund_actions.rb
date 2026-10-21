@@ -59,6 +59,42 @@ module CancellationRefundActions
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
+  def mark_card_refunded
+    run = @event.event_cancellation_refund_run
+    item = run&.items&.find_by(order_id: params[:order_id])
+    return render json: { error: "Manual card refund item not found" }, status: :not_found unless item&.needs_manual?
+
+    @event.organization.with_lock do
+      item.order.with_lock do
+        item.with_lock do
+          payments = item.order.payments.where(status: [:succeeded, :partially_refunded])
+          payments = payments.merge(Payment.live_or_legacy_capture) if Rails.env.production?
+          payment = payments.order(:id).first
+          unless item.order.payment_method == "door_card" && payment && !%w[stripe door_cash].include?(payment.provider)
+            return render json: { error: "Only captured non-Stripe card payments can use this action" },
+              status: :unprocessable_entity
+          end
+          amount = EventCancellationRefunds.balance_cents(item.order)
+          if amount.zero?
+            item.update!(status: :skipped, last_error: "Buyer balance already resolved")
+          else
+            refund = Commerce::RefundCreator.call(order: item.order, payment: payment, amount_cents: amount,
+              reason: "event_cancelled_manual_card_return", requested_by: current_user, idempotency_key: item.refund_key,
+              manual_card_return: { reference: params[:reference], returned_at: params[:returned_at] })
+            item.update!(status: :refunded, amount_cents: amount, last_error: nil) if refund.succeeded?
+            AuditLogger.record!(action: "event.cancellation_card_refunded", auditable: @event, actor: current_user,
+              organization: @event.organization, metadata: { order_id: item.order_id, payment_id: payment.id,
+                refund_id: refund.id, amount_cents: refund.amount_cents }, request: request)
+          end
+        end
+      end
+    end
+    EventCancellationRefundJob.perform_later(run.id)
+    render json: cancellation_json
+  rescue Commerce::RefundCreator::RefundError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   private
 
   def cancellation_json

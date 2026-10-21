@@ -56,6 +56,16 @@ RSpec.describe EventCancellationRefunds do
     expect(described_class.unresolved?(simulated_event)).to be(false)
   end
 
+  it "counts only live captures and their refunds in a mixed live and test order" do
+    test_capture = create(:payment, :succeeded, order: order, amount_cents: 2000,
+      provider_environment: "test")
+    create(:refund, order: order, payment: test_capture, amount_cents: 500)
+
+    expect(described_class.balances(event, exclude_nonlive: true).first[:amount_cents]).to eq(5250)
+    expect(described_class.outstanding_balance_cents(event)).to eq(5250)
+    expect(described_class.preview(event)[:total_cents]).to eq(6750) unless Rails.env.production?
+  end
+
   it "computes a fifty-order preview with a bounded number of grouped queries" do
     49.times do
       paid_order = create(:order, event: event)

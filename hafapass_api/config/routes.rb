@@ -251,6 +251,7 @@ Rails.application.routes.draw do
             post :start_cancellation_refunds
             post :retry_cancellation_refunds
             post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
+            post "cancellation_refunds/:order_id/mark_card_refunded", to: "events#mark_card_refunded"
           end
           resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
           resource :sales_suspension, only: [:destroy], controller: "event_sales_suspensions"
@@ -368,7 +369,9 @@ Rails.application.routes.draw do
         end
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:index, :create, :destroy]
-        resources :payouts, only: [:index, :update]
+        resources :payouts, only: [:index, :update] do
+          post :release_hold, on: :member
+        end
         resources :disputes, only: [:index]
         resources :audit_logs, only: [:index]
         resource :marketplace, only: [:show], controller: "marketplace"

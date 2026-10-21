@@ -9,6 +9,7 @@
 class OrganizationFinanceSummary
   SETTLED_ORDER_STATUSES = %i[completed partially_refunded refunded].freeze
   IN_FLIGHT_PAYOUT_STATUSES = %i[pending processing].freeze
+  HELD_PAYOUT_STATUSES = %i[held].freeze
   CASH_CUSTODY_KINDS = %w[organizer_retained_cash organizer_cash_return].freeze
   RECENT_PAYOUT_LIMIT = 50
   EARNING_COLUMNS = (Settlement::MONEY_COLUMNS - %i[paid_cents negative_balance_cents]).freeze
@@ -110,11 +111,12 @@ class OrganizationFinanceSummary
     preview = result.attributes
     paid = payouts.fetch([event.id, "paid"], 0)
     in_flight = IN_FLIGHT_PAYOUT_STATUSES.sum { |status| payouts.fetch([event.id, status.to_s], 0) }
+    held = payouts.fetch([event.id, "held"], 0)
     # Balance before payouts, unfloored: the calculator floors payable at 0,
     # which would hide an event that refunds or disputes pushed below zero.
     balance = preview[:organizer_proceeds_cents] - preview[:processing_fee_cents] - preview[:reserve_cents] +
       preview[:adjustment_cents]
-    owed = [preview[:payable_cents] - paid - in_flight, 0].max
+    owed = [preview[:payable_cents] - paid - in_flight - held, 0].max
     sales, item_discounts = @sales.fetch(event.id, [0, 0])
     refunded = @refunded_proceeds.fetch(event.id, 0)
     cash = door_cash_retained(result.items)
@@ -151,6 +153,7 @@ class OrganizationFinanceSummary
       payable_cents: preview[:payable_cents],
       paid_cents: paid,
       in_flight_cents: in_flight,
+      held_cents: held,
       owed_cents: owed,
       negative_balance_cents: preview[:negative_balance_cents],
       settlement: settlement && {
@@ -164,7 +167,7 @@ class OrganizationFinanceSummary
       },
       requestable_cents: requestable,
       settlement_state: settlement_state(settlement, statement_current),
-      payout_state: payout_state(owed: owed, in_flight: in_flight, paid: paid, requestable: requestable,
+      payout_state: payout_state(owed: owed, in_flight: in_flight, held: held, paid: paid, requestable: requestable,
         finalized: settlement&.status_finalized?)
     }
   end
@@ -195,7 +198,8 @@ class OrganizationFinanceSummary
   # ready: a payout can be requested now; needs_new_version: money is owed
   # but activity since the latest version (a refund, or the last payout
   # itself) means a new version must be finalized first.
-  def payout_state(owed:, in_flight:, paid:, requestable:, finalized:)
+  def payout_state(owed:, in_flight:, held:, paid:, requestable:, finalized:)
+    return "on_hold" if held.positive?
     return "in_progress" if in_flight.positive?
     if owed.positive?
       return "ready" if requestable.positive?
@@ -223,6 +227,7 @@ class OrganizationFinanceSummary
       payable_cents: sum.call(:payable_cents),
       paid_cents: organization.payouts.status_paid.sum(:amount_cents),
       in_flight_cents: organization.payouts.where(status: IN_FLIGHT_PAYOUT_STATUSES).sum(:amount_cents),
+      held_cents: organization.payouts.status_held.sum(:amount_cents),
       owed_cents: sum.call(:owed_cents),
       negative_balance_cents: sum.call(:negative_balance_cents),
       requestable_cents: [sum.call(:requestable_cents), available].min,
@@ -241,7 +246,8 @@ class OrganizationFinanceSummary
     earned = sum.call(:balance_cents) + organization_adjustments
     paid = organization.payouts.status_paid.sum(:amount_cents)
     in_flight = organization.payouts.where(status: IN_FLIGHT_PAYOUT_STATUSES).sum(:amount_cents)
-    balance = earned - paid - in_flight
+    held = organization.payouts.status_held.sum(:amount_cents)
+    balance = earned - paid - in_flight - held
     {
       sales_cents: sum.call(:sales_cents),
       discount_cents: sum.call(:item_discount_cents),
@@ -255,6 +261,7 @@ class OrganizationFinanceSummary
       earned_cents: earned,
       paid_cents: paid,
       in_flight_cents: in_flight,
+      held_cents: held,
       balance_cents: balance,
       owed_cents: [balance, 0].max,
       negative_balance_cents: [-balance, 0].max,

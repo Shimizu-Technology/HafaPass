@@ -81,7 +81,8 @@ export default function CancellationRefundProgress({ eventId, admin = false, sta
       return
     }
     setCashError('')
-    const result = await mutate(`${base}/cancellation_refunds/${cashItem.order_id}/mark_cash_refunded`, { reference: reference.trim(), returned_at: instant.toISOString() })
+    const action = cashItem.payment_method === 'door_card' ? 'mark_card_refunded' : 'mark_cash_refunded'
+    const result = await mutate(`${base}/cancellation_refunds/${cashItem.order_id}/${action}`, { reference: reference.trim(), returned_at: instant.toISOString() })
     if (result) { setCashItem(null); setReference(''); setReturnedAt('') }
   }
 
@@ -89,7 +90,7 @@ export default function CancellationRefundProgress({ eventId, admin = false, sta
     [data.run.refunded, 'refunded'], [data.run.pending, 'pending'],
     [data.run.waiting_on_pending_refund, 'Awaiting refund confirmation'],
     [data.run.waiting_on_dispute, 'Awaiting dispute resolution'],
-    [data.run.failed, 'failed'], [data.run.needs_manual, 'Needs cash return'],
+    [data.run.failed, 'failed'], [data.run.needs_manual, 'Needs manual return'],
     [data.run.skipped, 'already resolved'],
   ].filter(([count]) => count > 0)
 
@@ -117,11 +118,11 @@ export default function CancellationRefundProgress({ eventId, admin = false, sta
           {canRefund && (data.run.failed > 0 || data.run.pending > 0) && <button type="button" disabled={busy} className="btn-secondary mt-3" onClick={() => mutate(`${base}/retry_cancellation_refunds`, {})}>{data.run.failed > 0 ? 'Retry failed' : 'Resume pending'}</button>}
           {!canRefund && data.run.failed > 0 && <p className="mt-2">Ask an owner or finance teammate to retry failed refunds.</p>}
           <ul className="mt-3 divide-y divide-neutral-100">{data.run.items.map(item => <li key={item.id} className="py-3">
-            <strong>{item.order_reference}</strong><span className="block text-neutral-700">{item.status === 'refunded' ? `${money(item.amount_cents)} refunded ${item.payment_method === 'door_cash' ? 'in cash' : 'to card'}` : `${money(item.amount_cents)}${item.status === 'needs_manual' ? ' remaining to return' : ''} · ${item.status === 'needs_manual' ? 'Needs cash return' : item.status.replaceAll('_', ' ')}`}</span>
+            <strong>{item.order_reference}</strong><span className="block text-neutral-700">{item.status === 'refunded' ? `${money(item.amount_cents)} refunded ${item.payment_method === 'door_cash' ? 'in cash' : 'to card'}` : `${money(item.amount_cents)}${item.status === 'needs_manual' ? ' remaining to return' : ''} · ${item.status === 'needs_manual' ? item.payment_method === 'door_card' ? 'Needs card return' : 'Needs cash return' : item.status.replaceAll('_', ' ')}`}</span>
             {item.error && <p className="text-red-700">{item.error}</p>}
-            {item.status === 'needs_manual' && (canMarkCash
-              ? <button type="button" className="btn-secondary mt-3 block" onClick={() => openCash(item)}>Mark refunded in cash</button>
-              : <p>Ask an owner or finance teammate to record the cash return.</p>)}
+            {item.status === 'needs_manual' && ((item.payment_method === 'door_card' ? admin : canMarkCash)
+              ? <button type="button" className="btn-secondary mt-3 block" onClick={() => openCash(item)}>{item.payment_method === 'door_card' ? 'Record card return' : 'Mark refunded in cash'}</button>
+              : <p>Ask {item.payment_method === 'door_card' ? 'an admin to record the card return' : 'an owner or finance teammate to record the cash return'}.</p>)}
           </li>)}</ul>
           {data.run.item_total_pages > 1 && <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="button" className="btn-secondary" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Previous orders</button>
@@ -144,12 +145,12 @@ export default function CancellationRefundProgress({ eventId, admin = false, sta
       <div className="mt-5 flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={() => setConfirmingLegacy(false)}>Keep reviewing</button><button type="button" disabled={busy} className="btn-primary" onClick={startLegacy}>Confirm and start refunds</button></div>
     </Dialog>}
     {cashItem && <Dialog labelledBy="cash-refund-title" onClose={() => setCashItem(null)} busy={busy} className="max-w-md">
-      <h2 id="cash-refund-title" className="text-lg font-semibold">Record cash returned to buyer</h2>
-      <p className="mt-2">{cashItem.order_reference} · {money(cashItem.amount_cents)}. Return the cash before recording it here.</p>
+      <h2 id="cash-refund-title" className="text-lg font-semibold">Record {cashItem.payment_method === 'door_card' ? 'card payment' : 'cash'} returned to buyer</h2>
+      <p className="mt-2">{cashItem.order_reference} · {money(cashItem.amount_cents)}. {cashItem.payment_method === 'door_card' ? 'Complete the return through the card provider before recording it here.' : 'Return the cash before recording it here.'}</p>
       {cashError && <p role="alert" className="mt-3 text-sm text-red-700">{cashError}</p>}
-      <label className="mt-4 block">Cash return reference<input className="input mt-1" value={reference} onChange={event => setReference(event.target.value)} /></label>
+      <label className="mt-4 block">{cashItem.payment_method === 'door_card' ? 'Provider return reference' : 'Cash return reference'}<input className="input mt-1" value={reference} onChange={event => setReference(event.target.value)} /></label>
       <label className="mt-3 block">Returned at ({eventTimeZone})<input type="datetime-local" required className="input mt-1" value={returnedAt} onChange={event => setReturnedAt(event.target.value)} /></label>
-      <div className="mt-5 flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={() => setCashItem(null)}>Close</button><button type="button" disabled={busy || !reference.trim() || !returnedAt} className="btn-primary" onClick={markCash}>Mark refunded in cash</button></div>
+      <div className="mt-5 flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={() => setCashItem(null)}>Close</button><button type="button" disabled={busy || !reference.trim() || !returnedAt} className="btn-primary" onClick={markCash}>{cashItem.payment_method === 'door_card' ? 'Record card return' : 'Mark refunded in cash'}</button></div>
     </Dialog>}
   </div>
 }

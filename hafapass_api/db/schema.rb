@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -299,7 +299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: { "type" => "all_attendees" }, null: false
+    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false
@@ -333,7 +333,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.check_constraint "char_length(currency::text) = 3", name: "connected_accounts_currency_length"
     t.check_constraint "jsonb_typeof(payout_details) = 'object'::text", name: "connected_accounts_payout_details_object"
-    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying, 'manual'::character varying, 'stripe'::character varying, 'legacy_manual'::character varying, 'check'::character varying]::text[])", name: "connected_accounts_provider_valid"
+    t.check_constraint "provider::text = ANY (ARRAY['paypal'::character varying::text, 'manual'::character varying::text, 'stripe'::character varying::text, 'legacy_manual'::character varying::text, 'check'::character varying::text])", name: "connected_accounts_provider_valid"
     t.check_constraint "readiness_revision > 0", name: "connected_accounts_readiness_revision_positive"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "connected_accounts_status_valid"
   end
@@ -678,7 +678,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.check_constraint "buyer_fee_percent >= 0 AND buyer_fee_percent <= 100", name: "events_buyer_fee_percent_valid"
     t.check_constraint "fee_policy = ANY (ARRAY[0, 1, 2])", name: "events_fee_policy_valid"
     t.check_constraint "max_capacity IS NULL OR max_capacity > 0", name: "events_capacity_positive"
-    t.check_constraint "policy_hold_at IS NULL AND policy_hold_scope IS NULL AND policy_hold_reason IS NULL OR policy_hold_at IS NOT NULL AND (policy_hold_scope::text = ANY (ARRAY['sales'::character varying, 'hidden'::character varying]::text[])) AND char_length(btrim(policy_hold_reason)) > 0", name: "events_policy_hold_consistent"
+    t.check_constraint "policy_hold_at IS NULL AND policy_hold_scope IS NULL AND policy_hold_reason IS NULL OR policy_hold_at IS NOT NULL AND (policy_hold_scope::text = ANY (ARRAY['sales'::character varying::text, 'hidden'::character varying::text])) AND char_length(btrim(policy_hold_reason)) > 0", name: "events_policy_hold_consistent"
   end
 
   create_table "fee_components", force: :cascade do |t|
@@ -1189,6 +1189,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.string "processing_fee_bearer_snapshot"
     t.string "locale", default: "en", null: false
     t.boolean "marketing_opt_in", default: false, null: false
+    t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
@@ -1206,7 +1207,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.check_constraint "fee_policy_snapshot = ANY (ARRAY[0, 1, 2])", name: "orders_fee_policy_snapshot_valid"
     t.check_constraint "guest_access_version > 0", name: "orders_guest_access_version_positive"
     t.check_constraint "organizer_fee_cents >= 0", name: "orders_organizer_fee_nonnegative"
-    t.check_constraint "processing_fee_bearer_snapshot IS NULL OR (processing_fee_bearer_snapshot::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying]::text[]))", name: "orders_processing_fee_bearer_snapshot_valid"
+    t.check_constraint "processing_fee_bearer_snapshot IS NULL OR (processing_fee_bearer_snapshot::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text]))", name: "orders_processing_fee_bearer_snapshot_valid"
     t.check_constraint "refund_amount_cents <= total_cents", name: "orders_refund_within_total"
     t.check_constraint "refund_amount_cents >= 0", name: "orders_refund_nonnegative"
     t.check_constraint "service_fee_cents >= 0", name: "orders_service_fee_nonnegative"
@@ -1308,7 +1309,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.index ["actor_user_id"], name: "index_organizer_sales_export_requests_on_actor_user_id"
     t.index ["event_id"], name: "index_organizer_sales_export_requests_on_event_id"
     t.check_constraint "row_count >= 0", name: "organizer_sales_export_requests_row_count_nonnegative"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'ready'::character varying, 'failed'::character varying, 'expired'::character varying]::text[])", name: "organizer_sales_export_requests_status_valid"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'processing'::character varying::text, 'ready'::character varying::text, 'failed'::character varying::text, 'expired'::character varying::text])", name: "organizer_sales_export_requests_status_valid"
   end
 
   create_table "organizer_tax_informations", force: :cascade do |t|
@@ -1426,6 +1427,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.jsonb "tax_information_snapshot", default: {}, null: false
     t.text "tax_information_tin"
     t.string "tax_approval_digest"
+    t.string "held_from_status"
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
     t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
@@ -2017,7 +2019,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.string "payout_schedule_text", default: "within 3 business days after your event", null: false
     t.text "business_mailing_address"
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
-    t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying, 'organizer'::character varying]::text[])", name: "site_settings_processing_fee_bearer_valid"
+    t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
   end
 
   create_table "solid_queue_batch_executions", force: :cascade do |t|
@@ -2470,7 +2472,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_130000) do
     t.datetime "updated_at", null: false
     t.index ["provider", "serial_number"], name: "index_wallet_passes_on_provider_and_serial_number", unique: true
     t.index ["ticket_id"], name: "index_wallet_passes_on_ticket_id"
-    t.check_constraint "provider::text = ANY (ARRAY['apple'::character varying, 'google'::character varying]::text[])", name: "wallet_passes_provider_known"
+    t.check_constraint "provider::text = ANY (ARRAY['apple'::character varying::text, 'google'::character varying::text])", name: "wallet_passes_provider_known"
   end
 
   create_table "webhook_events", force: :cascade do |t|

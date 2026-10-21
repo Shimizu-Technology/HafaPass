@@ -16,6 +16,55 @@ afterEach(() => vi.unstubAllEnvs())
 describe('guest order recovery actions', () => {
   beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear(); window.localStorage.clear() })
 
+  it('uses the current cancelled event status when an older reschedule is the latest change', async () => {
+    const order = { id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
+      order_items: [], tickets: [], latest_event_change: { id: 8, change_type: 'rescheduled', reason: 'Earlier date change' },
+      cancellation_refund: { status: 'processing', amount_cents: 5250 },
+      event: { slug: 'cancelled-event', title: 'Cancelled Event', status: 'cancelled', timezone: 'Pacific/Guam' } }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes><Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+
+    expect(await screen.findByText('Cancelled Event')).toBeInTheDocument()
+    expect(screen.getByText(/refund.*process/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Keep my tickets' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Earlier date change')).not.toBeInTheDocument()
+  })
+
+  it('hides choices for an old postponement after the event returns to published', async () => {
+    const order = { id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
+      order_items: [], tickets: [], latest_event_change: { id: 8, change_type: 'postponed', reason: 'Earlier delay' },
+      event: { slug: 'active-event', title: 'Active Event', status: 'published', timezone: 'Pacific/Guam' } }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes><Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+
+    expect(await screen.findByText('Active Event')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Keep my tickets' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Earlier delay')).not.toBeInTheDocument()
+  })
+
+  it('shows cancellation-refund status when the cancelled event has no change record', async () => {
+    const order = { id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
+      order_items: [], tickets: [], cancellation_refund: { status: 'needs_cash_return', amount_cents: 5250 },
+      event: { slug: 'cancelled-event', title: 'Cancelled Event', status: 'cancelled', timezone: 'Pacific/Guam' } }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes><Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+
+    expect(await screen.findByText('Cancelled Event')).toBeInTheDocument()
+    expect(within(document.getElementById('order-event-change')).getByRole('status')).toHaveTextContent(/cash/i)
+    expect(screen.queryByRole('button', { name: 'Keep my tickets' })).not.toBeInTheDocument()
+  })
+
+  it('labels a manual card return without describing it as cash', async () => {
+    const order = { id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
+      order_items: [], tickets: [], cancellation_refund: { status: 'needs_card_return', amount_cents: 5250 },
+      event: { slug: 'cancelled-event', title: 'Cancelled Event', status: 'cancelled', timezone: 'Pacific/Guam' } }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/922/confirmation']}><Routes><Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
+
+    expect(await screen.findByText('Cancelled Event')).toBeInTheDocument()
+    expect(within(document.getElementById('order-event-change')).getByRole('status')).toHaveTextContent(/card payment/)
+  })
+
   it('does not fetch cached private order access before Clerk hydration and device binding settle', async () => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
     useAuth.mockReturnValue({ isLoaded: false, userId: undefined })

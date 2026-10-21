@@ -104,9 +104,5 @@ module CommunicationCampaigns
       MarketingUnsubscribe.exists?(organization: campaign.event.organization, email: email) ||
         MessageDelivery.new(recipient: email).suppressed_recipient?
     end
-
-    def opted_in?(email)
-      MarketingConsent.opted_in?(organization: campaign.event.organization, email: email)
-    end
   end
 end

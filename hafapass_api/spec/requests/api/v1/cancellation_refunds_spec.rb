@@ -87,6 +87,31 @@ RSpec.describe "Cancellation refund permissions", type: :request do
     expect(AuditLog.where(action: "event.cancellation_cash_refunded", auditable: event)).to exist
   end
 
+  it "lets only an admin record an evidenced return for a captured non-Stripe card payment" do
+    order = create(:order, event: event, payment_method: "door_card")
+    type = create(:ticket_type, event: event)
+    create(:order_item, order: order, ticket_type: type, quantity: 2, subtotal_cents: 5000,
+      fee_cents: 250, organizer_proceeds_cents: 5000)
+    create(:payment, :succeeded, order: order, provider: "boh_clover", provider_environment: "live",
+      provider_payment_id: "clover_fixture_#{order.id}")
+    EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    EventCancellationRefundJob.perform_now(run.id)
+    expect(run.items.find_by!(order: order)).to be_needs_manual
+    expect(OrderPresenter.call(order)[:cancellation_refund][:status]).to eq("needs_card_return")
+    path = "/api/v1/admin/events/#{event.id}/cancellation_refunds/#{order.id}/mark_card_refunded"
+    payload = { reference: "Clover return 42", returned_at: Time.current.iso8601(6) }
+
+    post path, params: payload, headers: auth_headers(profile.user)
+    expect(response).to have_http_status(:forbidden)
+    post path, params: payload, headers: auth_headers(create(:user, :admin))
+    expect(response).to have_http_status(:ok)
+    expect(order.reload).to be_refunded
+    expect(run.items.find_by!(order: order)).to be_refunded
+    expect(order.refunds.succeeded.first.provider_payload["manual_card_return"]["reference"]).to eq("Clover return 42")
+    expect(AuditLog.where(action: "event.cancellation_card_refunded", auditable: event)).to exist
+  end
+
   it "shows and records the current cash balance after a separate partial return" do
     order = create(:order, event: event, payment_method: "door_cash")
     type = create(:ticket_type, event: event)

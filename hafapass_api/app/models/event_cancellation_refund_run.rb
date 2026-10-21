@@ -46,5 +46,10 @@ class EventCancellationRefundRun < ApplicationRecord
         update!(status: :needs_attention, completed_at: nil)
       end
     end
+    if completed? && !EventCancellationRefunds.unresolved?(event)
+      event.payouts.status_held.find_each do |payout|
+        PayoutHoldRelease.call(payout: payout, actor: started_by, automatic: true)
+      end
+    end
   end
 end

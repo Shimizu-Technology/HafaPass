@@ -69,7 +69,7 @@ class OrderPresenter
     status = if succeeded && (order.refunded? || item&.refunded?)
       "refunded"
     elsif item&.needs_manual?
-      "needs_cash_return"
+      order.payment_method == "door_card" ? "needs_card_return" : "needs_cash_return"
     elsif item&.failed?
       "needs_attention"
     elsif item&.waiting_on_dispute?

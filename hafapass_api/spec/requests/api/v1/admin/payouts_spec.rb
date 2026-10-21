@@ -18,6 +18,25 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     patch "/api/v1/admin/payouts/#{payout.id}", params: attributes, headers: auth_headers(actor)
   end
 
+  it "exposes a release-hold action and rejects a stale payout above current payable" do
+    payout.update!(status: :held, held_from_status: "processing")
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("cancel and reissue")
+    expect(payout.reload).to be_status_held
+  end
+
+  it "releases an affordable hold to its recorded prior status and audits the admin" do
+    payout.update!(status: :held, held_from_status: "processing")
+    create(:balance_adjustment, organization: organization, event: event, amount_cents: 1000)
+
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to have_attributes(status: "processing", held_from_status: nil)
+    expect(AuditLog.find_by!(auditable: payout, action: "payout.released_from_cancellation_hold").actor_user).to eq(admin)
+  end
+
   it "requires evidence before changing a payout or releasing its reservation" do
     %w[paid failed reversed].each do |status|
       reconcile({ status: status })

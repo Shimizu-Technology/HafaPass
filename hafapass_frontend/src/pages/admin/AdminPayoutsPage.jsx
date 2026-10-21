@@ -219,6 +219,53 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   )
 }
 
+function ReleaseHoldDialog({ payout, beginRequest, onClose, onSaved }) {
+  const titleId = useId()
+  const [confirmed, setConfirmed] = useState(false)
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const unresolved = payout.cancellation_refunds_unresolved || payout.outstanding_buyer_balance_cents > 0
+  const tooLarge = payout.amount_cents > payout.hold_available_cents
+  const submit = async event => {
+    event.preventDefault()
+    if (unresolved && (!confirmed || !reason.trim())) {
+      setError('Confirm the payout was already sent before cancellation and explain why it can be released.')
+      return
+    }
+    const request = beginRequest()
+    if (!request) return
+    setBusy(true)
+    setError('')
+    try {
+      await apiClient.post(`/admin/payouts/${payout.id}/release_hold`, {
+        sent_before_cancellation_confirmed: confirmed,
+        cancellation_payout_reason: reason.trim(),
+      }, request.config)
+      if (request.current()) onSaved(`Hold released for payout #${payout.id}.`)
+    } catch (failure) {
+      if (request.handleError(failure) || !request.current()) return
+      setError(errorMessage(failure, 'The hold was not released. Check your connection and try again.'))
+    } finally { request.release(); setBusy(false) }
+  }
+  return <Dialog labelledBy={titleId} busy={busy} onClose={onClose} className="max-w-lg">
+    <form onSubmit={submit}>
+      <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Release hold on payout #{payout.id}</h2>
+      <p className="mt-2 text-sm text-neutral-700">This restores the payout to {payout.held_from_status || 'its previous'} status. Amount: {money(payout.amount_cents, payout.currency)}.</p>
+      {tooLarge && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">The payout exceeds the event’s current net payable ({money(payout.hold_available_cents, payout.currency)} available after other payouts). Record a failed outcome, then finalize a new settlement and reissue the correct amount.</p>}
+      {!payout.held_from_status && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">The original payout status is unknown. Record an outcome and reissue instead of releasing this hold.</p>}
+      {['provider_result_conflict', 'provider_result_unknown'].includes(payout.failure_code) && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">The provider result needs reconciliation before this hold can be released.</p>}
+      {unresolved && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950">
+        <p>Buyer refunds remain unresolved. Release is allowed only if this payout was already sent before cancellation.</p>
+        <label className="mt-3 flex gap-2"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />This payout was already sent before the cancellation</label>
+        <label className="mt-3 block">Reason for releasing an already sent payout<textarea className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} maxLength={1000} /></label>
+      </div>}
+      {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
+      <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} disabled={busy} className="btn-secondary">Cancel</button><button type="submit" disabled={busy || tooLarge || !payout.held_from_status || ['provider_result_conflict', 'provider_result_unknown'].includes(payout.failure_code)} className="btn-primary">{busy ? 'Releasing…' : 'Release hold'}</button></div>
+    </form>
+  </Dialog>
+}
+
 function AdjustmentDialog({ context, beginRequest, onClose, onSaved }) {
   const titleId = useId()
   const [kind, setKind] = useState('manual_credit')
@@ -355,6 +402,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
     status: filters.status, q: filters.q, event_id: filters.event_id, organization_id: filters.organization_id, page: filters.page || 1,
   }))
   const [reconciling, setReconciling] = useState(null)
+  const [releasing, setReleasing] = useState(null)
   const payouts = list.data?.payouts || []
   const counts = list.data?.status_counts || {}
   const filtered = filters.status || filters.q
@@ -389,9 +437,11 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
                 <td data-label="Transfer" className={foldCell}><span className="min-w-0 text-xs text-neutral-700">
                   <span className="block font-mono [overflow-wrap:anywhere]">{payout.provider_payout_id || 'No transfer ID yet'}</span>
                   {payout.failure_message && <span className="block text-red-700">{payout.failure_message}</span>}
+                  {payout.status === 'held' && payout.amount_cents > payout.hold_available_cents && <span className="block text-red-700">Amount exceeds current net payable; record a failed outcome and reissue.</span>}
                   {payout.last_reconciliation && <span className="block text-content-muted [overflow-wrap:anywhere]">Recorded by {payout.last_reconciliation.recorded_by || 'system'} · {payout.last_reconciliation.reference}</span>}
                 </span></td>
                 <td className={`${foldCell} before:content-none md:text-right`}>
+                  {payout.status === 'held' && <button type="button" onClick={() => setReleasing(payout)} className="btn-secondary !px-4 !py-2 text-sm">Release hold<span className="sr-only"> for payout #{payout.id}</span></button>}
                   {payout.allowed_outcomes.length > 0
                     ? <button type="button" onClick={() => setReconciling(payout)} className="btn-secondary !px-4 !py-2 text-sm">Record outcome<span className="sr-only"> for payout #{payout.id}</span></button>
                     : <span className="text-xs text-content-muted">Final</span>}
@@ -405,6 +455,8 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
     <OperationalPagination meta={list.data?.meta} page={Number(filters.page) || 1} onPage={page => setFilter({ page: String(page) })} busy={list.loading} label="Payout pages" />
     {reconciling && <ReconcileDialog payout={reconciling} beginRequest={list.beginRequest} onClose={() => setReconciling(null)}
       onSaved={message => { setReconciling(null); onNotice(message); list.reload() }} />}
+    {releasing && <ReleaseHoldDialog payout={releasing} beginRequest={list.beginRequest} onClose={() => setReleasing(null)}
+      onSaved={message => { setReleasing(null); onNotice(message); list.reload() }} />}
   </>
 }
 

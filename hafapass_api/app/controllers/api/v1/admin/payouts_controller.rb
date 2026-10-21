@@ -45,6 +45,18 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     render json: { error: message }, status: :unprocessable_entity
   end
 
+  def release_hold
+    payout = Payout.find(params[:id])
+    PayoutHoldRelease.call(payout: payout, actor: current_user,
+      sent_before_cancellation_confirmed: params[:sent_before_cancellation_confirmed] == true,
+      cancellation_payout_reason: params[:cancellation_payout_reason], request: request)
+    render json: { id: payout.id, status: payout.status }
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Payout not found" }, status: :not_found
+  rescue PayoutHoldRelease::ReleaseError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   private
 
   def filtered_payouts
@@ -81,6 +93,12 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     # Compared in memory (snapshot vs. details on file), once per payout.
     payee_changed = payout.provider == "check" && !payout.payee_matches_approval?
     conflict = audits.reverse.find { |audit| audit.action == "payout.provider_result_conflict" }
+    hold_available = if payout.status_held?
+      current_payable = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
+      other_reserved = payout.event.payouts.where(status: [:pending, :processing, :held, :paid])
+        .where.not(id: payout.id).sum(:amount_cents)
+      [current_payable - other_reserved, 0].max
+    end
     payout.attributes.slice(
       "id", "provider", "provider_payout_id", "amount_cents", "currency", "status", "failure_code",
       "failure_message", "initiated_at", "paid_at", "created_at"
@@ -96,6 +114,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       tax_information_snapshot: payout.tax_information_snapshot,
       outstanding_buyer_balance_cents: liability[:outstanding_cents],
       cancellation_refunds_unresolved: liability[:unresolved],
+      held_from_status: payout.held_from_status,
+      hold_available_cents: hold_available,
       current_payee: payee_changed ? payout.connected_account.check_payee : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,

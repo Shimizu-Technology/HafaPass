@@ -59,6 +59,11 @@ class MessageDeliveryJob < ApplicationJob
           last_error: "Recipient has a prior bounce, complaint, or suppression")
         next :done
       end
+      if delivery.promotional? && SiteSetting.instance.business_mailing_address.blank?
+        delivery.update!(status: :suppressed, suppressed_at: Time.current,
+          last_error: "Promotional send blocked by missing mailing address")
+        next :done
+      end
       raise ReplayExpired, "Provider result requires reconciliation before replay" if delivery.provider_replay_expired?
 
       previously_unknown = delivery.provider_outcome_unknown? ||
@@ -107,7 +112,7 @@ class MessageDeliveryJob < ApplicationJob
         SiteSetting.instance.business_mailing_address.blank?)
       delivery.with_lock do
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
-          provider_outcome_unknown: false, send_lease_token: nil, send_lease_expires_at: nil,
+          provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil,
           last_error: "Promotional send blocked by unsubscribe, provider suppression, or missing mailing address")
       end
       return

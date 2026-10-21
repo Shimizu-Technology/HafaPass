@@ -1,5 +1,12 @@
 {
   "unsubscribe": {
+    "heading": "Email preferences",
+    "loading": "Loading email preferences…",
+    "linkError": "This unsubscribe link could not be used.",
+    "requestError": "Could not unsubscribe. Please try again.",
+    "prompt": "Unsubscribe from promotional emails from {{organization}}? Ticket and order updates will still arrive.",
+    "saving": "Saving…",
+    "action": "Unsubscribe",
     "unsubscribedConfirmation": "You're unsubscribed from promotional emails from {{organization}}. Ticket and order updates will still arrive. To get updates again, opt in at your next checkout."
   },
   "nav": {
@@ -772,6 +779,7 @@
       "cancelledCashRefunded": "{{amount}} was returned in cash on {{date}}.",
       "cancelledRefundProcessing": "Your refund is processing.",
       "cancelledCashReturnPending": "The organizer will return your cash payment.",
+      "cancelledCardReturnPending": "HåfaPass is waiting for confirmation that your card payment was returned.",
       "cancelledRefundComplete": "Your refund is complete.",
       "cancelledRefundNeedsAttention": "Your refund needs attention. HåfaPass is reviewing it.",
       "cancelledRefundAwaitingDispute": "A payment dispute is being resolved before your refund.",

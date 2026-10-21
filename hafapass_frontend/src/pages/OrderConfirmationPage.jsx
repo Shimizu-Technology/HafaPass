@@ -242,15 +242,21 @@ function OrderConfirmationContent() {
             : usableTickets
               ? t('buyerAccount.orderConfirmationPage.yourTicketsAreReadyYouCanRequestA')
               : t('buyerAccount.orderConfirmationPage.youCanViewYourOrderAndTicketStatuses')
-  const change = order?.latest_event_change
+  const currentChangeTypes = event?.status === 'cancelled' ? ['cancelled']
+    : event?.status === 'postponed' ? ['postponed', 'rescheduled']
+      : ['published', 'rescheduled'].includes(event?.status) ? ['rescheduled'] : []
+  const change = currentChangeTypes.includes(order?.latest_event_change?.change_type)
+    ? order.latest_event_change : null
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
     ticket.status === 'issued' && ticket.refundable_cents >= 0
   ))
   const eventRefundAttempt = change ? getBuyerRefundAttempt(id, `event:${change.id}`) : null
-  const canRespondToChange = change && (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt)) && ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type)
-  const cancelledRefund = change?.change_type === 'cancelled' ? (order?.cancellation_refund || (order?.status === 'refunded'
+  const canRespondToChange = change && (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt)) &&
+    ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type) &&
+    (event?.status !== 'cancelled' || change.change_type === 'cancelled')
+  const cancelledRefund = event?.status === 'cancelled' ? (order?.cancellation_refund || (order?.status === 'refunded'
     ? { status: 'refunded', amount_cents: order.refunded_cents, payment_method: order.payment_method } : null)) : null
-  const showCancelledRefundStatus = cancelledRefund && ['refunded', 'processing', 'needs_cash_return', 'needs_attention', 'awaiting_dispute', 'resolved'].includes(cancelledRefund.status)
+  const showCancelledRefundStatus = cancelledRefund && ['refunded', 'processing', 'needs_cash_return', 'needs_card_return', 'needs_attention', 'awaiting_dispute', 'resolved'].includes(cancelledRefund.status)
   const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
   // Recovery links import credentials after mount. Read the current credential for every action.
   const orderHeaders = () => orderAccessHeaders(id)
@@ -437,16 +443,17 @@ function OrderConfirmationContent() {
           </div> : isProcessing && <p className="mt-2 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.thisPageRefreshesAutomaticallyDoNotSubmitAnother')}</p>}
         </div>
 
-        {change && (
+        {(change || showCancelledRefundStatus) && (
           <section id="order-event-change" className="mb-6 scroll-mt-24 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <h2 className="font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.event', { change: t(`buyerAccount.orderConfirmationPage.eventStatus.${change.change_type}`, { defaultValue: change.change_type }) })}</h2>
-            <p className="mt-1 text-sm text-amber-900">{change.reason || t('buyerAccount.orderConfirmationPage.theOrganizerChangedThisEventReviewTheUpdated')}</p>
-            {change.response && <p className="mt-3 text-sm font-medium text-amber-950">{t('buyerAccount.orderConfirmationPage.yourResponse', { response: t(`buyerAccount.orderConfirmationPage.changeResponse.${change.response}`, { defaultValue: change.response.replace('_', ' ') }) })}</p>}
+            <h2 className="font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.event', { change: t(`buyerAccount.orderConfirmationPage.eventStatus.${change?.change_type || 'cancelled'}`, { defaultValue: change?.change_type || 'cancelled' }) })}</h2>
+            <p className="mt-1 text-sm text-amber-900">{change?.reason || t('buyerAccount.orderConfirmationPage.theOrganizerChangedThisEventReviewTheUpdated')}</p>
+            {change?.response && <p className="mt-3 text-sm font-medium text-amber-950">{t('buyerAccount.orderConfirmationPage.yourResponse', { response: t(`buyerAccount.orderConfirmationPage.changeResponse.${change.response}`, { defaultValue: change.response.replace('_', ' ') }) })}</p>}
             {showCancelledRefundStatus && <p role="status" className="mt-3 text-sm font-semibold text-amber-950">{cancelledRefund.status === 'refunded'
               ? cancelledRefund.refunded_at
                 ? t(cancelledRefund.payment_method === 'door_cash' ? 'buyerAccount.orderConfirmationPage.cancelledCashRefunded' : 'buyerAccount.orderConfirmationPage.cancelledCardRefunded', { amount: formatMoneyCents(cancelledRefund.amount_cents || 0), date: formatEventDate(cancelledRefund.refunded_at, event.timezone) })
                 : t('buyerAccount.orderConfirmationPage.cancelledRefundComplete')
               : t({ needs_cash_return: 'buyerAccount.orderConfirmationPage.cancelledCashReturnPending',
+                needs_card_return: 'buyerAccount.orderConfirmationPage.cancelledCardReturnPending',
                 needs_attention: 'buyerAccount.orderConfirmationPage.cancelledRefundNeedsAttention',
                 awaiting_dispute: 'buyerAccount.orderConfirmationPage.cancelledRefundAwaitingDispute',
                 resolved: 'buyerAccount.orderConfirmationPage.cancelledPaymentResolved',
