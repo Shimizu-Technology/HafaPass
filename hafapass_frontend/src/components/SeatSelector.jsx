@@ -1,11 +1,13 @@
 import { formatMoneyCents } from '../utils/money'
 import { useTranslation } from 'react-i18next'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { Accessibility, EyeOff, Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
 
 export default function SeatSelector({ event, onReserved, source = 'online', reserveLabel }) {
   const { t } = useTranslation()
+  const translation = useRef(t)
+  translation.current = t
   const money = cents => cents === 0 ? t('events.free') : formatMoneyCents(cents)
   const [map, setMap] = useState(null)
   const [selectedIds, setSelectedIds] = useState([])
@@ -21,12 +23,12 @@ export default function SeatSelector({ event, onReserved, source = 'online', res
       .then(response => { if (active) { setMap(response.data); setLoading(false) } })
       .catch(err => {
         if (active) {
-          setError(err.response?.data?.error || t('buyer.SeatSelector.unableToLoadTheSeatMap'))
+          setError(err.response?.data?.error || translation.current('buyer.SeatSelector.unableToLoadTheSeatMap'))
           setLoading(false)
         }
       })
     return () => { active = false }
-  }, [event.slug, t])
+  }, [event.slug])
 
   const seats = useMemo(() => map?.sections.flatMap(section =>
     section.rows.flatMap(row => row.seats.map(seat => ({ ...seat, section: section.name, row: row.label })))

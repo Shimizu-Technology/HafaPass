@@ -89,6 +89,8 @@ export default function EventDetailPage() {
 
 function EventDetailContent() {
   const { t } = useTranslation()
+  const translation = useRef(t)
+  translation.current = t
   const { slug } = useParams()
   const reducedMotion = useReducedMotion()
   const navigate = useNavigate()
@@ -158,12 +160,12 @@ function EventDetailContent() {
       })
       .catch(error => { if (current()) {
         setError(error.response?.status === 404
-          ? { message: t('buyer.EventDetail.eventNotFound'), retryable: false }
-          : { message: t('buyer.EventDetail.thisEventCouldntLoadPleaseTryAgain'), retryable: true })
+          ? { message: translation.current('buyer.EventDetail.eventNotFound'), retryable: false }
+          : { message: translation.current('buyer.EventDetail.thisEventCouldntLoadPleaseTryAgain'), retryable: true })
         setLoading(false)
       } })
     return () => { active = false }
-  }, [slug, isPreview, isLiveMoneyProof, loadAttempt, navigate, t])
+  }, [slug, isPreview, isLiveMoneyProof, loadAttempt, navigate])
 
   // Switching language reloads the event text quietly, keeping the page (and any
   // ticket selection) in place; the first load already used the current language.
@@ -185,9 +187,9 @@ function EventDetailContent() {
     let active = true
     apiClient.get(`/waitlist_offers/${encodeURIComponent(waitlistOfferToken)}`)
       .then(res => { if (active && liveRoute.current.slug === slug) setWaitlistOffer(res.data) })
-      .catch(() => { if (active && liveRoute.current.slug === slug) setWaitlistOffer({ error: t('buyer.EventDetail.offerUnavailable') }) })
+      .catch(() => { if (active && liveRoute.current.slug === slug) setWaitlistOffer({ error: translation.current('buyer.EventDetail.offerUnavailable') }) })
     return () => { active = false }
-  }, [waitlistOfferToken, slug, t])
+  }, [waitlistOfferToken, slug])
 
   const handleCheckout = (lineItems) => {
     if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
@@ -413,7 +415,7 @@ function EventDetailContent() {
                   {event.assigned_seating ? (
                     <SeatSelector event={event} onReserved={handleSeatCheckout} />
                   ) : event.ticket_types && event.ticket_types.length > 0 ? (
-                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} showOriginal={content.showingOriginal} />
+                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} showOriginal={content.showingOriginal} showTranslationNotice={!content.notice} />
                   ) : (
                     <p className="text-neutral-500 text-center py-4">{t('buyer.EventDetail.noTicketsAvailable')}</p>
                   )}

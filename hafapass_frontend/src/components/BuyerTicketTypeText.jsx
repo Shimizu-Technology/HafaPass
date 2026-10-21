@@ -1,7 +1,7 @@
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
 
-export default function BuyerTicketTypeText({ ticketType, showOriginal = false }) {
+export default function BuyerTicketTypeText({ ticketType, showOriginal = false, showNotice = true }) {
   const content = useTranslatedContent({
     ...ticketType,
     original_content: ticketType.original_content || (ticketType.machine_translated ? {
@@ -10,6 +10,6 @@ export default function BuyerTicketTypeText({ ticketType, showOriginal = false }
   }, ['name', 'description'])
   return <>
     <span className="text-neutral-800 font-medium text-sm">{showOriginal ? ticketType.original_name || content.name : content.name}</span>
-    {content.notice && <MachineTranslationNotice {...content.notice} />}
+    {showNotice && content.notice && <MachineTranslationNotice {...content.notice} as="span" />}
   </>
 }

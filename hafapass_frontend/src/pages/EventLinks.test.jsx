@@ -14,7 +14,6 @@ vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ isLoaded: true, userId:
 vi.mock('framer-motion', async original => ({ ...(await original()), useReducedMotion: () => true }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/ui/ScrollReveal', () => ({ FadeUp: ({ children }) => children }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }))
 vi.mock('../utils/marketplaceAttribution', () => ({ captureQueryAttribution: vi.fn(), trackFunnel: vi.fn() }))
 
 const event = {

@@ -70,6 +70,8 @@ function CheckoutContent({ buyerId }) {
     && currentRoute.current.search === context.search, [])
 
   const { t } = useTranslation()
+  const translation = useRef(t)
+  translation.current = t
   const navigationMatches = !location.state?.event || location.state.event.slug === slug
   const [event, setEvent] = useState(navigationMatches ? location.state?.event || null : null)
   const [loading, setLoading] = useState(!navigationMatches || !location.state?.event)
@@ -124,7 +126,7 @@ function CheckoutContent({ buyerId }) {
     if (!location.pathname.startsWith('/checkout/')) return undefined
     const context = captureContext()
     if (!checkoutBuyerMatches(slug)) {
-      setError(t('buyer.Checkout.returnToTheAccountThatStartedThisSaved'))
+      setError(translation.current('buyer.Checkout.returnToTheAccountThatStartedThisSaved'))
       setLoading(false)
       return undefined
     }
@@ -134,12 +136,12 @@ function CheckoutContent({ buyerId }) {
     const attempt = getCheckoutAttempt(slug)
     if (!activeOrderId && !attempt) return undefined
     if (attempt && !checkoutAttemptCurrent(slug, attempt.payload.checkout_key, context.buyerId)) {
-      setError(t('buyer.Checkout.returnToTheAccountThatStartedThisSaved'))
+      setError(translation.current('buyer.Checkout.returnToTheAccountThatStartedThisSaved'))
       setLoading(false)
       return undefined
     }
     if (expectedActiveId && activeOrderId !== expectedActiveId) {
-      setError(t('buyer.Checkout.anotherSavedCheckoutIsActiveRecoverItBefore'))
+      setError(translation.current('buyer.Checkout.anotherSavedCheckoutIsActiveRecoverItBefore'))
       setLoading(false)
       return undefined
     }
@@ -200,12 +202,12 @@ function CheckoutContent({ buyerId }) {
     }
     recover().catch(err => {
       if (current()) {
-        setError(err.response?.data?.error || t('buyer.Checkout.weCouldNotRestoreYourCheckoutRetryThis'))
+        setError(err.response?.data?.error || translation.current('buyer.Checkout.weCouldNotRestoreYourCheckoutRetryThis'))
         setLoading(false)
       }
     }).finally(() => { if (!cancelled && contextCurrent(context)) setRecovering(false) })
     return () => { cancelled = true }
-  }, [navigate, slug, location.pathname, location.search, recoveryVersion, captureContext, contextCurrent, t])
+  }, [navigate, slug, location.pathname, location.search, recoveryVersion, captureContext, contextCurrent])
 
   const retrySavedCheckout = () => {
     setError(null)
@@ -231,10 +233,10 @@ function CheckoutContent({ buyerId }) {
       .then(res => { if (active) setConfig(res.data) })
       .catch((err) => {
         console.error('Failed to load payment config:', err)
-        if (active) setConfigError(t('buyer.Checkout.unableToLoadPaymentConfigurationPleaseTryAgain'))
+        if (active) setConfigError(translation.current('buyer.Checkout.unableToLoadPaymentConfigurationPleaseTryAgain'))
       })
     return () => { active = false }
-  }, [configAttempt, t])
+  }, [configAttempt])
   const retryConfig = () => {
     setConfigError(null)
     setConfig(null)
@@ -271,11 +273,11 @@ function CheckoutContent({ buyerId }) {
           setEvent(res.data)
           setLoading(false)
         })
-        .catch(() => { if (current()) { setError(t('buyer.Checkout.unableToLoadEventDetails')); setLoading(false) } })
+        .catch(() => { if (current()) { setError(translation.current('buyer.Checkout.unableToLoadEventDetails')); setLoading(false) } })
       return () => { active = false }
     }
   }, [slug, event, lineItems, navigate, liveMoneyProof, location.pathname, location.search, recoveryVersion,
-    canStartNewCheckout, checkoutNeedsRecovery, captureContext, contextCurrent, t])
+    canStartNewCheckout, checkoutNeedsRecovery, captureContext, contextCurrent])
 
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
@@ -748,9 +750,9 @@ function CheckoutContent({ buyerId }) {
                       {event.registration_questions.map(question => <div key={question.id}>
                         <label className="mb-1 block text-sm font-medium text-neutral-700" htmlFor={`question-${question.id}`}>{question.prompt}{question.required && ' *'}</label>
                         {question.kind === 'selection' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">{t('buyer.Checkout.selectOne')}</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
-                          : question.kind === 'checkbox' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? t('buyer.Checkout.questionerror', { value1: question.id }) : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] == null ? '' : String(registrationAnswers[question.id])} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value === '' ? undefined : e.target.value === 'true' })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">{t('buyer.Checkout.chooseAnAnswer')}</option><option value="true">{t('buyer.Checkout.yes')}</option><option value="false">{t('buyer.Checkout.no')}</option></select>
-                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? t('buyer.Checkout.questionerror', { value1: question.id }) : undefined} disabled={submitting} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />
-                              : <input id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? t('buyer.Checkout.questionerror', { value1: question.id }) : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />}
+                          : question.kind === 'checkbox' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] == null ? '' : String(registrationAnswers[question.id])} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value === '' ? undefined : e.target.value === 'true' })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">{t('buyer.Checkout.chooseAnAnswer')}</option><option value="true">{t('buyer.Checkout.yes')}</option><option value="false">{t('buyer.Checkout.no')}</option></select>
+                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />
+                              : <input id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />}
                         {formErrors[`question_${question.id}`] && <p id={`question-${question.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`question_${question.id}`]}</p>}
                       </div>)}
                     </div>

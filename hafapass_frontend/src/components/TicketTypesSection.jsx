@@ -12,7 +12,7 @@ import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFee
 // ones only for platform admins.
 // `showOriginal` follows the event page's "Show original" switch for
 // machine-translated ticket names.
-export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false }) {
+export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false, showTranslationNotice = true }) {
   const { t } = useTranslation()
   const [quantities, setQuantities] = useState({})
 
@@ -69,7 +69,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-medium text-neutral-900 break-words max-w-full"><BuyerTicketTypeText ticketType={tt} showOriginal={showOriginal} /></h3>
+                    <h3 className="font-medium text-neutral-900 break-words max-w-full"><BuyerTicketTypeText ticketType={tt} showOriginal={showOriginal} showNotice={showTranslationNotice} /></h3>
                     {soldOut && (
                       <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : t('buyer.TicketTypesSection.salesUnavailable')}</span>
                     )}

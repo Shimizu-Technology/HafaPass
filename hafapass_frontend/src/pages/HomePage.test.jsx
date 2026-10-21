@@ -9,7 +9,6 @@ const auth = vi.hoisted(() => ({ isLoaded: true, isSignedIn: false }))
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/ui/ScrollReveal', () => ({ FadeUp: ({ children }) => <div>{children}</div> }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => ({ 'events.free': 'Free', 'events.from': 'From' }[key] || key) }) }))
 vi.mock('@clerk/clerk-react', () => ({
   useAuth: () => auth,
   SignIn: function MockSignIn({ signUpUrl, forceRedirectUrl }) {

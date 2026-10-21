@@ -15,7 +15,6 @@ vi.mock('@clerk/clerk-react', () => ({ useAuth: vi.fn() }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/StripeProvider', () => ({ default: ({ children }) => children }))
 vi.mock('../components/PaymentForm', () => ({ default: () => <p>Payment form</p> }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }))
 vi.mock('../utils/workspace', async importOriginal => ({ ...(await importOriginal()), useAccountRole: () => null }))
 vi.mock('../utils/marketplaceAttribution', () => ({ anonymousId: () => 'test-anonymous', currentAttribution: () => ({}), trackFunnel: vi.fn() }))
 
@@ -89,11 +88,11 @@ describe('checkout navigation', () => {
       <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
     </MemoryRouter>)
 
-    expect(await screen.findByText('checkout.feesUnavailable')).toBeInTheDocument()
-    expect(screen.queryByText('checkout.total')).not.toBeInTheDocument()
-    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.retryFees' }))
+    expect(await screen.findByText("We couldn't load the current service fee, so we can't show your total yet.")).toBeInTheDocument()
+    expect(screen.queryByText("Total")).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: "Try again" }))
 
-    expect(await screen.findByText('checkout.serviceFeeIncludesProcessing')).toBeInTheDocument()
+    expect(await screen.findByText("Includes card processing")).toBeInTheDocument()
     // 5% of $50.00 + 2 × $1.00 = $4.50, so the buyer total is $54.50.
     expect(screen.getByText('$4.50')).toBeInTheDocument()
     expect(screen.getByText('$54.50')).toBeInTheDocument()
@@ -107,8 +106,8 @@ describe('checkout navigation', () => {
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
       <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
     </MemoryRouter>)
-    expect(await screen.findByText('eventDetail.paidSalesOpenSoon')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /checkout.continueToPayment/ })).not.toBeInTheDocument()
+    expect(await screen.findByText("Paid ticket sales open soon")).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Continue\ to\ Payment/ })).not.toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 
@@ -122,10 +121,10 @@ describe('checkout navigation', () => {
     render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
       <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
     </MemoryRouter>)
-    await user.type(await screen.findByLabelText(/checkout.fullName|name/i), 'Ana Cruz')
+    await user.type(await screen.findByLabelText(/Full Name|name/i), 'Ana Cruz')
     await user.type(screen.getByLabelText(/email/i), 'ana@example.test')
     for (const box of screen.queryAllByRole('checkbox')) await user.click(box)
-    await user.click(screen.getByRole('button', { name: /checkout.continueToPayment/ }))
+    await user.click(screen.getByRole('button', { name: /Continue\ to\ Payment/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Paid ticket sales open soon')
   })
 
@@ -153,8 +152,8 @@ describe('checkout navigation', () => {
       <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
     </MemoryRouter>)
 
-    expect(await screen.findByText('checkout.feesUnavailable')).toBeInTheDocument()
-    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.retryFees' }))
+    expect(await screen.findByText("We couldn't load the current service fee, so we can't show your total yet.")).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: "Try again" }))
     // Three advertised all-in tickets at $20.99 = $62.97: $59.97 + $3.00 fee.
     expect(await screen.findByText('$3.00')).toBeInTheDocument()
     expect(screen.getByText('$62.97')).toBeInTheDocument()
@@ -171,7 +170,7 @@ describe('checkout navigation', () => {
     </MemoryRouter>)
 
     expect(await screen.findByText('$2.25')).toBeInTheDocument()
-    expect(screen.queryByText('checkout.serviceFeeIncludesProcessing')).not.toBeInTheDocument()
+    expect(screen.queryByText("Includes card processing")).not.toBeInTheDocument()
   })
 
   it('keeps a completed free order on its lazy confirmation route and stores recovery access', async () => {
@@ -188,10 +187,10 @@ describe('checkout navigation', () => {
       </Route></Routes></Suspense>
     </MemoryRouter>)
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('checkout.fullName'), 'Guest Buyer')
-    await user.type(screen.getByLabelText('checkout.emailAddress'), 'guest@example.invalid')
+    await user.type(await screen.findByLabelText("Full Name"), 'Guest Buyer')
+    await user.type(screen.getByLabelText("Email Address"), 'guest@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     await waitFor(() => expect(openConfirmation).toBeTypeOf('function'))
     expect(getOrderAccess(922)).toBe('guest-token')
     expect(getActiveCheckout('free-event')).toBe('922')
@@ -237,7 +236,7 @@ describe('checkout navigation', () => {
     </Routes></MemoryRouter>)
     await screen.findByText('Payment form')
     const user = userEvent.setup()
-    const edit = screen.getByRole('button', { name: 'checkout.editInfo' })
+    const edit = screen.getByRole('button', { name: "Edit info" })
     await user.click(edit)
     expect(edit).toBeDisabled()
     await user.click(edit)
@@ -286,7 +285,7 @@ describe('checkout navigation', () => {
       if (outcome === 'false') clear.mockReturnValueOnce(false)
       else clear.mockImplementationOnce(() => { throw new Error('Synthetic storage failure') })
     }
-    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.editInfo' }))
+    await userEvent.setup().click(screen.getByRole('button', { name: "Edit info" }))
     expect(await screen.findByText(/Your order was cancelled, but this page could not reset/)).toBeInTheDocument()
     expect(screen.queryByText('Payment form')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reload checkout' })).toBeInTheDocument()
@@ -312,7 +311,7 @@ describe('checkout navigation', () => {
     </Routes></MemoryRouter>
     const view = render(tree)
     await screen.findByText('Payment form')
-    await userEvent.setup().click(screen.getByRole('button', { name: 'checkout.editInfo' }))
+    await userEvent.setup().click(screen.getByRole('button', { name: "Edit info" }))
     expect(await screen.findByRole('alert')).toHaveTextContent(outcome === 'rejected'
       ? 'Payment is processing; cancellation unavailable' : 'We could not confirm cancellation')
     expect(screen.getByText('Payment form')).toBeInTheDocument()
@@ -340,14 +339,14 @@ describe('checkout navigation', () => {
       <Route path='/events/:slug' element={<h1>Selection unnecessarily lost</h1>} />
     </Routes></MemoryRouter>)
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('checkout.fullName'), 'Guest Buyer')
-    await user.type(screen.getByLabelText('checkout.emailAddress'), 'guest@example.invalid')
+    await user.type(await screen.findByLabelText("Full Name"), 'Guest Buyer')
+    await user.type(screen.getByLabelText("Email Address"), 'guest@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /checkout.continueToPayment/ }))
+    await user.click(screen.getByRole('button', { name: /Continue\ to\ Payment/ }))
     await screen.findByText('Payment form')
-    await user.click(screen.getByRole('button', { name: 'checkout.editInfo' }))
-    expect(await screen.findByLabelText('checkout.fullName')).toHaveValue('Guest Buyer')
-    expect(screen.getByLabelText('checkout.emailAddress')).toHaveValue('guest@example.invalid')
+    await user.click(screen.getByRole('button', { name: "Edit info" }))
+    expect(await screen.findByLabelText("Full Name")).toHaveValue('Guest Buyer')
+    expect(screen.getByLabelText("Email Address")).toHaveValue('guest@example.invalid')
     expect(screen.getByText('Admission')).toBeInTheDocument()
     expect(screen.queryByText('Selection unnecessarily lost')).not.toBeInTheDocument()
     expect(getActiveCheckout('paid-event')).toBeNull()
@@ -383,7 +382,7 @@ describe('checkout navigation', () => {
     const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
     apiClient.get.mockResolvedValue({ data: event })
     await userEvent.setup().click(screen.getByRole('button', { name: 'Retry saved checkout' }))
-    expect(await screen.findByLabelText('checkout.fullName')).toBeInTheDocument()
+    expect(await screen.findByLabelText("Full Name")).toBeInTheDocument()
     expect(screen.getByText('× 2')).toBeInTheDocument()
     expect(screen.queryByText('Lost ticket selection')).not.toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
@@ -460,10 +459,10 @@ describe('checkout navigation', () => {
       <Route path='/orders/:id/confirmation' element={<p>Old order exposed</p>} />
     </Routes></MemoryRouter>)
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('checkout.fullName'), 'Guest Buyer')
-    await user.type(screen.getByLabelText('checkout.emailAddress'), 'guest@example.invalid')
+    await user.type(await screen.findByLabelText("Full Name"), 'Guest Buyer')
+    await user.type(screen.getByLabelText("Email Address"), 'guest@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     await waitFor(() => expect(finish).toBeTypeOf('function'))
     view.unmount()
     const newer = { payload: { event_id: 37, checkout_key: 'b'.repeat(64) }, expiresAt: Date.now() + 300000 }
@@ -526,18 +525,18 @@ describe('checkout navigation', () => {
       <Route path='/orders/:id/confirmation' element={<h1>Corrected checkout confirmed</h1>} />
     </Routes></MemoryRouter>)
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('checkout.fullName'), 'Guest Buyer')
-    const email = screen.getByLabelText('checkout.emailAddress')
+    await user.type(await screen.findByLabelText("Full Name"), 'Guest Buyer')
+    const email = screen.getByLabelText("Email Address")
     await user.type(email, 'original@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     await screen.findByRole('button', { name: 'Start a new checkout' })
     expect(getCheckoutAttempt('free-event')).toBeNull()
     const originalKey = apiClient.post.mock.calls[0][1].checkout_key
     await user.clear(email)
     await user.type(email, 'corrected@example.invalid')
     apiClient.post.mockResolvedValueOnce({ data: { id: 926, status: 'completed', guest_access_token: 'corrected-access' } })
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     expect(await screen.findByText('Corrected checkout confirmed')).toBeInTheDocument()
     expect(apiClient.post.mock.calls[1][1].buyer_email).toBe('corrected@example.invalid')
     expect(apiClient.post.mock.calls[1][1].checkout_key).not.toBe(originalKey)
@@ -551,16 +550,16 @@ describe('checkout navigation', () => {
       <Route path='/checkout/:slug' element={<CheckoutPage />} />
     </Routes></MemoryRouter>)
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('checkout.fullName'), 'Original Buyer')
-    await user.type(screen.getByLabelText('checkout.emailAddress'), 'original@example.invalid')
+    await user.type(await screen.findByLabelText("Full Name"), 'Original Buyer')
+    await user.type(screen.getByLabelText("Email Address"), 'original@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /checkout.continueToPayment/ }))
+    await user.click(screen.getByRole('button', { name: /Continue\ to\ Payment/ }))
     await screen.findByRole('button', { name: 'Recover earlier checkout' })
     const original = apiClient.post.mock.calls[0][1]
-    await user.clear(screen.getByLabelText('checkout.fullName'))
-    await user.type(screen.getByLabelText('checkout.fullName'), 'Edited Buyer')
-    await user.clear(screen.getByLabelText('checkout.emailAddress'))
-    await user.type(screen.getByLabelText('checkout.emailAddress'), 'edited@example.invalid')
+    await user.clear(screen.getByLabelText("Full Name"))
+    await user.type(screen.getByLabelText("Full Name"), 'Edited Buyer')
+    await user.clear(screen.getByLabelText("Email Address"))
+    await user.type(screen.getByLabelText("Email Address"), 'edited@example.invalid')
     apiClient.post.mockResolvedValueOnce({ data: { id: 925, guest_access_token: 'original-access' } })
     apiClient.post.mockResolvedValueOnce({ data: { id: 925, event, buyer_name: 'Original Buyer', buyer_email: 'original@example.invalid', client_secret: 'test-original-secret', stripe_publishable_key: 'pk_test_fixture', expires_at: new Date(Date.now() + 300000).toISOString(), total_cents: 1080, order_items: [{ ticket_type_id: 7, name: 'Admission', quantity: 1, unit_price_cents: 1000 }] } })
     await user.click(screen.getByRole('button', { name: 'Recover earlier checkout' }))
@@ -582,16 +581,16 @@ describe('checkout navigation', () => {
       <Route path='/orders/:id/confirmation' element={<h1>Original order recovered</h1>} />
     </Routes></MemoryRouter>)
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('checkout.fullName'), 'Guest Buyer')
-    const email = screen.getByLabelText('checkout.emailAddress')
+    await user.type(await screen.findByLabelText("Full Name"), 'Guest Buyer')
+    const email = screen.getByLabelText("Email Address")
     await user.type(email, 'original@example.invalid')
     await user.click(screen.getByRole('checkbox'))
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     await screen.findByRole('button', { name: 'Recover earlier checkout' })
     const original = apiClient.post.mock.calls[0][1]
     await user.clear(email)
     await user.type(email, 'edited@example.invalid')
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     expect(await screen.findByText(/earlier checkout is still unconfirmed/)).toBeInTheDocument()
     expect(email).toHaveValue('edited@example.invalid')
     expect(apiClient.post).toHaveBeenCalledTimes(1)
@@ -622,10 +621,10 @@ describe('registration error recovery', () => {
   function mount() { render(<MemoryRouter initialEntries={[{ pathname: '/checkout/registration', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes><Route path='/checkout/:slug' element={<CheckoutPage />} /></Routes></MemoryRouter>) }
   it('focuses the missing dynamic answer and links its error, then moves to the missing waiver without losing answers', async () => {
     mount(); const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('checkout.fullName'), 'Synthetic Buyer')
-    await user.type(screen.getByLabelText('checkout.emailAddress'), 'buyer@example.invalid')
+    await user.type(await screen.findByLabelText("Full Name"), 'Synthetic Buyer')
+    await user.type(screen.getByLabelText("Email Address"), 'buyer@example.invalid')
     await user.click(document.getElementById('termsAccepted'))
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     const meal = screen.getByLabelText('Meal preference *')
     expect(meal).toHaveFocus()
     expect(meal).toHaveAttribute('aria-invalid', 'true')
@@ -634,12 +633,12 @@ describe('registration error recovery', () => {
     expect(apiClient.post).not.toHaveBeenCalled()
     await user.type(meal, 'Vegetarian')
     await user.selectOptions(screen.getByLabelText('Will you attend dinner? *'), 'false')
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     expect(document.getElementById('waiver-19')).toHaveFocus()
     expect(document.getElementById('waiver-19')).toHaveAttribute('aria-describedby', 'waiver-19-error')
     expect(meal).toHaveValue('Vegetarian')
     await user.click(document.getElementById('waiver-19'))
-    await user.click(screen.getByRole('button', { name: /checkout.placeOrder/ }))
+    await user.click(screen.getByRole('button', { name: /Place\ Order/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.objectContaining({ registration_answers: { 17: 'Vegetarian', 18: false }, waiver_acceptances: [{ event_waiver_id: 19, version: 'qa-v1' }] })))
   })
 })
