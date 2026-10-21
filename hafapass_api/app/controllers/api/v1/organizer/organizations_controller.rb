@@ -3,7 +3,14 @@
 class Api::V1::Organizer::OrganizationsController < ApplicationController
   def index
     memberships = current_user.organization_memberships.effective.includes(:organization).order(:id)
-    render json: memberships.map { |membership| organization_json(membership.organization, membership.role) }
+    organizations = memberships.map { |membership| organization_json(membership.organization, membership.role) }
+    # An admin who opened another organization from the admin console sees it
+    # in their switcher, clearly marked, without becoming a member.
+    if current_user.admin? && (requested = admin_requested_organization) &&
+        organizations.none? { |item| item[:id] == requested.id }
+      organizations << organization_json(requested, nil)
+    end
+    render json: organizations
   end
 
   def show
@@ -29,7 +36,13 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
       currency: organization.currency,
       role: role,
       permissions: OrganizationAuthorization.permissions_for(user: current_user, organization: organization),
-      payout_ready: organization.payout_ready?
+      payout_ready: organization.payout_ready?,
+      admin_view: current_user.admin? && role.nil?
     }
+  end
+
+  def admin_requested_organization
+    requested_id = request.headers["X-Organization-Id"].presence || params[:organization_id].presence
+    requested_id && Organization.find_by(id: requested_id)
   end
 end

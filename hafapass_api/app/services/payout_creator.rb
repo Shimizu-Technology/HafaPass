@@ -129,7 +129,9 @@ class PayoutCreator
         idempotency_key: idempotency_key,
         amount_cents: amount,
         currency: settlement.currency,
-        status: :pending
+        status: :pending,
+        payee_snapshot: account.check_payee,
+        payee_approval_digest: account.provider == "check" ? account.readiness_state_digest : nil
       )
       [payout, true]
     end

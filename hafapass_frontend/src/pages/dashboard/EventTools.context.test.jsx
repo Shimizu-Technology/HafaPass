@@ -198,7 +198,7 @@ it('shows the server reason when a layout with an unpaired wheelchair space is r
 it('does not grant staff or seating controls without server permission or an enabled seating flag', async () => {
   rows[11] = { ...rows[11], permissions: { view_events: true } }
   const view = mount(tools[0])
-  await screen.findByText('Your event access does not include managing staff.')
+  await screen.findByText('Your role doesn’t include managing this event’s team. Ask your organization owner if you need it.')
   expect(apiClient.get).toHaveBeenCalledTimes(1); expect(screen.queryByRole('button', { name: 'Assign' })).not.toBeInTheDocument()
   view.unmount(); rows[11] = dto(11); caps.assigned_seating = false
   mount(tools[2]); await screen.findByText('Assigned seating is not enabled for this platform.')

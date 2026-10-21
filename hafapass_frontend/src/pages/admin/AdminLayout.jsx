@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { BarChart3, Calendar, Users, ShoppingCart, Shield, LifeBuoy, Compass, ShieldCheck, Menu, PanelLeftClose, PanelLeftOpen, Landmark, Scale, Settings, ScrollText } from 'lucide-react'
+import { BarChart3, Building2, Calendar, Users, ShoppingCart, Shield, LifeBuoy, Compass, ShieldCheck, Menu, PanelLeftClose, PanelLeftOpen, Landmark, Scale, Settings, ScrollText } from 'lucide-react'
 import AdminNavigationDrawer from './AdminNavigationDrawer'
 import { WORKSPACE_WIDTHS } from '../../utils/workspace'
 
@@ -12,6 +12,7 @@ const navGroups = [
   { label: 'Marketplace', items: [
     { to: '/admin/events', label: 'Events', icon: Calendar },
     { to: '/admin/orders', label: 'Orders', icon: ShoppingCart },
+    { to: '/admin/organizations', label: 'Organizations', icon: Building2 },
     { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/admin/marketplace', label: 'Marketplace', icon: Compass },
   ] },
