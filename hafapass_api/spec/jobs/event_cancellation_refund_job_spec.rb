@@ -12,11 +12,13 @@ RSpec.describe EventCancellationRefundJob do
 
   before { allow(EmailService).to receive(:send_event_change_notifications_async) }
 
-  def paid_order(email:, method: nil, environment: "live")
-    order = create(:order, event: event, buyer_email: email, payment_method: method)
+  def paid_order(email:, method: nil, environment: "live", amount_cents: 5250)
+    order = create(:order, event: event, buyer_email: email, payment_method: method,
+      subtotal_cents: amount_cents - 250, total_cents: amount_cents)
     type = create(:ticket_type, event: event)
-    create(:order_item, order: order, ticket_type: type, quantity: 2, subtotal_cents: 5000,
-      fee_cents: 250, organizer_proceeds_cents: 5000)
+    create(:order_item, order: order, ticket_type: type, quantity: 2,
+      unit_price_cents: (amount_cents - 250) / 2, subtotal_cents: amount_cents - 250,
+      fee_cents: 250, organizer_proceeds_cents: amount_cents - 250)
     create(:payment, :succeeded, order: order, provider: method == "door_cash" ? "door_cash" : "stripe",
       provider_environment: environment,
       provider_payment_id: method == "door_cash" ? "cash_test_#{order.id}" : "sim_pi_#{order.id}")
@@ -39,6 +41,40 @@ RSpec.describe EventCancellationRefundJob do
     expect(AuditLog.where(action: "event.cancellation_refunds_completed", auditable: event)).to exist
     described_class.perform_now(run.id)
     expect(order.refunds.count).to eq(1)
+  end
+
+  it "keeps the succeeded refund amount when provider confirmation resumes the job" do
+    order = paid_order(email: "confirmed@example.com", amount_cents: 9650)
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    item = run.items.find_by!(order: order)
+    refund = create(:refund, order: order, payment: order.payments.first, amount_cents: 9650,
+      status: :pending, succeeded_at: nil, idempotency_key: item.refund_key,
+      provider_refund_id: "re_confirmed_#{order.id}")
+
+    described_class.perform_now(run.id)
+    expect(item.reload).to be_waiting_on_pending_refund
+    expect { refund.update!(status: :succeeded, succeeded_at: Time.current) }
+      .to have_enqueued_job(described_class).with(run.id)
+    described_class.perform_now(run.id)
+
+    expect(item.reload).to be_refunded
+    expect(item.amount_cents).to eq(9650)
+    expect(run.reload.summary).to include(total_cents: 9650,
+      items: [hash_including(status: "refunded", amount_cents: 9650)])
+    expect(AuditLog.where(action: "event.cancellation_refund_amount_changed", auditable: event)).not_to exist
+  end
+
+  it "distinguishes an unpaid order from an already refunded order" do
+    unpaid = create(:order, event: event, total_cents: 0, subtotal_cents: 0, service_fee_cents: 0)
+    paid = paid_order(email: "already-refunded@example.com")
+    create(:refund, order: paid, payment: paid.payments.first, amount_cents: paid.total_cents)
+
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+
+    expect(run.items.find_by!(order: unpaid)).to have_attributes(status: "skipped", last_error: "No payment to refund")
+    expect(run.items.find_by!(order: paid)).to have_attributes(status: "skipped", last_error: "Order already fully refunded")
   end
 
   it "refunds the full live capture despite a test refund on the same order" do

@@ -73,6 +73,7 @@ class EventCancellationRefunds
     rows.map do |id, method|
       lost_cents = disputes[id]&.at(1) || 0
       { order_id: id, payment_method: method,
+        captured_cents: payments[id]&.at(1) || 0,
         amount_cents: [(payments[id]&.at(1) || 0) - (refunds[id]&.at(1) || 0) - lost_cents, 0].max,
         pending_refund: refunds[id]&.at(2) || false, open_dispute: disputes[id]&.at(2) || false,
         lost_dispute: lost_cents.positive? }
@@ -128,7 +129,9 @@ class EventCancellationRefunds
         item.last_error = "Waiting for dispute resolution" if entry[:open_dispute]
         item.last_error = "Dispute lost; buyer refunded by chargeback" if entry[:lost_dispute] && amount.zero? && !entry[:pending_refund]
         item.last_error = "Waiting for an existing refund" if status == :waiting_on_pending_refund
-        item.last_error = "Order already fully refunded" if status == :skipped && !entry[:lost_dispute]
+        if status == :skipped && !entry[:lost_dispute]
+          item.last_error = entry[:captured_cents].zero? ? "No payment to refund" : "Order already fully refunded"
+        end
       end
     end
     AuditLogger.record!(action: "event.cancellation_refunds_started", auditable: event, actor: actor,

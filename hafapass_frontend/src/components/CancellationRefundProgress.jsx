@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import apiClient from '../api/client'
 import Dialog from './Dialog'
 import { formatEventDateTime, fromEventLocalInput, toEventLocalInput } from '../utils/eventTime'
@@ -6,6 +7,7 @@ import { formatEventDateTime, fromEventLocalInput, toEventLocalInput } from '../
 const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 
 export default function CancellationRefundProgress({ eventId, admin = false, status, onCancelled, canMarkCash = false, canRefund = true, eventTimeZone = 'Pacific/Guam', prominent = false }) {
+  const { t } = useTranslation()
   const base = `${admin ? '/admin' : '/organizer'}/events/${eventId}`
   const [data, setData] = useState(null)
   const [page, setPage] = useState(1)
@@ -134,7 +136,7 @@ export default function CancellationRefundProgress({ eventId, admin = false, sta
     </section>}
     {confirming && <Dialog labelledBy="cancel-refunds-title" onClose={() => setConfirming(false)} busy={busy} className="max-w-md">
       <h2 id="cancel-refunds-title" className="text-lg font-semibold">Cancel event and refund all buyers?</h2>
-      <p className="mt-3">Refund {data?.preview.count} orders, {money(data?.preview.total_cents || 0)} including service fees.</p>
+      <p className="mt-3">{t('cancellationRefundProgress.confirmRefundOrders', { count: data?.preview.count || 0, amount: money(data?.preview.total_cents || 0) })}</p>
       <p className="mt-2 font-semibold text-red-700">This cannot be undone.</p>
       <label className="mt-4 block">Reason for cancellation<textarea className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} /></label>
       <div className="mt-5 flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={() => setConfirming(false)}>Keep event</button><button type="button" disabled={busy || !reason.trim()} className="btn-primary" onClick={cancel}>Confirm cancellation and refunds</button></div>

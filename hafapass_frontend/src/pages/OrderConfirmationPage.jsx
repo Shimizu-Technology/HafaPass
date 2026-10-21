@@ -257,6 +257,8 @@ function OrderConfirmationContent() {
   const cancelledRefund = event?.status === 'cancelled' ? (order?.cancellation_refund || (order?.status === 'refunded'
     ? { status: 'refunded', amount_cents: order.refunded_cents, payment_method: order.payment_method } : null)) : null
   const showCancelledRefundStatus = cancelledRefund && ['refunded', 'processing', 'not_started', 'needs_cash_return', 'needs_card_return', 'needs_attention', 'awaiting_dispute', 'resolved'].includes(cancelledRefund.status)
+  const hasRefundableTickets = (order?.refundable_cents == null || order.refundable_cents > 0) &&
+    order?.tickets?.some(ticket => ticket.status === 'issued' && ticket.refundable_cents > 0)
   const decisionBusy = ['accepted', 'refund_requested'].includes(decisionState)
   // Recovery links import credentials after mount. Read the current credential for every action.
   const orderHeaders = () => orderAccessHeaders(id)
@@ -597,7 +599,7 @@ function OrderConfirmationContent() {
             <span>{formatMoneyCents(refund.amount_cents)} · {t(`buyerAccount.orderConfirmationPage.refundStatus.${refund.status}`)}</span>
             <span className="text-neutral-600">{formatEventDate(refund.requested_at, event.timezone)}</span>
           </li>)}</ul> : <p className="mt-2 text-sm text-neutral-600">{t('buyerAccount.orderConfirmationPage.noRefunds')}</p>}
-          {(canRespondToChange || order.tickets?.some(ticket => ticket.status === 'issued' && ticket.refundable_cents > 0 && ['cancelled', 'postponed'].includes(event.status))) && <a href={canRespondToChange ? '#order-event-change' : '#order-tickets'} className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.requestRefund')}</a>}
+          {hasRefundableTickets && !showCancelledRefundStatus && (canRespondToChange || ['cancelled', 'postponed'].includes(event.status)) && <a href={canRespondToChange ? '#order-event-change' : '#order-tickets'} className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.requestRefund')}</a>}
         </section>
 
 

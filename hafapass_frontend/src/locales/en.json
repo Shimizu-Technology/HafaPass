@@ -1,4 +1,8 @@
 {
+  "cancellationRefundProgress": {
+    "confirmRefundOrders_one": "Refund {{count}} order, {{amount}} including service fees.",
+    "confirmRefundOrders_other": "Refund {{count}} orders, {{amount}} including service fees."
+  },
   "unsubscribe": {
     "heading": "Email preferences",
     "loading": "Loading email preferences…",

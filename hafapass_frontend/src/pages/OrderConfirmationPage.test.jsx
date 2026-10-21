@@ -63,6 +63,7 @@ describe('guest order recovery actions', () => {
 
     expect(await screen.findByText('Your refund is being arranged.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Request refund' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Request refund' })).not.toBeInTheDocument()
   })
 
   it('labels a manual card return without describing it as cash', async () => {
@@ -261,6 +262,7 @@ describe('buyer refund outcomes and terminal retries', () => {
     expect(await screen.findByText(/Refunded \$37\.75 to your card on Oct 22/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Keep my tickets' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Request refund' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Request refund' })).not.toBeInTheDocument()
   })
 
   it.each([['processing', 'Your refund is processing.'], ['needs_cash_return', 'The organizer will return your cash payment.']])('shows %s cancellation status without choice buttons', async (status, message) => {
@@ -270,6 +272,25 @@ describe('buyer refund outcomes and terminal retries', () => {
     expect(await screen.findByText(message)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Keep my tickets' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Request refund' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Request refund' })).not.toBeInTheDocument()
+  })
+
+  it('hides the refund-history link when no ticket has a refundable balance', async () => {
+    mockOrder({ ...paidOrder, tickets: [{ ...paidOrder.tickets[0], refundable_cents: 0 }],
+      event: { ...paidOrder.event, status: 'postponed' },
+      latest_event_change: { id: 4, change_type: 'postponed' } })
+    mount()
+    expect(await screen.findByText('Refund Event')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Request refund' })).not.toBeInTheDocument()
+  })
+
+  it('hides the refund-history link when the order balance is fully refunded', async () => {
+    mockOrder({ ...paidOrder, refundable_cents: 0,
+      event: { ...paidOrder.event, status: 'postponed' },
+      latest_event_change: { id: 4, change_type: 'postponed' } })
+    mount()
+    expect(await screen.findByText('Refund Event')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Request refund' })).not.toBeInTheDocument()
   })
 
   it.each(['postponed', 'rescheduled'])('preserves both choices for an unresolved %s change', async change_type => {

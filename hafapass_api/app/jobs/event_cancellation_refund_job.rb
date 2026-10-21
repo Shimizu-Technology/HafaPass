@@ -65,6 +65,10 @@ class EventCancellationRefundJob < ApplicationJob
       item.update!(retry_generation: item.retry_generation + 1)
       existing = nil
     end
+    if existing&.succeeded? && amount.zero?
+      item.update!(status: :refunded, amount_cents: existing.amount_cents, last_error: nil)
+      return nil
+    end
     if amount != item.amount_cents
       previous_amount = item.amount_cents
       item.update!(amount_cents: amount)
@@ -73,15 +77,12 @@ class EventCancellationRefundJob < ApplicationJob
         metadata: { order_id: order.id, previous_amount_cents: previous_amount, amount_cents: amount })
     end
     if amount.zero?
-      message = if existing&.succeeded?
-        nil
-      elsif disputes.lost.exists?
+      message = if disputes.lost.exists?
         "Dispute lost; buyer refunded by chargeback"
       else
         "Buyer balance already resolved"
       end
-      item.update!(status: existing&.succeeded? ? :refunded : :skipped,
-        last_error: message)
+      item.update!(status: :skipped, last_error: message)
       return nil
     end
 
@@ -116,7 +117,7 @@ class EventCancellationRefundJob < ApplicationJob
     item.with_lock do
       refund = item.order.refunds.find_by(idempotency_key: item.refund_key)
       if refund&.succeeded?
-        item.update!(status: :refunded, last_error: nil)
+        item.update!(status: :refunded, amount_cents: refund.amount_cents, last_error: nil)
       elsif refund&.failed? || refund&.cancelled?
         item.update!(status: :failed, last_error: refund.failure_message || error || "Provider refund failed")
       elsif error == "Refund amount exceeds refundable balance" && refund.nil?

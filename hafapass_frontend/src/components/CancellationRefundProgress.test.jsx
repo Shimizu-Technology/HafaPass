@@ -28,6 +28,15 @@ it('shows the exact fee-inclusive amount before cancellation and sends the revie
   })
 })
 
+it('uses singular order wording in the cancellation confirmation', async () => {
+  const user = userEvent.setup()
+  apiClient.get.mockResolvedValue({ data: { preview: { count: 1, total_cents: 9650, cash_count: 0 }, run: null } })
+  render(<CancellationRefundProgress eventId={7} status="published" />)
+  await user.click(screen.getByRole('button', { name: 'Review cancellation and refunds' }))
+  await user.click(await screen.findByRole('button', { name: 'Cancel event and refund all buyers' }))
+  expect(screen.getByText('Refund 1 order, $96.50 including service fees.')).toBeInTheDocument()
+})
+
 it('refreshes the reviewed totals after a stale confirmation conflict', async () => {
   const user = userEvent.setup()
   apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: {
