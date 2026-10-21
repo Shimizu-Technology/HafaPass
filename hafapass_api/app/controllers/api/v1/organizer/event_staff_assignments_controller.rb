@@ -64,6 +64,11 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
   end
 
   def resend_invitation
+    unless OrganizationRoles::EVENT_STAFF_INVITE_ROLES.include?(@staff_invitation.role) ||
+        OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :manage_members)
+      return render json: { error: "Only the organization owner can resend this invitation" }, status: :forbidden
+    end
+
     token = OrganizationTeam.resend!(membership: @staff_invitation, actor: current_user, request: request)
     render json: staff_invitation_json(@staff_invitation.reload).merge(OrganizationTeam.link_json(token))
   rescue OrganizationTeam::TeamError => e

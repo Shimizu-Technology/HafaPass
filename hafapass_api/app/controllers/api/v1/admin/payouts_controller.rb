@@ -26,7 +26,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(

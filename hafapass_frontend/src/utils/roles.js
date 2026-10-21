@@ -46,5 +46,6 @@ export function emailDeliveryLabel(delivery) {
 
 // Prefer the URL the API built (the same one the email contains); otherwise
 // build it from the configured public site, never the current tab's origin.
+// Returns null without a token, so no one is handed a link that can't work.
 export const invitationUrl = data => data?.invitation_url
-  || `${resolvePublicWebUrl()}/organization-invitations/accept?token=${encodeURIComponent(data?.invitation_token || '')}`
+  || (data?.invitation_token ? `${resolvePublicWebUrl()}/organization-invitations/accept?token=${encodeURIComponent(data.invitation_token)}` : null)

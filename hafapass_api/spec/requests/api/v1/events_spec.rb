@@ -101,6 +101,7 @@ RSpec.describe "Api::V1::Events", type: :request do
 
   describe "GET /api/v1/events/:slug" do
     it "serves maintained Japanese content while preserving English as the fallback" do
+      with_locales_enabled(%w[ja])
       event = create(:event, :published, supported_locales: %w[en ja],
         localized_content: { "ja" => { "title" => "グアム・フェスティバル", "description" => "島のお祭り" } })
       create(:ticket_type, event: event)

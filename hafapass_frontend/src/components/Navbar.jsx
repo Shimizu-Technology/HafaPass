@@ -300,7 +300,8 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 }
 
 // Organizer, admin and support routes use a workspace header: workspace links,
-// a clear way back to the public site, language and account controls.
+// a clear way back to the public site and account controls. Staff screens are
+// English, so there is no language switcher here.
 function WorkspaceNav({ authContext, role, workspace, isSignedIn, clerkEnabled, roleAlert, onRetryRole, mobileMenuOpen, setMobileMenuOpen, menuTrigger }) {
   const location = useLocation()
   const { t } = useTranslation()
@@ -343,12 +344,10 @@ function WorkspaceNav({ authContext, role, workspace, isSignedIn, clerkEnabled, 
 
           <div className="hidden items-center gap-3 lg:flex">
             <Link to="/" className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-neutral-600 transition-colors hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{publicSite}</Link>
-            <LanguageSwitcher isDarkMode={false} />
             {clerkEnabled && isSignedIn && <SignedIn><UserButton afterSignOutUrl="/" /></SignedIn>}
           </div>
 
           <div className="flex items-center gap-1 lg:hidden">
-            <LanguageSwitcher isDarkMode={false} />
             <button
               ref={menuTrigger}
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

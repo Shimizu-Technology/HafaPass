@@ -50,6 +50,11 @@ class OrganizationInvitation
           raise InvitationError, "You are already a member of this organization"
         end
 
+        if membership.owner? && membership.organization.organization_memberships.where(role: :owner)
+            .where.not(id: membership.id).any?(&:effective?)
+          raise InvitationError, "This organization already has an owner. Ask HåfaPass to send a new invitation."
+        end
+
         earlier = membership.organization.organization_memberships.where(user: user).where.not(id: membership.id).first
         accepted = earlier ? rejoin!(earlier, membership) : membership
         accepted.update!(
@@ -80,12 +85,16 @@ class OrganizationInvitation
     # invitation row is closed, so history stays attached to one record.
     def rejoin!(earlier, invitation)
       earlier.lock!
-      earlier.update!(role: invitation.role, invited_email: invitation.invited_email,
-        invited_by_user_id: invitation.invited_by_user_id, invited_at: invitation.invited_at,
-        pending_event_assignments: invitation.pending_event_assignments)
+      incoming = invitation.attributes.slice("role", "invited_email", "invited_by_user_id", "invited_at",
+        "pending_event_assignments")
+      # Close the incoming invitation first so its email is free for the
+      # earlier row under the one-open-invitation-per-email index.
       invitation.update!(status: :revoked, invitation_version: invitation.invitation_version + 1,
         pending_event_assignments: [])
+      earlier.update!(incoming)
       earlier
+    rescue ActiveRecord::RecordNotUnique
+      raise InvitationError, "We couldn't attach this invitation to your earlier membership. Ask the organization owner to send a new one."
     end
 
     def email_matches?(membership, user)

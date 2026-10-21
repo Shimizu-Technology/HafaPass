@@ -15,7 +15,7 @@ const VERIFICATION = {
 // The organizer's guided setup: one list, in order, with the next action
 // and what HåfaPass does at each step. Only the owner can accept the
 // agreement or submit for review; an admin viewing the workspace sees status.
-export default function OrganizerSetupChecklist({ profile, canCreate, adminView = false, busy, error = null, onEditProfile, onAcceptPolicy, onSubmitVerification }) {
+export default function OrganizerSetupChecklist({ profile, canCreate, adminView = false, busy, agreementError = null, onOpenAgreement, onEditProfile, onAcceptPolicy, onSubmitVerification }) {
   const [agreementOpen, setAgreementOpen] = useState(false)
   const progress = profile.setup_progress || {}
   const verification = VERIFICATION[profile.verification_status] || VERIFICATION.unverified
@@ -31,7 +31,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     {
       key: 'agreement', title: 'Organizer agreement', done: profile.policy_accepted,
       status: profile.policy_accepted ? 'Accepted' : profile.policy_accepted_at ? 'A new version needs your acceptance' : 'Not accepted yet',
-      action: !profile.policy_accepted && !adminView && <button type="button" disabled={busy} onClick={() => setAgreementOpen(true)} className="btn-secondary !px-4 !py-2 text-sm">Review and accept</button>,
+      action: !profile.policy_accepted && !adminView && <button type="button" disabled={busy} onClick={() => { onOpenAgreement?.(); setAgreementOpen(true) }} className="btn-secondary !px-4 !py-2 text-sm">Review and accept</button>,
     },
     {
       key: 'verification', title: 'HåfaPass verifies your organization (tickets go on sale after this)', done: verification.done,
@@ -97,7 +97,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
         })}
       </ol>
       {agreementOpen && !profile.policy_accepted && <OrganizerAgreementDialog version={profile.current_policy_version}
-        reaccept={Boolean(profile.policy_version)} busy={busy} error={error}
+        reaccept={Boolean(profile.policy_version)} busy={busy} error={agreementError}
         onClose={() => setAgreementOpen(false)}
         onAccept={async () => { if (await onAcceptPolicy()) setAgreementOpen(false) }} />}
     </section>

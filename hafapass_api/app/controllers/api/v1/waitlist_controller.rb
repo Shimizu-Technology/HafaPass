@@ -9,6 +9,7 @@ module Api
       def create
         entry = @event.waitlist_entries.build(waitlist_params)
         entry.quantity ||= 1
+        entry.locale = request_locale
 
         # Attach user if authenticated
         if request.headers["Authorization"].present?

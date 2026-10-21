@@ -99,6 +99,45 @@ RSpec.describe "Team invitations never take over existing members", type: :reque
     expect(invite.reload).to be_owner
   end
 
+  it "lets a cancelled Owner invitation be sent again to the same email" do
+    admin = create(:user, :admin)
+    owner_membership.update!(role: :manager)
+    base = "/api/v1/admin/organizations/#{organization.id}/memberships"
+    post base, params: { email: "boss@example.com", role: "owner" }, headers: auth_headers(admin)
+    first = response.parsed_body["id"]
+    delete "#{base}/#{first}", headers: auth_headers(admin)
+    expect(response).to have_http_status(:no_content)
+
+    post base, params: { email: "boss@example.com", role: "owner" }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body["id"]).not_to eq(first)
+    expect(OrganizationMembership.find(first)).to be_status_revoked
+  end
+
+  it "refuses to transfer ownership while an Owner invitation is open" do
+    admin = create(:user, :admin)
+    owner_membership.update!(role: :manager)
+    post "/api/v1/admin/organizations/#{organization.id}/memberships", params: { email: "boss@example.com", role: "owner" },
+      headers: auth_headers(admin)
+    manager_membership = organization.organization_memberships.find_by!(user: manager)
+
+    post "/api/v1/admin/organizations/#{organization.id}/memberships/#{manager_membership.id}/transfer_ownership",
+      headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to include("Cancel the open Owner invitation")
+  end
+
+  it "only resends door-staff invitations from the event page for people who cannot manage members" do
+    finance_invite = create(:organization_membership, organization: organization, user: nil, role: :finance,
+      invited_email: "money@example.com", status: :invited, accepted_at: nil, invitation_expires_at: 3.days.from_now,
+      pending_event_assignments: [{ "event_id" => event.id, "role" => "box_office" }])
+
+    post "/api/v1/organizer/events/#{event.id}/staff_invitations/#{finance_invite.id}/resend", headers: headers_for(manager)
+    expect(response).to have_http_status(:forbidden)
+    post "/api/v1/organizer/events/#{event.id}/staff_invitations/#{finance_invite.id}/resend", headers: headers_for(owner)
+    expect(response).to have_http_status(:ok)
+  end
+
   it "lets someone removed earlier rejoin on their old row instead of failing" do
     returning = create(:user, email: "back@example.com")
     old = create(:organization_membership, organization: organization, user: returning, role: :finance,

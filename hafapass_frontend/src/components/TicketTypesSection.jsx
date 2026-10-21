@@ -5,7 +5,9 @@ import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFee
 
 // Rows and the buy button lead with all-in prices (ticket + the buyer's
 // service fee), with the breakdown as a smaller secondary line.
-export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
+// `showOriginal` follows the event page's "Show original" switch for
+// machine-translated ticket names.
+export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false }) {
   const { t } = useTranslation()
   const [quantities, setQuantities] = useState({})
 
@@ -61,12 +63,12 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-medium text-neutral-900 break-words max-w-full">{tt.name}</h3>
+                    <h3 className="font-medium text-neutral-900 break-words max-w-full">{showOriginal && tt.original_name ? tt.original_name : tt.name}</h3>
                     {soldOut && (
                       <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : 'Sales unavailable'}</span>
                     )}
                   </div>
-                  {tt.description && <p className="text-sm text-neutral-600 mt-0.5 break-words">{tt.description}</p>}
+                  {(showOriginal && tt.machine_translated ? tt.original_description : tt.description) && <p className="text-sm text-neutral-600 mt-0.5 break-words">{showOriginal && tt.machine_translated ? tt.original_description : tt.description}</p>}
 
                   {/* Pricing with tier info */}
                   <div className="mt-1">

@@ -347,7 +347,7 @@ function DashboardSession({ authContext }) {
    if (request.current()) setProfile(response.data)
    return request.current()
   } catch (err) {
-   if (request.current()) setActionError(err.response?.data?.error || 'Could not update your setup. Please try again.')
+   if (request.current()) setActionError({ path, message: err.response?.data?.error || 'Could not update your setup. Please try again.' })
    return false
   } finally {
    request.release()
@@ -602,11 +602,13 @@ function DashboardSession({ authContext }) {
     <button type="button" onClick={leaveAdminView} className="btn-secondary shrink-0 !px-4 !py-2 text-sm">Leave this organization</button>
    </div>}
 
-   {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading} error={actionError}
+   {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading}
+    agreementError={actionError?.path === 'accept_policy' ? actionError.message : null} onOpenAgreement={() => setActionError(null)}
     onEditProfile={openEditor}
     onAcceptPolicy={() => updateReadiness('accept_policy')}
     onSubmitVerification={() => updateReadiness('submit_verification')} />}
-   {actionError && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{actionError}</p>}
+   {/* Agreement errors show inside the agreement dialog only. */}
+   {actionError && actionError.path !== 'accept_policy' && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{actionError.message}</p>}
 
    <DashboardSummary state={summary} currency={organization?.currency || 'USD'} onRetry={() => fetchSummary()} />
    <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue, link name or event ID." query={listing.q} onSearch={listing.search} busy={listLoading} />

@@ -56,6 +56,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   // The payee shown is the one this payout was approved for. If the organizer
   // changed it since, the API refuses "Paid" until the change is approved.
   const payeeChanged = isCheck && payout.payee_changed === true
+  const [payeeConfirmed, setPayeeConfirmed] = useState(false)
   const describePayee = payee => payee ? `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}` : ''
 
   const submit = async event => {
@@ -69,14 +70,15 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     else if (confirmed < new Date(payout.created_at)) found.confirmedAt = 'The confirmation time must be after the payout was requested.'
     if (!reason.trim()) found.reason = 'Explain how you confirmed this outcome.'
     if (payout.conflict && !acknowledged) found.conflict = 'Confirm you reviewed the provider conflict.'
-    if (outcome === 'paid' && payeeChanged) found.payee = 'Payee details changed after approval — review before writing the check.'
+    if (outcome === 'paid' && payeeChanged && !payeeConfirmed) found.payee = 'Confirm you wrote this check to the approved payee shown above.'
     setErrors(found)
     if (Object.keys(found).length) return
     const request = beginRequest()
     if (!request) return
     setBusy(true)
     try {
-      const evidence = { reference: reference.trim(), reason: reason.trim(), confirmed_at: confirmed.toISOString() }
+      const evidence = { reference: reference.trim(), reason: reason.trim(), confirmed_at: confirmed.toISOString(),
+        ...(outcome === 'paid' && payeeChanged && payeeConfirmed ? { approved_payee_confirmed: true } : {}) }
       if (payout.conflict) evidence.conflict_audit_id = payout.conflict.audit_id
       const body = { status: outcome, evidence }
       if (transferId.trim() && !keepsTransferId) body.provider_payout_id = transferId.trim()
@@ -95,9 +97,13 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Record outcome for payout #{payout.id}</h2>
         <p className="mt-1 text-sm text-content-muted">{money(payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. Record only what the bank or provider has confirmed; your name and evidence go into the audit log.</p>
         {isCheck && payout.payee && <p className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800 [overflow-wrap:anywhere]">Approved payee: <strong>{describePayee(payout.payee)}</strong></p>}
-        {payeeChanged && <div role="alert" className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
-          <p className="font-semibold">Payee details changed after approval — review before writing the check.</p>
-          {payout.current_payee && <p className="mt-1">Now on file: {describePayee(payout.current_payee)}. Approve the new details in Users before recording this check as paid.</p>}
+        {payeeChanged && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
+          <p className="font-semibold">The payee on file is different from the approved payee above.</p>
+          {payout.current_payee && <p className="mt-1">Now on file: {describePayee(payout.current_payee)}. Write and record this check only to the approved payee.</p>}
+          {outcome === 'paid' && <label className="mt-2 flex min-h-11 items-start gap-2 font-medium">
+            <input type="checkbox" checked={payeeConfirmed} onChange={event => setPayeeConfirmed(event.target.checked)} aria-describedby={errors.payee ? 'reconcile-payee-error' : undefined} className="mt-0.5 h-4 w-4 accent-brand-700" />
+            I wrote this check to the approved payee shown above
+          </label>}
           {fieldError('payee')}
         </div>}
         {isCheck && <p className="mt-2 text-sm text-content-muted">A check is recorded as paid on the date written on the check, not when it clears.</p>}

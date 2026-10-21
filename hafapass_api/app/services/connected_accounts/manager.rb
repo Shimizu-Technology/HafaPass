@@ -52,10 +52,12 @@ module ConnectedAccounts
     # where money goes, so any earlier readiness approval stops applying.
     def self.update_payout_details!(account:, payout_details:, actor:, request: nil)
       raise AccountError, "Only check payouts have payee details" unless account.provider == "check"
+      details = normalize_check_details(payout_details)
+      ensure_no_check_in_flight!(account.organization)
 
       before_data = readiness_snapshot(account)
       provider_configuration_before = account.provider_configuration_digest
-      account.payout_details = normalize_check_details(payout_details)
+      account.payout_details = details
       if account.provider_configuration_digest != provider_configuration_before
         account.readiness_revision += 1
         account.status = derived_status(account, disabled: account.status_disabled?)
@@ -74,6 +76,15 @@ module ConnectedAccounts
       account
     rescue ActiveRecord::RecordInvalid => e
       raise AccountError, e.record.errors.full_messages.to_sentence
+    end
+
+    CHECK_IN_FLIGHT_MESSAGE = "A check payout is in progress. You can change payee details after HåfaPass records it."
+
+    # The approved payee is what a check in flight is written to; changing it
+    # mid-payout would leave the admin unable to record the real check.
+    def self.ensure_no_check_in_flight!(organization)
+      in_flight = organization.payouts.where(provider: "check", status: [:pending, :processing]).exists?
+      raise AccountError, CHECK_IN_FLIGHT_MESSAGE if in_flight
     end
 
     def self.normalize_check_details(details)

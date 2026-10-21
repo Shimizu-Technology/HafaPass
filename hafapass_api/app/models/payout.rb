@@ -18,16 +18,16 @@ class Payout < ApplicationRecord
   attr_readonly :organization_id, :event_id, :settlement_id, :connected_account_id,
     :provider, :idempotency_key, :amount_cents, :currency, :payee_snapshot, :payee_approval_digest
 
-  PAYEE_CHANGED_MESSAGE = "Payee details changed after approval — review before writing the check"
+  PAYEE_CHANGED_MESSAGE = "The payee on file differs from the approved payee shown. Confirm you wrote this " \
+    "check to the approved payee before recording it as paid."
 
-  # A check may be written only to the payee this payout was approved for,
-  # while that approval still covers the account's current details.
+  # A check is written to the payee this payout was approved for. Payee edits
+  # are blocked while a check payout is in flight, so a difference only comes
+  # from older data; recording it as paid then needs an explicit confirmation.
   def payee_matches_approval?
     return true unless provider == "check"
 
-    account = connected_account
-    payee_snapshot.present? && account.check_payee == payee_snapshot &&
-      account.readiness_state_digest == payee_approval_digest && account.active_payment_readiness_approval.present?
+    payee_snapshot.present? && connected_account.check_payee == payee_snapshot
   end
 
   def may_reconcile_to?(new_status)

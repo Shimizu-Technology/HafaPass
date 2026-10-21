@@ -103,18 +103,18 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
       replace(response.data)
       setEmail('')
       setNotice(`Invitation sent to ${response.data.email} as ${roleLabel(response.data.role)}.`)
-      setLink({ url: invitationUrl(response.data), email: response.data.email })
+      setLink(invitationUrl(response.data) ? { url: invitationUrl(response.data), email: response.data.email } : null)
     }, 'Could not send the invitation.')
   }
   const resend = membership => run(async () => {
     const response = await request('post', `${basePath}/${membership.id}/resend`)
     replace(response.data)
     setNotice(`A new invitation was sent to ${membership.email}. Earlier links no longer work.`)
-    setLink({ url: invitationUrl(response.data), email: membership.email })
+    setLink(invitationUrl(response.data) ? { url: invitationUrl(response.data), email: membership.email } : null)
   }, 'Could not resend the invitation.')
   const copyLink = membership => run(async () => {
     const response = await request('post', `${basePath}/${membership.id}/invitation_link`)
-    setLink({ url: invitationUrl(response.data), email: membership.email })
+    setLink(invitationUrl(response.data) ? { url: invitationUrl(response.data), email: membership.email } : null)
   }, 'Could not get the invitation link.')
   const changeRole = (membership, nextRole) => run(async () => {
     const response = await request('patch', `${basePath}/${membership.id}`, { role: nextRole })

@@ -59,7 +59,9 @@ class PayoutReconciler
         raise ReconciliationError, "Keep the original transfer identifier when recording a reversal"
       end
 
-      raise ReconciliationError, Payout::PAYEE_CHANGED_MESSAGE if status == "paid" && !payout.payee_matches_approval?
+      if status == "paid" && !payout.payee_matches_approval? && normalized["approved_payee_confirmed"] != true
+        raise ReconciliationError, Payout::PAYEE_CHANGED_MESSAGE
+      end
 
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
       payout.update!(status: status, provider_payout_id: external_id,
@@ -95,6 +97,11 @@ class PayoutReconciler
       raise ReconciliationError, "Conflict audit identifier must be a positive integer" unless conflict_id.match?(/\A[1-9]\d*\z/)
 
       normalized["conflict_audit_id"] = conflict_id.to_i
+    end
+    # Recorded in the audit evidence when a check's details on file differ
+    # from the approved payee the admin wrote the check to.
+    if ActiveModel::Type::Boolean.new.cast(values["approved_payee_confirmed"])
+      normalized["approved_payee_confirmed"] = true
     end
     normalized
   rescue ArgumentError

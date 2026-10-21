@@ -37,6 +37,16 @@ describe('OrganizerSetupChecklist', () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
+  it('clears a stale error when the agreement dialog opens and shows a new error only inside it', async () => {
+    const onOpenAgreement = vi.fn()
+    const { rerender } = render(<MemoryRouter><OrganizerSetupChecklist profile={base} canCreate busy={false} onOpenAgreement={onOpenAgreement} onAcceptPolicy={vi.fn()} /></MemoryRouter>)
+    await userEvent.click(screen.getByRole('button', { name: 'Review and accept' }))
+    expect(onOpenAgreement).toHaveBeenCalled()
+    rerender(<MemoryRouter><OrganizerSetupChecklist profile={base} canCreate busy={false} agreementError="Agreement could not be saved" onOpenAgreement={onOpenAgreement} onAcceptPolicy={vi.fn()} /></MemoryRouter>)
+    expect(screen.getAllByText('Agreement could not be saved')).toHaveLength(1)
+    expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent('Agreement could not be saved')
+  })
+
   it('flags an updated agreement that needs re-acceptance', () => {
     show({ ...base, policy_version: '2026-07' })
     expect(screen.getByTestId('agreement-update-notice')).toHaveTextContent('updated to version 2026-10')

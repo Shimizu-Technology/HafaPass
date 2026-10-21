@@ -127,11 +127,30 @@ RSpec.describe "Check payee changes while a payout is in flight", type: :request
       evidence: { reference: "Check 2001", confirmed_at: 5.minutes.ago.iso8601(6), reason: "Check mailed" } }
   end
 
-  it "keeps showing the approved payee and refuses Paid until the new details are approved" do
+  it "blocks payee edits while a check payout is in flight" do
+    patch "/api/v1/organizer/connected_accounts/#{account.id}",
+      params: { payout_details: { payee_name: "Someone Else", delivery_method: "mail", mailing_address: "PO Box 9" } },
+      headers: auth_headers(owner).merge("X-Organization-Id" => organization.id.to_s)
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to eq(
+      "A check payout is in progress. You can change payee details after HåfaPass records it."
+    )
+    expect(account.reload.check_payee).to include("payee_name" => "Ambros Inc.")
+
+    patch "/api/v1/admin/payouts/#{payout.id}", params: paid, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to be_status_paid
+
     patch "/api/v1/organizer/connected_accounts/#{account.id}",
       params: { payout_details: { payee_name: "Someone Else", delivery_method: "mail", mailing_address: "PO Box 9" } },
       headers: auth_headers(owner).merge("X-Organization-Id" => organization.id.to_s)
     expect(response).to have_http_status(:ok)
+  end
+
+  it "records a legacy mismatched payee as paid only with explicit confirmation, in the audit evidence" do
+    account.update_column(:payout_details, { "payee_name" => "Someone Else", "delivery_method" => "mail",
+                                             "mailing_address" => "PO Box 9" })
 
     get "/api/v1/admin/payouts", headers: auth_headers(admin)
     listed = response.parsed_body.fetch("payouts").find { |item| item["id"] == payout.id }
@@ -141,13 +160,14 @@ RSpec.describe "Check payee changes while a payout is in flight", type: :request
 
     patch "/api/v1/admin/payouts/#{payout.id}", params: paid, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)
-    expect(response.parsed_body["error"]).to eq("Payee details changed after approval — review before writing the check")
+    expect(response.parsed_body["error"]).to include("Confirm you wrote this check to the approved payee")
     expect(payout.reload).to be_status_processing
 
-    patch "/api/v1/admin/payouts/#{payout.id}", headers: auth_headers(admin), params: {
-      status: "failed", evidence: { reference: "void", confirmed_at: 1.minute.ago.iso8601(6), reason: "Payee changed; reissue" }
-    }
+    confirmed = paid.deep_merge(evidence: { approved_payee_confirmed: "true" })
+    patch "/api/v1/admin/payouts/#{payout.id}", params: confirmed, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
+    audit = AuditLog.where(auditable: payout, action: "payout.reconciled").last
+    expect(audit.metadata.dig("reconciliation", "approved_payee_confirmed")).to be(true)
   end
 
   it "snapshots the approved payee when PayoutCreator reserves the payout" do

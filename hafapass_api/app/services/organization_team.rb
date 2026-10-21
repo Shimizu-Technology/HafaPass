@@ -25,7 +25,8 @@ class OrganizationTeam
       allowed_roles = allow_owner ? OrganizationMembership.roles.keys : INVITABLE_ROLES
       raise TeamError, "Enter a valid email address" unless email.match?(URI::MailTo::EMAIL_REGEXP)
       raise TeamError, "Choose one of: #{allowed_roles.map { |item| OrganizationRoles.label(item) }.join(', ')}" unless allowed_roles.include?(role)
-      if effective_member_for(organization, email) || active_member_for(organization, email)
+      # Effective members are a subset of active ones.
+      if active_member_for(organization, email)
         raise TeamError, "That person is already on this team"
       end
 
@@ -162,6 +163,9 @@ class OrganizationTeam
           raise TeamError, "Choose an active team member who has accepted their invitation"
         end
         raise TeamError, "That person is already the owner" if to_membership.owner?
+        if organization.organization_memberships.where(role: :owner).any?(&:invitation_open?)
+          raise TeamError, "Cancel the open Owner invitation before transferring ownership"
+        end
 
         owners = organization.organization_memberships.where(role: :owner).where.not(id: to_membership.id)
         actor_owner = owners.find_by(user_id: actor.id)
@@ -227,8 +231,11 @@ class OrganizationTeam
     end
 
     # Only an open invitation or a removed row can become a new invitation.
+    # A cancelled Owner invitation is history: a fresh row is created instead,
+    # so cancelling one never blocks that email.
     def find_reusable(organization, email)
       organization.organization_memberships.where(status: [:invited, :revoked])
+        .where.not(status: :revoked, role: :owner)
         .where("LOWER(invited_email) = ?", email).order(:id).last
     end
 

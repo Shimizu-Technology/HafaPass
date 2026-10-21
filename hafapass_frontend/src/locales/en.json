@@ -195,5 +195,18 @@
     "festival": "Community",
     "nightlife": "Nightlife",
     "other": "Other"
+  },
+  "language": {
+    "change": "Change language, {{language}}",
+    "available": "Available languages"
+  },
+  "translation": {
+    "automatic": "Translated automatically",
+    "original": "Original text",
+    "showOriginal": "Show original",
+    "showTranslation": "Show translation"
+  },
+  "policy": {
+    "englishGoverns": "This policy is written in English. The English version governs if a translation differs."
   }
 }

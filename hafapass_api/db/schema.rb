@@ -635,6 +635,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
     t.string "policy_hold_scope"
     t.text "policy_hold_reason"
     t.bigint "policy_hold_by_user_id"
+    t.jsonb "translations", default: {}, null: false
+    t.string "translation_status", default: "untranslated", null: false
+    t.datetime "translation_requested_at"
+    t.jsonb "localized_content_sources", default: {}, null: false
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
@@ -1148,6 +1152,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
     t.string "checkout_request_digest"
     t.datetime "checkout_recovery_expires_at"
     t.string "processing_fee_bearer_snapshot"
+    t.string "locale", default: "en", null: false
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
@@ -2156,6 +2161,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
     t.bigint "ticket_id", null: false
     t.integer "token_version", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.string "locale", default: "en", null: false
     t.index "lower((recipient_email)::text)", name: "index_ticket_transfers_on_lower_recipient"
     t.index ["accepted_by_user_id"], name: "index_ticket_transfers_on_accepted_by_user_id"
     t.index ["initiated_by_user_id"], name: "index_ticket_transfers_on_initiated_by_user_id"
@@ -2179,6 +2185,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
     t.datetime "sales_start_at"
     t.integer "sort_order", default: 0
     t.datetime "updated_at", null: false
+    t.jsonb "translations", default: {}, null: false
+    t.string "translation_status", default: "untranslated", null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
@@ -2318,6 +2326,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_200400) do
     t.bigint "ticket_type_id"
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.string "locale", default: "en", null: false
     t.index ["event_id", "ticket_type_id", "email"], name: "idx_waitlist_unique_entry", unique: true
     t.index ["event_id", "ticket_type_id", "position"], name: "idx_on_event_id_ticket_type_id_position_e28bca8bda"
     t.index ["event_id"], name: "index_waitlist_entries_on_event_id"
