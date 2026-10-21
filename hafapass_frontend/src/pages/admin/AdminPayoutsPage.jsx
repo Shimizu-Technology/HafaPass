@@ -53,6 +53,10 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   // the check number is the transfer ID and the date on the check is the
   // confirmation time.
   const isCheck = payout.provider === 'check'
+  // The payee shown is the one this payout was approved for. If the organizer
+  // changed it since, the API refuses "Paid" until the change is approved.
+  const payeeChanged = isCheck && payout.payee_changed === true
+  const describePayee = payee => payee ? `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}` : ''
 
   const submit = async event => {
     event.preventDefault()
@@ -65,6 +69,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     else if (confirmed < new Date(payout.created_at)) found.confirmedAt = 'The confirmation time must be after the payout was requested.'
     if (!reason.trim()) found.reason = 'Explain how you confirmed this outcome.'
     if (payout.conflict && !acknowledged) found.conflict = 'Confirm you reviewed the provider conflict.'
+    if (outcome === 'paid' && payeeChanged) found.payee = 'Payee details changed after approval — review before writing the check.'
     setErrors(found)
     if (Object.keys(found).length) return
     const request = beginRequest()
@@ -89,7 +94,13 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
       <form noValidate onSubmit={submit}>
         <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Record outcome for payout #{payout.id}</h2>
         <p className="mt-1 text-sm text-content-muted">{money(payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. Record only what the bank or provider has confirmed; your name and evidence go into the audit log.</p>
-        {isCheck && payout.payee && <p className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800 [overflow-wrap:anywhere]">Check payable to <strong>{payout.payee.payee_name}</strong> · {payout.payee.delivery_method === 'pickup' ? `Pickup${payout.payee.pickup_note ? ` — ${payout.payee.pickup_note}` : ''}` : `Mail to ${payout.payee.mailing_address}`}{payout.payee.memo ? ` · Memo: ${payout.payee.memo}` : ''}</p>}
+        {isCheck && payout.payee && <p className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800 [overflow-wrap:anywhere]">Approved payee: <strong>{describePayee(payout.payee)}</strong></p>}
+        {payeeChanged && <div role="alert" className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
+          <p className="font-semibold">Payee details changed after approval — review before writing the check.</p>
+          {payout.current_payee && <p className="mt-1">Now on file: {describePayee(payout.current_payee)}. Approve the new details in Users before recording this check as paid.</p>}
+          {fieldError('payee')}
+        </div>}
+        {isCheck && <p className="mt-2 text-sm text-content-muted">A check is recorded as paid on the date written on the check, not when it clears.</p>}
         {errors.form && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{errors.form}</p>}
         {payout.conflict && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
           <p className="font-semibold">The provider reported a result that conflicts with an earlier outcome.</p>

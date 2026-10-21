@@ -18,7 +18,15 @@ class AddCheckPayoutMethod < ActiveRecord::Migration[8.1]
     change_column_null :organizer_profiles, :user_id, true
   end
 
+  # Rolling back would drop organizers' check payee details and fail on
+  # admin-created organizations whose owner has not accepted yet.
   def down
+    if select_value("SELECT 1 FROM connected_accounts WHERE provider = 'check' LIMIT 1") ||
+        select_value("SELECT 1 FROM organizer_profiles WHERE user_id IS NULL LIMIT 1")
+      raise ActiveRecord::IrreversibleMigration,
+        "Check payout accounts or owner-less organizer profiles exist; migrate them before rolling back"
+    end
+
     change_column_null :organizer_profiles, :user_id, false
     remove_check_constraint :connected_accounts, name: "connected_accounts_payout_details_object"
     remove_check_constraint :connected_accounts, name: "connected_accounts_provider_valid"

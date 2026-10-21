@@ -50,15 +50,18 @@ class OrganizationInvitation
           raise InvitationError, "You are already a member of this organization"
         end
 
-        membership.update!(
+        earlier = membership.organization.organization_memberships.where(user: user).where.not(id: membership.id).first
+        accepted = earlier ? rejoin!(earlier, membership) : membership
+        accepted.update!(
           user: user,
           status: :active,
           accepted_at: Time.current,
           expires_at: nil,
-          invitation_version: membership.invitation_version + 1
+          invitation_version: accepted.invitation_version + 1
         )
-        apply_pending_event_assignments!(membership)
-        adopt_organizer_profile!(membership) if membership.owner?
+        apply_pending_event_assignments!(accepted)
+        adopt_organizer_profile!(accepted) if accepted.owner?
+        membership = accepted
       end
       user.sync_member_label!
       membership
@@ -71,6 +74,19 @@ class OrganizationInvitation
     end
 
     private
+
+    # Someone removed earlier (or whose access ended) keeps one row per
+    # organization: the new invitation's role and events move onto it and the
+    # invitation row is closed, so history stays attached to one record.
+    def rejoin!(earlier, invitation)
+      earlier.lock!
+      earlier.update!(role: invitation.role, invited_email: invitation.invited_email,
+        invited_by_user_id: invitation.invited_by_user_id, invited_at: invitation.invited_at,
+        pending_event_assignments: invitation.pending_event_assignments)
+      invitation.update!(status: :revoked, invitation_version: invitation.invitation_version + 1,
+        pending_event_assignments: [])
+      earlier
+    end
 
     def email_matches?(membership, user)
       ClerkIdentity.email_matches?(user: user, email: membership.invited_email)

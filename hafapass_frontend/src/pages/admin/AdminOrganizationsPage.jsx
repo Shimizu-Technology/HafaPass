@@ -29,7 +29,7 @@ function CreateOrganizationDialog({ busy, error, created, onCancel, onCreate }) 
       {created ? (
         <>
           <p className="mt-2 text-sm text-neutral-700">We emailed an Owner invitation to <strong className="[overflow-wrap:anywhere]">{created.owner?.email}</strong>. They become the owner when they sign in with that email and accept. Until then you can manage the organization from its page.</p>
-          {created.invitation_token && <InvitationLinkPanel url={invitationUrl(created.invitation_token)} email={created.owner?.email} />}
+          {created.invitation_token && <InvitationLinkPanel url={invitationUrl(created)} email={created.owner?.email} />}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" onClick={onCancel} className="btn-secondary">Close</button>
             <Link to={`/admin/organizations/${created.id}`} className="btn-primary">Open {created.name}</Link>

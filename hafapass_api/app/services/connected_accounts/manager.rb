@@ -77,7 +77,9 @@ module ConnectedAccounts
     end
 
     def self.normalize_check_details(details)
-      values = details.respond_to?(:to_unsafe_h) ? details.to_unsafe_h : details.to_h
+      values = details.respond_to?(:to_unsafe_h) ? details.to_unsafe_h : details
+      raise AccountError, "Enter who the check is for and how it reaches you" unless values.is_a?(Hash)
+
       values = values.stringify_keys.slice(*CHECK_DETAIL_FIELDS).transform_values { |value| value.to_s.strip }
       values.delete("mailing_address") unless values["delivery_method"] == "mail"
       values.delete("pickup_note") unless values["delivery_method"] == "pickup"

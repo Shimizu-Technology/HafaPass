@@ -25,14 +25,24 @@ class OrganizationTeam
       allowed_roles = allow_owner ? OrganizationMembership.roles.keys : INVITABLE_ROLES
       raise TeamError, "Enter a valid email address" unless email.match?(URI::MailTo::EMAIL_REGEXP)
       raise TeamError, "Choose one of: #{allowed_roles.map { |item| OrganizationRoles.label(item) }.join(', ')}" unless allowed_roles.include?(role)
-      if effective_member_for(organization, email)
+      if effective_member_for(organization, email) || active_member_for(organization, email)
         raise TeamError, "That person is already on this team"
       end
 
       membership = nil
       token = nil
       organization.with_lock do
-        membership = find_reusable(organization, email) || organization.organization_memberships.build
+        reusable = find_reusable(organization, email)
+        if reusable&.owner? && !allow_owner
+          raise TeamError, "That email has an Owner invitation. Only a HåfaPass admin can change it."
+        end
+        if event_assignment && reusable && !reusable.invitation_open?
+          raise TeamError, "This person's earlier access was removed or their invitation expired. " \
+            "Ask the organization owner to re-invite them."
+        end
+        ensure_single_owner!(organization, except: reusable) if role == "owner"
+
+        membership = reusable || organization.organization_memberships.build
         reopening = membership.new_record? || !membership.invitation_open?
         entries = reopening ? [] : Array(membership.pending_event_assignments)
         if event_assignment
@@ -74,6 +84,11 @@ class OrganizationTeam
       token = nil
       membership.with_lock do
         raise TeamError, "Only pending or expired invitations can be resent" unless membership.status_invited?
+        if membership.owner?
+          raise TeamError, "Only a HåfaPass admin can resend an Owner invitation" unless actor&.admin?
+
+          ensure_single_owner!(membership.organization, except: membership)
+        end
 
         membership.update!(invitation_version: membership.invitation_version + 1, invited_by_user: actor)
         token = OrganizationInvitation.issue!(membership)
@@ -86,6 +101,13 @@ class OrganizationTeam
       token
     end
 
+    # Token plus the same accept URL the email uses (FRONTEND_URL), so a
+    # copied link and an emailed link always match.
+    def link_json(token)
+      { invitation_token: token,
+        invitation_url: "#{PublicSiteUrl.frontend}/organization-invitations/accept?token=#{ERB::Util.url_encode(token)}" }
+    end
+
     # The current link for an open invitation, without changing it.
     def invitation_token(membership)
       raise TeamError, "This invitation is no longer open. Resend it to create a new link." unless membership.invitation_open?
@@ -96,6 +118,7 @@ class OrganizationTeam
     def revoke!(membership:, actor:, request: nil)
       raise TeamError, "Transfer ownership before removing the owner" if membership.owner? && membership.status_active?
       raise TeamError, "This person's access is already removed" if membership.status_revoked?
+      raise TeamError, "Only a HåfaPass admin can cancel an Owner invitation" if membership.owner? && !actor&.admin?
 
       membership.with_lock do
         OrganizationInvitation.revoke!(membership)
@@ -182,16 +205,39 @@ class OrganizationTeam
       }
     end
 
+    # The effective member who owns this email: the address they accepted
+    # an invitation with, or one Clerk has verified for their account.
+    # Editable contact details (users.email) are never identity evidence.
     def effective_member_for(organization, email)
-      organization.organization_memberships.effective.joins(:user).where("LOWER(users.email) = ?", email).first
+      member_matching(organization.organization_memberships.effective.includes(:user), email)
     end
 
     private
 
+    # Active rows whose owner-chosen access end date has passed still belong
+    # to that person; they are never reopened as invitations.
+    def active_member_for(organization, email)
+      member_matching(organization.organization_memberships.status_active.includes(:user), email)
+    end
+
+    def member_matching(scope, email)
+      members = scope.to_a
+      members.find { |membership| membership.invited_email.to_s.downcase == email } ||
+        members.find { |membership| membership.user && ClerkIdentity.email_matches?(user: membership.user, email: email) }
+    end
+
+    # Only an open invitation or a removed row can become a new invitation.
     def find_reusable(organization, email)
-      known_user = User.where("LOWER(email) = ?", email).first
-      (known_user && organization.organization_memberships.find_by(user: known_user)) ||
-        organization.organization_memberships.where("LOWER(invited_email) = ?", email).order(:id).last
+      organization.organization_memberships.where(status: [:invited, :revoked])
+        .where("LOWER(invited_email) = ?", email).order(:id).last
+    end
+
+    def ensure_single_owner!(organization, except: nil)
+      others = organization.organization_memberships.where(role: :owner)
+      others = others.where.not(id: except.id) if except&.persisted?
+      return unless others.any? { |membership| membership.effective? || membership.invitation_open? }
+
+      raise TeamError, "This organization already has an owner or an open Owner invitation. Use Transfer ownership instead."
     end
 
     def move_organizer_profile!(organization, previous, to_membership)

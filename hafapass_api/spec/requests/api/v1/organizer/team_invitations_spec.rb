@@ -6,6 +6,9 @@ RSpec.describe "Organizer team invitations and ownership", type: :request do
   include ActiveJob::TestHelper
   include ActiveSupport::Testing::TimeHelpers
 
+  # Team membership is matched against Clerk-verified emails; default to none.
+  before { allow(ClerkIdentity).to receive(:verified_email_addresses).and_return([]) }
+
   let(:owner) { create(:user, :organizer, email: "owner@example.com") }
   let(:profile) { create(:organizer_profile, user: owner) }
   let(:organization) { profile.organization }
@@ -160,6 +163,7 @@ RSpec.describe "Organizer team invitations and ownership", type: :request do
 
     it "assigns existing team members immediately" do
       staff = member(:box_office, email: "staff@example.com")
+      allow(ClerkIdentity).to receive(:verified_email_addresses).with(staff.clerk_id).and_return(["staff@example.com"])
       post "/api/v1/organizer/events/#{event.id}/staff_assignments",
         params: { email: "STAFF@example.com", role: "box_office" }, headers: headers_for(owner)
       expect(response).to have_http_status(:created)

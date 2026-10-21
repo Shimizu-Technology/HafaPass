@@ -81,6 +81,38 @@ RSpec.describe "Platform staff invitations", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
+  it "stops working when the inviting admin is no longer an admin, and demotion revokes their invitations" do
+    body = invite("helper@example.com", "support")
+    token = Rack::Utils.parse_query(URI(body["accept_url"]).query).fetch("token")
+    admin.update_column(:role, User.roles[:support]) # demoted outside the users screen
+
+    helper = create(:user, email: "helper@example.com")
+    post "/api/v1/platform_invitations/accept", params: { token: token }, headers: auth_headers(helper)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to include("Ask a HåfaPass admin")
+    get "/api/v1/me", headers: auth_headers(helper)
+    expect(response.parsed_body).to include("role" => "attendee")
+
+    admin.update_column(:role, User.roles[:admin])
+    other_admin = create(:user, :admin)
+    patch "/api/v1/admin/users/#{admin.id}", params: { role: "support" }, headers: auth_headers(other_admin)
+    expect(response).to have_http_status(:ok)
+    expect(PlatformInvitation.find(body["id"])).to be_status_revoked
+  end
+
+  it "remembers an unverified match briefly instead of asking Clerk on every page load" do
+    invite("helper@example.com", "support")
+    spoofer = create(:user, email: "helper@example.com")
+    headers = auth_headers(spoofer)
+    allow(ClerkIdentity).to receive(:verified_email_addresses).with(spoofer.clerk_id).and_return(["other@example.com"])
+    allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
+
+    3.times { get "/api/v1/me", headers: headers }
+
+    expect(ClerkIdentity).to have_received(:verified_email_addresses).with(spoofer.clerk_id).once
+    expect(response.parsed_body).to include("role" => "attendee")
+  end
+
   describe "navigation workspace flags on /me" do
     it "offers organizer tools only to people with a workspace and scanning only with scan rights" do
       attendee = create(:user)

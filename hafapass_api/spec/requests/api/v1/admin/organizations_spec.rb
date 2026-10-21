@@ -7,6 +7,9 @@ RSpec.describe "Admin organizations and team management", type: :request do
   let(:support) { create(:user, role: :support) }
   let(:organizer) { create(:user, :organizer) }
 
+  # Team membership is matched against Clerk-verified emails; default to none.
+  before { allow(ClerkIdentity).to receive(:verified_email_addresses).and_return([]) }
+
   it "creates an organization for someone with an emailed owner invitation" do
     post "/api/v1/admin/organizations",
       params: { name: "Ambros Events", owner_email: "Owner@Ambros.test", pre_verified: true },

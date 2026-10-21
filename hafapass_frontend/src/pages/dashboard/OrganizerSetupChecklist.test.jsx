@@ -19,7 +19,7 @@ describe('OrganizerSetupChecklist', () => {
     show()
     const steps = screen.getAllByRole('listitem')
     expect(steps.map(step => step.querySelector('p').textContent.replace(/Next|\s\(done\)/g, '').trim())).toEqual([
-      'Organizer profile', 'Organizer agreement', 'Verification by HåfaPass', 'How you get paid', 'Create your first event', 'Publish',
+      'Organizer profile', 'Organizer agreement', 'HåfaPass verifies your organization (tickets go on sale after this)', 'How you get paid', 'Create your first event', 'Publish',
     ])
     expect(steps[1]).toHaveAttribute('aria-current', 'step')
     expect(screen.getByText('1 of 6 done')).toBeInTheDocument()

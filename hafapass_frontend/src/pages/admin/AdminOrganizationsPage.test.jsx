@@ -23,7 +23,7 @@ describe('Admin organizations', () => {
   })
 
   it('creates an organization for someone and shows the owner invitation', async () => {
-    apiClient.post.mockResolvedValue({ data: { ...detail, invitation_token: 'owner-token' } })
+    apiClient.post.mockResolvedValue({ data: { ...detail, invitation_token: 'owner-token', invitation_url: 'https://hafapass.test/organization-invitations/accept?token=owner-token' } })
     render(<MemoryRouter initialEntries={['/admin/organizations']}><AdminOrganizationsPage /></MemoryRouter>)
     expect(await screen.findByRole('link', { name: /Ambros Events/ })).toHaveAttribute('href', '/admin/organizations/3')
 
@@ -36,7 +36,7 @@ describe('Admin organizations', () => {
 
     expect(apiClient.post).toHaveBeenCalledWith('/admin/organizations', { name: 'Ambros Events', owner_email: 'owner@ambros.test', pre_verified: true }, expect.anything())
     const done = within(await screen.findByRole('dialog', { name: 'Organization created' }))
-    expect(done.getByLabelText('Invitation link').value).toContain('owner-token')
+    expect(done.getByLabelText('Invitation link').value).toBe('https://hafapass.test/organization-invitations/accept?token=owner-token')
     expect(done.getByRole('link', { name: 'Open Ambros Events' })).toHaveAttribute('href', '/admin/organizations/3')
   })
 
@@ -50,6 +50,13 @@ describe('Admin organizations', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/admin/organizations/3/memberships', expect.anything())
     expect(screen.getByRole('radio', { name: /Manager/ })).toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: /^Owner/ })).not.toBeInTheDocument()
+
+    apiClient.patch.mockResolvedValue({ data: {} })
+    await userEvent.click(screen.getByRole('button', { name: 'Unverify' }))
+    const confirm = within(screen.getByRole('dialog', { name: 'Unverify Ambros Events?' }))
+    expect(confirm.getByText(/can’t go on sale until they are verified again/)).toBeInTheDocument()
+    await userEvent.click(confirm.getByRole('button', { name: 'Unverify' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/4', { verification_status: 'unverified' }, expect.anything())
 
     await userEvent.click(screen.getByRole('button', { name: 'Open its dashboard' }))
     expect(window.localStorage.getItem('hafapass_organization_id')).toBe('3')

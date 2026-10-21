@@ -90,9 +90,12 @@ class ConnectedAccount < ApplicationRecord
   private
 
   def check_payee_details
-    details = payout_details.to_h
-    return if details.blank? # Not entered yet; payee review stays outstanding.
+    unless payout_details.is_a?(Hash)
+      errors.add(:payout_details, "are invalid")
+      return
+    end
 
+    details = payout_details
     errors.add(:payout_details, "need the name to write on the check") if details["payee_name"].to_s.strip.blank?
     unless CHECK_DELIVERY_METHODS.include?(details["delivery_method"])
       errors.add(:payout_details, "need a delivery choice: mail or pickup")

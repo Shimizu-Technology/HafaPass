@@ -12,15 +12,12 @@ class Api::V1::Admin::OrganizationMembershipsController < Api::V1::Admin::BaseCo
   end
 
   def create
-    role = params[:role].to_s
-    allow_owner = role == "owner" && !@organization.organization_memberships.where(role: :owner)
-      .where(status: [:active, :invited]).any? { |membership| membership.effective? || membership.invitation_open? }
-    membership, token = OrganizationTeam.invite!(organization: @organization, email: params[:email], role: role,
-      actor: current_user, request: request, allow_owner: allow_owner)
-    render json: OrganizationTeam.membership_json(membership).merge(invitation_token: token), status: :created
+    # OrganizationTeam refuses a second owner (active or invited).
+    membership, token = OrganizationTeam.invite!(organization: @organization, email: params[:email],
+      role: params[:role], actor: current_user, request: request, allow_owner: true)
+    render json: OrganizationTeam.membership_json(membership).merge(OrganizationTeam.link_json(token)), status: :created
   rescue OrganizationTeam::TeamError => e
-    message = role == "owner" && !allow_owner ? "This organization already has an owner. Use Transfer ownership instead." : e.message
-    render json: { error: message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   def update
@@ -39,13 +36,13 @@ class Api::V1::Admin::OrganizationMembershipsController < Api::V1::Admin::BaseCo
 
   def resend
     token = OrganizationTeam.resend!(membership: @membership, actor: current_user, request: request)
-    render json: OrganizationTeam.membership_json(@membership.reload).merge(invitation_token: token)
+    render json: OrganizationTeam.membership_json(@membership.reload).merge(OrganizationTeam.link_json(token))
   rescue OrganizationTeam::TeamError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
   def invitation_link
-    render json: { invitation_token: OrganizationTeam.invitation_token(@membership) }
+    render json: OrganizationTeam.link_json(OrganizationTeam.invitation_token(@membership))
   rescue OrganizationTeam::TeamError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end

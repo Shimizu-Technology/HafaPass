@@ -65,7 +65,7 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
 
   def resend_invitation
     token = OrganizationTeam.resend!(membership: @staff_invitation, actor: current_user, request: request)
-    render json: staff_invitation_json(@staff_invitation.reload).merge(invitation_token: token)
+    render json: staff_invitation_json(@staff_invitation.reload).merge(OrganizationTeam.link_json(token))
   rescue OrganizationTeam::TeamError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
@@ -111,7 +111,7 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
 
     membership, token = OrganizationTeam.invite!(organization: current_organization, email: email, role: role,
       actor: current_user, request: request, event_assignment: { event: @event, role: role })
-    render json: { invitation: staff_invitation_json(membership).merge(invitation_token: token) }, status: :created
+    render json: { invitation: staff_invitation_json(membership).merge(OrganizationTeam.link_json(token)) }, status: :created
   rescue OrganizationTeam::TeamError => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e

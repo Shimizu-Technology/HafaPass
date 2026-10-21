@@ -133,7 +133,7 @@ function EventStaffSession({ id, identity }) {
         const invitation = response.data.invitation
         setInvitations(items => [...items.filter(item => item.membership_id !== invitation.membership_id), invitation])
         setNotice(`Invitation sent to ${invitation.email}. They can work this event as ${label(invitation.role)} as soon as they accept.`)
-        setLink({ url: invitationUrl(invitation.invitation_token), email: invitation.email })
+        setLink({ url: invitationUrl(invitation), email: invitation.email })
       }
     })
   }
@@ -142,7 +142,7 @@ function EventStaffSession({ id, identity }) {
     return mutate('Resend event invitation', config => apiClient.post(`/organizer/events/${id}/staff_invitations/${invitation.membership_id}/resend`, {}, config), response => {
       setInvitations(items => items.map(item => item.membership_id === invitation.membership_id ? response.data : item))
       setNotice(`A new invitation was sent to ${invitation.email}.`)
-      setLink({ url: invitationUrl(response.data.invitation_token), email: invitation.email })
+      setLink({ url: invitationUrl(response.data), email: invitation.email })
     })
   }
   const withdrawInvitation = invitation => mutate('Withdraw event invitation', config => apiClient.delete(`/organizer/events/${id}/staff_invitations/${invitation.membership_id}`, config), () => {

@@ -86,6 +86,26 @@ describe('AdminPayoutsPage', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Confirmation time must be after the payout request')
   })
 
+  it('shows the approved check payee and blocks Paid when the payee changed after approval', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [{ ...payout, provider: 'check',
+      payee: { payee_name: 'Ambros Inc.', delivery_method: 'pickup', pickup_note: 'Front desk' },
+      payee_changed: true, current_payee: { payee_name: 'Someone Else', delivery_method: 'mail', mailing_address: 'PO Box 9' } }] })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/Ambros Inc\. · Pickup — Front desk/)).toBeInTheDocument()
+    expect(dialog.getAllByText('Payee details changed after approval — review before writing the check.').length).toBeGreaterThan(0)
+    expect(dialog.getByText(/Someone Else/)).toBeInTheDocument()
+    expect(dialog.getByText(/recorded as paid on the date written on the check, not when it clears/)).toBeInTheDocument()
+    expect(dialog.getByLabelText(/Check number/)).toBeInTheDocument()
+    await user.type(dialog.getByLabelText(/Check number/), '1042')
+    await user.type(dialog.getByLabelText(/Reference/), 'register 7')
+    await user.type(dialog.getByLabelText('How you confirmed it'), 'written')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(apiClient.patch).not.toHaveBeenCalled()
+  })
+
   it('shows an empty state for a filtered list', async () => {
     respond({ payouts: [] })
     renderAt('/admin/payouts?status=failed')

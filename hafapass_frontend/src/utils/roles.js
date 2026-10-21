@@ -1,3 +1,5 @@
+import { resolvePublicWebUrl } from './site'
+
 // One plain line per role, shown wherever someone chooses a role. The API
 // keeps the same copy in app/services/organization_roles.rb for emails.
 export const ORGANIZATION_ROLES = {
@@ -42,4 +44,7 @@ export function emailDeliveryLabel(delivery) {
   return 'The email could not be delivered. Copy the link and share it another way.'
 }
 
-export const invitationUrl = token => `${window.location.origin}/organization-invitations/accept?token=${encodeURIComponent(token)}`
+// Prefer the URL the API built (the same one the email contains); otherwise
+// build it from the configured public site, never the current tab's origin.
+export const invitationUrl = data => data?.invitation_url
+  || `${resolvePublicWebUrl()}/organization-invitations/accept?token=${encodeURIComponent(data?.invitation_token || '')}`

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 # Admin and Support invitations. An invitation is pending until the invitee
 # signs in with the invited email *verified by Clerk*; editable contact
 # details are never treated as proof. Accepting never lowers a role.
@@ -82,6 +84,9 @@ class PlatformInvitations
         unless invitation.display_status == "pending" && invitation.invitation_version == payload["version"].to_i
           raise InvitationError, "Invitation is invalid or expired"
         end
+        unless inviter_still_admin?(invitation)
+          raise InvitationError, "This invitation is no longer valid. Ask a HåfaPass admin to send a new one."
+        end
         unless ClerkIdentity.email_matches?(user: user, email: invitation.email)
           raise InvitationError, "Sign in with the verified email address that received this invitation and try again."
         end
@@ -94,21 +99,43 @@ class PlatformInvitations
     # Signing in with a verified invited email applies the role even when the
     # person never clicks the link. Only checks Clerk when an open invitation
     # names the account's contact email, so ordinary sign-ins stay cheap.
+    #
+    # A contact email that matches but is not verified would otherwise cost a
+    # Clerk lookup on every page load, so a miss is remembered briefly for
+    # that exact set of invitations.
+    MISS_CACHE_TTL = 10.minutes
+
     def apply_pending_for!(user, request: nil)
       return [] if user.email.blank?
 
-      candidates = PlatformInvitation.unexpired_pending.where("LOWER(email) = ?", user.email.to_s.strip.downcase)
-      return [] unless candidates.exists?
+      candidates = PlatformInvitation.unexpired_pending.includes(:invited_by_user)
+        .where("LOWER(email) = ?", user.email.to_s.strip.downcase).order(:id).to_a
+      candidates.select! { |invitation| inviter_still_admin?(invitation) }
+      return [] if candidates.empty?
 
-      candidates.to_a.filter_map do |invitation|
+      miss_key = "platform-invitation-miss/#{user.id}/" +
+        Digest::SHA256.hexdigest(candidates.map { |item| [item.id, item.invitation_version] }.to_json)
+      return [] if Rails.cache.read(miss_key)
+
+      applied = candidates.filter_map do |invitation|
         next unless ClerkIdentity.email_matches?(user: user, email: invitation.email)
 
         invitation.with_lock do
-          next unless invitation.display_status == "pending"
+          next unless invitation.display_status == "pending" && inviter_still_admin?(invitation)
 
           apply!(invitation, user, request: request)
           invitation
         end
+      end
+      Rails.cache.write(miss_key, true, expires_in: MISS_CACHE_TTL) if applied.empty?
+      applied
+    end
+
+    # Pending invitations stop working when the admin who sent them loses
+    # admin access; they are revoked so the list says so.
+    def revoke_sent_by!(user, actor:, request: nil)
+      PlatformInvitation.status_pending.where(invited_by_user: user).find_each do |invitation|
+        revoke!(invitation: invitation, actor: actor, request: request)
       end
     end
 
@@ -136,6 +163,10 @@ class PlatformInvitations
     end
 
     private
+
+    def inviter_still_admin?(invitation)
+      invitation.invited_by_user&.reload&.admin?
+    end
 
     def apply!(invitation, user, request:)
       previous_role = user.role

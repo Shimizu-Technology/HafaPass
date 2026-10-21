@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, LayoutDashboard, Loader2 } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, LayoutDashboard, Loader2 } from 'lucide-react'
+import Dialog from '../../components/Dialog'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
@@ -14,6 +15,7 @@ function AdminOrganizationSession({ id, identity }) {
   const { beginRequest } = usePlatformRequests(identity, `/admin/organizations/${id}`)
   const navigate = useNavigate()
   const [state, setState] = useState({ status: 'loading', organization: null })
+  const [verifying, setVerifying] = useState(null)
 
   const load = useCallback(() => {
     const request = beginRequest()
@@ -38,6 +40,23 @@ function AdminOrganizationSession({ id, identity }) {
       throw error
     } finally { request.release() }
   }, [beginRequest])
+
+  // One audited action: verified organizations can put tickets on sale.
+  const changeVerification = async () => {
+    const target = verifying
+    const request = beginRequest()
+    if (!target || !request) return
+    setVerifying({ ...target, busy: true, error: null })
+    try {
+      await apiClient.patch(`/admin/organizer_profiles/${target.profileId}`, { verification_status: target.to }, request.config)
+      if (!request.current()) return
+      setVerifying(null)
+      load()
+    } catch (error) {
+      if (request.handleError(error) || !request.current()) return
+      setVerifying({ ...target, busy: false, error: error.response?.data?.errors?.[0] || error.response?.data?.error || 'The change was not saved.' })
+    } finally { request.release() }
+  }
 
   const openWorkspace = () => {
     window.localStorage.setItem('hafapass_organization_id', String(id))
@@ -67,7 +86,12 @@ function AdminOrganizationSession({ id, identity }) {
                   <div><dt className="inline text-content-muted">Payouts: </dt><dd className="inline">{organization.payout_ready ? 'Ready' : 'Not ready'}</dd></div>
                 </dl>
               </div>
-              <button type="button" onClick={openWorkspace} className="btn-primary shrink-0 gap-2"><LayoutDashboard aria-hidden="true" className="h-4 w-4" />Open its dashboard</button>
+              <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                <button type="button" onClick={openWorkspace} className="btn-primary gap-2"><LayoutDashboard aria-hidden="true" className="h-4 w-4" />Open its dashboard</button>
+                {organization.organizer_profile && (organization.organizer_profile.verification_status === 'verified'
+                  ? <button type="button" onClick={() => setVerifying({ profileId: organization.organizer_profile.id, to: 'unverified' })} className="btn-secondary">Unverify</button>
+                  : <button type="button" onClick={() => setVerifying({ profileId: organization.organizer_profile.id, to: 'verified' })} className="btn-secondary gap-2"><BadgeCheck aria-hidden="true" className="h-4 w-4" />Verify organization</button>)}
+              </div>
             </div>
             <p className="mt-4 text-sm text-content-muted">Opening the dashboard lets you work inside this organization as an admin. Everything you change is recorded in the audit log.</p>
           </section>
@@ -76,6 +100,19 @@ function AdminOrganizationSession({ id, identity }) {
             onChanged={load}
             description="Invite people, change roles, resend or cancel invitations and transfer ownership. Organizers see the same changes in their Settings." />
         </div>
+      )}
+      {verifying && organization && (
+        <Dialog labelledBy="verify-title" onClose={() => setVerifying(null)} busy={Boolean(verifying.busy)} className="max-w-md">
+          <h2 id="verify-title" className="text-lg font-semibold text-neutral-900">{verifying.to === 'verified' ? `Verify ${organization.name}?` : `Unverify ${organization.name}?`}</h2>
+          <p className="mt-2 text-sm text-neutral-700">{verifying.to === 'verified'
+            ? 'Verified organizations can put tickets on sale once their other checks are complete. This is recorded in the audit log.'
+            : 'Their events can’t go on sale until they are verified again. This is recorded in the audit log.'}</p>
+          {verifying.error && <p role="alert" className="mt-3 text-sm text-red-800">{verifying.error}</p>}
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" onClick={() => setVerifying(null)} disabled={verifying.busy} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={changeVerification} disabled={verifying.busy} className={verifying.to === 'verified' ? 'btn-primary' : 'btn-danger'}>{verifying.busy ? 'Saving…' : verifying.to === 'verified' ? 'Verify' : 'Unverify'}</button>
+          </div>
+        </Dialog>
       )}
     </AdminLayout>
   )

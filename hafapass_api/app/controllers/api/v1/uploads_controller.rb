@@ -75,10 +75,10 @@ module Api
         else
           organization = OrganizationContext.resolve(user: current_user,
             requested_id: organization_id.presence || request.headers["X-Organization-Id"].presence)
-          allowed = organization && (current_user.admin? ||
-            (current_user.organizer_profile&.organization_id == organization.id &&
-              OrganizationAuthorization.allowed?(user: current_user, organization: organization,
-                permission: :manage_organization)))
+          # Organization images follow the membership role (the owner, or an
+          # admin), not who originally created the organizer profile.
+          allowed = organization && OrganizationAuthorization.allowed?(user: current_user,
+            organization: organization, permission: :manage_organization)
         end
         unless allowed
           render json: { error: "You do not have permission to upload an image here" }, status: :forbidden

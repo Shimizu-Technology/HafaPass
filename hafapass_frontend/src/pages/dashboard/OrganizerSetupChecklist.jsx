@@ -53,7 +53,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
       action: !profile.policy_accepted && !adminView && <button type="button" disabled={busy} onClick={() => setAgreementOpen(true)} className="btn-secondary !px-4 !py-2 text-sm">Review and accept</button>,
     },
     {
-      key: 'verification', title: 'Verification by HåfaPass', done: verification.done,
+      key: 'verification', title: 'HåfaPass verifies your organization (tickets go on sale after this)', done: verification.done,
       status: verification.status, next: verification.next,
       action: !adminView && (['unverified', 'rejected'].includes(profile.verification_status)
         ? <button type="button" disabled={busy || !hasDescription} onClick={onSubmitVerification} className="btn-secondary !px-4 !py-2 text-sm">{profile.verification_status === 'rejected' ? 'Submit again' : 'Submit for review'}</button>

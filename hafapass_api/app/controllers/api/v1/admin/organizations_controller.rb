@@ -54,7 +54,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
         actor: current_user, request: request, allow_owner: true, deliver: false)
     end
     EmailService.send_organization_invitation_async(membership, requested_by: current_user)
-    render json: organization_detail(organization.reload).merge(invitation_token: token), status: :created
+    render json: organization_detail(organization.reload).merge(OrganizationTeam.link_json(token)), status: :created
   rescue OrganizationTeam::TeamError => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e

@@ -59,6 +59,9 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
         after_data: { role: user.role },
         request: request
       )
+      if previous_role == "admin" && !user.admin?
+        PlatformInvitations.revoke_sent_by!(user, actor: current_user, request: request)
+      end
       render json: user_json(user)
     else
       render json: { errors: user.errors.full_messages }, status: :unprocessable_entity

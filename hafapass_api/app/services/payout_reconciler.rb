@@ -35,6 +35,11 @@ class PayoutReconciler
       if status == "paid" && (external_id.blank? || external_id.start_with?("sim_", "manual_po_"))
         raise ReconciliationError, "A real provider or bank transfer identifier is required to record payment"
       end
+      if external_id.present? && external_id != payout.provider_payout_id &&
+          Payout.where(provider: payout.provider, provider_payout_id: external_id).where.not(id: payout.id).exists?
+        raise ReconciliationError, payout.provider == "check" ? "That check number is already recorded" :
+          "That transfer identifier is already recorded"
+      end
       confirmed_at = Time.iso8601(normalized.fetch("confirmed_at"))
       if confirmed_at < payout.created_at || confirmed_at > Time.current
         raise ReconciliationError, "Confirmation time must be after the payout request and not in the future"
@@ -53,6 +58,8 @@ class PayoutReconciler
       if payout.status_paid? && external_id != payout.provider_payout_id
         raise ReconciliationError, "Keep the original transfer identifier when recording a reversal"
       end
+
+      raise ReconciliationError, Payout::PAYEE_CHANGED_MESSAGE if status == "paid" && !payout.payee_matches_approval?
 
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
       payout.update!(status: status, provider_payout_id: external_id,
