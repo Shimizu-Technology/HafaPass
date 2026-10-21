@@ -316,7 +316,7 @@ module Api
               if record.is_a?(Order)
                 row = { id: record.id,
                   order_number: record.reference, ticket_type: record.tickets.map { |ticket| ticket.ticket_type.name }.uniq.join(", "),
-                  status: record.status, purchase_date: record.completed_at || record.created_at,
+                  status: record.status, sales_status_label: OrganizerTicketSalesStatus.label(record.status), purchase_date: record.completed_at || record.created_at,
                   channel: FinanceExports.channel(record), ticket_count: record.tickets.size,
                   checked_in_count: record.tickets.count(&:checked_in?) }
                 row.merge!(attendee_name: record.buyer_name, attendee_email: record.buyer_email,
@@ -327,6 +327,7 @@ module Api
                 sales_status = OrganizerTicketSalesStatus.for(record)
                 row = { id: record.id,
                   ticket_type: record.ticket_type.name, status: record.status, sales_status: sales_status,
+                  sales_status_label: OrganizerTicketSalesStatus.label(sales_status),
                   order_id: record.order_id, order_number: record.order.reference,
                   purchase_date: record.order.completed_at || record.order.created_at,
                   channel: FinanceExports.channel(record.order), test_payment: record.order.test_payment? }

@@ -10,13 +10,58 @@ import { pluralize } from '../../utils/eventToolFormat'
 import { saveBlob } from '../../utils/download'
 
 const STATUS_STYLES = {
-  checked_in: { label: 'Checked In', className: 'bg-green-100 text-green-800' },
+  checked_in: { label: 'Checked in', className: 'bg-green-100 text-green-800' },
   issued: { label: 'Valid', className: 'bg-brand-100 text-brand-700' },
   cancelled: { label: 'Cancelled', className: 'bg-red-100 text-red-800' },
   refunded: { label: 'Refunded', className: 'bg-amber-100 text-amber-900' },
   partially_refunded: { label: 'Partially refunded', className: 'bg-amber-100 text-amber-900' },
   transferred: { label: 'Transferred', className: 'bg-neutral-100 text-neutral-800' },
   completed: { label: 'Paid', className: 'bg-green-100 text-green-800' }
+}
+const STATUS_LABELS = {
+  paid: 'Paid', issued: 'Valid', checked_in: 'Checked in', not_checked_in: 'Not checked in',
+  refunded: 'Refunded', partially_refunded: 'Partially refunded', cancelled: 'Cancelled', transferred: 'Transferred'
+}
+const SORT_LABELS = { purchase_date: 'purchase date', name: 'name', ticket_type: 'ticket type', amount: 'amount', check_in_time: 'check-in time' }
+
+function dateChip(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const [year, month, day] = value.split('-').map(Number)
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)))
+}
+
+function filterChips(params, ticketTypes) {
+  const chips = []
+  for (const [key, value] of params.entries()) {
+    if (!value || key === 'page' || key === 'purchased_to' || key === 'direction') continue
+    if (key === 'view' && value === 'tickets') continue
+    if (key === 'payment_environment' && value === 'live') continue
+    if (key === 'sort' && value === 'purchase_date' && (params.get('direction') || 'desc') === 'desc') continue
+    if (key === 'purchased_from') {
+      const end = params.get('purchased_to')
+      chips.push({ keys: ['purchased_from', 'purchased_to'], label: `Purchased ${dateChip(value)}${end ? ` – ${dateChip(end)}` : ' onward'}` })
+      continue
+    }
+    if (key === 'sort') {
+      const direction = params.get('direction') || 'desc'
+      const suffix = value === 'name' || value === 'ticket_type' ? (direction === 'asc' ? 'A–Z' : 'Z–A')
+        : value === 'amount' ? (direction === 'asc' ? 'low to high' : 'high to low')
+          : direction === 'asc' ? 'oldest first' : 'newest first'
+      chips.push({ keys: ['sort', 'direction'], label: `Sorted by ${SORT_LABELS[value] || value} (${suffix})` })
+      continue
+    }
+    const labels = {
+      view: value === 'orders' ? 'Orders' : 'Tickets / attendees', status: `Status: ${STATUS_LABELS[value] || value}`,
+      ticket_type: `Ticket type: ${ticketTypes.find(type => String(type.id) === value)?.name || value}`,
+      search: `Search: ${value}`, channel: `Sales channel: ${value === 'box_office' ? 'Box office' : value === 'guest_list' ? 'Comp / guest list' : 'Online'}`,
+      promo_code: `Promo code: ${value}`, payment_environment: value === 'test' ? 'Test orders only' : 'Live and test orders',
+      purchased_to: `Purchased through ${dateChip(value)}`
+    }
+    chips.push({ keys: [key], label: labels[key] || `${key.replaceAll('_', ' ')}: ${value}` })
+  }
+  if (params.get('purchased_to') && !params.get('purchased_from')) chips.push({ keys: ['purchased_to'], label: `Purchased through ${dateChip(params.get('purchased_to'))}` })
+  if (params.get('direction') && !params.get('sort') && params.get('direction') !== 'desc') chips.push({ keys: ['direction'], label: 'Oldest first' })
+  return chips
 }
 
 const RESENDABLE_STATUSES = new Set(['issued', 'checked_in'])
@@ -280,10 +325,13 @@ function AttendeesPageSession({ id, identity }) {
   const totalCount = Number.isInteger(meta?.total_count) ? meta.total_count : attendees.length
   const ticketTypes = event?.ticket_types || []
   const totalPages = meta?.total_pages || 1
-  const activeFilters = [...searchParams.entries()].filter(([key, value]) => key !== 'page' && value)
-  const chipValue = (key, value) => key === 'ticket_type'
-    ? (ticketTypes.find(type => String(type.id) === value)?.name || value)
-    : value.replaceAll('_', ' ')
+  const activeFilters = filterChips(searchParams, ticketTypes)
+  const removeChip = keys => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    keys.forEach(key => next.delete(key))
+    next.delete('page')
+    return next
+  }, { replace: true })
   const canExport = permissions.view_attendees === true || permissions.view_finance === true
   const canSeeFinance = permissions.view_finance === true
   const financeColumns = ['ticket_price', 'discount', 'fee', 'tax', 'total_paid']
@@ -312,13 +360,13 @@ function AttendeesPageSession({ id, identity }) {
           {permissions.view_attendees === true && <button type="button" onClick={async () => { try { const response = await requestOutsideList(config => apiClient.get(`/organizer/events/${id}/sales_exports/door_list?${activeQuery()}`, { responseType: 'blob', ...config })); saveBlob(response.data, `${event?.slug || `event-${id}`}-door-list.pdf`) } catch (error) { if (current()) setExportError(await exportFailureMessage(error, 'Unable to prepare the door list.')) } }} className="btn-secondary min-h-11 gap-1.5 !px-4 !py-2.5 text-sm"><Printer className="h-4 w-4" /> Print door list</button>}
         </div>}
       </div>
-      {activeFilters.length > 0 && <div role="region" className="mb-4 flex flex-wrap items-center gap-2" aria-label="Active filters">{activeFilters.map(([key, value]) => <button key={key} type="button" onClick={() => changeFilter(key, '')} className="rounded-full bg-brand-50 px-3 py-1 text-sm text-brand-900">{key.replaceAll('_', ' ')}: {chipValue(key, value)} ×</button>)}<button type="button" className="text-sm font-medium underline" onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}>Clear filters</button></div>}
+      {activeFilters.length > 0 && <div role="region" className="mb-4 flex flex-wrap items-center gap-2" aria-label="Active filters">{activeFilters.map(({ keys, label }) => <button key={keys.join('-')} type="button" onClick={() => removeChip(keys)} className="rounded-full bg-brand-50 px-3 py-1 text-sm text-brand-900">{label} ×</button>)}<button type="button" className="text-sm font-medium underline" onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}>Clear filters</button></div>}
       {queuedExport && <p role="status" className="mb-4 rounded-lg bg-brand-50 p-3 text-sm">Your export is being prepared. <button type="button" className="underline" onClick={() => checkQueuedExport()} disabled={exporting}>Check download</button></p>}
       {recentExports.length > 0 && <section aria-label="Recent exports" className="mb-4 rounded-lg border border-neutral-200 bg-white p-4"><h2 className="font-semibold">Recent exports</h2><ul className="mt-2 space-y-2 text-sm">{recentExports.map(item => <li key={item.id} className="flex flex-wrap items-center justify-between gap-2"><span>Export #{item.id} · {item.row_count} rows · {item.status}</span>{['pending', 'processing', 'ready'].includes(item.status) && <button type="button" className="underline" disabled={exporting} onClick={() => checkQueuedExport(item.download_url)}>{item.status === 'ready' ? 'Download' : 'Check status'}</button>}</li>)}</ul></section>}
       {exportOpen && <Dialog labelledBy="sales-export-title" onClose={() => setExportOpen(false)} busy={exporting} className="max-w-lg"><h3 id="sales-export-title" className="text-lg font-semibold">Export this list</h3><p className="mt-2 text-sm text-neutral-600">{pluralize(totalCount, filter('view') === 'orders' ? 'order' : 'attendee')} match the current filters. Choose the columns to share.</p><div className="mt-4 grid grid-cols-2 gap-2">{exportChoices.map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={exportColumns.includes(key)} onChange={event => setExportColumns(previous => event.target.checked ? [...previous, key] : previous.filter(column => column !== key))} />{label}</label>)}</div><div className="mt-5 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setExportOpen(false)}>Cancel</button><button type="button" className="btn-primary" disabled={exporting || !allowedExportColumns.length} onClick={downloadExport}>{exporting ? 'Preparing…' : 'Download CSV'}</button></div></Dialog>}
       {filtersOpen && <Dialog labelledBy="sales-filters-title" onClose={() => setFiltersOpen(false)} className="max-w-lg"><h3 id="sales-filters-title" className="text-lg font-semibold">Filters & sort</h3><div className="mt-4 grid gap-3 max-h-[60vh] overflow-y-auto">
         <label className="text-sm">View<select aria-label="View sales as" value={filter('view') || 'tickets'} onChange={e => changeFilter('view', e.target.value)} className="input mt-1"><option value="tickets">Tickets / attendees</option><option value="orders">Orders</option></select></label>
-        <label className="text-sm">Status<select aria-label="Filter attendees by status" value={statusFilter} onChange={e => changeFilter('status', e.target.value)} className="input mt-1"><option value="">All statuses</option>{['paid','refunded','partially_refunded','cancelled','checked_in','not_checked_in','transferred','issued'].map(value => <option key={value} value={value}>{value.replaceAll('_',' ')}</option>)}</select></label>
+        <label className="text-sm">Status<select aria-label="Filter attendees by status" value={statusFilter} onChange={e => changeFilter('status', e.target.value)} className="input mt-1"><option value="">All statuses</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="text-sm">Ticket type<select aria-label="Filter attendees by ticket type" value={ticketTypeFilter} onChange={e => changeFilter('ticket_type', e.target.value)} className="input mt-1"><option value="">All ticket types</option>{ticketTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
         <label className="text-sm">Sales channel<select aria-label="Sales channel" value={filter('channel')} onChange={e => changeFilter('channel', e.target.value)} className="input mt-1"><option value="">All channels</option><option value="online">Online</option><option value="box_office">Box office</option><option value="guest_list">Comp / guest list</option></select></label>
         <label className="text-sm">Promo code<input aria-label="Promo code" value={filter('promo_code')} onChange={e => changeFilter('promo_code', e.target.value)} className="input mt-1" /></label>
@@ -385,7 +433,7 @@ function AttendeesPageSession({ id, identity }) {
               </thead>
               <tbody className="divide-y divide-neutral-200">
                 {attendees.map((att) => {
-                  const style = STATUS_STYLES[att.sales_status || att.status] || { label: (att.sales_status || att.status).replaceAll('_', ' '), className: 'bg-neutral-100 text-neutral-800' }
+                  const style = STATUS_STYLES[att.sales_status || att.status] || { label: STATUS_LABELS[att.sales_status || att.status] || (att.sales_status || att.status).replaceAll('_', ' '), className: 'bg-neutral-100 text-neutral-800' }
                   return (
                     <tr key={att.id}>
                       <td className="min-w-32 px-4 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}<TestPaymentBadge order={att} />{att.order_number && <span className="block text-xs font-normal text-neutral-500">{att.order_number}</span>}</td>
@@ -393,7 +441,7 @@ function AttendeesPageSession({ id, identity }) {
                       <td className="px-4 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
                       {filter('view') === 'orders' && <td className="px-4 py-3 text-sm text-neutral-600">{formatDate(att.purchase_date, event?.timezone)}</td>}
                       {filter('view') === 'orders' && canSeeFinance && <td className="px-4 py-3 text-right text-sm text-neutral-900 tabular-nums">{att.amount_cents == null ? '—' : `$${(att.amount_cents / 100).toFixed(2)}`}</td>}
-                      <td className="px-4 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span></td>
+                      <td className="px-4 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{att.sales_status_label || style.label}</span></td>
                       <td className="px-4 py-3 text-sm text-neutral-500">{filter('view') === 'orders' ? `${att.checked_in_count || 0}/${att.ticket_count || 0}` : formatDate(att.checked_in_at, event?.timezone)}</td>
                       {/* Stacked until 2xl so the actions stay in view beside the event sidebar at 1280. */}
                       {showActions && <td className="px-4 py-3"><div className="flex flex-col items-stretch gap-1.5 2xl:flex-row 2xl:justify-end">{rowActions(att, 'desktop')}</div></td>}
@@ -407,12 +455,12 @@ function AttendeesPageSession({ id, identity }) {
           {/* Mobile cards */}
           <div className="sm:hidden space-y-2">
             {attendees.map((att) => {
-              const style = STATUS_STYLES[att.sales_status || att.status] || { label: (att.sales_status || att.status).replaceAll('_', ' '), className: 'bg-neutral-100 text-neutral-800' }
+              const style = STATUS_STYLES[att.sales_status || att.status] || { label: STATUS_LABELS[att.sales_status || att.status] || (att.sales_status || att.status).replaceAll('_', ' '), className: 'bg-neutral-100 text-neutral-800' }
               return (
                 <div key={att.id} className="bg-white rounded-xl border border-neutral-200 p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-neutral-900">{att.attendee_name || '—'}<TestPaymentBadge order={att} /></span>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{style.label}</span>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{att.sales_status_label || style.label}</span>
                   </div>
                   <p className="text-xs text-neutral-500 mt-1 break-all">{att.attendee_email || '—'}</p>
                   {att.order_number && <p className="text-xs text-neutral-500 mt-1">{att.order_number}{canSeeFinance && att.amount_cents != null ? ` · $${(att.amount_cents / 100).toFixed(2)}` : ''}</p>}

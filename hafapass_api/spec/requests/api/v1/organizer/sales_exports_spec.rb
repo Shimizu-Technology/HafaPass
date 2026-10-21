@@ -195,12 +195,12 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(response.media_type).to eq("application/pdf")
     expect(response.headers["Cache-Control"]).to eq("no-store")
     text = PDF::Reader.new(StringIO.new(response.body)).pages.map(&:text).join("\n")
-    expect(text).to include("Mina", order.reference, "Check in")
+    expect(text).to include("Mina", order.reference, "Check in", "Valid")
     expect(text).not_to include("Ana", "mina@example.test")
     expect(AuditLog.where(action: "sales.door_list_exported").last.metadata).to include("row_count" => 1)
     get "#{base}/sales_exports/door_list", headers: headers
     all_statuses = PDF::Reader.new(StringIO.new(response.body)).pages.map(&:text).join("\n")
-    expect(all_statuses).to include("Status", "cancelled", "Ana")
+    expect(all_statuses).to include("Status", "Cancelled", "Ana")
   end
 
   it "summarizes check-in and accepted transfers on order-level CSV rows" do
@@ -398,14 +398,31 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(rows.sum { |row| (BigDecimal(row["Total paid"]) * 100).to_i }).to eq(202)
   end
 
+  it "allocates legacy order cents across tickets without order items" do
+    order = create(:order, event: event, subtotal_cents: 301, discount_cents: 1,
+      service_fee_cents: 2, total_cents: 302)
+    type = create(:ticket_type, event: event)
+    3.times { |index| create(:ticket, event: event, order: order, order_item: nil,
+      ticket_type: type, attendee_name: "Legacy #{index}") }
+    post "#{base}/sales_exports", params: { columns: %w[ticket_price discount fee tax total_paid] }, headers: headers
+    expect(response).to have_http_status(:ok)
+    rows = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
+    totals = { "Ticket price" => 301, "Discount" => 1, "Fee" => 2, "Tax" => 0, "Total paid" => 302 }
+    totals.each do |column, cents|
+      expect(rows.sum { |row| (BigDecimal(row[column]) * 100).to_i }).to eq(cents)
+      expect(rows.map { |row| row[column] }).to all(be_present)
+    end
+  end
+
   it "uses one ticket status for screen, filter, and CSV after a partial refund" do
     order, ticket = sale(name: "Mina")
     order.update!(status: :partially_refunded)
     get "#{base}/attendees", headers: headers
     expect(response.parsed_body.dig("attendees", 0, "sales_status")).to eq("partially_refunded")
+    expect(response.parsed_body.dig("attendees", 0, "sales_status_label")).to eq("Partially refunded")
     expect(names(status: "partially_refunded")).to eq(["Mina"])
     post "#{base}/sales_exports", params: { columns: %w[status] }, headers: headers
-    expect(CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).first["Status"]).to eq("partially_refunded")
+    expect(CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).first["Status"]).to eq("Partially refunded")
     ticket.update!(status: :cancelled)
     expect(names(status: "partially_refunded")).to be_empty
     expect(names(status: "cancelled")).to eq(["Mina"])

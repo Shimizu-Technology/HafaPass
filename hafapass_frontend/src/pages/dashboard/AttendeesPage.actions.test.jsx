@@ -135,10 +135,40 @@ describe('sales list controls', () => {
   it('restores URL filters, shows chips, and clears them', async () => {
     mount({}, { ticket_types: [{ id: 4, name: 'Entry' }] }, '/dashboard/events/37/attendees?status=checked_in&ticket_type=4')
     await screen.findAllByText('Mina Cruz')
-    expect(screen.getByRole('region', { name: 'Active filters' })).toHaveTextContent('checked in')
+    expect(screen.getByRole('region', { name: 'Active filters' })).toHaveTextContent('Status: Checked in')
+    expect(screen.getByRole('region', { name: 'Active filters' })).toHaveTextContent('Ticket type: Entry')
     expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining('status=checked_in'), expect.any(Object))
     await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Active filters' })).not.toBeInTheDocument())
+  })
+
+  it('shows human filter chips, hides defaults, and keeps machine values in the URL', async () => {
+    mount({}, { ticket_types: [{ id: 4, name: 'VIP Front Row' }] }, '/dashboard/events/37/attendees?search=tanaka&ticket_type=4&payment_environment=all&sort=name&direction=asc&purchased_from=2026-10-01&purchased_to=2026-10-15')
+    await screen.findAllByText('Mina Cruz')
+    const chips = screen.getByRole('region', { name: 'Active filters' })
+    for (const label of ['Search: tanaka', 'Ticket type: VIP Front Row', 'Live and test orders', 'Sorted by name (A–Z)', 'Purchased Oct 1 – Oct 15']) {
+      expect(within(chips).getByRole('button', { name: `${label} ×` })).toBeInTheDocument()
+    }
+    expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining('direction=asc'), expect.any(Object))
+    await userEvent.click(within(chips).getByRole('button', { name: 'Sorted by name (A–Z) ×' }))
+    expect(within(chips).queryByText(/Sorted by/)).not.toBeInTheDocument()
+  })
+
+  it('does not show chips for explicit default filter values', async () => {
+    mount({}, {}, '/dashboard/events/37/attendees?view=tickets&payment_environment=live&sort=purchase_date&direction=desc')
+    await screen.findAllByText('Mina Cruz')
+    expect(screen.queryByRole('region', { name: 'Active filters' })).not.toBeInTheDocument()
+  })
+
+  it('uses human status labels for filters and API display labels for rows', async () => {
+    mount({}, {}, '/dashboard/events/37/attendees?status=partially_refunded')
+    await screen.findAllByText('Mina Cruz')
+    expect(screen.getByRole('region', { name: 'Active filters' })).toHaveTextContent('Status: Partially refunded')
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    const select = screen.getByLabelText('Filter attendees by status')
+    expect(within(select).getByRole('option', { name: 'Valid' })).toHaveValue('issued')
+    expect(within(select).getByRole('option', { name: 'Not checked in' })).toHaveValue('not_checked_in')
+    expect(within(select).getByRole('option', { name: 'Partially refunded' })).toHaveValue('partially_refunded')
   })
 
   it('provides cards for phones and an export dialog with the filtered scope', async () => {
@@ -157,7 +187,7 @@ describe('sales list controls', () => {
     await screen.findAllByText('Mina Cruz')
     await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Sales channel' }), 'box_office')
-    expect(screen.getByRole('button', { name: /channel: box office/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Sales channel: Box office/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Show results' }))
     await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
     expect(screen.queryByRole('checkbox', { name: 'Total paid' })).not.toBeInTheDocument()

@@ -72,7 +72,7 @@ class OrganizerSalesExport
     when "total_paid", "price_paid" then money(ticket ? ticket_total(item, ticket) : order.total_cents)
     when "discount_promo" then [money(ticket ? allocated(item, ticket, :discount_cents) : order.discount_cents), order.promo_code&.code].compact.join(" / ")
     when "channel" then FinanceExports.channel(order)
-    when "status" then ticket ? OrganizerTicketSalesStatus.for(ticket) : order.status
+    when "status" then OrganizerTicketSalesStatus.label(ticket ? OrganizerTicketSalesStatus.for(ticket) : order.status)
     when "check_in_time" then self.class.local_time(ticket ? ticket.checked_in_at : order.tickets.filter_map(&:checked_in_at).max, @query.event)
     when "transferred_to" then transferred_to(ticket ? [ticket] : order.tickets)
     when "purchase_date" then self.class.local_time(order.completed_at || order.created_at, @query.event)
@@ -81,19 +81,26 @@ class OrganizerSalesExport
   end
 
   def allocated(item, ticket, component)
-    return nil unless item
-
-    @allocation_cache[component] ||= begin
-      ticket_ids = item.tickets.loaded? ? item.tickets.sort_by(&:id).map(&:id) : item.tickets.order(:id).pluck(:id)
-      Commerce::MoneyAllocator.call(item.public_send(component), Array.new(ticket_ids.length, 1))[ticket_ids.index(ticket.id)]
+    source = item || ticket.order
+    @allocation_cache[[source.class.name, source.id, component]] ||= begin
+      tickets = item ? item.tickets : ticket.order.tickets.where(order_item_id: nil)
+      ticket_ids = tickets.loaded? ? tickets.sort_by(&:id).map(&:id) : tickets.order(:id).pluck(:id)
+      cents = item ? item.public_send(component) : legacy_order_cents(source, component)
+      Commerce::MoneyAllocator.call(cents, Array.new(ticket_ids.length, 1))[ticket_ids.index(ticket.id)]
     end
   end
 
   def ticket_total(item, ticket)
-    return nil unless item
-
     allocated(item, ticket, :subtotal_cents) - allocated(item, ticket, :discount_cents) +
       allocated(item, ticket, :fee_cents) + allocated(item, ticket, :tax_cents)
+  end
+
+  def legacy_order_cents(order, component)
+    case component
+    when :fee_cents then order.service_fee_cents
+    when :tax_cents then order.total_cents - order.subtotal_cents + order.discount_cents - order.service_fee_cents
+    else order.public_send(component)
+    end
   end
 
   def money(cents)

@@ -2,6 +2,16 @@
 
 # One status precedence for the attendee screen, filters, and ticket CSV rows.
 class OrganizerTicketSalesStatus
+  LABELS = {
+    "issued" => "Valid", "checked_in" => "Checked in", "refunded" => "Refunded",
+    "partially_refunded" => "Partially refunded", "cancelled" => "Cancelled",
+    "transferred" => "Transferred", "completed" => "Paid", "paid" => "Paid"
+  }.freeze
+
+  def self.label(status)
+    LABELS.fetch(status.to_s) { status.to_s.humanize }
+  end
+
   def self.for(ticket)
     return "cancelled" if ticket.cancelled? || ticket.order.cancelled?
     return ticket.order.status if ticket.order.refunded? || ticket.order.partially_refunded?
