@@ -90,7 +90,7 @@ class FeeChange < ApplicationRecord
   end
 
   def self.schedule!(settings:, attributes:, effective_at:, actor:, request: nil, future_terms_approved: false,
-    draft_policies_acknowledged: false, approved_registry_digest: nil)
+    approved_registry_digest: nil)
     change = nil
     settings.with_lock do
       raise ArgumentError, "A fee change is already scheduled" if pending.exists?
@@ -111,10 +111,6 @@ class FeeChange < ApplicationRecord
       raise ArgumentError, "Approve the exact future fee and policy terms before scheduling" unless future_terms_approved
       blockers = PolicyRegistry.approval_blockers
       raise ArgumentError, "Policy text has technical problems: #{blockers.join('; ')}" if blockers.any?
-      if PolicyRegistry.draft? && !draft_policies_acknowledged
-        raise ArgumentError, "Confirm that you are approving draft policies for launch before legal review"
-      end
-
       digest = PolicyRegistry.registry_digest(material_terms: new_terms)
       unless approved_registry_digest.present? &&
           ActiveSupport::SecurityUtils.secure_compare(approved_registry_digest.to_s, digest)
@@ -129,8 +125,7 @@ class FeeChange < ApplicationRecord
         effective_at: effective_at, expires_at: effective_at + PlatformCapabilityReviews::Manager::QUICK_APPROVAL_TERM,
         actor_user: actor }
       submission = PlatformCapabilityReview.create!(snapshot.merge(decision: :submission))
-      approval = PlatformCapabilityReview.create!(snapshot.merge(decision: :approval, parent_review: submission,
-        reason: PolicyRegistry.draft? ? PolicyRegistry::DRAFT_ACKNOWLEDGMENT : nil))
+      approval = PlatformCapabilityReview.create!(snapshot.merge(decision: :approval, parent_review: submission))
 
       change = create!(created_by: actor, old_terms: old_terms, new_terms: new_terms, effective_at: effective_at,
         preapproval: approval, preapproved_registry_digest: digest)

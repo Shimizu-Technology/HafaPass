@@ -13,7 +13,7 @@ const settings = {
   service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform',
   payout_schedule_text: 'within 3 business days after your event',
   fee_notice_days: 30,
-  policy_draft: true, policy_register_approved: true,
+  policy_register_approved: true,
   stripe_test_configured: true, stripe_live_configured: true, stripe_live_approved: false,
   environment: 'production', payments_by_mode: { test: 12 },
   payment_mode_readiness: {
@@ -81,12 +81,11 @@ describe('AdminSettingsPage', () => {
     fireEvent.change(within(dialog).getByLabelText(/Effective date and time/), { target: { value: '2027-12-01T12:00' } })
     expect(within(dialog).getByRole('button', { name: 'Schedule fee change' })).toBeDisabled()
     await user.click(within(dialog).getByLabelText(/I approve these exact future fee/))
-    await user.click(within(dialog).getByLabelText(/I’m approving these draft policies/))
     await user.click(within(dialog).getByRole('button', { name: 'Schedule fee change' }))
 
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/settings',
       expect.objectContaining({ service_fee_flat_cents: 75, fee_notice_days: 45, effective_at: expect.any(String),
-        future_terms_approved: true, draft_policies_acknowledged: true,
+        future_terms_approved: true,
         approved_registry_digest: 'a'.repeat(64) }), expect.anything()))
     expect(await screen.findByRole('status')).toHaveTextContent('Fee change scheduled')
   })

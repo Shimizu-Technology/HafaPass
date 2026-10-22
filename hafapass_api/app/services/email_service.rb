@@ -74,6 +74,8 @@ class EmailService
       when "verification_request"
         profile = OrganizerProfile.find(delivery.metadata.fetch("organizer_profile_id"))
         send_verification_request(profile, delivery.recipient, delivery: delivery)
+      when "refund_reconciliation_digest"
+        send_refund_reconciliation_digest(delivery, delivery: delivery)
       when "organization_invitation"
         send_organization_invitation(delivery.organization_membership, delivery: delivery)
       when "platform_invitation"
@@ -157,6 +159,39 @@ class EmailService
         idempotency_key: refund ? "refund-notification/#{refund.id}" : nil)
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
+    end
+
+    def send_refund_reconciliation_digest_async(items, date: Date.current)
+      return [] if items.empty?
+
+      event = Event.find(items.first.fetch(:event_id))
+      snapshot = items.first(100).map do |item|
+        item.slice(:type, :id, :order_reference, :event_title, :status, :amount_cents, :overdue, :next_action)
+      end
+      admins = User.where(role: :admin).where.not(email: [nil, ""]).order(:id).to_a
+        .uniq { |admin| admin.email.downcase }
+      admins.map do |admin|
+        delivery = create_delivery(event: event, template: "refund_reconciliation_digest", recipient: admin.email,
+          metadata: { date: date.iso8601, count: items.length, items: snapshot },
+          idempotency_key: "refund-reconciliation-digest/#{date.iso8601}/#{admin.id}")
+        MessageDeliveryJob.perform_later(delivery.id) if delivery.queued?
+        delivery
+      end
+    end
+
+    def send_refund_reconciliation_digest(message, delivery: nil)
+      count = message.metadata.fetch("count")
+      list = message.metadata.fetch("items").map do |item|
+        "<li>#{ERB::Util.html_escape(item.fetch('order_reference'))} — " \
+          "#{ERB::Util.html_escape(item.fetch('event_title'))}: " \
+          "#{ERB::Util.html_escape(item.fetch('status').tr('_', ' '))} " \
+          "($#{format('%.2f', item.fetch('amount_cents').to_i / 100.0)})</li>"
+      end.join
+      html = "<h2>Refunds needing attention</h2><p>#{count} unresolved item(s). " \
+        "Review the reconciliation queue before releasing related payouts.</p><ul>#{list}</ul>" \
+        "<p><a href=\"#{frontend_url}/admin/refund_reconciliation\">Open refund reconciliation</a></p>"
+      deliver(to: message.recipient, subject: "Refund reconciliation: #{count} item(s) need attention",
+        html: html, tag: "refund_reconciliation", delivery: delivery)
     end
 
     def send_guest_list_notification_async(guest_entry)

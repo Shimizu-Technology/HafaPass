@@ -11,14 +11,13 @@ RSpec.describe "Scheduled fee changes", type: :request do
   let(:effective_at) { 31.days.from_now.iso8601 }
 
   before do
-    PlatformCapabilityReviews::Manager.quick_approve!(capability: "policy_register", actor: admin,
-      draft_policies_acknowledged: true)
+    PlatformCapabilityReviews::Manager.quick_approve!(capability: "policy_register", actor: admin)
   end
 
   def schedule(attributes = {})
     payload = {
       service_fee_percent: 7, service_fee_flat_cents: 150, effective_at: effective_at,
-      future_terms_approved: true, draft_policies_acknowledged: true
+      future_terms_approved: true
     }.merge(attributes)
     get "/api/v1/admin/settings/fee_change_preview", params: payload.slice(:service_fee_percent, :service_fee_flat_cents),
       headers: auth_headers(admin)

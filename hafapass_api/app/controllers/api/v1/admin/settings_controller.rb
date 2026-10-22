@@ -94,7 +94,6 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       if changed_fee_terms
         FeeChange.schedule!(settings: settings, attributes: requested_fee_terms, effective_at: effective_at,
           actor: @current_user, request: request, future_terms_approved: params[:future_terms_approved] == true || params[:future_terms_approved] == "true",
-          draft_policies_acknowledged: params[:draft_policies_acknowledged] == true || params[:draft_policies_acknowledged] == "true",
           approved_registry_digest: params[:approved_registry_digest])
       end
       true
@@ -132,7 +131,6 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       processing_fee_bearer: settings.processing_fee_bearer,
       payout_schedule_text: settings.payout_schedule_text,
       fee_notice_days: settings.fee_notice_days,
-      policy_draft: PolicyRegistry.draft?,
       policy_register_approved: PlatformCapabilities.enabled?("policy_register"),
       **FeeChange.notice_preview,
       pending_fee_change: FeeChange.pending.order(:id).last&.as_json(only: [:id, :old_terms, :new_terms, :effective_at, :created_at]),

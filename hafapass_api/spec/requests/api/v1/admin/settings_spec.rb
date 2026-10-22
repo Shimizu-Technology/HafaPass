@@ -139,12 +139,10 @@ RSpec.describe "Admin settings", type: :request do
 
   describe "fee terms" do
     it "schedules the fee, processing bearer and payout terms with an audit record" do
-      PlatformCapabilityReviews::Manager.quick_approve!(capability: "policy_register", actor: admin,
-        draft_policies_acknowledged: true)
+      PlatformCapabilityReviews::Manager.quick_approve!(capability: "policy_register", actor: admin)
       patch "/api/v1/admin/settings", params: { service_fee_percent: "4.5", service_fee_flat_cents: 75,
         processing_fee_bearer: "organizer", payout_schedule_text: "  within 5 business days  ",
         effective_at: 31.days.from_now.iso8601, future_terms_approved: true,
-        draft_policies_acknowledged: true,
         approved_registry_digest: FeeChange.proposed_registry_digest(settings: SiteSetting.instance, attributes: {
           service_fee_percent: "4.5", service_fee_flat_cents: 75, processing_fee_bearer: "organizer",
           payout_schedule_text: "  within 5 business days  " }) }, headers: auth_headers(admin)

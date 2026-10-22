@@ -55,6 +55,19 @@ RSpec.describe PolicyRegistry do
     end
   end
 
+  it "requires a fresh register approval when only the status or effective date changes" do
+    base = described_class.send(:registry)
+    acceptances = [described_class.buyer_terms[:digest], described_class.organizer_agreement[:digest]]
+    before = described_class.registry_digest
+
+    { "effective_date" => "2099-01-01", "status" => "superseded" }.each do |field, value|
+      allow(described_class).to receive(:registry).and_return(base.merge(field => value))
+
+      expect(described_class.registry_digest).not_to eq(before), "#{field} did not change the register digest"
+      expect([described_class.buyer_terms[:digest], described_class.organizer_agreement[:digest]]).to eq(acceptances)
+    end
+  end
+
   it "keeps legal-review notes out of the public text and lists them for admins" do
     strings = described_class.public_documents.values.flat_map do |document|
       [document["title"], document["summary"]] + document["sections"].flat_map { |section| section.values_at("heading", "body") }
@@ -69,8 +82,8 @@ RSpec.describe PolicyRegistry do
     described_class.review_notes.each { |note| expect(headings.fetch(note[:document])).to include(note[:section]) }
   end
 
-  it "treats draft status as information and only technical problems as approval blockers" do
-    expect(described_class).to be_draft
+  it "treats only technical problems as approval blockers" do
+    expect(described_class).not_to be_draft
     expect(described_class.approval_blockers).to eq([])
 
     allow(described_class).to receive(:templates).and_return(
@@ -84,15 +97,15 @@ RSpec.describe PolicyRegistry do
     expect(described_class.approval_blockers).to eq(["A policy uses an unknown template placeholder (not_a_setting)"])
   end
 
-  it "serves the launch draft, clearly marked as pending legal review" do
-    expect(described_class.version).to eq("2026-10-counsel-draft-3")
-    expect(described_class.status).to eq("draft-pending-legal-review")
+  it "serves the owner-approved policies with a shared effective date" do
+    expect(described_class.version).to eq("2026-10-22")
+    expect(described_class.effective_date).to eq("2026-10-22")
+    expect(described_class.status).to eq("approved")
+    expect(described_class.review_summary).to include(draft: false, effective_date: "2026-10-22")
     expect(described_class.public_documents.keys).to include(
       "buyer-terms", "refunds", "privacy", "organizer-agreement", "acceptable-use", "retention", "cookies", "accessibility"
     )
-    described_class.public_documents.each_value do |document|
-      expect(document.fetch("summary")).to end_with("Draft pending legal review.")
-    end
+    expect(described_class.public_documents.to_json).not_to match(/draft|pending counsel|subject to review|not final/i)
   end
 
   it "states the agent-of-payee, refund liability and tax roles without public drafting notes" do
@@ -136,7 +149,7 @@ RSpec.describe PolicyRegistry do
 
     expect(profile.reload).not_to be_policy_accepted
     expect(described_class.buyer_terms[:digest]).not_to eq(buyer_digest)
-    expect(described_class.buyer_terms[:version]).to eq("2026-10-counsel-draft-3")
+    expect(described_class.buyer_terms[:version]).to eq("2026-10-22")
   end
 
   it "treats acceptance of the previous pilot draft as stale" do

@@ -18,10 +18,10 @@ RSpec.describe PlatformCapabilityReview do
   end
 
   it "requires every capability-specific evidence control" do
-    review = described_class.new(attributes.merge(controls: controls.except("counsel_approved")))
+    review = described_class.new(attributes.merge(controls: controls.except("policy_owner_approved")))
 
     expect(review).not_to be_valid
-    expect(review.errors[:controls].join).to include("counsel_approved")
+    expect(review.errors[:controls].join).to include("policy_owner_approved")
   end
 
   it "reports a missing evidence digest as blank at the application boundary" do

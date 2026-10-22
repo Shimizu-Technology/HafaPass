@@ -5,6 +5,24 @@ require "ostruct"
 class StripeService
   class PaymentError < StandardError; end
   class CardPolicyError < PaymentError; end
+  class BudgetExceeded < PaymentError; end
+  class AmbiguousRefund < PaymentError; end
+  REFUND_LOOKUP_PAGE_LIMIT = 3
+
+  class CallBudget
+    attr_reader :calls, :limit
+
+    def initialize(limit)
+      @limit = limit
+      @calls = 0
+    end
+
+    def charge!
+      raise BudgetExceeded, "Stripe call budget reached" if calls >= limit
+
+      @calls += 1
+    end
+  end
 
   class << self
     # ── Payment Intents ──────────────────────────────────────────────
@@ -80,7 +98,8 @@ class StripeService
 
     # The POST idempotency cache expires. Find an acknowledged operation by
     # our durable metadata before ever replaying an uncertain refund request.
-    def find_refund(payment_intent_id, idempotency_key:, payment: nil)
+    def find_refund(payment_intent_id, idempotency_key:, payment: nil, expected_amount_cents: nil,
+      expected_created_at: nil, call_budget: nil)
       settings = SiteSetting.instance
       if simulated_operation?(payment_intent_id, payment, settings)
         raise PaymentError, "A real payment cannot be reconciled in simulation mode" unless payment_intent_id.start_with?("sim_")
@@ -88,16 +107,38 @@ class StripeService
         return nil
       end
 
-      client, options = operation_client(payment: payment, settings: settings)
-      match = nil
-      client.v1.refunds.list({ payment_intent: payment_intent_id, limit: 100 }, options).auto_paging_each do |refund|
-        next unless refund.metadata&.[]("hafapass_refund_key") == idempotency_key
+      client, options = operation_client(payment: payment, settings: settings, call_budget: call_budget)
+      matches = []
+      cursor = nil
+      REFUND_LOOKUP_PAGE_LIMIT.times do
+        params = { payment_intent: payment_intent_id, limit: 100 }
+        params[:starting_after] = cursor if cursor
+        call_budget&.charge!
+        page = client.v1.refunds.list(params, options)
+        page.data.each do |refund|
+          key = refund.metadata&.[]("hafapass_refund_key")
+          next if key.present? && key != idempotency_key
+          next if expected_amount_cents && refund.amount != expected_amount_cents
+          next if expected_created_at && (Time.at(refund.created.to_i) - expected_created_at).abs > 1.day
+          next if key.blank? && (!expected_amount_cents || !expected_created_at)
 
-        raise PaymentError, "Multiple provider refunds match this operation; finance review is required" if match
+          matches << refund
+          raise AmbiguousRefund, "Multiple provider refunds match this operation; manual finance review is required" if matches.length > 1
+        end
+        return matches.first unless page.has_more
 
-        match = refund
+        cursor = page.data.last&.id
+        raise AmbiguousRefund, "Stripe refund pagination was incomplete; manual finance review is required" unless cursor
       end
-      match
+      raise AmbiguousRefund, "Stripe refund pagination limit reached; manual finance review is required"
+    end
+
+    def retrieve_refund(refund_id, payment:, call_budget: nil)
+      raise PaymentError, "Simulated refunds cannot be reconciled with Stripe" if payment.provider_environment == "simulate"
+
+      client, options = operation_client(payment: payment, settings: SiteSetting.instance, call_budget: call_budget)
+      call_budget&.charge!
+      client.v1.refunds.retrieve(refund_id, {}, options)
     end
 
     def cancel_payment_intent(payment_intent_id, idempotency_key:, payment: nil)
@@ -191,7 +232,7 @@ class StripeService
       provider_id.start_with?("sim_") || (payment ? payment.provider_environment == "simulate" : settings.simulate_mode?)
     end
 
-    def operation_client(payment:, settings:)
+    def operation_client(payment:, settings:, call_budget: nil)
       if payment
         raise PaymentError, "Payment context is missing; finance review is required" if payment.provider_environment.blank?
         if Rails.env.staging? && (!ProviderRehearsal.stripe_enabled? || payment.provider_environment != "test")
@@ -214,6 +255,7 @@ class StripeService
         raise PaymentError, "Payment platform account context is missing; finance review is required"
       end
       client = Stripe::StripeClient.new(key)
+      call_budget&.charge!
       actual_platform = client.v1.accounts.retrieve_current.id
       unless actual_platform == expected_platform
         raise PaymentError, "Stripe credentials belong to a different platform account; finance review is required"

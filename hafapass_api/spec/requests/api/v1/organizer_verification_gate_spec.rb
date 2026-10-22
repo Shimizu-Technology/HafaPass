@@ -84,8 +84,8 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
       "message" => "Checkout is off until you approve the production policy register.")
 
     item = setup.find { |entry| entry["key"] == "policy_register" }
-    expect(item).to include("requires_draft_acknowledgment" => PolicyRegistry.draft?)
-    post "/api/v1/admin/platform_capabilities/policy_register/quick_approve", params: { draft_policies_acknowledged: true },
+    expect(item).not_to have_key("requires_draft_acknowledgment")
+    post "/api/v1/admin/platform_capabilities/policy_register/quick_approve",
       headers: auth_headers(admin)
     expect(response).to have_http_status(:created), response.body
     expect(PlatformCapabilities.enabled?("policy_register")).to be(true)

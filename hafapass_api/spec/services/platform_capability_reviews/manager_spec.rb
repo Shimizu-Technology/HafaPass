@@ -13,24 +13,16 @@ RSpec.describe PlatformCapabilityReviews::Manager do
     }
   end
 
-  # Generic examples model counsel-approved policy text; the draft path is below.
-  before { allow(PolicyRegistry).to receive(:draft?).and_return(false) }
-
-  it "approves draft policies for launch only with the explicit acknowledgment, and records it" do
-    allow(PolicyRegistry).to receive(:draft?).and_call_original
-    expect(PolicyRegistry).to be_draft
+  it "approves the owner-approved policy snapshot without a draft acknowledgment" do
+    expect(PolicyRegistry).not_to be_draft
     submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
 
-    expect do
-      described_class.approve!(submission: submission, actor: approver)
-    end.to raise_error(described_class::ReviewError, /approving draft policies for launch before legal review/)
-
-    approval = described_class.approve!(submission: submission, actor: approver, draft_policies_acknowledged: true)
+    approval = described_class.approve!(submission: submission, actor: approver)
     expect(approval).to be_active
-    expect(approval.reason).to eq(PolicyRegistry::DRAFT_ACKNOWLEDGMENT)
+    expect(approval.reason).to be_nil
     log = AuditLog.find_by!(auditable: approval, action: "platform_capability.approved")
-    expect(log.metadata).to include("draft_policies_acknowledged" => true, "policy_version" => PolicyRegistry.version)
-    expect(log.after_data).to include("reason" => PolicyRegistry::DRAFT_ACKNOWLEDGMENT)
+    expect(log.metadata).to eq({})
+    expect(log.after_data).to include("reason" => nil)
   end
 
   it "blocks approval only for technical problems in the policy text" do
@@ -38,7 +30,7 @@ RSpec.describe PlatformCapabilityReviews::Manager do
     submission = described_class.submit!(capability: "policy_register", attributes: attributes, actor: submitter)
 
     expect do
-      described_class.approve!(submission: submission, actor: approver, draft_policies_acknowledged: true)
+      described_class.approve!(submission: submission, actor: approver)
     end.to raise_error(described_class::ReviewError, /technical problems: Unfilled template placeholders/)
     expect(PlatformCapabilities.enabled?("policy_register")).to be(false)
   end
@@ -95,20 +87,12 @@ RSpec.describe PlatformCapabilityReviews::Manager do
   end
 
   describe ".quick_approve!" do
-    it "needs the draft-policy acknowledgment and records it the same way as the full review" do
-      allow(PolicyRegistry).to receive(:draft?).and_return(true)
-
-      expect do
-        described_class.quick_approve!(capability: "policy_register", actor: submitter)
-      end.to raise_error(described_class::ReviewError, /approving draft policies for launch before legal review/)
-      expect(PlatformCapabilityReview.where(capability: "policy_register")).to be_empty
-
-      approval = described_class.quick_approve!(capability: "policy_register", actor: submitter,
-        draft_policies_acknowledged: true)
+    it "records a quick approval without a draft acknowledgment" do
+      approval = described_class.quick_approve!(capability: "policy_register", actor: submitter)
       expect(approval).to be_active
-      expect(approval.reason).to eq(PolicyRegistry::DRAFT_ACKNOWLEDGMENT)
+      expect(approval.reason).to be_nil
       log = AuditLog.find_by!(auditable: approval, action: "platform_capability.approved")
-      expect(log.metadata).to include("draft_policies_acknowledged" => true)
+      expect(log.metadata).to eq({})
     end
 
     it "refuses a second approval while one is active" do

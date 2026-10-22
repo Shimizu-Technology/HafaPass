@@ -167,7 +167,6 @@ function AdminSettingsSession({ identity, resourcePath }) {
   const [effectiveAt, setEffectiveAt] = useState('')
   const [feePreview, setFeePreview] = useState(null)
   const [futureTermsApproved, setFutureTermsApproved] = useState(false)
-  const [draftPoliciesAcknowledged, setDraftPoliciesAcknowledged] = useState(false)
 
   // `keepForm` re-checks the saved settings (for example payment readiness)
   // without discarding edits the admin has not saved yet.
@@ -210,7 +209,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
     try {
       const response = await apiClient.patch('/admin/settings', {
         ...changes, ...(feeChanges.length ? { effective_at: new Date(effectiveAt).toISOString(),
-          future_terms_approved: futureTermsApproved, draft_policies_acknowledged: draftPoliciesAcknowledged,
+          future_terms_approved: futureTermsApproved,
           approved_registry_digest: feePreview.registry_digest } : {}),
       }, request.config)
       if (!request.current()) return
@@ -242,7 +241,6 @@ function AdminSettingsSession({ identity, resourcePath }) {
         })
         setFeePreview(response.data)
         setFutureTermsApproved(false)
-        setDraftPoliciesAcknowledged(false)
         setConfirming(feeChanges)
       } catch { setErrors({ form: 'Could not load the affected organizer count. Try again.' }) }
     }
@@ -368,10 +366,9 @@ function AdminSettingsSession({ identity, resourcePath }) {
         </dl>
         <p className="mt-4 break-all text-xs text-neutral-600">Future policy register digest: <code>{feePreview?.registry_digest}</code></p>
         <label className="mt-4 flex gap-2 text-sm text-neutral-900"><input type="checkbox" checked={futureTermsApproved} onChange={event => setFutureTermsApproved(event.target.checked)} />I approve these exact future fee and policy terms at the effective date.</label>
-        {saved.policy_draft !== false && <label className="mt-2 flex gap-2 text-sm text-neutral-900"><input type="checkbox" checked={draftPoliciesAcknowledged} onChange={event => setDraftPoliciesAcknowledged(event.target.checked)} />I’m approving these draft policies for launch before legal review. HåfaPass will update them after counsel reviews.</label>}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" disabled={saving} onClick={() => setConfirming(null)} className="btn-secondary">Keep editing</button>
-          <button type="button" disabled={saving || saved.policy_register_approved === false || !feePreview?.registry_digest || !futureTermsApproved || (saved.policy_draft !== false && !draftPoliciesAcknowledged) || !effectiveAt || new Date(effectiveAt).getTime() < Date.now() + Number(form.fee_notice_days) * 86400000} onClick={save} className="btn-primary">{saving ? 'Scheduling…' : 'Schedule fee change'}</button>
+          <button type="button" disabled={saving || saved.policy_register_approved === false || !feePreview?.registry_digest || !futureTermsApproved || !effectiveAt || new Date(effectiveAt).getTime() < Date.now() + Number(form.fee_notice_days) * 86400000} onClick={save} className="btn-primary">{saving ? 'Scheduling…' : 'Schedule fee change'}</button>
         </div>
       </Dialog>}
     </AdminLayout>

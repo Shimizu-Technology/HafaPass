@@ -34,7 +34,7 @@ async function renderPage(Component, route = '/', path = '/') {
 
 beforeEach(() => {
   api.get.mockImplementation(url => {
-    if (url === '/config') return Promise.resolve({ data: { service_fee_percent: '5.0', service_fee_flat_cents: 100, buyer_terms_version: '1', policy_status: 'approved', policies: { 'buyer-terms': { title: 'Authoritative English policy', summary: 'English policy summary', sections: [{ heading: 'English legal heading', body: 'English legal body' }] } } } })
+    if (url === '/config') return Promise.resolve({ data: { service_fee_percent: '5.0', service_fee_flat_cents: 100, buyer_terms_version: '2026-10-22', policy_status: 'approved', policy_effective_date: '2026-10-22', policies: { 'buyer-terms': { title: 'Authoritative English policy', summary: 'English policy summary', sections: [{ heading: 'English legal heading', body: 'English legal body' }] } } } })
     if (url === '/marketplace_collections') return Promise.resolve({ data: { collections: [] } })
     if (url.startsWith('/me/')) return Promise.resolve({ data: { events: [], organizers: [], reminders: [] } })
     return Promise.resolve({ data: { name: 'Fixture name', title: 'Fixture title', events: [], meta: {}, completed_events: 2, tickets_issued: 3, followers: 4 } })

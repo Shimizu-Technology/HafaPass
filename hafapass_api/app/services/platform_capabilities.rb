@@ -40,8 +40,7 @@ class PlatformCapabilities
     "policy_register" => {
       label: "Production policy register",
       required_env: [],
-      controls: %w[counsel_approved accounting_approved privacy_approved effective_dates_approved
-        reacceptance_rules_approved retention_deletion_and_legal_hold_approved]
+      controls: %w[policy_owner_approved effective_dates_approved reacceptance_rules_approved]
     }
   }.freeze
 
