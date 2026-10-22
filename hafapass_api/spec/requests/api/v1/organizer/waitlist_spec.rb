@@ -99,6 +99,36 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
     end
   end
 
+  describe "POST /api/v1/organizer/events/:event_id/waitlist/:id/retry_unconfirmed" do
+    it "requires an unconfirmed round and creates only one explicit retry" do
+      entry = create(:waitlist_entry, :notified, event: event, ticket_type: ga_ticket,
+        delivery_failure: WaitlistDelivery::UNCONFIRMED)
+      path = "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/retry_unconfirmed"
+
+      post path, headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(entry.reload.delivery_failure).to be_nil
+      expect(EmailService).to have_received(:send_waitlist_notification_async).once
+
+      post path, headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(EmailService).to have_received(:send_waitlist_notification_async).once
+    end
+
+    it "accepts an unconfirmed active offer without replacing the offer" do
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
+      offer = WaitlistOffers::Issuer.call(entry: entry)
+      entry.update!(delivery_failure: WaitlistDelivery::UNCONFIRMED)
+
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/retry_unconfirmed", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(offer.reload).to be_offered
+      expect(entry.reload.delivery_failure).to be_nil
+      expect(EmailService).to have_received(:send_waitlist_offer_async).with(offer, hash_including(:idempotency_key))
+    end
+  end
+
   describe "POST /api/v1/organizer/events/:event_id/waitlist/notify_next" do
     it "notifies the next N entries in position order" do
       e1 = create(:waitlist_entry, event: event, ticket_type: ga_ticket)

@@ -122,9 +122,11 @@ class MessageProviderEventProcessor
     delivery.with_lock do
       return if delivery.last_event_at.present? && receipt.occurred_at < delivery.last_event_at
 
-      attributes = { status: status, last_event_at: receipt.occurred_at, last_error: failure_message(receipt) }
+      attributes = { status: status, last_event_at: receipt.occurred_at, last_error: failure_message(receipt),
+        reconciled_at: nil }
       attributes[timestamp_column(status)] = receipt.occurred_at if timestamp_column(status)
       delivery.update!(attributes)
+      WaitlistDelivery.reconcile_success!(delivery) if status == :delivered
     end
   end
 

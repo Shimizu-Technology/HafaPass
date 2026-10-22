@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_180100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1072,7 +1072,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180100) do
     t.string "wire_body_digest"
     t.bigint "organization_membership_id"
     t.bigint "platform_invitation_id"
+    t.datetime "reconciled_at"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
+    t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY ((ARRAY['waitlist_notification'::character varying, 'waitlist_offer'::character varying])::text[])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
     t.index ["order_id", "created_at"], name: "index_message_deliveries_on_order_id_and_created_at"

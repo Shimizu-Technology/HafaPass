@@ -173,6 +173,7 @@ class MessageDeliveryJob < ApplicationJob
         unknown = false if !previously_unknown && known_rejection?(error)
         delivery.update!(status: :failed, failed_at: Time.current,
           provider_outcome_unknown: unknown, last_error: "#{error.class}: #{error.message}".first(1000),
+          reconciled_at: nil,
           send_lease_token: nil, send_lease_expires_at: nil)
       end
     end

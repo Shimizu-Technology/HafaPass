@@ -5,7 +5,7 @@ module Api
         include Paginatable
 
         before_action :set_event
-        before_action :set_entry, only: [:notify, :offer, :destroy]
+        before_action :set_entry, only: [:notify, :retry_unconfirmed, :offer, :destroy]
 
         # GET /api/v1/organizer/events/:event_id/waitlist
         def index
@@ -46,6 +46,22 @@ module Api
 
           unless @entry.notify_and_queue!
             return render json: { error: "Can only notify entries with 'waiting' status" }, status: :unprocessable_entity
+          end
+
+          render json: entry_json(@entry)
+        rescue WaitlistDelivery::AddressMissing
+          address_error
+        end
+
+        def retry_unconfirmed
+          return address_error unless WaitlistDelivery.address_ready?(@event)
+          retried = if @entry.offered?
+            WaitlistDelivery.retry_unconfirmed_offer!(@entry)
+          else
+            @entry.retry_unconfirmed_notification!
+          end
+          unless retried
+            return render json: { error: "This alert is no longer unconfirmed; refresh the waitlist" }, status: :unprocessable_entity
           end
 
           render json: entry_json(@entry)

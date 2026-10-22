@@ -227,6 +227,31 @@ for (const tool of tools) describe(`${tool.title} context ownership`, () => {
   })
 })
 
+describe('Waitlist delivery recovery', () => {
+  it('shows an unconfirmed alert and requires confirmation for its manual retry', async () => {
+    activeTool = { ...tools[2], row: owner => ({ ...tools[2].row(owner), status: 'notified',
+      delivery_failure: 'Delivery unconfirmed; check with the buyer before manually retrying' }) }
+    mount(activeTool)
+    expect(await screen.findByText(/Delivery unconfirmed; check with the buyer/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry alert' }))
+    expect(screen.getByText(/may already have arrived/)).toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Retry alert' }))
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/waitlist/5/retry_unconfirmed', {}, expect.any(Object))
+  })
+
+  it('offers a separate manual resend for an unconfirmed checkout offer', async () => {
+    activeTool = { ...tools[2], row: owner => ({ ...tools[2].row(owner), status: 'offered',
+      delivery_failure: 'Delivery unconfirmed; check with the buyer before manually retrying' }) }
+    mount(activeTool)
+    await screen.findByText(/Delivery unconfirmed; check with the buyer/)
+    await userEvent.click(screen.getByRole('button', { name: 'Retry offer email' }))
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Retry offer email' }))
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/waitlist/5/retry_unconfirmed', {}, expect.any(Object))
+  })
+})
+
 describe('draft retention and current waitlist view', () => {
   it('allows clear-and-type guest quantity and sends the valid numeric quantity with scoped ownership', async () => {
     activeTool = tools[0]

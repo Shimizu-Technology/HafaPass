@@ -220,11 +220,11 @@ class EmailService
       delivery
     end
 
-    def send_waitlist_offer_async(offer)
+    def send_waitlist_offer_async(offer, idempotency_key: "waitlist-offer/#{offer.id}")
       delivery = create_delivery(event: offer.event, template: "waitlist_offer",
         recipient: offer.waitlist_entry.email,
         metadata: { waitlist_offer_id: offer.id }.merge(commercial_metadata(offer.event)),
-        idempotency_key: "waitlist-offer/#{offer.id}")
+        idempotency_key: idempotency_key)
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end

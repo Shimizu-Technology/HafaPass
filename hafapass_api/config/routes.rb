@@ -207,6 +207,7 @@ Rails.application.routes.draw do
           resources :waitlist, only: [:index, :destroy], controller: "waitlist" do
             member do
               post :notify
+              post :retry_unconfirmed
               post :offer
             end
             collection do

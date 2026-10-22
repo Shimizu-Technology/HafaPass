@@ -113,13 +113,34 @@ RSpec.describe WaitlistDelivery do
     expect(ticket.reload.available_quantity).to eq(3)
   end
 
-  it "sweeps a failed alert even when provider acceptance is uncertain" do
+  it "keeps an uncertain offer reserved until the organizer explicitly retries its email" do
+    ticket = create(:ticket_type, event: event, quantity_available: 3)
+    offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
+    delivery = MessageDelivery.find_by!(idempotency_key: "waitlist-offer/#{offer.id}")
+    delivery.update!(status: :failed, provider_outcome_unknown: true, last_error: "timeout")
+
+    SweepWaitlistDeliveriesJob.perform_now
+    expect(offer.reload).to be_offered
+    expect(entry.reload).to be_offered
+    expect(entry.delivery_failure).to eq(described_class::UNCONFIRMED)
+    expect(described_class.retry_unconfirmed_offer!(entry)).to be true
+    expect(described_class.retry_unconfirmed_offer!(entry.reload)).to be false
+    expect(MessageDelivery.where(template: "waitlist_offer").count).to eq(2)
+    expect(offer.reload).to be_offered
+  end
+
+  it "keeps an uncertain alert notified and offers an explicit manual retry" do
     entry.notify!
     delivery = EmailService.send_waitlist_notification_async(entry)
     delivery.update!(status: :failed, provider_outcome_unknown: true, last_error: "transport timed out")
     SweepWaitlistDeliveriesJob.perform_now
-    expect(entry.reload).to be_waiting
-    expect(entry.delivery_failure).to eq("transport timed out")
+    expect(entry.reload).to be_notified
+    expect(entry.delivery_failure).to eq(described_class::UNCONFIRMED)
+    expect(delivery.reload.reconciled_at).to be_present
+    expect(entry.retry_unconfirmed_notification!).to be true
+    expect(entry.reload).to be_notified
+    expect(entry.delivery_failure).to be_nil
+    expect(MessageDelivery.where(template: "waitlist_notification").count).to eq(2)
   end
 
   it "sweeps a known failed alert back to waiting" do
@@ -129,5 +150,112 @@ RSpec.describe WaitlistDelivery do
     SweepWaitlistDeliveriesJob.perform_now
     expect(entry.reload).to be_waiting
     expect(entry.delivery_failure).to eq("provider rejected")
+  end
+
+  it "lets a checkout claim win between loading and locking an offer" do
+    ticket = create(:ticket_type, event: event, quantity_available: 3)
+    offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
+    delivery = MessageDelivery.find_by!(idempotency_key: "waitlist-offer/#{offer.id}")
+    delivery.update!(status: :failed, last_error: "rejected")
+    allow_any_instance_of(WaitlistOffer).to receive(:lock!).and_wrap_original do |original, *args|
+      offer.update_columns(status: WaitlistOffer.statuses.fetch("claimed"), claimed_at: Time.current)
+      original.call(*args)
+    end
+
+    described_class.reconcile_failure!(delivery)
+
+    expect(offer.reload).to be_claimed
+    expect(entry.reload).to be_offered
+    expect(delivery.reload.reconciled_at).to be_present
+    expect(entry.delivery_failure).to be_nil
+  end
+
+  it "uses the delivery status reloaded under its lock" do
+    entry.notify!
+    delivery = EmailService.send_waitlist_notification_async(entry)
+    delivery.update!(status: :failed, last_error: "stale failure")
+    allow(delivery).to receive(:lock!).and_wrap_original do |original, *args|
+      MessageDelivery.where(id: delivery.id).update_all(status: MessageDelivery.statuses.fetch("delivered"))
+      original.call(*args)
+    end
+
+    described_class.reconcile_failure!(delivery)
+
+    expect(entry.reload).to be_notified
+    expect(entry.delivery_failure).to be_nil
+    expect(delivery.reload.reconciled_at).to be_nil
+  end
+
+  it "does not create another alert when a delivered receipt arrives after a revert" do
+    entry.notify!
+    delivery = EmailService.send_waitlist_notification_async(entry)
+    delivery.update!(status: :failed, last_error: "provider rejected", provider_id: "late-#{delivery.id}")
+    described_class.reconcile_failure!(delivery)
+    expect(entry.reload).to be_waiting
+
+    delivery.update!(status: :delivered)
+    described_class.reconcile_success!(delivery)
+
+    expect(entry.reload).to be_notified
+    expect(entry.notify_and_queue!).to be false
+    expect(MessageDelivery.where(template: "waitlist_notification").count).to eq(1)
+  end
+
+  it "caps each sweep at the oldest 500 failures and marks them once" do
+    now = Time.current
+    rows = 501.times.map do |index|
+      { event_id: event.id, template: "waitlist_notification", recipient: "buyer#{index}@example.com",
+        idempotency_key: "sweep-bound/#{SecureRandom.uuid}", provider: "simulated", channel: "email",
+        status: MessageDelivery.statuses.fetch("failed"), metadata: { waitlist_entry_id: entry.id },
+        created_at: now + index.seconds, updated_at: now }
+    end
+    MessageDelivery.insert_all!(rows)
+
+    SweepWaitlistDeliveriesJob.perform_now
+    expect(MessageDelivery.where(reconciled_at: nil, template: "waitlist_notification").count).to eq(1)
+    expect(MessageDelivery.where(reconciled_at: nil, template: "waitlist_notification").pick(:created_at)).to be_within(1.second).of(now + 500.seconds)
+    SweepWaitlistDeliveriesJob.perform_now
+    expect(MessageDelivery.where(reconciled_at: nil, template: "waitlist_notification").count).to eq(0)
+  end
+
+  it "requeues a hard-bounced alert with a retryable reason" do
+    entry.notify!
+    delivery = EmailService.send_waitlist_notification_async(entry)
+    delivery.update!(status: :bounced, last_error: "Mailbox unavailable")
+
+    SweepWaitlistDeliveriesJob.perform_now
+
+    expect(entry.reload).to be_waiting
+    expect(entry.delivery_failure).to include("Email bounced")
+    expect(delivery.reload.reconciled_at).to be_present
+  end
+
+  it "records a complaint as an opt-out without requeuing the entry" do
+    entry.notify!
+    delivery = EmailService.send_waitlist_notification_async(entry)
+    delivery.update!(status: :complained)
+
+    SweepWaitlistDeliveriesJob.perform_now
+
+    expect(entry.reload).to be_notified
+    expect(entry.delivery_failure).to include("opted out")
+    expect(MarketingUnsubscribe.find_by!(organization: event.organization, email: entry.email).unsubscribed_at).to be_present
+    expect(delivery.reload.reconciled_at).to be_present
+  end
+
+  it "keeps a transient bounce unconfirmed rather than releasing the alert" do
+    entry.notify!
+    delivery = EmailService.send_waitlist_notification_async(entry)
+    at = Time.current
+    delivery.update!(status: :bounced, last_event_at: at)
+    MessageProviderEvent.create!(message_delivery: delivery, provider: delivery.provider,
+      provider_event_id: "transient-#{delivery.id}", provider_message_id: "transient-#{delivery.id}",
+      event_type: "email.bounced", occurred_at: at, received_at: at,
+      payload: { bounce: { type: "Transient" } })
+
+    SweepWaitlistDeliveriesJob.perform_now
+
+    expect(entry.reload).to be_notified
+    expect(entry.delivery_failure).to eq(described_class::UNCONFIRMED)
   end
 end

@@ -162,6 +162,9 @@ function WaitlistSession({ eventId, identity }) {
   const handleNotify = entry => {
     askConfirmation('notify_entry', `Notify ${entry.name || entry.email} that tickets are available?`, 'Send notification', config => apiClient.post(`/organizer/events/${eventId}/waitlist/${entry.id}/notify`, {}, config), () => setNotice('Notification request recorded. Delivery is handled separately.'))
   }
+  const handleRetryUnconfirmed = entry => {
+    askConfirmation('retry_unconfirmed', `Delivery to ${entry.name || entry.email} is unconfirmed and may already have arrived. Check with the buyer before sending another email. Send it again?`, entry.status === 'offered' ? 'Retry offer email' : 'Retry alert', config => apiClient.post(`/organizer/events/${eventId}/waitlist/${entry.id}/retry_unconfirmed`, {}, config), () => setNotice('A new email was requested. Delivery is handled separately.'))
+  }
   const handleOffer = entry => {
     askConfirmation('offer_tickets', `Reserve inventory and send a checkout offer to ${entry.name || entry.email}?`, 'Create ticket offer', config => apiClient.post(`/organizer/events/${eventId}/waitlist/${entry.id}/offer`, {}, config), () => setNotice('Ticket offer created. Delivery is handled separately.'))
   }
@@ -290,6 +293,9 @@ function WaitlistSession({ eventId, identity }) {
                       {entry.status === 'waiting' && (
                         <button disabled={mutationsLocked || !addressReady} aria-describedby={!addressReady ? 'waitlist-address-required' : undefined} onClick={() => handleOffer(entry)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50" title="Reserve tickets and send offer">Offer</button>
                       )}
+                      {['notified', 'offered'].includes(entry.status) && entry.delivery_failure?.startsWith('Delivery unconfirmed') && (
+                        <button disabled={mutationsLocked || !addressReady} onClick={() => handleRetryUnconfirmed(entry)} className="inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50">{entry.status === 'offered' ? 'Retry offer email' : 'Retry alert'}</button>
+                      )}
                       {entry.status === 'waiting' && (
                         <button
                           disabled={mutationsLocked || !addressReady} aria-describedby={!addressReady ? 'waitlist-address-required' : undefined} aria-label={`Notify ${entry.name || entry.email}`} onClick={() => handleNotify(entry)}
@@ -307,7 +313,7 @@ function WaitlistSession({ eventId, identity }) {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                    {entry.delivery_failure && <p role="alert" className="mt-1 max-w-52 text-xs text-red-700 [overflow-wrap:anywhere]">Couldn't send: {entry.delivery_failure}. {entry.status === 'waiting' ? 'Retry with Offer or Notify.' : ''}</p>}
+                    {entry.delivery_failure && <p role="alert" className="mt-1 max-w-52 text-xs text-red-700 [overflow-wrap:anywhere]">{entry.delivery_failure.startsWith('Delivery unconfirmed') ? entry.delivery_failure : `Couldn't send: ${entry.delivery_failure}.`} {entry.status === 'waiting' ? 'Retry with Offer or Notify.' : ''}</p>}
                   </td>
                 </tr>
               ))}
