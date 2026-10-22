@@ -15,6 +15,9 @@ class PayoutReconciler
     raise ReconciliationError, "Status must be paid, failed, or reversed" unless %w[paid failed reversed].include?(status)
 
     normalized = normalize_evidence!(evidence)
+    if status != "paid" && normalized["withholding_override_reason"].present?
+      raise ReconciliationError, "A withholding override only applies when recording payment"
+    end
     Payout.transaction do
       # Match payout reservation's organization-first locking, so releasing a
       # reservation and reserving a new payout cannot use competing snapshots.
@@ -32,6 +35,7 @@ class PayoutReconciler
         raise ReconciliationError, "Transfer identifier must be text"
       end
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
+      raise ReconciliationError, "Transfer identifier cannot contain a TIN" unless BackupWithholding.safe_text?(external_id)
       raise ReconciliationError, "Transfer identifier is too long" if external_id.to_s.length > 255
       if status == "paid" && (external_id.blank? || external_id.start_with?("sim_", "manual_po_"))
         raise ReconciliationError, "A real provider or bank transfer identifier is required to record payment"
@@ -64,6 +68,8 @@ class PayoutReconciler
         raise ReconciliationError, Payout::PAYEE_CHANGED_MESSAGE
       end
       if status == "paid"
+        PayoutWithholdingGuard.call(payout: payout, actor: actor,
+          override_reason: normalized["withholding_override_reason"], request: request)
         liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
           { outstanding_cents: 0, unresolved: false }
         if liability[:unresolved]
@@ -103,6 +109,8 @@ class PayoutReconciler
           buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] : nil }, request: request)
     end
     payout
+  rescue PayoutWithholdingGuard::WithholdingError => e
+    raise ReconciliationError, e.message
   rescue ActiveRecord::RecordInvalid => e
     raise ReconciliationError, e.record.errors.full_messages.to_sentence
   end
@@ -115,6 +123,10 @@ class PayoutReconciler
     reason = values["reason"].to_s.strip
     unless reference.present? && reference.length <= 500 && reason.present? && reason.length <= 1000
       raise ReconciliationError, "A confirmation reference and reconciliation reason are required"
+    end
+    [reference, reason, values["legacy_payee_name"], values["legacy_evidence_note"],
+      values["cancellation_payout_reason"], values["withholding_override_reason"]].compact.each do |field|
+      raise ReconciliationError, "Free-text evidence cannot contain a TIN" unless BackupWithholding.safe_text?(field)
     end
     timestamp = values["confirmed_at"].to_s
     raise ArgumentError unless timestamp.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
@@ -153,6 +165,9 @@ class PayoutReconciler
       normalized["legacy_payee_name"] = name
       normalized["legacy_evidence_note"] = note
       normalized["legacy_payee_confirmed"] = true if ActiveModel::Type::Boolean.new.cast(values["legacy_payee_confirmed"])
+    end
+    if values.key?("withholding_override_reason")
+      normalized["withholding_override_reason"] = values["withholding_override_reason"].to_s.strip
     end
     normalized
   rescue ArgumentError

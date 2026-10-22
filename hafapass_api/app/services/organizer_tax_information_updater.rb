@@ -20,14 +20,20 @@ class OrganizerTaxInformationUpdater
         :tin, :mailing_address, :exempt_payee_code, :signer_name).transform_values { |value| value.to_s.strip })
       record.certified_at = Time.current
       record.certification_version = OrganizerTaxInformation::CERTIFICATION_VERSION
-      record.tin_match_status = "unverified"
+      second_notice = record.b_notice_stage == "second" && record.irs_validation_recorded_on.nil?
+      record.tin_match_status = second_notice ? "mismatch" : "unverified"
       record.tin_match_result_code = nil
       record.tin_matched_at = nil
-      record.b_notice_stage = nil
-      record.b_notice_sent_at = nil
-      record.b_notice_response_due_on = nil
-      record.backup_withholding_flag = false
-      record.backup_withholding_reason = nil
+      unless second_notice
+        record.b_notice_sent_at = nil
+        record.b_notice_response_due_on = nil
+        record.irs_notice_received_on = nil
+        record.b_notice_send_due_on = nil
+      end
+      # A certified W-9 resolves a first notice, while preserving its stage
+      # and first-receipt date for the three-year recurrence rule.
+      record.backup_withholding_flag = false unless second_notice
+      record.backup_withholding_reason = nil unless second_notice
       record.save!
       # Invalidate every payout method approval, including prior submissions.
       organization.connected_accounts.order(:id).each do |account|

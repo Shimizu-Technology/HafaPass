@@ -40,10 +40,16 @@ class PayoutCreator
   attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request, :withholding_override_reason
 
   def submit_payout!(payout)
-    payout.with_lock do
-      raise PayoutError, "Payout was held before submission" unless payout.status_pending?
+    payout.organization.with_lock do
+      payout.with_lock do
+        raise PayoutError, "Payout was held before submission" unless payout.status_pending?
+
+        PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request)
+      end
     end
     PayoutGateway.submit(payout)
+  rescue PayoutWithholdingGuard::WithholdingError => e
+    raise PayoutError, e.message
   rescue PayoutGateway::PayoutError => e
     record_submission_error!(
       payout,
@@ -77,12 +83,24 @@ class PayoutCreator
     Payout.transaction do
       payout.organization.lock!
       payout.lock!
+      provider_result = attributes.dup
+      withholding_review = false
+      if %w[paid processing].include?(attributes[:status].to_s)
+        begin
+          PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request,
+            allow_recalculation: false)
+        rescue PayoutWithholdingGuard::WithholdingError
+          withholding_review = true
+          attributes = attributes.merge(status: :processing, failure_code: "withholding_review_required",
+            failure_message: "Provider outcome needs withholding review before payment can be recorded")
+        end
+      end
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
       terminal = payout.status_paid? || payout.status_failed? || payout.status_reversed?
       incoming_paid = attributes[:status].to_s == "paid"
       same_transfer = payout.provider_payout_id == attributes[:provider_payout_id]
       conflict = terminal && incoming_paid && (payout.status_failed? || !same_transfer)
-      action = "payout.#{attributes.fetch(:status)}"
+      action = withholding_review ? "payout.withholding_review_required" : "payout.#{attributes.fetch(:status)}"
       if payout.status_held?
         if incoming_paid
           payout.update!(provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
@@ -115,7 +133,7 @@ class PayoutCreator
         organization: payout.organization, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
         metadata: { amount_cents: payout.amount_cents, settlement_id: settlement.id,
-          failure_code: attributes[:failure_code], provider_result: attributes }, request: request)
+          failure_code: attributes[:failure_code], provider_result: provider_result }, request: request)
     end
   end
 

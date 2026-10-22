@@ -82,13 +82,31 @@ RSpec.describe "Admin tax operations", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.media_type).to eq("application/pdf")
     expect(response.body).not_to include(tax.tin)
-    post "/api/v1/admin/organizations/#{organization.id}/tax_information/b_notice_sent",
-      params: { stage: "first", sent_on: Date.current.iso8601 }, headers: auth_headers(admin)
+    post "/api/v1/admin/organizations/#{organization.id}/tax_information/notice_received",
+      params: { received_on: 60.days.ago.to_date.iso8601 }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
-    expect(tax.reload.b_notice_response_due_on).to be > Date.current
+    post "/api/v1/admin/organizations/#{organization.id}/tax_information/b_notice_sent",
+      params: { stage: "first", sent_on: 60.days.ago.to_date.iso8601 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(tax.reload.b_notice_response_due_on).to eq(BNotice.business_days_after(60.days.ago.to_date, 30))
+    post "/api/v1/admin/organizations/#{organization.id}/tax_information/notice_received",
+      params: { received_on: Date.current.iso8601 }, headers: auth_headers(admin)
     post "/api/v1/admin/organizations/#{organization.id}/tax_information/b_notice_sent",
       params: { stage: "second", sent_on: Date.current.iso8601 }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
+    expect(tax.reload.b_notice_stage).to eq("second")
+    expect(tax.irs_notice_received_on).to eq(Date.current)
+    expect(tax.b_notice_response_due_on).to eq(BNotice.business_days_after(Date.current, 30))
+    post "/api/v1/admin/organizations/#{organization.id}/tax_information/validate_second_notice",
+      params: { evidence_type: "ssa_card", recorded_on: Date.current.iso8601 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_entity)
+    post "/api/v1/admin/organizations/#{organization.id}/tax_information/validate_second_notice",
+      params: { evidence_type: "irs_letter_147c", recorded_on: Date.current.iso8601,
+        document_reference: "locked cabinet reference" }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(tax.reload).to have_attributes(irs_validation_evidence_type: "irs_letter_147c",
+      irs_validation_admin_id: admin.id, tin_match_status: "matched")
+    expect(AuditLog.where(action: "tax_information.second_b_notice_validated").last.metadata.to_json).not_to include(tax.tin)
     patch "/api/v1/admin/organizations/#{organization.id}/tax_information/withholding_flag",
       params: { flagged: true, reason: "TIN #{tax.tin} is wrong" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)
@@ -112,8 +130,60 @@ RSpec.describe "Admin tax operations", type: :request do
     post "/api/v1/admin/annual_tax_reports/export", params: { year: 2026 }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     row = CSV.parse(response.body, headers: true).first
-    expect(row["payee_tin"]).to eq(tax.tin)
+    expect(row["payee_tin"]).to eq("***-**-5678")
+    expect(response.body).not_to include(tax.tin)
+    post "/api/v1/admin/annual_tax_reports/export",
+      params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: auth_headers(admin)
+    expect(CSV.parse(response.body, headers: true).first["payee_tin"]).to eq(tax.tin)
+    expect(response.headers["Content-Disposition"]).to include("SENSITIVE-FULL-TINS")
     expect(row["payer_tin"]).to eq("SET_TAX_PAYER_TIN")
-    expect(AuditLog.where(action: "annual_tax_report.exported").last.metadata.to_json).not_to include(tax.tin)
+    audit = AuditLog.where(action: "annual_tax_report.exported").last
+    expect(audit.metadata).to include("count" => 1, "purpose" => "CPA filing preparation", "full_tins" => true)
+    expect(audit.metadata.to_json).not_to include(tax.tin)
+  end
+
+  it "masks a formatted payer TIN in the default annual CSV" do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("TAX_PAYER_TIN").and_return("12-3456789")
+    post "/api/v1/admin/annual_tax_reports/export", params: { year: 2026 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include("12-3456789")
+  end
+
+  it "lists a refund-only payee in the refund year" do
+    event = create(:event, organization: organization)
+    order = create(:order, event: event)
+    item = create(:order_item, order: order)
+    settlement = create(:settlement, organization: organization, event: event)
+    settlement.settlement_items.create!(kind: "sale_proceeds", amount_cents: 500,
+      currency: organization.currency, description: "Sale", occurred_at: Time.utc(2026, 9, 1),
+      source_type: "OrderItem", source_id: item.id)
+    create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: create(:connected_account, organization: organization),
+      status: :paid, paid_at: Time.utc(2026, 10, 1))
+    refund = create(:refund, order: order, amount_cents: 500, succeeded_at: Time.utc(2027, 1, 2))
+    create(:refund_item, refund: refund, order_item: item, amount_cents: 500,
+      organizer_proceeds_cents: 450, fee_cents: 50)
+    get "/api/v1/admin/annual_tax_reports", params: { year: 2027 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["reports"].first).to include("organization_id" => organization.id,
+      "gross_paid_cents" => 0, "refund_clawbacks_cents" => 450)
+  end
+
+  it "requires a purpose for a full-TIN export" do
+    post "/api/v1/admin/annual_tax_reports/export", params: { year: 2026, include_full_tins: true }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(AuditLog.where(action: "annual_tax_report.exported")).not_to exist
+  end
+
+  it "checks upload length before reading IRS results" do
+    expect(TinMatching).not_to receive(:import!)
+    # A real oversized upload exercises Rack's request path without parsing its content.
+    Tempfile.create(["oversize", ".txt"]) do |file|
+      file.truncate(12_000_001)
+      post "/api/v1/admin/tin_matching/import", params: { file: Rack::Test::UploadedFile.new(file.path, "text/plain") }, headers: auth_headers(admin)
+    end
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to include("too large")
   end
 end

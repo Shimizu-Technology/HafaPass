@@ -4,6 +4,9 @@ RSpec.describe "Cancelled event payout holds" do
   let(:profile) { create(:organizer_profile, :verified) }
   let(:event) { create(:event, :published, organizer_profile: profile) }
   let(:admin) { create(:user, :admin) }
+  let!(:tax) do
+    event.organization.organizer_tax_information || create(:organizer_tax_information, organization: event.organization)
+  end
   let(:order) { create(:order, event: event) }
   let!(:payment) { create(:payment, :succeeded, order: order, provider_environment: "live") }
   let(:payout) do
@@ -50,6 +53,19 @@ RSpec.describe "Cancelled event payout holds" do
     expect(audit.before_data["status"]).to eq("held")
     expect(audit.after_data["status"]).to eq("pending")
     expect(audit.metadata["automatic"]).to be(true)
+  end
+
+  it "keeps automatic release held when withholding becomes required" do
+    payout.update!(status: :pending)
+    EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
+    create(:balance_adjustment, event: event, organization: event.organization, amount_cents: 1000)
+    run = event.reload.event_cancellation_refund_run
+    create(:refund, order: order, payment: payment, amount_cents: payment.amount_cents)
+    run.items.update_all(status: EventCancellationRefundItem.statuses.fetch("refunded"))
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
+    run.reconcile_status!
+    expect(payout.reload).to be_status_held
+    expect(AuditLog.where(auditable: payout, action: "payout.released_from_cancellation_hold")).not_to exist
   end
 
   it "keeps a held payout when a pending refund still makes the buyer liability unresolved" do

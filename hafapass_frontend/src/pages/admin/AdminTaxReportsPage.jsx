@@ -29,6 +29,12 @@ function TaxReportsSession({ identity }) {
   }, [beginRequest, year])
   useEffect(() => { load() }, [load])
   const action = async kind => {
+    let purpose
+    if (kind === 'preparation_export') {
+      purpose = window.prompt('Enter the purpose for exporting full taxpayer identification numbers:')?.trim()
+      if (!purpose || purpose.length < 10) { setError('Enter a purpose of at least 10 characters.'); return }
+      if (!window.confirm('This CSV contains full taxpayer identification numbers. Export it for the stated purpose?')) return
+    }
     const request = beginRequest()
     if (!request) return
     const epoch = generation.current
@@ -37,10 +43,10 @@ function TaxReportsSession({ identity }) {
       const isSensitive = kind === 'preparation_export'
       const path = `/admin/tax_reports/${kind}`
       const response = isSensitive
-        ? await apiClient.post(path, { year: report.year }, { ...request.config, ...(isSensitive ? { responseType: 'blob' } : {}) })
+        ? await apiClient.post(path, { year: report.year, include_full_tins: true, purpose }, { ...request.config, ...(isSensitive ? { responseType: 'blob' } : {}) })
         : await apiClient.get(path, { ...request.config, params: { year: report.year }, responseType: 'blob' })
       if (!request.current() || epoch !== generation.current) return
-      saveBlob(response.data, `hafapass-${kind}-${report.year}.csv`)
+      saveBlob(response.data, `hafapass-${kind}-${report.year}${isSensitive ? '-SENSITIVE-FULL-TINS' : '-masked'}.csv`)
     } catch (e) {
       if (request.current() && epoch === generation.current && !request.handleError(e)) setError('The action failed. Please retry.')
     } finally { if (request.current()) setBusy(false); request.release() }

@@ -53,6 +53,15 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       fee_changes = changes.slice(*FEE_TERM_FIELDS)
       next false unless settings.save
 
+      if changes.key?("tax_reporting_thresholds")
+        settings.tax_reporting_thresholds.each do |form, amount|
+          threshold = AnnualTaxThreshold.for(year: Date.current.year, form_type: form)
+          threshold.save! unless threshold.persisted?
+          threshold.update!(amount_cents: amount)
+        end
+        AuditLogger.record!(action: "annual_tax_thresholds.updated", auditable: settings, actor: @current_user,
+          metadata: { year: Date.current.year, amounts_cents: settings.tax_reporting_thresholds }, request: request)
+      end
       if changes.any?
         AuditLogger.record!(action: "site_settings.updated", auditable: settings, actor: @current_user,
           before_data: changes.transform_values { |values| values.first.to_s },
@@ -106,7 +115,9 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       payout_schedule_text: settings.payout_schedule_text,
       backup_withholding_mode: settings.backup_withholding_mode,
       backup_withholding_rate_bps: settings.backup_withholding_rate_bps,
-      tax_reporting_thresholds: settings.tax_reporting_thresholds,
+      tax_reporting_thresholds: AnnualTaxThreshold::DEFAULT_AMOUNTS.keys.index_with do |form|
+        AnnualTaxThreshold.for(year: Date.current.year, form_type: form).amount_cents
+      end,
       stripe_test_configured: settings.can_enable_test?,
       stripe_live_configured: settings.stripe_live_configured?,
       stripe_live_approved: settings.can_enable_live?,

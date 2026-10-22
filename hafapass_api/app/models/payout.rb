@@ -21,8 +21,7 @@ class Payout < ApplicationRecord
 
   attr_readonly :organization_id, :event_id, :settlement_id, :connected_account_id,
     :provider, :idempotency_key, :amount_cents, :currency, :payee_snapshot, :payee_approval_digest,
-    :tax_information_snapshot, :tax_information_tin, :tax_approval_digest, :withheld_cents,
-    :withholding_rate_bps, :withholding_reason, :withholding_override_reason
+    :tax_information_snapshot, :tax_information_tin, :tax_approval_digest
 
   def disbursement_cents
     amount_cents - withheld_cents

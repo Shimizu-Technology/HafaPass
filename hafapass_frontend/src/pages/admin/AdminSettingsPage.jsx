@@ -278,7 +278,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
 
         <section aria-labelledby="tax-controls-settings" className="card p-5 sm:p-6">
           <h2 id="tax-controls-settings" className="text-lg font-semibold">Tax payout controls</h2>
-          <p className="mt-1 text-sm text-neutral-700">These settings affect payouts only. A CPA should approve the rate and reporting thresholds before filing.</p>
+          <p className="mt-1 text-sm text-neutral-700">Backup withholding affects payouts. Threshold fields configure the current tax year; a CPA should approve changes before filing.</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium">When backup withholding applies<select className="input mt-1" value={form.backup_withholding_mode} onChange={update('backup_withholding_mode')}><option value="block">Block payout (default)</option><option value="withhold">Withhold and pay the balance</option></select></label>
             <label className="text-sm font-medium">Withholding rate (basis points)<input className="input mt-1" type="number" min="1" max="10000" value={form.backup_withholding_rate_bps} onChange={update('backup_withholding_rate_bps')} /></label>

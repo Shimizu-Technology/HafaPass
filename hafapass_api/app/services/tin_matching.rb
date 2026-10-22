@@ -47,14 +47,18 @@ class TinMatching
         raise ImportError, "Unknown or already imported account reference" unless match && !match.imported_at
 
         tax = match.organizer_tax_information
+        tax.organization.lock!
+        tax.lock!
         expected_name = match_name(tax)
         unless tax.updated_at == match.tax_information_updated_at &&
             type == (tax.tin_type == "ein" ? "1" : "2") && tin == tax.tin && name == expected_name
           raise ImportError, "Result file does not match the current W-9; export a new request"
         end
         code = code_text.to_i
-        tax.update!(tin_match_status: OrganizerTaxInformation::MATCH_RESULTS.fetch(code),
-          tin_match_result_code: code, tin_matched_at: Time.current)
+        status = OrganizerTaxInformation::MATCH_RESULTS.fetch(code)
+        tax.update!(tin_match_status: status, tin_match_result_code: code, tin_matched_at: Time.current,
+          **(status == "mismatch" ? { irs_validation_evidence_type: nil, irs_validation_recorded_on: nil,
+            irs_validation_admin_id: nil, irs_validation_document_reference: nil } : {}))
         match.update!(result_code: code, imported_at: Time.current)
         counts[tax.tin_match_status] += 1
       end

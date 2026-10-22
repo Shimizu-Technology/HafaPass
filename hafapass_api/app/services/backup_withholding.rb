@@ -3,8 +3,12 @@
 class BackupWithholding
   class WithholdingError < StandardError; end
 
+  def self.safe_text?(value)
+    !value.to_s.gsub(/\D/, "").match?(/\d{9}/)
+  end
+
   def self.safe_reason?(value)
-    value.to_s.match?(/\A.{10,1000}\z/m) && !value.to_s.gsub(/\D/, "").match?(/\d{9}/)
+    value.to_s.match?(/\A.{10,1000}\z/m) && safe_text?(value)
   end
 
   def self.for_payout(organization:, amount_cents:, actor:, override_reason: nil)

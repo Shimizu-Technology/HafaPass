@@ -18,6 +18,54 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     patch "/api/v1/admin/payouts/#{payout.id}", params: attributes, headers: auth_headers(actor)
   end
 
+  it "blocks recording payment after a new withholding flag unless separately overridden" do
+    tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
+    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("withholding review blocks")
+    expect(payout.reload).to be_status_processing
+    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true,
+      withholding_override_reason: "CPA approved the actual transfer")))
+    expect(response).to have_http_status(:ok)
+    expect(AuditLog.where(auditable: payout, action: "payout.backup_withholding_overridden")).to exist
+  end
+
+  it "rejects TINs in reconciliation references and reasons before audit" do
+    reconcile(payload.merge(evidence: evidence.merge(reference: "bank 012-34-5678")))
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("cannot contain a TIN")
+    expect(AuditLog.where(auditable: payout)).not_to exist
+  end
+
+  it "rejects a TIN in hold-release audit reasons" do
+    payout.update!(status: :held, held_from_status: "processing")
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold",
+      params: { cancellation_payout_reason: "TIN 012-34-5678 was reviewed" }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("cannot contain a TIN")
+    expect(AuditLog.where(auditable: payout, action: "payout.released_from_cancellation_hold")).not_to exist
+  end
+
+  it "rejects a TIN in a manual balance adjustment reason" do
+    post "/api/v1/admin/balance_adjustments",
+      params: { organization_id: organization.id, kind: "manual_credit", amount_cents: 100,
+        reason: "TIN 012-34-5678 was reviewed" }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("cannot contain a TIN")
+    expect(AuditLog.where(action: "balance_adjustment.posted")).not_to exist
+  end
+
+  it "blocks release when a new withholding flag applies" do
+    tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+    payout.update!(status: :held, held_from_status: "processing")
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("withholding review blocks")
+    expect(payout.reload).to be_status_held
+  end
+
   it "routes admin payout requests through the idempotency gate" do
     post "/api/v1/admin/payouts", params: { settlement_id: settlement.id }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)

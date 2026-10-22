@@ -12,6 +12,15 @@ class BNotice
     current
   end
 
+  def self.business_days_before(date, days)
+    current = date.to_date
+    days.times do
+      current -= 1
+      current -= 1 while current.saturday? || current.sunday? || federal_holidays(current.year).include?(current)
+    end
+    current
+  end
+
   def self.federal_holidays(year)
     fixed = [[1, 1], [6, 19], [7, 4], [11, 11], [12, 25]].flat_map do |month, day|
       date = Date.new(year, month, day)
@@ -40,7 +49,7 @@ class BNotice
       pdf.text "Account: organization #{tax.organization_id}; TIN ending #{tax.tin_last_four}"
       pdf.move_down 16
       pdf.text "Our records show that the name and taxpayer identification number for this account require correction. " \
-        "Please respond within 30 business days of the notice date. Contact HåfaPass through your organizer dashboard; do not email a TIN."
+        "Please respond by #{tax.b_notice_response_due_on || "the date provided by HåfaPass"}. Contact HåfaPass through your organizer dashboard; do not email a TIN."
       pdf.move_down 14
       if stage == "first"
         pdf.text "First notice: provide a new completed and signed Form W-9 (or acceptable substitute) with the correct name and TIN."

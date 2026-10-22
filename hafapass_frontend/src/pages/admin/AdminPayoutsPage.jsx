@@ -65,6 +65,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const [taxPayeeConfirmed, setTaxPayeeConfirmed] = useState(false)
   const [legacyPayeeName, setLegacyPayeeName] = useState('')
   const [legacyEvidenceNote, setLegacyEvidenceNote] = useState('')
+  const [withholdingOverride, setWithholdingOverride] = useState('')
   const [legacyPayeeConfirmed, setLegacyPayeeConfirmed] = useState(false)
   const describePayee = payee => payee ? `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}` : ''
 
@@ -99,7 +100,8 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         ...(outcome === 'paid' && payeeChanged && payeeConfirmed ? { approved_payee_confirmed: true } : {}),
         ...(outcome === 'paid' && !legacyTaxPayee && taxApprovalChanged && taxPayeeConfirmed ? { approved_tax_payee_confirmed: true } : {}),
         ...(outcome === 'paid' && legacyTaxPayee ? { legacy_payee_name: legacyPayeeName.trim(), legacy_evidence_note: legacyEvidenceNote.trim(), legacy_payee_confirmed: true } : {}),
-        ...(outcome === 'paid' && needsCancellationConfirmation ? { sent_before_cancellation_confirmed: true, cancellation_payout_reason: cancellationReason.trim() } : {}) }
+        ...(outcome === 'paid' && needsCancellationConfirmation ? { sent_before_cancellation_confirmed: true, cancellation_payout_reason: cancellationReason.trim() } : {}),
+        ...(outcome === 'paid' && withholdingOverride.trim() ? { withholding_override_reason: withholdingOverride.trim() } : {}) }
       if (payout.conflict) evidence.conflict_audit_id = payout.conflict.audit_id
       const body = { status: outcome, evidence }
       if (transferId.trim() && !keepsTransferId) body.provider_payout_id = transferId.trim()
@@ -210,6 +212,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
             {fieldError('reason')}
           </div>
         </div>
+        {outcome === 'paid' && <label className="mt-4 block text-sm font-medium">Backup withholding override reason (admin only, optional)<textarea className="input mt-1" maxLength={1000} value={withholdingOverride} onChange={event => setWithholdingOverride(event.target.value)} /></label>}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" disabled={busy} onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" disabled={busy} className={outcome === 'paid' ? 'btn-primary' : 'btn-danger'}>{busy ? 'Recording…' : `Record as ${OUTCOMES[outcome].label.toLowerCase()}`}</button>
@@ -223,6 +226,7 @@ function ReleaseHoldDialog({ payout, beginRequest, onClose, onSaved }) {
   const titleId = useId()
   const [confirmed, setConfirmed] = useState(false)
   const [reason, setReason] = useState('')
+  const [withholdingOverride, setWithholdingOverride] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const unresolved = payout.cancellation_refunds_unresolved || payout.outstanding_buyer_balance_cents > 0
@@ -241,6 +245,7 @@ function ReleaseHoldDialog({ payout, beginRequest, onClose, onSaved }) {
       await apiClient.post(`/admin/payouts/${payout.id}/release_hold`, {
         sent_before_cancellation_confirmed: confirmed,
         cancellation_payout_reason: reason.trim(),
+        ...(withholdingOverride.trim() ? { withholding_override_reason: withholdingOverride.trim() } : {}),
       }, request.config)
       if (request.current()) onSaved(`Hold released for payout #${payout.id}.`)
     } catch (failure) {
@@ -260,6 +265,7 @@ function ReleaseHoldDialog({ payout, beginRequest, onClose, onSaved }) {
         <label className="mt-3 flex gap-2"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />This payout was already sent before the cancellation</label>
         <label className="mt-3 block">Reason for releasing an already sent payout<textarea className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} maxLength={1000} /></label>
       </div>}
+      <label className="mt-3 block text-sm">Backup withholding override reason (admin only, optional)<textarea className="input mt-1" maxLength={1000} value={withholdingOverride} onChange={event => setWithholdingOverride(event.target.value)} /></label>
       {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
       <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} disabled={busy} className="btn-secondary">Cancel</button><button type="submit" disabled={busy || tooLarge || !payout.held_from_status || ['provider_result_conflict', 'provider_result_unknown'].includes(payout.failure_code)} className="btn-primary">{busy ? 'Releasing…' : 'Release hold'}</button></div>
     </form>

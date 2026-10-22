@@ -14,6 +14,7 @@ class OrganizerTaxInformation < ApplicationRecord
     "I am authorized to sign for this payee."
 
   belongs_to :organization
+  belongs_to :irs_validation_admin, class_name: "User", optional: true
   has_many :tin_match_requests, dependent: :restrict_with_exception
   encrypts :tin
   self.filter_attributes += [:tin]
@@ -28,6 +29,7 @@ class OrganizerTaxInformation < ApplicationRecord
   validates :organization_id, uniqueness: true
   validates :tin_match_status, inclusion: { in: ["unverified", *MATCH_RESULTS.values] }
   validates :backup_withholding_reason, presence: true, if: :backup_withholding_flag?
+  validates :irs_validation_evidence_type, inclusion: { in: %w[ssa_card irs_letter_147c] }, allow_nil: true
   before_validation :set_last_four
 
   def masked_tin
@@ -35,8 +37,8 @@ class OrganizerTaxInformation < ApplicationRecord
   end
 
   def backup_withholding_required?
-    backup_withholding_flag? || (tin_match_status == "mismatch" && b_notice_response_due_on.present? &&
-      Date.current > b_notice_response_due_on)
+    backup_withholding_flag? || (tin_match_status == "mismatch" && irs_validation_recorded_on.nil? &&
+      b_notice_response_due_on.present? && Date.current > b_notice_response_due_on)
   end
 
   # Explicit allowlist: ciphertext and plaintext never enter normal responses.
@@ -46,9 +48,27 @@ class OrganizerTaxInformation < ApplicationRecord
         "masked_tin" => masked_tin, "w9_on_file" => certified_at.present?,
         "tin_match_status" => tin_match_status, "tin_match_result_code" => tin_match_result_code,
         "b_notice_stage" => b_notice_stage, "b_notice_sent_at" => b_notice_sent_at,
+        "next_b_notice_stage" => next_b_notice_stage,
         "b_notice_response_due_on" => b_notice_response_due_on,
+        "irs_notice_received_on" => irs_notice_received_on, "b_notice_send_due_on" => b_notice_send_due_on,
+        "b_notice_send_at_risk" => b_notice_send_due_on.present? && irs_notice_received_on.present? &&
+          (b_notice_sent_at.nil? || b_notice_sent_at.to_date < irs_notice_received_on) &&
+          Date.current >= BNotice.business_days_before(b_notice_send_due_on, 3),
+        "irs_validation_evidence_type" => irs_validation_evidence_type,
+        "irs_validation_recorded_on" => irs_validation_recorded_on,
+        "irs_validation_admin_id" => irs_validation_admin_id,
+        "irs_validation_document_reference" => irs_validation_document_reference,
         "backup_withholding_flag" => backup_withholding_flag,
         "backup_withholding_required" => backup_withholding_required?)
+  end
+
+  def next_b_notice_stage
+    return nil if irs_notice_received_on.nil? ||
+      (b_notice_sent_at && b_notice_sent_at.to_date >= irs_notice_received_on)
+
+    first_receipt = first_b_notice_received_on || (b_notice_stage == "first" && b_notice_sent_at&.to_date)
+    first_receipt && irs_notice_received_on &&
+      irs_notice_received_on > first_receipt && irs_notice_received_on < first_receipt + 3.years ? "second" : "first"
   end
 
   def serializable_hash(*)

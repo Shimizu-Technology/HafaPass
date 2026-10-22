@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_150100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_160100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -120,6 +120,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_150100) do
     t.index ["organization_id"], name: "index_annual_tax_report_settings_on_organization_id"
     t.check_constraint "form_type::text = ANY (ARRAY['review_required'::character varying::text, '1099-nec'::character varying::text, '1099-misc'::character varying::text, '1099-k'::character varying::text, 'none'::character varying::text])", name: "annual_tax_report_form_valid"
     t.check_constraint "jurisdiction::text = ANY (ARRAY['irs'::character varying::text, 'guam_drt'::character varying::text])", name: "annual_tax_report_jurisdiction_valid"
+  end
+
+  create_table "annual_tax_thresholds", force: :cascade do |t|
+    t.integer "year", null: false
+    t.string "form_type", null: false
+    t.integer "amount_cents", null: false
+    t.integer "transaction_count"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["year", "form_type"], name: "index_annual_tax_thresholds_on_year_and_form_type", unique: true
   end
 
   create_table "apple_wallet_registrations", force: :cascade do |t|
@@ -1349,6 +1359,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_150100) do
     t.date "b_notice_response_due_on"
     t.boolean "backup_withholding_flag", default: false, null: false
     t.text "backup_withholding_reason"
+    t.date "irs_notice_received_on"
+    t.date "b_notice_send_due_on"
+    t.date "first_b_notice_received_on"
+    t.string "irs_validation_evidence_type"
+    t.date "irs_validation_recorded_on"
+    t.bigint "irs_validation_admin_id"
+    t.string "irs_validation_document_reference"
     t.index ["organization_id"], name: "index_organizer_tax_informations_on_organization_id", unique: true
     t.check_constraint "tin_match_status::text = ANY (ARRAY['unverified'::character varying::text, 'matched'::character varying::text, 'missing_or_invalid'::character varying::text, 'not_issued'::character varying::text, 'mismatch'::character varying::text, 'invalid_request'::character varying::text, 'duplicate'::character varying::text, 'matched_ssn'::character varying::text, 'matched_ein'::character varying::text, 'matched_both'::character varying::text])", name: "tax_information_tin_match_status_valid"
   end
@@ -2710,6 +2727,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_150100) do
   add_foreign_key "organizer_sales_export_requests", "events"
   add_foreign_key "organizer_sales_export_requests", "users", column: "actor_user_id"
   add_foreign_key "organizer_tax_informations", "organizations"
+  add_foreign_key "organizer_tax_informations", "users", column: "irs_validation_admin_id"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict
   add_foreign_key "payment_readiness_reviews", "connected_accounts", on_delete: :restrict

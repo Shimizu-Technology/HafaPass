@@ -63,6 +63,9 @@ RSpec.describe "Admin tax reporting", type: :request do
     expect(row["gross_ticket_proceeds"]).to eq("25.00")
     expect(row["masked_tin"]).to eq("***-**-5678")
     post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: auth_headers(admin)
+    expect(response.body).not_to include(tax.tin)
+    post "/api/v1/admin/tax_reports/preparation_export",
+      params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     expect(CSV.parse(response.body, headers: true).first["full_tin_for_1099_preparation_import_as_text"]).to eq(tax.tin)
     audit = AuditLog.where(action: "tax_report.exported").last
@@ -77,7 +80,8 @@ RSpec.describe "Admin tax reporting", type: :request do
       tax.update!(legal_name: "Updated Payee", tin: "987654321") if arguments[:action] == "tax_report.exported"
       result
     end
-    post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: auth_headers(admin)
+    post "/api/v1/admin/tax_reports/preparation_export",
+      params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: auth_headers(admin)
     row = CSV.parse(response.body, headers: true).first
     expect(row["legal_name"]).to eq("Island Events LLC")
     expect(row["full_tin_for_1099_preparation_import_as_text"]).to eq("012345678")
@@ -101,7 +105,7 @@ RSpec.describe "Admin tax reporting", type: :request do
     expect(legacy["masked_tin"]).to be_blank
     expect(response.body).not_to include("012345678", "987654321")
 
-    post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: auth_headers(admin)
+    post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: auth_headers(admin)
     full = CSV.parse(response.body, headers: true)
     expect(full.map { |row| row["full_tin_for_1099_preparation_import_as_text"] })
       .to contain_exactly("012345678", "987654321", "")
@@ -113,10 +117,10 @@ RSpec.describe "Admin tax reporting", type: :request do
     freeze_time do
       headers = auth_headers(admin)
       10.times do
-        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: headers
+        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: headers
         expect(response).to have_http_status(:ok)
       end
-      post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: headers
+      post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: headers
       expect(response).to have_http_status(:too_many_requests)
       expect(response.parsed_body["error"]).to include("Too many full-TIN requests")
       expect(response.body).not_to include(tax.tin)
@@ -130,12 +134,12 @@ RSpec.describe "Admin tax reporting", type: :request do
       variants = [export, "#{export}/", "#{export}.json"]
       9.times do |index|
         path = variants[index % variants.size]
-        post path, params: { year: 2026 }, headers: headers
+        post path, params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: headers
         expect(response).not_to have_http_status(:too_many_requests)
       end
-      post "#{export}.json", params: { year: 2026 }, headers: headers
+      post "#{export}.json", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: headers
       expect(response).not_to have_http_status(:too_many_requests)
-      post "#{export}/", params: { year: 2026 }, headers: headers
+      post "#{export}/", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: headers
       expect(response).to have_http_status(:too_many_requests)
       expect(response.body).not_to include(tax.tin)
     end
@@ -152,11 +156,11 @@ RSpec.describe "Admin tax reporting", type: :request do
     freeze_time do
       headers = auth_headers(admin)
       10.times do |index|
-        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 },
+        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" },
           headers: headers.merge("REMOTE_ADDR" => "198.51.100.#{index + 1}")
         expect(response).to have_http_status(:ok)
       end
-      post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 },
+      post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" },
         headers: headers.merge("REMOTE_ADDR" => "198.51.100.50")
       expect(response).to have_http_status(:too_many_requests)
     end
@@ -168,19 +172,19 @@ RSpec.describe "Admin tax reporting", type: :request do
       first_headers = auth_headers(admin).merge("REMOTE_ADDR" => "198.51.100.80")
       second_headers = auth_headers(another).merge("REMOTE_ADDR" => "198.51.100.80")
       5.times do
-        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: first_headers
+        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: first_headers
         expect(response).to have_http_status(:ok)
-        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: second_headers
+        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: second_headers
         expect(response).to have_http_status(:ok)
       end
-      post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: first_headers
+      post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: first_headers
       expect(response).to have_http_status(:too_many_requests)
     end
   end
 
   it "does not export when audit recording fails" do
     allow(AuditLogger).to receive(:record!).and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
-    post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: auth_headers(admin)
+    post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)
     expect(response.body).not_to include(tax.tin)
   end

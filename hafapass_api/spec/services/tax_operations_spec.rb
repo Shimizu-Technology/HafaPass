@@ -61,11 +61,40 @@ RSpec.describe "Tax operations services" do
         override_reason: "CPA authorized payout after review")[:withheld_cents]).to eq(0)
     end
 
-    it "activates an unresolved mismatch after the notice window and clears it on a new W-9" do
+    it "activates an unresolved mismatch after the notice window and excludes federal holidays" do
       tax.update!(tin_match_status: "mismatch", b_notice_stage: "first",
         b_notice_sent_at: 45.days.ago, b_notice_response_due_on: Date.yesterday)
       expect(tax.backup_withholding_required?).to be(true)
       expect(BNotice.business_days_after(Date.new(2026, 12, 24), 1)).to eq(Date.new(2026, 12, 28))
+      expect(BNotice.business_days_after(Date.new(2026, 6, 18), 1)).to eq(Date.new(2026, 6, 22))
+      tax.update!(irs_notice_received_on: 15.days.ago.to_date,
+        b_notice_send_due_on: BNotice.business_days_after(Date.current, 2), b_notice_sent_at: nil)
+      expect(tax.safe_json["b_notice_send_at_risk"]).to be(true)
+    end
+  end
+
+  describe OrganizerTaxInformationUpdater do
+    it "preserves second-notice withholding until an admin records IRS validation" do
+      tax.update!(tin_match_status: "mismatch", b_notice_stage: "second",
+        first_b_notice_received_on: 1.year.ago.to_date, irs_notice_received_on: 40.days.ago.to_date,
+        b_notice_response_due_on: Date.yesterday)
+      described_class.call(organization: organization, actor: admin,
+        attributes: { certified: true, legal_name: tax.legal_name, tin_type: tax.tin_type,
+          tin: tax.tin, tax_classification: tax.tax_classification,
+          mailing_address: tax.mailing_address, signer_name: tax.signer_name })
+      expect(tax.reload).to have_attributes(b_notice_stage: "second", tin_match_status: "mismatch")
+      expect(tax.backup_withholding_required?).to be(true)
+    end
+
+    it "clears a first notice while retaining its stage and receipt history" do
+      tax.update!(tin_match_status: "mismatch", b_notice_stage: "first",
+        first_b_notice_received_on: Date.current, irs_notice_received_on: Date.current)
+      described_class.call(organization: organization, actor: admin,
+        attributes: { certified: true, legal_name: tax.legal_name, tin_type: tax.tin_type,
+          tin: tax.tin, tax_classification: tax.tax_classification,
+          mailing_address: tax.mailing_address, signer_name: tax.signer_name })
+      expect(tax.reload).to have_attributes(b_notice_stage: "first", tin_match_status: "unverified",
+        first_b_notice_received_on: Date.current)
     end
   end
 
@@ -108,6 +137,41 @@ RSpec.describe "Tax operations services" do
         .to contain_exactly(["Island Events LLC", 5000, "012345678"], ["New Legal Payee", 7500, "987654321"])
       expect(described_class.payee_key_for(first)).not_to eq(described_class.payee_key_for(second))
       expect(reports.map(&:row).to_json).not_to include("012345678", "987654321")
+    end
+
+    it "keeps a 2027 refund row for the 2026 payee and follows sale lines when the event payee changes" do
+      event = create(:event, organization: organization)
+      account = create(:connected_account, organization: organization)
+      order = create(:order, event: event)
+      item = create(:order_item, order: order)
+      first_settlement = create(:settlement, organization: organization, event: event)
+      first_settlement.settlement_items.create!(kind: "sale_proceeds", amount_cents: 500,
+        currency: organization.currency, description: "Sale", occurred_at: Time.utc(2026, 9, 1),
+        source_type: "OrderItem", source_id: item.id)
+      first = create(:payout, organization: organization, event: event, settlement: first_settlement,
+        connected_account: account, status: :paid, paid_at: Time.utc(2026, 10, 1))
+      tax.update!(legal_name: "New Event Payee", tin: "987654321")
+      second = create(:payout, organization: organization, event: event,
+        settlement: create(:settlement, organization: organization, event: event),
+        connected_account: account, status: :paid, paid_at: Time.utc(2026, 12, 1))
+      refund = create(:refund, order: order, amount_cents: 500, succeeded_at: Time.utc(2027, 1, 2))
+      create(:refund_item, refund: refund, order_item: item, amount_cents: 500, organizer_proceeds_cents: 450, fee_cents: 50)
+      reports = described_class.for_organization(organization: organization, year: 2027)
+      expect(reports.length).to eq(1)
+      expect(reports.first.payee_key).to eq(described_class.payee_key_for(first))
+      expect(reports.first.payee_key).not_to eq(described_class.payee_key_for(second))
+      expect(reports.first.row).to include(gross_paid_cents: 0, refund_clawbacks_cents: 450)
+    end
+
+    it "reads per-form per-year threshold settings" do
+      setting = AnnualTaxThreshold.for(year: 2026, form_type: "1099-nec")
+      setting.save!
+      setting.update!(amount_cents: 250_000)
+      expect(setting.amount_cents).to eq(250_000)
+      expect(AnnualTaxThreshold.for(year: 2025, form_type: "1099-nec").amount_cents).to eq(60_000)
+      expect(AnnualTaxThreshold.for(year: 2026, form_type: "1099-k").transaction_count).to eq(200)
+      AnnualTaxReportSetting.create!(organization: organization, year: 2026, form_type: "1099-k")
+      expect(described_class.new(organization: organization, year: 2026).row[:threshold_met]).to be_nil
     end
 
     it "uses the payout payee snapshot when a W-9 was missing" do

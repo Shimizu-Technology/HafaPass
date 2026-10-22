@@ -45,7 +45,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :cancellation_payout_reason).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :cancellation_payout_reason, :withholding_override_reason).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -65,7 +65,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     payout = Payout.find(params[:id])
     PayoutHoldRelease.call(payout: payout, actor: current_user,
       sent_before_cancellation_confirmed: params[:sent_before_cancellation_confirmed] == true,
-      cancellation_payout_reason: params[:cancellation_payout_reason], request: request)
+      cancellation_payout_reason: params[:cancellation_payout_reason],
+      withholding_override_reason: params[:withholding_override_reason], request: request)
     render json: { id: payout.id, status: payout.status }
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Payout not found" }, status: :not_found

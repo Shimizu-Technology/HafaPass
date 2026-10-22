@@ -13,7 +13,7 @@ vi.mock('./AdminLayout', () => ({ default: ({ children }) => <div>{children}</di
 const year = new Date().getFullYear()
 const matching = { payees: [{ organization_id: 7, organization_name: 'Island Events', tax_information: {
   legal_name: 'Island Events LLC', masked_tin: '***-**-5678', tin_match_status: 'mismatch',
-  backup_withholding_required: false, backup_withholding_flag: false,
+  backup_withholding_required: false, backup_withholding_flag: false, tin_type: 'ein',
 } }] }
 const annual = { reports: [{ organization_id: 7, payee_key: 'payee-key', organization_name: 'Island Events', masked_tin: '***-**-5678',
   gross_paid_cents: 10003, withheld_cents: 2401, refund_clawbacks_cents: 500,
@@ -49,6 +49,27 @@ describe('AdminTaxControlsPage', () => {
     await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(expect.any(Blob), 'tin-matching.txt'))
     await userEvent.upload(screen.getByLabelText('IRS result file'), new File(['1;012345678;Island Events;abc;0'], 'result.txt', { type: 'text/plain' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/tin_matching/import', expect.any(FormData), expect.anything()))
+  })
+
+  it('records IRS receipt before a B-notice can be sent', async () => {
+    show()
+    await screen.findByText(/TIN status:/)
+    expect(screen.getByRole('button', { name: /Record .* notice sent today/ })).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('IRS notice receipt date'), '2026-10-01')
+    await userEvent.click(screen.getByRole('button', { name: 'Record IRS notice receipt' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/organizations/7/tax_information/notice_received',
+      { received_on: '2026-10-01' }, expect.anything()))
+  })
+
+  it('asks for a purpose and confirmation before exporting full TINs', async () => {
+    show()
+    await screen.findByText(/TIN status:/)
+    vi.spyOn(window, 'prompt').mockReturnValue('CPA filing preparation')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Export full TINs' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/annual_tax_reports/export',
+      { year: String(year), include_full_tins: true, purpose: 'CPA filing preparation' }, expect.anything()))
+    vi.restoreAllMocks()
   })
 
   it('requires a reason for a manual withholding flag', async () => {
