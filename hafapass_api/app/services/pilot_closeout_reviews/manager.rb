@@ -39,7 +39,7 @@ module PilotCloseoutReviews
       submission.event.with_lock do
         submission.reload
         submission.live_pilot_run.lock!
-        validate_open_submission!(submission, actor: actor, approving: true)
+        validate_open_submission!(submission)
         current_metrics = PilotCloseout.local_metrics(submission.live_pilot_run)
         PilotCloseout.ensure_closeout_ready!(submission.live_pilot_run, current_metrics)
         current_digest = PilotCloseout.local_state_digest(submission.live_pilot_run, current_metrics)
@@ -166,7 +166,7 @@ module PilotCloseoutReviews
       review = nil
       submission.event.with_lock do
         submission.reload
-        validate_open_submission!(submission, actor: actor)
+        validate_open_submission!(submission)
         review = PilotCloseoutReview.create!(snapshot(submission).merge(
           decision: decision, parent_review: submission, actor_user: actor,
           signed_at: Time.current, reason: reason.to_s.strip
@@ -179,13 +179,10 @@ module PilotCloseoutReviews
     end
     private_class_method :decide_negative!
 
-    def self.validate_open_submission!(submission, actor:, approving: false)
+    def self.validate_open_submission!(submission)
       raise ReviewError, "Only a Gate J submission can be decided" unless submission.decision_submission?
       if submission.child_reviews.where(decision: [:approval, :rejection]).exists?
         raise ReviewError, "This Gate J submission already has a decision"
-      end
-      if approving && submission.actor_user_id == actor.id
-        raise ReviewError, "The closeout submitter cannot approve their own Gate J decision"
       end
     end
     private_class_method :validate_open_submission!

@@ -41,6 +41,8 @@ module Api
 
       skip_before_action :authenticate_user!
       before_action :optional_authenticate!, only: [:index, :show]
+      # Event text depends on the visitor's language.
+      after_action { response.headers["Vary"] = [response.headers["Vary"].presence, "Accept-Language"].compact.join(", ") }
 
       def index
         events = filtered_events.includes(
@@ -68,45 +70,51 @@ module Api
         }
       end
 
+      # A retired link name resolves to the event's current one. The JSON keeps
+      # the canonical `slug` and adds `redirected_from` so the SPA can replace
+      # the address bar without a second request.
       def show
         if params[:live_money_proof] == "true" && @current_user&.admin?
-          event = Event.where(live_money_proof_candidate: true).find_by!(slug: params[:slug])
-          render json: event_json(event, include_ticket_types: true)
+          event = Event.find_by_public_slug!(params[:slug], scope: Event.where(live_money_proof_candidate: true))
+          render json: show_json(event)
           return
         end
         # Allow organizers to preview their own draft events
         if params[:preview] == "true" && @current_user
-          event = Event.find_by!(slug: params[:slug])
+          event = Event.find_by_public_slug!(params[:slug])
           organizer_profile = @current_user.organizer_profile
           if organizer_profile && event.organizer_profile_id == organizer_profile.id
-            render json: event_json(event, include_ticket_types: true)
+            render json: show_json(event)
             return
           end
         end
 
-        event = Event.publicly_visible.find_by!(slug: params[:slug])
-        render json: event_json(event, include_ticket_types: true)
+        event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_visible)
+        render json: show_json(event)
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end
 
       private
 
+      def show_json(event)
+        json = event_json(event, include_ticket_types: true, include_design: true)
+        json[:redirected_from] = params[:slug] if event.slug != params[:slug]
+        json
+      end
+
       def filtered_events
         events = Event.discoverable
         if params[:q].present?
-          query = "%#{ActiveRecord::Base.sanitize_sql_like(params[:q].to_s.strip)}%"
-          events = events.where(<<~SQL.squish, query: query)
-            events.title ILIKE :query OR events.description ILIKE :query OR
-            events.short_description ILIKE :query OR events.venue_name ILIKE :query OR events.venue_city ILIKE :query
-          SQL
+          events = events.accent_insensitive_search(params[:q], :title, :description, :short_description,
+            :venue_name, :venue_city)
         end
         events = events.where(category: params[:category]) if Event.categories.key?(params[:category].to_s)
         events = events.where(is_featured: true) if ActiveModel::Type::Boolean.new.cast(params[:featured])
         events = events.where(starts_at: parse_date_boundary(params[:date_from], beginning: true)..) if params[:date_from].present?
         events = events.where(starts_at: ..parse_date_boundary(params[:date_to], beginning: false)) if params[:date_to].present?
         events = filter_named_window(events)
-        events = events.where("LOWER(events.venue_city) = ?", params[:village].to_s.strip.downcase) if params[:village].present?
+        events = events.accent_insensitive_equals(:venue_city, params[:village]) if params[:village].present?
         events = events.joins(:venue).where(venues: { slug: params[:venue] }) if params[:venue].present?
         events = events.joins(:organization).where(organizations: { slug: params[:organizer] }) if params[:organizer].present?
         events = filter_price(events)
@@ -134,6 +142,18 @@ module Api
         end
       end
 
+      # The all-in price buyers see on cards: the effective ticket price plus
+      # the buyer's share of the service fee, with Commerce::ServiceFee's
+      # per-ticket half-up rounding (PostgreSQL ROUND on numeric rounds half
+      # away from zero, which is half up for these non-negative amounts).
+      ALL_IN_TICKET_PRICE_SQL = <<~SQL.squish.freeze
+        (SELECT effective.price_cents + CASE WHEN effective.price_cents > 0 THEN
+            ROUND((ROUND(effective.price_cents * CAST(:fee_percent AS numeric) / 100) + :fee_flat_cents)
+              * events.buyer_fee_percent / 100.0)
+          ELSE 0 END
+         FROM (SELECT #{EFFECTIVE_TICKET_PRICE_SQL} AS price_cents) effective)
+      SQL
+
       def filter_price(events)
         cents = case params[:price]
         when "free" then 0
@@ -141,11 +161,9 @@ module Api
         when "under_50" then 5000
         else return events
         end
-        if params[:price] == "free"
-          events.where("#{EFFECTIVE_TICKET_PRICE_SQL} = :price_cents", price_at: Time.current, price_cents: cents)
-        else
-          events.where("#{EFFECTIVE_TICKET_PRICE_SQL} <= :price_cents", price_at: Time.current, price_cents: cents)
-        end
+        operator = params[:price] == "free" ? "=" : "<="
+        events.where("#{ALL_IN_TICKET_PRICE_SQL} #{operator} :price_cents", price_at: Time.current, price_cents: cents,
+          fee_percent: listing_fee_terms.percent.to_s, fee_flat_cents: listing_fee_terms.flat_cents)
       end
 
       def parse_date_boundary(value, beginning:)
@@ -209,8 +227,8 @@ module Api
         end
       end
 
-      def event_json(event, include_ticket_types: false)
-        content = event.content_for(params[:locale].presence || request.headers["Accept-Language"])
+      def event_json(event, include_ticket_types: false, include_design: false)
+        content = event.content_for(request_locale)
         active_tickets = event.tickets.where.not(status: :cancelled)
         attendee_count = active_tickets.count
 
@@ -220,7 +238,13 @@ module Api
           slug: event.slug,
           description: content[:description],
           short_description: content[:short_description],
+          content_locale: content[:locale],
+          machine_translated: content[:machine_translated],
+          original_content: content[:locale] == AppLocale::DEFAULT ? nil : event.slice(*Event::CONTENT_FIELDS),
           cover_image_url: event.cover_image_url,
+          page_customization: include_design ? event.page_customization :
+            (event.page_customization.is_a?(Hash) ? event.page_customization.slice("focal_point", "accent") : {}),
+          image_asset_host: S3Service.public_asset_host,
           venue_name: event.venue_name,
           venue_address: event.venue_address,
           venue_city: event.venue_city,
@@ -240,7 +264,8 @@ module Api
           attendee_count: attendee_count,
           fee_policy: event.fee_policy,
           buyer_fee_percent: event.buyer_fee_percent,
-          transfers_enabled: event.transfers_enabled,
+          service_fee_includes_processing: listing_settings.platform_bears_processing?,
+          transfers_enabled: event.transfers_available?,
           assigned_seating: event.assigned_seating?,
           supported_locales: event.supported_locales,
           localized_content: event.localized_content,
@@ -257,6 +282,7 @@ module Api
             verified: event.organizer_profile.verification_status_verified?,
             followed: followed?(event)
           },
+          seller: SellerIdentity.for_event(event, platform_name: listing_settings.platform_name).as_json,
           venue: event.venue && {
             id: event.venue.id, name: event.venue.name, slug: event.venue.slug,
             village: event.venue.village, verified: event.venue.verified
@@ -271,13 +297,25 @@ module Api
           json[:ticket_types] = event.ticket_types.includes(:pricing_tiers).order(:sort_order, :id).map do |tt|
             active_tier = tt.active_pricing_tier
             next_tier = tt.next_pricing_tier
+            tt_content = tt.content_for(request_locale)
+            current_price_cents = tt.current_price_cents
+            fee = Commerce::ServiceFee.for_event(event, current_price_cents, terms: listing_fee_terms)
             tt_json = {
               id: tt.id,
-              name: tt.name,
-              description: tt.description,
+              name: tt_content[:name],
+              description: tt_content[:description],
+              machine_translated: tt_content[:machine_translated],
+              original_name: tt.name,
+              original_description: tt.description,
               price_cents: tt.price_cents,
-              current_price_cents: tt.current_price_cents,
+              current_price_cents: current_price_cents,
               original_price_cents: tt.price_cents,
+              # All-in prices include the mandatory per-ticket service fee the
+              # buyer pays under the event's fee policy, computed by the same
+              # code as checkout. Displays lead with these (16 CFR Part 464).
+              all_in_price_cents: fee.all_in_price_cents,
+              service_fee_cents: fee.buyer_fee_cents,
+              regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents, terms: listing_fee_terms).all_in_price_cents,
               quantity_available: tt.quantity_available,
               quantity_sold: tt.quantity_sold,
               quantity_remaining: tt.available_quantity,
@@ -298,7 +336,8 @@ module Api
             if next_tier
               tt_json[:next_tier] = {
                 name: next_tier.name,
-                price_cents: next_tier.price_cents
+                price_cents: next_tier.price_cents,
+                all_in_price_cents: Commerce::ServiceFee.for_event(event, next_tier.price_cents, terms: listing_fee_terms).all_in_price_cents
               }
             end
             tt_json

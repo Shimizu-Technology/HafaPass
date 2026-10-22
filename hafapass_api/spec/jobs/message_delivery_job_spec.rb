@@ -31,4 +31,26 @@ RSpec.describe MessageDeliveryJob do
     expect(delivery.reload).to be_suppressed
     expect(EmailService).not_to have_received(:send_delivery_payload)
   end
+
+  it "never sends to a reserved placeholder address" do
+    delivery.update_columns(recipient: GuestListEntry::PLACEHOLDER_EMAIL)
+    allow(EmailService).to receive(:send_delivery_payload)
+
+    described_class.new.perform(delivery.id)
+
+    expect(delivery.reload).to have_attributes(status: "cancelled", attempts: 0)
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
+
+  it "cancels a queued legacy cosmetic event-change email before delivery" do
+    change = delivery.order.event.event_changes.create!(change_type: "rescheduled", occurred_at: Time.current)
+    EventChange.where(id: change.id).update_all(change_type: "customized")
+    delivery.update!(template: "event_change", metadata: { event_change_id: change.id })
+    allow(EmailService).to receive(:send_delivery_payload)
+
+    described_class.new.perform(delivery.id)
+
+    expect(delivery.reload).to have_attributes(status: "cancelled", attempts: 0)
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
 end

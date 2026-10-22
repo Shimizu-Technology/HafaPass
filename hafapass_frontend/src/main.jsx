@@ -7,6 +7,7 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import DraftNavigationProvider from './components/DraftNavigationProvider'
 import { HelmetProvider } from 'react-helmet-async'
+import { MotionConfig } from 'framer-motion'
 import './index.css'
 import ServiceCheck from './ServiceCheck.jsx'
 import { initializeMonitoring, Sentry } from './monitoring'
@@ -25,9 +26,12 @@ removeLegacyPrivateCaches().finally(() => {
   </Sentry.ErrorBoundary> }])
   createRoot(document.getElementById('root')).render(
     <StrictMode>
-      <HelmetProvider>
-        <RouterProvider router={router} />
-      </HelmetProvider>
+      {/* JS animations follow the visitor's reduced-motion preference, matching the CSS fallback. */}
+      <MotionConfig reducedMotion="user">
+        <HelmetProvider>
+          <RouterProvider router={router} />
+        </HelmetProvider>
+      </MotionConfig>
     </StrictMode>,
   )
 })

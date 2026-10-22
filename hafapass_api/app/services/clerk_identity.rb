@@ -8,6 +8,10 @@ require "json"
 class ClerkIdentity
   class LookupUnavailable < StandardError; end
 
+  DEFAULT_TIMEOUT = 5
+  # Account creation waits on the lookup while the user signs in.
+  SIGN_IN_TIMEOUT = 1.5
+
   class RequestCache < ActiveSupport::CurrentAttributes
     attribute :verified_emails, :profiles
   end
@@ -33,11 +37,17 @@ class ClerkIdentity
 
     # Display/contact data only. Never use persisted profile fields as proof of
     # email ownership or authorization; those checks still refetch each request.
-    def profile(clerk_id)
+    # A cached failure only answers lookups that would wait no longer, so a
+    # short sign-in lookup that timed out never blocks a later full-length one.
+    def profile(clerk_id, timeout: DEFAULT_TIMEOUT)
       cache = RequestCache.profiles
-      return fetch_profile(clerk_id) unless cache
+      return fetch_profile(clerk_id, timeout) unless cache
 
-      cache.fetch(clerk_id) { cache[clerk_id] = fetch_profile(clerk_id) }
+      entry = cache[clerk_id]
+      return entry[:profile] if entry && (entry[:profile] || entry[:timeout] >= timeout)
+
+      cache[clerk_id] = { profile: fetch_profile(clerk_id, timeout), timeout: timeout }
+      cache[clerk_id][:profile]
     end
 
     def email_matches?(user:, email:)
@@ -51,12 +61,12 @@ class ClerkIdentity
       profile(clerk_id)&.fetch(:verified_emails)
     end
 
-    def fetch_profile(clerk_id)
+    def fetch_profile(clerk_id, timeout)
       return nil if clerk_id.blank? || ENV["CLERK_SECRET_KEY"].blank?
 
       uri = URI("https://api.clerk.com/v1/users/#{ERB::Util.url_encode(clerk_id)}")
       response = Net::HTTP.start(uri.host, uri.port, use_ssl: true,
-        open_timeout: 5, read_timeout: 5) do |http|
+        open_timeout: timeout, read_timeout: timeout) do |http|
         request = Net::HTTP::Get.new(uri)
         request["Authorization"] = "Bearer #{ENV.fetch('CLERK_SECRET_KEY')}"
         http.request(request)

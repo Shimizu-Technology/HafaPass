@@ -25,14 +25,12 @@ RSpec.describe PaymentReadinessReviews::Manager do
     }
   end
 
-  it "requires two people, preserves evidence, and revokes readiness append-only" do
+  it "lets one administrator submit and approve, preserves evidence, and revokes readiness append-only" do
     submission = described_class.submit!(account: account, attributes: evidence, actor: submitter)
 
-    expect do
-      described_class.approve!(submission: submission, actor: submitter)
-    end.to raise_error(described_class::ReviewError, /cannot approve their own/)
-
-    approval = described_class.approve!(submission: submission, actor: approver)
+    approval = described_class.approve!(submission: submission, actor: submitter)
+    expect(approval.actor_user).to eq(submitter)
+    expect(submission.actor_user).to eq(submitter)
     expect(account.reload).to be_status_ready
     expect(account.requirements_due).to be_empty
     expect(account).to be_payout_ready

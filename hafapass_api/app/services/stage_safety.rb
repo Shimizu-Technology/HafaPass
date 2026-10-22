@@ -4,11 +4,14 @@ require "uri"
 require "base64"
 require "openssl"
 require_relative "provider_rehearsal"
+require_relative "launch_capabilities"
 
 # Staging runs the production runtime against separate data, with real test
 # identity and simulated commerce. It never supplies production approvals.
 class StageSafety
   class ConfigurationError < StandardError; end
+
+  STAGING_LAUNCH_CAPABILITIES = %w[ticket_transfers].freeze
 
   class << self
     def call(runtime: false)
@@ -22,7 +25,7 @@ class StageSafety
         admin_bootstrap_disabled: !ActiveModel::Type::Boolean.new.cast(ENV["ENABLE_FIRST_USER_ADMIN_BOOTSTRAP"]),
         no_live_stripe_credentials: no_live_stripe_credentials?,
         provider_rehearsal: ProviderRehearsal.configuration_valid?,
-        launch_scope: ENV.fetch("HAFAPASS_LAUNCH_SCOPE", "general_admission") == "general_admission"
+        launch_scope: launch_scope?
       }
       if runtime
         if ProviderRehearsal.stripe_enabled?
@@ -51,6 +54,14 @@ class StageSafety
     end
 
     private
+
+    # Staging rehearses the production launch: general admission plus, at
+    # most, ticket transfers. Seating, sales tools, recurrence or door card
+    # payments enabled through HAFAPASS_LAUNCH_CAPABILITIES fail readiness.
+    def launch_scope?
+      ENV.fetch("HAFAPASS_LAUNCH_SCOPE", "general_admission") == "general_admission" && LaunchCapabilities.configured? &&
+        (LaunchCapabilities.additional_capabilities - STAGING_LAUNCH_CAPABILITIES).empty?
+    end
 
     def admission_signing?
       pem = ENV["ADMISSION_MANIFEST_PRIVATE_KEY_PEM"]

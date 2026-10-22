@@ -5,7 +5,7 @@ const json = (route, body, status = 200) => route.fulfill({
   status, contentType: 'application/json', body: JSON.stringify(body),
 })
 
-test('admin independently approves the exact Gate J closeout and Guam expansion decision', async ({ page }) => {
+test('admin approves the exact Gate J closeout and Guam expansion decision', async ({ page }) => {
   let approvalRequested = false
   const event = {
     id: 42, title: 'Guam Community Night', slug: 'guam-community-night', status: 'completed',
@@ -67,6 +67,7 @@ test('admin independently approves the exact Gate J closeout and Guam expansion 
   })
 
   await page.goto('/admin/events')
+  await page.getByRole('button', { name: /^Release gates for / }).click()
   await page.getByRole('button', { name: 'Review Gate J closeout' }).click()
   await expect(page.getByText('limited guam expansion', { exact: true })).toBeVisible()
   await expect(page.getByText('Publish organizer-success response targets')).toBeVisible()

@@ -20,6 +20,11 @@ const pending = {
 describe('LivePilotOperationsDialog', () => {
   beforeEach(() => { apiClient.get.mockReset(); apiClient.post.mockReset() })
 
+  it('does not take focus when its trigger first renders', () => {
+    render(<LivePilotOperationsDialog event={event} />)
+    expect(document.activeElement).toBe(document.body)
+  })
+
   it('fails closed in the UI when Gate G or applicable Gate H is not current', async () => {
     apiClient.get.mockResolvedValue({ data: {
       event, live_pilot: { prerequisite_ready: false, approved: false, maximum_inventory_cap: 250 },
@@ -32,7 +37,7 @@ describe('LivePilotOperationsDialog', () => {
     expect(screen.getByRole('button', { name: 'Submit Gate I plan' })).toBeDisabled()
   })
 
-  it('lets a second administrator approve the exact pending plan', async () => {
+  it('lets an administrator approve the exact pending plan', async () => {
     apiClient.get.mockResolvedValue({ data: {
       event, live_pilot: { prerequisite_ready: true, approved: false, pending_submission: pending },
     } })

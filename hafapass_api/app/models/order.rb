@@ -1,5 +1,6 @@
 class Order < ApplicationRecord
-  attr_readonly :checkout_key_digest, :checkout_request_digest, :checkout_recovery_expires_at
+  attr_readonly :checkout_key_digest, :checkout_request_digest, :checkout_recovery_expires_at,
+    :processing_fee_bearer_snapshot
 
   has_one :live_money_proof_authorization, dependent: :restrict_with_error
   belongs_to :user, optional: true
@@ -31,15 +32,48 @@ class Order < ApplicationRecord
   enum :status, { pending: 0, completed: 1, refunded: 2, cancelled: 3, partially_refunded: 4, expired: 5 }
   enum :fee_policy_snapshot, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }, prefix: :fee
 
+  # Production finance counts real money only: orders paid in Stripe test
+  # mode (admin QA) are left out of revenue, analytics and exports. Free,
+  # cash and box-office orders stay. Outside production nothing is excluded.
+  scope :excluding_test_payments, -> {
+    if Rails.env.production?
+      live_capture = Payment.live_or_legacy_capture.select(:order_id)
+      nonlive_stripe = Payment.nonlive_stripe.select(:order_id)
+      where.not(id: nonlive_stripe).or(where(id: live_capture))
+    else
+      all
+    end
+  }
+
+  def test_payment?
+    payments.any? { |payment| payment.provider == "stripe" && payment.provider_environment == "test" }
+  end
+
+  validates :locale, inclusion: { in: AppLocale::SUPPORTED }
   validates :buyer_email, presence: true
+  validates :marketing_opt_in, inclusion: { in: [true, false] }
   validates :buyer_name, presence: true
   validates :currency, presence: true, length: { is: 3 }
   validates :subtotal_cents, :service_fee_cents, :discount_cents, :total_cents, :refund_amount_cents,
     :organizer_fee_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :buyer_fee_percent_snapshot, numericality: { only_integer: true, in: 0..100 }
+  # NULL is a legacy order created before the bearer was snapshotted; it keeps
+  # the legacy rule that actual processing is deducted from organizer proceeds.
+  validates :processing_fee_bearer_snapshot, inclusion: { in: SiteSetting::PROCESSING_FEE_BEARERS }, allow_nil: true
   validate :financial_components_balance
 
   before_validation :assign_reference, on: :create
+  after_update -> { Wallet::PassSync.tickets_changed(tickets.select(:id)) }, if: :saved_change_to_status?
+  after_update_commit :restore_marketing_opt_in, if: -> { saved_change_to_status? && completed? && marketing_opt_in? }
+
+  def restore_marketing_opt_in
+    event.organization.with_lock do
+      return unless MarketingConsent.latest_order(organization: event.organization, email: buyer_email)&.id == id
+
+      MarketingUnsubscribe.where(organization_id: event.organization_id,
+        email: buyer_email.to_s.strip.downcase).where("unsubscribed_at < ?", created_at).delete_all
+    end
+  end
 
   def guest_access_valid?(version:, at: Time.current)
     user_id.nil? && guest_access_revoked_at.nil? && guest_access_expires_at.present? &&
@@ -53,6 +87,16 @@ class Order < ApplicationRecord
     disputes.where(status: [:open, :lost]).exists?
   end
 
+  def buyer_status
+    return "disputed" if ticket_access_blocked?
+    return "refunded" if refunded?
+    return "partially_refunded" if partially_refunded?
+    return "cancelled_event" if event.cancelled?
+    return "cancelled" if cancelled?
+
+    "paid"
+  end
+
   def full_refund_pending?
     return false unless total_cents.positive?
 
@@ -61,21 +105,44 @@ class Order < ApplicationRecord
     reserved.any?(&:pending?) && reserved.sum(&:amount_cents) >= total_cents
   end
 
-  def ticket_fulfilled?
+  # payment_mode lets bulk callers (scanner manifests) read the setting once.
+  def ticket_fulfilled?(payment_mode: nil)
     return false unless completed? || partially_refunded?
     return true unless Rails.env.production? && total_cents.positive?
 
     captured = payments.loaded? ? payments.select { |payment| payment.succeeded? || payment.partially_refunded? } :
       payments.where(status: [:succeeded, :partially_refunded]).to_a
+    # Stripe test-mode tickets admit people only while the platform itself is
+    # in test mode (production QA). Once payments are live they stop working.
+    admissible_environments = (payment_mode || SiteSetting.instance.payment_mode) == "test" ? %w[live test] : %w[live]
     captured.any? do |payment|
       payment.amount_cents >= total_cents && payment.currency == currency && payment.provider_payment_id.present? &&
-        (payment.provider != "stripe" || (payment.provider_environment == "live" && payment.provider_platform_account_id.present?)) &&
+        (payment.provider != "stripe" || (admissible_environments.include?(payment.provider_environment) &&
+          payment.provider_platform_account_id.present?)) &&
         !payment.provider_payment_id.start_with?("sim_") && payment.provider_payload.to_h["simulated"] != true
     end
   end
 
   def ticket_record_available?
     completed? || partially_refunded? || refunded? || cancelled?
+  end
+
+  def receipt_available?
+    ticket_record_available? && (completed_at.present? ||
+      payments.any? { |payment| payment.succeeded? || payment.partially_refunded? || payment.refunded? })
+  end
+
+  def payment_environment
+    entries = payments.to_a
+    payment = entries.select { |entry| entry.succeeded? || entry.partially_refunded? || entry.refunded? }.max_by(&:id) ||
+      entries.max_by(&:id)
+    return if payment.nil?
+
+    return "simulated" if payment.provider_environment == "simulate" ||
+      payment.provider_payload.to_h["simulated"] == true || payment.provider_payment_id.to_s.start_with?("sim_")
+    return "test" if payment.provider_payload.to_h["livemode"] == false
+
+    payment.provider_environment
   end
 
   def gross_cents
@@ -90,6 +157,10 @@ class Order < ApplicationRecord
 
   def net_cents
     total_cents - refunded_cents
+  end
+
+  def platform_bears_processing?
+    processing_fee_bearer_snapshot == "platform"
   end
 
   def fee_cents

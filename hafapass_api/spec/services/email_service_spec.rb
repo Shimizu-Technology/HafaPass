@@ -1,6 +1,16 @@
 require "rails_helper"
 
 RSpec.describe EmailService do
+  it "groups large USD amounts in English and localized receipt emails" do
+    order = create(:order, subtotal_cents: 1_000_00, service_fee_cents: 11_345_67, total_cents: 12_345_67)
+    english = I18n.with_locale(:en) { described_class.send(:build_order_confirmation_html, order, order.event, []) }
+    korean = I18n.with_locale(:ko) { described_class.send(:build_order_confirmation_html, order, order.event, []) }
+
+    expect(english).to include("$1,000.00", "$12,345.67")
+    expect(korean).to include("US$1,000.00", "US$12,345.67")
+    expect(english).not_to include("$1000.00", "$12345.67")
+  end
+
   it "rejects an unprepared direct delivery before networking" do
     order = create(:order, user: nil)
     delivery = create(:message_delivery, order: order)
@@ -58,6 +68,60 @@ RSpec.describe EmailService do
     end
   end
 
+  describe ".from_email" do
+    def stub_sender(value)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("MAILER_FROM_EMAIL").and_return(value)
+    end
+
+    it "uses the configured verified sender" do
+      stub_sender(" HåfaPass <tickets@mail.example.test> ")
+      expect(described_class.from_email).to eq("HåfaPass <tickets@mail.example.test>")
+    end
+
+    it "falls back to a reserved domain only in development and test" do
+      stub_sender(nil)
+      expect(described_class.from_email).to eq("tickets@example.test")
+    end
+
+    it "refuses to send from a deployed environment without a configured sender" do
+      stub_sender("")
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("staging"))
+      allow(described_class).to receive(:configured?).and_return(true)
+
+      expect { described_class.from_email }.to raise_error(described_class::ProviderDisabled, /MAILER_FROM_EMAIL/)
+    end
+  end
+
+  it "explains transferred tickets instead of an empty ticket table when the buyer holds none" do
+    order = create(:order)
+    html = described_class.send(:build_order_confirmation_html, order, order.event, [])
+
+    expect(html).to include("All tickets on this order were transferred")
+    expect(html).not_to include("Your Tickets")
+    expect(html).not_to include("Present your QR code")
+  end
+
+  it "names the organizer as seller and the platform as the ticketing service on receipts and tickets" do
+    ticket = create(:ticket)
+    seller = ticket.event.organizer_profile.business_name
+    receipt = described_class.send(:build_order_confirmation_html, ticket.order, ticket.event, [ticket])
+    ticket_html = described_class.send(:build_ticket_email_html, ticket, ticket.event, ticket.ticket_type)
+
+    expect(receipt).to include("Sold by #{ERB::Util.html_escape(seller)} · Tickets by HåfaPass",
+      "Event seller: #{ERB::Util.html_escape(seller)}", "operated by ", "Shimizu Technology", "Service fee:", "Total paid:")
+    expect(receipt).not_to match(/tax/i)
+    expect(ticket_html).to include("Sold by #{ERB::Util.html_escape(seller)} · Tickets by HåfaPass")
+  end
+
+  it "keeps the ticket table and entry instructions while the buyer holds tickets" do
+    ticket = create(:ticket)
+    html = described_class.send(:build_order_confirmation_html, ticket.order, ticket.event, [ticket])
+
+    expect(html).to include("Your Tickets", "Present your QR code", "View Ticket")
+    expect(html).not_to include("were transferred")
+  end
+
   it "fails closed in production instead of recording a simulated customer delivery" do
     order = create(:order)
     allow(Rails.env).to receive(:production?).and_return(true)
@@ -100,5 +164,20 @@ RSpec.describe EmailService do
     expect(params["html"]).to include("&lt;script&gt;buyer()&lt;/script&gt;", "&lt;img src=x onerror=alert(1)&gt;",
       "&lt;b&gt;Venue&lt;/b&gt;", "&lt;svg onload=alert(2)&gt;", "&lt;em&gt;Attendee&lt;/em&gt;")
     expect(params["html"]).not_to include("<script>buyer()", "<img src=x", "<svg onload")
+  end
+
+  it "leaves tickets transferred to another account out of the buyer's order email" do
+    buyer = create(:user)
+    order = create(:order, user: buyer)
+    ticket_type = create(:ticket_type, event: order.event)
+    held = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, attendee_name: "Held Guest")
+    moved = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, attendee_name: "Transferee Guest")
+    moved.update!(holder_user: create(:user))
+    expect([held, moved].map(&:display_credential)).to all(be_present)
+
+    html = described_class.prepare_delivery_payload(create(:message_delivery, order: order)).fetch("html")
+
+    expect(html).to include("Held Guest", "/tickets/#{held.display_credential}")
+    expect(html).not_to include("Transferee Guest", moved.display_credential)
   end
 end

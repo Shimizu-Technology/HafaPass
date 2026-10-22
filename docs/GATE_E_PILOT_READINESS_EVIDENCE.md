@@ -1,10 +1,12 @@
 # Gate E — Event-Specific Pilot Readiness Evidence
 
+> **Optional record (2026-10-21).** This gate no longer blocks publishing or sales. Production's only sales gate is an admin verifying the organizer; see [Production cutover](PRODUCTION_CUTOVER.md). Use this review when you want a written record.
+
 Status: application control implemented; a real organizer, venue, operating team, and signed readiness bundle are still required.
 
 ## Why this exists
 
-An organizer verification or provider credential cannot prove that one specific event is safe to put on sale. Gate E binds the first pilot's event configuration to a signed operating plan, six named operational roles, twelve explicit controls, an effective window, and an independent administrator's decision.
+An organizer verification or provider credential cannot prove that one specific event is safe to put on sale. Gate E binds the first pilot's event configuration to a signed operating plan, six named operational roles, twelve explicit controls, an effective window, and an administrator's recorded decision.
 
 This control prevents a checklist document from becoming detached from the event it approved. Production publication/resumption and checkout fail closed when no current approval matches the event.
 
@@ -16,7 +18,7 @@ This control prevents a checklist document from becoming detached from the event
 4. Record only the restricted evidence reference and the lowercase SHA-256 digest in Admin → Events → Prepare pilot readiness.
 5. Name the primary and backup on-call owners, event commander, door lead, finance contact, and venue safety contact. Contact references must point to the restricted on-call directory.
 6. Affirm every control only after the evidence supports it.
-7. A different administrator reviews and approves the exact submission. The API prevents self-approval.
+7. An administrator reviews and approves the exact submission. One administrator may submit and approve (decision of 2026-10-21); the audit trail records the submitter, approver, and timestamps. A two-person rule may return later as an optional setting.
 8. Revoke the approval immediately if venue, safety, staffing, payout, event, or evidence conditions cease to be valid.
 
 ## Required controls
@@ -45,7 +47,7 @@ The application records the production `GIT_SHA` (or `development` locally) and 
 - ticket types, prices, limits, inventory, sales windows, door allocations, pricing tiers, add-ons, donations, registration questions, waivers, and promo configuration;
 - assigned-seating layout version, renderer, seat-to-ticket mapping, operational status, labels, zones, and accessibility metadata.
 
-Ordinary sales counters are deliberately excluded, so selling a ticket does not invalidate approval. Material configuration changes do invalidate approval without rewriting history. The event must receive a new evidence submission and independent approval before production sales continue.
+Ordinary sales counters are deliberately excluded, so selling a ticket does not invalidate approval. Material configuration changes do invalidate approval without rewriting history. The event must receive a new evidence submission and approval before production sales continue.
 
 A new deployment revision also invalidates approval. This enforces Gate A's rule that pilot evidence belongs to one immutable application/database candidate; it cannot silently authorize different code.
 
@@ -63,6 +65,6 @@ The full readiness record is available only through administrator endpoints. Pub
 
 ## Evidence that still must be produced outside the application
 
-The software does not select the organizer, inspect a venue, verify a physical seat, name real people, provision devices, approve cash handling, or resolve P0/P1 findings. Gate E is complete only when the actual event has a signed evidence bundle, all owners have confirmed their assignments, the second administrator has approved the current digest, and there is no unresolved P0/P1 scenario.
+The software does not select the organizer, inspect a venue, verify a physical seat, name real people, provision devices, approve cash handling, or resolve P0/P1 findings. Gate E is complete only when the actual event has a signed evidence bundle, all owners have confirmed their assignments, an administrator has approved the current digest, and there is no unresolved P0/P1 scenario.
 
 Gate F device/browser/accessibility/load proof is enforced through [Gate F Validation Evidence](GATE_F_VALIDATION_EVIDENCE.md). Real evidence is still pending. Gate G physical event-day rehearsal remains a separate release gate.

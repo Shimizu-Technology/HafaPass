@@ -1,0 +1,24 @@
+# Netlify entry point for this monorepo.
+#
+# The site builds from the repository root (no base directory in the Netlify
+# UI). Netlify only reads a netlify.toml from the base directory or the root,
+# so the frontend's own hafapass_frontend/netlify.toml and its edge functions
+# were never picked up and share previews never deployed.
+#
+# Setting build.base here makes Netlify run a second configuration pass from
+# hafapass_frontend/: it then loads hafapass_frontend/netlify.toml as the
+# effective configuration and finds edge functions in
+# hafapass_frontend/netlify/edge-functions/. File-based settings override the
+# UI build settings, so the UI command/publish values no longer apply.
+#
+# That second pass is Netlify's default ("baseRelDir"). Only sites on the legacy
+# single-pass mode use the values below; there, paths resolve from the
+# repository root and the command runs in the base directory. They point at the
+# same build output and edge functions as hafapass_frontend/netlify.toml.
+# Verified with @netlify/config in both modes. Keep the two files in step.
+# Redirects and the SPA fallback live in hafapass_frontend/public/_redirects.
+[build]
+  base = "hafapass_frontend"
+  command = "npm run build"
+  publish = "hafapass_frontend/dist"
+  edge_functions = "hafapass_frontend/netlify/edge-functions"

@@ -9,7 +9,6 @@ const auth = vi.hoisted(() => ({ isLoaded: true, isSignedIn: false }))
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/ui/ScrollReveal', () => ({ FadeUp: ({ children }) => <div>{children}</div> }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => ({ 'events.free': 'Free', 'events.from': 'From' }[key] || key) }) }))
 vi.mock('@clerk/clerk-react', () => ({
   useAuth: () => auth,
   SignIn: function MockSignIn({ signUpUrl, forceRedirectUrl }) {
@@ -46,6 +45,7 @@ function mount() {
   return render(<MemoryRouter initialEntries={['/']}><Routes>
     <Route path='/' element={<HomePage />} />
     <Route path='/events' element={<BrowseDestination />} />
+    <Route path='/host' element={<h1>Host your event with HåfaPass</h1>} />
     <Route path='/dashboard' element={<ProtectedRoute><h1>Create your organizer profile</h1></ProtectedRoute>} />
     <Route path='/sign-in' element={<SignInPage />} />
     <Route path='/sign-up' element={<SignUpPage />} />
@@ -55,7 +55,7 @@ function mount() {
 const entryLink = async entry => {
   await screen.findByRole('heading', { name: /No upcoming events listed/ })
   return entry === 'footer'
-    ? screen.getByRole('link', { name: 'footer.forOrganizers' })
+    ? screen.getByRole('link', { name: "For Organizers" })
     : screen.getAllByRole('link', { name: 'Start Hosting' })[entry === 'hero' ? 0 : 1]
 }
 
@@ -67,41 +67,24 @@ describe('hosting entry navigation', () => {
     apiClient.get.mockResolvedValue({ data: { events: [] } })
   })
 
-  it.each(['hero', 'bottom', 'footer'])('takes an already signed-in %s visitor directly into organizer setup', async entry => {
-    auth.isSignedIn = true
-    mount()
-    await userEvent.setup().click(await entryLink(entry))
-    expect(await screen.findByRole('heading', { name: 'Create your organizer profile' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Create an account' })).not.toBeInTheDocument()
-  })
-
-  it.each(['hero', 'bottom', 'footer'])('retains %s hosting intent through guest sign-in and signup', async entry => {
-    mount()
-    const user = userEvent.setup()
-    await user.click(await entryLink(entry))
-    expect(await screen.findByRole('heading', { name: 'Sign in to continue' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/sign-up?returnTo=%2Fdashboard')
-    await user.click(screen.getByRole('link', { name: 'Create an account' }))
-    expect(await screen.findByRole('heading', { name: 'Create an account' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Use an existing account' })).toHaveAttribute('href', '/sign-in?returnTo=%2Fdashboard')
-    await user.click(screen.getByRole('button', { name: 'Complete signup' }))
-    expect(await screen.findByRole('heading', { name: 'Create your organizer profile' })).toBeInTheDocument()
-  })
-
-  it('returns an existing guest account to organizer setup after sign in', async () => {
-    mount()
-    const user = userEvent.setup()
-    await user.click(await entryLink('footer'))
-    await user.click(await screen.findByRole('button', { name: 'Complete sign in' }))
-    expect(await screen.findByRole('heading', { name: 'Create your organizer profile' })).toBeInTheDocument()
+  // The organizer journey (signup/sign-in return to setup) is covered by HostPage.test.jsx.
+  it.each(['hero', 'bottom', 'footer'])('sends the %s hosting entry to the host landing page for every visitor', async entry => {
+    for (const signedIn of [false, true]) {
+      auth.isSignedIn = signedIn
+      const view = mount()
+      await userEvent.setup().click(await entryLink(entry))
+      expect(await screen.findByRole('heading', { name: 'Host your event with HåfaPass' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Sign in to continue' })).not.toBeInTheDocument()
+      view.unmount()
+    }
   })
 
   it('keeps event browsing separate while preserving the organizer call to action', async () => {
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 37, slug: 'workshop', title: 'Workshop', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
-    expect(await screen.findByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
-    screen.getAllByRole('link', { name: 'Start Hosting' }).forEach(link => expect(link).toHaveAttribute('href', '/dashboard'))
-    expect(screen.getByRole('link', { name: 'footer.signIn' })).toHaveAttribute('href', '/sign-in')
+    expect(await screen.findAllByRole('link', { name: 'Browse Events' }).then(links => links[0])).toHaveAttribute('href', '/events')
+    screen.getAllByRole('link', { name: 'Start Hosting' }).forEach(link => expect(link).toHaveAttribute('href', '/host'))
+    expect(screen.getByRole('link', { name: "Sign In" })).toHaveAttribute('href', '/sign-in')
   })
 
   it('keeps browsing available during a slow load without declaring the event list empty', async () => {
@@ -109,7 +92,7 @@ describe('hosting entry navigation', () => {
     apiClient.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('Loading upcoming events')
-    expect(screen.getByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
+    expect(screen.getAllByRole('link', { name: 'Browse Events' })[0]).toHaveAttribute('href', '/events')
     expect(screen.queryByText('Check back for new dates, or start setting up your own event.')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /No upcoming events listed/ })).not.toBeInTheDocument()
     await act(async () => finish({ data: { events: [] } }))
@@ -124,7 +107,7 @@ describe('hosting entry navigation', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Events couldn’t load')
     expect(screen.queryByText('Check back for new dates, or start setting up your own event.')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /No upcoming events listed/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Browse Events' })).toHaveAttribute('href', '/events')
+    expect(screen.getAllByRole('link', { name: 'Browse Events' })[0]).toHaveAttribute('href', '/events')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Retry events' }))
     expect(await screen.findByRole('link', { name: /Recovered event/ })).toHaveAttribute('href', '/events/recovered-event')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -158,19 +141,27 @@ describe('hosting entry navigation', () => {
     expect(within(featured).getByRole('heading', { name: 'A real catalog event' })).toBeInTheDocument()
     expect(within(featured).getByRole('link', { name: 'Get Tickets' })).toHaveAttribute('href', '/events/no-art')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(within(featured).getByText('Event artwork unavailable')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Food & Drink' })).toHaveAttribute('href', '/events?category=dining')
     expect(screen.getByRole('link', { name: 'Classes & Workshops' })).toHaveAttribute('href', '/events?category=workshop')
   })
 
   it('recovers broken organizer artwork while keeping featured details and action usable', async () => {
-    const artwork = 'https://example.test/organizer-poster.png'
+    const artwork = 'https://storage.invalid/uploads/organizer-poster.png'
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 45, slug: 'poster', title: 'Organizer poster event',
-      cover_image_url: artwork, is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
+      cover_image_url: artwork, image_asset_host: 'storage.invalid', page_customization: { focal_point: { x: 25, y: 75 } },
+      is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     const featured = await screen.findByRole('article', { name: 'Featured event' })
     const image = within(featured).getByRole('img', { name: 'Artwork for Organizer poster event' })
     expect(image).toHaveAttribute('src', artwork)
     expect(image).toHaveAttribute('loading', 'eager')
+    // Fills its 16:9 frame without relying on percentage heights; a blurred copy fills behind portrait posters.
+    expect(image).toHaveClass('absolute', 'inset-0', 'object-contain')
+    expect(image.style.objectPosition).toBe('')
+    expect(image.parentElement).toHaveClass('relative', 'aspect-[16/9]')
+    expect(within(featured).getByTestId('artwork-backdrop')).toHaveAttribute('src', artwork)
+    expect(within(featured).getByTestId('artwork-backdrop')).toHaveStyle({ objectPosition: '25% 75%' })
     fireEvent.error(image)
     expect(within(featured).queryByRole('img')).not.toBeInTheDocument()
     expect(within(featured).getByText('Event artwork unavailable')).toBeInTheDocument()

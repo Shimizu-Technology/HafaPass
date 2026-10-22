@@ -190,8 +190,8 @@ function SeatingSession({ id, identity }) {
       {!seating?.assigned_seating ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="card p-6">
-            <h2 className="text-lg font-semibold text-neutral-900">Create a pilot layout</h2>
-            <p className="mt-1 text-sm text-neutral-600">Generate a clean section-and-row map. Protected wheelchair and companion seats remain paired.</p>
+            <h2 className="text-lg font-semibold text-neutral-900">Create a seating layout</h2>
+            <p className="mt-1 text-sm text-neutral-600">Build a simple map of sections, rows and seats. Each wheelchair space stays paired with a companion seat.</p>
             <div className="mt-5 space-y-4">
               <label className="block text-sm font-medium text-neutral-700">Layout name<input className="input mt-1" value={layoutName} onChange={eventValue => setLayoutName(eventValue.target.value)} /></label>
               <div className="grid grid-cols-3 gap-3">
@@ -270,8 +270,8 @@ function SeatingSession({ id, identity }) {
 
       </fieldset>
       <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
-        <p className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Accessibility and provider boundary</p>
-        <p className="mt-1">Do not ask buyers for medical documentation. This native map remains the accessible purchasing path even when a visual chart provider is enabled.</p>
+        <p className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Accessible seating</p>
+        <p className="mt-1">Don’t ask buyers for medical documentation. Buyers can always pick accessible seats from this map, even if a visual seating chart is added later.</p>
       </div>
     </div></EventWorkspace>
   )

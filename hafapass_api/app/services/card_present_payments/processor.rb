@@ -44,6 +44,10 @@ module CardPresentPayments
         raise ProcessingError.new(message.presence || "Card payment failed", attempt: attempt)
       end
 
+      # A policy hold or sales suspension placed after the order was created
+      # stops the charge; the order fails and its inventory is released.
+      raise CardPresentGateway::PaymentError, "This event is not currently on sale" unless order.event.reload.sales_open?
+
       result = gateway.charge(
         account: attempt.card_present_account,
         amount_cents: attempt.amount_cents,
@@ -57,7 +61,7 @@ module CardPresentPayments
         record_unknown!(attempt, e, provider_response: result.provider_response,
           provider_payment_id: result.provider_payment_id)
         Sentry.capture_exception(e)
-        raise ProcessingError.new("The terminal succeeded but HafaPass requires reconciliation", attempt: attempt)
+        raise ProcessingError.new("The terminal succeeded but HåfaPass requires reconciliation", attempt: attempt)
       end
     rescue CardPresentGateway::PaymentError => e
       record_failure!(attempt, e)

@@ -43,6 +43,9 @@ RSpec.describe MessageDeliveryJob do
 
   it "keeps lost Resend acceptance uncertain when staging transport is disabled" do
     allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("staging"))
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("FRONTEND_URL").and_return("https://staging.hafapass.example")
+    allow(ENV).to receive(:[]).with("MAILER_FROM_EMAIL").and_return("tickets@staging.hafapass.example")
     allow(ProviderRehearsal).to receive(:email_payload_allowed?).and_return(true)
     requests = []
     allow(Resend::Emails).to receive(:send) do |params, options:|
@@ -209,6 +212,12 @@ RSpec.describe MessageDeliveryJob do
       described_class.new.perform(delivery.id)
     end
     expect(delivery.reload).to be_sent
+  end
+
+  it "treats a Resend not-found response as a definite rejection" do
+    allow(Resend::Emails).to receive(:send).and_raise(Resend::Error::NotFoundError.new("missing", 404))
+    expect { described_class.new.perform(delivery.id) }.to raise_error(Resend::Error::NotFoundError)
+    expect(delivery.reload.provider_outcome_unknown).to be(false)
   end
 
   it "does not let a later authentication rejection erase an earlier unknown outcome" do

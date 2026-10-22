@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { formatEventDate, formatEventTime, formatEventTimeRange, toEventLocalInput } from './eventTime'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { configureEnabledLanguages, setActiveLanguage } from './locale'
+import { formatEventDate, formatEventDateTime, formatEventTime, formatEventTimeRange, fromEventLocalInput, toEventLocalInput } from './eventTime'
 
 describe('event time formatting', () => {
   const guamSevenPm = '2026-08-15T09:00:00.000Z'
@@ -11,6 +12,7 @@ describe('event time formatting', () => {
 
   it('round-trips an API timestamp into a Guam datetime-local value', () => {
     expect(toEventLocalInput(guamSevenPm, 'Pacific/Guam')).toBe('2026-08-15T19:00')
+    expect(fromEventLocalInput('2026-08-15T19:00', 'Pacific/Guam').toISOString()).toBe('2026-08-15T09:00:00.000Z')
   })
 
   it('keeps a same-day event range compact in its Guam venue timezone', () => {
@@ -36,5 +38,24 @@ describe('event time formatting', () => {
   it('keeps the start time for an event without an end and avoids an invalid-date label', () => {
     expect(formatEventTimeRange(guamSevenPm, null, 'Pacific/Guam')).toBe('7:00 PM')
     expect(formatEventTimeRange(guamSevenPm, 'invalid', 'Pacific/Guam')).toBe('7:00 PM')
+  })
+})
+
+describe('event time formatting in the active language', () => {
+  beforeEach(() => configureEnabledLanguages('ko,ja,zh-Hant,zh,tl'))
+  afterEach(() => { setActiveLanguage('en'); configureEnabledLanguages('en') })
+
+  it('keeps the Guam venue time while following the selected language', () => {
+    const start = '2026-10-21T09:00:00Z'
+    setActiveLanguage('ko')
+    expect(formatEventDate(start)).toBe('2026년 10월 21일')
+    expect(formatEventTime(start)).toBe('오후 7:00')
+    setActiveLanguage('ja')
+    expect(formatEventDate(start)).toBe('2026年10月21日')
+    expect(formatEventTime(start)).toBe('19:00')
+    setActiveLanguage('zh-Hant')
+    expect(formatEventDate(start)).toBe('2026年10月21日')
+    setActiveLanguage('en')
+    expect(formatEventDateTime(start)).toBe('Oct 21, 2026, 7:00 PM')
   })
 })

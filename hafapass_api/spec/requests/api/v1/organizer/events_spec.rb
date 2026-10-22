@@ -6,6 +6,26 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
   let(:headers) { auth_headers(user) }
 
   describe "GET /api/v1/organizer/events" do
+    it "loads inventory and site settings in a fixed number of queries as the list grows" do
+      4.times do
+        event = create(:event, organizer_profile: organizer_profile)
+        ticket_type = create(:ticket_type, event: event)
+        create(:pricing_tier, ticket_type: ticket_type)
+      end
+      queries = []
+      callback = ->(_name, _started, _finished, _id, payload) {
+        queries << payload[:sql] if payload[:sql]&.match?(/FROM "(?:inventory_holds|waitlist_offers|seat_holds|site_settings)"/)
+      }
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        get "/api/v1/organizer/events", headers: headers
+      end
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("events").size).to eq(4)
+      expect(queries.grep(/inventory_holds/).size).to be <= 2
+      expect(queries.grep(/waitlist_offers/).size).to be <= 2
+      expect(queries.grep(/seat_holds/).size).to be <= 2
+      expect(queries.grep(/site_settings/).size).to be <= 3
+    end
     it "returns the organizer's events" do
       event1 = create(:event, organizer_profile: organizer_profile, title: "Event 1")
       event2 = create(:event, :published, organizer_profile: organizer_profile, title: "Event 2")
@@ -18,6 +38,7 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(events.length).to eq(2)
       titles = events.map { |e| e["title"] }
       expect(titles).to include("Event 1", "Event 2")
+      expect(events.pluck("organization_name").uniq).to eq([organizer_profile.organization.name])
     end
 
     it "does not return other organizers' events" do
@@ -74,6 +95,7 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       json = JSON.parse(response.body)
       expect(json["id"]).to eq(event.id)
       expect(json["ticket_types"].length).to eq(2)
+      expect(json["organization_name"]).to eq(organizer_profile.organization.name)
     end
 
     it "returns 404 for another organizer's event" do
@@ -83,6 +105,114 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       get "/api/v1/organizer/events/#{other_event.id}", headers: headers
 
       expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe "GET /api/v1/organizer/events/summary" do
+    let(:organization) { organizer_profile.organization }
+    let(:org_headers) { headers.merge("X-Organization-Id" => organization.id.to_s) }
+    let!(:live) do
+      create(:event, :published, organizer_profile: organizer_profile, title: "Live now",
+        starts_at: 1.hour.ago, ends_at: 3.hours.from_now, doors_open_at: 2.hours.ago)
+    end
+    let!(:soon) { create(:event, :published, organizer_profile: organizer_profile, title: "Soon", starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours) }
+    let!(:later) { create(:event, :published, organizer_profile: organizer_profile, title: "Later", starts_at: 10.days.from_now, ends_at: 10.days.from_now + 2.hours) }
+
+    def member_headers(role)
+      member = create(:user)
+      create(:organization_membership, organization: organization, user: member, role: role)
+      [member, auth_headers(member).merge("X-Organization-Id" => organization.id.to_s)]
+    end
+
+    def sell_ticket(event)
+      ticket_type = create(:ticket_type, event: event, price_cents: 2500)
+      order = create(:order, event: event, subtotal_cents: 2500, service_fee_cents: 0, total_cents: 2500)
+      item = create(:order_item, order: order, ticket_type: ticket_type, unit_price_cents: 2500,
+        subtotal_cents: 2500, fee_cents: 0, organizer_proceeds_cents: 2500)
+      create(:ticket, order: order, order_item: item, ticket_type: ticket_type, event: event)
+      create(:ticket, :cancelled, order: order, order_item: item, ticket_type: ticket_type, event: event)
+      [order, item]
+    end
+
+    before do
+      create(:event, organizer_profile: organizer_profile, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 2.hours)
+      create(:event, organizer_profile: organizer_profile, status: :postponed, starts_at: 6.days.from_now, ends_at: 6.days.from_now + 2.hours)
+      create(:event, :past, :published, organizer_profile: organizer_profile)
+      order, item = sell_ticket(soon)
+      refund = create(:refund, order: order, amount_cents: 1000)
+      create(:refund_item, refund: refund, order_item: item, amount_cents: 1000, organizer_proceeds_cents: 1000)
+      order.update!(status: :partially_refunded, refund_amount_cents: 1000)
+      sell_ticket(later)
+      other_event = create(:event, :published, organizer_profile: create(:organizer_profile), starts_at: 1.day.from_now, ends_at: 1.day.from_now + 2.hours)
+      create(:ticket, event: other_event, ticket_type: create(:ticket_type, event: other_event))
+    end
+
+    it "totals published events that have not ended, tickets, and revenue net of refunds" do
+      get "/api/v1/organizer/events/summary", headers: org_headers
+
+      expect(response).to have_http_status(:ok)
+      # Live, Soon and Later; the draft, postponed and finished events are excluded.
+      expect(response.parsed_body).to include(
+        "upcoming_events_count" => 3,
+        "tickets_sold" => 2,
+        "revenue_cents" => 4000
+      )
+      expect(response.parsed_body["next_event"]).to include("id" => live.id, "title" => "Live now", "timezone" => live.timezone)
+    end
+
+    it "gives finance members organization-wide revenue and counts" do
+      _member, finance_headers = member_headers(:finance)
+
+      get "/api/v1/organizer/events/summary", headers: finance_headers
+
+      expect(response.parsed_body).to include("upcoming_events_count" => 3, "tickets_sold" => 2, "revenue_cents" => 4000)
+    end
+
+    it "hides revenue from marketers" do
+      _member, marketer_headers = member_headers(:marketer)
+
+      get "/api/v1/organizer/events/summary", headers: marketer_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("tickets_sold" => 2)
+      expect(response.parsed_body).not_to have_key("revenue_cents")
+    end
+
+    it "limits assigned staff to their events and hides money without view_finance" do
+      scanner, scanner_headers = member_headers(:scanner)
+      create(:event_staff_assignment, organization: organization, event: later, user: scanner, role: :scanner)
+
+      get "/api/v1/organizer/events/summary", headers: scanner_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("upcoming_events_count" => 1, "tickets_sold" => 1)
+      expect(response.parsed_body["next_event"]).to include("id" => later.id)
+      expect(response.parsed_body).not_to have_key("revenue_cents")
+    end
+
+    it "does not reveal revenue through an event-level manager assignment" do
+      staff, staff_headers = member_headers(:box_office)
+      create(:event_staff_assignment, organization: organization, event: soon, user: staff, role: :manager)
+
+      get "/api/v1/organizer/events/summary", headers: staff_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("upcoming_events_count" => 1, "tickets_sold" => 1)
+      expect(response.parsed_body).not_to have_key("revenue_cents")
+    end
+
+    it "rejects a member of another organization naming this one" do
+      outsider = create(:organizer_profile).user
+
+      get "/api/v1/organizer/events/summary", headers: auth_headers(outsider).merge("X-Organization-Id" => organization.id.to_s)
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "requires organization membership" do
+      get "/api/v1/organizer/events/summary", headers: auth_headers(create(:user))
+
+      expect(response).to have_http_status(:forbidden)
     end
   end
 
@@ -157,6 +287,44 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
   describe "PUT /api/v1/organizer/events/:id" do
     let!(:event) { create(:event, organizer_profile: organizer_profile, title: "Original Title") }
+
+    it "saves and audits page design through event edit permission" do
+      ImageUploadReceipt.create!(user: user, organization: event.organization, event: event,
+        source_key: "pending/test/page", final_key: "uploads/test/page.webp",
+        public_url: "https://storage.invalid/uploads/p.webp", completed_at: Time.current)
+      design = { accent: "#123456", gallery: [{ url: "https://storage.invalid/uploads/p.webp", alt: "Stage" }],
+        sections: [{ type: "gallery", enabled: true, items: [] }] }
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: design }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization).to include("accent" => "#123456")
+      expect(response.parsed_body["page_customization"]["gallery"].first["alt"]).to eq("Stage")
+      expect(event.event_changes).to be_empty
+      audit = AuditLog.find_by!(auditable: event, action: "event.page_customized")
+      expect(audit.actor_user).to eq(user)
+      expect(audit.before_data).to eq("page_customization" => {})
+      expect(audit.after_data.dig("page_customization", "accent")).to eq("#123456")
+      expect(OrderPresenter.call(create(:order, event: event))[:latest_event_change]).to be_nil
+      expect(response.parsed_body["seller"]["seller_name"]).to be_present
+    end
+
+    it "allows content editors and platform admins to change design" do
+      membership = event.organization.organization_memberships.find_by!(user: user)
+      membership.update!(role: :marketer)
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "#123456" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization["accent"]).to eq("#123456")
+      user.update!(role: :admin)
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "#654321" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.page_customization["accent"]).to eq("#654321")
+    end
+
+    it "rejects invalid page design without persisting or auditing it" do
+      put "/api/v1/organizer/events/#{event.id}", params: { page_customization: { accent: "url(javascript:evil)" } }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(event.reload.page_customization).to eq({})
+      expect(event.event_changes).to be_empty
+    end
 
     it "updates the event" do
       put "/api/v1/organizer/events/#{event.id}", params: { title: "Updated Title" }, headers: headers
@@ -280,6 +448,30 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
 
       expect(response).to have_http_status(:not_found)
       expect(Event.exists?(other_event.id)).to be true
+    end
+
+    it "preserves a draft's scanner history and explains how to archive it instead" do
+      event = create(:event, organizer_profile: organizer_profile)
+      device = create(:scanner_device, event: event, user: user)
+      expect(event.orders).to be_empty
+      expect(event.tickets).to be_empty
+
+      expect {
+        delete "/api/v1/organizer/events/#{event.id}", headers: headers
+      }.not_to change(Event, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq(
+        "This event has saved history or related records and cannot be deleted. Archive it instead to keep those records."
+      )
+      expect(event.reload).to be_draft
+      expect(device.reload.event_id).to eq(event.id)
+
+      post "/api/v1/organizer/events/#{event.id}/archive", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(event.reload).to be_archived
+      expect(device.reload.event_id).to eq(event.id)
     end
   end
 

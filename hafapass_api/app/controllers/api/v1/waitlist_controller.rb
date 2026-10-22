@@ -9,6 +9,7 @@ module Api
       def create
         entry = @event.waitlist_entries.build(waitlist_params)
         entry.quantity ||= 1
+        entry.locale = request_locale
 
         # Attach user if authenticated
         if request.headers["Authorization"].present?
@@ -59,7 +60,8 @@ module Api
       private
 
       def set_event
-        @event = Event.published.where(live_money_proof_candidate: false).find_by!(slug: params[:slug])
+        @event = Event.find_by_public_slug!(params[:slug],
+          scope: Event.published.where(live_money_proof_candidate: false).without_hidden_policy_hold)
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end

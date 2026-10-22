@@ -2,14 +2,14 @@ require "prawn"
 require "rqrcode"
 
 class TicketPdfGenerator
-  class UnsupportedCharacterError < StandardError; end
+  UnsupportedCharacterError = PdfFonts::UnsupportedCharacterError
 
   BRAND_TEAL = "0D9488"
   BRAND_CORAL = "F97316"
   DARK_TEXT = "1A1A1A"
   MUTED_TEXT = "6B7280"
   LIGHT_BG = "F9FAFB"
-  FONT_DIRECTORY = Rails.root.join("app/assets/fonts/tickets").freeze
+  FONT_DIRECTORY = PdfFonts::DIRECTORY
   QR_BLOCK_HEIGHT = 220
 
   def initialize(ticket)
@@ -17,12 +17,15 @@ class TicketPdfGenerator
     @event = ticket.event
     @ticket_type = ticket.ticket_type
     @scan_credential = ticket.scan_credential
+    @seller = SellerIdentity.for_event(@event)
   end
 
   def generate
     Prawn::Document.new(page_size: "A5", margin: [110, 30, 30, 30]) do |pdf|
-      configure_fonts(pdf)
-      validate_text_coverage!(pdf)
+      # Picks fonts for every character before the QR is made; text no bundled
+      # font can draw raises instead of printing missing-glyph boxes.
+      @unsupported = PdfFonts.configure(pdf, texts: [@event.title, @event.venue_name, @event.venue_address, @ticket_type.name,
+        @ticket.seat_label, @seller.line], locale: @ticket.order&.locale, strict: false)
       # Reserve the header in the page margin so flowing text cannot overlap
       # repeated branding or rehearsal labels on continuation pages.
       pdf.repeat(:all, dynamic: true) do
@@ -40,39 +43,6 @@ class TicketPdfGenerator
 
   private
 
-  def configure_fonts(pdf)
-    pdf.font_families.update(
-      "TicketSans" => {
-        normal: FONT_DIRECTORY.join("NotoSans-Regular.ttf").to_s,
-        bold: FONT_DIRECTORY.join("NotoSans-Bold.ttf").to_s
-      },
-      "TicketJapanese" => {
-        normal: FONT_DIRECTORY.join("NotoSansJP-Regular.ttf").to_s,
-        bold: FONT_DIRECTORY.join("NotoSansJP-Regular.ttf").to_s
-      },
-      "TicketEmoji" => {
-        normal: FONT_DIRECTORY.join("NotoEmoji-Regular.ttf").to_s,
-        bold: FONT_DIRECTORY.join("NotoEmoji-Regular.ttf").to_s
-      }
-    )
-    pdf.fallback_fonts = %w[TicketJapanese TicketEmoji]
-  end
-
-  def validate_text_coverage!(pdf)
-    fonts = []
-    %w[TicketSans TicketJapanese TicketEmoji].each do |family|
-      pdf.font(family) { fonts << pdf.font }
-    end
-    values = [@event.title, @event.venue_name, @event.venue_address, @ticket_type.name, @ticket.seat_label]
-    missing = values.compact.join.each_char.uniq.reject do |character|
-      character.match?(/\s/) || fonts.any? { |font| font.glyph_present?(character) }
-    end
-    return if missing.empty?
-
-    codepoints = missing.map { |character| "U+#{character.ord.to_s(16).upcase}" }.join(", ")
-    raise UnsupportedCharacterError, "Ticket PDF fonts do not support #{codepoints}"
-  end
-
   def render_header(pdf)
     # Brand bar
     pdf.fill_color BRAND_TEAL
@@ -82,7 +52,7 @@ class TicketPdfGenerator
     # Title
     pdf.fill_color DARK_TEXT
     pdf.font "TicketSans", style: :bold, size: 20
-    pdf.text "HafaPass", color: BRAND_TEAL
+    pdf.text "HåfaPass", color: BRAND_TEAL
     pdf.move_down 4
 
     pdf.fill_color MUTED_TEXT
@@ -94,7 +64,7 @@ class TicketPdfGenerator
   def render_event_details(pdf)
     pdf.fill_color DARK_TEXT
     pdf.font "TicketSans", style: :bold, size: 16
-    pdf.text @event.title
+    pdf.text safe_text(@event.title)
     pdf.move_down 8
 
     if @event.cancelled? || @event.postponed?
@@ -115,8 +85,8 @@ class TicketPdfGenerator
       pdf.text time_str
     end
 
-    pdf.text @event.venue_name if @event.venue_name.present?
-    pdf.text @event.venue_address if @event.venue_address.present?
+    pdf.text safe_text(@event.venue_name) if @event.venue_name.present?
+    pdf.text safe_text(@event.venue_address) if @event.venue_address.present?
     pdf.move_down 12
   end
 
@@ -131,8 +101,8 @@ class TicketPdfGenerator
   def render_ticket_details(pdf)
     pdf.fill_color DARK_TEXT
     pdf.font "TicketSans", style: :bold, size: 11
-    pdf.text @ticket_type.name
-    pdf.text @ticket.seat_label if @ticket.seat_label.present?
+    pdf.text safe_text(@ticket_type.name)
+    pdf.text safe_text(@ticket.seat_label) if @ticket.seat_label.present?
 
     pdf.move_down 4
     pdf.fill_color MUTED_TEXT
@@ -181,7 +151,11 @@ class TicketPdfGenerator
     pdf.text Rails.env.production? ? "Present this QR code at the door" : "For testing only - no real event admission", align: :center
     pdf.move_down 4
     pdf.font "TicketSans", size: 7
-    pdf.text "Powered by HafaPass", align: :center, color: "9CA3AF"
+    pdf.text safe_text(@seller.line), align: :center, color: "6B7280"
+  end
+
+  def safe_text(text)
+    PdfFonts.replace_unsupported(text, @unsupported)
   end
 
   def format_date(datetime)

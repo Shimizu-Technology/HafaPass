@@ -6,7 +6,7 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
   let(:profile) { create(:organizer_profile, organization: organization) }
   let(:event) { create(:event, :completed, organization: organization, organizer_profile: profile) }
   let(:settlement) { create(:settlement, organization: organization, event: event) }
-  let(:account) { create(:connected_account, organization: organization, provider: "manual", with_readiness_approval: false) }
+  let(:account) { create(:connected_account, organization: organization, provider: "manual") }
   let!(:payout) do
     create(:payout, organization: organization, event: event, settlement: settlement,
       connected_account: account, status: :processing, provider_payout_id: "manual_po_fixture", created_at: 1.hour.ago)
@@ -16,6 +16,25 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
 
   def reconcile(attributes = payload, actor: admin)
     patch "/api/v1/admin/payouts/#{payout.id}", params: attributes, headers: auth_headers(actor)
+  end
+
+  it "exposes a release-hold action and rejects a stale payout above current payable" do
+    payout.update!(status: :held, held_from_status: "processing")
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("cancel and reissue")
+    expect(payout.reload).to be_status_held
+  end
+
+  it "releases an affordable hold to its recorded prior status and audits the admin" do
+    payout.update!(status: :held, held_from_status: "processing")
+    create(:balance_adjustment, organization: organization, event: event, amount_cents: 1000)
+
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to have_attributes(status: "processing", held_from_status: nil)
+    expect(AuditLog.find_by!(auditable: payout, action: "payout.released_from_cancellation_hold").actor_user).to eq(admin)
   end
 
   it "requires evidence before changing a payout or releasing its reservation" do
@@ -45,6 +64,27 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     expect(audit.metadata.fetch("reconciliation")).to eq(evidence.stringify_keys)
     expect(audit.before_data.fetch("status")).to eq("processing")
     expect(audit.after_data.fetch("status")).to eq("paid")
+  end
+
+  it "shows cancelled-event buyer liability and requires already-sent evidence through the API" do
+    order = create(:order, event: event)
+    create(:payment, :succeeded, order: order, provider_environment: "live")
+    event.update!(status: :cancelled)
+    EventCancellationRefunds.prepare!(event: event, actor: admin)
+    get "/api/v1/admin/payouts", params: { event_id: event.id }, headers: auth_headers(admin)
+    expect(response.parsed_body.fetch("payouts").first).to include(
+      "status" => "held", "outstanding_buyer_balance_cents" => 5250)
+
+    reconcile
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("already sent before the cancellation")
+    reconcile(payload.merge(evidence: evidence.merge(sent_before_cancellation_confirmed: true,
+      cancellation_payout_reason: "Transfer cleared before cancellation notice")))
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to be_status_paid
+    get "/api/v1/admin/payouts", params: { event_id: event.id }, headers: auth_headers(admin)
+    expect(response.parsed_body.fetch("payouts").first).to include(
+      "status" => "paid", "outstanding_buyer_balance_cents" => 5250)
   end
 
   it "recovers the exact same outcome without creating another audit or changing evidence" do
@@ -104,6 +144,60 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
   it "refuses ordinary organizer access even with well-formed confirmation evidence" do
     reconcile(payload, actor: profile.user)
     expect(response).to have_http_status(:forbidden)
+    expect(payout.reload).to be_status_processing
+  end
+
+  it "requires audited confirmation after approval changes, while failed remains available" do
+    account.increment!(:readiness_revision)
+    get "/api/v1/admin/payouts", headers: auth_headers(admin)
+    listed = response.parsed_body.fetch("payouts").find { |item| item["id"] == payout.id }
+    expect(listed).to include("tax_approval_changed" => true)
+    expect(listed.dig("tax_information_snapshot", "masked_tin")).to eq("***-**-5678")
+    expect(response.body).not_to include("012345678")
+
+    reconcile
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("Confirm this payout was already sent")
+    expect(payout.reload).to be_status_processing
+
+    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
+    expect(response).to have_http_status(:ok)
+    audit = AuditLog.find_by!(auditable: payout, action: "payout.reconciled")
+    expect(audit.metadata.dig("reconciliation", "approved_tax_payee_confirmed")).to be(true)
+    expect(audit.metadata.to_json).not_to include("012345678")
+  end
+
+  it "requires actual payee and evidence for a legacy paid payout, but allows failure" do
+    Payout.where(id: payout.id).update_all(tax_information_snapshot: {}, tax_information_tin: nil, tax_approval_digest: nil)
+    payout.reload
+    reconcile
+    expect(response).to have_http_status(:unprocessable_content)
+    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
+    expect(response).to have_http_status(:unprocessable_content)
+    legacy = evidence.merge(legacy_payee_name: "  Actual Guam Payee  ", legacy_evidence_note: "  Check 1042  ", legacy_payee_confirmed: true)
+    reconcile(payload.merge(evidence: legacy.merge(legacy_evidence_note: " ")))
+    expect(response).to have_http_status(:unprocessable_content)
+    reconcile(payload.merge(evidence: legacy.merge(legacy_payee_confirmed: false)))
+    expect(response).to have_http_status(:unprocessable_content)
+    reconcile(payload.merge(evidence: legacy.merge(approved_tax_payee_confirmed: true)))
+    expect(response).to have_http_status(:unprocessable_content)
+    reconcile(payload.merge(status: "failed", evidence: evidence))
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to be_status_failed
+  end
+
+  it "records the entered legacy payee and reference in append-only audit evidence" do
+    Payout.where(id: payout.id).update_all(tax_information_snapshot: {}, tax_information_tin: nil, tax_approval_digest: nil)
+    legacy = evidence.merge(legacy_payee_name: " Actual Guam Payee ", legacy_evidence_note: " Check 1042 ", legacy_payee_confirmed: true)
+    reconcile(payload.merge(evidence: legacy))
+    expect(response).to have_http_status(:ok)
+    expect(AuditLog.find_by!(auditable: payout, action: "payout.reconciled").metadata.fetch("reconciliation"))
+      .to include("legacy_payee_name" => "Actual Guam Payee", "legacy_evidence_note" => "Check 1042", "legacy_payee_confirmed" => true)
+  end
+
+  it "does not attach legacy payee evidence to a payout with a W-9 snapshot" do
+    reconcile(payload.merge(evidence: evidence.merge(legacy_payee_name: "Other Payee", legacy_evidence_note: "Check 1042", legacy_payee_confirmed: true)))
+    expect(response).to have_http_status(:unprocessable_content)
     expect(payout.reload).to be_status_processing
   end
 end

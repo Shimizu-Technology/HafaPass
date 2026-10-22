@@ -62,6 +62,31 @@ module Seating
         raise ConfigurationError, "The layout must belong to this event's venue and organization"
       end
       raise ConfigurationError, "A venue layout needs at least one active seat" unless venue_layout.venue_seats.where(active: true).exists?
+
+      validate_companion_pairs!
+    end
+
+    # Pairing rule (shared with Seating::HoldAllocator): a wheelchair space and
+    # its companion seats carry the same companion_group within one layout.
+    # Holds can only enforce an existing pair, so every active wheelchair space
+    # must already have at least one active companion seat in its group.
+    def validate_companion_pairs!
+      seats = venue_layout.venue_seats.where(active: true)
+      # Rows saved before VenueSeat normalized companion_group may still hold
+      # whitespace-only values; those never count as a group.
+      companion_groups = seats.accessibility_kind_companion.where("BTRIM(venue_seats.companion_group) <> ''").select(:companion_group)
+      unpaired = seats.accessibility_kind_wheelchair
+        .where("venue_seats.companion_group IS NULL OR BTRIM(venue_seats.companion_group) = '' OR venue_seats.companion_group NOT IN (?)",
+          companion_groups)
+      count = unpaired.count
+      return if count.zero?
+
+      # Count in SQL; load only the seats named in the message.
+      labels = unpaired.includes(seating_row: :seating_section).reorder(:id).limit(3).map(&:display_label).join("; ")
+      more = count > 3 ? " and #{count - 3} more" : ""
+      raise ConfigurationError,
+        "This layout has #{count} wheelchair #{"space".pluralize(count)} without a companion seat: " \
+        "#{labels}#{more}. Give each wheelchair space a companion seat in the same companion group, then publish the layout again."
     end
 
     def replacement_history?(configuration)

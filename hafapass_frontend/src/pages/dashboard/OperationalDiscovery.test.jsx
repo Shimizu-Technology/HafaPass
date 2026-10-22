@@ -418,7 +418,7 @@ describe('complete operational discovery', () => {
     await user.click(await screen.findByRole('button', { name: 'Next', exact: true }))
     await screen.findByText(/HP-OLDER-1 /)
     await user.click(screen.getByRole('button', { name: 'Refund', exact: true }))
-    await user.click(screen.getByRole('button', { name: 'Process Refund' }))
+    await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
     await screen.findByText(/Refund pending/)
     const original = apiClient.post.mock.calls[0]
     await user.type(screen.getByLabelText('Find an order'), 'other buyer')

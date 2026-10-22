@@ -1,9 +1,14 @@
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
-import { CheckCircle2, CircleAlert, Loader2, WalletCards } from 'lucide-react'
+import { CheckCircle2, CircleAlert, Download, Loader2, WalletCards } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import apiClient from '../../api/client'
+import TestPaymentBadge from '../../components/TestPaymentBadge'
+import FeeTermsNote from '../../components/FeeTermsNote'
+import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
+import EventSalesInsights from './EventSalesInsights'
+import { saveBlob } from '../../utils/download'
 
 function formatCents(cents) {
  const safe = Number.isFinite(cents) ? cents : 0
@@ -36,12 +41,13 @@ function EventAnalyticsPageSession({ id, identity }) {
  const [error, setError] = useState(null)
  const [stats, setStats] = useState(null)
  const [event, setEvent] = useState(null)
- const [attendees, setAttendees] = useState(null)
- const [showAttendees, setShowAttendees] = useState(false)
- const [attendeesLoading, setAttendeesLoading] = useState(false)
  const [finance, setFinance] = useState(null)
  const [financeBusy, setFinanceBusy] = useState(false)
  const [payoutNotice, setPayoutNotice] = useState('')
+ const [exporting, setExporting] = useState(null)
+ const [exportError, setExportError] = useState(null)
+ const [statementChoice, setStatementChoice] = useState('')
+ const feeTerms = usePlatformFeeTerms()
  const loadGeneration = useRef(0)
  const accessEpoch = useRef(0)
  const verifiedRights = useRef(null)
@@ -52,13 +58,13 @@ function EventAnalyticsPageSession({ id, identity }) {
   ++accessEpoch.current
   verifiedRights.current = null
   requests.current.forEach(request => request.controller.abort())
-  setStats(null); setFinance(null); setAttendees(null); setShowAttendees(false); setEvent(null)
-  setFinanceBusy(false); setPayoutNotice(''); setAttendeesLoading(false); setLoading(false)
+  setStats(null); setFinance(null); setEvent(null)
+  setFinanceBusy(false); setPayoutNotice(''); setLoading(false)
   setError(message)
  }, [])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
   const verifyingEvent = method === 'get' && url === `/organizer/events/${id}`
-  const permission = url.endsWith('/attendees') ? 'view_attendees' : url.endsWith('/finalize') ? 'manage_finance' : url.endsWith('/payout') ? 'payout' : 'view_finance'
+  const permission = url.endsWith('/finalize') ? 'manage_finance' : url.endsWith('/payout') ? 'payout' : 'view_finance'
   if (!verifyingEvent && verifiedRights.current?.[permission] !== true) throw new DOMException('Analytics access is not verified', 'AbortError')
   const request = beginRequest()
   if (!request) throw new DOMException('Page context changed', 'AbortError')
@@ -114,26 +120,31 @@ function EventAnalyticsPageSession({ id, identity }) {
   } finally { if (canApply()) setLoading(false) }
  }, [id, identity.organizationId, requestApi, current, withdrawAccess])
  useEffect(() => { fetchData() }, [fetchData])
+ // The organization finances page links straight to this event's settlement.
+ const settlementReady = Boolean(finance)
+ useEffect(() => {
+  if (!settlementReady || window.location.hash !== '#settlement') return
+  const target = document.getElementById('settlement')
+  if (!target) return
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+ }, [settlementReady])
 
- const fetchAttendees = async () => {
-  if (!current() || verifiedRights.current?.view_attendees !== true) return
+ // CSV exports come from the API, which owns the money math and the
+ // spreadsheet-safe formatting.
+ const downloadExport = async (kind, path, filename) => {
+  if (exporting) return
   const epoch = accessEpoch.current
   const canApply = () => current() && epoch === accessEpoch.current
-  setError(null); setAttendeesLoading(true)
+  setExporting(kind); setExportError(null)
   try {
-   const res = await requestApi('get', `/organizer/events/${id}/attendees`)
-   if (!canApply()) return
-   const rows = res.data.attendees || res.data
-   setAttendees(Array.isArray(rows) ? rows : []); setShowAttendees(true)
-  } catch { if (canApply()) setError('Failed to load attendees.') }
-  finally { if (canApply()) setAttendeesLoading(false) }
+   const response = await requestApi('get', path, { responseType: 'blob' })
+   if (canApply()) saveBlob(response.data, filename)
+  } catch (exportFailure) {
+   if (exportFailure?.name !== 'AbortError' && canApply()) setExportError('That export could not be downloaded. Check your connection and try again.')
+  } finally { if (canApply()) setExporting(null) }
  }
- const handleToggleAttendees = () => {
-  if (!current() || verifiedRights.current?.view_attendees !== true) return
-  if (showAttendees) setShowAttendees(false)
-  else if (attendees) setShowAttendees(true)
-  else fetchAttendees()
- }
+
  const refreshFinance = async () => {
   const epoch = accessEpoch.current
   const response = await requestApi('get', `/organizer/events/${id}/finance`)
@@ -196,6 +207,10 @@ function EventAnalyticsPageSession({ id, identity }) {
   ? Math.round((stats.tickets_checked_in / stats.total_tickets_sold) * 100)
   : 0
  const latestSettlement = finance?.settlements?.[0]
+ const currency = (finance?.preview?.currency || 'usd').toUpperCase()
+ const exportName = event?.slug || `event-${id}`
+ const statementValue = statementChoice || (latestSettlement ? String(latestSettlement.id) : 'current')
+ const statementLabel = statementValue === 'current' ? 'current' : `v${finance?.settlements?.find(item => String(item.id) === statementValue)?.version ?? ''}`
 
  return (
   <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
@@ -264,11 +279,11 @@ function EventAnalyticsPageSession({ id, identity }) {
 
    {/* Settlement and payout ledger */}
    {finance && (
-    <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="finance-heading">
+    <section id="settlement" className="mb-8 scroll-mt-24 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="finance-heading">
      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-3">
        <div className="rounded-xl bg-emerald-50 p-2.5"><WalletCards className="h-5 w-5 text-emerald-700" /></div>
-       <div><h2 id="finance-heading" className="text-lg font-semibold text-neutral-900">Settlement and payout</h2><p className="mt-1 text-sm text-neutral-500">Versioned from immutable sales, refunds, processing costs, disputes, reserves, adjustments, and payouts.</p></div>
+       <div><h2 id="finance-heading" className="text-lg font-semibold text-neutral-900">Settlement and payout</h2><p className="mt-1 text-sm text-neutral-500">Built from recorded sales, refunds, processing costs, disputes, reserves, adjustments, and payouts. Past records are never changed.</p></div>
       </div>
       {finance.connected_account?.payout_ready ? (
        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> {finance.connected_account.provider} ready</span>
@@ -280,9 +295,12 @@ function EventAnalyticsPageSession({ id, identity }) {
      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Gross ticket value</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.gross_cents)}</p></div>
       <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Refunds</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.refund_cents)}</p></div>
-      <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Processing costs</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.processing_fee_cents)}</p></div>
+      <div className="rounded-xl bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Processing costs to you</p><p className="mt-1 font-bold text-neutral-900">{formatCents(finance.preview.processing_fee_cents)}</p>{finance.preview.platform_processing_fee_cents > 0 && <p className="mt-0.5 text-xs text-emerald-700">HåfaPass covered {formatCents(finance.preview.platform_processing_fee_cents)}</p>}</div>
       <div className="rounded-xl bg-brand-50 p-3"><p className="text-xs text-brand-700">Organizer payable</p><p className="mt-1 font-bold text-brand-900">{formatCents(finance.preview.payable_cents)}</p></div>
      </div>
+
+     <FeeTermsNote className="mt-4" feeTerms={feeTerms} feePolicy={event?.fee_policy} buyerFeePercent={event?.buyer_fee_percent} />
+     {feeTerms.terms?.bearer === 'platform' && finance.preview.processing_fee_cents > 0 && <p className="mt-2 text-sm text-neutral-600" data-testid="earlier-processing-note">{formatCents(finance.preview.processing_fee_cents)} in card processing is deducted from your proceeds. That covers orders placed under earlier terms, when card processing came out of organizer proceeds, and any add-ons or donations.</p>}
 
      {finance.preview.negative_balance_cents > 0 && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">A {formatCents(finance.preview.negative_balance_cents)} negative balance will be withheld from future organization payouts.</div>}
      {payoutNotice && <p role="status" className="mt-4 rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700">{payoutNotice}</p>}
@@ -294,15 +312,34 @@ function EventAnalyticsPageSession({ id, identity }) {
      </div>
 
      {finance.payouts?.length > 0 && <div className="mt-5 divide-y divide-neutral-100 rounded-xl border border-neutral-200">{finance.payouts.map(payout => <div key={payout.id} className="flex items-center justify-between px-4 py-3 text-sm"><span className="text-neutral-600">{payout.provider} · {payout.status}</span><span className="font-semibold text-neutral-900">{formatCents(payout.amount_cents)}</span></div>)}</div>}
+
+     <div className="mt-5 border-t border-neutral-100 pt-5">
+      <h3 className="text-sm font-semibold text-neutral-900">Exports</h3>
+      <p className="mt-1 text-sm text-neutral-600">Spreadsheet files for your records. The orders file lists every paid, refunded and complimentary order with fees, card processing and your proceeds.</p>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+       <button type="button" disabled={Boolean(exporting)} onClick={() => downloadExport('orders', `/organizer/events/${id}/finance/orders_export`, `${exportName}-orders.csv`)} className="btn-secondary gap-2 !px-4 !py-2.5 text-sm">
+        {exporting === 'orders' ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Download aria-hidden="true" className="h-4 w-4" />} Orders CSV
+       </button>
+       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-neutral-700">Statement
+         <select value={statementValue} onChange={changeEvent => setStatementChoice(changeEvent.target.value)} className="input min-h-11 !py-2 text-sm sm:w-56">
+          {(finance.settlements || []).map(item => <option key={item.id} value={String(item.id)}>Version {item.version} ({item.status})</option>)}
+          <option value="current">Current, not finalized</option>
+         </select>
+        </label>
+        <button type="button" disabled={Boolean(exporting)} onClick={() => downloadExport('statement', `/organizer/events/${id}/finance/statement_export?settlement_id=${encodeURIComponent(statementValue)}`, `${exportName}-statement-${statementLabel}.csv`)} className="btn-secondary gap-2 !px-4 !py-2.5 text-sm">
+         {exporting === 'statement' ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Download aria-hidden="true" className="h-4 w-4" />} Statement CSV
+        </button>
+       </div>
+      </div>
+      {exportError && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}</p>}
+      <Link to={`/dashboard/events/${id}/attendees`} className="mt-3 mr-5 inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 hover:text-brand-900">Export this list with filters</Link>
+      <Link to="/dashboard/finances" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 hover:text-brand-900">All events and payouts</Link>
+     </div>
     </section>
    )}
 
-   <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5" aria-labelledby="acquisition-heading">
-    <h2 id="acquisition-heading" className="text-lg font-semibold text-neutral-900">Discovery and acquisition</h2>
-    <p className="mt-1 text-sm text-neutral-500">Anonymous funnel totals and attributed orders; no buyer identity is exposed here.</p>
-    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{['landing', 'event_view', 'checkout_started', 'purchase'].map(stage => <div key={stage} className="rounded-xl bg-neutral-50 p-3"><p className="text-xs capitalize text-neutral-500">{stage.replace('_', ' ')}</p><p className="mt-1 text-xl font-bold">{stats.marketplace_funnel?.[stage] || 0}</p></div>)}</div>
-    {stats.acquisition_sources?.length > 0 && <div className="mt-4 divide-y rounded-xl border">{stats.acquisition_sources.map((source, index) => <div key={index} className="flex items-center justify-between px-4 py-3 text-sm"><span>{source.source} / {source.medium}{source.campaign ? ` / ${source.campaign}` : ''}</span><strong>{source.orders} orders</strong></div>)}</div>}
-   </section>
+   <EventSalesInsights stats={stats} currency={currency} />
 
    {/* Tickets by Type */}
    <div className="bg-white rounded-xl shadow-sm border border-neutral-200 mb-8">
@@ -360,7 +397,7 @@ function EventAnalyticsPageSession({ id, identity }) {
         <tbody className="divide-y divide-neutral-200">
          {(stats.recent_orders || []).map((order) => (
           <tr key={order.id}>
-           <td className="px-5 py-3 text-sm font-medium text-neutral-900">{order.buyer_name}</td>
+           <td className="px-5 py-3 text-sm font-medium text-neutral-900">{order.buyer_name}<TestPaymentBadge order={order} /></td>
            <td className="px-5 py-3 text-sm text-neutral-600">{order.buyer_email}</td>
            <td className="px-5 py-3 text-sm text-neutral-600 text-right">{order.ticket_count}</td>
            <td className="px-5 py-3 text-sm text-neutral-900 text-right font-medium">{formatCents(order.total_cents)}</td>
@@ -375,7 +412,7 @@ function EventAnalyticsPageSession({ id, identity }) {
        {(stats.recent_orders || []).map((order) => (
         <div key={order.id} className="px-4 py-3">
          <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-neutral-900">{order.buyer_name}</span>
+          <span className="text-sm font-medium text-neutral-900">{order.buyer_name}<TestPaymentBadge order={order} /></span>
           <span className="text-sm font-medium text-neutral-900">{formatCents(order.total_cents)}</span>
          </div>
          <div className="flex items-center justify-between mt-1">
@@ -394,109 +431,16 @@ function EventAnalyticsPageSession({ id, identity }) {
     )}
    </div>
 
-   {/* Attendees Section */}
-   <div className="bg-white rounded-xl shadow-sm border border-neutral-200">
-    <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
-     <h2 className="text-lg font-semibold text-neutral-900">Attendees</h2>
-     <div className="flex items-center gap-3">
-      {permissions.view_attendees === true && <Link to={`/dashboard/events/${id}/attendees`} className="text-sm text-brand-500 hover:text-brand-700 font-medium">
-       Full List →
-      </Link>}
-      {permissions.view_attendees === true && <button
-       onClick={handleToggleAttendees}
-       disabled={attendeesLoading || permissions.view_attendees !== true}
-       className="text-sm text-brand-500 hover:text-brand-700 font-medium disabled:opacity-50"
-      >
-       {attendeesLoading ? 'Loading...' : showAttendees ? 'Hide' : 'View All'}
-      </button>}
-     </div>
+   {/* Attendees: one link to the full, searchable list instead of a second inline copy. */}
+   <section aria-labelledby="analytics-attendees-heading" className="bg-white rounded-xl shadow-sm border border-neutral-200 px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-w-0">
+     <h2 id="analytics-attendees-heading" className="text-lg font-semibold text-neutral-900">Attendees</h2>
+     <p className="mt-1 text-sm text-neutral-600">{permissions.view_attendees === true ? 'Search, filter, check status and export everyone holding a ticket.' : 'Your event access does not include the attendee list.'}</p>
     </div>
-    {showAttendees && attendees && (
-     attendees.length > 0 ? (
-      <>
-       {/* Desktop table */}
-       <div className="hidden sm:block overflow-x-auto">
-        <table className="w-full">
-         <thead>
-          <tr className="bg-neutral-50">
-           <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Name</th>
-           <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Email</th>
-           <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Ticket Type</th>
-           <th className="text-left px-5 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Status</th>
-          </tr>
-         </thead>
-         <tbody className="divide-y divide-neutral-200">
-          {attendees.map((att) => (
-           <tr key={att.id}>
-            <td className="px-5 py-3 text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</td>
-            <td className="px-5 py-3 text-sm text-neutral-600">{att.attendee_email || '—'}</td>
-            <td className="px-5 py-3 text-sm text-neutral-600">{att.ticket_type}</td>
-            <td className="px-5 py-3">
-             {att.status === 'checked_in' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-               Checked In
-              </span>
-             ) : att.status === 'issued' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-700">
-               Valid
-              </span>
-             ) : att.status === 'cancelled' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-               Cancelled
-              </span>
-             ) : (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-800">
-               {att.status}
-              </span>
-             )}
-            </td>
-           </tr>
-          ))}
-         </tbody>
-        </table>
-       </div>
-       {/* Mobile card layout */}
-       <div className="sm:hidden divide-y divide-neutral-200">
-        {attendees.map((att) => (
-         <div key={att.id} className="px-4 py-3">
-          <div className="flex items-center justify-between">
-           <span className="text-sm font-medium text-neutral-900">{att.attendee_name || '—'}</span>
-           {att.status === 'checked_in' ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-             Checked In
-            </span>
-           ) : att.status === 'issued' ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-700">
-             Valid
-            </span>
-           ) : att.status === 'cancelled' ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-             Cancelled
-            </span>
-           ) : (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-800">
-             {att.status}
-            </span>
-           )}
-          </div>
-          <p className="text-xs text-neutral-500 mt-1">{att.attendee_email || '—'}</p>
-          <p className="text-xs text-neutral-400 mt-0.5">{att.ticket_type}</p>
-         </div>
-        ))}
-       </div>
-      </>
-     ) : (
-      <div className="px-5 py-8 text-center">
-       <p className="text-sm text-neutral-500">No attendees yet.</p>
-      </div>
-     )
-    )}
-    {!showAttendees && !attendeesLoading && (
-     <div className="px-5 py-6 text-center">
-      <p className="text-sm text-neutral-500">Click &quot;View All&quot; to see the full attendee list with check-in status.</p>
-     </div>
-    )}
-   </div>
+    {permissions.view_attendees === true && <Link to={`/dashboard/events/${id}/attendees`} className="btn-secondary min-h-11 shrink-0 self-start !px-4 !py-2.5 text-sm sm:self-auto">
+     View attendee list
+    </Link>}
+   </section>
   </div></EventWorkspace>
  )
 }

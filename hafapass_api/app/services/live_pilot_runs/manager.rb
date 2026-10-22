@@ -60,8 +60,6 @@ module LivePilotRuns
       run.event.with_lock do
         run.lock!
         raise RunError, "Only a paused pilot run can be resumed" unless run.status_paused?
-        raise RunError, "The Gate I approval is no longer current" unless
-          LivePilot.active_approval(run.event)&.id == run.live_pilot_review_id
         raise RunError, "Resolve every pause-required incident before resuming" if
           run.unresolved_incidents.any?(&:pause_required?)
         checkpoint = run.live_pilot_metric_snapshots.order(observed_at: :desc).first

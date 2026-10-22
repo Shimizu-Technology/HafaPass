@@ -73,6 +73,35 @@ RSpec.describe Settlements::Finalizer do
     expect(described_class.call(event: event, actor: actor)).to be_status_finalized
   end
 
+  it "blocks a legacy cancelled event with a live paid order and no refund run" do
+    cancelled_event = create(:event, :cancelled, organizer_profile: profile)
+    order, = record_sale!(cancelled_event)
+    order.payments.update_all(provider_environment: "live")
+    create(:connected_account, organization: organization)
+    expect(cancelled_event.event_cancellation_refund_run).to be_nil
+
+    expect { described_class.call(event: cancelled_event, actor: actor) }
+      .to raise_error(described_class::FinalizationError, /Finish cancellation refunds/)
+    settlement = create(:settlement, event: cancelled_event, organization: organization)
+    expect { PayoutCreator.call(settlement: settlement, actor: actor,
+      idempotency_key: "cancelled-without-run") }
+      .to raise_error(PayoutCreator::PayoutError, /Finish cancellation refunds/)
+  end
+
+  it "finalizes a cancelled event with no paid orders and no refund run" do
+    cancelled_event = create(:event, :cancelled, organizer_profile: profile)
+    create(:balance_adjustment, organization: organization, event: cancelled_event, created_by_user: actor,
+      kind: "manual_credit", amount_cents: 1000, status: :posted, reason: "Organizer credit",
+      effective_at: Time.current)
+    create(:connected_account, organization: organization)
+    expect(cancelled_event.event_cancellation_refund_run).to be_nil
+    settlement = described_class.call(event: cancelled_event, actor: actor)
+    expect(settlement).to be_status_finalized
+    payout = PayoutCreator.call(settlement: settlement, actor: actor,
+      idempotency_key: "cancelled-without-paid-orders")
+    expect(payout).to be_status_paid
+  end
+
   it "prevents double payout and carries a post-payout refund against later organization proceeds" do
     order, item = record_sale!(event)
     create(:connected_account, organization: organization)
@@ -135,7 +164,9 @@ RSpec.describe Settlements::Finalizer do
   end
 
   it "cannot clear an existing liability with a simulated production payout after a mode change" do
-    record_sale!(event)
+    order, = record_sale!(event)
+    # Production settles live Stripe money only.
+    order.payments.update_all(provider_environment: "live")
     create(:connected_account, organization: organization)
     settlement = described_class.call(event: event, actor: actor)
     SiteSetting.instance.update!(payment_mode: "simulate")

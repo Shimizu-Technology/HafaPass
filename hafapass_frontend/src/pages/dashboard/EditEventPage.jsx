@@ -3,17 +3,21 @@ import EventWorkspace from '../../components/EventWorkspace'
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive } from 'lucide-react'
+import { AlertTriangle, Clock3, Trash2, XCircle, CheckCircle2, Eye, Copy, RefreshCw, PauseCircle, Archive, Link2 } from 'lucide-react'
 import EventAccessNotice from '../../components/EventAccessNotice'
 import apiClient from '../../api/client'
-import CoverImageUpload from '../../components/CoverImageUpload'
+import PageDesignEditor, { DescriptionToolbar } from '../../components/PageDesignEditor'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
+import FeePolicyPanel from '../../components/FeePolicyPanel'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
+import CancellationRefundProgress from '../../components/CancellationRefundProgress'
 import FormErrorSummary from '../../components/FormErrorSummary'
-import { organizerChecklist } from '../../utils/organizerChecklist'
+import { blocksPublishing, organizerChecklist } from '../../utils/organizerChecklist'
+import VerificationNotice from '../../components/VerificationNotice'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { compareLocalDateTimes, formatEventDate, toEventLocalInput } from '../../utils/eventTime'
+import { eventLinkFormatError, eventLinkUrl, normalizeEventLinkInput } from '../../utils/eventLink'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 
 const AGE_RESTRICTIONS = [
@@ -24,6 +28,7 @@ const AGE_RESTRICTIONS = [
 
 const eventForm = e => ({
   title: e.title || '',
+  slug: e.slug || '',
   short_description: e.short_description || '',
   description: e.description || '',
   category: e.category || 'other',
@@ -36,9 +41,11 @@ const eventForm = e => ({
   doors_open_at: toEventLocalInput(e.doors_open_at, e.timezone),
   max_capacity: e.max_capacity ? String(e.max_capacity) : '',
   cover_image_url: e.cover_image_url || '',
+  page_customization: e.page_customization || {},
   recurrence_rule: e.recurrence_rule || '',
   recurrence_end_date: e.recurrence_end_date || '',
-  show_attendees: e.show_attendees !== false
+  show_attendees: e.show_attendees !== false,
+  transfers_enabled: e.transfers_enabled === true
 })
 
 function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading, reason, onReasonChange, requireReason = false }) {
@@ -78,6 +85,7 @@ function EditEventSession({ id, identity }) {
   const [error, setError] = useState(null)
   const [event, setEvent] = useState(null)
   const permissions = event?.permissions || {}
+  const [feeChoiceDirty, setFeeChoiceDirty] = useState(false)
   const canManage = permissions.manage_events === true
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -87,7 +95,6 @@ function EditEventSession({ id, identity }) {
   const [publishing, setPublishing] = useState(false)
 
   // Danger zone modals
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
   const [showPostponeConfirm, setShowPostponeConfirm] = useState(false)
@@ -98,9 +105,11 @@ function EditEventSession({ id, identity }) {
   const [generatingRecurrences, setGeneratingRecurrences] = useState(false)
   const [recurrenceChildren, setRecurrenceChildren] = useState([])
   const [changeReason, setChangeReason] = useState('')
+  const [organizerProfile, setOrganizerProfile] = useState(null)
 
   const [form, setForm] = useState({
     title: '',
+    slug: '',
     short_description: '',
     description: '',
     category: 'other',
@@ -113,15 +122,17 @@ function EditEventSession({ id, identity }) {
     doors_open_at: '',
     max_capacity: '',
     cover_image_url: '',
+    page_customization: {},
     recurrence_rule: '',
     recurrence_end_date: '',
-    show_attendees: true
+    show_attendees: true,
+    transfers_enabled: false
   })
 
   const savedForm = eventForm(event || {})
   const hasUnsavedChanges = Object.keys(form).some(field => {
-    const value = typeof form[field] === 'string' ? form[field].trim() : form[field]
-    const savedValue = typeof savedForm[field] === 'string' ? savedForm[field].trim() : savedForm[field]
+    const value = field === 'page_customization' ? JSON.stringify(form[field]) : typeof form[field] === 'string' ? form[field].trim() : form[field]
+    const savedValue = field === 'page_customization' ? JSON.stringify(savedForm[field]) : typeof savedForm[field] === 'string' ? savedForm[field].trim() : savedForm[field]
     return value !== savedValue
   })
 
@@ -137,12 +148,13 @@ function EditEventSession({ id, identity }) {
     setError(null)
     try {
       const res = await apiClient.get(`/organizer/events/${id}`, request.config)
-      if (!canApply()) return
+      if (!canApply()) return false
       const e = res.data
       setEvent(e)
       setForm(eventForm(e))
+      return true
     } catch (err) {
-      if (!canApply()) return
+      if (!canApply()) return false
       if (err.response?.status === 401) {
         setError('Please sign in to access this page.')
       } else if (err.response?.status === 404) {
@@ -150,6 +162,7 @@ function EditEventSession({ id, identity }) {
       } else {
         setError('Failed to load event.')
       }
+      return false
     } finally {
       request.release()
       if (canApply()) setLoading(false)
@@ -192,12 +205,38 @@ function EditEventSession({ id, identity }) {
 
   const updateField = (field, value) => {
     if (!current()) return
-    setForm(prev => ({ ...prev, [field]: value }))
+    setForm(prev => ({ ...prev, [field]: typeof value === 'function' ? value(prev[field]) : value }))
     if (formErrors[field]) {
       setFormErrors(prev => ({ ...prev, [field]: null }))
     }
     setSuccessMessage(null)
   }
+
+  // The link name is checked against the API (reserved words and links other
+  // events use now or used before) shortly after the organizer stops typing.
+  const [linkCheck, setLinkCheck] = useState(null)
+  const linkSlug = form.slug.trim()
+  const linkChanged = Boolean(event) && linkSlug !== (event.slug || '')
+  const linkFormatError = linkChanged ? eventLinkFormatError(linkSlug) : null
+  useEffect(() => {
+    if (!linkChanged || linkFormatError) return undefined
+    const request = beginRequest()
+    if (!request) return undefined
+    const timer = setTimeout(async () => {
+      setLinkCheck({ slug: linkSlug, status: 'checking' })
+      try {
+        const res = await apiClient.get(`/organizer/events/${id}/slug_availability`, { ...request.config, params: { slug: linkSlug } })
+        if (request.current()) setLinkCheck({ slug: linkSlug, status: res.data.available ? 'available' : 'taken', message: res.data.message })
+      } catch {
+        if (request.current()) setLinkCheck({ slug: linkSlug, status: 'unknown' })
+      } finally {
+        request.release()
+      }
+    }, 400)
+    return () => { clearTimeout(timer); request.controller.abort(); request.release() }
+  }, [id, linkSlug, linkChanged, linkFormatError, beginRequest])
+  const currentLinkCheck = linkCheck?.slug === linkSlug ? linkCheck : null
+  const linkError = formErrors.slug || linkFormatError || (currentLinkCheck?.status === 'taken' ? currentLinkCheck.message : null)
 
   // Keep seconds in untouched API timestamps instead of rewriting them from
   // minute-precision inputs. Null explicitly clears an edited optional time.
@@ -211,6 +250,10 @@ function EditEventSession({ id, identity }) {
   const validate = () => {
     const errors = {}
     if (!form.title.trim()) errors.title = 'Title is required'
+    if (linkChanged) {
+      const linkProblem = linkFormatError || (currentLinkCheck?.status === 'taken' ? currentLinkCheck.message : null)
+      if (linkProblem) errors.slug = linkProblem
+    }
     if (canManage) {
       if (!form.venue_name.trim()) errors.venue_name = 'Venue name is required'
       if (!form.starts_at) errors.starts_at = 'Start date/time is required'
@@ -250,6 +293,7 @@ function EditEventSession({ id, identity }) {
     try {
       const payload = {
         title: form.title.trim(),
+        ...(linkChanged ? { slug: linkSlug } : {}),
         short_description: form.short_description.trim() || null,
         description: form.description.trim() || null,
         category: form.category,
@@ -261,12 +305,14 @@ function EditEventSession({ id, identity }) {
         ...scheduleChanges,
         max_capacity: form.max_capacity ? Number(form.max_capacity) : null,
         cover_image_url: form.cover_image_url.trim() || null,
+        ...(JSON.stringify(form.page_customization) !== JSON.stringify(savedForm.page_customization) ? { page_customization: form.page_customization } : {}),
         recurrence_rule: form.recurrence_rule || null,
         recurrence_end_date: form.recurrence_end_date || null,
-        show_attendees: form.show_attendees
+        show_attendees: form.show_attendees,
+        ...(capabilities.ticket_transfers === true ? { transfers_enabled: form.transfers_enabled } : {})
       }
       if (!canManage) {
-        const presentationFields = ['title', 'short_description', 'description', 'category', 'cover_image_url']
+        const presentationFields = ['title', 'slug', 'short_description', 'description', 'category', 'cover_image_url', 'page_customization']
         Object.keys(payload).forEach(key => { if (!presentationFields.includes(key)) delete payload[key] })
       }
       if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
@@ -285,8 +331,16 @@ function EditEventSession({ id, identity }) {
       setSuccessMessage('Event updated successfully.')
     } catch (err) {
       if (!request.current()) return
-      const msg = err.response?.data?.errors?.join(', ') || err.response?.data?.error || 'Failed to update event'
-      setSubmitError(msg)
+      const errors = err.response?.data?.errors || []
+      const linkMessage = errors.find(message => message.startsWith('Event link'))
+      if (linkMessage) {
+        setFormErrors(prev => ({ ...prev, slug: linkMessage }))
+        requestAnimationFrame(() => { if (current()) document.getElementById('slug')?.focus() })
+      }
+      const otherErrors = errors.filter(message => message !== linkMessage)
+      if (!linkMessage || otherErrors.length) {
+        setSubmitError(otherErrors.join(', ') || err.response?.data?.error || 'Failed to update event')
+      }
     } finally {
       request.release()
       if (request.current()) setSubmitting(false)
@@ -322,11 +376,11 @@ function EditEventSession({ id, identity }) {
     const request = beginRequest()
     if (!request) return
     setDangerLoading(true)
+    setSubmitError(null)
     try {
       const res = await apiClient.post(`/organizer/events/${id}/${action}`, { reason: lifecycleReason.trim() || undefined }, request.config)
       if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
-      setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
       setLifecycleReason('')
@@ -334,7 +388,6 @@ function EditEventSession({ id, identity }) {
     } catch (err) {
       if (!request.current()) return
       setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
-      setShowCancelConfirm(false)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
     } finally {
@@ -361,12 +414,28 @@ function EditEventSession({ id, identity }) {
     }
   }
 
+  // Only drafts waiting for organizer verification need the organizer profile.
+  const needsVerification = event?.status === 'draft' && (event?.publish_checklist || []).some(item => item.code === 'organizer_verified' && !item.complete)
+  useEffect(() => {
+    if (!needsVerification) return
+    const request = beginRequest()
+    if (!request) return
+    let lookup
+    try { lookup = apiClient.get('/organizer_profile', request.config) } catch { request.release(); return }
+    Promise.resolve(lookup).then(response => {
+      if (request.current() && response?.data?.verification_status) setOrganizerProfile(response.data)
+    }).catch(() => {}).finally(() => request.release())
+    return () => request.controller.abort()
+  }, [needsVerification, beginRequest])
+
   const eventEndedInPast = event?.ends_at && new Date(event.ends_at) < new Date()
   const publishChecklist = event?.publish_checklist || []
   const remainingTicketCapacity = event?.max_capacity == null ? null : Math.max(0,
     Number(event.max_capacity) - (event.ticket_types || []).reduce((sum, ticket) => sum + Number(ticket.quantity_available || 0), 0))
   const organizerSteps = organizerChecklist(publishChecklist)
-  const readyToPublish = publishChecklist.length > 0 && publishChecklist.every(item => item.complete)
+  const readyToPublish = publishChecklist.length > 0 && publishChecklist.filter(blocksPublishing).every(item => item.complete)
+  // Verification that only holds back ticket sales, not publishing.
+  const salesWaitOnVerification = publishChecklist.some(item => item.code === 'organizer_verified' && !item.complete && !blocksPublishing(item))
 
   if (loading) {
     return (
@@ -389,7 +458,8 @@ function EditEventSession({ id, identity }) {
 
 
   return (
-    <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges}><div className="mx-auto max-w-3xl">
+    <EventWorkspace eventId={id} event={event} hasUnsavedChanges={hasUnsavedChanges || feeChoiceDirty}><div className="mx-auto max-w-3xl">
+      {event.status === 'cancelled' && <div className="mb-6"><CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} prominent canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} /></div>}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
           {event?.slug && (
@@ -431,7 +501,7 @@ function EditEventSession({ id, identity }) {
 
       <h2 className="mb-6 text-xl font-semibold text-neutral-950">Event details</h2>
 
-      {hasUnsavedChanges && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">You have unsaved changes. Save Changes before publishing. Preview shows the last saved event.</p>}
+      {hasUnsavedChanges && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">You have unsaved changes. Save Changes before publishing. Preview shows the last saved event in a new tab; the live preview below shows your draft.</p>}
 
       {/* Publish Button for Draft Events */}
       {canManage && event?.status === 'draft' && (
@@ -446,9 +516,11 @@ function EditEventSession({ id, identity }) {
           <ul className="grid sm:grid-cols-2 gap-2 mt-4" aria-label="Publishing checklist">
             {organizerSteps.map(item => (
               <li key={item.code} className={`flex items-center gap-2 text-xs ${item.complete ? 'text-emerald-700' : 'text-neutral-600'}`}>
-                {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-                <div>{item.href && !item.complete ? <a href={item.href} className="underline underline-offset-2">{item.label}</a> : item.label}
+                {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : blocksPublishing(item) ? <XCircle className="w-4 h-4 shrink-0" /> : <Clock3 aria-hidden="true" className="w-4 h-4 shrink-0 text-amber-700" />}
+                <div className="min-w-0">{item.href && !item.complete ? <a href={item.href} className="underline underline-offset-2">{item.label}</a> : item.label}
                   {item.detail && <p className="mt-1 text-xs font-normal text-neutral-600">{item.detail}</p>}
+                  {item.requestVerification && !blocksPublishing(item) && <p className="mt-1 text-xs font-normal text-neutral-700">You can publish now. Tickets go on sale once HåfaPass verifies your organization.</p>}
+                  {item.requestVerification && <VerificationNotice profile={organizerProfile} beginRequest={beginRequest} showSummary={false} className="mt-2" />}
                 </div>
               </li>
             ))}
@@ -460,7 +532,9 @@ function EditEventSession({ id, identity }) {
       {showPublishConfirm && (
         <ConfirmModal
           title="Publish Event?"
-          message={`Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
+          message={salesWaitOnVerification
+            ? `Publish the saved event “${event.title}”? Attendees will be able to find it. Tickets go on sale once HåfaPass verifies your organization.`
+            : `Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
           confirmLabel={publishing ? 'Publishing...' : 'Yes, Publish'}
           confirmClass="bg-action-teal hover:bg-action-teal-hover"
           onConfirm={handlePublish}
@@ -470,19 +544,6 @@ function EditEventSession({ id, identity }) {
       )}
 
       {/* Danger zone modals */}
-      {showCancelConfirm && (
-        <ConfirmModal
-          title="Cancel Event?"
-          message="Ticket sales and public discovery will stop immediately. The reason is retained in the event history."
-          confirmLabel="Yes, Cancel Event"
-          onConfirm={() => handleLifecycle('cancel', 'Event has been cancelled.')}
-          onCancel={() => { setShowCancelConfirm(false); setLifecycleReason('') }}
-          loading={dangerLoading}
-          reason={lifecycleReason}
-          onReasonChange={setLifecycleReason}
-          requireReason
-        />
-      )}
       {showDeleteConfirm && (
         <ConfirmModal
           title="Delete Event?"
@@ -529,17 +590,6 @@ function EditEventSession({ id, identity }) {
 
       <FormErrorSummary errors={formErrors} />
       <form noValidate onSubmit={handleSubmit} className="space-y-8">
-        {/* Cover Image Upload */}
-        <section>
-          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Cover Image</h2>
-          <CoverImageUpload
-            eventId={id}
-            currentUrl={form.cover_image_url}
-            onUploaded={(url) => updateField('cover_image_url', url)}
-            disabled={submitting}
-          />
-        </section>
-
         {/* Basic Info Section */}
         <section>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Basic Info</h2>
@@ -557,7 +607,9 @@ function EditEventSession({ id, identity }) {
             </div>
             <div>
               <label htmlFor="description" className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
+              <DescriptionToolbar description={form.description} onDescriptionChange={value => updateField('description', value)} onFormatChange={format => updateField('page_customization', { ...form.page_customization, description_format: format })} />
               <textarea id="description" value={form.description} onChange={(e) => updateField('description', e.target.value)} rows={4} className="input" placeholder="Full event description..." disabled={submitting} />
+              <p className="mt-1 text-xs text-neutral-600">Formatting is optional. Existing plain text stays as written.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -574,6 +626,50 @@ function EditEventSession({ id, identity }) {
               </div>}
             </div>
           </div>
+        </section>
+
+        {/* Event Link Section */}
+        <section aria-labelledby="event-link-heading">
+          <h2 id="event-link-heading" className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Event Link</h2>
+          <label htmlFor="slug" className="block text-sm font-medium text-neutral-700 mb-1">Link name</label>
+          <input
+            id="slug"
+            type="text"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={80}
+            value={form.slug}
+            onChange={(e) => updateField('slug', normalizeEventLinkInput(e.target.value))}
+            aria-invalid={Boolean(linkError)}
+            aria-describedby={`slug-preview${linkError ? ' slug-error' : ''} slug-help`}
+            className={`input ${linkError ? 'input-error' : ''}`}
+            placeholder="e.g., full-moon-beach-party"
+            disabled={submitting}
+          />
+          <p id="slug-preview" className="mt-2 flex min-w-0 items-start gap-2 text-sm text-neutral-700">
+            <Link2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+            <span className="min-w-0 break-all"><span className="sr-only">Full link: </span>{eventLinkUrl(linkSlug || event?.slug || '')}</span>
+          </p>
+          <div aria-live="polite">
+            {linkError ? <p id="slug-error" className="mt-1 text-sm text-red-600">{linkError}</p>
+              : linkChanged && currentLinkCheck?.status === 'checking' ? <p className="mt-1 text-sm text-neutral-500">Checking this link…</p>
+              : linkChanged && currentLinkCheck?.status === 'available' ? <p className="mt-1 text-sm text-emerald-700">This link is available.</p>
+              : linkChanged && currentLinkCheck?.status === 'unknown' ? <p className="mt-1 text-sm text-neutral-500">We couldn’t check this link yet. It will be checked when you save.</p>
+              : null}
+          </div>
+          <p id="slug-help" className="mt-1 text-xs text-neutral-500">
+            Lowercase letters, numbers, and hyphens. {event?.slug_follows_title
+              ? 'Until you publish or change it, the link updates to match the title when you save.'
+              : 'Renaming the event keeps this link.'}
+          </p>
+          {linkChanged && event?.ever_published && (
+            <p role="status" className="mt-3 flex gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="min-w-0">This event is already public. After you save, the old link (<span className="break-all">{eventLinkUrl(event.slug)}</span>) keeps working and sends people to the new one. Update the link anywhere you can, like posters and social posts.</span>
+            </p>
+          )}
         </section>
 
         {canManage && <>
@@ -654,6 +750,23 @@ function EditEventSession({ id, identity }) {
                 Show attendees on event page
               </label>
             </div>
+            {capabilities.ticket_transfers === true && (
+              <div className="flex items-start gap-3">
+                <input
+                  id="transfers_enabled"
+                  type="checkbox"
+                  checked={form.transfers_enabled}
+                  onChange={(e) => updateField('transfers_enabled', e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-neutral-300 text-brand-500 focus:ring-brand-500"
+                  aria-describedby="transfers_enabled-help"
+                  disabled={submitting}
+                />
+                <div>
+                  <label htmlFor="transfers_enabled" className="text-sm font-medium text-neutral-700">Allow ticket transfers</label>
+                  <p id="transfers_enabled-help" className="text-sm text-neutral-500">Ticket holders can send a ticket to someone else until the event starts. Accepting a transfer replaces the QR code, so the sender’s copy stops working.</p>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -735,16 +848,35 @@ function EditEventSession({ id, identity }) {
 
         </>}
 
-        {/* Submit */}
-        <div className="pt-4 border-t border-neutral-200">
-          <button type="submit" disabled={submitting} className="btn-primary w-full sm:w-auto">
-            {submitting ? 'Saving...' : 'Save Changes'}
-          </button>
+        <PageDesignEditor event={{ ...event, title: form.title }} eventId={id} design={form.page_customization}
+          onChange={value => updateField('page_customization', value)} description={form.description}
+          coverUrl={form.cover_image_url}
+          onCoverUploaded={url => updateField('cover_image_url', url)} disabled={submitting} />
+
+        {/* Event-details save bar: sticks to the viewport bottom while the long
+            form scrolls and stops at the form's end, above independently saved
+            ticket types. */}
+        <div data-testid="event-details-save-bar" className="sticky bottom-0 z-20 rounded-t-xl border border-b-0 border-neutral-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgba(0,0,0,0.06)] sm:px-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p id="event-details-save-state" className={`text-sm ${hasUnsavedChanges ? 'font-medium text-amber-800' : 'text-neutral-500'}`} aria-live="polite">
+              {submitting ? 'Saving event details…' : hasUnsavedChanges ? 'Unsaved event detail changes' : 'Event details are saved'}
+            </p>
+            <button type="submit" disabled={submitting} aria-describedby="event-details-save-state" className="btn-primary w-full sm:w-auto">
+              {submitting ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
         </div>
       </form>
 
+      {/* Fee policy sits next to pricing so every organizer who can edit the
+          event can choose it, whatever the launch scope. */}
+      {event && <FeePolicyPanel eventId={id} event={event} canEdit={permissions.edit_event_content === true && permissions.manage_events === true}
+        beginRequest={beginRequest} onDirtyChange={setFeeChoiceDirty}
+        onSaved={saved => setEvent(currentEvent => ({ ...currentEvent, fee_policy: saved.fee_policy, buyer_fee_percent: saved.buyer_fee_percent }))} />}
+
       {/* Ticket Types CRUD */}
-      {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="scroll-mt-24 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>
+      {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="mt-10 scroll-mt-24 border-t border-neutral-200 pt-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>
+        <p className="rounded-xl bg-neutral-50 px-4 py-3 text-sm text-neutral-600"><span className="font-semibold text-neutral-800">Saved separately.</span> Ticket type changes save as soon as you add, edit or remove one. They are not part of Save Changes above.</p>
         {inventoryRefreshing && <p role="status" className="mt-6 text-sm text-neutral-600">Updating ticket list…</p>}
         {inventoryError && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p>{inventoryError}</p>
@@ -764,12 +896,10 @@ function EditEventSession({ id, identity }) {
             {(event.status === 'published' || event.status === 'postponed') && (
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Cancel Event</p>
-                  <p className="text-xs text-neutral-500">Stop sales and remove the event from public discovery.</p>
+                  <p className="text-sm font-medium text-neutral-900">Cancel event and refund all buyers</p>
+                  <p className="text-xs text-neutral-500">Stop sales and refund card orders. Cash orders need a manual return.</p>
                 </div>
-                <button onClick={() => setShowCancelConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5">
-                  <XCircle className="w-4 h-4" /> Cancel Event
-                </button>
+                <CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={async () => { if (await fetchEvent()) setSuccessMessage('Event cancelled. Refunds are processing.') }} />
               </div>
             )}
             {event.status === 'published' && (

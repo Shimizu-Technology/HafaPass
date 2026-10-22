@@ -29,7 +29,7 @@ In production, readiness requires:
 - for Sidekiq, a successful Redis ping, registered worker and singleton clock lease; and
 - a complete redacted production configuration contract.
 
-Provider checks return booleans only. They intentionally never return credentials. Production configuration and provider-policy controls are required readiness checks. Resend and the policy register need current independent approvals; live payment mode additionally requires Stripe approval. Redacted configuration presence does not prove actual provider behavior. Staging requires its isolated safety configuration and the selected durable runtime. Simulation remains the default; controlled provider rehearsal requires its explicit allowlists and test-mode configuration.
+Provider checks return booleans only. They intentionally never return credentials. Production configuration and provider-policy controls are required readiness checks. Resend and the policy register need current approvals (one administrator may submit and approve); live payment mode additionally requires Stripe approval. Redacted configuration presence does not prove actual provider behavior. Staging requires its isolated safety configuration and the selected durable runtime. Simulation remains the default; controlled provider rehearsal requires its explicit allowlists and test-mode configuration.
 
 ## Required production configuration
 

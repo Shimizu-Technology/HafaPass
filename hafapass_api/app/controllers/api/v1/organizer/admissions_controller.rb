@@ -23,7 +23,18 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
   def door_list
     return unless authorize_organization!(:manage_attendees, event: @event)
 
-    send_data Admissions::DoorListPdf.new(@event).generate,
+    ticket_count = @event.tickets.count
+    if ticket_count > Admissions::DoorListPdf::MAX_TICKETS
+      return render json: { error: "Emergency door list is limited to #{Admissions::DoorListPdf::MAX_TICKETS} tickets. Use a filtered organizer door list or contact support." }, status: :unprocessable_entity
+    end
+
+    pdf = Admissions::DoorListPdf.new(@event).generate
+    AuditLogger.record!(action: "sales.emergency_door_list_exported", auditable: @event, actor: current_user,
+      organization: current_organization,
+      metadata: { filters: {}, columns: %w[ticket attendee type status door_mark], row_count: ticket_count },
+      request: request)
+    response.headers["Cache-Control"] = "no-store"
+    send_data pdf,
       filename: "hafapass-door-list-#{@event.slug}.pdf",
       type: "application/pdf",
       disposition: "attachment"

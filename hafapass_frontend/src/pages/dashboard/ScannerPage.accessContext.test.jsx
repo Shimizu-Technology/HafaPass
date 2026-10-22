@@ -47,7 +47,7 @@ async function preparePrivateReads(extraAdapter, { manifestVersion = 1 } = {}) {
     const custom = extraAdapter?.(config)
     if (custom) return custom
     return Promise.resolve(response(config, config.url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Context event' }, { id: eventId + 1, title: 'Other event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Context event' }, { id: eventId + 1, status: 'published', title: 'Other event' }] }
       : config.url === '/me' ? { id: 1, clerk_id: auth.userId }
         : config.url.endsWith('/scanner_devices') ? device(91)
           : config.url.endsWith('/manifest') ? (config.url.includes(`/${eventId + 1}/`)
@@ -528,7 +528,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
           { config, status: 503, data: {}, headers: {} }))
       }
       return Promise.resolve(response(config, config.url === '/organizer/events'
-        ? { events: [{ id: eventId, title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
+        ? { events: [{ id: eventId, status: 'published', title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
           : config.url.endsWith('/scanner_devices') ? oldDevice : config.url.endsWith('/manifest') ? currentManifest
             : { counts: {}, permissions: {}, recent_actions: [] }))
     })
@@ -581,7 +581,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
       if (config.url.endsWith('/sync')) { action = JSON.parse(config.data).actions[0]; ackConfig = config; return heldAck.promise }
       if (config.url.endsWith('/manifest') && ++downloads > 1) { manifestConfig = config; return heldManifest.promise }
       return Promise.resolve(response(config, config.url === '/organizer/events'
-        ? { events: [{ id: eventId, title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
+        ? { events: [{ id: eventId, status: 'published', title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
           : config.url.endsWith('/scanner_devices') ? oldDevice : config.url.endsWith('/manifest') ? originalManifest
             : { counts: {}, permissions: {}, recent_actions: [] }))
     })
@@ -639,7 +639,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
           { config, status: 503, data: {}, headers: {} }))
       }
       return Promise.resolve(response(config, config.url === '/organizer/events'
-        ? { events: [{ id: eventId, title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
+        ? { events: [{ id: eventId, status: 'published', title: 'Context event' }] } : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
           : config.url.endsWith('/scanner_devices') ? oldDevice : config.url.endsWith('/manifest') ? currentManifest
             : { counts: {}, permissions: {}, recent_actions: [] }))
     })
@@ -689,7 +689,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
         return originalTimeout(callback, delay, ...args)
       })
       api.defaults.adapter = vi.fn(config => Promise.resolve(response(config,
-        config.url === '/organizer/events' ? { events: [{ id: eventId, title: 'Context event' }] }
+        config.url === '/organizer/events' ? { events: [{ id: eventId, status: 'published', title: 'Context event' }] }
           : config.url === '/me' ? { id: 1, clerk_id: 'staff-a' }
             : config.url.endsWith('/scanner_devices') ? prepared
               : config.url.endsWith('/manifest') ? manifest
@@ -760,7 +760,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
         return old.promise
       }
       if (config.url === '/organizer/events') return Promise.resolve(response(config, { events: [
-        { id: eventId, title: 'Original event' }, { id: eventId + 1, title: 'Other event' },
+        { id: eventId, status: 'published', title: 'Original event' }, { id: eventId + 1, status: 'published', title: 'Other event' },
       ] }))
       if (config.url === '/me') return Promise.resolve(response(config, { id: 1, clerk_id: 'staff-a' }))
       const selected = config.url.includes(`/${eventId + 1}/`) ? eventId + 1 : eventId
@@ -802,7 +802,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
       if (config.url.endsWith('/scanner_devices')) return Promise.reject(new AxiosError('Current access refused', undefined, config, null,
         { config, status: 403, data: { error: 'Current access refused' }, headers: {} }))
       return Promise.resolve(response(config, config.url === '/organizer/events'
-        ? { events: [{ id: eventId, title: 'Context event' }] } : { id: 1, clerk_id: 'staff-a' }))
+        ? { events: [{ id: eventId, status: 'published', title: 'Context event' }] } : { id: 1, clerk_id: 'staff-a' }))
     })
     const mounted = render(view())
     await screen.findByText('Current access refused')
@@ -828,7 +828,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
       const a = config.headers.get('Authorization') === 'Bearer synthetic-token-a'
       const held = a && (phase === 'registration' ? config.method === 'post' && config.url.endsWith('/scanner_devices') : config.url.endsWith('/manifest'))
       if (held) { oldConfig = config; return old.promise }
-      if (config.url === '/organizer/events') return Promise.resolve(response(config, { events: [{ id: eventId, title: 'Context event' }] }))
+      if (config.url === '/organizer/events') return Promise.resolve(response(config, { events: [{ id: eventId, status: 'published', title: 'Context event' }] }))
       if (config.url === '/me') return Promise.resolve(response(config, { id: a ? 1 : 2, clerk_id: a ? 'staff-a' : 'staff-b' }))
       if (config.url.endsWith('/scanner_devices')) return Promise.resolve(response(config, device(a ? 91 : 92)))
       if (config.url.endsWith('/manifest')) return Promise.resolve(response(config, manifest))

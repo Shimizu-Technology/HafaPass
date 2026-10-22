@@ -7,10 +7,10 @@ RSpec.describe "Api::V1::Admin::Users", type: :request do
 
   describe "PATCH /api/v1/admin/users/:id" do
     it "allows an admin to assign a supported role" do
-      patch "/api/v1/admin/users/#{user.id}", params: { role: "organizer" }, headers: headers
+      patch "/api/v1/admin/users/#{user.id}", params: { role: "support" }, headers: headers
 
       expect(response).to have_http_status(:ok)
-      expect(user.reload).to be_organizer
+      expect(user.reload).to be_support
       expect(AuditLog.where(auditable: user, actor_user: admin, action: "user.role_updated")).to exist
     end
 

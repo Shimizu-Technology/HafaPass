@@ -2,22 +2,31 @@
 
 module Marketplace
   class EventSerializer
-    def self.call(event, purchasable: nil)
-      new(event, purchasable: purchasable).call
+    def self.call(event, purchasable: nil, fee_terms: nil, locale: AppLocale::DEFAULT)
+      new(event, purchasable: purchasable, fee_terms: fee_terms, locale: locale).call
     end
 
-    def initialize(event, purchasable:)
+    def initialize(event, purchasable:, fee_terms: nil, locale: AppLocale::DEFAULT)
       @event = event
+      @locale = locale
       @purchasable = purchasable
+      @fee_terms = fee_terms
     end
 
     def call
+      content = event.content_for(@locale)
       {
         id: event.id,
-        title: event.title,
+        title: content[:title],
         slug: event.slug,
-        short_description: event.short_description,
+        short_description: content[:short_description],
+        content_locale: content[:locale],
+        machine_translated: content[:machine_translated],
+        original_content: content[:locale] == AppLocale::DEFAULT ? nil : event.slice(*Event::CONTENT_FIELDS),
         cover_image_url: event.cover_image_url,
+        page_customization: event.page_customization.is_a?(Hash) ?
+          event.page_customization.slice("focal_point", "accent") : {},
+        image_asset_host: S3Service.public_asset_host,
         starts_at: event.starts_at,
         ends_at: event.ends_at,
         timezone: event.timezone,
@@ -40,6 +49,10 @@ module Marketplace
 
     attr_reader :event, :purchasable
 
+    def fee_terms
+      @fee_terms ||= Commerce::ServiceFee.terms
+    end
+
     def ordered_ticket_types
       return event.ticket_types.sort_by { |type| [type.sort_order || 0, type.id] } if event.ticket_types.loaded?
 
@@ -47,10 +60,19 @@ module Marketplace
     end
 
     def ticket_type_json(type)
+      content = type.content_for(@locale)
+      current_price_cents = type.current_price_cents
+      fee = Commerce::ServiceFee.for_event(event, current_price_cents, terms: fee_terms)
       {
         id: type.id,
-        name: type.name,
-        current_price_cents: type.current_price_cents,
+        name: content[:name],
+        description: content[:description],
+        machine_translated: content[:machine_translated],
+        original_name: type.name,
+        original_description: type.description,
+        current_price_cents: current_price_cents,
+        all_in_price_cents: fee.all_in_price_cents,
+        service_fee_cents: fee.buyer_fee_cents,
         price_cents: type.price_cents,
         quantity_remaining: type.available_quantity,
         on_sale: event.sales_open? && type.on_sale?

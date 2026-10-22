@@ -23,7 +23,6 @@ class PaymentReadinessReview < ApplicationRecord
   validates :merchant_of_record, inclusion: { in: MERCHANTS_OF_RECORD }
   validate :complete_control_snapshot
   validate :valid_parent_relationship
-  validate :independent_approver
   validate :parent_snapshot_matches
   validate :revocation_reason_present
   validate :valid_effective_window
@@ -78,12 +77,6 @@ class PaymentReadinessReview < ApplicationRecord
     return if effective_at.blank? || expires_at.blank?
 
     errors.add(:expires_at, "must be after the effective time") unless expires_at > effective_at
-  end
-
-  def independent_approver
-    return unless decision_approval? && parent_review && actor_user_id == parent_review.actor_user_id
-
-    errors.add(:actor_user, "must be independent from the evidence submitter")
   end
 
   def parent_snapshot_matches

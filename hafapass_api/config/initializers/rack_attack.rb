@@ -26,8 +26,10 @@ class Rack::Attack
   # ─── General Throttles ────────────────────────────────────────────────────
 
   # Throttle all requests by IP (300 requests per 5 minutes)
+  # Wallet devices and the email provider's PDF fetches share venue/carrier NAT
+  # or a small provider IP pool, so they have their own limits below.
   throttle("req/ip", limit: 300, period: 5.minutes) do |req|
-    req.ip unless req.path.start_with?("/assets")
+    req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/")
   end
 
   # ─── Authentication Throttles ─────────────────────────────────────────────
@@ -35,6 +37,35 @@ class Rack::Attack
   # Throttle user sync/auth endpoints more strictly (20 per minute)
   throttle("users/ip", limit: 20, period: 1.minute) do |req|
     req.ip if req.path == "/api/v1/users/sync" && req.post?
+  end
+
+  throttle("sales-exports/ip", limit: 20, period: 1.hour) do |req|
+    req.ip if (req.post? && req.path.to_s.downcase.match?(%r{\A/api/v1/organizer/events/[^/]+/sales_exports(?:\.[a-z0-9]+)?/*\z})) ||
+      (req.get? && req.path.to_s.downcase.match?(%r{\A/api/v1/organizer/events/[^/]+/crm/export(?:\.[a-z0-9]+)?/*\z}))
+  end
+  throttle("door-lists/ip", limit: 60, period: 1.hour) do |req|
+    req.ip if req.get? && req.path.to_s.downcase.match?(%r{\A/api/v1/organizer/events/[^/]+/(?:sales_exports/door_list|admissions/door_list)(?:\.[a-z0-9]+)?/*\z})
+  end
+
+  # Full-TIN actions have a separate, tighter budget. Resolve a verified
+  # Clerk subject before using an admin ID; unverified requests only consume
+  # the IP budget and never create a user during rate-limit evaluation.
+  sensitive_tax_request = lambda do |req|
+    # Rails also routes a trailing slash and a format suffix (".json", ".csv")
+    # to these actions, so match every accepted form.
+    path = req.path.to_s.downcase
+    req.post? && (path.match?(%r{\A/api/v1/admin/tax_reports/preparation_export(?:\.[a-z0-9]+)?/*\z}) ||
+      path.match?(%r{\A/api/v1/admin/organizations/[^/]+/tax_information/reveal(?:\.[a-z0-9]+)?/*\z}))
+  end
+  throttle("tax-sensitive/ip", limit: 10, period: 1.hour) do |req|
+    req.ip if sensitive_tax_request.call(req)
+  end
+  throttle("tax-sensitive/admin", limit: 10, period: 1.hour) do |req|
+    next unless sensitive_tax_request.call(req)
+
+    token = req.get_header("HTTP_AUTHORIZATION").to_s.match(/\ABearer (\S+)\z/i)&.captures&.first
+    payload = ClerkAuthenticator.verify(token) if token
+    User.where(clerk_id: payload["sub"], role: User.roles[:admin]).pick(:id) if payload&.dig("sub")
   end
 
   # ─── Order Creation Throttles ─────────────────────────────────────────────
@@ -80,6 +111,11 @@ class Rack::Attack
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/resend\z}) && req.post?
   end
 
+  # Requesting organizer verification emails every admin.
+  throttle("organizer-verification/ip", limit: 5, period: 1.hour) do |req|
+    req.ip if req.post? && req.path == "/api/v1/organizer_profile/submit_verification"
+  end
+
   throttle("payment-resume/ip", limit: 20, period: 1.minute) do |req|
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/payment_resume\z}) && req.post?
   end
@@ -89,6 +125,35 @@ class Rack::Attack
   # Throttle check-in attempts (60 per minute per IP - for scanning)
   throttle("checkin/ip", limit: 60, period: 1.minute) do |req|
     req.ip if req.path.start_with?("/api/v1/check_in") && req.post?
+  end
+
+  # ─── Wallet Throttles ─────────────────────────────────────────────────────
+
+  # Apple Wallet devices poll and register for pass updates. One event edit
+  # pushes every device at a venue, often behind one shared Wi-Fi or carrier
+  # NAT address, so limits are per device and per pass with a high IP ceiling.
+  APPLE_WALLET_PREFIX = "/api/v1/wallet/apple/v1/"
+  throttle("apple-wallet/device", limit: 30, period: 1.minute) do |req|
+    req.path[%r{\A#{APPLE_WALLET_PREFIX}devices/([^/]+)/}, 1] if req.path.start_with?(APPLE_WALLET_PREFIX)
+  end
+
+  throttle("apple-wallet/pass", limit: 60, period: 1.minute) do |req|
+    req.path[%r{\A#{APPLE_WALLET_PREFIX}(?:passes/[^/]+|devices/[^/]+/registrations/[^/]+)/([^/]+)\z}, 1] if
+      req.path.start_with?(APPLE_WALLET_PREFIX)
+  end
+
+  throttle("apple-wallet/ip", limit: 1200, period: 1.minute) do |req|
+    req.ip if req.path.start_with?("/api/v1/wallet/apple/")
+  end
+
+  # The email provider fetches ticket PDFs from a small pool of addresses, so
+  # each signed link is limited on its own under a high IP ceiling.
+  throttle("ticket-email-attachment/token", limit: 10, period: 10.minutes) do |req|
+    Digest::SHA256.hexdigest(req.path) if req.path.start_with?("/api/v1/ticket_email_attachments/") && (req.get? || req.head?)
+  end
+
+  throttle("ticket-email-attachment/ip", limit: 1200, period: 1.minute) do |req|
+    req.ip if req.path.start_with?("/api/v1/ticket_email_attachments/") && (req.get? || req.head?)
   end
 
   # ─── Promo Code Validation Throttles ──────────────────────────────────────
@@ -142,7 +207,8 @@ class Rack::Attack
     }
 
     body = {
-      error: "Rate limit exceeded",
+      error: req.env["rack.attack.matched"].to_s.start_with?("tax-sensitive/") ?
+        "Too many full-TIN requests. Please try again later." : "Rate limit exceeded",
       retry_after: headers["Retry-After"].to_i
     }.to_json
 

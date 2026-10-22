@@ -58,10 +58,10 @@ Before real paid inventory is published, legal, accounting, and the selected pro
 - Financial reversals append compensating records. Operators do not edit or delete history.
 - Provider capability booleans cannot by themselves enable paid publishing or payouts.
 - Readiness evidence carries a SHA-256 digest and references the provider approval, merchant-of-record decision, approved fee/tax schedule, approved liability schedule, Guam territory confirmation, organizer onboarding, bank account, charges, payouts, refunds, and disputes.
-- Evidence submission and approval require different administrators. Approval and revocation are new append-only records; approved evidence cannot be edited or deleted.
+- One administrator may submit and approve (decision of 2026-10-21); the audit trail records the submitter, approver, and timestamps. A two-person rule may return later as an optional setting. Approval and revocation are new append-only records; approved evidence cannot be edited or deleted.
 - Expired or revoked evidence immediately fails `payout_ready?`, even if a provider's last capability sync still says enabled.
 - Each submission is bound to a canonical provider-state digest and monotonic readiness revision. Changing or disabling the provider account, capabilities, requirements, territory, currency, or account identifier permanently invalidates the old approval, even if a later sync restores the same values.
-- The Gate B migration intentionally removes readiness from every legacy connected account until the two-person evidence process is completed.
+- The Gate B migration intentionally removes readiness from every legacy connected account until the evidence review process is completed.
 
 ## Pilot release gates
 

@@ -13,10 +13,18 @@ test:
   <<: *default
   database: hafapass_api_test
 
+# Deployed web/job connections go through Neon's PgBouncer pooler in
+# transaction mode, where consecutive statements can land on different server
+# connections. Server-side prepared statements then fail after a migration
+# with "cached plan must not change result type", so they are off. Release
+# migrations use DATABASE_MIGRATION_URL (the direct host; see
+# bin/release-migrate), which Rails' migration advisory lock requires.
 production:
   <<: *default
   url: <%= ENV["DATABASE_URL"] %>
+  prepared_statements: false
 
 staging:
   <<: *default
   url: <%= ENV["STAGING_DATABASE_URL"] %>
+  prepared_statements: false

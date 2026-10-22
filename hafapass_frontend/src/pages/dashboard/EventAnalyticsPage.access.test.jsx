@@ -7,6 +7,7 @@ import EventAnalyticsPage from './EventAnalyticsPage'
 
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children }) => <div>{children}</div> }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const rights = { view_finance: true, view_attendees: true, manage_finance: true, payout: true }
 const event = { id: 37, organization_id: 1, title: 'Authorized event', status: 'completed', timezone: 'Pacific/Guam', permissions: rights }
@@ -38,6 +39,33 @@ it('distinguishes requesting a payout from a confirmed transfer', async () => {
   }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.any(String) } }))
 })
 
+it('explains that HåfaPass covers card processing and shows payout timing', async () => {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/finance')
+    ? { ...finance, preview: { gross_cents: 5000, processing_fee_cents: 0, platform_processing_fee_cents: 185, payable_cents: 5000 } }
+    : url.endsWith('/stats') ? stats : { ...event, fee_policy: 'buyer_pays', buyer_fee_percent: 100 } }))
+  mount()
+  expect(await screen.findByText(/which includes card processing\. You receive the full ticket price\./)).toBeInTheDocument()
+  expect(screen.getByText('Payout timing: within 3 business days after your event.')).toBeInTheDocument()
+  expect(screen.getByText('HåfaPass covered $1.85')).toBeInTheDocument()
+  expect(screen.getByText('Processing costs to you').nextSibling).toHaveTextContent('$0.00')
+})
+
+it('explains processing still deducted from organizer proceeds under earlier terms', async () => {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/finance')
+    ? { ...finance, preview: { gross_cents: 5000, processing_fee_cents: 183, platform_processing_fee_cents: 0, payable_cents: 4817 } }
+    : url.endsWith('/stats') ? stats : { ...event, fee_policy: 'buyer_pays', buyer_fee_percent: 100 } }))
+  mount()
+  expect(await screen.findByTestId('earlier-processing-note')).toHaveTextContent('$1.83 in card processing is deducted from your proceeds. That covers orders placed under earlier terms')
+})
+
+it('does not show the earlier-terms note when nothing is deducted', async () => {
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/finance')
+    ? { ...finance, preview: { processing_fee_cents: 0, platform_processing_fee_cents: 185 } } : url.endsWith('/stats') ? stats : event }))
+  mount()
+  await screen.findByText('HåfaPass covered $1.85')
+  expect(screen.queryByTestId('earlier-processing-note')).not.toBeInTheDocument()
+})
+
 describe('authoritative analytics access', () => {
   it('verifies event permissions before requesting private records', async () => {
     const verify = deferred()
@@ -64,22 +92,6 @@ describe('authoritative analytics access', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('event context could not be verified')
     expect(privateReads()).toHaveLength(0)
   })
-  it('withdraws cached records and aborts an in-flight mutation after attendee access denial', async () => {
-    const mutation = deferred()
-    apiClient.post.mockReturnValueOnce(mutation.promise)
-    mount(); await screen.findAllByText('Private buyer')
-    await userEvent.click(screen.getByRole('button', { name: 'Finalize current version' }))
-    const previousFinanceReads = apiClient.get.mock.calls.filter(([url]) => url.endsWith('/finance')).length
-    apiClient.get.mockImplementation(url => url.endsWith('/attendees') ? Promise.reject(denied(403)) : Promise.resolve({ data: fixture(url) }))
-    await userEvent.click(screen.getByRole('button', { name: 'View All' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your event access changed')
-    expect(screen.queryByText('Private buyer')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Finalize|^Request payout / })).not.toBeInTheDocument()
-    expect(apiClient.post.mock.calls[0][2].signal.aborted).toBe(true)
-    await act(async () => mutation.resolve({ data: { status: 'finalized' } }))
-    expect(apiClient.get.mock.calls.filter(([url]) => url.endsWith('/finance'))).toHaveLength(previousFinanceReads)
-    expect(screen.queryByText('Private buyer')).not.toBeInTheDocument()
-  })
   it.each([401, 403])('withdraws cached finance and buyer data after a current mutation receives %s', async status => {
     apiClient.post.mockRejectedValueOnce(denied(status))
     mount(); await screen.findAllByText('Private buyer')
@@ -87,7 +99,7 @@ describe('authoritative analytics access', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(status === 401 ? 'Please sign in' : 'Your event access changed')
     expect(screen.queryByText('Private buyer')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'View All' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View attendee list' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Request payout / })).not.toBeInTheDocument()
   })
   it('ignores old private read completion after denial and verifies current rights before retry', async () => {
@@ -106,39 +118,17 @@ describe('authoritative analytics access', () => {
     await act(async () => freshVerify.resolve({ data: { ...event, permissions: { view_finance: true } } }))
     await screen.findAllByText('Private buyer')
     expect(screen.queryByRole('button', { name: /Finalize|^Request payout / })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'View All' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View attendee list' })).not.toBeInTheDocument()
   })
 })
 
-it('cannot revive an old mutation after retry grants a different current permission set', async () => {
-  const old = deferred()
-  apiClient.post.mockReturnValueOnce(old.promise)
+it('offers one clearly labelled link to the attendee list', async () => {
   mount(); await screen.findAllByText('Private buyer')
-  await userEvent.click(screen.getByRole('button', { name: 'Finalize current version' }))
-  apiClient.get.mockImplementation(url => url.endsWith('/attendees') ? Promise.reject(denied(403)) : Promise.resolve({ data: fixture(url) }))
-  await userEvent.click(screen.getByRole('button', { name: 'View All' }))
-  await screen.findByRole('alert')
-  apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events/37' ? { ...event, permissions: { view_finance: true } } : fixture(url) }))
-  await userEvent.click(screen.getByRole('button', { name: 'Retry analytics' }))
-  await screen.findAllByText('Private buyer')
-  const financeReads = apiClient.get.mock.calls.filter(([url]) => url.endsWith('/finance')).length
-  await act(async () => old.resolve({ data: { status: 'finalized' } }))
-  expect(apiClient.get.mock.calls.filter(([url]) => url.endsWith('/finance'))).toHaveLength(financeReads)
-  expect(screen.queryByRole('button', { name: /Finalize|^Request payout / })).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'View All' })).not.toBeInTheDocument()
-})
-
-it('aborts an unresolved attendee read when a separate current mutation is denied', async () => {
-  const old = deferred()
-  apiClient.get.mockImplementation(url => url.endsWith('/attendees') ? old.promise : Promise.resolve({ data: fixture(url) }))
-  apiClient.post.mockRejectedValueOnce(denied(403))
-  mount(); await screen.findAllByText('Private buyer')
-  await userEvent.click(screen.getByRole('button', { name: 'View All' }))
-  const config = apiClient.get.mock.calls.find(([url]) => url.endsWith('/attendees'))[1]
-  await userEvent.click(screen.getByRole('button', { name: 'Finalize current version' }))
-  await screen.findByRole('alert')
-  expect(config.signal.aborted).toBe(true)
-  await act(async () => old.resolve({ data: { attendees: [{ id: 1, attendee_name: 'Old unauthorized attendee', status: 'issued' }] } }))
-  expect(screen.queryByText('Old unauthorized attendee')).not.toBeInTheDocument()
-  expect(screen.queryByText('Private buyer')).not.toBeInTheDocument()
+  const links = screen.getAllByRole('link', { name: /attendee/i })
+  expect(links).toHaveLength(1)
+  expect(links[0]).toHaveAccessibleName('View attendee list')
+  expect(links[0]).toHaveAttribute('href', '/dashboard/events/37/attendees')
+  expect(screen.queryByRole('link', { name: /Full List/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /View All/ })).not.toBeInTheDocument()
+  expect(privateReads().some(([url]) => url.endsWith('/attendees'))).toBe(false)
 })

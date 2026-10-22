@@ -1,14 +1,20 @@
 import useOperationalListing from '../../hooks/useOperationalListing'
 import OperationalSearch from '../../components/OperationalSearch'
 import OperationalPagination from '../../components/OperationalPagination'
+import { PageHeader, WorkspacePage } from '../../components/WorkspacePage'
+import { canManageOrganizationSettings, loadOrganizerOrganizations, resetOrganizerOrganizations } from '../../utils/organizerOrganizations'
+import OrganizerSetupChecklist from './OrganizerSetupChecklist'
+import { roleLabel } from '../../utils/roles'
 import { uploadImage } from '../../utils/uploads'
-import { Loader2, Pencil, X, Upload, CheckCircle2, Circle, ShieldCheck } from 'lucide-react'
+import { Loader2, Pencil, X, Upload, Plus, ScanLine, Settings } from 'lucide-react'
 import { useState, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import apiClient, { getApiAuthContext } from '../../api/client'
 import { formatEventDate } from '../../utils/eventTime'
 import { currentScannerOwner } from '../../utils/admissionStore'
 import { useOrganizerIdentity, useOrganizerPageVisit } from '../../hooks/useOrganizerContext'
+import DashboardSummary from './DashboardSummary'
+import { approvedImageUrl } from '../../utils/eventPageDesign'
 
 function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  const [businessName, setBusinessName] = useState('')
@@ -48,8 +54,15 @@ function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
  return (
   <div className="max-w-lg mx-auto">
    <div className="bg-white rounded-xl shadow-md p-6">
-    <h2 className="text-2xl font-bold text-neutral-900 mb-2">Create Your Organizer Profile</h2>
-    <p className="text-neutral-600 mb-6">Set up your organizer profile to start creating and managing events on HafaPass.</p>
+    <h2 className="text-2xl font-bold text-neutral-900 mb-2">Host events on HåfaPass</h2>
+    <p className="text-neutral-600">Start with your organization’s name. After that, a short checklist walks you through the rest:</p>
+    <ol className="mt-3 mb-6 list-decimal space-y-1 pl-5 text-sm text-neutral-700">
+     <li>Accept the organizer agreement</li>
+     <li>HåfaPass verifies your organization</li>
+     <li>Choose how you get paid (check or bank transfer)</li>
+     <li>Create and publish your first event</li>
+    </ol>
+    <p className="mb-6 text-sm text-content-muted">Joining someone else’s team? Use the invitation link from your email instead — you don’t need your own profile.</p>
 
     {error && (
      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -117,10 +130,12 @@ function StatusBadge({ status }) {
  )
 }
 
+// Event managers land on the event overview. Other staff keep their direct
+// route to the one tool they were given.
 function EventListCard({ event }) {
  const permissions = event.permissions || {}
- const destination = permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
- const actionLabel = permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"
+ const destination = permissions.manage_events ? `/dashboard/events/${event.id}` : permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
+ const actionLabel = permissions.manage_events ? "Open event" : permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"
  const ticketsSold = event.ticket_types
   ? event.ticket_types.reduce((sum, tt) => sum + (tt.quantity_sold || 0), 0)
   : 0
@@ -128,7 +143,7 @@ function EventListCard({ event }) {
  return (
   <Link
    to={destination}
-   className="block bg-white rounded-xl shadow-sm border border-neutral-200 hover:shadow-md hover:border-brand-200 transition-all p-4"
+   className="block bg-white rounded-xl shadow-sm border border-neutral-200 hover:shadow-md hover:border-brand-200 transition-[border-color,box-shadow] duration-200 ease-out-strong p-4"
   >
    <div className="flex items-start justify-between gap-3">
     <div className="min-w-0 flex-1">
@@ -219,7 +234,7 @@ function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, 
      <div>
       <label className="block text-sm font-medium text-neutral-700 mb-1">Logo</label>
       <div className="flex items-center gap-3">
-       {logoUrl ? (
+       {approvedImageUrl(logoUrl, profile.image_asset_host) ? (
         <img src={logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover border border-neutral-200" />
        ) : (
         <div className="w-12 h-12 rounded-xl bg-neutral-100 flex items-center justify-center">
@@ -255,6 +270,7 @@ function DashboardSession({ authContext }) {
  const [events, setEvents] = useState([])
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
+ const [actionError, setActionError] = useState(null)
  const [editor, setEditor] = useState(null)
  const editorRef = useRef(null)
  const editorGeneration = useRef(0)
@@ -264,6 +280,8 @@ function DashboardSession({ authContext }) {
  const [selectedOrganizationId, setSelectedOrganizationId] = useState(window.localStorage.getItem('hafapass_organization_id') || '')
  const listing = useOperationalListing(`events:${authContext?.userId || currentScannerOwner()}:${selectedOrganizationId}`)
  const [eventMeta, setEventMeta] = useState(null)
+ const [summary, setSummary] = useState(null)
+ const summaryRequest = useRef(null)
  const [listLoading, setListLoading] = useState(false)
  const loadGeneration = useRef(0)
  const loadingOrganization = useRef(null)
@@ -275,7 +293,7 @@ function DashboardSession({ authContext }) {
  const canManageProfile = permissions.manage_organization === true
  const canCreate = permissions.manage_events === true
  const canScan = permissions.scan === true || events.some(event => event.permissions?.scan)
- const canManageSettings = permissions.manage_members || permissions.manage_payout_settings
+ const canManageSettings = canManageOrganizationSettings(organization)
 
  const contextCurrent = context => Boolean(context && mounted.current && context.generation === loadGeneration.current
   && context.authContext === getApiAuthContext() && context.owner === currentScannerOwner()
@@ -320,16 +338,18 @@ function DashboardSession({ authContext }) {
  }
 
  const updateReadiness = async (path) => {
-  if (readinessLoading) return
+  if (readinessLoading) return false
   const request = beginRequest(profileContext)
-  if (!request) return
+  if (!request) return false
   setReadinessLoading(true)
-  setError(null)
+  setActionError(null)
   try {
    const response = await apiClient.post(`/organizer_profile/${path}`, {}, request.config)
    if (request.current()) setProfile(response.data)
+   return request.current()
   } catch (err) {
-   if (request.current()) setError(err.response?.data?.error || 'Could not update organizer readiness.')
+   if (request.current()) setActionError({ path, message: err.response?.data?.error || 'Could not update your setup. Please try again.' })
+   return false
   } finally {
    request.release()
    if (request.current()) setReadinessLoading(false)
@@ -362,6 +382,26 @@ function DashboardSession({ authContext }) {
  const fetchEventsRef = useRef(fetchEvents)
  fetchEventsRef.current = fetchEvents
 
+ // Totals cover the whole organization, so search and paging do not refetch them.
+ const fetchSummary = async (context = profileContext) => {
+  const request = beginRequest(context)
+  if (!request) return
+  summaryRequest.current?.controller.abort()
+  summaryRequest.current = request
+  const current = () => request.current() && summaryRequest.current === request
+  setSummary({ status: 'loading' })
+  try {
+   const response = await apiClient.get('/organizer/events/summary', request.config)
+   if (current()) setSummary({ status: 'ready', data: response.data || {} })
+  } catch {
+   if (current()) setSummary({ status: 'error' })
+  } finally {
+   request.release()
+  }
+ }
+ const fetchSummaryRef = useRef(fetchSummary)
+ fetchSummaryRef.current = fetchSummary
+
  const fetchDashboard = async () => {
   if (!mounted.current) return
   const generation = ++loadGeneration.current
@@ -369,6 +409,8 @@ function DashboardSession({ authContext }) {
   requests.current.clear()
   closeEditor(editorRef.current)
   setReadinessLoading(false)
+  // An earlier organization's setup error must not look like this one's.
+  setActionError(null)
   const requestedOrganization = window.localStorage.getItem('hafapass_organization_id')
   loadingOrganization.current = requestedOrganization || ''
   if (profileContext?.organizationId !== requestedOrganization) {
@@ -377,6 +419,7 @@ function DashboardSession({ authContext }) {
    setProfileContext(null)
    setEvents([])
    setEventMeta(null)
+   setSummary(null)
   }
   let context = { generation, authContext, owner: currentScannerOwner(), organizationId: window.localStorage.getItem('hafapass_organization_id') }
   const current = () => contextCurrent(context)
@@ -386,7 +429,7 @@ function DashboardSession({ authContext }) {
   setError(null)
   let eventsStarted = false
   try {
-   const organizationsRes = await apiClient.get('/organizer/organizations', request.config)
+   const organizationsRes = await loadOrganizerOrganizations(authContext)
    if (!current()) return
    const availableOrganizations = Array.isArray(organizationsRes.data) ? organizationsRes.data : []
    setOrganizations(availableOrganizations)
@@ -410,6 +453,7 @@ function DashboardSession({ authContext }) {
 
    eventsStarted = true
    void fetchEventsRef.current(context)
+   void fetchSummaryRef.current(context)
   } catch (err) {
    if (!current()) return
    if (err.response?.status === 404) {
@@ -425,6 +469,15 @@ function DashboardSession({ authContext }) {
    request.release()
    if (current() && !eventsStarted) { setLoading(false); setListLoading(false) }
   }
+ }
+
+ // An admin who opened another organization from the admin console returns
+ // to their own organizations (if any) without a stale switcher entry.
+ const leaveAdminView = () => {
+  window.localStorage.removeItem('hafapass_organization_id')
+  resetOrganizerOrganizations()
+  setSelectedOrganizationId('')
+  fetchDashboardRef.current()
  }
 
  const fetchDashboardRef = useRef(fetchDashboard)
@@ -500,59 +553,40 @@ function DashboardSession({ authContext }) {
  }
 
  return (
-  <div className="max-w-4xl mx-auto px-4 py-8">
-   <div className="flex min-w-0 flex-col gap-4 mb-8 lg:flex-row lg:items-start lg:justify-between">
-   <div className="min-w-0 flex-1">
-     <div className="flex items-center gap-2">
-      <h1 className="min-w-0 flex-1 break-words text-2xl font-bold text-neutral-900">Welcome, {profile.business_name}</h1>
-      {canManageProfile && <button onClick={openEditor} className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center p-2.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
-       <Pencil className="w-4 h-4" />
-      </button>}
-     </div>
-     <p className="text-neutral-600 mt-1">{canCreate ? 'Manage your events and track ticket sales' : 'Open your assigned event tasks'}</p>
-     {organizations.length > 1 && (
-      <label className="mt-3 flex min-w-0 flex-col gap-2 text-sm text-neutral-600 sm:flex-row sm:items-center">
-       Organization
-       <select value={selectedOrganizationId} onChange={event => {
-        window.localStorage.setItem('hafapass_organization_id', event.target.value)
-        setSelectedOrganizationId(event.target.value)
-       }} className="input min-h-[44px] min-w-0 max-w-full !w-full !py-2 text-sm sm:flex-1 sm:max-w-sm">
-        {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {(organization.role || 'staff').replaceAll('_', ' ')}</option>)}
-       </select>
-      </label>
-     )}
-    </div>
-    <div className="flex min-w-0 flex-wrap items-center gap-3 lg:justify-end">
-     {canScan && <Link
-      to="/dashboard/scanner"
-      className="inline-flex items-center justify-center gap-2 bg-action-teal text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-action-teal-hover transition-colors text-sm"
-     >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-      </svg>
-      Scan Tickets
+  <WorkspacePage>
+   <PageHeader
+    title={`Welcome, ${profile.business_name}`}
+    titleAccessory={canManageProfile && <button onClick={openEditor} className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center p-2.5 text-neutral-400 hover:text-brand-500 rounded-lg hover:bg-brand-50 transition-colors" title="Edit Profile">
+     <Pencil className="w-4 h-4" />
+    </button>}
+    description={canCreate ? 'Manage your events and track ticket sales' : 'Open your assigned event tasks'}
+    actions={(canScan || canCreate || canManageSettings) && <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-nowrap sm:items-center">
+     {canCreate && <Link to="/dashboard/events/new" className="btn-primary col-span-2 order-first gap-2 whitespace-nowrap !px-5 !py-2.5 text-sm sm:order-last">
+      <Plus aria-hidden="true" className="h-4 w-4" />
+      Create event
      </Link>}
-     {canCreate && <Link
-      to="/dashboard/events/new"
-      className="inline-flex items-center justify-center gap-2 bg-action text-white px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-action-hover transition-colors text-sm"
-     >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-      </svg>
-      Create Event
+     {canScan && <Link to="/dashboard/scanner" className={`btn-secondary gap-2 whitespace-nowrap !px-4 !py-2.5 text-sm ${canManageSettings ? '' : 'col-span-2'}`}>
+      <ScanLine aria-hidden="true" className="h-4 w-4" />
+      Scan tickets
      </Link>}
-     {canManageSettings && <Link
-      to="/dashboard/settings"
-      className="inline-flex items-center justify-center gap-2 bg-neutral-100 text-neutral-700 px-4 py-2.5 min-h-[44px] rounded-xl font-medium hover:bg-neutral-200 transition-colors text-sm border border-neutral-300"
-     >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
+     {canManageSettings && <Link to="/dashboard/settings" className={`btn-secondary gap-2 whitespace-nowrap !px-4 !py-2.5 text-sm ${canScan ? '' : 'col-span-2'}`}>
+      <Settings aria-hidden="true" className="h-4 w-4" />
       Settings
      </Link>}
-    </div>
-   </div>
+    </div>}
+   >
+    {organizations.length > 1 && (
+     <label className="mt-3 flex min-w-0 flex-col gap-2 text-sm text-neutral-600 sm:flex-row sm:items-center">
+      Organization
+      <select value={selectedOrganizationId} onChange={event => {
+       window.localStorage.setItem('hafapass_organization_id', event.target.value)
+       setSelectedOrganizationId(event.target.value)
+      }} className="input min-h-[44px] min-w-0 max-w-full !w-full !py-2 text-sm sm:flex-1 sm:max-w-sm">
+       {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {organization.admin_view ? 'Admin view' : roleLabel(organization.role) || 'Staff'}</option>)}
+      </select>
+     </label>
+    )}
+   </PageHeader>
 
    {canManageProfile && editor && (
     <EditProfileModal
@@ -566,28 +600,20 @@ function DashboardSession({ authContext }) {
     />
    )}
 
-   {canManageProfile && <section className="mb-8 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="organizer-readiness-title">
-    <div className="flex items-start gap-3">
-     <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5 text-brand-600" /></div>
-     <div className="min-w-0 flex-1">
-      <h2 id="organizer-readiness-title" className="font-semibold text-neutral-900">Organizer readiness</h2>
-      <p className="text-sm text-neutral-500 mt-1">These platform checks protect attendees and are required before an event can be published.</p>
-      <ul className="mt-4 space-y-3">
-       <li className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-neutral-700">{profile.policy_accepted ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} <Link className="inline-flex min-h-[44px] items-center underline" to="/policies/organizer-agreement" target="_blank">Organizer agreement</Link> {profile.policy_accepted ? 'accepted' : 'requires acceptance'}</span>
-        {!profile.policy_accepted && <button type="button" disabled={readinessLoading} onClick={() => window.confirm(`I accept organizer agreement ${profile.current_policy_version} and agree to publish accurate event information and honor attendee purchases and refunds.`) && updateReadiness('accept_policy')} className="btn-secondary min-h-[44px] text-xs !py-2">Accept policy</button>}
-       </li>
-       <li className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-neutral-700">{profile.verification_status === 'verified' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Identity verification: <strong className="capitalize">{profile.verification_status}</strong></span>
-        {['unverified', 'rejected'].includes(profile.verification_status) && <button type="button" disabled={readinessLoading} onClick={() => updateReadiness('submit_verification')} className="btn-secondary min-h-[44px] text-xs !py-2">Submit for review</button>}
-       </li>
-       <li className="flex flex-col items-start gap-3 text-sm text-neutral-700 sm:flex-row sm:items-center sm:justify-between"><span className="flex min-w-0 flex-wrap items-center gap-2">{profile.payout_ready ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-neutral-400" />} Paid-event payouts {profile.payout_ready ? `ready via ${profile.connected_account?.provider}` : 'not ready'}</span>{!profile.payout_ready && <Link to="/dashboard/settings" className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center font-semibold text-brand-600 hover:text-brand-700">Set up</Link>}</li>
-      </ul>
-      {profile.verification_notes && <p className="mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3">Review note: {profile.verification_notes}</p>}
-     </div>
-    </div>
-   </section>}
+   {organization?.admin_view && <div role="status" className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+    <p>You’re viewing <strong>{organization.name}</strong> as a HåfaPass admin. Changes you make here are recorded in the audit log.</p>
+    <button type="button" onClick={leaveAdminView} className="btn-secondary shrink-0 !px-4 !py-2 text-sm">Leave this organization</button>
+   </div>}
 
+   {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading}
+    agreementError={actionError?.path === 'accept_policy' ? actionError.message : null} onOpenAgreement={() => setActionError(null)}
+    onEditProfile={openEditor}
+    onAcceptPolicy={() => updateReadiness('accept_policy')}
+    onSubmitVerification={() => updateReadiness('submit_verification')} />}
+   {/* Agreement errors show inside the agreement dialog only. */}
+   {actionError && actionError.path !== 'accept_policy' && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{actionError.message}</p>}
+
+   <DashboardSummary state={summary} currency={organization?.currency || 'USD'} onRetry={() => fetchSummary()} />
    <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue, link name or event ID." query={listing.q} onSearch={listing.search} busy={listLoading} />
    {listLoading && <p role="status" className="mb-3 text-sm text-neutral-700">Loading events…</p>}
    <div aria-busy={listLoading}>
@@ -617,7 +643,7 @@ function DashboardSession({ authContext }) {
    )}
    </div>
    <OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={listLoading} label="Event pages" />
-  </div>
+  </WorkspacePage>
  )
 }
 

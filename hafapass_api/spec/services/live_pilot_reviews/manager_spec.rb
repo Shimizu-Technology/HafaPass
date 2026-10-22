@@ -13,7 +13,7 @@ RSpec.describe LivePilotReviews::Manager do
     end.to raise_error(described_class::ReviewError, /Only an administrator/)
   end
 
-  it "requires an independent decision and binds the exact Gate G candidate" do
+  it "lets one administrator submit and approve the exact Gate G candidate" do
     profile = create(:organizer_profile, :payout_ready)
     event = create(:event, :published, organizer_profile: profile, organization: profile.organization,
       starts_at: 1.day.from_now, ends_at: 1.day.from_now + 3.hours, max_capacity: 50)
@@ -24,11 +24,8 @@ RSpec.describe LivePilotReviews::Manager do
       event: event, attributes: valid_live_pilot_attributes(event: event), actor: submitter
     )
 
-    expect do
-      described_class.approve!(submission: submission, actor: submitter)
-    end.to raise_error(described_class::ReviewError, /cannot approve/)
-
-    approval = described_class.approve!(submission: submission, actor: create(:user, :admin))
+    approval = described_class.approve!(submission: submission, actor: submitter)
+    expect(approval.actor_user).to eq(submitter)
     expect(LivePilot.active_approval(event)).to eq(approval)
     expect(approval).to have_attributes(inventory_cap: 10, event_state_digest: PilotReadiness.event_state_digest(event))
   end

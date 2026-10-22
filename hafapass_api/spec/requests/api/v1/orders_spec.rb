@@ -29,10 +29,30 @@ RSpec.describe "Api::V1::Orders", type: :request do
     end
 
     context "with valid params" do
+      it "casts checkout marketing choices and preserves each recovery identity" do
+        { true => true, "1" => true, false => false, nil => false, "invalid" => false }.each do |choice, expected|
+          key = SecureRandom.hex(32)
+          params = valid_params.merge(checkout_key: key, buyer_email: "buyer-#{key.first(8)}@example.invalid")
+          params[:marketing_opt_in] = choice unless choice.nil?
+          post_json "/api/v1/orders", params: params
+          expect(response).to have_http_status(:created)
+          order = Order.find(response.parsed_body.fetch("id"))
+          expect(order.marketing_opt_in).to be(expected)
+          digest = order.checkout_request_digest
+          expect do
+            post_json "/api/v1/orders", params: params
+          end.not_to change(Order, :count)
+          expect(response).to have_http_status(:created)
+          expect(response.parsed_body.fetch("id")).to eq(order.id)
+          expect(order.reload.checkout_request_digest).to eq(digest)
+        end
+      end
+
       it "keeps recovery identity stable across wrapped params and ignored schema metadata" do
         keyed = valid_params.merge(checkout_key: SecureRandom.hex(32))
         post_json "/api/v1/orders", params: keyed
         expect(response).to have_http_status(:created)
+        expect(response.headers["Cache-Control"]).to eq("private, no-store")
         original_id = response.parsed_body["id"]
         expect do
           post_json "/api/v1/orders", params: keyed.merge(order: { buyer_name: "Wrapper changed" },
@@ -103,10 +123,11 @@ RSpec.describe "Api::V1::Orders", type: :request do
 
         # subtotal: 2*2500 + 1*7500 = 12500 cents
         expect(json["subtotal_cents"]).to eq(12500)
-        # service_fee: (12500 * 0.03).round + (3 * 50) = 375 + 150 = 525 cents
-        expect(json["service_fee_cents"]).to eq(525)
-        # total: 12500 + 525 = 13025 cents
-        expect(json["total_cents"]).to eq(13025)
+        # service_fee: (12500 * 0.05).round + (3 * 100) = 625 + 300 = 925 cents
+        expect(json["service_fee_cents"]).to eq(925)
+        # total: 12500 + 925 = 13425 cents
+        expect(json["total_cents"]).to eq(13425)
+        expect(json["processing_fee_bearer"]).to eq("platform")
         expect(json["status"]).to eq("completed")
         expect(json["buyer_email"]).to eq("buyer@example.com")
         expect(json["buyer_name"]).to eq("Jane Smith")
@@ -180,50 +201,15 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
     end
 
-    it "fails closed in production when event-specific pilot readiness is absent" do
+    it "refuses checkout in production until HåfaPass verifies the organizer" do
       allow(Rails.env).to receive(:production?).and_return(true)
       allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
+      organizer_profile.update!(verification_status: :pending, verification_requested_at: Time.current)
 
       post_json "/api/v1/orders", params: valid_params
 
       expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to include("current pilot readiness approval")
-      expect(Order.count).to eq(0)
-    end
-
-    it "fails closed in production when Gate F candidate validation is absent" do
-      allow(Rails.env).to receive(:production?).and_return(true)
-      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
-      allow_any_instance_of(Event).to receive(:production_release_gate_status).and_return(:pilot_validation)
-
-      post_json "/api/v1/orders", params: valid_params
-
-      expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to include("current Gate F validation approval")
-      expect(Order.count).to eq(0)
-    end
-
-    it "fails closed in production when Gate G event-day rehearsal approval is absent" do
-      allow(Rails.env).to receive(:production?).and_return(true)
-      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
-      allow_any_instance_of(Event).to receive(:production_release_gate_status).and_return(:event_day_rehearsal)
-
-      post_json "/api/v1/orders", params: valid_params
-
-      expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to include("current Gate G rehearsal approval")
-      expect(Order.count).to eq(0)
-    end
-
-    it "fails closed in production when Gate H live-money approval is absent" do
-      allow(Rails.env).to receive(:production?).and_return(true)
-      allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
-      allow_any_instance_of(Event).to receive(:production_release_gate_status).and_return(:live_money)
-
-      post_json "/api/v1/orders", params: valid_params
-
-      expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to include("current Gate H live-money approval")
+      expect(response.parsed_body.fetch("error")).to eq("Tickets for this event are not on sale yet")
       expect(Order.count).to eq(0)
     end
 
@@ -237,7 +223,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
       create_event_day_rehearsal_approval(event: proof_event)
       buyer = create(:user, :admin)
       authorization = LiveMoneyProofAuthorizations::Manager.request!(
-        event: proof_event, buyer_email: "proof-buyer@example.com", max_amount_cents: 200,
+        event: proof_event, buyer_email: "proof-buyer@example.com", max_amount_cents: 300,
         expires_at: 1.hour.from_now, actor: buyer
       )
       LiveMoneyProofAuthorizations::Manager.approve!(authorization: authorization, actor: create(:user, :admin))
@@ -348,7 +334,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         post_json "/api/v1/orders", params: valid_params.merge(terms_version: "stale-version")
 
         expect(response).to have_http_status(:unprocessable_entity)
-        expect(response.parsed_body["error"]).to include("current HafaPass buyer terms")
+        expect(response.parsed_body["error"]).to include("current HåfaPass buyer terms")
         expect(event.orders).to be_empty
       end
 

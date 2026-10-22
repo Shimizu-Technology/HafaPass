@@ -49,7 +49,7 @@ describe('event guide filters and recovery', () => {
     expect(screen.getByRole('combobox', { name: 'Price' })).toHaveValue('free')
   })
 
-  it('clears no-match filters and retains organizer entry via the protected dashboard', async () => {
+  it('clears no-match filters and keeps direct event creation and the organizer landing page', async () => {
     apiClient.get.mockResolvedValue({ data: { events: [], meta: { current_page: 1, total_pages: 1, total_count: 0 } } })
     mount('/events?search=nothing&category=dining&date=tonight&price=free&village=Hag%C3%A5t%C3%B1a')
     await screen.findByRole('heading', { name: 'No matching events' })
@@ -57,7 +57,7 @@ describe('event guide filters and recovery', () => {
     await screen.findByRole('heading', { name: 'No events yet' })
     await waitFor(() => expect(screen.getByLabelText('Browse URL')).toHaveTextContent(/^$/))
     expect(screen.getByRole('link', { name: 'Create an Event' })).toHaveAttribute('href', '/dashboard')
-    expect(screen.getByRole('link', { name: 'For event organizers' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: 'For event organizers' })).toHaveAttribute('href', '/host')
   })
   it('does not overwrite the next event’s offer URL while the listing outlet is retained', async () => {
     mount('/events?search=music&price=free')

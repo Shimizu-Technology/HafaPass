@@ -1,7 +1,39 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseController
+  include AdminListing
+
+  # Direction is part of the kind for manual entries: a credit or reserve
+  # release adds to the organizer's balance, a debit or reserve hold takes
+  # from it. A mismatched sign would silently do the opposite.
+  SIGNED_KINDS = { "manual_credit" => 1, "reserve_release" => 1, "manual_debit" => -1, "reserve_hold" => -1 }.freeze
+
+  # GET /api/v1/admin/balance_adjustments
+  def index
+    scope = BalanceAdjustment.all
+    scope = scope.where(organization_id: params[:organization_id]) if params[:organization_id].present?
+    scope = scope.where(event_id: params[:event_id]) if params[:event_id].present?
+    scope = scope.where(kind: params[:kind]) if BalanceAdjustment::KINDS.include?(params[:kind].to_s)
+    scope = scope.where(status: params[:status]) if BalanceAdjustment.statuses.key?(params[:status].to_s)
+    adjustments, meta = admin_page(scope.includes(:organization, :event, :created_by_user, :reversal)
+      .order(created_at: :desc, id: :desc))
+    render json: { balance_adjustments: adjustments.map { |adjustment| adjustment_list_json(adjustment) }, meta: meta }
+  end
+
   def create
+    sign = SIGNED_KINDS[params[:kind].to_s]
+    # Dispute, processing and payout-reversal kinds are posted by the system.
+    unless sign
+      return render json: { errors: ["Kind must be one of #{SIGNED_KINDS.keys.to_sentence(last_word_connector: ", or ")}"] },
+        status: :unprocessable_entity
+    end
+
+    amount = params[:amount_cents].to_s
+    if !amount.match?(/\A-?\d+\z/) || (amount.to_i <=> 0) != sign
+      return render json: { errors: ["Amount must be #{sign.positive? ? "positive" : "negative"} for #{params[:kind].to_s.humanize.downcase}"] },
+        status: :unprocessable_entity
+    end
+
     organization = Organization.find(params[:organization_id])
     event = organization.events.find(params[:event_id]) if params[:event_id].present?
     adjustment = organization.balance_adjustments.create!(
@@ -61,6 +93,8 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
       request: request
     )
     render json: adjustment_json(reversal), status: :created
+  rescue ActiveRecord::RecordNotUnique
+    render json: { error: "This adjustment was already reversed" }, status: :conflict
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Posted adjustment not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -74,6 +108,15 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
     return "reserve_hold" if adjustment.kind == "reserve_release"
 
     adjustment.amount_cents.positive? ? "manual_debit" : "manual_credit"
+  end
+
+  def adjustment_list_json(adjustment)
+    adjustment_json(adjustment).merge(
+      organization: { id: adjustment.organization_id, name: adjustment.organization.name },
+      event: adjustment.event && { id: adjustment.event_id, title: adjustment.event.title },
+      created_by: adjustment.created_by_user&.email,
+      reversed_by_id: adjustment.reversal&.id
+    )
   end
 
   def adjustment_json(adjustment)

@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
 import EditEventPage from './EditEventPage'
 
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ onUploaded }) => <button type="button" onClick={() => onUploaded('https://images.invalid/verified.png')}>Choose verified cover</button> }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ ticketTypes }) => <ul>{ticketTypes.map(type => <li key={type.id}>{type.name}</li>)}</ul> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+const launch = vi.hoisted(() => ({ value: {} }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => launch.value }))
 
 const event = { permissions: { edit_event_content: true, manage_events: true, manage_inventory: true, box_office: true, view_attendees: true, manage_staff: true, manage_attendees: true, view_finance: true }, id: 37, title: 'Published Workshop', venue_name: 'Venue', status: 'published', timezone: 'Pacific/Guam', category: 'other', age_restriction: 'all_ages', starts_at: '2026-10-16T09:00:42.123Z', ends_at: '2026-10-16T12:00:42.123Z', doors_open_at: '2026-10-16T08:30:42.123Z', ticket_types: [] }
 function mount() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/edit']}><Routes><Route path="/dashboard/events/:id/edit" element={<EditEventPage />} /></Routes></MemoryRouter>) }
@@ -21,6 +23,50 @@ describe('published event content and schedule edits', () => {
     apiClient.put.mockResolvedValue({ data: event })
   })
 
+  it('reloads the cancelled event through the guarded fetch before showing success', async () => {
+    const user = userEvent.setup()
+    const cancelled = { ...event, status: 'cancelled', permissions: { ...event.permissions, refund: true } }
+    let finishReload
+    apiClient.get.mockImplementation(path => path.endsWith('/cancellation_refunds')
+      ? Promise.resolve({ data: { preview: { count: 0, total_cents: 0, cash_count: 0 }, run: null } })
+      : apiClient.get.mock.calls.filter(([url]) => url === '/organizer/events/37').length > 1
+        ? new Promise(resolve => { finishReload = resolve })
+        : Promise.resolve({ data: { ...event, permissions: cancelled.permissions } }))
+    apiClient.post.mockResolvedValue({ data: cancelled })
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Review cancellation and refunds' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel event and refund all buyers' }))
+    await user.type(screen.getByLabelText('Reason for cancellation'), 'Storm')
+    await user.click(screen.getByRole('button', { name: 'Confirm cancellation and refunds' }))
+    await waitFor(() => expect(finishReload).toBeTypeOf('function'))
+    expect(screen.queryByText('Event cancelled. Refunds are processing.')).not.toBeInTheDocument()
+    await act(async () => finishReload({ data: cancelled }))
+    expect(await screen.findByText('Event cancelled. Refunds are processing.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View cancellation refunds' })).toBeInTheDocument()
+    expect(apiClient.get.mock.calls.filter(([url]) => url === '/organizer/events/37').at(-1)[1]).toHaveProperty('signal')
+  })
+
+  it('places cancellation progress above the event details on a cancelled event', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/cancellation_refunds')
+      ? { preview: { count: 0, total_cents: 0, cash_count: 0 }, run: { status: 'completed', refunded: 1, skipped: 0, total_orders: 1, items: [] } }
+      : { ...event, status: 'cancelled' } }))
+    mount()
+    const banner = await screen.findByRole('button', { name: /Cancellation refunds: 1 of 1 done/ })
+    expect(banner.compareDocumentPosition(screen.getByRole('heading', { name: 'Event details' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows specific page design validation feedback from the API', async () => {
+    apiClient.put.mockRejectedValueOnce({ response: { data: { errors: [
+      'Page customization gallery photo 2 needs alt text (up to 200 characters)',
+      'Page customization video URL must be a valid YouTube or Vimeo HTTPS link'
+    ] } } })
+    const user = userEvent.setup()
+    mount()
+    await user.type(await screen.findByLabelText(/Event Title/), ' Updated')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(await screen.findByText(/gallery photo 2 needs alt text/)).toHaveTextContent('video URL must be a valid YouTube or Vimeo HTTPS link')
+  })
+
   it('shows assigned scanner recovery on direct editor access without editing controls', async () => {
     apiClient.get.mockResolvedValue({ data: { ...event, permissions: { scan: true, edit_event_content: false } } })
     mount()
@@ -28,6 +74,55 @@ describe('published event content and schedule edits', () => {
     expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Cancel Event/ })).not.toBeInTheDocument()
     expect(apiClient.put).not.toHaveBeenCalled()
+  })
+
+  it('lets an event manager choose who pays the fee next to ticket pricing, saved separately', async () => {
+    const user = userEvent.setup()
+    mount()
+    const panel = (await screen.findByRole('heading', { name: 'Who pays the service fee' })).closest('section')
+    expect(panel.nextElementSibling).toHaveAttribute('id', 'ticket-types')
+    expect(within(panel).getByRole('radio', { name: /Buyer pays the fee/ })).toBeChecked()
+    apiClient.put.mockResolvedValueOnce({ data: { ...event, fee_policy: 'organizer_absorbs', buyer_fee_percent: 0 } })
+    await user.click(within(panel).getByRole('radio', { name: /I cover the fee/ }))
+    await user.click(within(panel).getByRole('button', { name: 'Save fee choice' }))
+    expect(apiClient.put).toHaveBeenCalledWith('/organizer/events/37', { fee_policy: 'organizer_absorbs', buyer_fee_percent: 0 }, expect.any(Object))
+    expect(await within(panel).findByText('Fee choice saved. It applies to new orders.')).toBeInTheDocument()
+    expect(within(panel).getByRole('radio', { name: /I cover the fee/ })).toBeChecked()
+  })
+
+  it('shows the fee choice read-only to content editors who cannot manage the event', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...event, permissions: { ...event.permissions, manage_events: false } } })
+    mount()
+    const panel = (await screen.findByRole('heading', { name: 'Who pays the service fee' })).closest('section')
+    expect(within(panel).getByRole('radio', { name: /Buyer pays the fee/ })).toBeDisabled()
+    expect(within(panel).queryByRole('button', { name: 'Save fee choice' })).not.toBeInTheDocument()
+  })
+
+  it('keeps Save Changes in a sticky bar that reports unsaved details and still submits', async () => {
+    const user = userEvent.setup()
+    mount()
+    const title = await screen.findByLabelText(/Event Title/)
+    const bar = screen.getByTestId('event-details-save-bar')
+    expect(bar).toHaveClass('sticky', 'bottom-0')
+    expect(bar.closest('form')).not.toBeNull()
+    const save = within(bar).getByRole('button', { name: 'Save Changes' })
+    expect(save).toHaveAccessibleDescription('Event details are saved')
+    await user.type(title, ' Live')
+    expect(save).toHaveAccessibleDescription('Unsaved event detail changes')
+    expect(screen.getByText('Saved separately.')).toBeInTheDocument()
+    let finishSave
+    apiClient.put.mockReturnValueOnce(new Promise(resolve => { finishSave = resolve }))
+    await user.click(save)
+    expect(apiClient.put).toHaveBeenCalledTimes(1)
+    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ title: 'Published Workshop Live' })
+    const pending = within(bar).getByRole('button', { name: 'Saving...' })
+    expect(pending).toBeDisabled()
+    expect(pending).toHaveAccessibleDescription('Saving event details…')
+    await act(async () => finishSave({ data: { ...event, title: 'Published Workshop Live' } }))
+    await screen.findByText('Event updated successfully.')
+    expect(title).toHaveValue('Published Workshop Live')
+    expect(within(bar).getByRole('button', { name: 'Save Changes' })).toHaveAccessibleDescription('Event details are saved')
+    expect(within(bar).getByText('Event details are saved')).toBeInTheDocument()
   })
 
   it('limits presentation editors to content fields and sends no discarded operation edits', async () => {
@@ -140,6 +235,47 @@ it('requires saving before publishing, names the saved preview and confirms the 
 })
 
 
+it('shows organizer verification as one checklist step with a request action, and it still blocks publishing', async () => {
+  window.localStorage.setItem('hafapass_organization_id', '1')
+  const draft = { ...event, organization_id: 1, status: 'draft', slug: 'workshop', publish_checklist: [
+    { code: 'title', label: 'Title', complete: true },
+    { code: 'organizer_verified', label: 'Organizer identity verified', complete: false },
+    { code: 'pilot_readiness_approved', label: 'Pilot readiness', complete: true },
+  ] }
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer_profile'
+    ? { verification_status: 'unverified', organization: { role: 'owner' } } : draft }))
+  apiClient.post.mockResolvedValue({ data: { verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z', organization: { role: 'owner' } } })
+  const user = userEvent.setup()
+  mount()
+  const checklist = await screen.findByRole('list', { name: 'Publishing checklist' })
+  expect(checklist).toHaveTextContent('Waiting for HåfaPass to verify your organization before tickets go on sale')
+  expect(checklist).not.toHaveTextContent(/launch review|Pilot readiness/i)
+  expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
+  await user.click(await within(checklist).findByRole('button', { name: 'Request verification' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', {}, expect.objectContaining({ organizationId: '1' }))
+  expect(await within(checklist).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+  window.localStorage.removeItem('hafapass_organization_id')
+})
+
+it('lets an unverified organizer publish when verification only holds back sales, and says when tickets go on sale', async () => {
+  const draft = { ...event, organization_id: 1, status: 'draft', slug: 'workshop', publish_checklist: [
+    { code: 'title', label: 'Title', complete: true, required_to_publish: true },
+    { code: 'organizer_verified', label: 'Organizer identity verified', complete: false, required_to_publish: false },
+  ] }
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer_profile'
+    ? { verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z', organization: { role: 'owner' } } : draft }))
+  const user = userEvent.setup()
+  mount()
+  const checklist = await screen.findByRole('list', { name: 'Publishing checklist' })
+  expect(checklist).toHaveTextContent('You can publish now. Tickets go on sale once HåfaPass verifies your organization.')
+  expect(await within(checklist).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+  const publish = screen.getByRole('button', { name: 'Publish Event' })
+  expect(publish).toBeEnabled()
+  await user.click(publish)
+  expect(screen.getByRole('dialog')).toHaveTextContent('Tickets go on sale once HåfaPass verifies your organization.')
+  expect(screen.getByRole('dialog')).not.toHaveTextContent('purchase tickets')
+})
+
 describe('canonical saved event form', () => {
   const readyDraft = { ...event, status: 'draft', venue_city: 'Tamuning', max_capacity: 300,
     description: 'Keep this event description', ticket_types: [{ id: 4, name: 'Saved admission' }],
@@ -212,5 +348,38 @@ describe('canonical saved event form', () => {
     expect(apiClient.put.mock.calls[0][1].max_capacity).toBe(100)
     expect(capacity.value).toBe('100')
     expect(screen.getByRole('button', { name: 'Publish Event' })).toBeEnabled()
+  })
+})
+
+describe('ticket transfer setting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    launch.value = {}
+    apiClient.get.mockResolvedValue({ data: { ...event, transfers_enabled: false } })
+    apiClient.put.mockImplementation((_url, body) => Promise.resolve({ data: { ...event, ...body } }))
+  })
+
+  it('hides the setting and sends no transfer field while the capability is off', async () => {
+    const user = userEvent.setup()
+    mount()
+    await user.type(await screen.findByLabelText(/Event Title/), ' Live')
+    expect(screen.queryByLabelText('Allow ticket transfers')).not.toBeInTheDocument()
+    await user.click(within(screen.getByTestId('event-details-save-bar')).getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1]).not.toHaveProperty('transfers_enabled')
+  })
+
+  it('lets an organizer allow transfers when the capability is on', async () => {
+    launch.value = { ticket_transfers: true }
+    const user = userEvent.setup()
+    mount()
+    const toggle = await screen.findByLabelText('Allow ticket transfers')
+    expect(toggle).not.toBeChecked()
+    expect(toggle).toHaveAccessibleDescription(/replaces the QR code/)
+    await user.click(toggle)
+    await user.click(within(screen.getByTestId('event-details-save-bar')).getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ transfers_enabled: true })
+    expect(screen.getByLabelText('Allow ticket transfers')).toBeChecked()
   })
 })

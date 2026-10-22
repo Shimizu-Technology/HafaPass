@@ -2,13 +2,16 @@ import { expect, test } from '@playwright/test'
 
 const json = (route, data) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
 const hold = () => { let release; const promise = new Promise(resolve => { release = resolve }); return { promise, release } }
-const profile = name => ({ business_name: name, business_description: '', policy_accepted: true, verification_status: 'unverified' })
+// The setup checklist (like the API) needs a profile description before
+// verification can be requested, so the fixture has one.
+const profile = name => ({ business_name: name, business_description: 'Island events', policy_accepted: true, verification_status: 'unverified' })
 const organizations = [1, 2].map(id => ({ id, name: id === 1 ? 'Alpha organization' : 'Beta organization', role: 'owner', permissions: { manage_organization: true, manage_events: true } }))
 
 async function dashboardFixtures(page, profiles) {
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
   await page.route('**/api/v1/organizer/organizations', route => json(route, organizations))
   await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [] }))
+  await page.route('**/api/v1/organizer/events/summary', route => json(route, { upcoming_events_count: 0, tickets_sold: 0, next_event: null }))
   await page.route('**/api/v1/organizer_profile', route => json(route, profiles[route.request().headers()['x-organization-id']]))
 }
 
@@ -37,7 +40,7 @@ test('a received Alpha review can finish without replacing Beta or losing its ed
   await expect(page.getByLabel(/Business Name/)).toHaveValue('Beta draft')
   await page.getByRole('button', { name: 'Close profile editor' }).click()
   await page.getByLabel('Organization').selectOption('1')
-  await expect(page.getByText('pending', { exact: true })).toBeVisible()
+  await expect(page.getByText('Submitted — HåfaPass is reviewing it', { exact: true })).toBeVisible()
   expect(profiles[2].verification_status).toBe('unverified')
 })
 

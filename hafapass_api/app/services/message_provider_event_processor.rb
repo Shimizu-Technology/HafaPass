@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class MessageProviderEventProcessor
+  class InvalidMessageId < ResendWebhookVerifier::VerificationError; end
+
   STATUS_BY_EVENT = {
     "email.sent" => :sent,
     "email.delivered" => :delivered,
@@ -16,11 +18,13 @@ class MessageProviderEventProcessor
   end
 
   def self.reconcile_for!(delivery)
-    return if delivery.provider_id.blank?
+    return unless delivery.provider_id.is_a?(String) && delivery.provider_id.present?
 
     MessageProviderEvent.where(provider: delivery.provider, provider_message_id: delivery.provider_id,
       processed_at: nil).find_each do |receipt|
       new(provider_event_id: receipt.provider_event_id, event: nil).process_receipt!(receipt, delivery)
+    rescue InvalidMessageId
+      next
     rescue StandardError => e
       receipt.update_columns(processing_error: "#{e.class}: #{e.message}".first(1000), updated_at: Time.current)
       Sentry.capture_exception(e, extra: { provider: delivery.provider, provider_event_id: receipt.provider_event_id })
@@ -33,17 +37,21 @@ class MessageProviderEventProcessor
   end
 
   def call
-    delivery = MessageDelivery.find_by(provider: "resend", provider_id: provider_message_id)
+    message_id = provider_message_id
+    delivery = MessageDelivery.find_by(provider: "resend", provider_id: message_id)
     receipt = MessageProviderEvent.find_or_create_by!(provider: "resend", provider_event_id: provider_event_id) do |record|
       record.assign_attributes(
-        message_delivery: delivery, provider_message_id: provider_message_id, event_type: event_type,
+        message_delivery: delivery, provider_message_id: message_id, event_type: event_type,
         occurred_at: occurred_at, received_at: Time.current, payload: safe_payload
       )
     end
+    validate_receipt_identity!(receipt, provider: "resend", message_id: message_id)
     return receipt if receipt.processed_at.present?
     return receipt unless delivery
 
     process_receipt!(receipt, delivery)
+  rescue InvalidMessageId
+    raise
   rescue StandardError => e
     receipt&.update_columns(processing_error: "#{e.class}: #{e.message}".first(1000), updated_at: Time.current)
     Sentry.capture_exception(e, extra: { provider: "resend", provider_event_id: provider_event_id })
@@ -53,6 +61,7 @@ class MessageProviderEventProcessor
   def process_receipt!(receipt, delivery)
     MessageProviderEvent.transaction do
       receipt.lock!
+      validate_receipt_identity!(receipt, provider: delivery.provider, message_id: delivery.provider_id)
       return receipt if receipt.processed_at.present?
 
       apply_to_delivery!(delivery, receipt)
@@ -77,7 +86,22 @@ class MessageProviderEventProcessor
   end
 
   def provider_message_id
-    data.fetch("email_id")
+    validate_message_id!(data["email_id"])
+  end
+
+  def validate_message_id!(value)
+    unless value.is_a?(String) && value.present?
+      raise InvalidMessageId, "Webhook email_id must be a nonblank string"
+    end
+
+    value
+  end
+
+  def validate_receipt_identity!(receipt, provider:, message_id:)
+    validate_message_id!(receipt.provider_message_id)
+    return if receipt.provider == provider && receipt.provider_message_id == message_id
+
+    raise InvalidMessageId, "Webhook email_id does not match the stored receipt identity"
   end
 
   def occurred_at

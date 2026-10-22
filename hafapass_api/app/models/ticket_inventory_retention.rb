@@ -11,6 +11,7 @@ class TicketInventoryRetention < ApplicationRecord
   validate :financial_origin_matches
 
   before_update :prevent_mutation
+  after_create -> { Wallet::PassSync.tickets_changed(ticket_id) }
   before_destroy :prevent_mutation
 
   private

@@ -1,0 +1,105 @@
+{
+  "note": "Generated from Commerce::ServiceFee; checked by hostPricing.test.js and spec/services/commerce/service_fee_spec.rb",
+  "cases": [
+    {
+      "price_cents": 1010,
+      "quantity": 3,
+      "service_fee_percent": "5.0",
+      "service_fee_flat_cents": 0,
+      "buyer_fee_percent": 100,
+      "platform_fee_cents": 153,
+      "buyer_fee_cents": 153,
+      "all_in_total_cents": 3183
+    },
+    {
+      "price_cents": 1999,
+      "quantity": 3,
+      "service_fee_percent": "5.0",
+      "service_fee_flat_cents": 100,
+      "buyer_fee_percent": 100,
+      "platform_fee_cents": 600,
+      "buyer_fee_cents": 600,
+      "all_in_total_cents": 6597
+    },
+    {
+      "price_cents": 2500,
+      "quantity": 2,
+      "service_fee_percent": "5.0",
+      "service_fee_flat_cents": 100,
+      "buyer_fee_percent": 50,
+      "platform_fee_cents": 450,
+      "buyer_fee_cents": 226,
+      "all_in_total_cents": 5226
+    },
+    {
+      "price_cents": 4321,
+      "quantity": 3,
+      "service_fee_percent": "5.0",
+      "service_fee_flat_cents": 100,
+      "buyer_fee_percent": 33,
+      "platform_fee_cents": 948,
+      "buyer_fee_cents": 312,
+      "all_in_total_cents": 13275
+    },
+    {
+      "price_cents": 100,
+      "quantity": 7,
+      "service_fee_percent": "3.5",
+      "service_fee_flat_cents": 0,
+      "buyer_fee_percent": 100,
+      "platform_fee_cents": 28,
+      "buyer_fee_cents": 28,
+      "all_in_total_cents": 728
+    },
+    {
+      "price_cents": 1009,
+      "quantity": 4,
+      "service_fee_percent": "5.0",
+      "service_fee_flat_cents": 0,
+      "buyer_fee_percent": 100,
+      "platform_fee_cents": 200,
+      "buyer_fee_cents": 200,
+      "all_in_total_cents": 4236
+    },
+    {
+      "price_cents": 0,
+      "quantity": 5,
+      "service_fee_percent": "5.0",
+      "service_fee_flat_cents": 100,
+      "buyer_fee_percent": 100,
+      "platform_fee_cents": 0,
+      "buyer_fee_cents": 0,
+      "all_in_total_cents": 0
+    },
+    {
+      "price_cents": 50,
+      "quantity": 1,
+      "service_fee_percent": "5.0",
+      "service_fee_flat_cents": 100,
+      "buyer_fee_percent": 100,
+      "platform_fee_cents": 103,
+      "buyer_fee_cents": 103,
+      "all_in_total_cents": 153
+    },
+    {
+      "price_cents": 12345,
+      "quantity": 2,
+      "service_fee_percent": "4.75",
+      "service_fee_flat_cents": 75,
+      "buyer_fee_percent": 100,
+      "platform_fee_cents": 1322,
+      "buyer_fee_cents": 1322,
+      "all_in_total_cents": 26012
+    },
+    {
+      "price_cents": 999,
+      "quantity": 10,
+      "service_fee_percent": "2.25",
+      "service_fee_flat_cents": 30,
+      "buyer_fee_percent": 50,
+      "platform_fee_cents": 520,
+      "buyer_fee_cents": 260,
+      "all_in_total_cents": 10250
+    }
+  ]
+}

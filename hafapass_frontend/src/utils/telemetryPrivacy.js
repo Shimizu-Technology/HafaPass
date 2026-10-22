@@ -9,7 +9,7 @@ export function monitoringPath(url) {
 }
 
 export function scrubTelemetry(value, key = '') {
-  if (/authorization|cookie|token|credential|password|email|body|request_body/i.test(key)) return '[redacted]'
+  if (/authorization|cookie|token|credential|password|email|body|request_body|tax_information|taxpayer/i.test(key) || /(^|[_-])tin($|[_-])/i.test(key) || /(^|[a-z])Tin([A-Z]|$)/.test(key) || /^tin[A-Z]/.test(key) || /^TIN/.test(key)) return '[redacted]'
   if (Array.isArray(value)) return value.map(item => scrubTelemetry(item))
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, scrubTelemetry(item, name)]))
   if (typeof value === 'string') {

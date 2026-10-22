@@ -7,6 +7,7 @@ import EditEventPage from './EditEventPage'
 
 const uploads = vi.hoisted(() => new Map())
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ eventId, onUploaded }) => { uploads.set(String(eventId), onUploaded); return <p>Cover image control</p> } }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ onRefresh, ticketTypes }) => <div><button type="button" onClick={onRefresh}>Refresh saved inventory</button>{ticketTypes.map(ticket => <p key={ticket.id}>{ticket.name}</p>)}</div> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
@@ -40,6 +41,52 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null })
 
 describe('event editor context ownership with the real router', () => {
+  it.each(['success', 'error'])('clears a refused deletion while archiving and shows only the current %s result', async outcome => {
+    const archive = deferred()
+    const refusal = 'This event has saved history or related records and cannot be deleted. Archive it instead to keep those records.'
+    apiClient.delete.mockRejectedValueOnce({ response: { data: { error: refusal } } })
+    apiClient.post.mockReturnValueOnce(archive.promise)
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, Delete', exact: true }))
+    await screen.findByText(refusal)
+    await userEvent.click(screen.getByRole('button', { name: 'Archive', exact: true }))
+    expect(screen.queryByText(refusal)).not.toBeInTheDocument()
+    expect(apiClient.post.mock.calls[0][0]).toBe('/organizer/events/11/archive')
+    await act(async () => outcome === 'success'
+      ? archive.resolve({ data: { ...rows[11], status: 'archived' } })
+      : archive.reject({ response: { data: { error: 'Current archive failure' } } }))
+    expect(screen.queryByText(refusal)).not.toBeInTheDocument()
+    if (outcome === 'success') {
+      expect(screen.getByText('Event archived.')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Delete', exact: true })).not.toBeInTheDocument()
+    } else {
+      expect(screen.getByRole('alert')).toHaveTextContent('Current archive failure')
+      expect(screen.queryByText('Event archived.')).not.toBeInTheDocument()
+    }
+  })
+
+  it.each(['success', 'error'])('keeps Beta’s current refusal when an old Alpha archive finishes with %s', async outcome => {
+    const oldArchive = deferred()
+    apiClient.post.mockReturnValueOnce(oldArchive.promise)
+    apiClient.delete.mockRejectedValueOnce({ response: { data: { error: 'Beta deletion refused' } } })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Archive', exact: true }))
+    await beta()
+    await userEvent.click(screen.getByRole('button', { name: 'Delete', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, Delete', exact: true }))
+    await screen.findByText('Beta deletion refused')
+    await act(async () => outcome === 'success'
+      ? oldArchive.resolve({ data: { ...rows[11], status: 'archived' } })
+      : oldArchive.reject({ response: { data: { error: 'Old Alpha archive error' } } }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Beta deletion refused')
+    expect(screen.getByLabelText(/Event Title/)).toHaveValue('Beta event')
+    expect(screen.getByRole('button', { name: 'Archive', exact: true })).toBeEnabled()
+    expect(screen.queryByText('Event archived.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Old Alpha archive error')).not.toBeInTheDocument()
+  })
+
   it.each(['success', 'error'])('keeps Beta form fields when Alpha’s delayed load finishes with %s', async outcome => {
     const old = deferred()
     apiClient.get.mockImplementation(path => path.endsWith('/11') ? old.promise : Promise.resolve({ data: rows[22] }))

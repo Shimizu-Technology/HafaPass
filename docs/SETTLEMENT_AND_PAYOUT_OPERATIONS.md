@@ -4,7 +4,7 @@
 
 1. Complete or cancel the event.
 2. Resolve every pending refund and open dispute.
-3. Review the live preview: gross, discounts, buyer refunds, net charged, buyer-paid HafaPass fees, actual processing costs, organizer proceeds, reserves, adjustments, payable amount, prior payouts, and negative balance.
+3. Review the live preview: gross, discounts, buyer refunds, net charged, buyer-paid HafaPass fees, actual processing costs deducted from the organizer, processing covered by HåfaPass, organizer proceeds, reserves, adjustments, payable amount, prior payouts, and negative balance. Each order's processing-fee bearer snapshot decides which processing column it uses; see [Stripe processing fee evidence](./STRIPE_PROCESSING_FEE_OPERATIONS.md#who-bears-the-processing-cost).
 4. Finalize the statement. An identical ledger returns the existing version; changed activity creates the next immutable version.
 5. Confirm the connected account has current provider capabilities, no provider requirements, and an unexpired independent readiness approval; then confirm the organization-wide available balance is sufficient.
 6. Submit the payout with a unique idempotency key.
@@ -48,4 +48,4 @@ Automated production payout adapters remain disabled. Before enabling one, imple
 
 For each production provider, retain the onboarding evidence, provider approval, connected-account identifier, signed terms, test transaction identifiers, settlement version and digest, payout identifier, bank receipt, reconciliation result, approving finance user, and audit-log request IDs. Link the restricted bundle through the append-only payment-readiness submission and independent approval described in [Gate B Payment Readiness Operations](./GATE_B_PAYMENT_READINESS_OPERATIONS.md).
 
-Before a paid public pilot, complete the real chronological charge → partial refund → settlement → payout/bank receipt → final refund → negative-balance settlement proof and independent approval in [Gate H Low-Value Live-Money Proof](./GATE_H_LIVE_MONEY_PROOF.md). A simulated payout, a `processing` manual transfer, or a provider dashboard screenshot without matching local/bank cents is not Gate H evidence.
+Before a paid public pilot, complete the real chronological charge → partial refund → settlement → payout/bank receipt → final refund → negative-balance settlement proof and approval in [Gate H Low-Value Live-Money Proof](./GATE_H_LIVE_MONEY_PROOF.md). A simulated payout, a `processing` manual transfer, or a provider dashboard screenshot without matching local/bank cents is not Gate H evidence.

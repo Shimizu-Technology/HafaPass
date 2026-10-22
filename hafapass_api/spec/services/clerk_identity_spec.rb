@@ -25,6 +25,12 @@ RSpec.describe ClerkIdentity do
     expect(http).to have_received(:request).with(have_attributes(path: "/v1/users/user_recipient"))
   end
 
+  it "keeps the default lookup timeout for identity checks outside sign-in" do
+    described_class.profile("user_recipient")
+    expect(Net::HTTP).to have_received(:start)
+      .with("api.clerk.com", 443, hash_including(open_timeout: described_class::DEFAULT_TIMEOUT, read_timeout: described_class::DEFAULT_TIMEOUT))
+  end
+
   it "fails closed when the response subject does not match" do
     expect(described_class.verified_email_addresses("user_other")).to eq([])
   end
@@ -111,6 +117,18 @@ RSpec.describe ClerkIdentity do
     end
     expect(http).to have_received(:request).once
     expect(described_class::RequestCache.profiles).to be_nil
+  end
+
+  it "retries a short timed-out lookup at a longer timeout but reuses any success" do
+    described_class.with_request_cache do
+      allow(http).to receive(:request).and_raise(Net::ReadTimeout)
+      expect(described_class.profile("user_recipient", timeout: described_class::SIGN_IN_TIMEOUT)).to be_nil
+      expect(described_class.profile("user_recipient", timeout: described_class::SIGN_IN_TIMEOUT)).to be_nil
+      allow(http).to receive(:request).and_return(response)
+      expect(described_class.verified_email_addresses("user_recipient", require_available: true)).to eq(["team@example.com"])
+      expect(described_class.profile("user_recipient", timeout: described_class::SIGN_IN_TIMEOUT)).to include(email: "team@example.com")
+    end
+    expect(Net::HTTP).to have_received(:start).twice
   end
 
   it "never backfills an unverified primary email" do

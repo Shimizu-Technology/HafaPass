@@ -12,9 +12,17 @@ Order.destroy_all
 TicketType.destroy_all
 Event.destroy_all
 OrganizerProfile.destroy_all
+OrganizationMembership.destroy_all
+Organization.destroy_all
 User.destroy_all
 
 puts "  Cleared existing data."
+
+# Seeded events happen on Guam, so build their times in Guam local time rather
+# than the server's UTC zone (otherwise a 5:00 PM start shows as 3:00 AM).
+def guam_time(days_from_now, hour, min = 0)
+  ActiveSupport::TimeZone["Pacific/Guam"].now.advance(days: days_from_now).change(hour: hour, min: min)
+end
 
 # --- Platform Admin ---
 admin_user = User.create!(
@@ -111,10 +119,26 @@ attendee4 = User.create!(
 
 puts "  Created #{User.count} users (1 admin, #{User.where(role: :organizer).count} organizers, #{User.where(role: :attendee).count} attendees)."
 
-# --- Organizer Profiles ---
+# --- Organizations, owner memberships and organizer profiles ---
+# Each organizer business is an Organization; the organizer user owns it through
+# an active membership, and the organizer profile and its events belong to it.
+def create_organizer_organization(user:, name:)
+  organization = Organization.create!(name: name, timezone: "Pacific/Guam", currency: "usd", status: :active)
+  OrganizationMembership.create!(
+    organization: organization,
+    user: user,
+    role: :owner,
+    status: :active,
+    invited_at: Time.current,
+    accepted_at: Time.current
+  )
+  organization
+end
+
 profile_guamtime = OrganizerProfile.create!(
   user: org_guamtime,
   business_name: "GuamTime Events",
+  organization: create_organizer_organization(user: org_guamtime, name: "GuamTime Events"),
   business_description: "Guam's premier event promotion and ticketing platform. We bring the best concerts, festivals, and experiences to the island.",
   is_ambros_partner: true
 )
@@ -122,6 +146,7 @@ profile_guamtime = OrganizerProfile.create!(
 profile_bwtc = OrganizerProfile.create!(
   user: org_bwtc,
   business_name: "Breaking Wave Theatre Company",
+  organization: create_organizer_organization(user: org_bwtc, name: "Breaking Wave Theatre Company"),
   business_description: "Guam's community theatre company dedicated to storytelling, creative arts, and bringing unique performance experiences to the island.",
   is_ambros_partner: false
 )
@@ -129,6 +154,7 @@ profile_bwtc = OrganizerProfile.create!(
 profile_heritage = OrganizerProfile.create!(
   user: org_heritage,
   business_name: "Humåtak Heritage Foundation",
+  organization: create_organizer_organization(user: org_heritage, name: "Humåtak Heritage Foundation"),
   business_description: "Preserving and celebrating CHamoru heritage through annual festivals, cultural events, and community gatherings in the historic village of Umatac.",
   is_ambros_partner: true
 )
@@ -136,6 +162,7 @@ profile_heritage = OrganizerProfile.create!(
 profile_nightlife = OrganizerProfile.create!(
   user: org_nightlife,
   business_name: "Island Nights Promotions",
+  organization: create_organizer_organization(user: org_nightlife, name: "Island Nights Promotions"),
   business_description: "Guam's hottest nightlife events — beach parties, DJ nights, and premium club experiences across the island.",
   is_ambros_partner: true
 )
@@ -143,213 +170,224 @@ profile_nightlife = OrganizerProfile.create!(
 profile_sports = OrganizerProfile.create!(
   user: org_sports,
   business_name: "Guam Basketball Confederation",
+  organization: create_organizer_organization(user: org_sports, name: "Guam Basketball Confederation"),
   business_description: "Official organizing body for basketball events on Guam, including FIBA World Cup qualifiers and local tournaments.",
   is_ambros_partner: false
 )
 
-puts "  Created #{OrganizerProfile.count} organizer profiles."
+puts "  Created #{Organization.count} organizations and #{OrganizerProfile.count} organizer profiles with owner memberships."
 
 # --- Events (based on real Guam events) ---
 
 # Event 1: Hafaloha Concert Series — J Boog (FEATURED, upcoming)
 event1 = Event.create!(
   organizer_profile: profile_guamtime,
+  organization: profile_guamtime.organization,
   title: "Hafaloha Concert Series Part 5: featuring J Boog",
   description: "The Hafaloha Concert Series returns with Part 5, headlined by island reggae superstar J Boog! Known for hits like 'Let's Do It Again' and 'Sunshine Girl,' J Boog brings his signature sound to Guam for an unforgettable evening under the stars at Ypao Beach Park. Local opening acts, food trucks, craft beer garden, and good vibes all night long. This is THE concert event of the spring — don't miss it!",
   short_description: "Island reggae superstar J Boog live at Ypao Beach Park with local opening acts and food trucks",
   venue_name: "Ypao Beach Park",
   venue_address: "Ypao Road",
   venue_city: "Tumon",
-  starts_at: 14.days.from_now.change(hour: 17, min: 0),
-  ends_at: 14.days.from_now.change(hour: 23, min: 0),
-  doors_open_at: 14.days.from_now.change(hour: 16, min: 0),
+  starts_at: guam_time(14, 17),
+  ends_at: guam_time(14, 23),
+  doors_open_at: guam_time(14, 16),
   status: :published,
   published_at: 7.days.ago,
   category: :concert,
   age_restriction: :all_ages,
   max_capacity: 3000,
   is_featured: true,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32856/10244887/a91b1e92e03f19017094d73739facdd6a15c1e9b35259a7ddd1665a4f13c7493/922f43db-8352-410e-a057-dd943d6c54ae.png"
+  cover_image_url: nil
 )
 
 # Event 2: Humåtak CHamoru Heritage Festival (FEATURED, upcoming)
 event2 = Event.create!(
   organizer_profile: profile_heritage,
+  organization: profile_heritage.organization,
   title: "Humåtak Guam History & CHamoru Heritage Day Festival 2026",
   description: "Celebrate Culture at the 2026 Humåtak Guam History & CHamoru Heritage Day Festival! Located in the historic village of Umatac, this four-day celebration honors the island's indigenous roots. Explore historical landmarks around Umatac Bay, see displays of local craftsmanship including weaving and carving inspired by the ancient Latte Stone culture, enjoy authentic island cuisine, and experience live entertainment that captures the spirit of the Mariana Islands. A family-friendly event perfect for those interested in Guam history and community celebrations.",
   short_description: "Four-day cultural celebration in historic Umatac honoring CHamoru heritage with food, music, and traditional crafts",
   venue_name: "Umatac Festival Grounds",
   venue_address: "Marine Corps Drive",
   venue_city: "Umatac",
-  starts_at: 7.days.from_now.change(hour: 18, min: 0),
-  ends_at: 10.days.from_now.change(hour: 0, min: 0),
-  doors_open_at: 7.days.from_now.change(hour: 17, min: 30),
+  starts_at: guam_time(7, 18),
+  ends_at: guam_time(10, 0),
+  doors_open_at: guam_time(7, 17, 30),
   status: :published,
   published_at: 14.days.ago,
   category: :festival,
   age_restriction: :all_ages,
   max_capacity: 5000,
   is_featured: true,
-  cover_image_url: "https://guam.stripes.com/travel/cc6jnj-chamoru-heritage.jpg/alternates/LANDSCAPE_910/Chamoru-Heritage.jpg"
+  cover_image_url: nil
 )
 
 # Event 3: FIBA World Cup Qualifiers (upcoming)
 event3 = Event.create!(
   organizer_profile: profile_sports,
+  organization: profile_sports.organization,
   title: "FIBA World Cup Qualifiers: Guam vs Australia",
   description: "Team Guam takes on Australia in FIBA Basketball World Cup 2027 Asian Qualifiers at the UOG Calvo Field House! Come support our island warriors as they compete on the world stage. The energy in the Field House is electric — this is Guam basketball at its finest. Food vendors outside, team merchandise available, and the loudest crowd in the Pacific!",
   short_description: "Team Guam faces Australia in FIBA World Cup qualifying action at UOG Calvo Field House",
   venue_name: "UOG Calvo Field House",
   venue_address: "University of Guam",
   venue_city: "Mangilao",
-  starts_at: 6.days.from_now.change(hour: 19, min: 0),
-  ends_at: 6.days.from_now.change(hour: 22, min: 0),
-  doors_open_at: 6.days.from_now.change(hour: 17, min: 30),
+  starts_at: guam_time(6, 19),
+  ends_at: guam_time(6, 22),
+  doors_open_at: guam_time(6, 17, 30),
   status: :published,
   published_at: 10.days.ago,
   category: :sports,
   age_restriction: :all_ages,
   max_capacity: 2500,
   is_featured: false,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/33143/10261224/dce11f39df6197871f2b01f5149c18b6f5c92ec1f53ca3b01d441bd3067c1c50/8625e216-218d-4e9c-ad0e-dcd0a7dfe462.png"
+  cover_image_url: nil
 )
 
 # Event 4: Scraps 6 — MMA/Boxing (upcoming)
 event4 = Event.create!(
   organizer_profile: profile_guamtime,
+  organization: profile_guamtime.organization,
   title: "Scraps 6: Island Throwdown",
   description: "Scraps is back for round 6! Guam's premier amateur MMA and boxing event returns to the Dusit Thani Resort with a stacked fight card featuring the island's toughest competitors. Full bar, ringside seating available, and an after-party to follow. This is the fight night Guam has been waiting for!",
   short_description: "Amateur MMA and boxing event with a stacked fight card at Dusit Thani Resort",
   venue_name: "Dusit Thani Guam Resort",
   venue_address: "1227 Pale San Vitores Road",
   venue_city: "Tumon",
-  starts_at: 28.days.from_now.change(hour: 19, min: 0),
-  ends_at: 28.days.from_now.change(hour: 23, min: 30),
-  doors_open_at: 28.days.from_now.change(hour: 18, min: 0),
+  starts_at: guam_time(28, 19),
+  ends_at: guam_time(28, 23, 30),
+  doors_open_at: guam_time(28, 18),
   status: :published,
   published_at: 5.days.ago,
   category: :sports,
   age_restriction: :eighteen_plus,
   max_capacity: 800,
   is_featured: false,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32896/10297726/34647bbd177ac93cb8816747536ae8be36125d2d0f531d76e385422f99a06d5b/efe69b3b-94a1-4e9f-90a3-cc4b320e9e07.jpeg"
+  cover_image_url: nil
 )
 
 # Event 5: Tides of Fantasy — Renaissance Faire (this weekend, almost sold out)
 event5 = Event.create!(
   organizer_profile: profile_bwtc,
+  organization: profile_bwtc.organization,
   title: "Tides of Fantasy: A Renaissance Faire & Live Tabletop Adventure",
   description: "Step into a world where imagination meets island storytelling! Tides of Fantasy is Guam's first Renaissance Faire, bringing classic medieval fantasy to life while weaving in oceanic imagery and island-rooted creativity. Saturday night features a Live Tabletop Roleplaying Adventure show. Sunday, wander the Renaissance Faire — themed vendors, medieval performances, interactive games, costume contests, and workshops. Dress in your finest fantasy, Renaissance, or island-inspired attire!",
   short_description: "Guam's first Renaissance Faire with live tabletop RPG show, themed vendors, and performances",
   venue_name: "Holiday Resort & Spa Guam",
   venue_address: "946 Pale San Vitores Road",
   venue_city: "Tumon",
-  starts_at: 1.day.from_now.change(hour: 18, min: 30),
-  ends_at: 2.days.from_now.change(hour: 19, min: 0),
-  doors_open_at: 1.day.from_now.change(hour: 18, min: 0),
+  starts_at: guam_time(1, 18, 30),
+  ends_at: guam_time(2, 19),
+  doors_open_at: guam_time(1, 18),
   status: :published,
   published_at: 21.days.ago,
   category: :festival,
   age_restriction: :all_ages,
   max_capacity: 500,
   is_featured: true,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32904/10262262/9b4292ea3f5f5f96a8393de382bd097501febd126364a1e57d238c4df4a10a33/2f8b7ba3-2973-487e-a3fb-523574b915e6.jpg"
+  cover_image_url: nil
 )
 
 # Event 6: Full Moon Beach Party (nightlife, upcoming)
 event6 = Event.create!(
   organizer_profile: profile_nightlife,
+  organization: profile_nightlife.organization,
   title: "Full Moon Beach Party: March Edition",
   description: "Dance under the full moon at Tumon Bay! Featuring DJ Kiko spinning tropical house, live fire dancers, and island cocktail specials all night long. The ultimate beach party experience on Guam. Full bar, glow accessories at the door, and the best sunset-to-moonrise views on the island.",
   short_description: "Full moon beach party with DJ Kiko, fire dancers, and island cocktail specials at Tumon Bay",
   venue_name: "Tumon Bay Beach",
   venue_address: "1255 Pale San Vitores Road",
   venue_city: "Tumon",
-  starts_at: 10.days.from_now.change(hour: 21, min: 0),
-  ends_at: 10.days.from_now.change(hour: 2, min: 0) + 1.day,
-  doors_open_at: 10.days.from_now.change(hour: 20, min: 30),
+  starts_at: guam_time(10, 21),
+  ends_at: guam_time(11, 2),
+  doors_open_at: guam_time(10, 20, 30),
   status: :published,
   published_at: 3.days.ago,
   category: :nightlife,
   age_restriction: :twenty_one_plus,
   max_capacity: 500,
   is_featured: false,
-  cover_image_url: "https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=1200"
+  cover_image_url: nil
 )
 
 # Event 7: Safe Haven Gala (upcoming, formal)
 event7 = Event.create!(
   organizer_profile: profile_guamtime,
+  organization: profile_guamtime.organization,
   title: "Safe Haven Gala 2026",
   description: "An elegant evening supporting Guam's Safe Haven foundation. Join us at the beautiful Dusit Thani Resort for a night of fine dining, live entertainment, silent auction, and community spirit. Black tie optional. All proceeds support programs for women and children in need on Guam.",
   short_description: "Formal gala benefiting Safe Haven foundation with fine dining, live entertainment, and silent auction",
   venue_name: "Dusit Thani Guam Resort",
   venue_address: "1227 Pale San Vitores Road",
   venue_city: "Tumon",
-  starts_at: 63.days.from_now.change(hour: 18, min: 0),
-  ends_at: 63.days.from_now.change(hour: 23, min: 0),
-  doors_open_at: 63.days.from_now.change(hour: 17, min: 30),
+  starts_at: guam_time(63, 18),
+  ends_at: guam_time(63, 23),
+  doors_open_at: guam_time(63, 17, 30),
   status: :published,
   published_at: 1.day.ago,
   category: :other,
   age_restriction: :twenty_one_plus,
   max_capacity: 300,
   is_featured: false,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32933/10282525/d33db73fe173b9d2c35e61e12034392763972cd02229320a3655ba729ceca3ef/87eec079-2e26-4514-8e94-520ccbc7edb6.png"
+  cover_image_url: nil
 )
 
 # Event 8: The Mad Collab Block Party (upcoming, community)
 event8 = Event.create!(
   organizer_profile: profile_guamtime,
+  organization: profile_guamtime.organization,
   title: "The Mad Collab: Block Party 2026",
   description: "The Mad Collab returns with the biggest block party of the year! Local artists, live music, food vendors, art installations, custom merch drops, and the best vibes on the island. This is where Guam's creative community comes together — DJs, painters, dancers, photographers, and everyone in between. Free entry, pay-as-you-go for food and drinks.",
   short_description: "Guam's biggest creative block party with local artists, live music, food vendors, and art installations",
   venue_name: "Tumon Night Market",
   venue_address: "Pale San Vitores Road",
   venue_city: "Tumon",
-  starts_at: 72.days.from_now.change(hour: 16, min: 0),
-  ends_at: 72.days.from_now.change(hour: 23, min: 0),
-  doors_open_at: 72.days.from_now.change(hour: 15, min: 30),
+  starts_at: guam_time(72, 16),
+  ends_at: guam_time(72, 23),
+  doors_open_at: guam_time(72, 15, 30),
   status: :published,
   published_at: 2.days.ago,
   category: :festival,
   age_restriction: :all_ages,
   max_capacity: 2000,
   is_featured: false,
-  cover_image_url: "https://sc-events.s3.amazonaws.com/32988/10260840/0ebf50cf2ea18ef783b2de31b4016fe834af186aeb4e845a79f362240ad27615/8a50fb54-beda-4a99-aadf-a54da1ff165f.png"
+  cover_image_url: nil
 )
 
 # Event 9: Neon Nights UV Glow Party (nightlife)
 event9 = Event.create!(
   organizer_profile: profile_nightlife,
+  organization: profile_nightlife.organization,
   title: "Neon Nights: UV Glow Party",
   description: "Get your glow on at Guam's biggest UV party! Body paint stations, neon decorations, and the best EDM DJs from across the Pacific. Wear white for maximum glow effect! Glow accessories included with entry. VIP section with bottle service available.",
   short_description: "UV glow party with body paint stations, EDM DJs, and neon decorations",
   venue_name: "Globe Nightclub",
   venue_address: "199 Chalan San Antonio",
   venue_city: "Tamuning",
-  starts_at: 21.days.from_now.change(hour: 22, min: 0),
-  ends_at: 21.days.from_now.change(hour: 3, min: 0) + 1.day,
-  doors_open_at: 21.days.from_now.change(hour: 21, min: 30),
+  starts_at: guam_time(21, 22),
+  ends_at: guam_time(22, 3),
+  doors_open_at: guam_time(21, 21, 30),
   status: :published,
   published_at: 1.day.ago,
   category: :nightlife,
   age_restriction: :eighteen_plus,
   max_capacity: 300,
   is_featured: false,
-  cover_image_url: "https://images.unsplash.com/photo-1574391884720-bbc3740c59d1?w=1200"
+  cover_image_url: nil
 )
 
 # Event 10: Draft event (organizer hasn't published yet)
 event10 = Event.create!(
   organizer_profile: profile_nightlife,
+  organization: profile_nightlife.organization,
   title: "Summer Kickoff Party 2026",
   description: "The biggest party of the summer! Details coming soon...",
   short_description: "Summer kickoff party — details TBA",
   venue_name: "TBA",
   venue_city: "Tumon",
-  starts_at: 90.days.from_now.change(hour: 20, min: 0),
-  ends_at: 90.days.from_now.change(hour: 2, min: 0) + 1.day,
+  starts_at: guam_time(90, 20),
+  ends_at: guam_time(91, 2),
   status: :draft,
   category: :nightlife,
   age_restriction: :twenty_one_plus,
@@ -507,6 +545,7 @@ puts "  Created #{Order.count} orders with #{Ticket.count} tickets (#{Ticket.whe
 puts ""
 puts "=== Seed Data Summary ==="
 puts "  Users:              #{User.count} (#{User.where(role: :admin).count} admin, #{User.where(role: :organizer).count} organizers, #{User.where(role: :attendee).count} attendees)"
+puts "  Organizations:      #{Organization.count} (#{OrganizationMembership.where(role: :owner, status: :active).count} active owner memberships)"
 puts "  Organizer Profiles: #{OrganizerProfile.count}"
 puts "  Events:             #{Event.count} (#{Event.published.count} published, #{Event.where(status: :draft).count} draft)"
 puts "  Ticket Types:       #{TicketType.count}"

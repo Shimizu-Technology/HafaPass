@@ -13,15 +13,14 @@ vi.mock('@clerk/clerk-react', () => ({
   SignedIn: ({ children }) => auth.isSignedIn ? children : null,
   UserButton: () => <button>Account options</button>,
 }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key === 'nav.admin' ? 'Admin' : key }) }))
 vi.mock('./LanguageSwitcher', () => ({ default: () => null }))
 vi.mock('../monitoring', () => ({ Sentry: { setUser: vi.fn(), captureException: vi.fn() } }))
 
-let Navbar, Wrapper, apiClient, setAuthTokenGetter
+let Navbar, Wrapper, apiClient, setAuthTokenGetter, workspace
 const response = (config, userId = 'buyer-a', role = 'admin') => ({ config, data: { clerk_id: userId, role }, status: 200, statusText: 'OK', headers: {} })
 const rejection = (config, status) => new AxiosError('Account lookup unavailable', undefined, config, null, { config, status, data: {} })
 const bind = () => setAuthTokenGetter(auth.getToken, { userId: auth.userId, sessionId: auth.sessionId, ready: auth.isLoaded && auth.isSignedIn })
-const view = (wrapped = false) => <MemoryRouter>{wrapped ? <Wrapper><Navbar /></Wrapper> : <Navbar />}</MemoryRouter>
+const view = (wrapped = false, path = '/') => <MemoryRouter initialEntries={[path]}>{wrapped ? <Wrapper><Navbar /></Wrapper> : <Navbar />}</MemoryRouter>
 
 describe('account-bound navbar with the real API authentication interceptor', () => {
   beforeEach(async () => {
@@ -32,6 +31,7 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     ;({ default: apiClient, setAuthTokenGetter } = await import('../api/client'))
     ;({ default: Wrapper } = await import('./ClerkProviderWrapper'))
     ;({ default: Navbar } = await import('./Navbar'))
+    workspace = await import('../utils/workspace')
     apiClient.defaults.adapter = vi.fn(config => Promise.resolve(response(config)))
   })
   afterEach(() => vi.unstubAllEnvs())
@@ -135,5 +135,172 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     const mobile = screen.getByRole('navigation', { name: 'Mobile navigation' })
     await user.click(within(mobile).getByRole('link', { name: 'Admin' }))
     expect(screen.queryByRole('navigation', { name: 'Mobile navigation' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the public buyer links on public routes', async () => {
+    render(view(true, '/events'))
+    await screen.findByRole('link', { name: 'Admin' })
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    for (const name of ["Events", 'Discover', "My Tickets", 'Saved', "Scanner", "Dashboard"]) {
+      expect(within(primary).getByRole('link', { name })).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('link', { name: /View public site/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: "Host an event" })).not.toBeInTheDocument()
+  })
+
+  it('offers guests the host landing page in the desktop and mobile navigation', async () => {
+    Object.assign(auth, { isSignedIn: false, userId: null, sessionId: null, user: null })
+    render(view(true, '/events'))
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(within(primary).getByRole('link', { name: "Host an event" })).toHaveAttribute('href', '/host')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Toggle menu' }))
+    const mobile = screen.getByRole('navigation', { name: 'Mobile navigation' })
+    expect(within(mobile).getByRole('link', { name: "Host an event" })).toHaveAttribute('href', '/host')
+  })
+
+  // Settings follows the same organization permissions the dashboard uses.
+  const owner = { id: 7, name: 'Island Nights', role: 'owner', permissions: { manage_members: true, manage_payout_settings: true } }
+  const scanner = { id: 8, name: 'Door team', role: 'scanner', permissions: { scan: true } }
+  const serve = (organizations, role = 'admin') => apiClient.defaults.adapter.mockImplementation(config => Promise.resolve(
+    config.url === '/organizer/organizations' ? { config, data: organizations, status: 200, statusText: 'OK', headers: {} } : response(config, 'buyer-a', role)))
+  const organizationCalls = () => apiClient.defaults.adapter.mock.calls.filter(([config]) => config.url === '/organizer/organizations')
+  const allowSettings = () => serve([owner])
+
+  it.each(['/dashboard', '/dashboard/events/6/edit', '/admin/users', '/support'])('switches %s to workspace navigation', async path => {
+    allowSettings()
+    render(view(true, path))
+    const admin = await screen.findByRole('link', { name: 'Admin' })
+    await screen.findByRole('link', { name: "Settings" })
+    expect(admin).toHaveAttribute('href', '/admin')
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(within(primary).getByRole('link', { name: "Dashboard" })).toHaveAttribute('href', '/dashboard')
+    expect(within(primary).getByRole('link', { name: "Scanner" })).toHaveAttribute('href', '/dashboard/scanner')
+    expect(within(primary).getByRole('link', { name: "Settings" })).toHaveAttribute('href', '/dashboard/settings')
+    expect(within(primary).getByRole('link', { name: "Support" })).toHaveAttribute('href', '/support')
+    for (const name of ["Events", 'Discover', "My Tickets", 'Saved']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: "View public site" })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: "HåfaPass workspace home" })).toHaveAttribute('href', '/dashboard')
+    expect(screen.queryByRole('button', { name: 'Search events' })).not.toBeInTheDocument()
+  })
+
+  it.each([['attendee', false], ['support', true]])('gates workspace platform links for the %s role once the role has loaded', async (role, support) => {
+    apiClient.defaults.adapter.mockImplementation(config => Promise.resolve(response(config, 'buyer-a', role)))
+    render(view(true, '/dashboard'))
+    await waitFor(() => expect(workspace.getAccountRole().role).toBe(role))
+    expect(Boolean(screen.queryByRole('link', { name: "Support" }))).toBe(support)
+    expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
+  })
+
+  it('shows Settings on an event workspace deep link for an owner without visiting the dashboard', async () => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    serve([owner, scanner], 'attendee')
+    render(view(true, '/dashboard/events/6/edit'))
+    expect(await screen.findByRole('link', { name: "Settings" })).toHaveAttribute('href', '/dashboard/settings')
+    expect(organizationCalls()).toHaveLength(1)
+    expect(organizationCalls()[0][0].headers.get('Authorization')).toBe('Bearer token-a')
+  })
+
+  it('hides Settings for a scanner and updates when the selected organization changes', async () => {
+    window.localStorage.setItem('hafapass_organization_id', '8')
+    serve([owner, scanner], 'attendee')
+    render(view(true, '/dashboard/events/6'))
+    await waitFor(() => expect(organizationCalls()).toHaveLength(1))
+    await waitFor(() => expect(workspace.getAccountRole().role).toBe('attendee'))
+    expect(screen.queryByRole('link', { name: "Settings" })).not.toBeInTheDocument()
+    await act(() => {
+      window.localStorage.setItem('hafapass_organization_id', '7')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_organization_id' }))
+    })
+    expect(screen.getByRole('link', { name: "Settings" })).toBeInTheDocument()
+    expect(organizationCalls()).toHaveLength(1)
+  })
+
+  it('drops Settings on sign-out and reloads it for the next account', async () => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    serve([owner])
+    bind()
+    const { rerender } = render(view(false, '/dashboard'))
+    await screen.findByRole('link', { name: "Settings" })
+    Object.assign(auth, { isSignedIn: false, userId: null, sessionId: null, user: null })
+    bind()
+    rerender(view(false, '/dashboard'))
+    expect(screen.queryByRole('link', { name: "Settings" })).not.toBeInTheDocument()
+    Object.assign(auth, { isSignedIn: true, userId: 'buyer-b', sessionId: 'session-b', user: { id: 'buyer-b' }, getToken: vi.fn().mockResolvedValue('token-b') })
+    serve([scanner])
+    bind()
+    rerender(view(false, '/dashboard'))
+    await waitFor(() => expect(organizationCalls()).toHaveLength(2))
+    expect(organizationCalls()[1][0].headers.get('Authorization')).toBe('Bearer token-b')
+    expect(screen.queryByRole('link', { name: "Settings" })).not.toBeInTheDocument()
+  })
+
+  it('shares one organization lookup with a dashboard load that starts at the same time', async () => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    let finish
+    apiClient.defaults.adapter.mockImplementation(config => config.url === '/organizer/organizations'
+      ? new Promise(resolve => { finish = () => resolve({ config, data: [owner], status: 200, statusText: 'OK', headers: {} }) })
+      : Promise.resolve(response(config)))
+    const { loadOrganizerOrganizations } = await import('../utils/organizerOrganizations')
+    const { getApiAuthContext } = await import('../api/client')
+    render(view(true, '/dashboard'))
+    await waitFor(() => expect(organizationCalls()).toHaveLength(1))
+    const dashboardLoad = loadOrganizerOrganizations(getApiAuthContext())
+    await act(async () => finish())
+    expect((await dashboardLoad).data).toEqual([owner])
+    expect(await screen.findByRole('link', { name: "Settings" })).toBeInTheDocument()
+    expect(organizationCalls()).toHaveLength(1)
+  })
+
+  it('opens and closes the workspace mobile menu', async () => {
+    allowSettings()
+    render(view(true, '/dashboard/settings'))
+    await screen.findByRole('link', { name: "Settings" })
+    const user = userEvent.setup()
+    const toggle = screen.getByRole('button', { name: 'Toggle menu' })
+    await user.click(toggle)
+    const mobile = screen.getByRole('navigation', { name: 'Mobile navigation' })
+    expect(within(mobile).getByRole('link', { name: "Settings" })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).getByRole('link', { name: "View public site" })).toHaveAttribute('href', '/')
+    within(mobile).getByRole('link', { name: "Settings" }).focus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('navigation', { name: 'Mobile navigation' })).not.toBeInTheDocument()
+    expect(toggle).toHaveFocus()
+  })
+
+  // Least privilege: links follow what /me says this account can use.
+  const serveWorkspace = (workspaceFlags, role = 'attendee') => apiClient.defaults.adapter.mockImplementation(config => Promise.resolve(
+    config.url === '/me' ? { config, data: { clerk_id: 'buyer-a', role, workspace: workspaceFlags }, status: 200, statusText: 'OK', headers: {} }
+      : { config, data: [], status: 200, statusText: 'OK', headers: {} }))
+
+  it('offers a buyer without a team "Host an event" instead of Scanner and Dashboard', async () => {
+    serveWorkspace({ organizer: false, scanner: false })
+    render(view(true, '/events'))
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(await within(primary).findByRole('link', { name: "Host an event" })).toHaveAttribute('href', '/dashboard')
+    expect(within(primary).queryByRole('link', { name: "Scanner" })).not.toBeInTheDocument()
+    expect(within(primary).queryByRole('link', { name: "Dashboard" })).not.toBeInTheDocument()
+  })
+
+  it('shows Dashboard without Scanner to a marketer and both to door staff', async () => {
+    serveWorkspace({ organizer: true, scanner: false })
+    const first = render(view(true, '/events'))
+    let primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(await within(primary).findByRole('link', { name: "Dashboard" })).toBeInTheDocument()
+    expect(within(primary).queryByRole('link', { name: "Scanner" })).not.toBeInTheDocument()
+    first.unmount()
+
+    serveWorkspace({ organizer: true, scanner: true })
+    render(view(true, '/dashboard'))
+    primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(await within(primary).findByRole('link', { name: "Scanner" })).toHaveAttribute('href', '/dashboard/scanner')
+  })
+
+  it('hides workspace Dashboard and Scanner from support staff without a team', async () => {
+    serveWorkspace({ organizer: false, scanner: false }, 'support')
+    render(view(true, '/support'))
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(await within(primary).findByRole('link', { name: "Support" })).toBeInTheDocument()
+    expect(within(primary).queryByRole('link', { name: "Dashboard" })).not.toBeInTheDocument()
+    expect(within(primary).queryByRole('link', { name: "Scanner" })).not.toBeInTheDocument()
   })
 })

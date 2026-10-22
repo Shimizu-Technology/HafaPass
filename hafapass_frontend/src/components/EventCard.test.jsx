@@ -8,7 +8,7 @@ function mount(tickets) { render(<MemoryRouter><EventCard event={{ ...event, tic
 describe('event card availability and prices', () => {
   it('distinguishes unopened or paused sales from exhausted inventory', () => {
     mount([{ price_cents: 1250, quantity_remaining: 20, on_sale: false }])
-    expect(screen.getByText('Sales unavailable')).toBeInTheDocument()
+    expect(screen.getByText('events.salesUnavailable')).toBeInTheDocument()
     expect(screen.queryByText('events.soldOut')).not.toBeInTheDocument()
     expect(screen.queryByText(/\$12.50/)).not.toBeInTheDocument()
   })
@@ -22,5 +22,11 @@ describe('event card availability and prices', () => {
       { price_cents: 2000, current_price_cents: 1250, quantity_remaining: 3, on_sale: true }])
     expect(screen.getByText('events.from $12.50')).toBeInTheDocument()
     expect(screen.getByText('events.ticketsAvailable')).toBeInTheDocument()
+  })
+  it('leads with the lowest all-in price including the buyer service fee', () => {
+    mount([{ price_cents: 2000, current_price_cents: 2000, all_in_price_cents: 2200, service_fee_cents: 200, quantity_remaining: 3, on_sale: true },
+      { price_cents: 1900, current_price_cents: 1900, all_in_price_cents: 2295, service_fee_cents: 395, quantity_remaining: 3, on_sale: true }])
+    expect(screen.getByText('events.from $22.00')).toBeInTheDocument()
+    expect(screen.queryByText(/\$19.00|\$20.00/)).not.toBeInTheDocument()
   })
 })

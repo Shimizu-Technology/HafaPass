@@ -42,6 +42,7 @@ test('admin records named Gate E ownership and complete event-bound evidence', a
   })
 
   await page.goto('/admin/events')
+  await page.getByRole('button', { name: /^Release gates for / }).click()
   await page.getByRole('button', { name: 'Prepare pilot readiness' }).click()
   await page.getByLabel('Restricted evidence reference').fill('private/pilot/guam-community-night')
   await page.getByLabel(/^Evidence SHA-256/).fill('a'.repeat(64))
@@ -58,7 +59,7 @@ test('admin records named Gate E ownership and complete event-bound evidence', a
     await page.getByLabel(`${label} name`).fill(name)
     await page.getByLabel(`${label} private contact reference`).fill(reference)
   }
-  for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check()
+  for (const checkbox of await page.getByRole('dialog').getByRole('checkbox').all()) await checkbox.check()
 
   const submit = page.getByRole('button', { name: 'Submit readiness' })
   await expect(submit).toBeEnabled()

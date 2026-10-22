@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
 
 export default function QRCode({ value, size = 256, bgColor = '#ffffff', fgColor = '#000000' }) {
+  const { t } = useTranslation()
   return (
     <QRCodeSVG
       value={value}
@@ -9,9 +11,9 @@ export default function QRCode({ value, size = 256, bgColor = '#ffffff', fgColor
       fgColor={fgColor}
       level="M"
       marginSize={2}
-      title="Ticket entry QR code"
+      title={t('buyer.qr.entryCode')}
       role="img"
-      aria-label="Ticket entry QR code"
+      aria-label={t('buyer.qr.entryCode')}
     />
   )
 }

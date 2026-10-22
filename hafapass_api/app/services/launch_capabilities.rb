@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
+# HAFAPASS_LAUNCH_SCOPE picks a preset (general_admission = every capability
+# off, full = every capability on). HAFAPASS_LAUNCH_CAPABILITIES is a comma list
+# of capabilities enabled on top of that preset, e.g. "ticket_transfers".
 class LaunchCapabilities
+  class ConfigurationError < StandardError; end
+
   FEATURES = %w[assigned_seating recurring_events advanced_sales_tools ticket_transfers door_card].freeze
   SCOPES = %w[general_admission full].freeze
 
@@ -8,12 +13,38 @@ class LaunchCapabilities
     ENV["HAFAPASS_LAUNCH_SCOPE"].presence || ((Rails.env.production? || Rails.env.staging?) ? "general_admission" : "full")
   end
 
+  def self.requested_capabilities
+    ENV["HAFAPASS_LAUNCH_CAPABILITIES"].to_s.split(",").map { |name| name.strip.downcase }.reject(&:blank?).uniq
+  end
+
+  def self.unknown_capabilities
+    requested_capabilities - FEATURES
+  end
+
+  # Extra capabilities only count when every requested name is known, so a typo
+  # never half-applies a list.
+  def self.additional_capabilities
+    unknown_capabilities.empty? ? requested_capabilities : []
+  end
+
   def self.configured?
-    SCOPES.include?(scope)
+    SCOPES.include?(scope) && unknown_capabilities.empty?
+  end
+
+  # Deployed environments refuse to boot with a misspelled scope or capability.
+  def self.validate!
+    raise ConfigurationError, "HAFAPASS_LAUNCH_SCOPE must be one of: #{SCOPES.join(', ')}" unless SCOPES.include?(scope)
+    return if unknown_capabilities.empty?
+
+    raise ConfigurationError, "HAFAPASS_LAUNCH_CAPABILITIES has unknown capabilities: #{unknown_capabilities.join(', ')} " \
+      "(known: #{FEATURES.join(', ')})"
   end
 
   def self.enabled?(feature)
-    FEATURES.include?(feature.to_s) && scope == "full"
+    feature = feature.to_s
+    return false unless FEATURES.include?(feature) && SCOPES.include?(scope)
+
+    scope == "full" || additional_capabilities.include?(feature)
   end
 
   def self.public_configuration

@@ -23,6 +23,9 @@ module Settlements
         unless event.completed? || event.cancelled?
           raise FinalizationError, "Only completed or cancelled events can be finalized"
         end
+        if EventCancellationRefunds.unresolved?(event)
+          raise FinalizationError, "Finish cancellation refunds before finalizing this event"
+        end
         if event.orders.joins(:refunds).merge(Refund.pending).exists? || event.orders.joins(:disputes).merge(Dispute.open).exists?
           raise FinalizationError, "Resolve pending refunds and open disputes before finalizing"
         end

@@ -1,3 +1,7 @@
+import { activeIntlLocale } from './locale'
+
+// Times always show in the event's own time zone; the language only changes
+// the wording and order (e.g. "Oct 21, 2026" or "2026年10月21日").
 export const DEFAULT_EVENT_TIME_ZONE = 'Pacific/Guam'
 
 function validDate(value) {
@@ -9,7 +13,7 @@ function validDate(value) {
 export function formatEventDate(value, timeZone = DEFAULT_EVENT_TIME_ZONE, options = {}) {
   const date = validDate(value)
   if (!date) return ''
-  return date.toLocaleDateString('en-US', {
+  return date.toLocaleDateString(activeIntlLocale(), {
     timeZone,
     month: 'short',
     day: 'numeric',
@@ -21,7 +25,7 @@ export function formatEventDate(value, timeZone = DEFAULT_EVENT_TIME_ZONE, optio
 export function formatEventTime(value, timeZone = DEFAULT_EVENT_TIME_ZONE, options = {}) {
   const date = validDate(value)
   if (!date) return ''
-  return date.toLocaleTimeString('en-US', {
+  return date.toLocaleTimeString(activeIntlLocale(), {
     timeZone,
     hour: 'numeric',
     minute: '2-digit',
@@ -32,7 +36,7 @@ export function formatEventTime(value, timeZone = DEFAULT_EVENT_TIME_ZONE, optio
 export function formatEventDateTime(value, timeZone = DEFAULT_EVENT_TIME_ZONE, options = {}) {
   const date = validDate(value)
   if (!date) return ''
-  return date.toLocaleString('en-US', {
+  return date.toLocaleString(activeIntlLocale(), {
     timeZone,
     month: 'short',
     day: 'numeric',
@@ -65,6 +69,19 @@ export function toEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
   }).formatToParts(date)
   const part = (type) => parts.find(item => item.type === type)?.value
   return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`
+}
+
+export function fromEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value || '')) return null
+  const requested = Date.parse(`${value}:00Z`)
+  if (Number.isNaN(requested)) return null
+  let instant = requested
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const actual = Date.parse(`${toEventLocalInput(new Date(instant), timeZone)}:00Z`)
+    instant += requested - actual
+  }
+  const result = new Date(instant)
+  return toEventLocalInput(result, timeZone) === value ? result : null
 }
 
 export function compareLocalDateTimes(first, second) {

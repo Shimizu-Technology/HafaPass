@@ -1,16 +1,12 @@
 # CORS configuration
-# Set ALLOWED_ORIGINS environment variable in production
-# Example: ALLOWED_ORIGINS=https://hafapass.com,https://www.hafapass.com
+# Every deployed environment (staging and production) must list its browser
+# origins in ALLOWED_ORIGINS, e.g. ALLOWED_ORIGINS=https://tickets.example.com
+# Only local development and test fall back to the local Vite ports.
+require Rails.root.join("config/runtime_configuration").to_s
 
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
-    # Default origins for development, override with ALLOWED_ORIGINS in production
-    allowed = if Rails.env.production?
-      ENV.fetch("ALLOWED_ORIGINS")
-    else
-      ENV.fetch("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176")
-    end
-    origins(*allowed.split(",").map(&:strip).reject(&:empty?))
+    origins(*RuntimeConfiguration.allowed_origins(local: Rails.env.local?))
 
     resource "*",
       headers: :any,

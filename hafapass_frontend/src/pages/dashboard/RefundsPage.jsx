@@ -7,7 +7,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-react'
 import apiClient from '../../api/client'
-import { supportMailto } from '../../utils/supportContact'
+import TestPaymentBadge from '../../components/TestPaymentBadge'
+import SupportLink from '../../components/SupportLink'
+import { partialRefundCents, refundConfirmLabel, ticketCountLabel } from '../../utils/eventToolFormat'
 
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
 const needsFinanceReview = (data, request) => data?.finance_review_required === true || (request?.financeReview && data?.finance_review_required !== false)
@@ -160,6 +162,7 @@ function RefundsPageSession({ eventId, identity }) {
 
  useEffect(() => { fetchOrders() }, [fetchOrders])
 
+ const partialAmountError = order => !pendingRequest && refundForm.type === 'partial' ? partialRefundCents(refundForm.amount, order.refundable_cents).error : null
  const handleRefund = async (orderId) => {
     if (!current() || !authorizedEvent.current || pendingRequest?.recoveryRequired || (pendingRequest && pendingRequest.orderId !== orderId)) return
   if (processing || accessRefreshing) return
@@ -188,14 +191,14 @@ function RefundsPageSession({ eventId, identity }) {
     }
     payload.cash_return = { reference: refundForm.cashReference.trim(), returned_at: returnedAt.toISOString() }
    }
-   if (refundForm.type === 'partial' && refundForm.amount) {
-    const parsed = parseFloat(refundForm.amount)
-    if (Number.isNaN(parsed) || parsed <= 0) {
-     setNotice('Please enter a valid refund amount.')
+   if (!pendingRequest && refundForm.type === 'partial') {
+    const { cents, error: amountError } = partialRefundCents(refundForm.amount, orders.find(order => order.id === orderId)?.refundable_cents)
+    if (amountError) {
+     setNotice(amountError)
      setProcessing(false)
      return
     }
-    payload.amount_cents = Math.round(parsed * 100)
+    payload.amount_cents = cents
    }
    request ||= { orderId, key: refundRequestKey || newRefundRequestKey(), payload }
    window.sessionStorage.setItem(storageKey, JSON.stringify(request))
@@ -213,7 +216,7 @@ function RefundsPageSession({ eventId, identity }) {
    } else if (status === 'pending') {
     setNotice('Refund pending — waiting for the payment provider. Retry this saved request to check its status; do not create another refund.')
    } else if (['succeeded', 'failed', 'cancelled'].includes(status)) {
-    setNotice(status === 'succeeded' ? response.data.manual_record && response.data.provider === 'door_cash' ? 'Cash return recorded. The organizer returned physical cash; HafaPass did not transfer money.' : response.data.refund_simulated ? 'Test refund complete. No real money was returned.' : 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
+    setNotice(status === 'succeeded' ? response.data.manual_record && response.data.provider === 'door_cash' ? 'Cash return recorded. The organizer returned physical cash; HåfaPass did not transfer money.' : response.data.refund_simulated ? 'Test refund complete. No real money was returned.' : 'Refund confirmed by the payment provider.' : `Refund ${status}. No refund has been confirmed.`)
     window.sessionStorage.removeItem(storageKey)
     if (importedLegacyKey.current === request.key) window.sessionStorage.removeItem(legacyStorageKey)
     setPendingRequest(null)
@@ -266,9 +269,9 @@ function RefundsPageSession({ eventId, identity }) {
    {notice && !pendingRequest?.financeReview && <p id="refund-notice" role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{notice}</p>}
    {pendingRequest?.financeReview && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
     <p>The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.</p>
-    <a className="inline-flex min-h-11 items-center font-semibold underline" href={supportMailto(`Refund review for order ${pendingRequest.orderId}`)}>Contact support</a>
+    <SupportLink subject={`Refund review for order ${pendingRequest.orderId}`} className="inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink>
    </div>}
-   {pendingRequest?.recoveryRequired && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved refund recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a refund.</p><a href={supportMailto('Recover an unreadable refund request')} className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</a></div>}
+   {pendingRequest?.recoveryRequired && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved refund recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a refund.</p><SupportLink subject="Recover an unreadable refund request" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div>}
    {pendingRequest && !pendingRequest.recoveryRequired && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
    {pendingRequest && !pendingRequest.recoveryRequired && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing || accessRefreshing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund'}</button>}
    {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{loadError} <button className="min-h-11 font-semibold underline" onClick={fetchOrders}>Retry</button></p>}
@@ -287,9 +290,9 @@ function RefundsPageSession({ eventId, identity }) {
           <DollarSign className="w-5 h-5 text-brand-500" />
          </div>
          <div className="min-w-0">
-          <p className="font-medium text-neutral-900 break-words">{order.reference || `Order #${order.id}`} &middot; {order.buyer_name}</p>
+          <p className="font-medium text-neutral-900 break-words">{order.reference || `Order #${order.id}`} &middot; {order.buyer_name}<TestPaymentBadge order={order} /></p>
           <p className="text-sm text-neutral-600 break-words">
-           {order.buyer_email} &middot; {order.ticket_count} ticket(s) &middot; ${(order.total_cents / 100).toFixed(2)}
+           {order.buyer_email} &middot; {ticketCountLabel(order.ticket_count)} &middot; ${(order.total_cents / 100).toFixed(2)}
            {order.refunded_cents > 0 && <> &middot; ${(order.refunded_cents / 100).toFixed(2)} refunded</>}
           </p>
          </div>
@@ -297,20 +300,20 @@ function RefundsPageSession({ eventId, identity }) {
         {refundingId !== order.id ? (
          <button onClick={() => { setRefundingId(order.id); setRefundRequestKey(newRefundRequestKey()); setRefundForm(initialRefundForm()) }}
           disabled={processing || accessRefreshing || Boolean(pendingRequest) || order.refundable_cents <= 0}
-          className="btn-secondary text-xs !py-2 !px-3 gap-1 text-red-600 border-red-200 hover:bg-red-50 shrink-0 self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed">
-          <RotateCcw className="w-3 h-3" /> {isCashOrder(order) ? 'Record cash already returned' : 'Refund'}
+          className="btn-secondary min-h-11 text-sm !py-2 !px-4 gap-1.5 shrink-0 self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed">
+          <RotateCcw className="w-4 h-4" /> {isCashOrder(order) ? 'Record cash already returned' : 'Refund'}
          </button>
         ) : (
          <button disabled={processing || accessRefreshing || Boolean(pendingRequest)} onClick={() => { setRefundingId(null); setRefundRequestKey(null) }} className="text-sm text-neutral-500 hover:text-neutral-700 shrink-0">Cancel</button>
         )}
        </div>
 
-       {order.refunds?.filter(refund => refund.manual_record && refund.provider === 'door_cash').map(refund => <p key={refund.id} className="mt-3 break-words text-sm text-neutral-700">Cash return recorded: ${(refund.amount_cents / 100).toFixed(2)} · {refund.cash_return?.reference} · Returned {refund.cash_return?.returned_at} · Recorded {refund.recorded_at} · Organizer custody. No money transferred by HafaPass.</p>)}
+       {order.refunds?.filter(refund => refund.manual_record && refund.provider === 'door_cash').map(refund => <p key={refund.id} className="mt-3 break-words text-sm text-neutral-700">Cash return recorded: ${(refund.amount_cents / 100).toFixed(2)} · {refund.cash_return?.reference} · Returned {refund.cash_return?.returned_at} · Recorded {refund.recorded_at} · Organizer custody. No money transferred by HåfaPass.</p>)}
        {refundingId === order.id && (
         <div className="mt-4 pt-4 border-t border-neutral-100">
          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-          <p className="text-sm text-amber-700">{isCashOrder(order) ? 'The organizer holds door cash and must return it to the buyer first. This records physical cash already returned. HafaPass does not send money. Enter the receipt or repayment reference, when the cash was returned, and why.' : 'The original payment provider determines the outcome. Pending requests are not completed refunds. Unsupported terminal payments need a manager to arrange repayment.'}</p>
+          <p className="text-sm text-amber-700">{isCashOrder(order) ? 'The organizer holds door cash and must return it to the buyer first. This records physical cash already returned. HåfaPass does not send money. Enter the receipt or repayment reference, when the cash was returned, and why.' : 'The original payment provider determines the outcome. Pending requests are not completed refunds. Unsupported terminal payments need a manager to arrange repayment.'}</p>
          </div>
          {isCashOrder(order) && <div className="mb-4 grid gap-3 sm:grid-cols-2">
           <div><label htmlFor={`cash-reference-${order.id}`} className="mb-1 block text-sm font-medium">Cash return reference</label>
@@ -331,6 +334,7 @@ function RefundsPageSession({ eventId, identity }) {
             <label htmlFor={`refund-amount-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">Amount ($)</label>
             <input id={`refund-amount-${order.id}`} disabled={processing || accessRefreshing || Boolean(pendingRequest)} type="number" step="0.01" min="0.01" max={(order.refundable_cents / 100).toFixed(2)}
              value={refundForm.amount} onChange={e => setRefundForm({...refundForm, amount: e.target.value})}
+             aria-invalid={(Boolean(partialAmountError(order)) && Boolean(refundForm.amount)) || undefined} aria-describedby={partialAmountError(order) ? `refund-amount-error-${order.id}` : undefined}
              className="input !py-2 text-sm w-28" placeholder="0.00" />
            </div>
           )}
@@ -339,12 +343,13 @@ function RefundsPageSession({ eventId, identity }) {
            <input id={`refund-reason-${order.id}`} aria-invalid={cashInvalidField === `refund-reason-${order.id}` || undefined} aria-describedby={cashInvalidField === `refund-reason-${order.id}` ? 'refund-notice' : undefined} disabled={processing || accessRefreshing || Boolean(pendingRequest)} value={refundForm.reason} onChange={e => setRefundForm({...refundForm, reason: e.target.value})}
             className="input !py-2 text-sm" placeholder="Customer request, event cancelled..." />
           </div>
-          <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || (refundForm.type === 'partial' && !refundForm.amount)}
+          <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || Boolean(partialAmountError(order))} aria-describedby={partialAmountError(order) ? `refund-amount-error-${order.id}` : undefined}
            className="btn-primary text-sm !py-2.5 !bg-action-danger hover:!bg-action-danger-hover gap-1 disabled:opacity-50">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-           {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund' : isCashOrder(order) ? 'Record cash already returned' : 'Process Refund'}
+           {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund' : isCashOrder(order) ? 'Record cash already returned' : refundConfirmLabel(order, refundForm)}
           </button>
          </div>
+         {partialAmountError(order) && <p id={`refund-amount-error-${order.id}`} className={`mt-2 text-sm ${refundForm.amount ? 'text-red-700' : 'text-neutral-600'}`}>{partialAmountError(order)}</p>}
         </div>
        )}
       </div>

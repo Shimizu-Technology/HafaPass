@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Api::V1::Organizer::FinancesController < Api::V1::Organizer::BaseController
+  include SpreadsheetExport
+
   before_action :set_event
   before_action :require_finance_visibility
 
@@ -44,7 +46,39 @@ class Api::V1::Organizer::FinancesController < Api::V1::Organizer::BaseControlle
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
+  def orders_export
+    record_export!("orders")
+    stream_csv(
+      filename: "#{@event.slug}-orders-#{Date.current.iso8601}.csv",
+      header: FinanceExports::ORDER_HEADER,
+      rows: FinanceExports.each_order_row([@event]).lazy.map { |row| FinanceExports.order_csv_values(row) }
+    )
+  end
+
+  # One statement version (its stored, immutable lines), or the current
+  # unapproved preview when settlement_id is "current" or absent.
+  def statement_export
+    requested = params[:settlement_id].to_s
+    settlement = requested.in?(["", "current"]) ? nil : @event.settlements.find(requested)
+    label = settlement ? "v#{settlement.version}" : "current"
+    record_export!("statement", settlement_version: settlement&.version)
+    stream_csv(
+      filename: "#{@event.slug}-statement-#{label}.csv",
+      header: FinanceExports::STATEMENT_HEADER,
+      rows: FinanceExports.statement_rows(@event, settlement)
+    )
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Statement not found" }, status: :not_found
+  end
+
   private
+
+  # Exports carry buyer contact details, so each one leaves an audit record.
+  def record_export!(kind, **details)
+    AuditLogger.record!(action: "finance.exported", auditable: @event, actor: current_user,
+      organization: current_organization, metadata: { export: kind, scope: "event" }.merge(details.compact),
+      request: request)
+  end
 
   def set_event
     @event = find_organization_event(params[:event_id])
@@ -58,6 +92,7 @@ class Api::V1::Organizer::FinancesController < Api::V1::Organizer::BaseControlle
     settlement.attributes.slice(
       "id", "version", "status", "currency", "source_digest", "gross_cents", "discount_cents",
       "refund_cents", "net_cents", "platform_fee_cents", "processing_fee_cents",
+      "platform_processing_fee_cents",
       "organizer_proceeds_cents", "reserve_cents", "adjustment_cents", "payable_cents", "paid_cents",
       "negative_balance_cents", "calculated_at", "finalized_at"
     ).merge(available_to_payout_cents: settlement.available_to_payout_cents)

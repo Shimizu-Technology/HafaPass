@@ -38,4 +38,18 @@ describe('cover image recovery', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Upload cover image' })).toBeInTheDocument())
     expect(onUploaded).not.toHaveBeenCalled()
   })
+
+  it('ignores keyboard-generated clicks and clamps pointer focal points', () => {
+    const onFocalChange = vi.fn()
+    render(<CoverImageUpload eventId={37} currentUrl="https://storage.invalid/uploads/cover.webp"
+      imageAssetHost="storage.invalid" focalPoint={{ x: 50, y: 50 }} onFocalChange={onFocalChange} />)
+    const button = screen.getByRole('button', { name: 'Set cover focal point' })
+    button.getBoundingClientRect = () => ({ left: 10, top: 20, width: 100, height: 100 })
+    fireEvent.click(button, { detail: 0, clientX: 0, clientY: 0 })
+    expect(onFocalChange).not.toHaveBeenCalled()
+    fireEvent.click(button, { detail: 1, clientX: -50, clientY: 400 })
+    expect(onFocalChange).toHaveBeenLastCalledWith({ x: 0, y: 100 })
+    fireEvent.keyDown(button, { key: 'ArrowRight' })
+    expect(onFocalChange).toHaveBeenLastCalledWith({ x: 55, y: 50 })
+  })
 })
