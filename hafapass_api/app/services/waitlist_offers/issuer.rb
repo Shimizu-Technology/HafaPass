@@ -21,10 +21,10 @@ module WaitlistOffers
         entry.event.lock!
         entry.lock!
         raise OfferError, "Only waiting entries can receive an offer" unless entry.waiting?
-        WaitlistDelivery.ensure_address!(entry.event)
         # Covers policy holds and suspended or closed sales: an offer reserves
         # inventory and emails the buyer, so it must not go out while nobody can buy.
         raise OfferError, "This event is not currently on sale" unless entry.event.sales_open?
+        WaitlistDelivery.ensure_address!(entry.event)
 
         selected = select_ticket_type
         selected.lock!
