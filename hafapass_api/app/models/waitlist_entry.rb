@@ -13,6 +13,7 @@ class WaitlistEntry < ApplicationRecord
   validates :email, uniqueness: { scope: [:event_id, :ticket_type_id], message: "is already on the waitlist for this ticket type" }
 
   before_validation :assign_position, on: :create
+  before_validation :record_request_time, on: :create
 
   scope :active, -> { where(status: [:waiting, :notified, :offered]) }
   scope :by_position, -> { order(:position) }
@@ -22,11 +23,46 @@ class WaitlistEntry < ApplicationRecord
   end
 
   def notify!
+    WaitlistDelivery.ensure_address!(event)
     update!(
       status: :notified,
       notified_at: Time.current,
-      expires_at: 24.hours.from_now
+      expires_at: 24.hours.from_now,
+      delivery_failure: nil
     )
+  end
+
+  def notify_and_queue!
+    WaitlistLocks.with(entry: self) do
+      return false unless waiting?
+
+      if notified_at.present?
+        latest = MessageDelivery.where(template: "waitlist_notification",
+          idempotency_key: "waitlist-notification/#{id}/#{notified_at.iso8601(6)}").order(id: :desc).first
+        latest&.lock!
+        if latest&.delivered?
+          update!(status: :notified, expires_at: 24.hours.from_now, delivery_failure: nil)
+          return false
+        end
+        return false if latest && !WaitlistDelivery.definitive_failure?(latest)
+      end
+
+      notify!
+      EmailService.send_waitlist_notification_async(self)
+      true
+    end
+  end
+
+  def retry_unconfirmed_notification!
+    WaitlistLocks.with(entry: self) do
+      return false unless notified? && delivery_failure == WaitlistDelivery::UNCONFIRMED
+      return false if MessageDelivery.exists?(template: "waitlist_notification", status: :delivered,
+        idempotency_key: "waitlist-notification/#{id}/#{notified_at.iso8601(6)}")
+
+      notify!
+      EmailService.send_waitlist_notification_async(self)
+      true
+    end
   end
 
   def offer_expired?
@@ -38,6 +74,10 @@ class WaitlistEntry < ApplicationRecord
   end
 
   private
+
+  def record_request_time
+    self.requested_at ||= Time.current
+  end
 
   def assign_position
     return if position.present?

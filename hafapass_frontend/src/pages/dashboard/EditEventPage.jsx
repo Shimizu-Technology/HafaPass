@@ -897,7 +897,7 @@ function EditEventSession({ id, identity }) {
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
                 <div>
                   <p className="text-sm font-medium text-neutral-900">Cancel event and refund all buyers</p>
-                  <p className="text-xs text-neutral-500">Stop sales and refund card orders. Cash orders need a manual return.</p>
+                  <p className="text-xs text-neutral-600">Stop sales and refund card orders. Cash orders need a manual return.</p>
                 </div>
                 <CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} onCancelled={async () => { if (await fetchEvent()) setSuccessMessage('Event cancelled. Refunds are processing.') }} />
               </div>
@@ -906,7 +906,7 @@ function EditEventSession({ id, identity }) {
               <div className="flex items-center justify-between p-3 bg-orange-50 rounded-xl">
                 <div>
                   <p className="text-sm font-medium text-neutral-900">Postpone Event</p>
-                  <p className="text-xs text-neutral-500">Pause sales while a new date is arranged.</p>
+                  <p className="text-xs text-neutral-600">Pause sales while a new date is arranged.</p>
                 </div>
                 <button onClick={() => setShowPostponeConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-orange-700 border border-orange-300 rounded-lg hover:bg-orange-100 transition-colors flex items-center gap-1.5">
                   <PauseCircle className="w-4 h-4" /> Postpone
@@ -937,9 +937,9 @@ function EditEventSession({ id, identity }) {
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
                 <div>
                   <p className="text-sm font-medium text-neutral-900">Delete Event</p>
-                  <p className="text-xs text-neutral-500">Permanently delete this draft event.</p>
+                  <p className="text-xs text-neutral-600">Permanently delete this draft event.</p>
                 </div>
-                <button onClick={() => setShowDeleteConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5">
+                <button onClick={() => setShowDeleteConfirm(true)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100">
                   <Trash2 className="w-4 h-4" /> Delete
                 </button>
               </div>

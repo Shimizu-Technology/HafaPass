@@ -326,6 +326,7 @@ class StripeWebhookProcessor
 
     Dispute.transaction do
       payment.order.event.organization.lock!
+      payment.order.event.lock!
       payment.order.lock!
       provider_id = value(object, :id)
       dispute = Dispute.find_or_initialize_by(provider: "stripe", provider_dispute_id: provider_id)

@@ -38,14 +38,17 @@ function SettingsPageSession({ identity }) {
  const [busy, setBusy] = useState(false)
  const [error, setError] = useState(null)
  const [notice, setNotice] = useState(null)
+ const [marketingNotice, setMarketingNotice] = useState(null)
  const [payoutError, setPayoutError] = useState(null)
+ const [marketingAddress, setMarketingAddress] = useState('')
+ const [marketingCertified, setMarketingCertified] = useState(false)
  const loadGeneration = useRef(0)
  const withdrawAccess = useCallback(message => {
   ++accessEpoch.current
   verifiedAccess.current = false
   requests.current.forEach(request => request.controller.abort())
   setOrganization(null); setAccounts([]); setMemberships([])
-  setNotice(null); setBusy(false); setLoading(false)
+  setNotice(null); setMarketingNotice(null); setBusy(false); setLoading(false)
   setError(message)
  }, [])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
@@ -76,6 +79,7 @@ function SettingsPageSession({ identity }) {
     && (organization.permissions ? organization.permissions[permission] === true : organization.role === 'owner'))
   const canManageTeam = can('manage_members')
   const canManagePayouts = can('manage_payout_settings')
+  const canManageOrganization = can('manage_organization')
   const canTransfer = can('manage_organization')
 
   const load = useCallback(async () => {
@@ -87,6 +91,7 @@ function SettingsPageSession({ identity }) {
     setLoading(true)
     setBusy(false)
     setError(null)
+    setMarketingNotice(null)
     try {
       const organizationResponse = await requestApi('get', '/organizer/organization')
       if (!canApply()) return
@@ -96,8 +101,10 @@ function SettingsPageSession({ identity }) {
       }
       const data = organizationResponse.data
       const allowed = permission => data.permissions ? data.permissions[permission] === true : data.role === 'owner'
-      verifiedAccess.current = allowed('manage_members') || allowed('manage_payout_settings')
+      verifiedAccess.current = allowed('manage_members') || allowed('manage_payout_settings') || allowed('manage_organization')
       setOrganization(data)
+      setMarketingAddress(data.marketing_mailing_address || '')
+      setMarketingCertified(Boolean(data.marketing_address_ready))
       const [membersResponse, accountsResponse] = await Promise.all([
         allowed('manage_members') ? requestApi('get', '/organizer/memberships') : null,
         allowed('manage_payout_settings') ? requestApi('get', '/organizer/connected_accounts') : null,
@@ -141,6 +148,21 @@ function SettingsPageSession({ identity }) {
     }
   }
 
+  const saveMarketingAddress = async event => {
+    event.preventDefault()
+    if (!current() || !canManageOrganization || busy) return
+    setBusy(true); setError(null); setMarketingNotice(null)
+    try {
+      const response = await requestApi('patch', '/organizer/organization', {
+        organization: { marketing_mailing_address: marketingAddress.trim(), certified: marketingCertified },
+      })
+      setOrganization(response.data)
+      setMarketingNotice('Marketing postal address saved. Campaigns and waitlist emails use this address until you change it.')
+    } catch (requestError) {
+      setError(requestError.response?.data?.errors?.join(', ') || requestError.response?.data?.error || 'Could not save the marketing postal address.')
+    } finally { setBusy(false) }
+  }
+
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
   if (!organization && error) return (
     <WorkspacePage as="section" width="form" aria-labelledby="organization-recovery-heading">
@@ -165,11 +187,29 @@ function SettingsPageSession({ identity }) {
 
       {error && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p>{error}</p><button type="button" onClick={load} className="min-h-11 font-semibold underline">Retry organization settings</button></div>}
 
-      {!canManageTeam && !canManagePayouts ? (
+      {!canManageTeam && !canManagePayouts && !canManageOrganization ? (
         <NoAccessNotice className="mt-8" title="Settings are for the organization owner"
           detail={`Your role: ${roleLabel(organization?.role) || 'HåfaPass admin'} — ${roleDescription(organization?.role) || 'no team or payout access here.'} Event managers assign door staff from each event’s Team page.`} />
       ) : (
         <div className="mt-8 space-y-8">
+          {canManageOrganization && <section className="card p-5 sm:p-6" aria-labelledby="marketing-postal-heading">
+            <h2 id="marketing-postal-heading" className="text-lg font-bold text-neutral-900">Marketing postal address</h2>
+            {marketingNotice && <p role="status" className="mt-2 text-sm text-emerald-800">{marketingNotice}</p>}
+            <p className="mt-1 text-sm text-neutral-700">Your organization's address appears in campaign emails. Campaigns pause until the owner certifies a current physical postal address.</p>
+            <form onSubmit={saveMarketingAddress} className="mt-4 space-y-4">
+              <label className="block text-sm font-medium text-neutral-700">Physical postal address
+                <textarea required rows={3} maxLength={500} className="input mt-1" value={marketingAddress}
+                  onChange={event => { setMarketingAddress(event.target.value); setMarketingCertified(false) }}
+                  aria-describedby="marketing-postal-hint" />
+              </label>
+              <p id="marketing-postal-hint" className="text-sm text-neutral-600">Include a street or PO Box, locality, and ZIP code. This address is public in every campaign email.</p>
+              <label className="flex min-h-11 items-start gap-3 text-sm text-neutral-700">
+                <input type="checkbox" required checked={marketingCertified} onChange={event => setMarketingCertified(event.target.checked)} className="mt-1" />
+                <span>I confirm this is a valid physical postal address for {organization.name}.</span>
+              </label>
+              <button type="submit" className="btn-primary" disabled={busy}>Save marketing address</button>
+            </form>
+          </section>}
           {canManageTeam && <TeamManager basePath="/organizer/memberships" request={teamRequest} canTransfer={canTransfer} heading="Organization team"
             memberships={memberships} onMembershipsChange={setMemberships} />}
           {canManagePayouts && <TaxInformationSection request={teamRequest}

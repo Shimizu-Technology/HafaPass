@@ -118,8 +118,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.string "payee_key", default: "all", null: false
     t.index ["organization_id", "year", "payee_key"], name: "idx_annual_tax_settings_on_payee_year", unique: true
     t.index ["organization_id"], name: "index_annual_tax_report_settings_on_organization_id"
-    t.check_constraint "form_type::text = ANY (ARRAY['review_required'::character varying, '1099-nec'::character varying, '1099-misc'::character varying, '1099-k'::character varying, 'none'::character varying]::text[])", name: "annual_tax_report_form_valid"
-    t.check_constraint "jurisdiction::text = ANY (ARRAY['irs'::character varying, 'guam_drt'::character varying]::text[])", name: "annual_tax_report_jurisdiction_valid"
+    t.check_constraint "form_type::text = ANY (ARRAY['review_required'::character varying::text, '1099-nec'::character varying::text, '1099-misc'::character varying::text, '1099-k'::character varying::text, 'none'::character varying::text])", name: "annual_tax_report_form_valid"
+    t.check_constraint "jurisdiction::text = ANY (ARRAY['irs'::character varying::text, 'guam_drt'::character varying::text])", name: "annual_tax_report_jurisdiction_valid"
   end
 
   create_table "annual_tax_thresholds", force: :cascade do |t|
@@ -1132,7 +1132,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.string "wire_body_digest"
     t.bigint "organization_membership_id"
     t.bigint "platform_invitation_id"
+    t.datetime "reconciled_at"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
+    t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY (ARRAY[('waitlist_notification'::character varying)::text, ('waitlist_offer'::character varying)::text])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
     t.index ["order_id", "created_at"], name: "index_message_deliveries_on_order_id_and_created_at"
@@ -1312,6 +1314,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.integer "status", default: 0, null: false
     t.string "timezone", default: "Pacific/Guam", null: false
     t.datetime "updated_at", null: false
+    t.text "marketing_mailing_address"
+    t.datetime "marketing_address_certified_at"
     t.index ["slug"], name: "index_organizations_on_slug", unique: true
     t.check_constraint "char_length(currency::text) = 3", name: "organizations_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organizations_status_valid"
@@ -1408,7 +1412,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.string "b_notice_identity_digest"
     t.index ["organization_id"], name: "index_organizer_tax_informations_on_organization_id", unique: true
     t.index ["tin_digest"], name: "index_organizer_tax_informations_on_tin_digest"
-    t.check_constraint "tin_match_status::text = ANY (ARRAY['unverified'::character varying, 'matched'::character varying, 'missing_or_invalid'::character varying, 'not_issued'::character varying, 'mismatch'::character varying, 'invalid_request'::character varying, 'duplicate'::character varying, 'matched_ssn'::character varying, 'matched_ein'::character varying, 'matched_both'::character varying]::text[])", name: "tax_information_tin_match_status_valid"
+    t.check_constraint "tin_match_status::text = ANY (ARRAY['unverified'::character varying::text, 'matched'::character varying::text, 'missing_or_invalid'::character varying::text, 'not_issued'::character varying::text, 'mismatch'::character varying::text, 'invalid_request'::character varying::text, 'duplicate'::character varying::text, 'matched_ssn'::character varying::text, 'matched_ein'::character varying::text, 'matched_both'::character varying::text])", name: "tax_information_tin_match_status_valid"
   end
 
   create_table "payment_events", force: :cascade do |t|
@@ -2138,7 +2142,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.jsonb "tax_reporting_thresholds", default: {"1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000}, null: false
     t.integer "fee_notice_days", default: 30, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
-    t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying, 'withhold'::character varying]::text[])", name: "site_settings_backup_withholding_mode_valid"
+    t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying::text, 'withhold'::character varying::text])", name: "site_settings_backup_withholding_mode_valid"
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
   end
 
@@ -2542,6 +2546,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.string "locale", default: "en", null: false
+    t.datetime "requested_at"
+    t.string "request_ip"
+    t.text "request_user_agent"
+    t.string "delivery_failure"
     t.index ["event_id", "ticket_type_id", "email"], name: "idx_waitlist_unique_entry", unique: true
     t.index ["event_id", "ticket_type_id", "position"], name: "idx_on_event_id_ticket_type_id_position_e28bca8bda"
     t.index ["event_id"], name: "index_waitlist_entries_on_event_id"
@@ -2564,6 +2572,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.integer "unit_price_cents", null: false
     t.datetime "updated_at", null: false
     t.bigint "waitlist_entry_id", null: false
+    t.string "cancel_reason"
     t.index ["event_id"], name: "index_waitlist_offers_on_event_id"
     t.index ["order_id"], name: "index_waitlist_offers_on_order_id"
     t.index ["pricing_tier_id"], name: "index_waitlist_offers_on_pricing_tier_id"

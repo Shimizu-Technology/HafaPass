@@ -20,7 +20,7 @@ class MessageDeliveryJob < ApplicationJob
     delivery = MessageDelivery.find(delivery_id)
     lease_token = SecureRandom.uuid
     previously_unknown = nil
-    outcome = delivery.with_lock do
+    outcome = with_delivery_lock(delivery) do
       if terminal?(delivery)
         mark_reminder_sent!(delivery) if delivery.sent? || delivery.delivered?
         next :done
@@ -48,6 +48,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "This is not a material event change")
         next :done
       end
+      if obsolete_waitlist?(delivery)
+        delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active")
+        next :done
+      end
       if delivery.undeliverable_recipient?
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
@@ -62,17 +66,22 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient unsubscribed from this organizer")
         next :done
       end
-      if delivery.promotional? && delivery.event &&
+      if delivery.requires_marketing_consent? && delivery.event &&
           !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient)
         delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient has not opted in")
         next :done
       end
       if delivery.suppressed_recipient?
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
-          last_error: "Recipient has a prior bounce, complaint, or suppression")
+          last_error: "Recipient has a prior hard bounce, applicable complaint, or provider suppression")
         next :done
       end
-      if delivery.promotional? && SiteSetting.instance.business_mailing_address.blank?
+      if waitlist_delivery?(delivery) && delivery.outbound_payload.blank?
+        organization = delivery.event.organization.reload
+        delivery.update!(metadata: delivery.metadata.merge("mailing_address" => organization.marketing_mailing_address,
+          "organizer_name" => organization.name))
+      end
+      if delivery.promotional? && !current_marketing_address?(delivery)
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
           last_error: "Promotional send blocked by missing mailing address")
         next :done
@@ -115,19 +124,32 @@ class MessageDeliveryJob < ApplicationJob
       :send
     end
     unless outcome == :send
-      MessageProviderEventProcessor.reconcile_for!(delivery) if outcome == :done
+      if outcome == :done
+        WaitlistDelivery.reconcile_failure!(delivery)
+        MessageProviderEventProcessor.reconcile_for!(delivery)
+      end
       return
     end
 
-    if delivery.promotional? && delivery.event && (delivery.marketing_unsubscribed? ||
-        !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient) ||
-        delivery.suppressed_recipient? ||
-        SiteSetting.instance.business_mailing_address.blank?)
-      delivery.with_lock do
+    if obsolete_waitlist?(delivery)
+      with_delivery_lock(delivery) do
+        delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active",
+          provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil)
+      end
+      return
+    end
+
+    if delivery.suppressed_recipient? || (delivery.promotional? && delivery.event &&
+        (delivery.marketing_unsubscribed? ||
+          (delivery.requires_marketing_consent? &&
+            !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient)) ||
+          !current_marketing_address?(delivery)))
+      with_delivery_lock(delivery) do
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
           provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil,
-          last_error: "Promotional send blocked by unsubscribe, provider suppression, or missing mailing address")
+          last_error: "Send blocked by applicable unsubscribe, provider suppression, or missing mailing address")
       end
+      WaitlistDelivery.reconcile_failure!(delivery)
       return
     end
 
@@ -150,7 +172,7 @@ class MessageDeliveryJob < ApplicationJob
     if delivery.provider == "resend" && (simulated || !id.is_a?(String) || id.blank?)
       raise UnknownProviderResult, "Email provider acceptance did not include a message ID"
     end
-    delivery.with_lock do
+    with_delivery_lock(delivery) do
       unless delivery.send_lease_token == lease_token
         raise UnknownProviderResult, "Provider request lease changed; reconcile acceptance before replay"
       end
@@ -161,22 +183,58 @@ class MessageDeliveryJob < ApplicationJob
     end
     MessageProviderEventProcessor.reconcile_for!(delivery)
   rescue StandardError => error
-    delivery&.with_lock do
+    with_delivery_lock(delivery) do
       if !terminal?(delivery) && (delivery.send_lease_token.nil? || delivery.send_lease_token == lease_token)
         # A definite rejection can clear uncertainty only if no older attempt
         # was already unknown. Never reinterpret an earlier lost response.
         unknown = delivery.provider_outcome_unknown?
         unknown = false if !previously_unknown && known_rejection?(error)
-        delivery.update!(status: :failed, failed_at: Time.current,
+        invalid_recipient = MessageAddressFailure.synchronous?(error)
+        delivery.update!(status: invalid_recipient ? :suppressed : :failed,
+          failed_at: invalid_recipient ? nil : Time.current,
+          suppressed_at: invalid_recipient ? Time.current : delivery.suppressed_at,
           provider_outcome_unknown: unknown, last_error: "#{error.class}: #{error.message}".first(1000),
+          metadata: invalid_recipient ? delivery.metadata.merge("provider_address_invalid" => true) : delivery.metadata,
+          reconciled_at: nil,
           send_lease_token: nil, send_lease_expires_at: nil)
       end
-    end
+    end if delivery
+    WaitlistDelivery.reconcile_failure!(delivery) if delivery
     Sentry.capture_exception(error, extra: { message_delivery_id: delivery_id })
     raise
   end
 
   private
+
+  def with_delivery_lock(delivery, &block)
+    WaitlistLocks.for_delivery(delivery, &block)
+  end
+
+  def waitlist_delivery?(delivery)
+    %w[waitlist_notification waitlist_offer].include?(delivery.template)
+  end
+
+  def obsolete_waitlist?(delivery)
+    return false unless waitlist_delivery?(delivery)
+
+    if delivery.template == "waitlist_offer"
+      offer = WaitlistOffer.find_by(id: delivery.metadata["waitlist_offer_id"])
+      offer.nil? || !offer.offered? || offer.order_id.present?
+    else
+      entry = WaitlistEntry.find_by(id: delivery.metadata["waitlist_entry_id"])
+      return true if entry.nil? || !entry.notified?
+      return entry.notified_at&.iso8601(6) != delivery.metadata["notified_at"] if delivery.metadata["notified_at"].present?
+
+      entry.notified_at.nil? || delivery.created_at < entry.notified_at
+    end
+  end
+
+  def current_marketing_address?(delivery)
+    organization = Organization.find_by(id: delivery.event&.organization_id)
+    organization&.marketing_postal_address_ready? && (PublicSiteUrl.api.present? || Rails.env.local?) &&
+      delivery.metadata["mailing_address"] == organization.marketing_mailing_address &&
+      delivery.metadata["organizer_name"] == organization.name
+  end
 
   def known_rejection?(error)
     error.is_a?(Resend::Error::InvalidRequestError) || error.is_a?(Resend::Error::NotFoundError) ||

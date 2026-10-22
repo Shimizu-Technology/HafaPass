@@ -292,7 +292,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
             <Field id="platform_phone" label="Support phone" hint="Optional. Shown next to the support email." error={errors.platform_phone}>
               <input id="platform_phone" type="tel" inputMode="tel" autoComplete="off" value={form.platform_phone} onChange={update('platform_phone')} aria-invalid={!!errors.platform_phone} aria-describedby={describedBy('platform_phone', true, errors.platform_phone)} className={inputClass('platform_phone')} />
             </Field>
-            <Field id="business_mailing_address" label="Business mailing address" hint="Required before organizers can send promotional emails. Include a physical postal address." error={errors.business_mailing_address}>
+            <Field id="business_mailing_address" label="Business mailing address" hint="HåfaPass contact address. Organizers certify their own campaign mailing address in Organization settings." error={errors.business_mailing_address}>
               <textarea id="business_mailing_address" rows={3} maxLength={500} value={form.business_mailing_address} onChange={update('business_mailing_address')} className={inputClass('business_mailing_address')} />
             </Field>
           </div>

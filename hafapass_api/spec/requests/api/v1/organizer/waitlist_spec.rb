@@ -8,11 +8,23 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
   let(:headers) { auth_headers(user) }
 
   before do
+    event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
     allow(EmailService).to receive(:send_waitlist_notification_async)
     allow(EmailService).to receive(:send_waitlist_offer_async)
   end
 
   describe "POST /api/v1/organizer/events/:event_id/waitlist/:id/offer" do
+    it "refuses before reserving inventory when the address is uncertified" do
+      event.organization.update!(marketing_address_certified_at: nil)
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
+      before_quantity = ga_ticket.available_quantity
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/offer", headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to include("Marketing postal address", "certify")
+      expect(entry.reload).to be_waiting
+      expect(ga_ticket.reload.available_quantity).to eq(before_quantity)
+    end
     it "reserves inventory and queues a single-use offer" do
       entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket, quantity: 2)
 
@@ -23,6 +35,29 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
       expect(entry.reload).to be_offered
       expect(ga_ticket.reload.available_quantity).to eq(98)
       expect(EmailService).to have_received(:send_waitlist_offer_async)
+    end
+
+    it "explains a withdrawn delivered offer to the buyer and lets the organizer reissue it" do
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
+      offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ga_ticket)
+      token = WaitlistCredential.offer(offer)
+      delivery = create(:message_delivery, event: event, order: nil, recipient: entry.email,
+        template: "waitlist_offer", metadata: { waitlist_offer_id: offer.id }, status: :delivered)
+      offer.update!(status: :cancelled, token_version: offer.token_version + 1, cancel_reason: "Inventory withdrawn")
+      entry.update!(status: :waiting, expires_at: nil)
+      WaitlistDelivery.reconcile_success!(delivery)
+
+      get "/api/v1/waitlist_offers/#{token}"
+      expect(response).to have_http_status(:gone)
+      expect(response.parsed_body).to include("code" => "offer_withdrawn", "event_slug" => event.slug)
+
+      get "/api/v1/organizer/events/#{event.id}/waitlist", headers: headers
+      expect(response.parsed_body.fetch("waitlist").first["withdrawn_offer_delivered"]).to be(true)
+
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/offer", headers: headers
+      expect(response).to have_http_status(:created)
+      expect(entry.reload).to be_offered
+      expect(response.parsed_body.dig("offer", "id")).not_to eq(offer.id)
     end
   end
 
@@ -58,6 +93,14 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
   end
 
   describe "POST /api/v1/organizer/events/:event_id/waitlist/:id/notify" do
+    it "refuses before marking an alert notified when the address is uncertified" do
+      event.organization.update!(marketing_address_certified_at: nil)
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/notify", headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["settings_url"]).to eq("/dashboard/settings")
+      expect(entry.reload).to be_waiting
+    end
     it "notifies a waiting entry" do
       entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
 
@@ -76,6 +119,36 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
 
       post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/notify", headers: headers
       expect(response).to have_http_status(:unprocessable_entity)
+    end
+  end
+
+  describe "POST /api/v1/organizer/events/:event_id/waitlist/:id/retry_unconfirmed" do
+    it "requires an unconfirmed round and creates only one explicit retry" do
+      entry = create(:waitlist_entry, :notified, event: event, ticket_type: ga_ticket,
+        delivery_failure: WaitlistDelivery::UNCONFIRMED)
+      path = "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/retry_unconfirmed"
+
+      post path, headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(entry.reload.delivery_failure).to be_nil
+      expect(EmailService).to have_received(:send_waitlist_notification_async).once
+
+      post path, headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(EmailService).to have_received(:send_waitlist_notification_async).once
+    end
+
+    it "accepts an unconfirmed active offer without replacing the offer" do
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
+      offer = WaitlistOffers::Issuer.call(entry: entry)
+      entry.update!(delivery_failure: WaitlistDelivery::UNCONFIRMED)
+
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/retry_unconfirmed", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(offer.reload).to be_offered
+      expect(entry.reload.delivery_failure).to be_nil
+      expect(EmailService).to have_received(:send_waitlist_offer_async).with(offer, hash_including(:idempotency_key))
     end
   end
 

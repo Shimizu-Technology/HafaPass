@@ -26,6 +26,7 @@ describe('PaymentForm', () => {
     expect(paymentElementOptions).toHaveBeenLastCalledWith(expect.objectContaining({ wallets: walletPolicy }))
     await userEvent.click(screen.getByRole('button', { name: 'Pay $12.50' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Your card was declined.')
+    expect(screen.getByRole('alert')).toHaveFocus()
     expect(paymentElementOptions).toHaveBeenLastCalledWith(expect.objectContaining({ wallets: walletPolicy }))
     expect(screen.getByRole('button', { name: 'Pay $12.50' })).toBeEnabled()
   })

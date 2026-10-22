@@ -191,7 +191,13 @@ function EventDetailContent() {
     let active = true
     apiClient.get(`/waitlist_offers/${encodeURIComponent(waitlistOfferToken)}`)
       .then(res => { if (active && liveRoute.current.slug === slug) setWaitlistOffer(res.data) })
-      .catch(() => { if (active && liveRoute.current.slug === slug) setWaitlistOffer({ error: translation.current('buyer.EventDetail.offerUnavailable') }) })
+      .catch(error => {
+        if (!active || liveRoute.current.slug !== slug) return
+        const withdrawn = error.response?.status === 410 && error.response?.data?.code === 'offer_withdrawn' && error.response?.data?.event_slug === slug
+        setWaitlistOffer({ error: withdrawn
+          ? "This ticket offer was withdrawn — you're still on the waitlist and we'll email you if tickets become available"
+          : translation.current('buyer.EventDetail.offerUnavailable') })
+      })
     return () => { active = false }
   }, [waitlistOfferToken, slug])
 

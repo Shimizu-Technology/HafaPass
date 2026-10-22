@@ -3,7 +3,7 @@ require "rails_helper"
 RSpec.describe MessageProviderEventProcessor do
   let(:delivery) { create(:message_delivery, provider: "resend", provider_id: "email_123", status: :sent) }
 
-  def provider_event(type, at: Time.current)
+  def provider_event(type, at: Time.current, message: "Temporary transport failure", code: nil, bounce_type: "Permanent")
     {
       "type" => type,
       "created_at" => at.iso8601,
@@ -11,7 +11,8 @@ RSpec.describe MessageProviderEventProcessor do
         "email_id" => "email_123",
         "to" => [delivery.recipient],
         "subject" => "private subject",
-        "bounce" => { "type" => "Permanent", "message" => "Mailbox does not exist" }
+        "bounce" => { "type" => bounce_type, "message" => message },
+        "error" => { "code" => code, "message" => message }
       }
     }
   end
@@ -170,7 +171,7 @@ RSpec.describe MessageProviderEventProcessor do
   end
 
   it "records provider events idempotently and applies a hard bounce" do
-    event = provider_event("email.bounced")
+    event = provider_event("email.bounced", message: "Mailbox does not exist")
     first = described_class.call(provider_event_id: "msg_unique", event: event)
     second = described_class.call(provider_event_id: "msg_unique", event: event)
 
@@ -188,6 +189,55 @@ RSpec.describe MessageProviderEventProcessor do
       event: provider_event("email.delivery_delayed", at: delivered_at - 1.minute))
 
     expect(delivery.reload).to be_delivered
+  end
+
+  it "keeps a hard bounce terminal when a newer delivered receipt arrives" do
+    described_class.call(provider_event_id: "hard-bounce",
+      event: provider_event("email.bounced", message: "Mailbox does not exist"))
+    described_class.call(provider_event_id: "contradictory-delivery",
+      event: provider_event("email.delivered", at: 1.minute.from_now))
+
+    expect(delivery.reload).to be_bounced
+    expect(delivery.metadata["provider_address_invalid"]).to be(true)
+    expect(MessageProviderEvent.find_by!(provider_event_id: "contradictory-delivery").processed_at).to be_present
+    refund_notice = create(:message_delivery, recipient: delivery.recipient, template: "refund_notification")
+    allow(EmailService).to receive(:send_delivery_payload)
+    MessageDeliveryJob.perform_now(refund_notice.id)
+    expect(refund_notice.reload).to be_suppressed
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
+
+  it "suppresses every later template after an invalid-address failed webhook" do
+    event = provider_event("email.failed")
+    event["data"].except!("bounce", "error")
+    event["data"]["failed"] = { "reason" => "Mailbox does not exist" }
+    described_class.call(provider_event_id: "invalid-address",
+      event: event)
+
+    expect(delivery.reload).to be_suppressed
+    expect(delivery.metadata["provider_address_invalid"]).to be(true)
+    refund_notice = create(:message_delivery, recipient: delivery.recipient, template: "refund_notification")
+    allow(EmailService).to receive(:send_delivery_payload)
+    MessageDeliveryJob.perform_now(refund_notice.id)
+    expect(refund_notice.reload).to be_suppressed
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
+
+  it "does not suppress a refund for a transient failed webhook" do
+    event = provider_event("email.failed")
+    event["data"].except!("bounce", "error")
+    event["data"]["failed"] = { "reason" => "reached_daily_quota" }
+    described_class.call(provider_event_id: "temporary-failure",
+      event: event)
+
+    expect(delivery.reload).to be_failed
+    expect(delivery.metadata["provider_address_invalid"]).not_to be(true)
+    refund_notice = create(:message_delivery, recipient: delivery.recipient, template: "refund_notification")
+    allow(EmailService).to receive(:prepare_delivery_payload).and_return({ "subject" => "Refund", "html" => "Refund" })
+    allow(EmailService).to receive(:send_delivery_payload).and_return({ simulated: true })
+    MessageDeliveryJob.perform_now(refund_notice.id)
+    expect(refund_notice.reload).to be_sent
+    expect(EmailService).to have_received(:send_delivery_payload).once
   end
 
   it "keeps an early webhook pending and reconciles it when the provider id is known" do

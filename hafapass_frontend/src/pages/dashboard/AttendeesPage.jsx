@@ -472,8 +472,8 @@ function AttendeesPageSession({ id, identity }) {
                   {att.order_number && <p className="text-xs text-neutral-500 mt-1">{att.order_number}{canSeeFinance && att.amount_cents != null ? ` · $${(att.amount_cents / 100).toFixed(2)}` : ''}</p>}
                   {att.purchase_date && <p className="text-xs text-neutral-500 mt-1">Purchased {formatDate(att.purchase_date, event?.timezone)}</p>}
                   <div className="flex justify-between mt-1">
-                    <span className="text-xs text-neutral-400">{att.ticket_type}</span>
-                    {filter('view') === 'orders' ? <span className="text-xs text-neutral-400">{att.checked_in_count || 0}/{att.ticket_count || 0} checked in</span> : att.checked_in_at && <span className="text-xs text-neutral-400">{formatDate(att.checked_in_at, event?.timezone)}</span>}
+                    <span className="text-xs text-neutral-600">{att.ticket_type}</span>
+                    {filter('view') === 'orders' ? <span className="text-xs text-neutral-600">{att.checked_in_count || 0}/{att.ticket_count || 0} checked in</span> : att.checked_in_at && <span className="text-xs text-neutral-600">{formatDate(att.checked_in_at, event?.timezone)}</span>}
                   </div>
                   {(canCheckIn(att) || canResend(att)) && <div className="mt-3 flex gap-2">{rowActions(att, 'phone')}</div>}
                 </div>

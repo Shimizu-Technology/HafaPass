@@ -207,7 +207,8 @@ class EmailService
       return unless waitlist_entry.email.present?
 
       delivery = create_delivery(event: waitlist_entry.event, template: "waitlist_notification",
-        recipient: waitlist_entry.email, metadata: { waitlist_entry_id: waitlist_entry.id },
+        recipient: waitlist_entry.email,
+        metadata: { waitlist_entry_id: waitlist_entry.id, notified_at: waitlist_entry.notified_at&.iso8601(6) }.merge(commercial_metadata(waitlist_entry.event)),
         idempotency_key: "waitlist-notification/#{waitlist_entry.id}/#{waitlist_entry.notified_at&.iso8601(6)}")
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
@@ -221,9 +222,11 @@ class EmailService
       delivery
     end
 
-    def send_waitlist_offer_async(offer)
+    def send_waitlist_offer_async(offer, idempotency_key: "waitlist-offer/#{offer.id}")
       delivery = create_delivery(event: offer.event, template: "waitlist_offer",
-        recipient: offer.waitlist_entry.email, metadata: { waitlist_offer_id: offer.id }, idempotency_key: "waitlist-offer/#{offer.id}")
+        recipient: offer.waitlist_entry.email,
+        metadata: { waitlist_offer_id: offer.id }.merge(commercial_metadata(offer.event)),
+        idempotency_key: idempotency_key)
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end
@@ -440,14 +443,15 @@ class EmailService
       return unless waitlist_entry.email.present?
 
       event = waitlist_entry.event
+      details = commercial_details(delivery)
       event_url = "#{frontend_url}/events/#{event.slug}"
       html, subject = in_locale(waitlist_entry.locale) do
-        [build_waitlist_notification_html(waitlist_entry, event, event_url),
+        [build_waitlist_notification_html(waitlist_entry, event, event_url, details[:footer]),
           safe_subject(t("waitlist.subject", event: event_title(event)))]
       end
 
       deliver(to: waitlist_entry.email, subject: subject, html: html, tag: "waitlist_notification", delivery: delivery,
-        entry_id: waitlist_entry.id)
+        entry_id: waitlist_entry.id, unsubscribe_url: details[:one_click_url], sender_name: details[:organizer_name])
     end
 
     def send_ticket_transfer(transfer, delivery: nil)
@@ -473,6 +477,7 @@ class EmailService
     def send_waitlist_offer(offer, delivery: nil)
       url = "#{frontend_url}/events/#{offer.event.slug}?waitlist_offer=#{ERB::Util.url_encode(WaitlistCredential.offer(offer))}"
       event = offer.event
+      details = commercial_details(delivery)
       html, subject = in_locale(offer.waitlist_entry.locale) do
         body = email_wrapper(t("waitlist_offer.title")) do
           <<~HTML
@@ -482,12 +487,14 @@ class EmailService
             <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{ht('waitlist_offer.cta')}</a></p>
             <p style="color:#6b7280;font-size:14px">#{ht('waitlist_offer.expires',
               expires_at: format_local_datetime(offer.expires_at, event.timezone, with_zone: true))}</p>
+            #{details[:footer]}
           HTML
         end
         [body, safe_subject(t("waitlist_offer.subject", event: event_title(event)))]
       end
       deliver(to: offer.waitlist_entry.email, subject: subject,
-        html: html, tag: "waitlist_offer", delivery: delivery, offer_id: offer.id)
+        html: html, tag: "waitlist_offer", delivery: delivery, offer_id: offer.id,
+        unsubscribe_url: details[:one_click_url], sender_name: details[:organizer_name])
     end
 
     def send_communication_campaign(delivery)
@@ -506,7 +513,7 @@ class EmailService
       end
       deliver(to: delivery.recipient, subject: safe_subject(delivery.metadata.fetch("subject")), html: html,
         tag: "communication_campaign", delivery: delivery, campaign_id: delivery.communication_campaign_id,
-        unsubscribe_url: one_click_url)
+        unsubscribe_url: one_click_url, sender_name: delivery.metadata.fetch("organizer_name"))
     end
 
     def send_event_reminder(reminder, delivery: nil)
@@ -573,6 +580,32 @@ class EmailService
 
     private
 
+    def commercial_metadata(event)
+      organization = event.organization
+      { mailing_address: organization.marketing_mailing_address, organizer_name: organization.name }
+    end
+
+    def commercial_details(delivery)
+      raise MessageWirePayload::Unavailable, "Commercial email requires a durable delivery" unless delivery
+
+      organization = delivery.event.organization
+      entry = if delivery.template == "waitlist_offer"
+        WaitlistOffer.find(delivery.metadata.fetch("waitlist_offer_id")).waitlist_entry
+      else
+        WaitlistEntry.find(delivery.metadata.fetch("waitlist_entry_id"))
+      end
+      encoded_token = ERB::Util.url_encode(WaitlistUnsubscribe.token(entry))
+      name = delivery.metadata.fetch("organizer_name")
+      address = delivery.metadata.fetch("mailing_address")
+      footer = <<~HTML
+        <p style="color:#6b7280;font-size:13px">Sent by #{h(name)} through HåfaPass.</p>
+        <p style="color:#6b7280;font-size:13px">#{h(address)}</p>
+        <p><a href="#{h("#{frontend_url}/unsubscribe/#{encoded_token}")}">Stop alerts for this event</a></p>
+      HTML
+      { footer: footer, organizer_name: name,
+        one_click_url: "#{PublicSiteUrl.api || 'http://localhost:3000'}/api/v1/marketing/unsubscribe/#{encoded_token}" }
+    end
+
     def create_delivery(order: nil, ticket: nil, event: nil, requested_by: nil, template:, recipient:, metadata: {},
       idempotency_key: nil, organization_membership: nil, platform_invitation: nil)
       digest_source = [template, recipient.to_s.downcase, order&.cache_key_with_version,
@@ -616,7 +649,9 @@ class EmailService
 
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, attachments: nil, **log_meta)
-      params = { from: from_email, to: delivery ? delivery.recipient : to, subject: subject, html: html }
+      sender_name = log_meta[:sender_name].to_s.gsub(/[\r\n<>"\\]/, " ").squish.first(80)
+      from = sender_name.present? ? %("#{sender_name} via HåfaPass" <#{from_email}>) : from_email
+      params = { from: from, to: delivery ? delivery.recipient : to, subject: subject, html: html }
       # Ticket PDFs travel as provider-fetched URLs (see TicketEmailAttachments).
       params[:attachments] = attachments if attachments.present?
       reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
@@ -858,7 +893,7 @@ class EmailService
       end
     end
 
-    def build_waitlist_notification_html(entry, event, event_url)
+    def build_waitlist_notification_html(entry, event, event_url, footer)
       greeting = entry.name.present? ? ht("waitlist.greeting", name: entry.name) : ht("waitlist.greeting_anonymous")
       email_wrapper(t("waitlist.title")) do
         <<~HTML
@@ -875,6 +910,7 @@ class EmailService
             <p style="color: #6b7280; margin: 0 0 24px;">#{ht('waitlist.deadline')}</p>
 
             <a href="#{event_url}" style="display: inline-block; background: linear-gradient(135deg, #0e7c7b 0%, #14a3a1 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-weight: 600; font-size: 16px;">#{ht('waitlist.cta')}</a>
+            #{footer}
           </div>
         HTML
       end

@@ -128,7 +128,7 @@ Rails.application.routes.draw do
         post "refund_reconciliation/:type/:id/:operation", to: "refund_reconciliations#action"
         resource :tax_information, only: [:show, :update]
         get "annual_statements/:year", to: "annual_statements#show"
-        resource :organization, only: [:show], controller: "organizations"
+        resource :organization, only: [:show, :update], controller: "organizations"
         resource :finances, only: [:show], controller: "organization_finances" do
           get :orders_export
           get :payouts_export
@@ -209,6 +209,7 @@ Rails.application.routes.draw do
           resources :waitlist, only: [:index, :destroy], controller: "waitlist" do
             member do
               post :notify
+              post :retry_unconfirmed
               post :offer
             end
             collection do
