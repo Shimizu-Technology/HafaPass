@@ -373,6 +373,70 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(entry.waitlist_offers.holding_inventory.count).to eq(1)
   end
 
+  it "serializes rejoin and offer issuance with completion of a claimed order" do
+    event = create(:event, :published, starts_at: 5.days.from_now)
+    event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
+    ticket_type = create(:ticket_type, event: event, quantity_available: 4)
+    buyer = create(:waitlist_entry, event: event, ticket_type: ticket_type, email: "buyer@example.com")
+    claimed = WaitlistOffers::Issuer.call(entry: buyer, ticket_type: ticket_type)
+    order_result = Commerce::OrderCreator.call(event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: buyer.email, buyer_name: "Buyer", waitlist_offer_token: WaitlistCredential.offer(claimed))
+    other = create(:waitlist_entry, event: event, ticket_type: ticket_type, email: "other@example.com")
+    locked = Queue.new
+    release = Queue.new
+    attempting = Queue.new
+    acquired = Queue.new
+    errors = Queue.new
+
+    rejoin = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        Event.transaction do
+          ApplicationRecord.connection.execute("SET LOCAL lock_timeout = '1s'")
+          Event.find(event.id).organization.lock!
+          Event.find(event.id).lock!
+          WaitlistUnsubscribe.stop!(WaitlistEntry.find(other.id))
+          WaitlistLocks.with(entry: WaitlistEntry.find(other.id)) do |_offer, entry|
+            entry.update!(status: :waiting, requested_at: Time.current)
+          end
+          locked << true
+          release.pop
+          WaitlistOffers::Issuer.call(entry: WaitlistEntry.find(other.id), ticket_type: TicketType.find(ticket_type.id))
+        end
+      end
+    rescue StandardError => error
+      errors << error
+    end
+    Timeout.timeout(3) { locked.pop }
+    completion = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        Event.transaction do
+          ApplicationRecord.connection.execute("SET LOCAL lock_timeout = '1s'")
+          attempting << true
+          Event.find(event.id).organization.lock!
+          Event.find(event.id).lock!
+          acquired << true
+          Commerce::OrderLifecycle.complete!(Order.find(order_result.order.id), payment: Payment.find(order_result.payment.id))
+        end
+      end
+    rescue StandardError => error
+      errors << error
+    end
+    Timeout.timeout(3) { attempting.pop }
+    release << true
+    Timeout.timeout(3) { acquired.pop }
+    expect(rejoin.join(3)).not_to be_nil
+    expect(completion.join(3)).not_to be_nil
+    raise errors.pop unless errors.empty?
+    expect(order_result.order.reload).to be_completed
+    expect(claimed.reload).to be_converted
+    expect(other.reload).to be_offered
+  ensure
+    release&.push(true)
+    [rejoin, completion].compact.each { |thread| thread.kill if thread.alive? }
+  end
+
   it "creates exactly one pending transfer under concurrent requests" do
     owner = create(:user)
     event = create(:event, :published, starts_at: 5.days.from_now)

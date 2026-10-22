@@ -11,6 +11,7 @@ module Commerce
         completed_now = false
 
         Order.transaction do
+          lock_event_context!(order)
           order.lock!
           payment&.lock!
 
@@ -38,14 +39,18 @@ module Commerce
 
           holds = order.inventory_holds.order(:id).lock.to_a
           catalog_holds = order.catalog_item_holds.order(:id).lock.to_a
+          # docs/LOCKING.md: order holds (3), offer (4), inventory (5).
+          claimed_offer = lock_claimed_waitlist_offer!(order)
           # Checkout locks ticket types before the seat session. Match that
           # order so a reused hold cannot deadlock a payment finalization.
           holds.map(&:ticket_type).uniq(&:id).sort_by(&:id).each(&:lock!)
+          holds.map(&:pricing_tier).compact.uniq(&:id).sort_by(&:id).each(&:lock!)
           seat_session = order.seat_hold_session
           seat_session&.lock!
           seat_hold_invalid = seat_session && (!seat_session.status_claimed? || seat_session.expires_at <= Time.current)
           if holds.empty? || seat_hold_invalid || (holds + catalog_holds).any? { |hold| !hold.active? || hold.expires_at <= Time.current }
-            release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true)
+            release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true,
+              claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
             mark_payment_succeeded!(payment)
             ReconciliationException.create!(
               order: order,
@@ -57,10 +62,8 @@ module Commerce
           end
 
           holds.each do |hold|
-            hold.ticket_type.lock!
             hold.ticket_type.increment!(:quantity_sold, hold.quantity)
             if hold.pricing_tier
-              hold.pricing_tier.lock!
               hold.pricing_tier.increment!(:quantity_sold, hold.quantity)
             end
             hold.consume!
@@ -75,7 +78,7 @@ module Commerce
           issued_tickets = issue_tickets!(order)
           Seating::SessionLifecycle.consume!(seat_session, tickets: issued_tickets) if seat_session
           finalize_promo!(order)
-          finalize_waitlist_offer!(order)
+          finalize_waitlist_offer!(claimed_offer)
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
           order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
@@ -89,6 +92,7 @@ module Commerce
 
       def fail!(order, payment: nil, failure_code: nil, failure_message: nil, reason: "payment_failed")
         Order.transaction do
+          lock_event_context!(order)
           order.lock!
           payment&.lock!
           payment&.update!(
@@ -97,18 +101,25 @@ module Commerce
             failure_code: failure_code,
             failure_message: failure_message
           ) unless payment && (payment.succeeded? || payment.partially_refunded? || payment.refunded?)
-          release_locked_order!(order, reason: reason) if order.pending?
+          if order.pending?
+            holds, catalog_holds = lock_order_holds!(order)
+            release_locked_order!(order, reason: reason, claimed_offer: lock_claimed_waitlist_offer!(order),
+              holds: holds, catalog_holds: catalog_holds)
+          end
         end
       end
 
       def cancel!(order, reason: "buyer_cancelled")
         payments_to_cancel = []
         Order.transaction do
+          lock_event_context!(order)
           order.lock!
           raise InvalidTransition, "Only pending orders can be cancelled" unless order.pending?
 
-          release_locked_order!(order, reason: reason)
-          payments_to_cancel = order.payments.pending.where(provider: "stripe").to_a
+          holds, catalog_holds = lock_order_holds!(order)
+          payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
+          release_locked_order!(order, reason: reason, claimed_offer: lock_claimed_waitlist_offer!(order),
+            holds: holds, catalog_holds: catalog_holds)
           order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: Time.current)
         end
         cancel_provider_payments!(order, payments_to_cancel)
@@ -118,11 +129,14 @@ module Commerce
         payments_to_cancel = []
         expired_now = false
         Order.transaction do
+          lock_event_context!(order)
           order.lock!
           return false unless order.pending? && order.expires_at.present? && order.expires_at <= at
 
-          release_locked_order!(order, reason: "hold_expired", expired: true, at: at)
-          payments_to_cancel = order.payments.pending.where(provider: "stripe").to_a
+          holds, catalog_holds = lock_order_holds!(order)
+          payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
+          release_locked_order!(order, reason: "hold_expired", expired: true, at: at,
+            claimed_offer: lock_claimed_waitlist_offer!(order), holds: holds, catalog_holds: catalog_holds)
           order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: at)
           expired_now = true
         end
@@ -131,6 +145,22 @@ module Commerce
       end
 
       private
+
+      def lock_event_context!(order)
+        order.event.organization.lock!
+        order.event.lock!
+      end
+
+      def lock_claimed_waitlist_offer!(order)
+        offer = order.waitlist_offer
+        return unless offer&.claimed?
+
+        WaitlistLocks.with(entry: offer.waitlist_entry, offer: offer) { offer if offer.claimed? }
+      end
+
+      def lock_order_holds!(order)
+        [order.inventory_holds.active.order(:id).lock.to_a, order.catalog_item_holds.active.order(:id).lock.to_a]
+      end
 
       def provider_matches?(payment, amount_cents, currency)
         amount_matches = amount_cents.nil? || payment.amount_cents == amount_cents.to_i
@@ -163,14 +193,15 @@ module Commerce
         StripeProcessingFees.request!(payment)
       end
 
-      def release_locked_order!(order, reason:, expired: false, at: Time.current)
-        order.inventory_holds.active.order(:id).lock.each do |hold|
+      def release_locked_order!(order, reason:, expired: false, at: Time.current, claimed_offer: nil,
+        holds:, catalog_holds:)
+        holds.select(&:active?).each do |hold|
           hold.release!(reason: reason, expired: expired, at: at)
         end
-        order.catalog_item_holds.active.order(:id).lock.each do |hold|
+        catalog_holds.select(&:active?).each do |hold|
           hold.release!(reason: reason, expired: expired, at: at)
         end
-        release_waitlist_offer!(order, at: at)
+        release_waitlist_offer!(claimed_offer, at: at)
         if order.seat_hold_session
           Seating::SessionLifecycle.release!(order.seat_hold_session, reason: reason, expired: expired, at: at,
             allow_claimed: true)
@@ -225,24 +256,18 @@ module Commerce
         issued
       end
 
-      def finalize_waitlist_offer!(order)
-        offer = order.waitlist_offer
+      def finalize_waitlist_offer!(offer)
         return unless offer&.claimed?
 
-        WaitlistLocks.with(entry: offer.waitlist_entry, offer: offer) do
-          offer.update!(status: :converted, converted_at: Time.current, token_version: offer.token_version + 1)
-          offer.waitlist_entry.update!(status: :converted, expires_at: nil)
-        end
+        offer.update!(status: :converted, converted_at: Time.current, token_version: offer.token_version + 1)
+        offer.waitlist_entry.update!(status: :converted, expires_at: nil)
       end
 
-      def release_waitlist_offer!(order, at: Time.current)
-        offer = order.waitlist_offer
+      def release_waitlist_offer!(offer, at: Time.current)
         return unless offer&.claimed?
 
-        WaitlistLocks.with(entry: offer.waitlist_entry, offer: offer) do
-          offer.update!(status: :expired, token_version: offer.token_version + 1)
-          offer.waitlist_entry.update!(status: :waiting, expires_at: nil, notified_at: nil)
-        end
+        offer.update!(status: :expired, token_version: offer.token_version + 1)
+        offer.waitlist_entry.update!(status: :waiting, expires_at: nil, notified_at: nil)
       end
 
       def record_promoter_commission!(order)

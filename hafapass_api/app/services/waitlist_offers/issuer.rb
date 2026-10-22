@@ -18,6 +18,8 @@ module WaitlistOffers
     def call
       offer = nil
       Event.transaction do
+        # docs/LOCKING.md: organization precedes event and waitlist locks.
+        entry.event.organization.lock!
         entry.event.lock!
         WaitlistLocks.with(entry: entry) do
           raise OfferError, "Only waiting entries can receive an offer" unless entry.waiting?

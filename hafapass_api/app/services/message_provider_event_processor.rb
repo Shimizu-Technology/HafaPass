@@ -13,6 +13,19 @@ class MessageProviderEventProcessor
     "email.suppressed" => :suppressed
   }.freeze
 
+  # docs/LOCKING.md: only these forward transitions may change a delivery.
+  # Hard bounce, invalid address, complaint, and suppression are terminal even
+  # when a contradictory receipt carries a newer provider timestamp.
+  ALLOWED_TRANSITIONS = {
+    "queued" => %i[sent delivered delayed failed bounced complained suppressed],
+    "sent" => %i[delivered delayed failed bounced complained suppressed],
+    "delayed" => %i[delivered failed bounced complained suppressed],
+    "failed" => %i[delivered delayed failed bounced complained suppressed],
+    "delivered" => %i[failed bounced complained suppressed], # failed only for an invalid address
+    "bounced" => %i[delivered bounced complained suppressed], # only a transient bounce can recover
+    "complained" => [], "suppressed" => [], "cancelled" => []
+  }.freeze
+
   def self.call(provider_event_id:, event:)
     new(provider_event_id: provider_event_id, event: event).call
   end
@@ -110,7 +123,9 @@ class MessageProviderEventProcessor
 
   def safe_payload
     {
-      "bounce" => data["bounce"].is_a?(Hash) ? data["bounce"].slice("type", "subType", "message") : nil,
+      "bounce" => data["bounce"].is_a?(Hash) ? data["bounce"].slice("type", "subType", "message", "code", "diagnosticCode") : nil,
+      "failed" => data["failed"].is_a?(Hash) ? data["failed"].slice("reason") : nil,
+      "error" => data["error"].is_a?(Hash) ? data["error"].slice("code", "message") : nil,
       "tags" => data["tags"].is_a?(Hash) ? data["tags"].slice("category") : nil
     }.compact
   end
@@ -120,13 +135,26 @@ class MessageProviderEventProcessor
     return unless status
 
     WaitlistLocks.for_delivery(delivery) do
-      return if delivery.last_event_at.present? && receipt.occurred_at < delivery.last_event_at
+      invalid_address = %i[failed bounced].include?(status) && MessageAddressFailure.receipt?(receipt)
+      status = :suppressed if status == :failed && invalid_address
+      terminal_failure = delivery.complained? || delivery.suppressed? ||
+        (delivery.bounced? && !WaitlistDelivery.transient_bounce?(delivery)) ||
+        delivery.metadata["provider_address_invalid"] == true
+      return if terminal_failure || !ALLOWED_TRANSITIONS.fetch(delivery.status).include?(status)
+      return if delivery.delivered? && status == :failed && !invalid_address
+      # A definitive failure wins even when its webhook arrives after a newer
+      # success receipt. Nonterminal provider updates still follow event time.
+      definitive = %i[complained suppressed].include?(status) ||
+        (status == :bounced && receipt.payload.dig("bounce", "type") != "Transient")
+      return if !definitive && delivery.last_event_at.present? && receipt.occurred_at < delivery.last_event_at
 
       attributes = { status: status, last_event_at: receipt.occurred_at, last_error: failure_message(receipt),
         reconciled_at: nil }
+      attributes[:metadata] = delivery.metadata.merge("provider_address_invalid" => true) if invalid_address
       attributes[timestamp_column(status)] = receipt.occurred_at if timestamp_column(status)
       delivery.update!(attributes)
       WaitlistDelivery.reconcile_success_locked!(delivery) if status == :delivered
+      WaitlistDelivery.reconcile_failure!(delivery) if %i[failed bounced complained suppressed].include?(status)
     end
   end
 
@@ -143,6 +171,8 @@ class MessageProviderEventProcessor
   def failure_message(receipt)
     return unless %i[failed bounced complained suppressed].include?(STATUS_BY_EVENT[receipt.event_type])
 
-    receipt.payload.dig("bounce", "message") || "Provider reported #{receipt.event_type.delete_prefix('email.')}"
+    receipt.payload.dig("error", "message") || receipt.payload.dig("bounce", "message") ||
+      receipt.payload.dig("failed", "reason") ||
+      "Provider reported #{receipt.event_type.delete_prefix('email.')}"
   end
 end

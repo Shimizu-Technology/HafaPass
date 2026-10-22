@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
-# All waitlist writers acquire row locks in this order: offer, entry, delivery.
+# docs/LOCKING.md: organization, event, then advisory, offer, entry, delivery.
 class WaitlistLocks
   ADVISORY_NAMESPACE = 20_261_022
 
   def self.with(entry:, offer: nil, delivery: nil)
     WaitlistEntry.transaction do
+      entry.event.organization.lock!
+      entry.event.lock!("FOR NO KEY UPDATE")
       # Stabilize the active-offer lookup before taking any row lock. A new
       # offer can otherwise appear while this transaction waits for the entry.
       ApplicationRecord.connection.exec_query("SELECT 1 FROM pg_advisory_xact_lock($1, $2)", "Waitlist lock", [

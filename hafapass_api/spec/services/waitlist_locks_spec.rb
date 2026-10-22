@@ -1,4 +1,5 @@
 require "rails_helper"
+require "timeout"
 
 RSpec.describe WaitlistLocks do
   # The two workers need separate PostgreSQL connections and committed fixtures.
@@ -50,6 +51,10 @@ RSpec.describe WaitlistLocks do
     end
   end
 
+  def signal(queue)
+    Timeout.timeout(3) { queue.pop }
+  end
+
   it "finishes unsubscribe racing delivery reconciliation without lock inversion" do
     ticket = create(:ticket_type, event: event, quantity_available: 3)
     offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
@@ -57,6 +62,8 @@ RSpec.describe WaitlistLocks do
     delivery.update!(status: :failed, last_error: "Resend::Error::InvalidRequestError: rejected")
     ready = Queue.new
     release = Queue.new
+    attempting = Queue.new
+    acquired = Queue.new
 
     unsubscribe = worker do
       WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), offer: WaitlistOffer.find(offer.id)) do
@@ -66,42 +73,76 @@ RSpec.describe WaitlistLocks do
         MessageDelivery.find(delivery.id).lock!
       end
     end
-    ready.pop
-    reconcile = worker { WaitlistDelivery.reconcile_failure!(MessageDelivery.find(delivery.id)) }
-    sleep 0.05
+    signal(ready)
+    reconcile = worker do
+      attempting << true
+      WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), delivery: MessageDelivery.find(delivery.id)) do
+        acquired << true
+        WaitlistDelivery.reconcile_failure!(MessageDelivery.find(delivery.id))
+      end
+    end
+    signal(attempting)
     release << true
+    signal(acquired)
     finish(unsubscribe, reconcile)
     expect(entry.reload).to be_cancelled
   end
 
-  it "serializes a late delivered receipt and the decision to start another alert round" do
+  def hard_bounced_alert
     entry.notify!
     delivery = EmailService.send_waitlist_notification_async(entry)
-    delivery.update!(status: :failed, last_error: "recipient rejected", provider: "resend",
+    delivery.update!(status: :sent, provider: "resend",
       provider_id: "late-receipt-#{delivery.id}")
-    WaitlistDelivery.reconcile_failure!(delivery)
+    MessageProviderEventProcessor.call(provider_event_id: "bounce-#{delivery.id}", event: {
+      "type" => "email.bounced", "created_at" => Time.current.iso8601,
+      "data" => { "email_id" => delivery.provider_id,
+        "bounce" => { "type" => "Permanent", "message" => "Mailbox does not exist" } }
+    })
     expect(entry.reload).to be_waiting
-    ready = Queue.new
-    release = Queue.new
+    delivery
+  end
 
-    receipt = worker do
-      WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), delivery: MessageDelivery.find(delivery.id)) do
-        ready << true
-        release.pop
-        MessageProviderEventProcessor.call(provider_event_id: "delivered-#{delivery.id}", event: {
-          "type" => "email.delivered", "created_at" => Time.current.iso8601,
-          "data" => { "email_id" => "late-receipt-#{delivery.id}" }
-        })
+  def late_delivery(delivery)
+    MessageProviderEventProcessor.call(provider_event_id: "delivered-#{delivery.id}", event: {
+      "type" => "email.delivered", "created_at" => 1.minute.from_now.iso8601,
+      "data" => { "email_id" => delivery.provider_id }
+    })
+  end
+
+  [:receipt_first, :new_round_first].each do |order|
+    it "keeps a hard bounce and suppresses round two when #{order.to_s.tr('_', ' ')}" do
+      delivery = hard_bounced_alert
+      ready = Queue.new
+      release = Queue.new
+      acquired = Queue.new
+      first = worker do
+        WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), delivery: MessageDelivery.find(delivery.id)) do
+          ready << true
+          release.pop
+          order == :receipt_first ? late_delivery(delivery) : WaitlistEntry.find(entry.id).notify_and_queue!
+        end
       end
-    end
-    ready.pop
-    notify = worker { WaitlistEntry.find(entry.id).notify_and_queue! }
-    sleep 0.05
-    release << true
-    finish(receipt, notify)
+      signal(ready)
+      second = worker do
+        WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), delivery: MessageDelivery.find(delivery.id)) do
+          acquired << true
+          order == :receipt_first ? WaitlistEntry.find(entry.id).notify_and_queue! : late_delivery(delivery)
+        end
+      end
+      release << true
+      signal(acquired)
+      finish(first, second)
 
-    expect(notify.value).to be(false)
-    expect(entry.reload).to be_notified
-    expect(MessageDelivery.where(template: "waitlist_notification", recipient: entry.email).count).to eq(1)
+      round_two = MessageDelivery.where(template: "waitlist_notification", recipient: entry.email)
+        .where.not(id: delivery.id).sole
+      expect(delivery.reload).to be_bounced
+      expect(delivery.metadata["provider_address_invalid"]).to be(true)
+      expect(round_two.suppressed_recipient?).to be(true)
+      allow(EmailService).to receive(:send_delivery_payload)
+      MessageDeliveryJob.perform_now(round_two.id)
+      expect(round_two.reload).to be_suppressed
+      expect(EmailService).not_to have_received(:send_delivery_payload)
+      expect(entry.reload.delivery_failure.downcase).to include("bounc")
+    end
   end
 end

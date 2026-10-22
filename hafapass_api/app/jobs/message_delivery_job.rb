@@ -189,7 +189,7 @@ class MessageDeliveryJob < ApplicationJob
         # was already unknown. Never reinterpret an earlier lost response.
         unknown = delivery.provider_outcome_unknown?
         unknown = false if !previously_unknown && known_rejection?(error)
-        invalid_recipient = provider_rejected_recipient?(error)
+        invalid_recipient = MessageAddressFailure.synchronous?(error)
         delivery.update!(status: invalid_recipient ? :suppressed : :failed,
           failed_at: invalid_recipient ? nil : Time.current,
           suppressed_at: invalid_recipient ? Time.current : delivery.suppressed_at,
@@ -240,11 +240,6 @@ class MessageDeliveryJob < ApplicationJob
     error.is_a?(Resend::Error::InvalidRequestError) || error.is_a?(Resend::Error::NotFoundError) ||
       error.is_a?(Resend::Error::RateLimitExceededError) ||
       error.is_a?(EmailService::ProviderDisabled)
-  end
-
-  def provider_rejected_recipient?(error)
-    (error.is_a?(Resend::Error::InvalidRequestError) || error.is_a?(Resend::Error::NotFoundError)) &&
-      error.message.match?(/recipient|mailbox|email address|does not exist|nonexistent/i)
   end
 
   def terminal?(delivery)
