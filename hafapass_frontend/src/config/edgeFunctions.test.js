@@ -42,6 +42,18 @@ describe('share preview edge function', () => {
     expect(await response.text()).toContain('og:title')
   })
 
+  it('serves policy-specific previews to social crawlers', async () => {
+    vi.stubGlobal('Netlify', { env: env('https://api.example.test') })
+    const fetchMock = vi.fn(async () => new Response('<meta property="og:title" content="Organizer Agreement">', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await ogRedirect(crawl('/policies/organizer-agreement'), context())
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/og/policies/organizer-agreement')
+    expect(response.headers.get('vary')).toBe('User-Agent')
+    expect(await response.text()).toContain('Organizer Agreement')
+  })
+
   it('passes through to the SPA when the API origin is not configured', async () => {
     vi.stubGlobal('Netlify', { env: env(undefined) })
     vi.stubGlobal('fetch', vi.fn())
@@ -60,6 +72,7 @@ describe('share preview edge function', () => {
       crawl('/events/beach-party', 'Mozilla/5.0 (compatible; bingbot/2.0)'),
       crawl('/events'),
       crawl('/events/beach-party/checkout'),
+      crawl('/policies/organizer-agreement', 'Mozilla/5.0 (iPhone)'),
     ]) {
       expect(await isSpa(await ogRedirect(request, context()))).toBe(true)
     }

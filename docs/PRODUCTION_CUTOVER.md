@@ -150,7 +150,7 @@ files in S3 and Clerk accounts of deleted users are not touched.
 The admin dashboard shows a red banner for each item that still blocks
 production, with an **Approve now** button (one admin, one click, audited):
 
-1. **Production policy register**: checkout is off until approved. While the policies are still drafts, tick the acknowledgment ("I'm approving these draft policies for launch before legal review…"); it is recorded on the approval and in the audit log. Unfilled placeholders block approval. A new policy version needs a new approval.
+1. **Production policy register**: checkout is off until the current owner-approved policy snapshot is approved in the admin flow. No draft acknowledgment is required. Unfilled placeholders block approval. A new policy version needs a new approval.
 2. **Production email (Resend)**: ticket and order emails are off until approved. The button stays disabled until the Resend variables are set.
 
 These one-click approvals last a year. Thirty days before they expire, the
@@ -211,8 +211,8 @@ API. The new table is additive and does not populate or approve any organizer's
 W-9. Existing organizers need completed tax information before payout readiness;
 saving tax details invalidates all payout-method approval revisions.
 
-The draft policy version is `2026-10-counsel-draft-3`; its content and registry
+The operative policy version is `2026-10-22`; its content and registry
 digests change. Existing `policy_register` capability approvals no longer match.
 Review Provider readiness and complete the applicable policy-register review
 through the existing workflow before expecting paid-sale readiness. Engineering
-drafts and product controls do not constitute counsel/accountant approval.
+owner approval and product controls do not constitute counsel/accountant approval.

@@ -1,5 +1,6 @@
-version: 2026-10-counsel-draft-3
-status: draft-pending-legal-review
+version: "2026-10-22"
+status: approved
+effective_date: "2026-10-22"
 # Outstanding legal-review items. Not served publicly and not part of any
 # digest: they are shown to admins in the policy register as information.
 # Keep docs/POLICY_REVIEW_REGISTER.md in step with this list.
@@ -54,7 +55,7 @@ documents:
   buyer-terms:
     title: Buyer Terms
     summary: |-
-      The terms that apply when you buy, receive, use, or transfer tickets on {{platform_name}}, including who sells the ticket, how pricing and fees work, and what to do when something goes wrong. Draft pending legal review.
+      The terms that apply when you buy, receive, use, or transfer tickets on {{platform_name}}, including who sells the ticket, how pricing and fees work, and what to do when something goes wrong.
     sections:
       - heading: Who we are and who sells your ticket
         body: |-
@@ -126,7 +127,7 @@ documents:
   refunds:
     title: Refund & Cancellation Policy
     summary: |-
-      When you can get a refund, what is refunded (including the service fee), how event cancellations and postponements are handled, and how long refunds take. Draft pending legal review.
+      When you can get a refund, what is refunded (including the service fee), how event cancellations and postponements are handled, and how long refunds take.
     sections:
       - heading: Who sets the refund rules
         body: |-
@@ -161,7 +162,7 @@ documents:
   privacy:
     title: Privacy Policy
     summary: |-
-      What personal information {{platform_name}} collects, how we use and share it, how long we keep it, and the choices you have. Draft pending legal review.
+      What personal information {{platform_name}} collects, how we use and share it, how long we keep it, and the choices you have.
     sections:
       - heading: Who is responsible
         body: |-
@@ -237,7 +238,7 @@ documents:
   organizer-agreement:
     title: Organizer Agreement
     summary: |-
-      The agreement between event organizers and {{operator_name}} for selling tickets on {{platform_name}}, covering the agency appointment, fees, payouts, refunds, responsibilities, and termination. You must accept the current version before publishing an event. Draft pending legal review.
+      The agreement between event organizers and {{operator_name}} for selling tickets on {{platform_name}}, covering the agency appointment, fees, payouts, refunds, responsibilities, and termination. You must accept the current version before publishing an event.
     sections:
       - heading: Eligibility and authority
         body: |-
@@ -317,7 +318,7 @@ documents:
   acceptable-use:
     title: Acceptable Use Policy
     summary: |-
-      The events, content, and behavior that are not allowed on {{platform_name}}, and what we may do when the rules are broken. Draft pending legal review.
+      The events, content, and behavior that are not allowed on {{platform_name}}, and what we may do when the rules are broken.
     sections:
       - heading: Who this applies to
         body: |-
@@ -357,7 +358,7 @@ documents:
   retention:
     title: Data Retention Schedule
     summary: |-
-      How long {{platform_name}} keeps different kinds of records and what happens when you ask us to delete your information. Draft pending legal review.
+      How long {{platform_name}} keeps different kinds of records and what happens when you ask us to delete your information.
     sections:
       - heading: Financial, order, and audit records
         body: |-
@@ -380,7 +381,7 @@ documents:
   cookies:
     title: Cookie Notice
     summary: |-
-      The cookies and similar browser storage {{platform_name}} uses, why we use them, and how to control them. We don't use advertising or third-party tracking cookies. Draft pending legal review.
+      The cookies and similar browser storage {{platform_name}} uses, why we use them, and how to control them. We don't use advertising or third-party tracking cookies.
     sections:
       - heading: What cookies are
         body: |-
@@ -405,7 +406,7 @@ documents:
   accessibility:
     title: Accessibility Statement
     summary: |-
-      Our accessibility goals for {{platform_name}}, the known limitations, and how to get help or report a barrier. Draft pending legal review.
+      Our accessibility goals for {{platform_name}}, the known limitations, and how to get help or report a barrier.
     sections:
       - heading: Our goal
         body: |-

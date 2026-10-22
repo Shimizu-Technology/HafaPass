@@ -25,6 +25,7 @@ class Api::V1::ConfigController < ApplicationController
       payout_schedule_text: settings.payout_schedule_text,
       public_web_url: PublicSiteUrl.base,
       buyer_terms_version: PolicyRegistry.buyer_terms[:version],
+      policy_effective_date: PolicyRegistry.effective_date,
       policies: PolicyRegistry.public_documents,
       policy_status: PolicyRegistry.status,
       event_categories: Event::CATEGORY_LABELS.map { |value, label| { value: value, label: label } }

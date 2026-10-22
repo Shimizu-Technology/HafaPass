@@ -22,30 +22,27 @@ class PolicyRegistry
   # Drafting notes in square brackets belong in review_notes, never in the
   # public text; one left in a document is a technical blocker.
   REVIEW_MARKER = /\[[^\]\n]+\]/
-  # The exact words an admin affirms to approve draft policies for launch.
-  DRAFT_ACKNOWLEDGMENT = "I'm approving these draft policies for launch before legal review. " \
-    "HåfaPass will update them after counsel reviews."
-
   class << self
     def version
       registry.fetch("version")
     end
 
-    # Engineering status of the policy text itself ("draft-pending-legal-review"
-    # until counsel supplies approved language). Not proof of approval either way.
-    def status
-      registry.fetch("status", "draft-pending-legal-review")
+    def effective_date
+      registry.fetch("effective_date")
     end
 
-    # What the admin policy register shows next to the approval controls: the
-    # served version, its draft status, the documents it covers, outstanding
-    # legal-review items (information only) and any technical blockers.
+    # The policy owner's publication decision, independent of later professional review.
+    def status
+      registry.fetch("status")
+    end
+
+    # Admin-only summary. Review notes must never be included in public_documents.
     def review_summary
       {
         version: version,
+        effective_date: effective_date,
         status: status,
         draft: draft?,
-        draft_acknowledgment: draft? ? DRAFT_ACKNOWLEDGMENT : nil,
         registry_digest: registry_digest,
         approval_blockers: approval_blockers,
         review_notes: review_notes,
@@ -65,9 +62,8 @@ class PolicyRegistry
       end
     end
 
-    # Technical problems that make the served text unfit to approve. Draft
-    # status and open legal-review items are not blockers: launching on draft
-    # policies is a business decision recorded with an explicit acknowledgment.
+    # Technical problems that make the served text unfit to approve. Open
+    # professional-review items are tracked internally and do not block publication.
     def approval_blockers
       blockers = []
       begin

@@ -1243,14 +1243,11 @@
       }
     },
     "policy": {
-      "draftPolicy": {
-        "context": "Public HåfaPass policy page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Policy content remains authoritative English; this key labels page navigation or policy status. "
+      "effective": {
+        "context": "Label before the operative date of a public HåfaPass policy. Keep the date and policy body in English."
       },
-      "version": {
-        "context": "Public HåfaPass policy page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Policy content remains authoritative English; this key labels page navigation or policy status. "
-      },
-      "draftPendingLegalReviewThisTextHas": {
-        "context": "Public HåfaPass policy page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Policy content remains authoritative English; this key labels page navigation or policy status. "
+      "versionLabel": {
+        "context": "Label before a public HåfaPass policy version; preserve the version interpolation variable."
       }
     }
   },

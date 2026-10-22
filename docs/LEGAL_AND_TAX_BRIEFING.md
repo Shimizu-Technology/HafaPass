@@ -1,6 +1,6 @@
 # HåfaPass legal and tax briefing
 
-Prepared by engineering, 2026-10-21. Draft for Leon's Guam attorney and CPA; no legal or accounting conclusions have been approved. The [counsel review packet](COUNSEL_REVIEW_PACKET.md) is the full source-backed brief and decision checklist. The [policy review register](POLICY_REVIEW_REGISTER.md) records the served draft and acceptance consequences.
+Prepared by engineering, 2026-10-21. Working brief for Leon's Guam attorney and CPA; no legal or accounting conclusions have been approved. The [counsel review packet](COUNSEL_REVIEW_PACKET.md) is the full source-backed brief and decision checklist. The [policy review register](POLICY_REVIEW_REGISTER.md) records the operative policies and acceptance consequences.
 
 ## Facts to test with professionals
 
@@ -19,6 +19,6 @@ Prepared by engineering, 2026-10-21. Draft for Leon's Guam attorney and CPA; no 
 3. Counsel and product owner: cancellation refunds, organizer campaign email, privacy/vendor roles and consumer terms.
 4. Counsel: license/permit/insurance, resale, international visitors, accessibility and contract enforceability.
 
-The packet includes a money-flow diagram, an issue-by-issue risk table with primary sources, accounting workpaper, comparable terms, product gaps, live policy links and specific questions for each reviewer. The policies remain `draft-pending-legal-review` at version `2026-10-counsel-draft-3`. Any served-text or version change changes a digest, so organizers must re-accept and an admin must approve the new policy-register snapshot; neither action is professional approval.
+The packet includes a money-flow diagram, an issue-by-issue risk table with primary sources, accounting workpaper, comparable terms, product gaps, live policy links and specific questions for each reviewer. Leon has designated version `2026-10-22` operative from October 22, 2026. Any served-text or version change changes a digest, so organizers must re-accept and an admin must approve the new policy-register snapshot; neither action is professional approval.
 
-The October 22 review corrected public fee-change, retention, refund-exception, support and accessibility wording. The repository README identifies Shimizu Technology LLC, but Leon and counsel should verify the exact registered entity and Stripe merchant identity before approving this version. See the findings and product follow-ups in the [policy review register](POLICY_REVIEW_REGISTER.md#october-22-implementation-review).
+The October 22 review corrected public fee-change, retention, refund-exception, support and accessibility wording. The repository README identifies Shimizu Technology LLC; Leon and counsel should verify the exact registered entity and Stripe merchant identity during later review. See the findings and product follow-ups in the [policy review register](POLICY_REVIEW_REGISTER.md#october-22-implementation-review).
