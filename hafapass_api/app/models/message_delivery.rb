@@ -75,7 +75,7 @@ class MessageDelivery < ApplicationRecord
   PLACEHOLDER_EMAIL_DOMAIN = "@hafapass.invalid"
 
   def undeliverable_recipient?
-    recipient.to_s.strip.downcase.end_with?(PLACEHOLDER_EMAIL_DOMAIN)
+    recipient.to_s.strip.downcase.end_with?(PLACEHOLDER_EMAIL_DOMAIN, "@privacy.invalid")
   end
 
   def suppressed_recipient?

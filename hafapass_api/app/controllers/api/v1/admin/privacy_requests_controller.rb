@@ -19,19 +19,23 @@ class Api::V1::Admin::PrivacyRequestsController < Api::V1::Admin::BaseController
     if @item.verified?
       return render json: { request: serialized }
     end
-    if @item.user && !ClerkIdentity.verified_email_addresses(@item.user.clerk_id,
+    if @item.user.nil?
+      return render json: { error: "The guest must pass the emailed challenge" }, status: :unprocessable_entity
+    end
+    if !ClerkIdentity.verified_email_addresses(@item.user.clerk_id,
         require_available: true).include?(@item.requester_email.downcase)
       return render json: { error: "Clerk does not verify this email for the account" }, status: :unprocessable_entity
     end
     @item.update!(status: "verified", verified_at: Time.current, verified_by: current_user)
     AuditLogger.record!(action: "privacy_request.verified", auditable: @item, actor: current_user,
-      metadata: { kind: @item.kind, proof: @item.user ? "clerk_verified_email" : "guest_order_link" }, request: request)
+      metadata: { kind: @item.kind, proof: "clerk_verified_email" }, request: request)
     render json: { request: serialized }
   end
 
   def execute
-    PrivacyRequestProcessor.new(@item).execute!(actor: current_user, request: request)
-    render json: { request: serialized }
+    outcome = PrivacyRequestProcessor.new(@item).execute!(actor: current_user, request: request,
+      confirm_dry_run: ActiveModel::Type::Boolean.new.cast(params[:confirm_dry_run]) == true)
+    render json: outcome.is_a?(Hash) ? { request: serialized, preview: outcome, dry_run: true } : { request: serialized }
   rescue PrivacyRequestProcessor::Blocked => error
     render json: { error: error.message }, status: :conflict
   end

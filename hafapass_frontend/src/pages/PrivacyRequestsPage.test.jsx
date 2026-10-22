@@ -22,7 +22,12 @@ describe('guest privacy requests', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Request my data' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/guest_privacy_requests',
       { kind: 'access', order_id: '27', guest_token: 'verified-link' }))
-    expect(screen.getByRole('status')).toHaveTextContent('Request submitted')
+    expect(screen.getByRole('status')).toHaveTextContent('one-time code')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Email verification code' }), '123456')
+    await userEvent.click(screen.getByRole('button', { name: 'Verify email' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/guest_privacy_requests/3/verify',
+      { code: '123456' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Email verified')
   })
 
   it('explains how to recover access when the link is missing', async () => {

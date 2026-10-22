@@ -15,7 +15,30 @@ class PrivacyRequest < ApplicationRecord
   validate :subject_present
 
   def verified?
-    verified_at.present?
+    verified_at.present? && (user_id.present? || guest_challenge_passed_at.present?)
+  end
+
+  def issue_guest_challenge!
+    raise ArgumentError, "Only guest requests need an email challenge" if user_id.present?
+
+    code = SecureRandom.random_number(1_000_000).to_s.rjust(6, "0")
+    update!(guest_challenge_digest: Digest::SHA256.hexdigest(code),
+      guest_challenge_expires_at: 15.minutes.from_now, guest_challenge_attempts: 0)
+    code
+  end
+
+  def verify_guest_challenge!(code)
+    with_lock do
+      return false if user_id.present? || verified_at.present? || guest_challenge_digest.blank? ||
+        guest_challenge_expires_at.blank? || guest_challenge_expires_at.past? || guest_challenge_attempts >= 5
+
+      update!(guest_challenge_attempts: guest_challenge_attempts + 1)
+      match = ActiveSupport::SecurityUtils.secure_compare(guest_challenge_digest,
+        Digest::SHA256.hexdigest(code.to_s))
+      update!(status: "verified", verified_at: Time.current, guest_challenge_digest: nil,
+        guest_challenge_expires_at: nil, guest_challenge_passed_at: Time.current) if match
+      match
+    end
   end
 
   private

@@ -12,10 +12,13 @@ class OrganizerSalesExportOrphanSweepJob < ApplicationJob
   GRACE_PERIOD = 2.days
 
   def perform
-    OrganizerSalesExportRequest.fail_expired_processing!
     # An orphan key only identifies its organization, so a narrower hold
     # lookup cannot reliably rule out an event, order, user, or email hold.
-    return if LegalHold.active.exists?
+    if LegalHold.active.exists?
+      Rails.logger.info("Sales export orphan sweep skipped under legal hold")
+      return
+    end
+    OrganizerSalesExportRequest.fail_expired_processing!
     return unless S3Service.configured?
 
     client = Aws::S3::Client.new(region: ENV.fetch("AWS_REGION", "us-west-2"),
@@ -33,7 +36,7 @@ class OrganizerSalesExportOrphanSweepJob < ApplicationJob
         next if associated.include?(object.key)
 
         begin
-          client.delete_object(bucket: bucket, key: object.key)
+          S3Service.delete_private_export!(object.key)
         rescue Aws::S3::Errors::ServiceError => error
           Rails.logger.error("Sales export orphan sweep: DeleteObject permission or service access failed (#{error.class})")
         end

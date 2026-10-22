@@ -72,11 +72,11 @@ class DataRetentionPurgeJob < ApplicationJob
     Order.where(status: [:pending, :expired]).where("COALESCE(expired_at, expires_at, created_at) < ?", pending_cutoff)
       .in_batches(of: DataRetention::BATCH_SIZE) do |batch|
         batch.each do |order|
-          next if DataRetention.held?(order) || DataRetention.unresolved_money?(order)
-          next if order.payments.exists? || order.refunds.exists? || order.disputes.exists? || order.tickets.exists?
-
-          counts["abandoned_orders"] += 1
-          DataRetention.delete_pending_order!(order) unless dry_run
+          if dry_run
+            counts["abandoned_orders"] += 1 if DataRetention.pending_order_purgeable?(order)
+          else
+            counts["abandoned_orders"] += 1 if DataRetention.delete_pending_order!(order)
+          end
         end
       end
     Rails.logger.info("[DataRetention] dry_run=#{dry_run} counts=#{counts.sort.to_h.to_json}")

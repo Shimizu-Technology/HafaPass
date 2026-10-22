@@ -76,6 +76,8 @@ class EmailService
         send_verification_request(profile, delivery.recipient, delivery: delivery)
       when "organization_invitation"
         send_organization_invitation(delivery.organization_membership, delivery: delivery)
+      when "guest_privacy_challenge"
+        send_guest_privacy_challenge(delivery.privacy_request, delivery: delivery)
       when "privacy_request_confirmation"
         send_privacy_request_confirmation(delivery.privacy_request, delivery: delivery)
       when "platform_invitation"
@@ -112,6 +114,23 @@ class EmailService
     rescue StandardError => e
       record_enqueue_failure(delivery, e)
       raise
+    end
+
+    def send_guest_privacy_challenge_async(privacy_request, code)
+      delivery = create_delivery(privacy_request: privacy_request, template: "guest_privacy_challenge",
+        recipient: privacy_request.requester_email, metadata: { "code" => code },
+        idempotency_key: "guest-privacy-challenge/#{privacy_request.id}")
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    end
+
+    def send_guest_privacy_challenge(privacy_request, delivery:)
+      code = delivery.metadata.fetch("code")
+      html = email_wrapper("Verify your HåfaPass privacy request") do
+        "<p>Your verification code is <strong>#{ERB::Util.html_escape(code)}</strong>. It expires in 15 minutes.</p>"
+      end
+      deliver(to: privacy_request.requester_email, subject: "Verify your HåfaPass privacy request",
+        html: html, tag: "privacy_request", delivery: delivery)
     end
 
     def send_privacy_request_confirmation_async(privacy_request)
@@ -531,6 +550,7 @@ class EmailService
         ticket&.cache_key_with_version, event&.cache_key_with_version, metadata.to_json].join("|")
       invitation_subject = organization_membership || platform_invitation
       digest_source = "#{digest_source}|#{invitation_subject.class.name}/#{invitation_subject.id}" if invitation_subject
+      suppressed = template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(recipient)
       attributes = {
         order: order,
         ticket: ticket,
@@ -541,11 +561,11 @@ class EmailService
         requested_by: requested_by,
         channel: "email",
         template: template,
-        recipient: recipient.to_s.strip.downcase,
+        recipient: suppressed ? "deleted@privacy.invalid" : recipient.to_s.strip.downcase,
         provider: delivery_provider,
         payload_digest: Digest::SHA256.hexdigest(digest_source),
-        metadata: metadata,
-        status: :queued
+        metadata: suppressed ? {} : metadata,
+        status: suppressed ? :suppressed : :queued
       }
       return MessageDelivery.create!(attributes) unless idempotency_key
 

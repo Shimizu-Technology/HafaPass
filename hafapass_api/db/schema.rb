@@ -1116,7 +1116,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_153000) do
     t.index ["status", "updated_at"], name: "index_message_deliveries_on_status_and_updated_at"
     t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
     t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
-    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL OR organization_membership_id IS NOT NULL OR platform_invitation_id IS NOT NULL OR privacy_request_id IS NOT NULL", name: "message_deliveries_subject_present"
+    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL OR organization_membership_id IS NOT NULL OR platform_invitation_id IS NOT NULL OR privacy_request_id IS NOT NULL", name: "message_deliveries_subject_present_with_privacy"
     t.check_constraint "outbound_wire_body IS NULL AND wire_body_digest IS NULL OR outbound_wire_body IS NOT NULL AND wire_body_digest IS NOT NULL AND wire_body_digest::text = encode(sha256(convert_to(outbound_wire_body, 'UTF8'::name)), 'hex'::text)", name: "message_deliveries_wire_digest_matches"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7, 8])", name: "message_deliveries_status_valid"
   end
@@ -1651,7 +1651,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_153000) do
     t.check_constraint "tier_type <> 1 OR quantity_sold <= quantity_limit", name: "pricing_tiers_sold_within_limit"
   end
 
+  create_table "privacy_email_suppressions", force: :cascade do |t|
+    t.string "email_digest", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["email_digest"], name: "index_privacy_email_suppressions_on_email_digest", unique: true
+  end
+
   create_table "privacy_requests", force: :cascade do |t|
+    t.string "guest_challenge_digest"
+    t.datetime "guest_challenge_expires_at"
+    t.integer "guest_challenge_attempts", default: 0, null: false
+    t.datetime "guest_challenge_passed_at"
     t.string "kind", null: false
     t.string "status", default: "submitted", null: false
     t.bigint "user_id"

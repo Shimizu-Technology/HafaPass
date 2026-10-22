@@ -374,6 +374,18 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     OrganizerSalesExportOrphanSweepJob.perform_now
   end
 
+  it "skips the orphan sweep and logs when any legal hold is active" do
+    processing = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: %w[name], status: "processing", claimed_at: 31.minutes.ago)
+    LegalHold.place!(scope_type: "organization", scope_value: event.organization_id.to_s,
+      reason: "Preserve pending export files", actor: owner)
+    allow(Rails.logger).to receive(:info).and_call_original
+    expect(S3Service).not_to receive(:configured?)
+    OrganizerSalesExportOrphanSweepJob.perform_now
+    expect(Rails.logger).to have_received(:info).with(/orphan sweep skipped under legal hold/)
+    expect(processing.reload.status).to eq("processing")
+  end
+
   it "logs ListBucket denial and ends the sweep cleanly" do
     allow(S3Service).to receive(:configured?).and_return(true)
     allow(ENV).to receive(:fetch).and_call_original
@@ -460,6 +472,37 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(request_record.reload).to have_attributes(status: "expired", storage_key: nil)
   end
 
+  it "skips held expired exports and logs the skip" do
+    request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: [], status: "ready", storage_key: "private/sales-exports/held.csv",
+      expires_at: 1.minute.ago)
+    LegalHold.place!(scope_type: "organization", scope_value: event.organization_id.to_s,
+      reason: "Preserve export records", actor: owner)
+    allow(Rails.logger).to receive(:info).and_call_original
+    expect(Rails.logger).to receive(:info).with(/Sales export cleanup skipped under legal hold/)
+    expect(S3Service).not_to receive(:delete_private_export!)
+    OrganizerSalesExportCleanupJob.perform_now(request_record.id)
+    expect(request_record.reload.status).to eq("ready")
+  end
+
+  it "rejects an expired export key outside the private prefix" do
+    request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: [], status: "ready", storage_key: "uploads/events/1/unsafe.jpg",
+      expires_at: 1.minute.ago)
+    expect { OrganizerSalesExportCleanupJob.perform_now(request_record.id) }
+      .to raise_error(S3Service::UploadError)
+    expect(request_record.reload.status).to eq("ready")
+  end
+
+  it "runs the two-day export cleanup even when automated retention is dry-run" do
+    request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: {}, columns: [], status: "ready", storage_key: nil,
+      expires_at: 1.minute.ago)
+    allow(DataRetention).to receive(:dry_run?).and_return(true)
+    OrganizerSalesExportCleanupJob.perform_now(request_record.id)
+    expect(request_record.reload.status).to eq("expired")
+  end
+
   it "removes an uploaded CSV if the export fails before completion" do
     sale(name: "Mina")
     request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
@@ -476,6 +519,29 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect { OrganizerSalesExportJob.perform_now(request_record.id) }.to raise_error("synthetic audit failure")
     expect(request_record.reload).to have_attributes(status: "failed", storage_key: nil)
   end
+
+  it "retains an uploaded CSV under legal hold if generation fails after upload" do
+    sale(name: "Mina")
+    request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
+      filters: { "view" => "tickets" }, columns: %w[name], row_count: 1)
+    LegalHold.place!(scope_type: "event", scope_value: event.id.to_s,
+      reason: "Preserve export evidence", actor: owner)
+    allow(S3Service).to receive(:configured?).and_return(true)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    allow(client).to receive(:put_object)
+    expect(S3Service).not_to receive(:delete_private_export!)
+    allow(AuditLogger).to receive(:record!).and_raise("synthetic audit failure")
+    allow(Rails.logger).to receive(:info).and_call_original
+
+    expect { OrganizerSalesExportJob.perform_now(request_record.id) }.to raise_error("synthetic audit failure")
+    expect(Rails.logger).to have_received(:info).with(/cleanup skipped under legal hold/)
+    expect(request_record.reload.status).to eq("failed")
+    expect(request_record.storage_key).to start_with("private/sales-exports/")
+  end
+
   it "keeps finance-only exports to transaction columns across roles" do
     sale(name: "Mina")
     roles = { finance: { allowed: %w[order_number ticket_price discount fee tax total_paid channel status purchase_date],

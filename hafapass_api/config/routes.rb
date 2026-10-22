@@ -102,6 +102,7 @@ Rails.application.routes.draw do
         resources :event_referrals, only: [:index, :create]
       end
       post "guest_privacy_requests", to: "guest_privacy_requests#create"
+      post "guest_privacy_requests/:id/verify", to: "guest_privacy_requests#verify"
       get "privacy_export", to: "privacy_exports#show"
 
       # Public events

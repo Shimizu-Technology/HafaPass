@@ -333,7 +333,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
 
       <section aria-labelledby="retention-purge-title" className="mt-6 card p-5 sm:p-6">
         <h2 id="retention-purge-title" className="text-lg font-semibold text-neutral-900">Data retention purge</h2>
-        <p className="mt-2 text-sm text-neutral-700">Production starts in dry-run mode. Scheduled runs count eligible records without changing them until you enable purge here. A legal hold always prevents disposal.</p>
+        <p className="mt-2 text-sm text-neutral-700">Production starts in dry-run mode. Scheduled runs count eligible records without changing them until you enable purge here. Privacy requests require explicit admin confirmation to execute during dry run. The existing two-day sales-export cleanup runs separately and still respects legal holds. A legal hold always prevents disposal.</p>
         <p className="mt-2 text-sm font-semibold text-neutral-900">Current mode: {saved.retention_dry_run ? 'Dry run' : 'Live purge'}</p>
         {saved.environment === 'production' && !saved.retention_purge_enabled && <label className="mt-4 flex items-start gap-2 text-sm text-neutral-800"><input type="checkbox" checked={purgeAcknowledged} onChange={event => setPurgeAcknowledged(event.target.checked)} className="mt-1" />I have reviewed the retention schedule with counsel and the CPA.</label>}
         <button type="button" disabled={purgeSaving || (!saved.retention_purge_enabled && saved.environment === 'production' && !purgeAcknowledged)}

@@ -72,17 +72,39 @@ export function GuestPrivacyRequestsPage() {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [requestId, setRequestId] = useState(null)
+  const [code, setCode] = useState('')
   const token = getOrderAccess(orderId)
   const submit = async kind => {
     if (!token) { setError('Open the secure link in your order email first.'); return }
     setPending(true); setError(''); setNotice('')
     try {
-      await apiClient.post('/guest_privacy_requests', { kind, order_id: orderId, guest_token: token })
-      setNotice('Request submitted. We will write to the email on your order.')
+      const response = await apiClient.post('/guest_privacy_requests', { kind, order_id: orderId, guest_token: token })
+      setRequestId(response.data.id)
+      setNotice('We sent a one-time code to the buyer email on your order. Enter it below to verify your request.')
     } catch (failure) {
       setError(failure.response?.data?.error || 'Request could not be submitted. Open a current order link and try again.')
     } finally { setPending(false) }
   }
-  return <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6"><RequestForm submit={submit} pending={pending} notice={notice}
-    error={error || (!token ? 'Open the secure link in your order email to make a request.' : '')} guest /></main>
+  const verify = async event => {
+    event.preventDefault()
+    setPending(true); setError('')
+    try {
+      await apiClient.post(`/guest_privacy_requests/${requestId}/verify`, { code })
+      setNotice('Email verified. An administrator can now review your request.')
+      setRequestId(null); setCode('')
+    } catch (failure) {
+      setError(failure.response?.data?.error || 'The code is invalid or expired. Submit a new request to try again.')
+    } finally { setPending(false) }
+  }
+  return <main className="mx-auto max-w-3xl space-y-4 px-4 py-8 sm:px-6"><RequestForm submit={submit} pending={pending} notice={notice}
+    error={error || (!token ? 'Open the secure link in your order email to make a request.' : '')} guest />
+    {requestId && <form onSubmit={verify} className="rounded-xl border border-neutral-200 bg-white p-5">
+      <label className="block text-sm font-medium">Email verification code
+        <input className="input mt-2" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+          value={code} onChange={event => setCode(event.target.value)} required />
+      </label>
+      <button type="submit" className="btn-primary mt-3" disabled={pending || code.length !== 6}>Verify email</button>
+    </form>}
+  </main>
 }

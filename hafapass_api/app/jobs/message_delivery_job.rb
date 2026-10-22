@@ -41,6 +41,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "This is not a material event change")
         next :done
       end
+      if delivery.template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(delivery.recipient)
+        delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Privacy deletion suppression")
+        next :done
+      end
       if delivery.undeliverable_recipient?
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
@@ -112,6 +116,13 @@ class MessageDeliveryJob < ApplicationJob
       return
     end
 
+    if delivery.template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(delivery.recipient)
+      delivery.with_lock do
+        delivery.update!(status: :suppressed, suppressed_at: Time.current,
+          send_lease_token: nil, send_lease_expires_at: nil, last_error: "Privacy deletion suppression")
+      end
+      return
+    end
     if delivery.promotional? && delivery.event && (delivery.marketing_unsubscribed? ||
         !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient) ||
         delivery.suppressed_recipient? ||

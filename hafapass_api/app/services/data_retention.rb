@@ -3,6 +3,10 @@
 class DataRetention
   CONFIG = Rails.root.join("config/data_retention.yml")
   BATCH_SIZE = 100
+  # Only abandoned checkout artifacts may be removed with an order. New foreign
+  # key children are blockers until explicitly reviewed here.
+  PENDING_ORDER_CHILDREN = %w[seat_holds catalog_item_holds inventory_holds seat_hold_sessions
+    order_items promo_redemptions referral_attributions acquisition_attributions marketplace_funnel_events].freeze
 
   def self.schedule
     @schedule ||= YAML.safe_load_file(CONFIG).fetch("tables")
@@ -23,28 +27,35 @@ class DataRetention
     return true if ActiveModel::Type::Boolean.new.cast(ENV["DATA_RETENTION_DRY_RUN"])
     return false unless Rails.env.production?
 
-    !SiteSetting.instance.retention_purge_enabled?
+    !SiteSetting.first&.retention_purge_enabled?
   end
 
-  def self.anonymize_order!(order)
+  def self.anonymize_order!(order, eligible_ticket_ids: nil, eligible_support_note_ids: nil,
+    anonymize_responses: nil)
     # Keep amounts, references and status so finance and tax reporting still reconcile.
     # Use a stable synthetic address to make retries idempotent.
     replacement = "deleted+order-#{order.id}@privacy.invalid"
-    ticket_ids = order.tickets.pluck(:id)
-    order.tickets.update_all(attendee_email: nil, attendee_name: nil, holder_email: nil, holder_user_id: nil,
+    ticket_ids = eligible_ticket_ids || order.tickets.where(holder_user_id: [nil, order.user_id])
+      .where("holder_email IS NULL OR lower(holder_email) = ?", order.buyer_email.to_s.downcase).pluck(:id)
+    anonymize_responses = order.tickets.count == ticket_ids.length if anonymize_responses.nil?
+    Ticket.where(id: ticket_ids).update_all(attendee_email: nil, attendee_name: nil, holder_email: nil, holder_user_id: nil,
       qr_code: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
-    RegistrationResponse.where(order_id: order.id).update_all(answer: {}, retention_anonymized_at: Time.current,
-      updated_at: Time.current)
+    if anonymize_responses
+      RegistrationResponse.where(order_id: order.id).update_all(answer: {}, retention_anonymized_at: Time.current,
+        updated_at: Time.current)
+    end
     TicketTransfer.where(ticket_id: ticket_ids).update_all(recipient_email: replacement,
       recipient_name: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
-    deliveries = MessageDelivery.where(order_id: order.id).or(MessageDelivery.where(ticket_id: ticket_ids))
+    deliveries = MessageDelivery.where(order_id: order.id, ticket_id: [nil, *ticket_ids])
+      .or(MessageDelivery.where(ticket_id: ticket_ids))
     MessageProviderEvent.where(message_delivery_id: deliveries.select(:id)).update_all(payload: {},
       processing_error: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
+    deliveries.where(status: [:queued, :delayed, :failed]).update_all(status: MessageDelivery.statuses.fetch("cancelled"))
     deliveries.update_all(recipient: replacement, metadata: {},
       outbound_payload: {}, outbound_wire_body: nil, wire_body_digest: nil, last_error: nil,
       retention_anonymized_at: Time.current, updated_at: Time.current)
     Payment.where(order_id: order.id).update_all(provider_payload: {}, failure_message: nil, updated_at: Time.current)
-    Refund.where(order_id: order.id).update_all(provider_payload: {}, failure_message: nil, updated_at: Time.current)
+    Refund.where(order_id: order.id).update_all(provider_payload: {}, reason: nil, failure_message: nil, updated_at: Time.current)
     Dispute.where(order_id: order.id).update_all(provider_payload: {}, updated_at: Time.current)
     PaymentEvent.where(payment_id: order.payments.select(:id)).update_all(data: {}, updated_at: Time.current)
     WebhookEvent.where(id: PaymentEvent.where(payment_id: order.payments.select(:id)).select(:webhook_event_id))
@@ -53,8 +64,13 @@ class DataRetention
     CardPresentPaymentAttempt.where(order_id: order.id).update_all(provider_response: {}, failure_message: nil,
       updated_at: Time.current)
     ReconciliationException.where(order_id: order.id).update_all(details: {}, updated_at: Time.current)
-    SupportNote.where(order_id: order.id).update_all(body: "[redacted]", retention_anonymized_at: Time.current,
-      updated_at: Time.current)
+    notes = if eligible_support_note_ids
+      SupportNote.where(id: eligible_support_note_ids)
+    else
+      SupportNote.where(order_id: order.id, ticket_id: [nil, *ticket_ids])
+        .or(SupportNote.where(ticket_id: ticket_ids))
+    end
+    notes.update_all(body: "[redacted]", retention_anonymized_at: Time.current, updated_at: Time.current)
     GuestListEntry.where(order_id: order.id).update_all(guest_email: nil, guest_name: "[redacted]",
       guest_phone: nil, notes: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
     AdmissionAction.where(ticket_id: ticket_ids).update_all(attendee_snapshot: {}, metadata: {},
@@ -67,6 +83,7 @@ class DataRetention
       before_data: {}, after_data: {}, metadata: {}, retention_anonymized_at: Time.current,
       updated_at: Time.current)
     order.update_columns(buyer_email: replacement, buyer_name: "Deleted buyer", buyer_phone: nil,
+      refund_reason: nil,
       marketing_opt_in: false, user_id: nil, guest_access_revoked_at: Time.current,
       retention_anonymized_at: Time.current, updated_at: Time.current)
   end
@@ -77,28 +94,52 @@ class DataRetention
   end
 
   def self.held?(record)
-    case record
-    when Order then LegalHold.for_order?(record)
-    when User then LegalHold.for_user?(record)
-    else
-      scopes = []
-      scopes << ["organization", record.organization_id.to_s] if record.respond_to?(:organization_id) && record.organization_id
-      scopes << ["event", record.event_id.to_s] if record.respond_to?(:event_id) && record.event_id
-      scopes << ["order", record.order_id.to_s] if record.respond_to?(:order_id) && record.order_id
-      scopes << ["user", record.user_id.to_s] if record.respond_to?(:user_id) && record.user_id
-      scopes << ["buyer_email", record.email.to_s.downcase] if record.respond_to?(:email) && record.email.present?
-      scopes << ["buyer_email", record.buyer_email.to_s.downcase] if record.respond_to?(:buyer_email) && record.buyer_email.present?
-      scopes << ["buyer_email", record.requester_email.to_s.downcase] if record.respond_to?(:requester_email) && record.requester_email.present?
-      scopes.any? { |type, value| LegalHold.active.exists?(scope_type: type, scope_value: value) } ||
-        (record.respond_to?(:order) && record.order && LegalHold.for_order?(record.order)) ||
-        (record.respond_to?(:ticket) && record.ticket&.order && LegalHold.for_order?(record.ticket.order)) ||
-        (record.respond_to?(:payment) && record.payment&.order && LegalHold.for_order?(record.payment.order)) ||
-        (record.respond_to?(:payment_event) && record.payment_event&.payment&.order &&
-          LegalHold.for_order?(record.payment_event.payment.order)) ||
-        (record.respond_to?(:message_delivery) && record.message_delivery &&
-          (record.message_delivery.order || record.message_delivery.ticket&.order) &&
-          LegalHold.for_order?(record.message_delivery.order || record.message_delivery.ticket.order))
+    return LegalHold.for_order?(record) if record.is_a?(Order)
+    return LegalHold.for_user?(record) if record.is_a?(User)
+    if record.is_a?(Organization)
+      return LegalHold.active.exists?(scope_type: "organization", scope_value: record.id.to_s)
     end
+    if record.is_a?(Event)
+      return LegalHold.active.where(scope_type: "event", scope_value: record.id.to_s)
+        .or(LegalHold.active.where(scope_type: "organization", scope_value: record.organization_id.to_s)).exists?
+    end
+
+    scopes = []
+    scopes << ["organization", record.organization_id.to_s] if record.respond_to?(:organization_id) && record.organization_id
+    scopes << ["event", record.event_id.to_s] if record.respond_to?(:event_id) && record.event_id
+    scopes << ["order", record.order_id.to_s] if record.respond_to?(:order_id) && record.order_id
+    scopes << ["user", record.user_id.to_s] if record.respond_to?(:user_id) && record.user_id
+    scopes << ["user", record.actor_user_id.to_s] if record.respond_to?(:actor_user_id) && record.actor_user_id
+    scopes << ["user", record.requested_by_id.to_s] if record.respond_to?(:requested_by_id) && record.requested_by_id
+    scopes << ["user", record.holder_user_id.to_s] if record.respond_to?(:holder_user_id) && record.holder_user_id
+    %i[email buyer_email requester_email recipient recipient_email holder_email].each do |field|
+      scopes << ["buyer_email", record.public_send(field).to_s.downcase] if
+        record.respond_to?(field) && record.public_send(field).present?
+    end
+    return true if scopes.any? { |type, value| LegalHold.active.exists?(scope_type: type, scope_value: value) }
+
+    return held?(record.event) if record.is_a?(OrganizerSalesExportRequest)
+    if record.is_a?(AuditLog)
+      subject = case record.auditable_type
+      when "Order" then Order.find_by(id: record.auditable_id)
+      when "Event" then Event.find_by(id: record.auditable_id)
+      when "Organization" then Organization.find_by(id: record.auditable_id)
+      end
+      return held?(subject) if subject
+    end
+    related = record.order if record.respond_to?(:order)
+    related ||= record.ticket&.order if record.respond_to?(:ticket)
+    related ||= record.payment&.order if record.respond_to?(:payment)
+    related ||= record.payment_event&.payment&.order if record.respond_to?(:payment_event)
+    if record.respond_to?(:message_delivery) && record.message_delivery
+      return true if held?(record.message_delivery)
+    end
+    return true if related && LegalHold.for_order?(related)
+
+    event = record.event if record.respond_to?(:event)
+    event ||= record.ticket&.event if record.respond_to?(:ticket)
+    event && LegalHold.active.where(scope_type: "organization", scope_value: event.organization_id.to_s)
+      .or(LegalHold.active.where(scope_type: "event", scope_value: event.id.to_s)).exists?
   end
 
   def self.anonymize!(record)
@@ -130,30 +171,62 @@ class DataRetention
     end
   end
 
-  # A pending order has no captured money, tickets in use, or open operational
-  # work. Delete its dependent quote/hold rows first; all other orders stay.
-  def self.delete_pending_order!(order)
-    raise "Order is not an abandoned pending checkout" unless order.pending? || order.expired?
-    raise "Order has money or fulfillment" if order.payments.exists? || order.refunds.exists? ||
-      order.disputes.exists? || order.tickets.exists? ||
-      PrivacyRequest.where(order_id: order.id).exists?
+  def self.pending_order_purgeable?(order)
+    return false unless order.pending? || order.expired?
+    return false if held?(order)
+    return false if order.payments.exists? || order.refunds.exists? || order.disputes.exists? ||
+      order.tickets.exists? || PrivacyRequest.where(order_id: order.id).exists? ||
+      AuditLog.where(auditable_type: "Order", auditable_id: order.id).exists? ||
+      CardPresentPaymentAttempt.where(order_id: order.id).exists? ||
+      LiveMoneyProofAuthorization.where(order_id: order.id).exists? ||
+      FeeComponent.where(order_id: order.id).exists? ||
+      MessageDelivery.where(order_id: order.id).exists?
+    # CheckoutAttempt is a permanent retry tombstone. A still-active lease may
+    # have no order_id yet, so also fence the digest carried by the order.
+    return false if CheckoutAttempt.where(order_id: order.id).exists?
+    return false if order.checkout_key_digest.present? &&
+      CheckoutAttempt.where(checkout_key_digest: order.checkout_key_digest).exists?
+    return false if PaymentEvent.joins(:payment).where(payments: { order_id: order.id }).exists?
+    return false if WebhookEvent.where("payload::text LIKE ? OR payload::text LIKE ?",
+      "%#{order.reference}%", "%#{order.id}%").exists?
+    return false if MessageProviderEvent.joins(:message_delivery)
+      .where(message_deliveries: { order_id: order.id }).exists?
+    return false if MessageProviderEvent.where("payload::text LIKE ? OR payload::text LIKE ?",
+      "%#{order.reference}%", "%#{order.id}%").exists?
 
     connection = ActiveRecord::Base.connection
-    tables = connection.data_sources - %w[schema_migrations ar_internal_metadata]
-    incoming = tables.to_h do |table|
-      [table, connection.foreign_keys(table)]
-    end
-    delete_tree = lambda do |table, ids|
-      incoming.each do |child_table, foreign_keys|
-        foreign_keys.select { |key| key.to_table == table }.each do |key|
-          child = Class.new(ApplicationRecord) { self.table_name = child_table }
-          child_ids = child.where(key.column => ids).pluck(:id)
-          delete_tree.call(child_table, child_ids) if child_ids.any?
-        end
+    connection.data_sources.each do |table|
+      next if %w[schema_migrations ar_internal_metadata].include?(table)
+
+      connection.foreign_keys(table).select { |key| key.to_table == "orders" }.each do |key|
+        next if PENDING_ORDER_CHILDREN.include?(table)
+
+        return false if connection.select_value(<<~SQL.squish)
+          SELECT 1 FROM #{connection.quote_table_name(table)}
+          WHERE #{connection.quote_column_name(key.column)} = #{connection.quote(order.id)} LIMIT 1
+        SQL
       end
-      Class.new(ApplicationRecord) { self.table_name = table }.where(id: ids).delete_all
     end
-    AuditLog.where(auditable_type: "Order", auditable_id: order.id).delete_all
-    delete_tree.call("orders", [order.id])
+    true
+  end
+
+  def self.delete_pending_order!(order)
+    Order.transaction do
+      order.lock!
+      return false unless pending_order_purgeable?(order)
+
+      item_ids = OrderItem.where(order_id: order.id).select(:id)
+      SeatHold.where(order_item_id: item_ids).delete_all
+      CatalogItemHold.where(order_item_id: item_ids).delete_all
+      InventoryHold.where(order_id: order.id).delete_all
+      SeatHoldSession.where(order_id: order.id).delete_all
+      PromoRedemption.where(order_id: order.id).delete_all
+      ReferralAttribution.where(order_id: order.id).delete_all
+      AcquisitionAttribution.where(order_id: order.id).delete_all
+      MarketplaceFunnelEvent.where(order_id: order.id).delete_all
+      OrderItem.where(order_id: order.id).delete_all
+      order.delete
+      true
+    end
   end
 end

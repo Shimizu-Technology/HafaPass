@@ -2,22 +2,21 @@ require "rails_helper"
 
 RSpec.describe DataRetention do
   describe "schedule inventory" do
-    it "classifies every application table and every directly sensitive column" do
-      excluded = %w[ar_internal_metadata schema_migrations site_settings runtime_executions runtime_throttle_buckets]
-      tables = ActiveRecord::Base.connection.data_sources.reject { |table| table.start_with?("solid_queue_") || excluded.include?(table) }
-      expect(described_class.schedule.keys.sort).to eq(tables.sort)
-
-      sensitive = /(?:email|phone|address|\Atin\z|_tin\z|ip_address|recipient|payload|answer|clerk_id|\A(?:first_name|last_name|buyer_name|attendee_name|guest_name|legal_name|signer_name|contact_name|name)\z)/
+    it "classifies every column of every table explicitly" do
+      connection = ActiveRecord::Base.connection
+      tables = connection.data_sources.sort
+      inventory = YAML.safe_load_file(described_class::CONFIG).fetch("column_classifications")
+      expect(inventory.keys.sort).to eq(tables)
       tables.each do |table|
-        rule = described_class.schedule.fetch(table)
-        expect(rule).to include("category", "period", "trigger", "action", "pii_columns")
-        expect(%w[anonymize delete keep]).to include(rule.fetch("action"))
-        columns = ActiveRecord::Base.connection.columns(table).map(&:name)
-        expect(columns).to include(rule.fetch("trigger"))
-        expect(rule.fetch("pii_columns") - columns).to be_empty
-        expect(columns.grep(sensitive) - rule.fetch("pii_columns") - rule.fetch("reviewed_non_pii_columns", [])).to be_empty,
-          "Classify new sensitive columns in #{table}"
+        columns = connection.columns(table).map(&:name).sort
+        classifications = inventory.fetch(table)
+        expect(classifications.keys.sort).to eq(columns), "Unclassified columns in #{table}"
+        expect(classifications.values - %w[pii financial non-personal system]).to be_empty
       end
+      application_tables = tables.reject { |table| table.start_with?("solid_queue_") ||
+        %w[ar_internal_metadata schema_migrations site_settings runtime_executions runtime_throttle_buckets
+          privacy_email_suppressions].include?(table) }
+      expect(described_class.schedule.keys.sort).to eq(application_tables.sort)
     end
   end
 
@@ -43,5 +42,136 @@ RSpec.describe DataRetention do
     expect(ticket.reload).to have_attributes(attendee_name: nil, attendee_email: nil, holder_email: nil)
     expect(payment.reload).to have_attributes(amount_cents: 5250, provider_payload: {})
     expect { described_class.anonymize_order!(order) }.not_to change { order.reload.buyer_email }
+  end
+end
+
+RSpec.describe DataRetention, "pending-order safety" do
+  let(:order) { create(:order, :pending, created_at: 100.days.ago, expires_at: 100.days.ago) }
+
+  %w[payments refunds disputes tickets].each do |association|
+    it "keeps a pending order with #{association}" do
+      allow(order).to receive(association).and_return(double(exists?: true))
+      expect(described_class.delete_pending_order!(order)).to be(false)
+      expect(Order.exists?(order.id)).to be(true)
+    end
+  end
+
+  {
+    "privacy requests" => PrivacyRequest,
+    "card-present attempts" => CardPresentPaymentAttempt,
+    "live-money authorizations" => LiveMoneyProofAuthorization,
+    "fee components" => FeeComponent,
+    "checkout retry tombstones" => CheckoutAttempt,
+    "message deliveries" => MessageDelivery
+  }.each do |label, model|
+    it "keeps a pending order with #{label}" do
+      allow(model).to receive(:where).with(order_id: order.id).and_return(double(exists?: true))
+      expect(described_class.delete_pending_order!(order)).to be(false)
+      expect(Order.exists?(order.id)).to be(true)
+    end
+  end
+
+  it "keeps an order while a checkout lease for its digest is active" do
+    keyed_order = create(:order, :pending, checkout_key_digest: "a" * 64,
+      created_at: 100.days.ago, expires_at: 100.days.ago)
+    CheckoutAttempt.create!(checkout_key_digest: "a" * 64, request_digest: "b" * 64,
+      status: :processing, lease_token_digest: "c" * 64, lease_expires_at: 1.minute.from_now)
+    expect(described_class.delete_pending_order!(keyed_order)).to be(false)
+    expect(Order.exists?(keyed_order.id)).to be(true)
+  end
+
+  it "keeps a reserved checkout retry tombstone permanently" do
+    tombstone = CheckoutAttempt.create!(checkout_key_digest: "d" * 64,
+      request_digest: "e" * 64, status: :reserved, order: order)
+    expect(described_class.delete_pending_order!(order)).to be(false)
+    expect(CheckoutAttempt.exists?(tombstone.id)).to be(true)
+  end
+
+  it "keeps an order referenced by a webhook event" do
+    WebhookEvent.create!(provider: "stripe", provider_event_id: SecureRandom.uuid,
+      event_type: "test.event", payload: { order_reference: order.reference })
+    expect(described_class.delete_pending_order!(order)).to be(false)
+  end
+
+  it "keeps an order referenced by a provider event" do
+    MessageProviderEvent.create!(provider: "resend", provider_event_id: SecureRandom.uuid,
+      provider_message_id: SecureRandom.uuid, event_type: "email.delivered",
+      occurred_at: Time.current, received_at: Time.current,
+      payload: { order_reference: order.reference })
+    expect(described_class.delete_pending_order!(order)).to be(false)
+  end
+
+  it "blocks an unlisted foreign-key child instead of deleting it recursively" do
+    note = SupportNote.create!(order: order, event: order.event,
+      author_user: create(:user, :admin), body: "Preserve this note")
+    expect(described_class.delete_pending_order!(order)).to be(false)
+    expect(SupportNote.exists?(note.id)).to be(true)
+    expect(Order.exists?(order.id)).to be(true)
+  end
+
+  it "rechecks a newly attached payment after taking the order lock" do
+    original = order.method(:lock!)
+    allow(order).to receive(:lock!) do
+      original.call
+      create(:payment, order: order)
+    end
+    expect(described_class.delete_pending_order!(order)).to be(false)
+    expect(Order.exists?(order.id)).to be(true)
+  end
+end
+
+RSpec.describe DataRetention, "indirect legal holds" do
+  let(:admin) { create(:user, :admin) }
+  let(:order) { create(:order) }
+
+  it "resolves an export request through its event and organization" do
+    export = OrganizerSalesExportRequest.create!(event: order.event, actor_user: admin,
+      filters: {}, columns: [])
+    LegalHold.place!(scope_type: "organization", scope_value: order.event.organization_id.to_s,
+      reason: "Preserve organizer exports", actor: admin)
+    expect(described_class.held?(export)).to be(true)
+  end
+
+  %w[Order Event Organization].each do |subject_type|
+    it "resolves an audit log's #{subject_type.downcase} subject" do
+      subject = { "Order" => order, "Event" => order.event,
+        "Organization" => order.event.organization }.fetch(subject_type)
+      log = AuditLogger.record!(action: "retention.test", auditable: subject, actor: admin)
+      scope = { "Order" => "order", "Event" => "event", "Organization" => "organization" }.fetch(subject_type)
+      LegalHold.place!(scope_type: scope, scope_value: subject.id.to_s,
+        reason: "Preserve subject audit history", actor: admin)
+      expect(described_class.held?(log)).to be(true)
+    end
+  end
+
+  it "finds a ticket holder user hold" do
+    holder = create(:user)
+    ticket = create(:ticket, order: order, event: order.event, holder_user: holder)
+    LegalHold.place!(scope_type: "user", scope_value: holder.id.to_s,
+      reason: "Preserve holder records", actor: admin)
+    expect(described_class.held?(ticket)).to be(true)
+  end
+
+  it "finds a transfer recipient email hold" do
+    ticket = create(:ticket, order: order, event: order.event)
+    transfer = create(:ticket_transfer, ticket: ticket, recipient_email: "recipient@example.com")
+    LegalHold.place!(scope_type: "buyer_email", scope_value: transfer.recipient_email,
+      reason: "Preserve recipient records", actor: admin)
+    expect(described_class.held?(transfer)).to be(true)
+  end
+
+  it "finds a delivery recipient email hold" do
+    delivery = create(:message_delivery, order: order, recipient: "recipient@example.com")
+    LegalHold.place!(scope_type: "buyer_email", scope_value: delivery.recipient,
+      reason: "Preserve recipient messages", actor: admin)
+    expect(described_class.held?(delivery)).to be(true)
+  end
+
+  it "finds a delivery requested-by user hold" do
+    sender = create(:user)
+    delivery = create(:message_delivery, order: order, requested_by: sender)
+    LegalHold.place!(scope_type: "user", scope_value: sender.id.to_s,
+      reason: "Preserve sender messages", actor: admin)
+    expect(described_class.held?(delivery)).to be(true)
   end
 end

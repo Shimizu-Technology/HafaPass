@@ -11,7 +11,9 @@ RSpec.describe PrivacyRequestProcessor do
 
   before do
     allow(ClerkIdentity).to receive(:delete_user).and_return(true)
-    allow(EmailService).to receive(:send_privacy_request_confirmation_async)
+    allow(EmailService).to receive(:send_privacy_request_confirmation_async).and_return(
+      build_stubbed(:message_delivery, id: 1))
+    allow(MessageDeliveryJob).to receive(:perform_now)
   end
 
   it "shows kept and deleted records with reasons" do
@@ -58,5 +60,113 @@ RSpec.describe PrivacyRequestProcessor do
     guest_order = create(:order, user: nil, buyer_email: user.email.upcase)
 
     expect(described_class.new(privacy_request).orders.map(&:id)).to contain_exactly(order.id, guest_order.id)
+  end
+end
+
+RSpec.describe PrivacyRequestProcessor, "review findings" do
+  let(:admin) { create(:user, :admin) }
+  let(:buyer) { create(:user) }
+  let(:order) { create(:order, user: buyer, buyer_email: buyer.email, event: create(:event, :past)) }
+  let(:privacy_request) do
+    PrivacyRequest.create!(kind: "deletion", user: buyer, requester_email: buyer.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+  end
+
+  before do
+    allow(ClerkIdentity).to receive(:delete_user).and_return(true)
+    allow(S3Service).to receive(:delete_upload!)
+    allow(EmailService).to receive(:send_privacy_request_confirmation_async).and_return(
+      build_stubbed(:message_delivery, id: 1))
+    allow(MessageDeliveryJob).to receive(:perform_now)
+  end
+
+  it "returns only a preview with zero writes and provider calls in dry-run mode" do
+    SiteSetting.delete_all
+    allow(Rails.env).to receive(:production?).and_return(true)
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DRY_RUN").and_return(nil)
+    writes = []
+    callback = ->(_name, _started, _finished, _id, payload) {
+      writes << payload[:sql] if payload[:sql].to_s.match?(/\A\s*(INSERT|UPDATE|DELETE|ALTER|TRUNCATE)\b/i)
+    }
+    admin; buyer; order; privacy_request
+    result = nil
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      result = described_class.new(privacy_request).execute!(actor: admin)
+    end
+    expect(result).to include(dry_run: true, retained: be_an(Array))
+    expect(writes).to be_empty
+    expect(S3Service).not_to have_received(:delete_upload!)
+    expect(ClerkIdentity).not_to have_received(:delete_user)
+    expect(EmailService).not_to have_received(:send_privacy_request_confirmation_async)
+    expect(SiteSetting.count).to eq(0)
+    expect(order.reload.buyer_email).to eq(buyer.email)
+  end
+
+  it "keeps a transferred holder's ticket, wallet pass, and identity out of deletion" do
+    ticket = create(:ticket, order: order, event: order.event, ticket_type: create(:ticket_type, event: order.event))
+    holder = create(:user)
+    ticket.update_columns(holder_user_id: holder.id, holder_email: holder.email,
+      attendee_name: holder.first_name, status: Ticket.statuses.fetch("transferred"))
+    wallet = WalletPass.record!(provider: "apple", serial_number: "transferred-#{ticket.id}", ticket: ticket)
+    holder_note = SupportNote.create!(order: order, ticket: ticket, event: order.event,
+      author_user: admin, body: "Contact #{holder.email}")
+    preview = described_class.new(privacy_request).preview
+    expect(preview[:deleted]).to include(include(table: "wallet_passes", count: 0))
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(ticket.reload).to have_attributes(holder_user_id: holder.id, holder_email: holder.email,
+      attendee_name: holder.first_name)
+    expect(WalletPass.exists?(wallet.id)).to be(true)
+    expect(holder_note.reload.body).to eq("Contact #{holder.email}")
+  end
+
+  it "exports a transfer fact without the new holder identity or their registration answer" do
+    ticket = create(:ticket, order: order, event: order.event, ticket_type: create(:ticket_type, event: order.event))
+    holder = create(:user)
+    ticket.update_columns(holder_user_id: holder.id, holder_email: holder.email,
+      attendee_email: holder.email, attendee_name: holder.first_name,
+      status: Ticket.statuses.fetch("transferred"))
+    question = create(:registration_question, event: order.event)
+    RegistrationResponse.create!(order: order, registration_question: question,
+      kind_snapshot: question.kind_before_type_cast, prompt_snapshot: question.prompt,
+      answer: { "value" => "holder secret" }, answered_at: Time.current)
+    access = PrivacyRequest.create!(kind: "access", user: buyer, requester_email: buyer.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+    exported = described_class.new(access).export[:orders].first
+    expect(exported[:tickets]).to eq([{ "id" => ticket.id, "status" => "transferred" }])
+    expect(exported[:registration_responses]).to be_empty
+    expect(exported.to_json).not_to include(holder.email, holder.first_name, "holder secret")
+  end
+
+  it "redacts refund reason, event-only notes, audit metadata, and recipient metadata" do
+    order.update_columns(refund_reason: "Call #{buyer.email}")
+    note = SupportNote.create!(event: order.event, author_user: admin, body: "Call #{buyer.email}")
+    audit = AuditLogger.record!(action: "retention.test", auditable: order.event,
+      actor: admin, metadata: { email: buyer.email })
+    request_audit = AuditLogger.record!(action: "privacy_request.verified", auditable: privacy_request,
+      actor: admin, metadata: { note: "Call the requester" })
+    delivery = create(:message_delivery, order: order, recipient: buyer.email,
+      metadata: { email: buyer.email })
+    deleted_email = buyer.email.dup
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(order.reload.refund_reason).to be_nil
+    expect(note.reload.body).to eq("[redacted]")
+    expect(audit.reload.metadata).to eq({})
+    expect(request_audit.reload.metadata).to eq({})
+    expect(delivery.reload.metadata).to eq({})
+    expect(PrivacyEmailSuppression.for?(deleted_email)).to be(true)
+  end
+end
+
+RSpec.describe "Privacy email suppression" do
+  it "stores only a keyed digest and prevents a later send to the deleted address" do
+    email = "deleted-buyer@example.com"
+    PrivacyEmailSuppression.suppress!(email)
+    expect(PrivacyEmailSuppression.last.email_digest).not_to include(email)
+    order = create(:order, buyer_email: email)
+    allow(MessageDeliveryJob).to receive(:perform_later)
+    delivery = EmailService.send_order_confirmation_async(order)
+    expect(delivery).to have_attributes(status: "suppressed", recipient: "deleted@privacy.invalid", metadata: {})
+    expect(MessageDeliveryJob).to have_received(:perform_later).with(delivery.id)
   end
 end
