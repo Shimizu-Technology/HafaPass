@@ -14,12 +14,19 @@ class Payout < ApplicationRecord
   validates :idempotency_key, uniqueness: true
   validates :provider_payout_id, uniqueness: { scope: :provider }, allow_blank: true
   validates :amount_cents, numericality: { only_integer: true, greater_than: 0 }
+  validates :withheld_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validate :withholding_less_than_amount
   validates :currency, length: { is: 3 }
   validate :relationships_share_organization
 
   attr_readonly :organization_id, :event_id, :settlement_id, :connected_account_id,
     :provider, :idempotency_key, :amount_cents, :currency, :payee_snapshot, :payee_approval_digest,
-    :tax_information_snapshot, :tax_information_tin, :tax_approval_digest
+    :tax_information_snapshot, :tax_information_tin, :tax_approval_digest, :withheld_cents,
+    :withholding_rate_bps, :withholding_reason, :withholding_override_reason
+
+  def disbursement_cents
+    amount_cents - withheld_cents
+  end
 
   PAYEE_CHANGED_MESSAGE = "The payee on file differs from the approved payee shown. Confirm you wrote this " \
     "check to the approved payee before recording it as paid."
@@ -37,6 +44,7 @@ class Payout < ApplicationRecord
 
   def tax_approval_matches?
     snapshot = tax_information_snapshot.to_h
+    return true if snapshot.blank? && withheld_cents.positive?
     tax = organization.organizer_tax_information
     snapshot.present? && tax.present? && snapshot["tax_information_id"] == tax.id &&
       snapshot["tax_information_updated_at"] == tax.updated_at.iso8601(6) &&
@@ -69,6 +77,10 @@ class Payout < ApplicationRecord
   end
 
   private
+
+  def withholding_less_than_amount
+    errors.add(:withheld_cents, "must be less than the gross payout") if withheld_cents.to_i >= amount_cents.to_i
+  end
 
   def relationships_share_organization
     ids = [event&.organization_id, settlement&.organization_id, connected_account&.organization_id].compact.uniq

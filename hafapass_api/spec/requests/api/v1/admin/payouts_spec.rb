@@ -18,6 +18,15 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     patch "/api/v1/admin/payouts/#{payout.id}", params: attributes, headers: auth_headers(actor)
   end
 
+  it "routes admin payout requests through the idempotency gate" do
+    post "/api/v1/admin/payouts", params: { settlement_id: settlement.id }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to include("Idempotency-Key")
+
+    post "/api/v1/admin/payouts", params: { settlement_id: settlement.id }, headers: auth_headers(create(:user))
+    expect(response).to have_http_status(:forbidden)
+  end
+
   it "exposes a release-hold action and rejects a stale payout above current payable" do
     payout.update!(status: :held, held_from_status: "processing")
     post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)

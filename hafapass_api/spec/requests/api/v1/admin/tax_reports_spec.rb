@@ -21,15 +21,13 @@ RSpec.describe "Admin tax reporting", type: :request do
       status: :paid, amount_cents: 2000, paid_at: Time.utc(2026, 10, 3))
   end
 
-  it "requires admin for reports, exports and reveals" do
+  it "requires admin for reports and exports" do
     headers = auth_headers(create(:user))
     ["/api/v1/admin/tax_reports", "/api/v1/admin/tax_reports/organizers_export", "/api/v1/admin/tax_reports/receipts_export"].each do |path|
       get path, params: { year: 2026 }, headers: headers
       expect(response).to have_http_status(:forbidden)
     end
     post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: headers
-    expect(response).to have_http_status(:forbidden)
-    post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: headers
     expect(response).to have_http_status(:forbidden)
   end
 
@@ -50,16 +48,9 @@ RSpec.describe "Admin tax reporting", type: :request do
     expect(response).to have_http_status(:unprocessable_entity)
   end
 
-  it "reveals a full TIN only through an audited POST with no caching" do
-    expect do
-      post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: auth_headers(admin)
-    end.to change { AuditLog.where(action: "organizer_tax_information.revealed").count }.by(1)
-    expect(response.parsed_body).to eq("tin" => "012345678")
-    expect(response.headers["Cache-Control"]).to include("no-store")
-    audit = AuditLog.where(action: "organizer_tax_information.revealed").last
-    expect(audit.actor_user).to eq(admin)
-    expect(audit.metadata.to_json).not_to include(tax.tin)
-    get "/api/v1/admin/tax_reports", params: { year: 2026 }, headers: auth_headers(admin)
+  it "does not expose an endpoint that reveals a TIN in JSON" do
+    post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: auth_headers(admin)
+    expect(response).to have_http_status(:not_found)
     expect(response.body).not_to include(tax.tin)
   end
 
@@ -118,16 +109,14 @@ RSpec.describe "Admin tax reporting", type: :request do
     expect(legacy["full_tin_for_1099_preparation_import_as_text"]).to be_blank
   end
 
-  it "throttles full-TIN reveal and export together per admin and per IP" do
+  it "throttles full-TIN exports per admin and per IP" do
     freeze_time do
       headers = auth_headers(admin)
-      9.times do
-        post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: headers
+      10.times do
+        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: headers
         expect(response).to have_http_status(:ok)
       end
       post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: headers
-      expect(response).to have_http_status(:ok)
-      post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: headers
       expect(response).to have_http_status(:too_many_requests)
       expect(response.parsed_body["error"]).to include("Too many full-TIN requests")
       expect(response.body).not_to include(tax.tin)
@@ -137,33 +126,18 @@ RSpec.describe "Admin tax reporting", type: :request do
   it "counts trailing-slash and format-suffix routes against the same budget" do
     freeze_time do
       headers = auth_headers(admin)
-      reveal = "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal"
       export = "/api/v1/admin/tax_reports/preparation_export"
-      variants = [reveal, "#{reveal}/", "#{reveal}.json", export, "#{export}/", "#{export}.json"]
+      variants = [export, "#{export}/", "#{export}.json"]
       9.times do |index|
         path = variants[index % variants.size]
-        post path, params: (path.start_with?(export) ? { year: 2026 } : {}), headers: headers
+        post path, params: { year: 2026 }, headers: headers
         expect(response).not_to have_http_status(:too_many_requests)
       end
-      post "#{reveal}.json", headers: headers
+      post "#{export}.json", params: { year: 2026 }, headers: headers
       expect(response).not_to have_http_status(:too_many_requests)
       post "#{export}/", params: { year: 2026 }, headers: headers
       expect(response).to have_http_status(:too_many_requests)
       expect(response.body).not_to include(tax.tin)
-    end
-  end
-
-  it "counts Rails IDs with suffixes against the full-TIN budget" do
-    freeze_time do
-      headers = auth_headers(admin)
-      5.times do
-        ["#{organization.id}abc", "#{organization.id}-x"].each do |id|
-          post "/api/v1/admin/organizations/#{id}/tax_information/reveal", headers: headers
-          expect(response).not_to have_http_status(:too_many_requests)
-        end
-      end
-      post "/api/v1/admin/organizations/#{organization.id}-x/tax_information/reveal", headers: headers
-      expect(response).to have_http_status(:too_many_requests)
     end
   end
 
@@ -178,11 +152,11 @@ RSpec.describe "Admin tax reporting", type: :request do
     freeze_time do
       headers = auth_headers(admin)
       10.times do |index|
-        post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal",
+        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 },
           headers: headers.merge("REMOTE_ADDR" => "198.51.100.#{index + 1}")
         expect(response).to have_http_status(:ok)
       end
-      post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal",
+      post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 },
         headers: headers.merge("REMOTE_ADDR" => "198.51.100.50")
       expect(response).to have_http_status(:too_many_requests)
     end
@@ -194,21 +168,18 @@ RSpec.describe "Admin tax reporting", type: :request do
       first_headers = auth_headers(admin).merge("REMOTE_ADDR" => "198.51.100.80")
       second_headers = auth_headers(another).merge("REMOTE_ADDR" => "198.51.100.80")
       5.times do
-        post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: first_headers
+        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: first_headers
         expect(response).to have_http_status(:ok)
-        post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: second_headers
+        post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: second_headers
         expect(response).to have_http_status(:ok)
       end
-      post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: first_headers
+      post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: first_headers
       expect(response).to have_http_status(:too_many_requests)
     end
   end
 
-  it "does not reveal or export when audit recording fails" do
+  it "does not export when audit recording fails" do
     allow(AuditLogger).to receive(:record!).and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
-    post "/api/v1/admin/organizations/#{organization.id}/tax_information/reveal", headers: auth_headers(admin)
-    expect(response).to have_http_status(:unprocessable_entity)
-    expect(response.body).not_to include(tax.tin)
     post "/api/v1/admin/tax_reports/preparation_export", params: { year: 2026 }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)
     expect(response.body).not_to include(tax.tin)

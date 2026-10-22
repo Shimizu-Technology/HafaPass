@@ -89,7 +89,8 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
   def settings_params
     params.permit(:payment_mode, :platform_name, :platform_email, :platform_phone,
                   :service_fee_percent, :service_fee_flat_cents, :processing_fee_bearer, :payout_schedule_text,
-                  :business_mailing_address)
+                  :business_mailing_address, :backup_withholding_mode, :backup_withholding_rate_bps,
+                  tax_reporting_thresholds: {})
   end
 
   def settings_json(settings)
@@ -103,6 +104,9 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       service_fee_flat_cents: settings.service_fee_flat_cents,
       processing_fee_bearer: settings.processing_fee_bearer,
       payout_schedule_text: settings.payout_schedule_text,
+      backup_withholding_mode: settings.backup_withholding_mode,
+      backup_withholding_rate_bps: settings.backup_withholding_rate_bps,
+      tax_reporting_thresholds: settings.tax_reporting_thresholds,
       stripe_test_configured: settings.can_enable_test?,
       stripe_live_configured: settings.stripe_live_configured?,
       stripe_live_approved: settings.can_enable_live?,

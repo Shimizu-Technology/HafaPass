@@ -116,7 +116,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     <Dialog labelledBy={titleId} busy={busy} onClose={onClose} className="max-w-xl">
       <form noValidate onSubmit={submit}>
         <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Record outcome for payout #{payout.id}</h2>
-        <p className="mt-1 text-sm text-content-muted">{money(payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. Record only what the bank or provider has confirmed; your name and evidence go into the audit log.</p>
+        <p className="mt-1 text-sm text-content-muted">{money(payout.disbursement_cents ?? payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. {payout.withheld_cents > 0 && `${money(payout.withheld_cents, payout.currency)} withheld from ${money(payout.amount_cents, payout.currency)} gross. `}Record only what the bank or provider has confirmed; your name and evidence go into the audit log.</p>
         {needsCancellationConfirmation && <div className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           <p className="font-semibold">{payout.outstanding_buyer_balance_cents > 0 ? `${money(payout.outstanding_buyer_balance_cents, payout.currency)} remains owed to buyers for this cancelled event.` : 'Buyer refunds are still pending for this cancelled event.'}</p>
           {outcome === 'paid' && <><label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={sentBeforeCancellation} onChange={event => setSentBeforeCancellation(event.target.checked)} className="mt-0.5 h-4 w-4" />This payout was already sent before the cancellation</label>{fieldError('sentBeforeCancellation')}
@@ -403,10 +403,36 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
   }))
   const [reconciling, setReconciling] = useState(null)
   const [releasing, setReleasing] = useState(null)
+  const [payoutForm, setPayoutForm] = useState({ settlement_id: '', amount_cents: '', withholding_override_reason: '' })
+  const [createError, setCreateError] = useState('')
+  const [creating, setCreating] = useState(false)
+  const createPayout = async event => {
+    event.preventDefault()
+    const request = list.beginRequest()
+    if (!request) return
+    setCreating(true); setCreateError('')
+    try {
+      const body = { settlement_id: payoutForm.settlement_id }
+      if (payoutForm.amount_cents) body.amount_cents = Number(payoutForm.amount_cents)
+      if (payoutForm.withholding_override_reason.trim()) body.withholding_override_reason = payoutForm.withholding_override_reason.trim()
+      await apiClient.post('/admin/payouts', body, { ...request.config, headers: { 'Idempotency-Key': window.crypto.randomUUID() } })
+      if (request.current()) { setPayoutForm({ settlement_id: '', amount_cents: '', withholding_override_reason: '' }); onNotice('Payout requested. Review the net check amount and record its outcome.'); list.reload() }
+    } catch (error) { if (request.current() && !request.handleError(error)) setCreateError(error.response?.data?.error || 'Payout could not be requested.') }
+    finally { request.release(); setCreating(false) }
+  }
   const payouts = list.data?.payouts || []
   const counts = list.data?.status_counts || {}
   const filtered = filters.status || filters.q
   return <>
+    <form onSubmit={createPayout} className="mb-5 rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
+      <h2 className="font-semibold">Request payout from finalized settlement</h2>
+      <p className="mt-1 text-sm text-neutral-700">A tax hold blocks the request by default. An override requires an admin reason and is audited. Enter a gross amount; the saved payout shows any withholding and net check amount.</p>
+      {createError && <p role="alert" className="mt-2 text-sm text-red-800">{createError}</p>}
+      <div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-sm font-medium">Settlement ID<input className="input mt-1" required inputMode="numeric" pattern="[0-9]+" value={payoutForm.settlement_id} onChange={e => setPayoutForm(prev => ({ ...prev, settlement_id: e.target.value }))} /></label>
+        <label className="text-sm font-medium">Gross amount (cents, optional)<input className="input mt-1" type="number" min="1" step="1" value={payoutForm.amount_cents} onChange={e => setPayoutForm(prev => ({ ...prev, amount_cents: e.target.value }))} /></label>
+        <label className="text-sm font-medium">Tax hold override reason (optional)<input className="input mt-1" maxLength={1000} value={payoutForm.withholding_override_reason} onChange={e => setPayoutForm(prev => ({ ...prev, withholding_override_reason: e.target.value }))} /></label></div>
+      <button type="submit" disabled={creating} className="btn-secondary mt-3">{creating ? 'Requesting…' : 'Request payout'}</button>
+    </form>
     <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter payouts by status">
       {['', ...PAYOUT_STATUSES].map(status => (
         <button key={status || 'all'} type="button" aria-pressed={filters.status === status} onClick={() => setFilter({ status, page: '' })}
@@ -432,7 +458,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
               <tr key={payout.id} className={foldRow}>
                 <td data-label="Payout" className={foldCell}><span><span className="font-mono text-xs text-neutral-900">#{payout.id}</span><span className="block text-xs text-content-muted">{formatDate(payout.created_at)}</span></span></td>
                 <td data-label="For" className={foldCell}><span className="min-w-0"><span className="block font-medium text-neutral-900 [overflow-wrap:anywhere]">{payout.organization.name}</span><span className="block text-xs text-content-muted [overflow-wrap:anywhere]">{payout.event.title} · settlement v{payout.settlement.version}</span></span></td>
-                <td data-label="Amount" className={`${foldCell} md:text-right`}><span className="font-semibold text-neutral-900">{money(payout.amount_cents, payout.currency)}</span></td>
+                <td data-label="Amount" className={`${foldCell} md:text-right`}><span className="font-semibold text-neutral-900">{money(payout.disbursement_cents ?? payout.amount_cents, payout.currency)}</span>{payout.withheld_cents > 0 && <span className="block text-xs text-amber-800">{money(payout.withheld_cents, payout.currency)} withheld</span>}</td>
                 <td data-label="Status" className={foldCell}><span><Badge status={payout.status} />{payout.paid_at && <span className="block text-xs text-content-muted">Paid {formatDate(payout.paid_at)}</span>}{payout.outstanding_buyer_balance_cents > 0 ? <span className="block text-xs font-semibold text-red-700">{money(payout.outstanding_buyer_balance_cents, payout.currency)} still owed to buyers</span> : payout.cancellation_refunds_unresolved && <span className="block text-xs font-semibold text-amber-800">Buyer refunds pending</span>}</span></td>
                 <td data-label="Transfer" className={foldCell}><span className="min-w-0 text-xs text-neutral-700">
                   <span className="block font-mono [overflow-wrap:anywhere]">{payout.provider_payout_id || 'No transfer ID yet'}</span>

@@ -5,6 +5,22 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
 
   RECONCILIATION_ACTIONS = %w[payout.reconciled payout.provider_result_conflict].freeze
 
+  def create
+    idempotency_key = request.headers["Idempotency-Key"].presence
+    return render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity unless idempotency_key
+
+    settlement = Settlement.status_finalized.find(params[:settlement_id])
+    payout = PayoutCreator.call(settlement: settlement, actor: current_user,
+      idempotency_key: idempotency_key, amount_cents: params[:amount_cents], request: request,
+      withholding_override_reason: params[:withholding_override_reason])
+    render json: { id: payout.id, amount_cents: payout.amount_cents, withheld_cents: payout.withheld_cents,
+      disbursement_cents: payout.disbursement_cents, status: payout.status }, status: :created
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Finalized settlement not found" }, status: :not_found
+  rescue PayoutCreator::PayoutError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   # GET /api/v1/admin/payouts
   def index
     scope = filtered_payouts
@@ -34,8 +50,8 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     )
     render json: payout.attributes.slice(
       "id", "organization_id", "event_id", "settlement_id", "provider", "provider_payout_id",
-      "amount_cents", "currency", "status", "paid_at"
-    )
+      "amount_cents", "currency", "status", "paid_at", "withheld_cents"
+    ).merge(disbursement_cents: payout.disbursement_cents)
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Payout not found" }, status: :not_found
   rescue PayoutReconciler::ReconciliationError => e
@@ -103,8 +119,10 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     end
     payout.attributes.slice(
       "id", "provider", "provider_payout_id", "amount_cents", "currency", "status", "failure_code",
-      "failure_message", "initiated_at", "paid_at", "created_at"
+      "failure_message", "initiated_at", "paid_at", "created_at", "withheld_cents", "withholding_reason",
+      "withholding_override_reason"
     ).merge(
+      disbursement_cents: payout.disbursement_cents,
       organization: { id: payout.organization_id, name: payout.organization.name },
       event: { id: payout.event_id, title: payout.event.title, slug: payout.event.slug },
       settlement: { id: payout.settlement_id, version: payout.settlement.version },

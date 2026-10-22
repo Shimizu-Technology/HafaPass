@@ -62,6 +62,7 @@ const AdminPayoutsPage = lazy(() => import('./pages/admin/AdminPayoutsPage'))
 const AdminDisputesPage = lazy(() => import('./pages/admin/AdminDisputesPage'))
 const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'))
 const AdminTaxReportsPage = lazy(() => import('./pages/admin/AdminTaxReportsPage'))
+const AdminTaxControlsPage = lazy(() => import('./pages/admin/AdminTaxControlsPage'))
 const AdminOrganizationsPage = lazy(() => import('./pages/admin/AdminOrganizationsPage'))
 const AdminOrganizationPage = lazy(() => import('./pages/admin/AdminOrganizationPage'))
 
@@ -129,6 +130,7 @@ function App() {
           <Route path="/admin/provider-readiness" element={<AdminRoute><ProviderReadinessPage /></AdminRoute>} />
           <Route path="/admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
           <Route path="/admin/tax-reports" element={<AdminRoute><AdminTaxReportsPage /></AdminRoute>} />
+          <Route path="/admin/tax-controls" element={<AdminRoute><AdminTaxControlsPage /></AdminRoute>} />
           <Route path="/admin/payouts" element={<AdminRoute><AdminPayoutsPage /></AdminRoute>} />
           <Route path="/admin/disputes" element={<AdminRoute><AdminDisputesPage /></AdminRoute>} />
           <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLogPage /></AdminRoute>} />

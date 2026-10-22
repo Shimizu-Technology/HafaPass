@@ -123,6 +123,7 @@ Rails.application.routes.draw do
       # Organizer events (protected)
       namespace :organizer do
         resource :tax_information, only: [:show, :update]
+        get "annual_statements/:year", to: "annual_statements#show"
         resource :organization, only: [:show], controller: "organizations"
         resource :finances, only: [:show], controller: "organization_finances" do
           get :orders_export
@@ -241,7 +242,15 @@ Rails.application.routes.draw do
           get :receipts_export
           post :preparation_export
         end
-        post "organizations/:organization_id/tax_information/reveal", to: "tax_informations#reveal"
+        get "tin_matching", to: "tin_matching#index"
+        post "tin_matching/export", to: "tin_matching#export"
+        post "tin_matching/import", to: "tin_matching#import"
+        patch "organizations/:organization_id/tax_information/withholding_flag", to: "tin_matching#flag"
+        post "organizations/:organization_id/tax_information/b_notice_pdf", to: "tin_matching#notice_pdf"
+        post "organizations/:organization_id/tax_information/b_notice_sent", to: "tin_matching#notice_sent"
+        get "annual_tax_reports", to: "annual_tax_reports#index"
+        post "annual_tax_reports/export", to: "annual_tax_reports#export"
+        patch "annual_tax_reports/:organization_id", to: "annual_tax_reports#update"
         resource :settings, only: [:show, :update]
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
@@ -369,7 +378,7 @@ Rails.application.routes.draw do
         end
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:index, :create, :destroy]
-        resources :payouts, only: [:index, :update] do
+        resources :payouts, only: [:index, :create, :update] do
           post :release_hold, on: :member
         end
         resources :disputes, only: [:index]

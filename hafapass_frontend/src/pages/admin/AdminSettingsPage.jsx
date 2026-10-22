@@ -37,6 +37,11 @@ const toForm = settings => ({
   service_fee_flat: settings.service_fee_flat_cents == null ? '' : (settings.service_fee_flat_cents / 100).toFixed(2),
   processing_fee_bearer: settings.processing_fee_bearer || 'platform',
   payout_schedule_text: settings.payout_schedule_text || '',
+  backup_withholding_mode: settings.backup_withholding_mode || 'block',
+  backup_withholding_rate_bps: String(settings.backup_withholding_rate_bps ?? 2400),
+  threshold_nec: String(settings.tax_reporting_thresholds?.['1099-nec'] ?? 200000),
+  threshold_misc: String(settings.tax_reporting_thresholds?.['1099-misc'] ?? 200000),
+  threshold_k: String(settings.tax_reporting_thresholds?.['1099-k'] ?? 2000000),
 })
 
 // Form values as the API's attributes. Dollars become whole cents.
@@ -51,6 +56,9 @@ function toAttributes(form) {
     service_fee_flat_cents: flat === '' ? null : Math.round(Number(flat) * 100),
     processing_fee_bearer: form.processing_fee_bearer,
     payout_schedule_text: form.payout_schedule_text.replace(/\s+/g, ' ').trim(),
+    backup_withholding_mode: form.backup_withholding_mode,
+    backup_withholding_rate_bps: Number(form.backup_withholding_rate_bps),
+    tax_reporting_thresholds: { '1099-nec': Number(form.threshold_nec), '1099-misc': Number(form.threshold_misc), '1099-k': Number(form.threshold_k) },
   }
 }
 
@@ -69,6 +77,10 @@ function validate(form) {
   }
   if (!values.payout_schedule_text) errors.payout_schedule_text = 'Describe when organizers are paid.'
   else if (values.payout_schedule_text.length > MAX_SCHEDULE_LENGTH) errors.payout_schedule_text = `Keep payout timing under ${MAX_SCHEDULE_LENGTH} characters.`
+  if (!form.backup_withholding_rate_bps.trim() || !Number.isInteger(values.backup_withholding_rate_bps) || values.backup_withholding_rate_bps < 1 || values.backup_withholding_rate_bps > 10000) errors.backup_withholding_rate_bps = 'Enter a rate from 1 to 10000 basis points.'
+  for (const [field, value] of Object.entries({ threshold_nec: form.threshold_nec, threshold_misc: form.threshold_misc, threshold_k: form.threshold_k })) {
+    if (!/^\d+$/.test(value) || Number(value) > 1000000000) errors[field] = 'Enter a whole-cent threshold.'
+  }
   return errors
 }
 
@@ -180,9 +192,11 @@ function AdminSettingsSession({ identity, resourcePath }) {
   const changes = useMemo(() => {
     if (!saved || !form) return {}
     const values = toAttributes(form)
+    const currentValues = toAttributes(toForm(saved))
     return Object.fromEntries(Object.entries(values).filter(([field, value]) => {
-      const current = saved[field]
+      const current = currentValues[field]
       if (field === 'service_fee_percent') return value == null || Number(current) !== value
+      if (field === 'tax_reporting_thresholds') return JSON.stringify(current) !== JSON.stringify(value)
       return (current ?? '') !== (value ?? '')
     }))
   }, [saved, form])
@@ -259,6 +273,16 @@ function AdminSettingsSession({ identity, resourcePath }) {
             <Field id="business_mailing_address" label="Business mailing address" hint="Required before organizers can send promotional emails. Include a physical postal address." error={errors.business_mailing_address}>
               <textarea id="business_mailing_address" rows={3} maxLength={500} value={form.business_mailing_address} onChange={update('business_mailing_address')} className={inputClass('business_mailing_address')} />
             </Field>
+          </div>
+        </section>
+
+        <section aria-labelledby="tax-controls-settings" className="card p-5 sm:p-6">
+          <h2 id="tax-controls-settings" className="text-lg font-semibold">Tax payout controls</h2>
+          <p className="mt-1 text-sm text-neutral-700">These settings affect payouts only. A CPA should approve the rate and reporting thresholds before filing.</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium">When backup withholding applies<select className="input mt-1" value={form.backup_withholding_mode} onChange={update('backup_withholding_mode')}><option value="block">Block payout (default)</option><option value="withhold">Withhold and pay the balance</option></select></label>
+            <label className="text-sm font-medium">Withholding rate (basis points)<input className="input mt-1" type="number" min="1" max="10000" value={form.backup_withholding_rate_bps} onChange={update('backup_withholding_rate_bps')} /></label>
+            {[['threshold_nec', '1099-NEC'], ['threshold_misc', '1099-MISC'], ['threshold_k', '1099-K']].map(([field, label]) => <label key={field} className="text-sm font-medium">{label} threshold (cents)<input className="input mt-1" type="number" min="0" step="1" value={form[field]} onChange={update(field)} /></label>)}
           </div>
         </section>
 

@@ -27,31 +27,11 @@ describe('AdminTaxReportsPage', () => {
     await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/tax_reports', expect.objectContaining({ params: { year: String(year - 1) } })))
   })
 
-  it('hides a revealed TIN again after 30 seconds', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    try {
-      apiClient.post.mockResolvedValue({ data: { tin: '012345678' } })
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-      show()
-      await user.click(await screen.findByRole('button', { name: 'Reveal current W-9 TIN for Island Events' }))
-      expect(await screen.findByText(/Current W-9 TIN.*012345678/)).toBeInTheDocument()
-      await vi.advanceTimersByTimeAsync(30_000)
-      await waitFor(() => expect(screen.queryByText(/012345678/)).not.toBeInTheDocument())
-      expect(screen.getByText('***-**-5678')).toBeInTheDocument()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('uses an explicit POST to reveal, hides on demand and never includes TIN in the request', async () => {
-    apiClient.post.mockResolvedValue({ data: { tin: '012345678' } })
+  it('keeps full TINs off the admin page', async () => {
     show()
-    await userEvent.click(await screen.findByRole('button', { name: 'Reveal current W-9 TIN for Island Events' }))
-    expect(await screen.findByText(/Current W-9 TIN.*012345678/)).toBeInTheDocument()
-    expect(apiClient.post).toHaveBeenCalledWith('/admin/organizations/7/tax_information/reveal', { year }, expect.anything())
-    await userEvent.click(screen.getByRole('button', { name: 'Hide current W-9 TIN for Island Events' }))
+    await screen.findByText('***-**-5678')
+    expect(screen.queryByRole('button', { name: /reveal.*TIN/i })).not.toBeInTheDocument()
     expect(screen.queryByText('012345678')).not.toBeInTheDocument()
-    expect(screen.getByText('***-**-5678')).toBeInTheDocument()
   })
 
   it('downloads masked CSV by GET and explicitly labelled 1099 CSV by audited POST', async () => {

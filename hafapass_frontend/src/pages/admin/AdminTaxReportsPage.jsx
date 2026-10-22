@@ -14,13 +14,12 @@ function TaxReportsSession({ identity }) {
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [revealed, setRevealed] = useState(null)
   const generation = useRef(0)
   const load = useCallback(async () => {
     const request = beginRequest()
     if (!request) return
     const epoch = ++generation.current
-    setReport(null); setRevealed(null); setError(null)
+    setReport(null); setError(null)
     try {
       const response = await apiClient.get('/admin/tax_reports', { ...request.config, params: { year } })
       if (request.current() && epoch === generation.current) setReport(response.data)
@@ -29,26 +28,19 @@ function TaxReportsSession({ identity }) {
     } finally { request.release() }
   }, [beginRequest, year])
   useEffect(() => { load() }, [load])
-  useEffect(() => {
-    if (!revealed) return
-    const timer = setTimeout(() => setRevealed(null), 30000)
-    return () => clearTimeout(timer)
-  }, [revealed])
-  const action = async (kind, organizationId) => {
+  const action = async kind => {
     const request = beginRequest()
     if (!request) return
     const epoch = generation.current
-    setBusy(true); setError(null); setRevealed(null)
+    setBusy(true); setError(null)
     try {
-      const isReveal = kind === 'reveal'
       const isSensitive = kind === 'preparation_export'
-      const path = isReveal ? `/admin/organizations/${organizationId}/tax_information/reveal` : `/admin/tax_reports/${kind}`
-      const response = isReveal || isSensitive
+      const path = `/admin/tax_reports/${kind}`
+      const response = isSensitive
         ? await apiClient.post(path, { year: report.year }, { ...request.config, ...(isSensitive ? { responseType: 'blob' } : {}) })
         : await apiClient.get(path, { ...request.config, params: { year: report.year }, responseType: 'blob' })
       if (!request.current() || epoch !== generation.current) return
-      if (isReveal) setRevealed({ id: organizationId, tin: response.data.tin })
-      else saveBlob(response.data, `hafapass-${kind}-${report.year}.csv`)
+      saveBlob(response.data, `hafapass-${kind}-${report.year}.csv`)
     } catch (e) {
       if (request.current() && epoch === generation.current && !request.handleError(e)) setError('The action failed. Please retry.')
     } finally { if (request.current()) setBusy(false); request.release() }
@@ -64,7 +56,7 @@ function TaxReportsSession({ identity }) {
           <h2 id="annual-tax-heading" className="text-lg font-semibold">Annual organizer payouts · {report.year}</h2>
           <p className="mt-2 text-sm text-neutral-700">Gross amounts are after discounts. Refund and fee components are shown separately. Each payout uses its W-9 at payout time; legacy payouts are flagged without a TIN. Activity is allocated among an organizer’s payout identities by paid amount. Adjustments bridge timing, reserves, processing costs and unpaid balances.</p>
           <div className="my-4 flex flex-wrap gap-3"><button disabled={busy} className="btn-secondary" onClick={() => action('organizers_export')}>Export masked CSV</button><button disabled={busy} className="btn-secondary" onClick={() => action('preparation_export')}>Export full TINs for 1099 preparation (audited)</button></div>
-          <p className="mb-4 text-xs text-content-muted">Full-TIN files contain sensitive tax data. Store them securely and import TIN columns as text to preserve leading zeroes. Reveals are audited and hide after 30 seconds.</p>
+          <p className="mb-4 text-xs text-content-muted">Full-TIN files contain sensitive tax data. Store them securely and import TIN columns as text to preserve leading zeroes. TINs remain masked on screen.</p>
           {report.organizers.length === 0 && <p>No live financial activity for this year.</p>}
           <div className="space-y-4">{report.organizers.map((row, index) => <article key={`${row.organization_id}:${row.tax_snapshot_payout_id || index}`} className="rounded-xl border border-neutral-200 p-4">
             <h3 className="font-semibold [overflow-wrap:anywhere]">{row.organization_name}</h3>
@@ -81,10 +73,6 @@ function TaxReportsSession({ identity }) {
                 ['Reconciliation adjustments', money(row.reconciliation_adjustments_cents)], ['Net paid out', money(row.net_paid_cents)],
               ].map(([label, value]) => <div key={label} className="[overflow-wrap:anywhere]"><dt className="text-content-muted">{label}</dt><dd className="font-medium">{value}</dd></div>)}
             </dl>
-            {row.current_w9_on_file && <div className="mt-3 border-t border-neutral-200 pt-3 text-sm">
-              <p>Current W-9 TIN (may differ from this payout snapshot): {revealed?.id === row.organization_id ? revealed.tin : 'Hidden'}</p>
-              <button disabled={busy} className="btn-secondary mt-2" onClick={() => revealed?.id === row.organization_id ? setRevealed(null) : action('reveal', row.organization_id)} aria-label={`${revealed?.id === row.organization_id ? 'Hide' : 'Reveal'} current W-9 TIN for ${row.organization_name}`}>{revealed?.id === row.organization_id ? 'Hide current TIN' : 'Reveal current TIN (audited)'}</button>
-            </div>}
           </article>)}</div>
         </section>
         <section aria-labelledby="bpt-heading" className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6">

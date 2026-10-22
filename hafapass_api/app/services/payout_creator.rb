@@ -7,12 +7,13 @@ class PayoutCreator
     new(**).call
   end
 
-  def initialize(settlement:, actor:, idempotency_key:, amount_cents: nil, request: nil)
+  def initialize(settlement:, actor:, idempotency_key:, amount_cents: nil, request: nil, withholding_override_reason: nil)
     @settlement = settlement
     @actor = actor
     @idempotency_key = idempotency_key
     @requested_amount_cents = amount_cents&.to_i
     @request = request
+    @withholding_override_reason = withholding_override_reason
   end
 
   def call
@@ -36,7 +37,7 @@ class PayoutCreator
 
   private
 
-  attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request
+  attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request, :withholding_override_reason
 
   def submit_payout!(payout)
     payout.with_lock do
@@ -135,10 +136,15 @@ class PayoutCreator
         raise PayoutError, "Financial activity changed; finalize a new settlement before paying out"
       end
 
-      account = settlement.organization.payout_account
-      raise PayoutError, "A payout-ready connected account is required" unless account
       tax = settlement.organization.organizer_tax_information
-      raise PayoutError, "A certified W-9 is required before payout" unless tax&.certified_at
+      withholding_review = tax.nil? || tax.certified_at.nil? || tax.backup_withholding_required?
+      account = settlement.organization.payout_account
+      if account.nil? && withholding_review
+        account = settlement.organization.connected_accounts.find do |candidate|
+          candidate.externally_ready? && candidate.active_payment_readiness_approval.present?
+        end
+      end
+      raise PayoutError, "A payout-ready connected account is required" unless account
 
       available = [
         settlement.available_to_payout_cents,
@@ -147,6 +153,9 @@ class PayoutCreator
       amount = requested_amount_cents || available
       raise PayoutError, "Payout amount must be positive" unless amount.positive?
       raise PayoutError, "Payout amount exceeds the available balance" if amount > available
+
+      withholding = BackupWithholding.for_payout(organization: settlement.organization,
+        amount_cents: amount, actor: actor, override_reason: withholding_override_reason)
 
       payout = settlement.payouts.create!(
         organization: settlement.organization,
@@ -159,13 +168,20 @@ class PayoutCreator
         status: :pending,
         payee_snapshot: account.check_payee,
         payee_approval_digest: account.provider == "check" ? account.readiness_state_digest : nil,
-        tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax.tin,
-        tax_approval_digest: account.readiness_state_digest
+        tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax&.tin,
+        tax_approval_digest: account.readiness_state_digest,
+        **withholding
       )
+      if withholding[:withholding_override_reason].present?
+        AuditLogger.record!(action: "payout.backup_withholding_overridden", auditable: payout, actor: actor,
+          organization: payout.organization, metadata: { reason: withholding[:withholding_override_reason] }, request: request)
+      end
       [payout, true]
     end
   rescue ActiveRecord::RecordNotUnique
     [validate_idempotent_replay!(Payout.find_by!(idempotency_key: idempotency_key)), false]
+  rescue BackupWithholding::WithholdingError => e
+    raise PayoutError, e.message
   end
 
   def validate_idempotent_replay!(payout)

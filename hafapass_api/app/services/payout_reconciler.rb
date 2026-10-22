@@ -71,7 +71,9 @@ class PayoutReconciler
             raise ReconciliationError, "Confirm this payout was already sent before the cancellation and explain why it is being recorded while buyer refunds remain unresolved"
           end
         end
-        if payout.tax_information_snapshot.blank?
+        if payout.tax_information_snapshot.blank? && payout.withheld_cents.positive?
+          # No W-9 was available, but the full backup withholding was reserved.
+        elsif payout.tax_information_snapshot.blank?
           if normalized["approved_tax_payee_confirmed"] == true
             raise ReconciliationError, "A legacy payout has no approved W-9 payee to confirm"
           end
