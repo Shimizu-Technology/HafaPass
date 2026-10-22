@@ -19,12 +19,16 @@ class PayoutHoldRelease
             raise ReleaseError, "Resolve the provider result conflict before releasing this payout"
           end
 
-          liability = EventCancellationRefunds.liability_snapshot(payout.event)
-          if liability[:unresolved] || RefundReconciliationQueue.outstanding_for_event?(payout.event)
-            confirmed = !automatic && sent_before_cancellation_confirmed == true &&
+          liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
+            { outstanding_cents: 0, unresolved: false }
+          queue_outstanding = RefundReconciliationQueue.outstanding_for_event?(payout.event)
+          if liability[:unresolved] || queue_outstanding
+            confirmed = payout.event.cancelled? && liability[:unresolved] && !automatic && sent_before_cancellation_confirmed == true &&
               cancellation_payout_reason.to_s.strip.present?
             unless confirmed
-              raise ReleaseError, "Buyer refunds remain unresolved; confirm this payout was already sent before cancellation and explain the release"
+              raise ReleaseError, queue_outstanding && !liability[:unresolved] ?
+                "Resolve outstanding refund liabilities before releasing this payout" :
+                "Buyer refunds remain unresolved; confirm this payout was already sent before cancellation and explain the release"
             end
           end
 

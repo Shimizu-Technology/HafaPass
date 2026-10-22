@@ -66,6 +66,9 @@ class PayoutReconciler
       if status == "paid"
         liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
           { outstanding_cents: 0, unresolved: false }
+        if RefundReconciliationQueue.outstanding_for_event?(payout.event) && !liability[:unresolved]
+          raise ReconciliationError, "Resolve outstanding refund liabilities before recording this payout as paid"
+        end
         if liability[:unresolved]
           unless normalized["sent_before_cancellation_confirmed"] == true && normalized["cancellation_payout_reason"].present?
             raise ReconciliationError, "Confirm this payout was already sent before the cancellation and explain why it is being recorded while buyer refunds remain unresolved"

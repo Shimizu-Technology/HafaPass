@@ -23,6 +23,7 @@ class RefundReconciliationActions
 
   def call
     authorize!
+    audit!("refund_reconciliation.action_attempted", @record, { operation: @action })
     case @action
     when "retry" then retry_refund!
     when "resync" then resync_refund!

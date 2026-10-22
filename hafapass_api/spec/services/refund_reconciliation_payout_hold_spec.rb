@@ -29,4 +29,30 @@ RSpec.describe "Unresolved refund payout protection" do
       .to raise_error(PayoutHoldRelease::ReleaseError, /refund|liability|buyer/i)
     expect(payout.reload).to be_status_held
   end
+
+  it "does not allow cancellation evidence to release a normal event payout" do
+    payout = create(:payout, event: event, organization: event.organization, settlement: settlement,
+      status: :held, held_from_status: "pending", with_tax_snapshot: false)
+
+    expect do
+      PayoutHoldRelease.call(payout: payout, actor: admin, sent_before_cancellation_confirmed: true,
+        cancellation_payout_reason: "Check already sent")
+    end.to raise_error(PayoutHoldRelease::ReleaseError, /outstanding refund/)
+    expect(payout.reload).to be_status_held
+  end
+
+  it "blocks recording an existing processing check as paid while a refund remains unresolved" do
+    payout = create(:payout, event: event, organization: event.organization, settlement: settlement,
+      status: :processing, provider_payout_id: "manual_po_fixture", with_tax_snapshot: false,
+      created_at: 1.hour.ago)
+    evidence = { reference: "Bank record", reason: "Marked as paid", confirmed_at: Time.current.iso8601,
+      legacy_payee_name: "Actual payee", legacy_evidence_note: "Bank record", legacy_payee_confirmed: true,
+      sent_before_cancellation_confirmed: true, cancellation_payout_reason: "Check already sent" }
+
+    expect do
+      PayoutReconciler.call(payout: payout, actor: admin, status: "paid", provider_payout_id: "bank-refund-gap",
+        evidence: evidence)
+    end.to raise_error(PayoutReconciler::ReconciliationError, /outstanding refund/)
+    expect(payout.reload).to be_status_processing
+  end
 end

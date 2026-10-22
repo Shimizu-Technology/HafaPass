@@ -257,4 +257,33 @@ describe('unresolved refund follow-up', () => {
     expect(apiClient.get.mock.calls.some(([path]) => path === '/organizer/refund_reconciliation')).toBe(false)
     expect(screen.queryByRole('button', { name: 'Record cash return' })).not.toBeInTheDocument()
   })
+
+  it('clears prior liabilities while event access is re-verified', async () => {
+    let eventCalls = 0
+    let resolveVerification
+    const verification = new Promise(resolve => { resolveVerification = resolve })
+    apiClient.get.mockImplementation(path => {
+      if (path === '/organizer/events/37') {
+        eventCalls += 1
+        return eventCalls === 1
+          ? Promise.resolve({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true } } })
+          : verification
+      }
+      if (path === '/organizer/refund_reconciliation') return Promise.resolve({ data: { items: [
+        { id: 51, type: 'cancellation', order_id: 922, order_reference: 'HP-922', buyer_email: 'buyer@example.test',
+          event_id: 37, event_title: 'Night Market', organization_name: 'GuamTime Events', amount_cents: 500,
+          status: 'needs_manual', age_seconds: 172800, next_action: 'Return cash to the buyer', manual_type: 'cash' },
+      ], meta: { page: 1, total_pages: 1, total: 1 } } })
+      return Promise.resolve({ data: { orders: [], meta: { page: 1, total_pages: 1, total_count: 0 } } })
+    })
+    const user = userEvent.setup()
+    mountRefunds()
+    expect(await screen.findByText('HP-922')).toBeInTheDocument()
+    await user.type(screen.getByRole('searchbox', { name: 'Find an order' }), 'new search')
+    await user.click(screen.getByRole('button', { name: 'Search orders' }))
+    await waitFor(() => expect(eventCalls).toBeGreaterThan(1))
+    expect(screen.queryByText('HP-922')).not.toBeInTheDocument()
+    resolveVerification({ data: { id: 37, organization_id: 1, permissions: { refund: false, view_finance: true } } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('This event could not be authorized')
+  })
 })

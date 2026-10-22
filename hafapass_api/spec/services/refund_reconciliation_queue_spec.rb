@@ -5,16 +5,16 @@ RSpec.describe RefundReconciliationQueue do
   let(:profile) { create(:organizer_profile, organization: organization) }
   let(:event) { create(:event, :published, organization: organization, organizer_profile: profile) }
 
-  def paid_order(event:, method: nil)
+  def paid_order(event:, method: nil, environment: "live")
     order = create(:order, event: event, **(method ? { payment_method: method } : {}))
     provider = method == "door_cash" ? "door_cash" : "stripe"
-    create(:payment, :succeeded, order: order, provider: provider, provider_environment: "live")
+    create(:payment, :succeeded, order: order, provider: provider, provider_environment: environment)
     order
   end
 
-  def pending_refund(order, status: :pending, created_at: 2.hours.ago)
+  def pending_refund(order, status: :pending, created_at: 2.hours.ago, amount_cents: 1000)
     create(:refund, order: order, payment: order.payments.first, status: status,
-      succeeded_at: nil, failed_at: status == :failed ? created_at : nil, created_at: created_at)
+      amount_cents: amount_cents, succeeded_at: nil, failed_at: status == :failed ? created_at : nil, created_at: created_at)
   end
 
   it "combines unresolved Stripe, cancellation, buyer request, and dispute obligations with buyer context" do
@@ -58,6 +58,34 @@ RSpec.describe RefundReconciliationQueue do
     cancelled = pending_refund(order, status: :cancelled)
 
     expect(described_class.call.fetch(:items)).to include(include(type: "refund", id: cancelled.id, status: "cancelled"))
+  end
+
+  it "removes an old failed partial refund after its replacement succeeds" do
+    order = paid_order(event: event)
+    failed = pending_refund(order, status: :failed, amount_cents: 1200)
+    create(:refund, order: order, payment: order.payments.first, amount_cents: 1200,
+      status: :succeeded, idempotency_key: "refund-reconciliation/#{failed.id}")
+
+    expect(described_class.call.fetch(:items)).not_to include(include(type: "refund", id: failed.id))
+  end
+
+  it "does not count two failed attempts as twice the buyer balance" do
+    order = paid_order(event: event)
+    pending_refund(order, status: :failed, amount_cents: order.total_cents)
+    pending_refund(order, status: :failed, amount_cents: order.total_cents)
+
+    rows = described_class.call.fetch(:items).select { |item| item[:order_id] == order.id }
+    expect(rows.sum { |item| item[:amount_cents] }).to eq(order.refundable_cents)
+  end
+
+  it "excludes nonlive production payments from liabilities and payout holds" do
+    test_order = paid_order(event: event, environment: "test")
+    pending_refund(test_order, status: :failed)
+    live_order = paid_order(event: event)
+    live_refund = pending_refund(live_order, status: :failed)
+    allow(Rails.env).to receive(:production?).and_return(true)
+
+    expect(described_class.call.fetch(:items)).to contain_exactly(include(type: "refund", id: live_refund.id))
   end
 
   it "scopes organizer data and filters status, age, and event" do

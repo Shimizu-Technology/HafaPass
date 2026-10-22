@@ -123,6 +123,8 @@ function RefundsPageSession({ eventId, identity }) {
   setCanRecordCash(false)
   setAccessRefreshing(true)
   setOrders([])
+  setQueueItems([])
+  setQueueMeta(null)
   try {
    const eventResponse = await requestApi('get', `/organizer/events/${eventId}`)
    if (!canApply()) return

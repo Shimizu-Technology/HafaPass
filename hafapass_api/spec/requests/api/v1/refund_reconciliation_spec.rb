@@ -75,6 +75,45 @@ RSpec.describe "Refund reconciliation", type: :request do
     expect(StripeService).to have_received(:refund_payment).once
   end
 
+  it "audits a retry attempt even when the Stripe result is unknown" do
+    failed = pending_refund(status: :failed)
+    allow(StripeService).to receive(:find_refund).and_return(nil)
+    allow(StripeService).to receive(:refund_payment).and_raise(Timeout::Error)
+
+    post "/api/v1/admin/refund_reconciliation/refund/#{failed.id}/retry", headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(AuditLog.where(action: "refund_reconciliation.action_attempted", auditable: failed,
+      actor_user: admin)).to exist
+    expect(AuditLog.where(action: "refund_reconciliation.retry", auditable: failed)).not_to exist
+    expect(failed.order.refunds.pending.find_by(idempotency_key: "refund-reconciliation/#{failed.id}")
+      .failure_code).to eq("provider_result_unknown")
+  end
+
+  it "executes an unfulfilled buyer request once through RefundCreator" do
+    order = create(:order, event: event)
+    ticket_type = create(:ticket_type, event: event)
+    item = create(:order_item, order: order, ticket_type: ticket_type, quantity: 1, unit_price_cents: 5000,
+      subtotal_cents: 5000, fee_cents: 250, organizer_proceeds_cents: 5000)
+    create(:ticket, order: order, order_item: item, event: event, ticket_type: ticket_type)
+    payment_for(order)
+    change = event.event_changes.create!(change_type: "rescheduled", occurred_at: 1.day.ago)
+    request = change.event_change_responses.create!(order: order, decision: "refund_requested", responded_at: 1.day.ago)
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(
+      id: "re_request_#{request.id}", status: "succeeded", amount: order.total_cents, currency: "usd"))
+    path = "/api/v1/admin/refund_reconciliation/request/#{request.id}/retry"
+
+    post path, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok), response.body
+    expect(order.refunds.succeeded.sole).to have_attributes(amount_cents: order.total_cents,
+      reason: "event_change_refund")
+    expect(AuditLog.where(action: "refund_reconciliation.request_executed", auditable: request)).to exist
+    post path, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(order.refunds.count).to eq(1)
+    expect(StripeService).to have_received(:refund_payment).once
+  end
+
   it "re-syncs a pending Stripe refund and audits the provider result" do
     refund = pending_refund
     allow(StripeService).to receive(:retrieve_refund).and_return(OpenStruct.new(

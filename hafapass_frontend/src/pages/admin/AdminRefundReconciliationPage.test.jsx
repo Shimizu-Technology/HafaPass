@@ -88,4 +88,13 @@ describe('AdminRefundReconciliationPage', () => {
     expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Original provider result is uncertain')
     expect(apiClient.post).toHaveBeenCalledWith('/admin/refund_reconciliation/refund/9/retry', {}, expect.anything())
   })
+
+  it('offers retry for a cancelled Stripe refund', async () => {
+    const user = userEvent.setup()
+    respond([{ ...item, status: 'cancelled', next_action: 'Review and retry the Stripe refund' }])
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Retry refund' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Retry refund' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/refund_reconciliation/refund/9/retry', {}, expect.anything()))
+  })
 })
