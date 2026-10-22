@@ -185,6 +185,15 @@ describe('FinancesPage', () => {
     expect(expectLinesToSum()).toBe(3)
   })
 
+  it('shows unresolved buyer refunds after a paid payout as an organizer debit', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...summary, breakdown: { ...summary.breakdown,
+      unresolved_buyer_liability_cents: 5250, earned_cents: 14199, balance_cents: 4199,
+      owed_cents: 4199 } } })
+    mount()
+    expect(await screen.findByText('Buyer refunds after payout')).toBeInTheDocument()
+    expect(screen.getByText('Buyer refunds after payout').closest('div')).toHaveTextContent('−$52.50')
+  })
+
   it('notes older orders that statements cannot include', async () => {
     apiClient.get.mockResolvedValue({ data: { ...summary, orders_without_items_count: 3 } })
     mount()

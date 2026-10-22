@@ -66,14 +66,16 @@ class PayoutReconciler
       if status == "paid"
         liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
           { outstanding_cents: 0, unresolved: false }
-        if RefundReconciliationQueue.outstanding_for_event?(payout.event) && !liability[:unresolved]
+        queue = RefundReconciliationQueue.new(event_id: payout.event_id).entries
+        if queue.any? && !payout.event.cancelled?
           raise ReconciliationError, "Resolve outstanding refund liabilities before recording this payout as paid"
         end
-        if liability[:unresolved]
+        if liability[:unresolved] || queue.any?
           unless normalized["sent_before_cancellation_confirmed"] == true && normalized["cancellation_payout_reason"].present?
             raise ReconciliationError, "Confirm this payout was already sent before the cancellation and explain why it is being recorded while buyer refunds remain unresolved"
           end
         end
+        outstanding_buyer_cents = [liability[:outstanding_cents], queue.sum { |item| item[:amount_cents] }].max
         if payout.tax_information_snapshot.blank?
           if normalized["approved_tax_payee_confirmed"] == true
             raise ReconciliationError, "A legacy payout has no approved W-9 payee to confirm"
@@ -100,8 +102,8 @@ class PayoutReconciler
         organization: payout.organization, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
         metadata: { reconciliation: normalized,
-          outstanding_buyer_balance_cents: status == "paid" ? liability[:outstanding_cents] : nil,
-          buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] : nil }, request: request)
+          outstanding_buyer_balance_cents: status == "paid" ? outstanding_buyer_cents : nil,
+          buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil }, request: request)
     end
     payout
   rescue ActiveRecord::RecordInvalid => e

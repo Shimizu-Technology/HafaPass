@@ -57,4 +57,76 @@ RSpec.describe RefundReconciliationJob, type: :job do
     expect(RefundReconciliationQueue.call.fetch(:items).map { |item| item[:id] }).to include(stale.id)
     expect(EmailService).to have_received(:send_refund_reconciliation_digest_async).once
   end
+
+  it "processes oldest refunds first and respects the refund and Stripe-call budgets" do
+    oldest = unsettled_refund(status: :pending, created_at: 4.hours.ago)
+    second = unsettled_refund(status: :pending, created_at: 3.hours.ago)
+    unsettled_refund(status: :pending, created_at: 2.hours.ago)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("REFUND_RECONCILIATION_MAX_REFUNDS", 200).and_return("2")
+    allow(ENV).to receive(:fetch).with("REFUND_RECONCILIATION_MAX_STRIPE_CALLS", 500).and_return("2")
+    processed = []
+    allow(RefundReconciliationActions).to receive(:call) do |**options|
+      options.fetch(:stripe_call_budget).charge!
+      processed << options.fetch(:id)
+    end
+    allow(EmailService).to receive(:send_refund_reconciliation_digest_async)
+
+    described_class.perform_now
+
+    expect(processed).to eq([oldest.id, second.id])
+  end
+
+  it "stops after the Stripe call budget before attempting another provider call" do
+    3.times { |index| unsettled_refund(status: :pending, created_at: (index + 2).hours.ago) }
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("REFUND_RECONCILIATION_MAX_STRIPE_CALLS", 500).and_return("1")
+    allow(RefundReconciliationActions).to receive(:call) do |**options|
+      options.fetch(:stripe_call_budget).charge!
+    end
+    allow(EmailService).to receive(:send_refund_reconciliation_digest_async)
+
+    described_class.perform_now
+
+    expect(RefundReconciliationActions).to have_received(:call).twice
+  end
+
+  it "stops cleanly on a Stripe rate limit and logs the run summary" do
+    2.times { |index| unsettled_refund(status: :pending, created_at: (index + 2).hours.ago) }
+    allow(StripeService).to receive(:retrieve_refund).and_raise(Stripe::RateLimitError.new("Too many requests"))
+    allow(EmailService).to receive(:send_refund_reconciliation_digest_async)
+    allow(Rails.logger).to receive(:info)
+
+    described_class.perform_now
+
+    expect(StripeService).to have_received(:retrieve_refund).once
+    expect(Rails.logger).to have_received(:info).with(/stop=stripe_rate_limit/)
+  end
+
+  it "stops after the configured number of consecutive provider errors" do
+    3.times { |index| unsettled_refund(status: :pending, created_at: (index + 2).hours.ago) }
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("REFUND_RECONCILIATION_MAX_CONSECUTIVE_ERRORS", 5).and_return("2")
+    allow(StripeService).to receive(:retrieve_refund).and_raise(Stripe::APIConnectionError.new("Unreachable"))
+    allow(EmailService).to receive(:send_refund_reconciliation_digest_async)
+    allow(Rails.logger).to receive(:info)
+
+    described_class.perform_now
+
+    expect(StripeService).to have_received(:retrieve_refund).twice
+    expect(Rails.logger).to have_received(:info).with(/stop=consecutive_errors/)
+  end
+
+  it "marks an ambiguous provider lookup for manual review without resolving the refund" do
+    refund = unsettled_refund(status: :pending, created_at: 2.hours.ago)
+    refund.update!(provider_refund_id: nil)
+    allow(StripeService).to receive(:find_refund).and_raise(StripeService::AmbiguousRefund.new("Multiple matches; manual review"))
+    allow(EmailService).to receive(:send_refund_reconciliation_digest_async)
+
+    described_class.perform_now
+
+    expect(refund.reload).to be_pending
+    expect(RefundReconciliationQueue.call.fetch(:items)).to include(include(
+      id: refund.id, unable_reason: "Multiple matches; manual review"))
+  end
 end

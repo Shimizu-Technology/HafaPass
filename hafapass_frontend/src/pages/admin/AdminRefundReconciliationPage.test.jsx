@@ -37,6 +37,12 @@ describe('AdminRefundReconciliationPage', () => {
       expect.objectContaining({ params: { status: 'failed', age_days: '3', event_id: '4', page: 1 } })))
   })
 
+  it('flags outstanding buyer liability when the organizer was already paid', async () => {
+    respond([{ ...item, organizer_already_paid: true }])
+    mount()
+    expect(await screen.findByText('Organizer was already paid; recover from organizer')).toBeInTheDocument()
+  })
+
   it('checks a pending refund through the resync action', async () => {
     const user = userEvent.setup()
     mount()

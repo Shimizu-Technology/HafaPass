@@ -12,6 +12,12 @@ class RefundReconciliationQueue
     new(event_id: event.id).entries.any?
   end
 
+  def self.recovery_amount_for_event(event)
+    return 0 unless event.cancelled? && event.payouts.status_paid.exists?
+
+    new(event_id: event.id).entries.sum { |entry| entry[:amount_cents] }
+  end
+
   def initialize(event_id: nil, organization_id: nil, status: nil, age_days: nil, page: 1, per_page: PAGE_SIZE)
     @event_id = event_id
     @organization_id = organization_id
@@ -46,6 +52,7 @@ class RefundReconciliationQueue
 
   def build_entries
     ids = order_scope.select(:id)
+    @paid_event_ids = Payout.status_paid.where(event_id: order_scope.select(:event_id)).pluck(:event_id).to_set
     live_payment_ids = Payment.live_or_legacy_capture.where(order_id: ids).pluck(:id).to_set if Rails.env.production?
     includes = { order: [:refunds, :disputes, :payments, { event: :organization }] }
     cancellation = EventCancellationRefundItem.where(order_id: ids)
@@ -131,12 +138,13 @@ class RefundReconciliationQueue
     when "request_unexecuted" then "Review and issue the buyer refund"
     else "Review the refund"
     end
+    organizer_already_paid = event.cancelled? && @paid_event_ids.include?(event.id)
     { id: record.id, type: type, order_id: order.id, order_reference: order.reference,
       buyer_name: order.buyer_name, buyer_email: order.buyer_email, event_id: event.id,
       event_title: event.title, organization_id: event.organization_id, organization_name: event.organization.name,
       amount_cents: amount, currency: order.currency, reason: reason, status: status,
       created_at: at, age_seconds: age, overdue: age > 3.days.to_i, next_action: action,
-      manual_type: manual }
+      manual_type: manual, organizer_already_paid: organizer_already_paid }
   end
 
   def attach_unable_reasons(rows)

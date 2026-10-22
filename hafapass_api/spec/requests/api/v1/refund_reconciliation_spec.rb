@@ -129,6 +129,19 @@ RSpec.describe "Refund reconciliation", type: :request do
     expect(StripeService).to have_received(:retrieve_refund).once
   end
 
+  it "keeps an ambiguous missing-ID lookup open and flags it for manual review" do
+    refund = pending_refund
+    refund.update!(provider_refund_id: nil)
+    allow(StripeService).to receive(:find_refund).and_raise(StripeService::AmbiguousRefund.new("Multiple matches; manual review"))
+
+    post "/api/v1/admin/refund_reconciliation/refund/#{refund.id}/resync", headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(refund.reload).to be_pending
+    expect(RefundReconciliationQueue.call.fetch(:items)).to include(include(
+      id: refund.id, unable_reason: "Multiple matches; manual review"))
+  end
+
   it "does not retry a failed refund when Stripe says the earlier transfer succeeded" do
     failed = pending_refund(status: :failed)
     allow(StripeService).to receive(:find_refund).and_return(OpenStruct.new(

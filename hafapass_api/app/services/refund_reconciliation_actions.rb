@@ -11,7 +11,7 @@ class RefundReconciliationActions
     new(**options).call
   end
 
-  def initialize(type:, id:, action:, actor:, params: {}, request: nil, system: false)
+  def initialize(type:, id:, action:, actor:, params: {}, request: nil, system: false, stripe_call_budget: nil)
     @type = type.to_s
     @record = TYPES.fetch(@type) { raise ActionError, "Refund item not found" }.find(id)
     @action = action.to_s
@@ -19,6 +19,7 @@ class RefundReconciliationActions
     @params = params.to_h.stringify_keys
     @request = request
     @system = system
+    @stripe_call_budget = stripe_call_budget
   end
 
   def call
@@ -31,6 +32,15 @@ class RefundReconciliationActions
     when "unable" then mark_unable!
     else raise ActionError, "Unknown refund action"
     end
+  rescue StripeService::AmbiguousRefund => e
+    raise if @system
+
+    audit!("refund_reconciliation.unable", @record, { reason: e.message }) if @type == "refund"
+    raise ActionError, e.message
+  rescue Stripe::RateLimitError, StripeService::BudgetExceeded => e
+    raise if @system
+
+    raise ActionError, e.message
   rescue Commerce::RefundCreator::RefundError, StripeService::PaymentError, Stripe::StripeError => e
     raise ActionError, e.message
   end
@@ -139,10 +149,13 @@ class RefundReconciliationActions
 
   def find_provider_refund(refund)
     if refund.provider_refund_id.present?
-      StripeService.retrieve_refund(refund.provider_refund_id, payment: refund.payment)
+      StripeService.retrieve_refund(refund.provider_refund_id, payment: refund.payment,
+        call_budget: @stripe_call_budget)
     else
       StripeService.find_refund(refund.payment.provider_payment_id,
-        idempotency_key: refund.idempotency_key, payment: refund.payment)
+        idempotency_key: refund.idempotency_key, payment: refund.payment,
+        expected_amount_cents: refund.amount_cents, expected_created_at: refund.created_at,
+        call_budget: @stripe_call_budget)
     end
   end
 

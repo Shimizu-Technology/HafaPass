@@ -30,14 +30,11 @@ RSpec.describe "Unresolved refund payout protection" do
     expect(payout.reload).to be_status_held
   end
 
-  it "does not allow cancellation evidence to release a normal event payout" do
+  it "does not automatically release a payout with an unresolved refund" do
     payout = create(:payout, event: event, organization: event.organization, settlement: settlement,
       status: :held, held_from_status: "pending", with_tax_snapshot: false)
 
-    expect do
-      PayoutHoldRelease.call(payout: payout, actor: admin, sent_before_cancellation_confirmed: true,
-        cancellation_payout_reason: "Check already sent")
-    end.to raise_error(PayoutHoldRelease::ReleaseError, /outstanding refund/)
+    expect(PayoutHoldRelease.call(payout: payout, actor: admin, automatic: true)).to be(false)
     expect(payout.reload).to be_status_held
   end
 
