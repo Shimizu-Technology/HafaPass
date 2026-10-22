@@ -37,6 +37,25 @@ RSpec.describe DataRetentionPurgeJob do
     expect(old.reload.buyer_email).to eq("buyer@example.com")
   end
 
+  it "stops writing at the next batch when the admin disables purge" do
+    stub_const("DataRetention::BATCH_SIZE", 1)
+    first = create(:order, completed_at: 8.years.ago)
+    second = create(:order, completed_at: 8.years.ago)
+    writes = 0
+    allow(DataRetention).to receive(:anonymize!).and_wrap_original do |original, record|
+      result = original.call(record)
+      if record.is_a?(Order) && (writes += 1) == 1
+        SiteSetting.instance.update_columns(retention_purge_enabled: false)
+      end
+      result
+    end
+
+    expect(described_class.perform_now.fetch("orders")).to eq(2)
+    expect(writes).to eq(1)
+    expect(first.reload.buyer_email).to end_with("@privacy.invalid")
+    expect(second.reload.buyer_email).to eq("buyer@example.com")
+  end
+
   it "skips holds and only anonymizes an eligible order once" do
     held = create(:order, completed_at: 8.years.ago)
     other = create(:order, completed_at: 8.years.ago)

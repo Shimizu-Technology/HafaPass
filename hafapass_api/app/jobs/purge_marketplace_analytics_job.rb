@@ -10,10 +10,6 @@ class PurgeMarketplaceAnalyticsJob < ApplicationJob
     MarketplaceFunnelEvent.where(order_id: nil).where(occurred_at: ...RETENTION_PERIOD.ago(at))
       .in_batches(of: DataRetention::BATCH_SIZE) do |batch|
         batch.each do |event|
-          if DataRetention.dry_run?
-            count += 1 unless RetentionGuard.protected?(event)
-            next
-          end
           next if RetentionGuard.protected?(event)
 
           LegalHold.with_retention_lock do
@@ -26,7 +22,7 @@ class PurgeMarketplaceAnalyticsJob < ApplicationJob
           end
         end
       end
-    Rails.logger.info("[MarketplaceAnalyticsRetention] dry_run=#{DataRetention.dry_run?} count=#{count}")
+    Rails.logger.info("[MarketplaceAnalyticsRetention] count=#{count}")
     count
   end
 end

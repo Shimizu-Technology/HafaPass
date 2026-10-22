@@ -2,6 +2,7 @@
 
 class DataRetention
   Protected = Class.new(StandardError)
+  DestructiveDisabled = Class.new(StandardError)
   CONFIG = Rails.root.join("config/data_retention.yml")
   BATCH_SIZE = 100
   # Only abandoned checkout artifacts may be removed with an order. New foreign
@@ -37,6 +38,10 @@ class DataRetention
       SiteSetting.first&.retention_purge_enabled? == true
   end
 
+  def self.ensure_destructive_enabled!
+    raise DestructiveDisabled, "Destructive retention is disabled" if dry_run?
+  end
+
   def self.reconciliation_audits_for_orders(order_ids)
     ids = Array(order_ids)
     AuditLog.where(auditable_type: "Refund", auditable_id: Refund.where(order_id: ids).select(:id))
@@ -58,10 +63,13 @@ class DataRetention
   end
 
   def self.anonymize_order!(order, eligible_ticket_ids: nil, eligible_support_note_ids: nil,
-    anonymize_responses: nil, buyer_owned: true, privacy_user_id: nil, privacy_emails: nil)
+    anonymize_responses: nil, buyer_owned: true, privacy_user_id: nil, privacy_emails: nil,
+    privacy_names: nil)
+    ensure_destructive_enabled!
     LegalHold.with_retention_lock do
       Order.transaction(requires_new: true) do
         order.lock!
+        ensure_destructive_enabled!
         if RetentionGuard.protected?(order)
           Rails.logger.info("[DataRetention] skipped protected orders record")
           return false
@@ -69,7 +77,7 @@ class DataRetention
         anonymize_order_locked!(order, eligible_ticket_ids: eligible_ticket_ids,
           eligible_support_note_ids: eligible_support_note_ids,
           anonymize_responses: anonymize_responses, buyer_owned: buyer_owned,
-          privacy_user_id: privacy_user_id, privacy_emails: privacy_emails)
+          privacy_user_id: privacy_user_id, privacy_emails: privacy_emails, privacy_names: privacy_names)
       end
     end
   rescue Protected
@@ -78,7 +86,8 @@ class DataRetention
   end
 
   def self.anonymize_order_locked!(order, eligible_ticket_ids:, eligible_support_note_ids:,
-    anonymize_responses:, buyer_owned:, privacy_user_id:, privacy_emails:)
+    anonymize_responses:, buyer_owned:, privacy_user_id:, privacy_emails:, privacy_names:)
+    ensure_destructive_enabled!
     unless buyer_owned
       ticket_ids = Array(eligible_ticket_ids)
       anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
@@ -93,16 +102,13 @@ class DataRetention
     replacement = "deleted+order-#{order.id}@privacy.invalid"
     ticket_ids = eligible_ticket_ids || order.tickets.where(holder_user_id: [nil, order.user_id])
       .where("holder_email IS NULL OR lower(holder_email) = ?", order.buyer_email.to_s.downcase).pluck(:id)
-    attendee_evidence = Ticket.where(id: ticket_ids).to_h do |ticket|
-      requester = if privacy_emails
-        privacy_emails.include?(ticket.attendee_email.to_s.downcase) ||
-          (buyer_owned && ticket.holder_email.blank? && ticket.holder_user_id.nil? &&
-            ticket.attendee_email.blank? && ticket.attendee_name.to_s.casecmp?(order.buyer_name.to_s))
-      else
-        true
-      end
-      [ticket.id, { requester: requester, name: ticket.attendee_name }]
+    snapshot_names = Array(privacy_names).filter_map { |name| name.to_s.downcase if name.present? }
+    snapshot_names << order.buyer_name.to_s.downcase if buyer_owned && order.buyer_name.present?
+    Ticket.where(id: ticket_ids).find_each do |ticket|
+      snapshot_names << ticket.attendee_name.downcase if privacy_emails&.include?(ticket.attendee_email.to_s.downcase) &&
+        ticket.attendee_name.present?
     end
+    snapshot_names.uniq!
     anonymize_responses = order.tickets.count == ticket_ids.length if anonymize_responses.nil?
     if privacy_emails
       anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
@@ -160,15 +166,20 @@ class DataRetention
     guests = guests.where("lower(guest_email) IN (?)", privacy_emails) if privacy_emails
     update_unheld(guests, guest_email: nil, guest_name: "[redacted]",
       guest_phone: nil, notes: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
-    AdmissionAction.where(ticket_id: attendee_evidence.keys).find_each do |action|
-      evidence = attendee_evidence.fetch(action.ticket_id)
-      next unless evidence[:requester]
+    AdmissionAction.where(ticket_id: ticket_ids).find_each do |action|
       if privacy_emails
         snapshot = action.attendee_snapshot
-        snapshot_email = snapshot["attendee_email"] || snapshot["email"]
-        snapshot_name = snapshot["attendee_name"] || snapshot["name"]
-        next if snapshot_email.present? && !privacy_emails.include?(snapshot_email.downcase)
-        next if snapshot_name.present? && !snapshot_name.casecmp?(evidence[:name].to_s)
+        emails = %w[attendee_email email holder_email].filter_map { |key| snapshot[key]&.to_s&.downcase }
+        user_ids = %w[attendee_user_id user_id holder_user_id].filter_map { |key| snapshot[key]&.to_s }
+        names = %w[attendee_name name].filter_map { |key| snapshot[key]&.to_s&.downcase }
+        belongs_to_requester = if emails.any?
+          emails.intersect?(privacy_emails)
+        elsif user_ids.any?
+          user_ids.include?(privacy_user_id.to_s)
+        else
+          names.intersect?(snapshot_names)
+        end
+        next unless belongs_to_requester
       end
 
       update_unheld(AdmissionAction.where(id: action.id), attendee_snapshot: {}, metadata: {},
@@ -206,8 +217,10 @@ class DataRetention
   end
 
   def self.anonymize_requester_tickets!(order, ticket_ids, emails:, user_id:, buyer_owned:)
+    ensure_destructive_enabled!
     Ticket.where(id: ticket_ids).find_each do |ticket|
       ticket.with_lock do
+        ensure_destructive_enabled!
         if RetentionGuard.protected?(ticket)
           Rails.logger.info("[DataRetention] skipped protected tickets record")
           next
@@ -232,8 +245,10 @@ class DataRetention
   end
 
   def self.update_unheld(scope, **attributes)
+    ensure_destructive_enabled!
     scope.find_each do |record|
       record.with_lock do
+        ensure_destructive_enabled!
         if RetentionGuard.protected?(record)
           Rails.logger.info("[DataRetention] skipped protected #{record.class.table_name} record")
           next
@@ -318,6 +333,7 @@ class DataRetention
   end
 
   def self.anonymize!(record)
+    ensure_destructive_enabled!
     case record
     when Order then anonymize_order!(record)
     when Payout
@@ -398,9 +414,11 @@ class DataRetention
   end
 
   def self.delete_pending_order!(order)
+    ensure_destructive_enabled!
     LegalHold.with_retention_lock do
       Order.transaction do
         order.lock!
+        ensure_destructive_enabled!
         if RetentionGuard.protected?(order)
           Rails.logger.info("[DataRetention] skipped protected orders record")
           return false
@@ -415,6 +433,7 @@ class DataRetention
           OrderItem.where(order_id: order.id)].each do |scope|
           scope.find_each do |child|
             child.with_lock do
+              ensure_destructive_enabled!
               raise Protected if RetentionGuard.protected?(child)
 
               child.delete
@@ -423,6 +442,7 @@ class DataRetention
         end
         raise Protected if RetentionGuard.protected?(order)
 
+        ensure_destructive_enabled!
         order.delete
         true
       end

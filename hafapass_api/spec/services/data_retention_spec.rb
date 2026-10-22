@@ -1,6 +1,41 @@
 require "rails_helper"
 
 RSpec.describe DataRetention do
+  before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
+  end
+
+  it "rejects direct retention writes without the deploy flag and leaves rows untouched" do
+    order = create(:order)
+    pending = create(:order, :pending, created_at: 100.days.ago, expires_at: 100.days.ago)
+    payment = create(:payment, order: order, provider_payload: { "email" => "private@example.test" })
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return(nil)
+
+    expect { described_class.anonymize!(payment) }.to raise_error(DataRetention::DestructiveDisabled)
+    expect { described_class.anonymize_order!(order) }.to raise_error(DataRetention::DestructiveDisabled)
+    expect { described_class.delete_pending_order!(pending) }.to raise_error(DataRetention::DestructiveDisabled)
+    expect do
+      described_class.update_unheld(Payment.where(id: payment.id), provider_payload: {})
+    end.to raise_error(DataRetention::DestructiveDisabled)
+
+    expect(payment.reload.provider_payload).to eq("email" => "private@example.test")
+    expect(order.reload.buyer_email).to eq("buyer@example.com")
+    expect(Order.exists?(pending.id)).to be(true)
+  end
+
+  it "rejects direct writes when the admin toggle is off or dry run is forced" do
+    order = create(:order)
+    SiteSetting.instance.update_columns(retention_purge_enabled: false)
+    expect { described_class.anonymize_order!(order) }.to raise_error(DataRetention::DestructiveDisabled)
+
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DRY_RUN").and_return("true")
+    expect { described_class.anonymize_order!(order) }.to raise_error(DataRetention::DestructiveDisabled)
+    expect(order.reload.buyer_email).to eq("buyer@example.com")
+  end
+
   describe "schedule inventory" do
     it "classifies every column of every table explicitly" do
       connection = ActiveRecord::Base.connection
@@ -205,6 +240,12 @@ end
 
 RSpec.describe DataRetention, "pending-order safety" do
   let(:order) { create(:order, :pending, created_at: 100.days.ago, expires_at: 100.days.ago) }
+
+  before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
+  end
 
   it "classifies every order column and uses every provider reference to block purge" do
     classifications = YAML.safe_load_file(DataRetention::CONFIG).fetch("column_classifications").fetch("orders")

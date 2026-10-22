@@ -21,6 +21,18 @@ RSpec.describe PurgeMarketplaceAnalyticsJob do
     expect(MarketplaceFunnelEvent.exists?(purchase.id)).to be(true)
   end
 
+  it "purges a 14-month-old unlinked event with the deploy flag unset" do
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return(nil)
+    SiteSetting.instance.update_columns(retention_purge_enabled: false)
+    event = create(:event)
+    old = MarketplaceFunnelEvent.create!(event: event, visitor_hash: "d" * 64, stage: :event_view,
+      occurred_at: 14.months.ago)
+
+    described_class.perform_now
+
+    expect(MarketplaceFunnelEvent.exists?(old.id)).to be(false)
+  end
+
   it "rechecks a hold under the row lock after the initial scan" do
     event = create(:event)
     old = MarketplaceFunnelEvent.create!(event: event, visitor_hash: "c" * 64, stage: :event_view,

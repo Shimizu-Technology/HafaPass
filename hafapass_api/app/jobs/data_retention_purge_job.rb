@@ -24,6 +24,7 @@ class DataRetentionPurgeJob < ApplicationJob
       relation = model.where(rule.fetch("trigger") => ...cutoff)
       relation = relation.where(retention_anonymized_at: nil) if model.column_names.include?("retention_anonymized_at")
       relation.in_batches(of: DataRetention::BATCH_SIZE) do |batch|
+        dry_run = DataRetention.dry_run?
         batch.each do |record|
           next if RetentionGuard.protected?(record)
           next if record.is_a?(Order) && record.tickets.exists? && record.event.starts_at&.after?(at)
@@ -57,6 +58,7 @@ class DataRetentionPurgeJob < ApplicationJob
               end
               result = case rule.fetch("action")
               when "delete"
+                DataRetention.ensure_destructive_enabled!
                 record.destroy!
                 true
               when "anonymize" then DataRetention.anonymize!(record)
@@ -71,6 +73,7 @@ class DataRetentionPurgeJob < ApplicationJob
     pending_cutoff = DataRetention.cutoff("90_days", at: at)
     Order.where(status: [:pending, :expired]).where("COALESCE(expired_at, expires_at, created_at) < ?", pending_cutoff)
       .in_batches(of: DataRetention::BATCH_SIZE) do |batch|
+        dry_run = DataRetention.dry_run?
         batch.each do |order|
           if dry_run
             counts["abandoned_orders"] += 1 if DataRetention.pending_order_purgeable?(order)
@@ -79,7 +82,7 @@ class DataRetentionPurgeJob < ApplicationJob
           end
         end
       end
-    Rails.logger.info("[DataRetention] dry_run=#{dry_run} counts=#{counts.sort.to_h.to_json}")
+    Rails.logger.info("[DataRetention] dry_run=#{DataRetention.dry_run?} counts=#{counts.sort.to_h.to_json}")
     counts
   end
 end

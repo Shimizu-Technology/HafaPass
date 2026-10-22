@@ -314,12 +314,14 @@ class PrivacyRequestProcessor
   end
 
   def execute_deletion!(actor)
+    DataRetention.ensure_destructive_enabled!
     user = @request.user
     clerk_id = user&.clerk_id
     uploads = user ? ImageUploadReceipt.where(user_id: user.id).to_a : []
     LegalHold.with_retention_lock do
       PrivacyRequest.transaction do
         @request.lock!
+        DataRetention.ensure_destructive_enabled!
         @orders = nil
         @plan = nil
         orders.each(&:lock!)
@@ -339,7 +341,7 @@ class PrivacyRequestProcessor
             eligible_ticket_ids: order.tickets.where(id: current_plan.ticket_ids).pluck(:id),
             eligible_support_note_ids: current_plan.order_note_ids.fetch(order.id),
             anonymize_responses: current_plan.response_order_ids.include?(order.id),
-            privacy_user_id: user&.id, privacy_emails: buyer_emails)
+            privacy_user_id: user&.id, privacy_emails: buyer_emails, privacy_names: personal_tokens)
           raise Blocked, "A protected order now blocks deletion" unless written
         end
         WalletPass.where(id: current_plan.wallet_pass_ids).find_each do |pass|
@@ -501,13 +503,44 @@ class PrivacyRequestProcessor
   def redact_personal_value(value, owned_references, tokens)
     case value
     when Hash
-      owned_item = owned_references.include?(value["order_reference"] || value[:order_reference])
+      fields = value.transform_keys(&:to_s)
+      reference = fields["order_reference"]
+      return value if reference.present? && !owned_references.include?(reference)
+
+      emails = %w[email buyer_email attendee_email holder_email recipient_email].filter_map do |key|
+        fields[key]&.to_s&.downcase
+      end
+      user_ids = %w[user_id buyer_user_id attendee_user_id holder_user_id].filter_map do |key|
+        fields[key]&.to_s
+      end
+      phones = %w[phone buyer_phone attendee_phone].filter_map { |key| fields[key]&.to_s }
+      names = %w[name first_name last_name buyer_name attendee_name].filter_map do |key|
+        fields[key]&.to_s&.downcase
+      end
+      requester_names = tokens.filter_map { |token| token.to_s.downcase if token.present? }
+      requester_phone = @request.user&.phone.to_s
+      identified = emails.any? || user_ids.any? || phones.any? || names.any?
+      owned_identity = if emails.any?
+        emails.intersect?(buyer_emails)
+      elsif user_ids.any?
+        @request.user_id && user_ids.include?(@request.user_id.to_s)
+      else
+        (requester_phone.present? && phones.include?(requester_phone)) ||
+          names.intersect?(requester_names)
+      end
+      owned_item = owned_references.include?(reference) || owned_identity
+      return value if identified && !owned_item
+
       value.each_with_object({}) do |(key, item), result|
         next if owned_item && %w[buyer_email buyer_name reason refund_reason dispute_reason].include?(key.to_s)
-        next if %w[first_name last_name name email phone].include?(key.to_s.downcase)
+        next if owned_item && %w[first_name last_name name email phone user_id attendee_name attendee_email
+          attendee_phone buyer_phone holder_email holder_user_id].include?(key.to_s.downcase)
         next if item.is_a?(String) && tokens.any? { |token| item.casecmp?(token) }
 
-        result[key] = redact_personal_value(item, owned_references, tokens)
+        redacted = redact_personal_value(item, owned_references, tokens)
+        next if owned_item && redacted.is_a?(Hash) && redacted.empty?
+
+        result[key] = redacted
       end
     when Array then value.map { |item| redact_personal_value(item, owned_references, tokens) }
     when String

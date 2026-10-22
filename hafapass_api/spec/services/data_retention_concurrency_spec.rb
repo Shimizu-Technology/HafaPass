@@ -4,7 +4,12 @@ require "timeout"
 RSpec.describe "Pending-order purge locking", :non_transactional do
   self.use_transactional_tests = false
 
-  before { clean_test_data }
+  before do
+    clean_test_data
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
+  end
   after { clean_test_data }
 
   it "rechecks a payment committed while purge waits for the order lock" do

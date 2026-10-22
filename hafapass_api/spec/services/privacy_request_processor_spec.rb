@@ -209,8 +209,10 @@ RSpec.describe PrivacyRequestProcessor do
     digest = create(:message_delivery, order: nil, event: order.event, recipient: admin.email,
       template: "refund_reconciliation_digest", status: :sent,
       metadata: { items: [
-        { order_reference: order.reference, buyer_email: user.email, reason: "Alice asks for a refund" },
-        { order_reference: bob_order.reference, buyer_email: bob.email, reason: "Bob asks for a refund" }
+        { order_reference: order.reference, buyer_email: user.email, name: "Alice Buyer",
+          contact: { email: user.email, phone: "671-555-0101" }, reason: "Alice asks for a refund" },
+        { order_reference: bob_order.reference, buyer_email: bob.email, name: "Bob Buyer",
+          contact: { email: bob.email, phone: "671-555-0202" }, reason: "Bob asks for a refund" }
       ] })
     audit = AuditLogger.record!(action: "retention.mixed_contact", auditable: order,
       actor: admin, metadata: { alice_email: user.email, bob_email: bob.email })
@@ -220,7 +222,9 @@ RSpec.describe PrivacyRequestProcessor do
     items = digest.reload.metadata.fetch("items")
     expect(items.first).to eq("order_reference" => order.reference)
     expect(items.second).to include("order_reference" => bob_order.reference,
-      "buyer_email" => bob.email, "reason" => "Bob asks for a refund")
+      "buyer_email" => bob.email, "name" => "Bob Buyer",
+      "contact" => { "email" => bob.email, "phone" => "671-555-0202" },
+      "reason" => "Bob asks for a refund")
     expect(audit.reload.metadata).to eq("bob_email" => bob.email)
   end
 
@@ -338,6 +342,26 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
     expect(historical_bob.reload.attendee_snapshot).to eq("attendee_name" => "Bob Before Transfer")
     expect(ticket.reload).to have_attributes(holder_email: nil, attendee_email: bob.email,
       attendee_name: "Bob Attendee")
+  end
+
+  it "redacts Alice's historical snapshot after the ticket attendee changes to Bob" do
+    buyer.update_columns(first_name: "Alice", last_name: "Earlier")
+    bob = create(:user)
+    ticket = create(:ticket, order: order, event: order.event,
+      ticket_type: create(:ticket_type, event: order.event), holder_email: buyer.email,
+      attendee_email: bob.email, attendee_name: "Bob Current")
+    alice_action = create(:admission_action, organization: order.event.organization, event: order.event,
+      ticket: ticket, scanner_device: nil, actor_user: admin, sequence: nil, source: :manual,
+      attendee_snapshot: { "name" => "Alice Earlier" })
+    bob_action = create(:admission_action, organization: order.event.organization, event: order.event,
+      ticket: ticket, scanner_device: nil, actor_user: admin, sequence: nil, source: :manual,
+      attendee_snapshot: { "name" => "Bob Current", "email" => bob.email })
+
+    described_class.new(privacy_request).execute!(actor: admin)
+
+    expect(alice_action.reload.attendee_snapshot).to eq({})
+    expect(bob_action.reload.attendee_snapshot).to eq("name" => "Bob Current", "email" => bob.email)
+    expect(ticket.reload.attendee_name).to eq("Bob Current")
   end
 
   it "redacts first name, last name, and structured identity keys in nested audit metadata" do
