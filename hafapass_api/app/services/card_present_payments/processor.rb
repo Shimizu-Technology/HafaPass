@@ -166,7 +166,7 @@ module CardPresentPayments
           provider_amount_cents: result.amount_cents,
           provider_currency: result.currency
         )
-        completed = order.reload.completed?
+        completed = order.completed?
         if completed
           attempt.update!(
             status: :succeeded,

@@ -87,6 +87,30 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
       "status" => "paid", "outstanding_buyer_balance_cents" => 5250)
   end
 
+  it "calculates a held event's payable amount once per listing request" do
+    payout.update!(status: :held, held_from_status: :processing)
+    create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, status: :held, held_from_status: :processing,
+      provider_payout_id: "manual_po_second")
+    other_event = create(:event, :completed, organization: organization, organizer_profile: profile)
+    create(:payout, organization: organization, event: other_event,
+      settlement: create(:settlement, organization: organization, event: other_event),
+      connected_account: account, status: :held, held_from_status: :processing,
+      provider_payout_id: "manual_po_other_event")
+    allow(Settlements::Calculator).to receive(:call).and_call_original
+
+    get "/api/v1/admin/payouts", headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("payouts").count).to eq(3)
+    expect(Settlements::Calculator).to have_received(:call).with(event).once
+    expect(Settlements::Calculator).to have_received(:call).with(other_event).once
+
+    get "/api/v1/admin/payouts", headers: auth_headers(admin)
+    expect(Settlements::Calculator).to have_received(:call).with(event).twice
+    expect(Settlements::Calculator).to have_received(:call).with(other_event).twice
+  end
+
   it "recovers the exact same outcome without creating another audit or changing evidence" do
     2.times { reconcile; expect(response).to have_http_status(:ok) }
     expect(AuditLog.where(auditable: payout, action: "payout.reconciled").count).to eq(1)

@@ -17,7 +17,8 @@ class PolicyRegistry
   PLACEHOLDER = /\{\{([a-z_]+)\}\}/
   PLACEHOLDERS = %w[platform_name operator_name support_contact fee_schedule payout_schedule].freeze
   MATERIAL_SETTINGS = %w[service_fee_percent service_fee_flat_cents processing_fee_bearer payout_schedule_text].freeze
-  SUPPORT_FALLBACK = "through Find your tickets → Contact support (/orders/recover)"
+  # The order-recovery page cannot receive privacy or accessibility requests.
+  SUPPORT_FALLBACK = "at shimizutechnology@gmail.com"
   # Drafting notes in square brackets belong in review_notes, never in the
   # public text; one left in a document is a technical blocker.
   REVIEW_MARKER = /\[[^\]\n]+\]/

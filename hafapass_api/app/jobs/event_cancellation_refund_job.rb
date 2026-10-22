@@ -4,6 +4,7 @@ require "timeout"
 
 class EventCancellationRefundJob < ApplicationJob
   class RunDeadlineExceeded < StandardError; end
+  class ManualItemRefreshError < StandardError; end
 
   RUN_DEADLINE = 30.minutes
   queue_as :default
@@ -28,7 +29,20 @@ class EventCancellationRefundJob < ApplicationJob
       end
       submit_refund(item, run, amount) if amount
     end
+    # One stuck manual item must not stop the rest from refreshing; retry the
+    # job for the failures after the run status reflects everything else.
+    failures = []
+    run.items.needs_manual.find_each do |item|
+      run.event.organization.with_lock do
+        item.order.with_lock do
+          item.with_lock { EventCancellationRefunds.refresh_cash_item!(item, actor: run.started_by) }
+        end
+      end
+    rescue StandardError => e
+      failures << "item #{item.id}: #{e.class}: #{e.message}"
+    end
     run.reconcile_status!
+    raise ManualItemRefreshError, failures.join("; ") if failures.any?
   end
 
   def prepare_item(item, run)

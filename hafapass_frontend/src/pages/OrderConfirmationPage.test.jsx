@@ -54,8 +54,8 @@ describe('guest order recovery actions', () => {
     expect(screen.queryByRole('button', { name: 'Keep my tickets' })).not.toBeInTheDocument()
   })
 
-  it('shows a legacy cancelled order before its refund run starts', async () => {
-    const order = { id: 922, reference: 'HP-922', status: 'completed', buyer_email: 'guest@example.invalid',
+  it.each(['completed', 'partially_refunded'])('shows a legacy cancelled %s order before its refund run starts', async status => {
+    const order = { id: 922, reference: 'HP-922', status, buyer_email: 'guest@example.invalid',
       order_items: [], tickets: [], cancellation_refund: { status: 'not_started' },
       event: { slug: 'cancelled-event', title: 'Cancelled Event', status: 'cancelled', timezone: 'Pacific/Guam' } }
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))

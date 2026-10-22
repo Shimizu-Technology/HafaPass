@@ -64,7 +64,7 @@ class OrderPresenter
 
     succeeded = order.refunds.succeeded.order(succeeded_at: :desc, id: :desc).first
     item = order.event.event_cancellation_refund_run&.items&.find_by(order: order)
-    return unless succeeded || item || (order.completed? && order.total_cents.positive?)
+    return unless succeeded || item || ((order.completed? || order.partially_refunded?) && order.total_cents.positive?)
 
     status = if succeeded && (order.refunded? || item&.refunded?)
       "refunded"
@@ -76,7 +76,7 @@ class OrderPresenter
       "awaiting_dispute"
     elsif item&.skipped?
       "resolved"
-    elsif !item && order.completed?
+    elsif !item && (order.completed? || order.partially_refunded?)
       "not_started"
     else
       "processing"

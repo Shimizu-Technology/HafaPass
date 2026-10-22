@@ -8,14 +8,6 @@ class EventCancellationRefundRun < ApplicationRecord
   enum :status, { processing: 0, completed: 1, needs_attention: 2 }
 
   def summary(page: 1)
-    items.needs_manual.find_each do |item|
-      event.organization.with_lock do
-        item.order.with_lock do
-          item.with_lock { EventCancellationRefunds.refresh_cash_item!(item, actor: started_by) }
-        end
-      end
-    end
-    reconcile_status!
     counts = items.group(:status).count.transform_keys { |key| EventCancellationRefundItem.statuses.key(key) || key.to_s }
     total_orders = items.count
     page = [[page.to_i, 1].max, [(total_orders.to_f / 50).ceil, 1].max].min
