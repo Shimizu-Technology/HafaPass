@@ -124,7 +124,7 @@ Rails.application.routes.draw do
       # Organizer events (protected)
       namespace :organizer do
         resource :tax_information, only: [:show, :update]
-        resource :organization, only: [:show], controller: "organizations"
+        resource :organization, only: [:show, :update], controller: "organizations"
         resource :finances, only: [:show], controller: "organization_finances" do
           get :orders_export
           get :payouts_export

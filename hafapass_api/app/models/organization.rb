@@ -26,6 +26,8 @@ class Organization < ApplicationRecord
   validates :name, :slug, :timezone, :currency, presence: true
   validates :slug, uniqueness: true
   validates :currency, length: { is: 3 }
+  validates :marketing_mailing_address, length: { maximum: 500 }, allow_blank: true
+  validate :certified_marketing_address_is_postal
 
   before_validation :generate_slug, if: -> { slug.blank? || name_changed? }
 
@@ -37,7 +39,25 @@ class Organization < ApplicationRecord
     status_active? && payout_account.present?
   end
 
+  def marketing_postal_address_ready?
+    marketing_address_certified_at.present? && marketing_postal_address_valid?
+  end
+
   private
+
+  def certified_marketing_address_is_postal
+    return if marketing_address_certified_at.blank?
+
+    unless marketing_postal_address_valid?
+      errors.add(:marketing_mailing_address, "must include a street or PO Box, locality, and postal code")
+    end
+  end
+
+  def marketing_postal_address_valid?
+    address = marketing_mailing_address.to_s.strip
+    address.length >= 12 && address.match?(/\d/) && address.match?(/\b\d{5}(?:-\d{4})?\b/) &&
+      address.match?(/[[:alpha:]]/) && !address.match?(/https?:\/\/|@/i)
+  end
 
   def generate_slug
     base = name.to_s.parameterize.presence || "organization"

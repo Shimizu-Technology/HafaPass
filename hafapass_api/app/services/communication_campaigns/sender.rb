@@ -22,13 +22,9 @@ module CommunicationCampaigns
         unless campaign.draft? || campaign.scheduled?
           raise CampaignError, "Only draft or scheduled campaigns can be sent"
         end
-        if SiteSetting.instance.business_mailing_address.blank?
-          message = if (@actor || campaign.created_by_user).admin?
-            "Set the Business mailing address in admin settings before sending promotional email"
-          else
-            "Promotional email is unavailable until HåfaPass adds its business mailing address. Contact HåfaPass support."
-          end
-          raise CampaignError, message
+        organization = campaign.event.organization
+        unless organization.marketing_postal_address_ready?
+          raise CampaignError, "The organization owner must certify a valid marketing postal address in Organization settings before sending email"
         end
         if PublicSiteUrl.api.blank? && !Rails.env.local?
           raise CampaignError, "PUBLIC_API_URL is required for one-click unsubscribe"
@@ -48,8 +44,8 @@ module CommunicationCampaigns
             idempotency_key: "campaign/#{campaign.id}/#{Digest::SHA256.hexdigest(normalized)}",
             payload_digest: Digest::SHA256.hexdigest([campaign.subject, campaign.body, normalized].join("|")),
             metadata: { subject: campaign.subject, body: campaign.body,
-              mailing_address: SiteSetting.instance.business_mailing_address,
-              organizer_name: campaign.event.organization.name },
+              mailing_address: organization.marketing_mailing_address,
+              organizer_name: organization.name },
             status: :queued
           )
         end

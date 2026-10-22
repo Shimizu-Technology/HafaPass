@@ -565,16 +565,16 @@ function CheckoutContent({ buyerId }) {
 
         {/* Progress */}
         <div className="flex items-center gap-3 mb-6">
-          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'info' ? 'text-brand-500' : 'text-emerald-600'}`}>
+          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'info' ? 'text-brand-800' : 'text-emerald-700'}`}>
             {step === 'payment'
               ? <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center"><Check className="w-3 h-3 text-white" /></div>
-              : <span className="w-5 h-5 rounded-full bg-brand-500 text-white text-xs flex items-center justify-center">1</span>
+              : <span className="w-5 h-5 rounded-full bg-brand-800 text-white text-xs flex items-center justify-center">1</span>
             }
             {t('checkout.yourInfo')}
           </div>
           <div className="w-8 h-px bg-neutral-200" />
-          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'payment' ? 'text-brand-500' : 'text-neutral-600'}`}>
-            <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${step === 'payment' ? 'bg-brand-500 text-white' : 'bg-neutral-200 text-neutral-500'}`}>2</span>
+          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'payment' ? 'text-brand-800' : 'text-neutral-600'}`}>
+            <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${step === 'payment' ? 'bg-brand-800 text-white' : 'bg-neutral-200 text-neutral-700'}`}>2</span>
             {t('checkout.payment')}
           </div>
         </div>
@@ -659,7 +659,7 @@ function CheckoutContent({ buyerId }) {
         {step === 'info' && (
           <div className="mb-6">
             {!showPromo && !promoData ? (
-              <button onClick={() => setShowPromo(true)} className="text-sm text-brand-500 hover:text-brand-600 font-medium flex items-center gap-1.5 transition-colors">
+              <button onClick={() => setShowPromo(true)} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-brand-800 transition-colors hover:text-brand-900">
                 <Tag className="w-3.5 h-3.5" /> {t('checkout.havePromoCode')}
               </button>
             ) : promoData ? (
@@ -874,7 +874,7 @@ function CheckoutContent({ buyerId }) {
                   if (current()) setSubmitError(err.response?.data?.error || t('buyer.Checkout.weCouldNotConfirmCancellationPleaseRefreshThis'))
                 } finally { if (viewCurrent()) setSubmitting(false) }
               }}
-                className="text-sm text-brand-500 hover:text-brand-600 font-medium">{t('checkout.editInfo')}</button>
+                className="min-h-11 text-sm font-medium text-brand-800 hover:text-brand-900">{t('checkout.editInfo')}</button>
             </div>
             {submitError && <p role="alert" className="mb-4 text-sm text-red-700">{submitError}</p>}
             <div className="bg-neutral-50 rounded-xl p-3 mb-4 text-sm text-neutral-600">

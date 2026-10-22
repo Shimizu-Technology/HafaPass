@@ -55,7 +55,7 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient unsubscribed from this organizer")
         next :done
       end
-      if delivery.promotional? && delivery.event &&
+      if delivery.requires_marketing_consent? && delivery.event &&
           !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient)
         delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Recipient has not opted in")
         next :done
@@ -65,7 +65,7 @@ class MessageDeliveryJob < ApplicationJob
           last_error: "Recipient has a prior bounce, complaint, or suppression")
         next :done
       end
-      if delivery.promotional? && SiteSetting.instance.business_mailing_address.blank?
+      if delivery.promotional? && !current_marketing_address?(delivery)
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
           last_error: "Promotional send blocked by missing mailing address")
         next :done
@@ -113,9 +113,10 @@ class MessageDeliveryJob < ApplicationJob
     end
 
     if delivery.promotional? && delivery.event && (delivery.marketing_unsubscribed? ||
-        !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient) ||
+        (delivery.requires_marketing_consent? &&
+          !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient)) ||
         delivery.suppressed_recipient? ||
-        SiteSetting.instance.business_mailing_address.blank?)
+        !current_marketing_address?(delivery))
       delivery.with_lock do
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
           provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil,
@@ -159,6 +160,13 @@ class MessageDeliveryJob < ApplicationJob
   end
 
   private
+
+  def current_marketing_address?(delivery)
+    organization = Organization.find_by(id: delivery.event&.organization_id)
+    organization&.marketing_postal_address_ready? && (PublicSiteUrl.api.present? || Rails.env.local?) &&
+      delivery.metadata["mailing_address"] == organization.marketing_mailing_address &&
+      delivery.metadata["organizer_name"] == organization.name
+  end
 
   def known_rejection?(error)
     error.is_a?(Resend::Error::InvalidRequestError) || error.is_a?(Resend::Error::NotFoundError) ||

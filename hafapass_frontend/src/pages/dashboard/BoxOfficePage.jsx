@@ -434,7 +434,7 @@ function BoxOfficePageSession({ id, identity }) {
                     <div className="flex justify-center">
                       <QRCode value={ticket.scan_credential} size={120} />
                     </div>
-                    <p className="text-xs text-center text-neutral-400 mt-1 font-mono">HP-T{ticket.id}</p>
+                    <p className="text-xs text-center text-neutral-600 mt-1 font-mono">HP-T{ticket.id}</p>
                   </div>
                 ))}
               </div>

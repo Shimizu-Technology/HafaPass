@@ -24,6 +24,27 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
     render json: organization_json(organization, membership&.role)
   end
 
+  def update
+    organization = OrganizationContext.resolve(
+      user: current_user,
+      requested_id: request.headers["X-Organization-Id"].presence || params[:organization_id].presence
+    )
+    return render json: { error: "Organization membership required" }, status: :forbidden unless organization
+    unless OrganizationAuthorization.allowed?(user: current_user, organization: organization, permission: :manage_organization)
+      return render json: { error: "Only the organization owner can set the marketing postal address" }, status: :forbidden
+    end
+
+    address = params.require(:organization).permit(:marketing_mailing_address)[:marketing_mailing_address].to_s.strip
+    organization.marketing_mailing_address = address.presence
+    organization.marketing_address_certified_at =
+      ActiveModel::Type::Boolean.new.cast(params.dig(:organization, :certified)) ? Time.current : nil
+    if organization.save
+      render json: organization_json(organization, organization.organization_memberships.find_by(user: current_user)&.role)
+    else
+      render json: { errors: organization.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
   private
 
   def organization_json(organization, role)
@@ -37,6 +58,8 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
       role: role,
       permissions: OrganizationAuthorization.permissions_for(user: current_user, organization: organization),
       payout_ready: organization.payout_ready?,
+      marketing_mailing_address: organization.marketing_mailing_address,
+      marketing_address_ready: organization.marketing_postal_address_ready?,
       admin_view: current_user.admin? && role.nil?
     }
   end

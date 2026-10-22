@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1252,6 +1252,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.integer "status", default: 0, null: false
     t.string "timezone", default: "Pacific/Guam", null: false
     t.datetime "updated_at", null: false
+    t.text "marketing_mailing_address"
+    t.datetime "marketing_address_certified_at"
     t.index ["slug"], name: "index_organizations_on_slug", unique: true
     t.check_constraint "char_length(currency::text) = 3", name: "organizations_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organizations_status_valid"

@@ -24,7 +24,7 @@ class MessageDelivery < ApplicationRecord
   attr_accessor :preparing_outbound_payload
 
   TICKET_EMAIL_TEMPLATES = %w[order_confirmation fulfillment_resend].freeze
-  PROMOTIONAL_TEMPLATES = %w[communication_campaign].freeze
+  PROMOTIONAL_TEMPLATES = %w[communication_campaign waitlist_notification waitlist_offer].freeze
 
   def promotional?
     channel == "email" && PROMOTIONAL_TEMPLATES.include?(template)
@@ -32,6 +32,10 @@ class MessageDelivery < ApplicationRecord
 
   def transactional?
     channel == "email" && !promotional?
+  end
+
+  def requires_marketing_consent?
+    channel == "email" && template == "communication_campaign"
   end
 
   def marketing_unsubscribed?

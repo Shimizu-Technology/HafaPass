@@ -4,7 +4,10 @@ RSpec.describe "Marketing delivery" do
   let(:event) { create(:event, :published) }
   let(:campaign) { create(:communication_campaign, event: event) }
 
-  before { SiteSetting.instance.update!(business_mailing_address: "123 Marine Drive, Hagåtña, GU 96910") }
+  before do
+    event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
+  end
 
   def attendee(email:, opted_in:)
     order = create(:order, event: event, buyer_email: email, marketing_opt_in: opted_in)
@@ -25,6 +28,7 @@ RSpec.describe "Marketing delivery" do
     expect(delivery).not_to be_transactional
     payload = EmailService.prepare_delivery_payload(delivery)
     expect(payload.fetch("html")).to include("123 Marine Drive", "Unsubscribe", event.organization.name)
+    expect(payload.fetch("from")).to eq("#{event.organization.name} via HåfaPass <#{EmailService.from_email}>")
     expect(payload.dig("headers", "List-Unsubscribe")).to include("/api/v1/marketing/unsubscribe/")
     expect(payload.dig("headers", "List-Unsubscribe-Post")).to eq("List-Unsubscribe=One-Click")
     one_click_path = URI(payload.dig("headers", "List-Unsubscribe").delete_prefix("<").delete_suffix(">")).path
@@ -34,18 +38,27 @@ RSpec.describe "Marketing delivery" do
 
   it "blocks missing mailing address and respects unsubscribe and provider complaints" do
     attendee(email: "yes@example.com", opted_in: true)
-    SiteSetting.instance.update!(business_mailing_address: nil)
-    expect { CommunicationCampaigns::Sender.call(campaign) }.to raise_error(/Contact HåfaPass support/)
-    admin_campaign = create(:communication_campaign, event: event, created_by_user: create(:user, :admin))
-    expect { CommunicationCampaigns::Sender.call(admin_campaign) }.to raise_error(/Business mailing address in admin settings/)
-    expect { CommunicationCampaigns::Sender.call(admin_campaign, actor: event.organizer_profile.user) }
-      .to raise_error(/Contact HåfaPass support/)
-    SiteSetting.instance.update!(business_mailing_address: "123 Marine Drive, Hagåtña, GU 96910")
+    event.organization.update!(marketing_address_certified_at: nil)
+    expect { CommunicationCampaigns::Sender.call(campaign) }.to raise_error(/certify a valid marketing postal address/)
+    event.organization.update!(marketing_address_certified_at: Time.current)
     MarketingUnsubscribe.create!(organization: event.organization, email: "yes@example.com", unsubscribed_at: Time.current)
     expect(CommunicationCampaigns::Sender.new(campaign).audience_counts[:eligible]).to eq(0)
     MarketingUnsubscribe.delete_all
     create(:message_delivery, event: event, recipient: "yes@example.com", status: :complained)
     expect(CommunicationCampaigns::Sender.new(campaign).audience_counts[:eligible]).to eq(0)
+  end
+
+  it "suppresses queued mail if the organizer changes the certified address" do
+    attendee(email: "yes@example.com", opted_in: true)
+    CommunicationCampaigns::Sender.call(campaign)
+    delivery = campaign.message_deliveries.sole
+    event.organization.update!(marketing_mailing_address: "9 Beach Road, Tamuning, GU 96913",
+      marketing_address_certified_at: Time.current)
+
+    MessageDeliveryJob.perform_now(delivery.id)
+
+    expect(delivery.reload).to be_suppressed
+    expect(delivery.provider_id).to be_nil
   end
 
   it "stops an already queued campaign when the buyer unsubscribes" do

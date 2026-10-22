@@ -97,10 +97,10 @@ export default function CancellationRefundProgress({ eventId, admin = false, sta
   ].filter(([count]) => count > 0)
 
   return <div className="min-w-0">
-    <button type="button" className={prominent ? 'w-full rounded-xl border border-amber-300 bg-amber-50 p-4 text-left text-sm font-semibold text-amber-950 hover:bg-amber-100' : 'text-sm font-semibold text-brand-700 underline'} onClick={() => setOpen(value => !value)}>
+    <button type="button" aria-expanded={open} aria-controls="cancellation-refund-progress" className={prominent ? 'w-full rounded-xl border border-amber-300 bg-amber-50 p-4 text-left text-sm font-semibold text-amber-950 hover:bg-amber-100' : 'inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline'} onClick={() => setOpen(value => !value)}>
       {prominent && data?.run ? `Cancellation refunds: ${data.run.refunded + data.run.skipped} of ${data.run.total_orders} done · ${open ? 'Hide details' : 'View details'}` : open ? 'Hide refund progress' : status === 'cancelled' ? 'View cancellation refunds' : 'Review cancellation and refunds'}
     </button>
-    {open && <section id="cancellation-refund-progress" className="mt-3 max-w-2xl min-w-0 rounded-xl border border-neutral-200 bg-white p-4 text-sm [overflow-wrap:anywhere]">
+    <section id="cancellation-refund-progress" hidden={!open} className="mt-3 max-w-2xl min-w-0 rounded-xl border border-neutral-200 bg-white p-4 text-sm [overflow-wrap:anywhere]">
       {error && <p role="alert" className="mb-3 text-red-700">{error}</p>}
       {!data && error ? <button type="button" className="btn-secondary" onClick={load}>Retry loading refund details</button>
         : !data ? <p role="status">Loading refund details…</p> : <>
@@ -133,7 +133,7 @@ export default function CancellationRefundProgress({ eventId, admin = false, sta
           </div>}
         </>}
       </>}
-    </section>}
+    </section>
     {confirming && <Dialog labelledBy="cancel-refunds-title" onClose={() => setConfirming(false)} busy={busy} className="max-w-md">
       <h2 id="cancel-refunds-title" className="text-lg font-semibold">Cancel event and refund all buyers?</h2>
       <p className="mt-3">{t('cancellationRefundProgress.confirmRefundOrders', { count: data?.preview.count || 0, amount: money(data?.preview.total_cents || 0) })}</p>

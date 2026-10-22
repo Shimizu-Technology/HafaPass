@@ -11,7 +11,7 @@ export default function SignInPage() {
       <div className="min-h-screen flex items-center justify-center bg-neutral-50">
         <div className="text-center p-8 bg-white rounded-xl shadow-sm max-w-md">
           <h1 className="text-2xl font-bold text-neutral-800 mb-2">{t('buyerDiscovery.signIn.signIn')}</h1>
-          <p className="text-neutral-500">{t('buyerDiscovery.signIn.signInIsTemporarilyUnavailablePleaseTry')}</p>
+          <p role="alert" className="text-neutral-600">{t('buyerDiscovery.signIn.signInIsTemporarilyUnavailablePleaseTry')}</p>
         </div>
       </div>
     )

@@ -2,8 +2,9 @@ require "rails_helper"
 
 RSpec.describe CommunicationCampaigns::Sender do
   it "deduplicates recipients and records durable deliveries" do
-    SiteSetting.instance.update!(business_mailing_address: "123 Marine Drive, Hagåtña, GU 96910")
     event = create(:event, :published)
+    event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
     type = create(:ticket_type, event: event)
     order = create(:order, event: event, buyer_email: "buyer@example.com", marketing_opt_in: true)
     item = create(:order_item, order: order, ticket_type: type, quantity: 2, subtotal_cents: 5000)

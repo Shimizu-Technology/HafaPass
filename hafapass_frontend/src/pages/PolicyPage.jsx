@@ -28,18 +28,18 @@ export default function PolicyPage() {
 
   if (error) {
     return (
-      <main className="min-h-screen bg-neutral-50 px-4 py-20">
+      <div className="min-h-screen bg-neutral-50 px-4 py-20">
         <div className="mx-auto max-w-xl rounded-2xl border border-red-200 bg-white p-8 text-center">
           <h1 className="text-2xl font-bold text-neutral-950">{t('buyerDiscovery.policy.policyUnavailable')}</h1>
           <p className="mt-3 text-neutral-700">{t('buyerDiscovery.policy.weCouldNotLoadTheAuthoritativePolicy')}</p>
           <button className="btn-primary mt-6" onClick={() => window.location.reload()}>{t('buyerDiscovery.policy.retry')}</button>
         </div>
-      </main>
+      </div>
     )
   }
 
   if (!registry) {
-    return <div className="grid min-h-screen place-items-center"><Loader2 className="h-8 w-8 animate-spin text-brand-600" aria-label={t('buyerDiscovery.policy.loadingPolicy')} /></div>
+    return <div role="status" aria-label={t('buyerDiscovery.policy.loadingPolicy')} className="grid min-h-screen place-items-center"><Loader2 aria-hidden="true" className="h-8 w-8 animate-spin motion-reduce:animate-none text-brand-600" /></div>
   }
 
   const content = registry.policies[policy]
@@ -51,7 +51,7 @@ export default function PolicyPage() {
     : null
 
   return (
-    <main className="min-h-screen bg-neutral-50 px-4 py-12">
+    <div className="min-h-screen bg-neutral-50 px-4 py-12">
       <SEO title={content.title} description={content.summary} url={`${PUBLIC_WEB_URL}/policies/${policy}`} />
       <article className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10">
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-neutral-950">{content.title}</h1>
@@ -79,6 +79,6 @@ export default function PolicyPage() {
           </ul>
         </nav>
       </article>
-    </main>
+    </div>
   )
 }

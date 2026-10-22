@@ -9,8 +9,8 @@ class SendWaitlistNotificationJob < ApplicationJob
     entry = WaitlistEntry.find_by(id: waitlist_entry_id)
     return unless entry
 
-    EmailService.send_waitlist_notification(entry)
-    Rails.logger.info("[SendWaitlistNotificationJob] Sent notification for waitlist entry #{waitlist_entry_id}")
+    EmailService.send_waitlist_notification_async(entry)
+    Rails.logger.info("[SendWaitlistNotificationJob] Queued notification for waitlist entry #{waitlist_entry_id}")
   rescue => e
     Rails.logger.error("[SendWaitlistNotificationJob] Failed for entry #{waitlist_entry_id}: #{e.message}")
     raise
