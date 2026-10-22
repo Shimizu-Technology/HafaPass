@@ -55,10 +55,8 @@ function AdminPrivacySession({ identity, resourcePath }) {
   }
   const executeSelected = () => {
     if (!selected) return
-    if (selected.preview.dry_run && !window.confirm(
-      'Scheduled retention is in dry-run mode. Execute this privacy request and change stored data?')) return
-    act(`/admin/privacy_requests/${selected.request.id}/execute`,
-      selected.preview.dry_run ? { confirm_dry_run: true } : {})
+    if (selected.preview.deletion_disabled) return
+    act(`/admin/privacy_requests/${selected.request.id}/execute`)
   }
   const place = async event => {
     event.preventDefault()
@@ -101,14 +99,14 @@ function AdminPrivacySession({ identity, resourcePath }) {
         <h2 className="text-lg font-semibold">Request preview</h2>
         {selected ? <div className="mt-4 space-y-4 text-sm">
           <p className="font-medium capitalize">{selected.request.kind} #{selected.request.id} · {selected.request.status.replaceAll('_', ' ')}</p>
-          {selected.preview.dry_run && <p className="rounded-lg bg-amber-50 p-3">Scheduled retention is in dry-run mode. Executing this request requires explicit confirmation.</p>}
+          {selected.preview.deletion_disabled && <p className="rounded-lg bg-amber-50 p-3">Deletion is disabled on this server</p>}
           {selected.preview.blockers.length > 0 && <div role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900"><strong>Blocked:</strong><ul className="mt-1 list-disc pl-5">{selected.preview.blockers.map(item => <li key={item}>{item}</li>)}</ul></div>}
           {!selected.request.user_id && !selected.request.verified_at && <p>The guest must enter the code sent to the buyer email before this request can be verified.</p>}
           <div><h3 className="font-semibold">Retained and anonymized</h3><ul className="mt-1 space-y-2">{selected.preview.retained.map(item => <li key={item.table}>{item.table}: {item.count} · {item.reason}</li>)}</ul></div>
           <div><h3 className="font-semibold">Deleted</h3><ul className="mt-1 space-y-2">{selected.preview.deleted.map(item => <li key={item.table}>{item.table}: {item.count} · {item.reason}</li>)}</ul></div>
           <div className="flex flex-wrap gap-2">
             {!selected.request.verified_at && selected.request.user_id && <button type="button" disabled={busy} onClick={() => act(`/admin/privacy_requests/${selected.request.id}/verify`)} className="btn-secondary">Verify identity</button>}
-            {selected.request.verified_at && !selected.request.executed_at && <button type="button" disabled={busy || selected.preview.blockers.length > 0} onClick={executeSelected} className="btn-primary">Execute request</button>}
+            {selected.request.verified_at && !selected.request.executed_at && <button type="button" disabled={busy || selected.preview.deletion_disabled || selected.preview.blockers.length > 0} onClick={executeSelected} className="btn-primary">Execute request</button>}
             {selected.request.kind === 'access' && selected.request.verified_at && <button type="button" onClick={download} className="btn-secondary">Download JSON</button>}
           </div>
           {selected.request.result?.manual_steps?.length > 0 && <p className="rounded-lg bg-amber-50 p-3">Manual completion: {selected.request.result.manual_steps.join(', ')}</p>}

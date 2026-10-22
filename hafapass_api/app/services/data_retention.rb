@@ -29,9 +29,12 @@ class DataRetention
 
   def self.dry_run?
     return true if ActiveModel::Type::Boolean.new.cast(ENV["DATA_RETENTION_DRY_RUN"])
-    return false unless Rails.env.production?
+    !destructive_enabled?
+  end
 
-    !SiteSetting.first&.retention_purge_enabled?
+  def self.destructive_enabled?
+    ENV["DATA_RETENTION_DESTRUCTIVE_ENABLED"] == "true" &&
+      SiteSetting.first&.retention_purge_enabled? == true
   end
 
   def self.reconciliation_audits_for_orders(order_ids)
@@ -56,16 +59,18 @@ class DataRetention
 
   def self.anonymize_order!(order, eligible_ticket_ids: nil, eligible_support_note_ids: nil,
     anonymize_responses: nil, buyer_owned: true, privacy_user_id: nil, privacy_emails: nil)
-    Order.transaction(requires_new: true) do
-      order.lock!
-      if RetentionGuard.protected?(order)
-        Rails.logger.info("[DataRetention] skipped protected orders record")
-        return false
+    LegalHold.with_retention_lock do
+      Order.transaction(requires_new: true) do
+        order.lock!
+        if RetentionGuard.protected?(order)
+          Rails.logger.info("[DataRetention] skipped protected orders record")
+          return false
+        end
+        anonymize_order_locked!(order, eligible_ticket_ids: eligible_ticket_ids,
+          eligible_support_note_ids: eligible_support_note_ids,
+          anonymize_responses: anonymize_responses, buyer_owned: buyer_owned,
+          privacy_user_id: privacy_user_id, privacy_emails: privacy_emails)
       end
-      anonymize_order_locked!(order, eligible_ticket_ids: eligible_ticket_ids,
-        eligible_support_note_ids: eligible_support_note_ids,
-        anonymize_responses: anonymize_responses, buyer_owned: buyer_owned,
-        privacy_user_id: privacy_user_id, privacy_emails: privacy_emails)
     end
   rescue Protected
     Rails.logger.info("[DataRetention] skipped protected orders record")
@@ -80,7 +85,7 @@ class DataRetention
         user_id: privacy_user_id, buyer_owned: false)
       raise Protected if RetentionGuard.protected?(order)
 
-      order.update_columns(user_id: nil, refund_reason: nil, updated_at: Time.current)
+      order.update_columns(user_id: nil, updated_at: Time.current)
       return true
     end
     # Keep amounts, references and status so finance and tax reporting still reconcile.
@@ -88,6 +93,16 @@ class DataRetention
     replacement = "deleted+order-#{order.id}@privacy.invalid"
     ticket_ids = eligible_ticket_ids || order.tickets.where(holder_user_id: [nil, order.user_id])
       .where("holder_email IS NULL OR lower(holder_email) = ?", order.buyer_email.to_s.downcase).pluck(:id)
+    attendee_evidence = Ticket.where(id: ticket_ids).to_h do |ticket|
+      requester = if privacy_emails
+        privacy_emails.include?(ticket.attendee_email.to_s.downcase) ||
+          (buyer_owned && ticket.holder_email.blank? && ticket.holder_user_id.nil? &&
+            ticket.attendee_email.blank? && ticket.attendee_name.to_s.casecmp?(order.buyer_name.to_s))
+      else
+        true
+      end
+      [ticket.id, { requester: requester, name: ticket.attendee_name }]
+    end
     anonymize_responses = order.tickets.count == ticket_ids.length if anonymize_responses.nil?
     if privacy_emails
       anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
@@ -145,8 +160,20 @@ class DataRetention
     guests = guests.where("lower(guest_email) IN (?)", privacy_emails) if privacy_emails
     update_unheld(guests, guest_email: nil, guest_name: "[redacted]",
       guest_phone: nil, notes: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
-    update_unheld(AdmissionAction.where(ticket_id: ticket_ids), attendee_snapshot: {}, metadata: {},
-      retention_anonymized_at: Time.current, updated_at: Time.current)
+    AdmissionAction.where(ticket_id: attendee_evidence.keys).find_each do |action|
+      evidence = attendee_evidence.fetch(action.ticket_id)
+      next unless evidence[:requester]
+      if privacy_emails
+        snapshot = action.attendee_snapshot
+        snapshot_email = snapshot["attendee_email"] || snapshot["email"]
+        snapshot_name = snapshot["attendee_name"] || snapshot["name"]
+        next if snapshot_email.present? && !privacy_emails.include?(snapshot_email.downcase)
+        next if snapshot_name.present? && !snapshot_name.casecmp?(evidence[:name].to_s)
+      end
+
+      update_unheld(AdmissionAction.where(id: action.id), attendee_snapshot: {}, metadata: {},
+        retention_anonymized_at: Time.current, updated_at: Time.current)
+    end
     update_unheld(AcquisitionAttribution.where(order_id: order.id), visitor_hash: "[redacted]", campaign: nil,
       source: nil, medium: nil, updated_at: Time.current)
     update_unheld(MarketplaceFunnelEvent.where(order_id: order.id), visitor_hash: "[redacted]", campaign: nil,
@@ -227,6 +254,9 @@ class DataRetention
       return reconciliation_digests_for_orders([record]).any? { |delivery| held?(delivery) }
     end
     return LegalHold.for_user?(record) if record.is_a?(User)
+    if record.is_a?(FeeChange)
+      return true if record.notices.any? { |notice| held?(notice) }
+    end
     if record.is_a?(Organization)
       return LegalHold.active.exists?(scope_type: "organization", scope_value: record.id.to_s)
     end
@@ -368,32 +398,34 @@ class DataRetention
   end
 
   def self.delete_pending_order!(order)
-    Order.transaction do
-      order.lock!
-      if RetentionGuard.protected?(order)
-        Rails.logger.info("[DataRetention] skipped protected orders record")
-        return false
-      end
-      return false unless pending_order_purgeable?(order)
+    LegalHold.with_retention_lock do
+      Order.transaction do
+        order.lock!
+        if RetentionGuard.protected?(order)
+          Rails.logger.info("[DataRetention] skipped protected orders record")
+          return false
+        end
+        return false unless pending_order_purgeable?(order)
 
-      item_ids = OrderItem.where(order_id: order.id).select(:id)
-      [SeatHold.where(order_item_id: item_ids), CatalogItemHold.where(order_item_id: item_ids),
-        InventoryHold.where(order_id: order.id), SeatHoldSession.where(order_id: order.id),
-        PromoRedemption.where(order_id: order.id), ReferralAttribution.where(order_id: order.id),
-        AcquisitionAttribution.where(order_id: order.id), MarketplaceFunnelEvent.where(order_id: order.id),
-        OrderItem.where(order_id: order.id)].each do |scope|
-        scope.find_each do |child|
-          child.with_lock do
-            raise Protected if RetentionGuard.protected?(child)
+        item_ids = OrderItem.where(order_id: order.id).select(:id)
+        [SeatHold.where(order_item_id: item_ids), CatalogItemHold.where(order_item_id: item_ids),
+          InventoryHold.where(order_id: order.id), SeatHoldSession.where(order_id: order.id),
+          PromoRedemption.where(order_id: order.id), ReferralAttribution.where(order_id: order.id),
+          AcquisitionAttribution.where(order_id: order.id), MarketplaceFunnelEvent.where(order_id: order.id),
+          OrderItem.where(order_id: order.id)].each do |scope|
+          scope.find_each do |child|
+            child.with_lock do
+              raise Protected if RetentionGuard.protected?(child)
 
-            child.delete
+              child.delete
+            end
           end
         end
-      end
-      raise Protected if RetentionGuard.protected?(order)
+        raise Protected if RetentionGuard.protected?(order)
 
-      order.delete
-      true
+        order.delete
+        true
+      end
     end
   rescue Protected
     Rails.logger.info("[DataRetention] skipped protected pending-order child record")

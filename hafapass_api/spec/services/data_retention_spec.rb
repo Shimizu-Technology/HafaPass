@@ -139,6 +139,12 @@ RSpec.describe DataRetention do
 end
 
 RSpec.describe RetentionGuard do
+  before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
+  end
+
   it "protects a fee notice through its event's unresolved refund and its owner's hold" do
     owner = create(:user)
     order = create(:order, completed_at: 8.years.ago)
@@ -157,6 +163,20 @@ RSpec.describe RetentionGuard do
     LegalHold.place!(scope_type: "user", scope_value: owner.id.to_s,
       reason: "Preserve owner records", actor: create(:user, :admin))
     expect(described_class.protected?(notice)).to be(true)
+    expect(described_class.protected?(change)).to be(true)
+  end
+
+  it "protects a fee change through a hold on its notice's event" do
+    order = create(:order)
+    owner = create(:user)
+    change = FeeChange.create!(created_by: owner, old_terms: { "service_fee_percent" => "1" },
+      new_terms: { "service_fee_percent" => "2" }, effective_at: 8.years.ago)
+    FeeChangeNotice.create!(fee_change: change, organization: order.event.organization,
+      owner: owner, event: order.event, recipient_email: owner.email, buyer_fee_percent: 2,
+      fee_policy: "buyer")
+    LegalHold.place!(scope_type: "event", scope_value: order.event_id.to_s,
+      reason: "Preserve fee notice event", actor: create(:user, :admin))
+
     expect(described_class.protected?(change)).to be(true)
   end
 

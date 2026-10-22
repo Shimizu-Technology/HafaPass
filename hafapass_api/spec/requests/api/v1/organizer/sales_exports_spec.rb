@@ -386,6 +386,27 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(processing.reload.status).to eq("processing")
   end
 
+  it "keeps an orphan when a hold is placed after listing but before its S3 delete" do
+    allow(S3Service).to receive(:configured?).and_return(true)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    key = "private/sales-exports/#{event.organization_id}/late-hold.csv"
+    object = Struct.new(:key, :last_modified)
+    page = Struct.new(:contents, :is_truncated, :next_continuation_token)
+    allow(client).to receive(:list_objects_v2) do
+      LegalHold.place!(scope_type: "event", scope_value: event.id.to_s,
+        reason: "Preserve export during sweep", actor: owner)
+      page.new([object.new(key, 3.days.ago)], false, nil)
+    end
+    expect(client).not_to receive(:delete_object)
+
+    OrganizerSalesExportOrphanSweepJob.perform_now
+
+    expect(LegalHold.active.where(scope_type: "event", scope_value: event.id.to_s)).to exist
+  end
+
   it "logs ListBucket denial and ends the sweep cleanly" do
     allow(S3Service).to receive(:configured?).and_return(true)
     allow(ENV).to receive(:fetch).and_call_original

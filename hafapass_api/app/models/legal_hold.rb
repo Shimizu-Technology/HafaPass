@@ -20,18 +20,39 @@ class LegalHold < ApplicationRecord
   end
 
   def release!(actor:, request: nil)
-    with_lock do
-      return if released_at?
+    self.class.with_retention_lock do
+      with_lock do
+        return if released_at?
 
-      update!(released_at: Time.current, released_by: actor)
-      AuditLogger.record!(action: "legal_hold.released", auditable: self, actor: actor,
-        metadata: { scope_type: scope_type, scope_value: scope_type == "buyer_email" ? "[redacted]" : scope_value },
-        request: request)
+        update!(released_at: Time.current, released_by: actor)
+        AuditLogger.record!(action: "legal_hold.released", auditable: self, actor: actor,
+          metadata: { scope_type: scope_type, scope_value: scope_type == "buyer_email" ? "[redacted]" : scope_value },
+          request: request)
+      end
+    end
+  end
+
+  # The global key serializes broad email/user holds with S3 deletion. The
+  # organization key also fences export objects whose path identifies an org.
+  def self.with_retention_lock(organization_id: nil)
+    transaction do
+      connection.execute("SELECT pg_advisory_xact_lock(728314, 0)")
+      if organization_id
+        bind = ActiveRecord::Relation::QueryAttribute.new("organization_id", Integer(organization_id),
+          ActiveRecord::Type::Integer.new)
+        connection.exec_query("SELECT pg_advisory_xact_lock(728314, $1)", "Retention organization lock", [bind])
+      end
+      yield
     end
   end
 
   def self.place!(scope_type:, scope_value:, reason:, actor:, request: nil)
-    transaction do
+    organization_id = case scope_type.to_s
+    when "organization" then scope_value.to_i
+    when "event" then Event.where(id: scope_value).pick(:organization_id)
+    when "order" then Order.joins(:event).where(id: scope_value).pick("events.organization_id")
+    end
+    with_retention_lock(organization_id: organization_id) do
       hold = create!(scope_type: scope_type, scope_value: scope_value, reason: reason, placed_by: actor)
       AuditLogger.record!(action: "legal_hold.placed", auditable: hold, actor: actor,
         metadata: { scope_type: hold.scope_type, scope_value: scope_type == "buyer_email" ? "[redacted]" : hold.scope_value },

@@ -10,6 +10,9 @@ RSpec.describe PrivacyRequestProcessor do
   end
 
   before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
     allow(ClerkIdentity).to receive(:delete_user).and_return(true)
     allow(EmailService).to receive(:send_privacy_request_confirmation_async).and_return(
       build_stubbed(:message_delivery, id: 1))
@@ -117,7 +120,7 @@ RSpec.describe PrivacyRequestProcessor do
       buyer_name: "Bob Buyer", buyer_phone: "671-555-0199")
   end
 
-  it "exports Alice's linked purchase without Bob's reasons and deletes only Alice's fields" do
+  it "exports Alice's linked purchase without Bob's reason and leaves that reason on deletion" do
     bob = create(:user)
     order.event.update_columns(starts_at: 1.year.ago)
     order.update!(buyer_email: bob.email, buyer_name: "Bob Buyer", buyer_phone: "671-555-0199")
@@ -135,7 +138,7 @@ RSpec.describe PrivacyRequestProcessor do
 
     exported = described_class.new(privacy_request).export[:orders].first
     expect(exported[:order]).to include("id" => order.id, "total_cents" => order.total_cents)
-    expect(exported[:order]["refund_reason"]).to eq("Alice asks for help")
+    expect(exported[:order]).not_to have_key("refund_reason")
     expect(exported[:order].keys).not_to include("buyer_email", "buyer_name", "buyer_phone")
     expect(exported[:tickets].map { |ticket| ticket["id"] }).to eq([alice_ticket.id])
     expect(exported[:refunds].first).to include("amount_cents" => refund.amount_cents)
@@ -145,7 +148,7 @@ RSpec.describe PrivacyRequestProcessor do
 
     described_class.new(privacy_request).execute!(actor: admin)
     expect(order.reload).to have_attributes(user_id: nil, buyer_email: bob.email,
-      buyer_name: "Bob Buyer", refund_reason: nil)
+      buyer_name: "Bob Buyer", refund_reason: "Alice asks for help")
     expect(alice_ticket.reload).to have_attributes(holder_email: nil, attendee_email: nil,
       attendee_name: nil)
     expect(bob_ticket.reload).to have_attributes(holder_email: bob.email, attendee_email: bob.email,
@@ -249,6 +252,9 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
   end
 
   before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
     allow(ClerkIdentity).to receive(:delete_user).and_return(true)
     allow(S3Service).to receive(:delete_upload!)
     allow(EmailService).to receive(:send_privacy_request_confirmation_async).and_return(
@@ -295,6 +301,55 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
     expect(EmailService).not_to have_received(:send_privacy_request_confirmation_async)
     expect(SiteSetting.count).to eq(0)
     expect(order.reload.buyer_email).to eq(buyer.email)
+  end
+
+  it "cannot override an unset server kill switch with admin confirmation" do
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return(nil)
+    result = described_class.new(privacy_request).execute!(actor: admin, confirm_dry_run: true)
+    expect(result).to include(dry_run: true, deletion_disabled: true)
+    expect(order.reload.buyer_email).to eq(buyer.email)
+    expect(privacy_request.reload.executed_at).to be_nil
+    expect(S3Service).not_to have_received(:delete_upload!)
+    expect(ClerkIdentity).not_to have_received(:delete_user)
+  end
+
+  it "keeps Bob's admission snapshot when Alice holds his ticket" do
+    bob = create(:user)
+    ticket = create(:ticket, order: order, event: order.event,
+      ticket_type: create(:ticket_type, event: order.event), holder_email: buyer.email,
+      attendee_email: bob.email, attendee_name: "Bob Attendee")
+    action = create(:admission_action, organization: order.event.organization, event: order.event,
+      ticket: ticket, scanner_device: nil, actor_user: admin, sequence: nil, source: :manual,
+      attendee_snapshot: { "name" => "Bob Attendee", "email" => bob.email })
+    alice_ticket = create(:ticket, order: order, event: order.event,
+      ticket_type: create(:ticket_type, event: order.event), holder_email: buyer.email,
+      attendee_email: buyer.email, attendee_name: "Alice Attendee")
+    alice_action = create(:admission_action, organization: order.event.organization, event: order.event,
+      ticket: alice_ticket, scanner_device: nil, actor_user: admin, sequence: nil, source: :manual,
+      attendee_snapshot: { "attendee_name" => "Alice Attendee" })
+    historical_bob = create(:admission_action, organization: order.event.organization, event: order.event,
+      ticket: alice_ticket, scanner_device: nil, actor_user: admin, sequence: nil, source: :manual,
+      attendee_snapshot: { "attendee_name" => "Bob Before Transfer" })
+
+    described_class.new(privacy_request).execute!(actor: admin)
+
+    expect(action.reload.attendee_snapshot).to eq("name" => "Bob Attendee", "email" => bob.email)
+    expect(alice_action.reload.attendee_snapshot).to eq({})
+    expect(historical_bob.reload.attendee_snapshot).to eq("attendee_name" => "Bob Before Transfer")
+    expect(ticket.reload).to have_attributes(holder_email: nil, attendee_email: bob.email,
+      attendee_name: "Bob Attendee")
+  end
+
+  it "redacts first name, last name, and structured identity keys in nested audit metadata" do
+    buyer.update_columns(first_name: "Alice", last_name: "Example")
+    original_email = buyer.email
+    audit = AuditLogger.record!(action: "retention.identity", auditable: order.event,
+      actor: admin, metadata: { details: { first_name: "Alice", last_name: "Example",
+        phone: "671-555-0101", note: "Alice Example" }, contact: buyer.email })
+
+    described_class.new(privacy_request).execute!(actor: admin)
+
+    expect(audit.reload.metadata.to_json).not_to include("Alice", "Example", "671-555-0101", original_email)
   end
 
   it "keeps a transferred holder's ticket, wallet pass, and identity out of deletion" do

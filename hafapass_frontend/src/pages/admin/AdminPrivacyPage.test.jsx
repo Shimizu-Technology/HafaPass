@@ -14,7 +14,7 @@ vi.mock('./AdminLayout', () => ({ default: ({ children }) => <div>{children}</di
 vi.mock('./AdminSessionGate', () => ({ default: ({ Session, resourcePath }) => <Session identity={{}} resourcePath={resourcePath} /> }))
 
 const request = { id: 7, kind: 'access', status: 'verified', user_id: 2, verified_at: 'now', result: {} }
-const detail = { request, preview: { blockers: [], dry_run: true, retained: [], deleted: [] } }
+const detail = { request, preview: { blockers: [], dry_run: true, deletion_disabled: true, retained: [], deleted: [] } }
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -24,19 +24,25 @@ beforeEach(() => {
 })
 
 describe('admin privacy execution', () => {
-  it('requires explicit confirmation to execute during dry-run', async () => {
+  it('shows the server kill switch and prevents execution during dry-run', async () => {
     const user = userEvent.setup()
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     render(<AdminPrivacyPage />)
     await user.click(await screen.findByRole('button', { name: /access #7/ }))
-    await user.click(await screen.findByRole('button', { name: 'Execute request' }))
+    expect(screen.getByText('Deletion is disabled on this server')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Execute request' })).toBeDisabled()
     expect(apiClient.post).not.toHaveBeenCalled()
+  })
 
-    window.confirm.mockReturnValue(true)
+  it('executes a verified request when destructive retention is enabled', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/legal_holds') ? { holds: [] }
+      : path.endsWith('/privacy_requests') ? { requests: [request] }
+        : { ...detail, preview: { ...detail.preview, dry_run: false, deletion_disabled: false } } }))
+    render(<AdminPrivacyPage />)
+    await user.click(await screen.findByRole('button', { name: /access #7/ }))
     await user.click(screen.getByRole('button', { name: 'Execute request' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/privacy_requests/7/execute',
-      { confirm_dry_run: true }, expect.anything()))
-    window.confirm.mockRestore()
+      {}, expect.anything()))
   })
 
   it('does not offer admin verification for a guest without the email challenge', async () => {

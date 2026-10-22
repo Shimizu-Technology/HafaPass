@@ -14,8 +14,12 @@ class OrganizerSalesExportCleanupJob < ApplicationJob
         next
       end
 
-      S3Service.delete_private_export!(export_request.storage_key) if export_request.storage_key.present?
-      export_request.update!(status: "expired", storage_key: nil)
+      LegalHold.with_retention_lock(organization_id: export_request.event.organization_id) do
+        next if RetentionGuard.protected?(export_request)
+
+        S3Service.delete_private_export!(export_request.storage_key) if export_request.storage_key.present?
+        export_request.update!(status: "expired", storage_key: nil)
+      end
     end
   end
 end

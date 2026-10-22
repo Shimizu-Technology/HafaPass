@@ -129,6 +129,7 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       payment_mode: settings.payment_mode,
       retention_purge_enabled: settings.retention_purge_enabled,
       retention_dry_run: DataRetention.dry_run?,
+      retention_destructive_enabled: !DataRetention.dry_run?,
       platform_name: settings.platform_name,
       platform_email: settings.platform_email,
       platform_phone: settings.platform_phone,

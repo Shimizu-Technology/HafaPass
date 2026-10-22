@@ -2,14 +2,19 @@ require "rails_helper"
 
 RSpec.describe "Retention migration safety" do
   it "builds new indexes outside DDL transactions and validates replacement constraints separately" do
-    %w[20261022110000_create_organizer_sales_export_requests.rb
-      20261022150000_add_data_retention_controls.rb].each do |filename|
+    %w[20261022150000_add_data_retention_controls.rb
+      20261022156000_index_sales_export_storage_key.rb].each do |filename|
       source = Rails.root.join("db/migrate", filename).read
       expect(source).to include("disable_ddl_transaction!")
-      source.scan(/add_index[^\n]*/).each do |index_statement|
+      source.scan(/add_index[^\n]*(?:\n[^\n]*){0,2}/).each do |index_statement|
         expect(index_statement).to include("algorithm: :concurrently")
       end
     end
+    shipped = Rails.root.join("db/migrate/20261022110000_create_organizer_sales_export_requests.rb")
+    expect(Digest::SHA256.file(shipped).hexdigest)
+      .to eq("c62b672d1721b86f26bc089a3eaf52018a784525e5090a414b3169453345b4f2")
+    expect(ActiveRecord::Base.connection.indexes(:organizer_sales_export_requests).map(&:name))
+      .to include("index_sales_exports_on_storage_key")
     controls = Rails.root.join("db/migrate/20261022150000_add_data_retention_controls.rb").read
     expect(controls).to include('name: "message_deliveries_subject_present_with_privacy", validate: false')
     expect(controls).to include('validate_check_constraint :message_deliveries, name: "message_deliveries_subject_present_with_privacy"')

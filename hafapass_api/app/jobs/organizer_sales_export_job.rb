@@ -64,7 +64,13 @@ class OrganizerSalesExportJob < ApplicationJob
         Rails.logger.info("Sales export failure cleanup skipped under legal hold: request_id=#{export_id}")
       else
         begin
-          S3Service.delete_private_export!(key)
+          LegalHold.with_retention_lock(organization_id: org.id) do
+            if RetentionGuard.protected?(export_request)
+              held_upload = true
+            else
+              S3Service.delete_private_export!(key)
+            end
+          end
         rescue StandardError => cleanup_error
           Rails.logger.error("Sales export cleanup failed for request #{export_id}: #{cleanup_error.class}")
         end

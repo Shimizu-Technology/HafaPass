@@ -36,7 +36,18 @@ class OrganizerSalesExportOrphanSweepJob < ApplicationJob
         next if associated.include?(object.key)
 
         begin
-          S3Service.delete_private_export!(object.key)
+          organization_id = object.key.delete_prefix(PREFIX).split("/", 2).first
+          organization_id = nil unless organization_id.match?(/\A[1-9]\d*\z/)
+
+          LegalHold.with_retention_lock(organization_id: organization_id) do
+            next if LegalHold.active.exists?
+
+            linked = OrganizerSalesExportRequest.find_by(storage_key: object.key)
+            next if linked && (linked.expires_at.nil? || linked.expires_at > cutoff ||
+              RetentionGuard.protected?(linked))
+
+            S3Service.delete_private_export!(object.key)
+          end
         rescue Aws::S3::Errors::ServiceError => error
           Rails.logger.error("Sales export orphan sweep: DeleteObject permission or service access failed (#{error.class})")
         end

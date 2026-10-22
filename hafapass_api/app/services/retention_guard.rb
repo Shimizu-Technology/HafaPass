@@ -38,6 +38,9 @@ class RetentionGuard
     ids << record.order_item&.order_id if record.respond_to?(:order_item)
     ids.concat(Order.where(event_id: record.event_id).pluck(:id)) if record.is_a?(Payout)
     ids.concat(Order.where(event_id: record.event_id).pluck(:id)) if record.is_a?(FeeChangeNotice)
+    if record.is_a?(FeeChange)
+      ids.concat(Order.where(event_id: record.notices.select(:event_id)).pluck(:id))
+    end
     if record.respond_to?(:message_delivery) && record.message_delivery
       ids.concat(related_orders(record.message_delivery).map(&:id))
     end
@@ -89,13 +92,24 @@ class RetentionGuard
     return true if pending.where(id: PaymentEvent.joins(:payment)
       .where(payments: { order_id: order.id }).select(:webhook_event_id)).exists?
 
-    pending.where("payload::text LIKE ?", "%#{order.reference}%").exists?
+    pending.find_each.any? do |receipt|
+      related_orders(receipt).any? { |candidate| candidate.id == order.id }
+    end
   end
 
   def self.references_in(record)
     found = Hash.new { |hash, key| hash[key] = [] }
     %w[metadata details payload before_data after_data outbound_payload provider_payload].each do |column|
       collect(record.public_send(column), found) if record.respond_to?(column)
+    end
+    if record.is_a?(WebhookEvent) && record.provider == "stripe"
+      object = record.payload.dig("data", "object") || {}
+      intent_id = record.event_type.to_s.start_with?("payment_intent.") ? object["id"] : object["payment_intent"]
+      if intent_id.present?
+        found["order_ids"].concat(Payment.where(provider: "stripe", provider_payment_id: intent_id)
+          .pluck(:order_id))
+        found["order_ids"].concat(Order.where(stripe_payment_intent_id: intent_id).pluck(:id))
+      end
     end
     found
   end

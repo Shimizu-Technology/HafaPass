@@ -6,6 +6,9 @@ RSpec.describe "Privacy requests and holds", type: :request do
   let(:order) { create(:order, user: buyer, buyer_email: buyer.email) }
 
   before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
     allow(EmailService).to receive(:send_guest_privacy_challenge_now)
     allow(ClerkIdentity).to receive(:verified_email_addresses).and_return([buyer.email.downcase])
   end
@@ -42,6 +45,7 @@ RSpec.describe "Privacy requests and holds", type: :request do
     expect(response).to have_http_status(:ok)
     expect(privacy_request.reload.verified_at).to be_present
 
+    SiteSetting.instance.update_columns(retention_purge_enabled: false)
     patch "/api/v1/admin/settings", params: { retention_purge_enabled: true }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     expect(SiteSetting.instance.reload.retention_purge_enabled).to be(true)
@@ -68,7 +72,7 @@ RSpec.describe "Privacy requests and holds", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
-  it "requires request-specific admin confirmation to execute during dry-run" do
+  it "returns only a preview during dry-run even with admin confirmation" do
     item = PrivacyRequest.create!(kind: "access", user: buyer, requester_email: buyer.email,
       status: "verified", verified_at: Time.current, verified_by: admin)
     allow(DataRetention).to receive(:dry_run?).and_return(true)
@@ -82,10 +86,11 @@ RSpec.describe "Privacy requests and holds", type: :request do
     post "/api/v1/admin/privacy_requests/#{item.id}/execute", params: { confirm_dry_run: true },
       headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
-    expect(item.reload.status).to eq("completed")
+    expect(response.parsed_body["dry_run"]).to be(true)
+    expect(item.reload.executed_at).to be_nil
   end
 
-  it "refuses administrator confirmation when the environment forces dry run" do
+  it "returns a write-free preview when the environment forces dry run" do
     item = PrivacyRequest.create!(kind: "deletion", user: buyer, requester_email: buyer.email,
       status: "verified", verified_at: Time.current, verified_by: admin)
     allow(ENV).to receive(:[]).and_call_original
@@ -100,8 +105,8 @@ RSpec.describe "Privacy requests and holds", type: :request do
       post "/api/v1/admin/privacy_requests/#{item.id}/execute", params: { confirm_dry_run: true },
         headers: auth_headers(admin)
     end
-    expect(response).to have_http_status(:conflict)
-    expect(response.parsed_body["error"]).to include("DATA_RETENTION_DRY_RUN")
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["dry_run"]).to be(true)
     expect(writes).to be_empty
     expect(item.reload.executed_at).to be_nil
     expect(S3Service).not_to have_received(:delete_upload!)

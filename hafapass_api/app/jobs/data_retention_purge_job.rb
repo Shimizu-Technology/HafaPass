@@ -8,7 +8,7 @@ class DataRetentionPurgeJob < ApplicationJob
   RUNNABLE = %w[orders payouts organizer_tax_informations audit_logs message_deliveries
     tickets registration_responses ticket_transfers guest_list_entries support_notes admission_actions
     admission_manifests message_provider_events privacy_requests marketing_unsubscribes
-    organizer_sales_export_requests payments refunds disputes
+    payments refunds disputes
     payment_events fee_components fee_changes fee_change_notices reconciliation_exceptions
     card_present_payment_attempts webhook_events].freeze
 
@@ -42,8 +42,6 @@ class DataRetentionPurgeJob < ApplicationJob
           next if record.is_a?(Payout) && !record.status_paid?
           next if record.is_a?(OrganizerTaxInformation) && Payout.where(organization_id: record.organization_id)
             .where("paid_at >= ? OR paid_at IS NULL", cutoff).exists?
-          next if record.is_a?(OrganizerSalesExportRequest) &&
-            (record.expires_at.nil? || record.expires_at > at)
 
           if dry_run
             counts[table] += 1
@@ -51,25 +49,20 @@ class DataRetentionPurgeJob < ApplicationJob
           end
 
           written = false
-          record.with_lock do
-            if RetentionGuard.protected?(record)
-              Rails.logger.info("[DataRetention] skipped protected #{table} record")
-              next
-            end
-            result = case rule.fetch("action")
-            when "delete"
-              if record.is_a?(OrganizerSalesExportRequest) && record.storage_key.present?
-                begin
-                  S3Service.delete_private_export!(record.storage_key)
-                rescue S3Service::UploadError, Aws::S3::Errors::ServiceError, Seahorse::Client::NetworkingError
-                  next
-                end
+          LegalHold.with_retention_lock do
+            record.with_lock do
+              if RetentionGuard.protected?(record)
+                Rails.logger.info("[DataRetention] skipped protected #{table} record")
+                next
               end
-              record.destroy!
-              true
-            when "anonymize" then DataRetention.anonymize!(record)
+              result = case rule.fetch("action")
+              when "delete"
+                record.destroy!
+                true
+              when "anonymize" then DataRetention.anonymize!(record)
+              end
+              written = result != false
             end
-            written = result != false
           end
           counts[table] += 1 if written
         end

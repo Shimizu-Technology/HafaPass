@@ -1,15 +1,29 @@
 require "rails_helper"
 
 RSpec.describe DataRetentionPurgeJob do
+  before do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
+  end
+
   it "starts in production dry-run mode until an admin enables purge" do
     allow(Rails.env).to receive(:production?).and_return(true)
-    allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with("DATA_RETENTION_DRY_RUN").and_return(nil)
     setting = SiteSetting.instance
+    setting.update_columns(retention_purge_enabled: false)
 
     expect(DataRetention.dry_run?).to be(true)
     setting.update!(retention_purge_enabled: true)
     expect(DataRetention.dry_run?).to be(false)
+  end
+
+  it "counts only when the server kill switch is unset, even after admin enablement" do
+    old = create(:order, completed_at: 8.years.ago)
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return(nil)
+
+    expect(described_class.perform_now.fetch("orders")).to eq(1)
+    expect(old.reload.buyer_email).to eq("buyer@example.com")
   end
 
   it "defaults to a count-only dry run when forced by the environment" do
@@ -68,6 +82,18 @@ RSpec.describe DataRetentionPurgeJob do
     described_class.perform_now
 
     expect(webhook.reload.payload.dig("data", "object", "order_reference")).to eq(order.reference)
+    expect(order.reload.retention_anonymized_at).to be_nil
+  end
+
+  it "keeps an old order for a received Stripe intent with metadata order_id" do
+    order = create(:order, completed_at: 8.years.ago)
+    receipt = WebhookEvent.create!(provider: "stripe", provider_event_id: SecureRandom.uuid,
+      event_type: "payment_intent.processing", status: :received,
+      payload: { data: { object: { id: "pi_unlinked", metadata: { order_id: order.id.to_s } } } })
+
+    described_class.perform_now
+
+    expect(receipt.reload.payload.dig("data", "object", "metadata", "order_id")).to eq(order.id.to_s)
     expect(order.reload.retention_anonymized_at).to be_nil
   end
 
