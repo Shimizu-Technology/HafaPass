@@ -10,8 +10,14 @@ class Api::V1::Admin::TinMatchingController < Api::V1::Admin::BaseController
   end
 
   def export
-    data = TinMatching.export!(actor: current_user, request: request)
-    send_data data, filename: "tin-matching-#{Date.current}.txt", type: "text/plain", disposition: "attachment"
+    purpose = params[:purpose].to_s.strip
+    unless BackupWithholding.safe_reason?(purpose)
+      error = BackupWithholding.safe_text?(purpose) ?
+        "Full-TIN export requires a 10-1000 character purpose" : BackupWithholding::TIN_WARNING
+      return render json: { error: error }, status: :unprocessable_entity
+    end
+    data = TinMatching.export!(actor: current_user, purpose: purpose, request: request)
+    send_data data, filename: "tin-matching-#{Date.current}-SENSITIVE-FULL-TINS.txt", type: "text/plain", disposition: "attachment"
   rescue TinMatching::ImportError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
@@ -43,7 +49,8 @@ class Api::V1::Admin::TinMatchingController < Api::V1::Admin::BaseController
     flagged = ActiveModel::Type::Boolean.new.cast(params[:flagged])
     reason = params[:reason].to_s.strip
     unless BackupWithholding.safe_reason?(reason)
-      return render json: { error: "Give a 10-1000 character reason without a TIN" }, status: :unprocessable_entity
+      error = BackupWithholding.safe_text?(reason) ? "Give a 10-1000 character reason" : BackupWithholding::TIN_WARNING
+      return render json: { error: error }, status: :unprocessable_entity
     end
 
     tax.organization.with_lock do
@@ -75,19 +82,21 @@ class Api::V1::Admin::TinMatchingController < Api::V1::Admin::BaseController
     required = tax.tin_type == "ssn" ? "ssa_card" : "irs_letter_147c"
     reference = params[:document_reference].to_s.strip
     recorded_on = Date.iso8601(params[:recorded_on].to_s)
-    unless tax.b_notice_stage == "second" && tax.irs_validation_recorded_on.nil? &&
+    unless tax.b_notice_stage == "second" && !tax.irs_validation_current? &&
         evidence == required && recorded_on <= Date.current &&
         reference.length <= 255 && BackupWithholding.safe_text?(reference)
-      return render json: { error: "Record the required IRS or SSA evidence, a valid date, and a reference without a TIN" }, status: :unprocessable_entity
+      error = BackupWithholding.safe_text?(reference) ?
+        "Record the required IRS or SSA evidence, a valid date, and a reference" : BackupWithholding::TIN_WARNING
+      return render json: { error: error }, status: :unprocessable_entity
     end
     tax.organization.with_lock do
       tax.lock!
       raise BNotice::NoticeError, "Second notice validation state changed; reload and retry" unless
-        tax.b_notice_stage == "second" && tax.irs_validation_recorded_on.nil? &&
+        tax.b_notice_stage == "second" && !tax.irs_validation_current? &&
         evidence == (tax.tin_type == "ssn" ? "ssa_card" : "irs_letter_147c")
       tax.update!(irs_validation_evidence_type: evidence, irs_validation_recorded_on: recorded_on,
         irs_validation_admin: current_user, irs_validation_document_reference: reference.presence,
-        tin_match_status: "matched")
+        validation_identity_digest: tax.current_identity_digest, tin_match_status: "matched")
       AuditLogger.record!(action: "tax_information.second_b_notice_validated", auditable: tax,
         actor: current_user, metadata: { evidence_type: evidence, recorded_on: recorded_on,
           document_reference: reference.presence }, request: request)
@@ -115,7 +124,7 @@ class Api::V1::Admin::TinMatchingController < Api::V1::Admin::BaseController
         received_on < first_receipt + 3.years ? "second" : "first"
       tax.update!(irs_notice_received_on: received_on,
         irs_validation_evidence_type: nil, irs_validation_recorded_on: nil,
-        irs_validation_admin_id: nil, irs_validation_document_reference: nil,
+        irs_validation_admin_id: nil, irs_validation_document_reference: nil, validation_identity_digest: nil,
         b_notice_send_due_on: BNotice.business_days_after(received_on, 15),
         b_notice_response_due_on: BNotice.business_days_after(received_on, 30))
       AuditLogger.record!(action: "tax_information.irs_notice_received", auditable: tax,
@@ -158,10 +167,11 @@ class Api::V1::Admin::TinMatchingController < Api::V1::Admin::BaseController
         tax.next_b_notice_stage == stage
       tax.update!(b_notice_stage: stage, b_notice_sent_at: sent_on.in_time_zone,
         irs_notice_received_on: received_on, b_notice_send_due_on: send_due,
+        b_notice_identity_digest: (tax.current_identity_digest if stage == "second"),
         first_b_notice_received_on: stage == "first" ? received_on : tax.first_b_notice_received_on,
         b_notice_response_due_on: BNotice.business_days_after(received_on, 30),
         irs_validation_evidence_type: nil, irs_validation_recorded_on: nil,
-        irs_validation_admin_id: nil, irs_validation_document_reference: nil)
+        irs_validation_admin_id: nil, irs_validation_document_reference: nil, validation_identity_digest: nil)
       AuditLogger.record!(action: "tax_information.b_notice_sent", auditable: tax, actor: current_user,
         metadata: { stage: stage, received_on: received_on, send_due_on: send_due, sent_on: sent_on,
           response_due_on: tax.b_notice_response_due_on }, request: request)

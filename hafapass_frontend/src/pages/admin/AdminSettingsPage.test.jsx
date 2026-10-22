@@ -78,6 +78,28 @@ describe('AdminSettingsPage', () => {
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/settings', { platform_phone: '671-555-0100' }, expect.anything()))
   })
 
+  it('loads and saves a prior tax year threshold with its selected year', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockImplementation((_path, config) => Promise.resolve({ data: {
+      ...settings,
+      tax_year: Number(config.params.tax_year),
+      tax_reporting_thresholds: config.params.tax_year === '2025'
+        ? { '1099-nec': 60000, '1099-misc': 60000, '1099-k': 2000000 }
+        : { '1099-nec': 200000, '1099-misc': 200000, '1099-k': 2000000 },
+    } }))
+    renderPage()
+    await screen.findByLabelText('Tax year')
+    await user.selectOptions(screen.getByLabelText('Tax year'), '2025')
+    const threshold = await screen.findByLabelText('1099-NEC threshold (cents)')
+    await waitFor(() => expect(threshold).toHaveValue(60000))
+    await user.clear(threshold)
+    await user.type(threshold, '65000')
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/settings', {
+      tax_year: '2025', tax_reporting_thresholds: { '1099-nec': 65000, '1099-misc': 60000, '1099-k': 2000000 },
+    }, expect.anything()))
+  })
+
   it('shows validation errors inline and in a summary', async () => {
     const user = userEvent.setup()
     renderPage()

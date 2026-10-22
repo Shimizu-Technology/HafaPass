@@ -42,13 +42,23 @@ describe('AdminTaxControlsPage', () => {
       { year: String(year), payee_key: 'payee-key', form_type: 'review_required', jurisdiction: 'guam_drt' }, expect.anything()))
   })
 
-  it('downloads a matching file and imports a result without putting TINs in form data', async () => {
+  it('requires purpose and confirmation for a sensitive matching file, then imports a result', async () => {
     show()
     await screen.findByText(/TIN status:/)
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('IRS matching review')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     await userEvent.click(screen.getByRole('button', { name: 'Export verification file' }))
-    await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(expect.any(Blob), 'tin-matching.txt'))
+    expect(apiClient.post).not.toHaveBeenCalled()
+    confirm.mockReturnValue(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Export verification file' }))
+    expect(prompt).toHaveBeenCalled()
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('full taxpayer identification numbers'))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/tin_matching/export',
+      { purpose: 'IRS matching review' }, expect.anything()))
+    await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(expect.any(Blob), expect.stringContaining('SENSITIVE-FULL-TINS.txt')))
     await userEvent.upload(screen.getByLabelText('IRS result file'), new File(['1;012345678;Island Events;abc;0'], 'result.txt', { type: 'text/plain' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/tin_matching/import', expect.any(FormData), expect.anything()))
+    vi.restoreAllMocks()
   })
 
   it('records IRS receipt before a B-notice can be sent', async () => {

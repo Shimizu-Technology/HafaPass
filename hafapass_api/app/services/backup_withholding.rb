@@ -2,9 +2,17 @@
 
 class BackupWithholding
   class WithholdingError < StandardError; end
+  TIN_WARNING = "This looks like a taxpayer ID. Remove it, or enter just the last 4 digits."
 
   def self.safe_text?(value)
-    !value.to_s.gsub(/\D/, "").match?(/\d{9}/)
+    text = value.to_s
+    return false if text.match?(/(?<!\d)(?:\d{3}[-.]\d{2}[-.]\d{4}|\d{2}-\d{7})(?!\d)/)
+
+    digits = text.scan(/(?<!\d)\d{9}(?!\d)/).uniq
+    return true if digits.empty?
+
+    digests = digits.map { |candidate| OrganizerTaxInformation.tin_digest_for(candidate) }
+    !OrganizerTaxInformation.where(tin_digest: digests).exists?
   end
 
   def self.safe_reason?(value)
@@ -21,7 +29,8 @@ class BackupWithholding
       raise WithholdingError, "Backup withholding review blocks this payout. An admin may override with a reason."
     end
     if override_reason.present? && (!actor&.admin? || !safe_reason?(override_reason.to_s.strip))
-      raise WithholdingError, "An admin override needs a 10-1000 character reason without a TIN"
+      raise WithholdingError, safe_text?(override_reason) ?
+        "An admin override needs a 10-1000 character reason" : TIN_WARNING
     end
     if mode == "block" && override_reason.present?
       return { withheld_cents: 0, withholding_rate_bps: 0,

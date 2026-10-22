@@ -23,8 +23,15 @@ RSpec.describe "Admin tax operations", type: :request do
 
   it "exports and imports an IRS result file with no complete TIN in the response or audit" do
     post "/api/v1/admin/tin_matching/export", headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(AuditLog.where(action: "tin_matching.exported")).not_to exist
+    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     expect(response.headers["Cache-Control"]).to include("no-store")
+    expect(response.headers["Content-Disposition"]).to include("SENSITIVE-FULL-TINS")
+    export_audit = AuditLog.where(action: "tin_matching.exported").last
+    expect(export_audit.metadata).to include("purpose" => "IRS matching review", "count" => 1)
+    expect(export_audit.metadata.to_json).not_to include(tax.tin)
     line = response.body.strip
     expect(line.split(";").length).to eq(4)
     Tempfile.create(["tin-result", ".txt"]) do |file|
@@ -41,7 +48,7 @@ RSpec.describe "Admin tax operations", type: :request do
   end
 
   it "filters the matching upload and TIN from request logs" do
-    post "/api/v1/admin/tin_matching/export", headers: auth_headers(admin)
+    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review" }, headers: auth_headers(admin)
     request_line = response.body.strip
     filtered = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
       .filter(tin: tax.tin, file: "#{request_line};3")
@@ -109,10 +116,65 @@ RSpec.describe "Admin tax operations", type: :request do
     expect(tax.reload).to have_attributes(irs_validation_evidence_type: "irs_letter_147c",
       irs_validation_admin_id: admin.id, tin_match_status: "matched")
     expect(AuditLog.where(action: "tax_information.second_b_notice_validated").last.metadata.to_json).not_to include(tax.tin)
+    expect(tax.validation_identity_digest).to match(/\A[0-9a-f]{64}\z/)
+    expect(tax.validation_identity_digest).not_to include(tax.tin, tax.legal_name)
     patch "/api/v1/admin/organizations/#{organization.id}/tax_information/withholding_flag",
       params: { flagged: true, reason: "TIN #{tax.tin} is wrong" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to eq(BackupWithholding::TIN_WARNING)
     expect(AuditLog.where(action: "tax_information.withholding_flag_changed")).to be_empty
+  end
+
+  it "requires a changed second-notice identity to be validated or newly matched" do
+    tax.update!(tin_match_status: "mismatch", b_notice_stage: "second",
+      b_notice_response_due_on: Date.yesterday)
+    post "/api/v1/admin/organizations/#{organization.id}/tax_information/validate_second_notice",
+      params: { evidence_type: "irs_letter_147c", recorded_on: Date.current.iso8601 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    validated_digest = tax.reload.validation_identity_digest
+    expect(tax.backup_withholding_required?).to be(false)
+
+    OrganizerTaxInformationUpdater.call(organization: organization, actor: admin,
+      attributes: { certified: true, legal_name: "Replacement Payee", tin_type: "ein",
+        tin: "987654321", tax_classification: tax.tax_classification,
+        mailing_address: tax.mailing_address, signer_name: tax.signer_name })
+    expect(tax.reload.validation_identity_digest).to eq(validated_digest)
+    expect(tax.irs_validation_current?).to be(false)
+    expect(tax.safe_json["irs_validation_recorded_on"]).to be_nil
+    expect(tax.tin_match_status).to eq("unverified")
+    expect(tax.backup_withholding_required?).to be(true)
+
+    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review" }, headers: auth_headers(admin)
+    line = response.body.strip
+    Tempfile.create(["replacement-result", ".txt"]) do |file|
+      file.write("#{line};0\n")
+      file.flush
+      post "/api/v1/admin/tin_matching/import",
+        params: { file: Rack::Test::UploadedFile.new(file.path, "text/plain") }, headers: auth_headers(admin)
+    end
+    expect(response).to have_http_status(:ok)
+    expect(tax.reload.tin_match_status).to eq("matched")
+    expect(tax.backup_withholding_required?).to be(false)
+
+    OrganizerTaxInformationUpdater.call(organization: organization, actor: admin,
+      attributes: { certified: true, legal_name: "Renamed Payee", tin_type: "ein",
+        tin: tax.tin, tax_classification: tax.tax_classification,
+        mailing_address: tax.mailing_address, signer_name: tax.signer_name })
+    expect(tax.reload.tin_match_status).to eq("unverified")
+    expect(tax.backup_withholding_required?).to be(true)
+  end
+
+  it "edits and audits a prior tax year's thresholds without changing the current year" do
+    prior = { "1099-nec" => 65_000, "1099-misc" => 70_000, "1099-k" => 2_000_000 }
+    patch "/api/v1/admin/settings", params: { tax_year: 2025, tax_reporting_thresholds: prior }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("tax_year" => 2025, "tax_reporting_thresholds" => prior)
+    audit = AuditLog.where(action: "annual_tax_thresholds.updated").last
+    expect(audit.metadata).to include("year" => 2025, "amounts_cents" => prior)
+    get "/api/v1/admin/settings", params: { tax_year: 2025 }, headers: auth_headers(admin)
+    expect(response.parsed_body["tax_reporting_thresholds"]).to eq(prior)
+    get "/api/v1/admin/settings", params: { tax_year: 2026 }, headers: auth_headers(admin)
+    expect(response.parsed_body["tax_reporting_thresholds"]["1099-nec"]).to eq(200_000)
   end
 
   it "keeps annual CSV full TIN access audited and JSON masked" do

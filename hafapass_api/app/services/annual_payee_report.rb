@@ -105,33 +105,45 @@ class AnnualPayeeReport
   def refund_attributions
     @refund_attributions ||= RefundItem.joins(refund: { order: :event })
       .where(events: { organization_id: organization.id }, refunds: { status: Refund.statuses[:succeeded], succeeded_at: period })
-      .includes(refund: :order).filter_map do |item|
+      .includes(refund: :order).flat_map do |item|
         order = item.refund.order
-        # A payout's finalized settlement must contain this order's sale line.
-        # A later payout for the same event cannot claim an earlier order merely
-        # because it was the most recent transfer before the refund.
+        # Attribute each refund line to every paid settlement that actually
+        # disbursed proceeds from that same sale line.
         candidates = organization.payouts.status_paid.joins(settlement: :settlement_items)
           .where(settlement_items: { kind: "sale_proceeds", source_type: "OrderItem",
-            source_id: order.order_items.select(:id) })
+            source_id: item.order_item_id })
           .where("payouts.paid_at < ?", item.refund.succeeded_at)
-          .where.not(settlement_id: SettlementItem.where(kind: "refund", source_type: "RefundItem",
-            source_id: item.id).select(:settlement_id))
           .distinct.order("payouts.paid_at, payouts.id")
-        payout = candidates.first
+        weights = candidates.map do |payout|
+          paid = payout.settlement.settlement_items.where(kind: "sale_proceeds", source_type: "OrderItem",
+            source_id: item.order_item_id).sum(:amount_cents)
+          [payout, paid] if paid.positive?
+        end.compact
         # Legacy settlements without persisted line items can be attributed
         # only when there is exactly one historical payout for the event.
-        if payout.nil?
+        if weights.empty?
           legacy = organization.payouts.status_paid.where(event_id: order.event_id)
             .where("paid_at < ?", item.refund.succeeded_at).to_a
-          payout = legacy.first if legacy.one? && legacy.first.settlement.settlement_items.empty?
+          weights = [[legacy.first, 1]] if legacy.one? && legacy.first.settlement.settlement_items.empty?
         end
-        { item: item, payout: payout } if payout
+        next [] if weights.empty?
+
+        total = weights.sum(&:last)
+        refund = item.organizer_proceeds_cents
+        shares = weights.map do |payout, paid|
+          numerator = refund * paid
+          { payout: payout, cents: numerator / total, remainder: numerator % total }
+        end
+        remaining = refund - shares.sum { |share| share[:cents] }
+        shares.sort_by { |share| [-share[:remainder], share[:payout].id] }.first(remaining)
+          .each { |share| share[:cents] += 1 }
+        shares.map { |share| { item: item, payout: share[:payout], amount_cents: share[:cents] } }
       end
   end
 
   def refund_clawbacks_cents
     refund_attributions.sum do |entry|
-      payee_key.nil? || self.class.payee_key_for(entry[:payout]) == payee_key ? entry[:item].organizer_proceeds_cents : 0
+      payee_key.nil? || self.class.payee_key_for(entry[:payout]) == payee_key ? entry[:amount_cents] : 0
     end
   end
 

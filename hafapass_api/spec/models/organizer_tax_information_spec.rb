@@ -3,6 +3,15 @@
 require "rails_helper"
 
 RSpec.describe OrganizerTaxInformation do
+  it "does not trust legacy second-notice evidence without an identity digest" do
+    tax = create(:organizer_tax_information, b_notice_stage: "second",
+      b_notice_response_due_on: Date.yesterday, irs_validation_recorded_on: Date.current)
+    expect(tax.validation_identity_digest).to be_nil
+    expect(tax.irs_validation_current?).to be(false)
+    expect(tax.backup_withholding_required?).to be(true)
+    expect(tax.safe_json["irs_validation_recorded_on"]).to be_nil
+  end
+
   it "encrypts the TIN at rest and round trips without exposing it in serialization or inspection" do
     tax = create(:organizer_tax_information)
     ciphertext = described_class.connection.select_value("SELECT tin FROM organizer_tax_informations WHERE id = #{tax.id}")

@@ -9,7 +9,7 @@ RSpec.describe "Tax operations services" do
 
   describe TinMatching do
     it "exports the IRS four-field format and imports all nine result codes without auditing a full TIN" do
-      line = described_class.export!(actor: admin).strip
+      line = described_class.export!(actor: admin, purpose: "IRS matching review").strip
       fields = line.split(";")
       expect(fields.length).to eq(4)
       expect(fields[0]).to eq("1")
@@ -18,7 +18,7 @@ RSpec.describe "Tax operations services" do
 
       (0..8).each do |code|
         tax.update!(tin_match_status: "unverified")
-        line = described_class.export!(actor: admin).strip
+        line = described_class.export!(actor: admin, purpose: "IRS matching review").strip
         result = described_class.import!(content: "#{line.strip};#{code}\n", actor: admin)
         expect(result).to eq(OrganizerTaxInformation::MATCH_RESULTS.fetch(code) => 1)
         expect(tax.reload.tin_match_result_code).to eq(code)
@@ -28,7 +28,7 @@ RSpec.describe "Tax operations services" do
     end
 
     it "rejects stale, unknown, duplicate, and altered result rows atomically" do
-      line = described_class.export!(actor: admin).strip
+      line = described_class.export!(actor: admin, purpose: "IRS matching review").strip
       expect { described_class.import!(content: "#{line};0\n#{line};3\n", actor: admin) }
         .to raise_error(TinMatching::ImportError, /repeated account/)
       expect(tax.reload.tin_match_status).to eq("unverified")
@@ -45,7 +45,7 @@ RSpec.describe "Tax operations services" do
     it "does not clear withholding when a later TIN match says matched" do
       tax.update!(tin_match_status: "unverified", b_notice_stage: "second",
         b_notice_response_due_on: Date.yesterday)
-      request_line = TinMatching.export!(actor: admin).strip
+      request_line = TinMatching.export!(actor: admin, purpose: "IRS matching review").strip
       TinMatching.import!(content: "#{request_line};0\n", actor: admin)
       expect(tax.reload.tin_match_status).to eq("mismatch")
       expect(tax.backup_withholding_required?).to be(true)
@@ -66,9 +66,9 @@ RSpec.describe "Tax operations services" do
       expect(SiteSetting.instance.update(backup_withholding_rate_bps: 0)).to be(false)
       SiteSetting.instance.reload
       expect { described_class.for_payout(organization: organization, amount_cents: 100, actor: admin,
-        override_reason: "TIN 012345678 should pass") }.to raise_error(BackupWithholding::WithholdingError, /without a TIN/)
+        override_reason: "TIN 012345678 should pass") }.to raise_error(BackupWithholding::WithholdingError, /This looks like a taxpayer ID/)
       expect { described_class.for_payout(organization: organization, amount_cents: 100, actor: admin,
-        override_reason: "TIN 012.34.5678 should pass") }.to raise_error(BackupWithholding::WithholdingError, /without a TIN/)
+        override_reason: "TIN 012.34.5678 should pass") }.to raise_error(BackupWithholding::WithholdingError, /This looks like a taxpayer ID/)
       SiteSetting.instance.update!(backup_withholding_mode: "block")
       expect(described_class.for_payout(organization: organization, amount_cents: 10_003, actor: admin,
         override_reason: "CPA authorized payout after review")[:withheld_cents]).to eq(0)
@@ -97,6 +97,23 @@ RSpec.describe "Tax operations services" do
           mailing_address: tax.mailing_address, signer_name: tax.signer_name })
       expect(tax.reload).to have_attributes(b_notice_stage: "second", tin_match_status: "mismatch")
       expect(tax.backup_withholding_required?).to be(true)
+    end
+
+    it "withholds for an unverified replacement TIN after a second notice, even before the old deadline" do
+      tax.update!(tin_match_status: "mismatch", b_notice_stage: "second",
+        b_notice_response_due_on: Date.tomorrow)
+      described_class.call(organization: organization, actor: admin,
+        attributes: { certified: true, legal_name: tax.legal_name, tin_type: tax.tin_type,
+          tin: "987654321", tax_classification: tax.tax_classification,
+          mailing_address: tax.mailing_address, signer_name: tax.signer_name })
+      expect(tax.reload.tin_match_status).to eq("unverified")
+      expect(tax.second_notice_identity_changed?).to be(true)
+      expect(tax.backup_withholding_required?).to be(true)
+
+      line = TinMatching.export!(actor: admin, purpose: "IRS matching review").strip
+      TinMatching.import!(content: "#{line};0\n", actor: admin)
+      expect(tax.reload.tin_match_current?).to be(true)
+      expect(tax.backup_withholding_required?).to be(false)
     end
 
     it "clears a first notice while retaining its stage and receipt history" do
@@ -174,6 +191,43 @@ RSpec.describe "Tax operations services" do
       expect(reports.first.payee_key).to eq(described_class.payee_key_for(first))
       expect(reports.first.payee_key).not_to eq(described_class.payee_key_for(second))
       expect(reports.first.row).to include(gross_paid_cents: 0, refund_clawbacks_cents: 450)
+    end
+
+    it "allocates a refund across both paid identities by line proceeds, including largest-remainder cents" do
+      event = create(:event, organization: organization)
+      account = create(:connected_account, organization: organization)
+      order = create(:order, event: event)
+      item = create(:order_item, order: order)
+      paid_at = Time.utc(2026, 10, 1)
+      first_settlement = create(:settlement, organization: organization, event: event)
+      first_settlement.settlement_items.create!(kind: "sale_proceeds", amount_cents: 100,
+        currency: organization.currency, description: "Partial sale", occurred_at: paid_at,
+        source_type: "OrderItem", source_id: item.id)
+      first = create(:payout, organization: organization, event: event, settlement: first_settlement,
+        connected_account: account, status: :paid, amount_cents: 100, paid_at: paid_at)
+      tax.update!(legal_name: "New Legal Payee", tin: "987654321")
+      second_settlement = create(:settlement, organization: organization, event: event)
+      second_settlement.settlement_items.create!(kind: "sale_proceeds", amount_cents: 400,
+        currency: organization.currency, description: "Remaining sale", occurred_at: paid_at + 1.day,
+        source_type: "OrderItem", source_id: item.id)
+      second = create(:payout, organization: organization, event: event, settlement: second_settlement,
+        connected_account: account, status: :paid, amount_cents: 400, paid_at: paid_at + 1.day)
+      refund = create(:refund, order: order, amount_cents: 450, succeeded_at: Time.utc(2027, 1, 2))
+      create(:refund_item, refund: refund, order_item: item, amount_cents: 450,
+        organizer_proceeds_cents: 450, fee_cents: 0)
+      rows = described_class.for_organization(organization: organization, year: 2027).to_h do |report|
+        [report.payee_key, report.row[:refund_clawbacks_cents]]
+      end
+      expect(rows).to eq(described_class.payee_key_for(first) => 90, described_class.payee_key_for(second) => 360)
+
+      rounding_refund = create(:refund, order: order, amount_cents: 451, succeeded_at: Time.utc(2027, 1, 3))
+      create(:refund_item, refund: rounding_refund, order_item: item, amount_cents: 451,
+        organizer_proceeds_cents: 451, fee_cents: 0)
+      rounded = described_class.for_organization(organization: organization, year: 2027).to_h do |report|
+        [report.payee_key, report.row[:refund_clawbacks_cents]]
+      end
+      expect(rounded).to eq(described_class.payee_key_for(first) => 180, described_class.payee_key_for(second) => 721)
+      expect(rounded.values.sum).to eq(901)
     end
 
     it "reads per-form per-year threshold settings" do

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_160100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1366,7 +1366,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_160100) do
     t.date "irs_validation_recorded_on"
     t.bigint "irs_validation_admin_id"
     t.string "irs_validation_document_reference"
+    t.string "tin_digest"
+    t.string "validation_identity_digest"
+    t.string "tin_match_identity_digest"
+    t.string "b_notice_identity_digest"
     t.index ["organization_id"], name: "index_organizer_tax_informations_on_organization_id", unique: true
+    t.index ["tin_digest"], name: "index_organizer_tax_informations_on_tin_digest"
     t.check_constraint "tin_match_status::text = ANY (ARRAY['unverified'::character varying::text, 'matched'::character varying::text, 'missing_or_invalid'::character varying::text, 'not_issued'::character varying::text, 'mismatch'::character varying::text, 'invalid_request'::character varying::text, 'duplicate'::character varying::text, 'matched_ssn'::character varying::text, 'matched_ein'::character varying::text, 'matched_both'::character varying::text])", name: "tax_information_tin_match_status_valid"
   end
 

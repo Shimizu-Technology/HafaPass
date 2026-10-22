@@ -34,7 +34,7 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
   it "rejects TINs in reconciliation references and reasons before audit" do
     reconcile(payload.merge(evidence: evidence.merge(reference: "bank 012-34-5678")))
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body["error"]).to include("cannot contain a TIN")
+    expect(response.parsed_body["error"]).to include("This looks like a taxpayer ID")
     expect(AuditLog.where(auditable: payout)).not_to exist
   end
 
@@ -45,7 +45,7 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     post "/api/v1/admin/payouts/#{payout.id}/release_hold",
       params: { withholding_override_reason: "TIN 012-34-5678 was reviewed" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body["error"]).to include("without a TIN")
+    expect(response.parsed_body["error"]).to include("This looks like a taxpayer ID")
     expect(AuditLog.where(auditable: payout, action: "payout.released_from_cancellation_hold")).not_to exist
   end
 
@@ -54,7 +54,7 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
       params: { organization_id: organization.id, kind: "manual_credit", amount_cents: 100,
         reason: "TIN 012-34-5678 was reviewed" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body["error"]).to include("cannot contain a TIN")
+    expect(response.parsed_body["error"]).to include("This looks like a taxpayer ID")
     expect(AuditLog.where(action: "balance_adjustment.posted")).not_to exist
   end
 

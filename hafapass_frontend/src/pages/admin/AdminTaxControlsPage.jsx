@@ -52,6 +52,13 @@ function Controls({ identity }) {
     download('/admin/annual_tax_reports/export', { year, include_full_tins: true, purpose }, `annual-payees-${year}-SENSITIVE-FULL-TINS.csv`)
   }
 
+  const matchingDownload = () => {
+    const purpose = window.prompt('Enter the purpose for exporting full taxpayer identification numbers for IRS matching:')?.trim()
+    if (!purpose || purpose.length < 10) { setError('Enter a purpose of at least 10 characters.'); return }
+    if (!window.confirm('This IRS matching file contains full taxpayer identification numbers. Export it for the stated purpose?')) return
+    download('/admin/tin_matching/export', { purpose }, `tin-matching-${new Date().toISOString().slice(0, 10)}-SENSITIVE-FULL-TINS.txt`)
+  }
+
   const download = (path, body, filename) => run(async config => {
     const response = await apiClient.post(path, body, { ...config, responseType: 'blob' })
     saveBlob(response.data, filename)
@@ -65,7 +72,7 @@ function Controls({ identity }) {
       <h2 id="matching-title" className="text-lg font-semibold">TIN matching</h2>
       <p className="mt-1 text-sm text-neutral-700">Download an IRS e-Services bulk file for unverified payees. Upload the returned result file. TINs stay masked on this page.</p>
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <button type="button" disabled={busy} className="btn-secondary" onClick={() => download('/admin/tin_matching/export', {}, 'tin-matching.txt')}>Export verification file</button>
+        <button type="button" disabled={busy} className="btn-secondary" onClick={matchingDownload}>Export verification file</button>
         <label className="text-sm font-medium">IRS result file<input aria-label="IRS result file" type="file" accept=".txt,text/plain" disabled={busy} className="input mt-1" onChange={e => { const file = e.target.files?.[0]; if (file) { const data = new FormData(); data.append('file', file); run(config => apiClient.post('/admin/tin_matching/import', data, config), 'Matching results imported.') } e.target.value = '' }} /></label>
       </div>
       <div className="mt-5 space-y-3">{payees.map(({ organization_id: id, organization_name: name, tax_information: tax }) => <article key={id} className="rounded-xl border p-4">

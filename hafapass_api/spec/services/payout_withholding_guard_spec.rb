@@ -34,6 +34,35 @@ RSpec.describe PayoutWithholdingGuard do
     expect(AuditLog.where(auditable: payout, action: "payout.backup_withholding_recalculated")).to exist
   end
 
+  it "blocks a $100 payout after switching from withhold to block even with $24 already withheld" do
+    payout.update!(withheld_cents: 2400, withholding_rate_bps: 2400, withholding_reason: "tin_or_admin_flag")
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS review")
+    SiteSetting.instance.update!(backup_withholding_mode: "block")
+
+    expect do
+      organization.with_lock { payout.with_lock { described_class.call(payout: payout, actor: admin) } }
+    end.to raise_error(described_class::WithholdingError, /blocks this payout/)
+    expect(payout.reload.disbursement_cents).to eq(7600)
+  end
+
+  it "adjusts a stale withhold rate and restores gross when withholding is cleared" do
+    payout.update!(withheld_cents: 2400, withholding_rate_bps: 2400, withholding_reason: "tin_or_admin_flag")
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS review")
+    SiteSetting.instance.update!(backup_withholding_mode: "withhold", backup_withholding_rate_bps: 2000)
+    organization.with_lock { payout.with_lock { described_class.call(payout: payout, actor: admin) } }
+    expect(payout.reload).to have_attributes(withheld_cents: 2000, withholding_rate_bps: 2000)
+    expect(payout.disbursement_cents).to eq(8000)
+
+    tax.update!(backup_withholding_flag: false, backup_withholding_reason: nil)
+    organization.with_lock { payout.with_lock { described_class.call(payout: payout, actor: admin) } }
+    expect(payout.reload).to have_attributes(withheld_cents: 0, withholding_rate_bps: 0,
+      withholding_reason: nil)
+    expect(payout.disbursement_cents).to eq(10_000)
+    audits = AuditLog.where(auditable: payout, action: "payout.backup_withholding_recalculated").order(:id)
+    expect(audits.count).to eq(2)
+    expect(audits.last.after_data).to include("withheld_cents" => 0)
+  end
+
   it "keeps a paid provider result in review when withholding changed after submission" do
     payout.update!(status: :processing)
     tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS review")
@@ -53,7 +82,7 @@ RSpec.describe PayoutWithholdingGuard do
     organization.with_lock do
       payout.with_lock do
         expect { described_class.call(payout: payout, actor: admin, override_reason: "TIN 012345678 is okay") }
-          .to raise_error(described_class::WithholdingError, /without a TIN/)
+          .to raise_error(described_class::WithholdingError, /This looks like a taxpayer ID/)
         described_class.call(payout: payout, actor: admin, override_reason: "CPA approved the transfer")
       end
     end

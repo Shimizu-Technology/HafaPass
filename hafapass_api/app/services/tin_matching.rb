@@ -9,7 +9,7 @@ class TinMatching
     ActiveSupport::Inflector.transliterate(tax.legal_name.to_s).gsub(/[^A-Za-z0-9&\- ]/, "").squish.first(40)
   end
 
-  def self.export!(actor:, request: nil)
+  def self.export!(actor:, purpose:, request: nil)
     rows = []
     TinMatchRequest.transaction do
       OrganizerTaxInformation.where(tin_match_status: "unverified").order(:id).find_each do |tax|
@@ -21,7 +21,7 @@ class TinMatching
         rows << [tax.tin_type == "ein" ? "1" : "2", tax.tin, name, reference].join(";")
       end
       AuditLogger.record!(action: "tin_matching.exported", auditable: actor, actor: actor,
-        metadata: { count: rows.length }, request: request)
+        metadata: { count: rows.length, purpose: purpose }, request: request)
     end
     rows.join("\n") + (rows.any? ? "\n" : "")
   end
@@ -56,12 +56,15 @@ class TinMatching
         end
         code = code_text.to_i
         status = OrganizerTaxInformation::MATCH_RESULTS.fetch(code)
-        # An e-Services match is not the SSA/IRS document validation required
-        # to clear a second B-notice. Keep that case open for an admin.
-        status = "mismatch" if tax.b_notice_stage == "second" && tax.irs_validation_recorded_on.nil?
+        # A match for the original second-notice identity cannot replace the
+        # SSA/IRS document review. A changed W-9 may be freshly matched.
+        status = "mismatch" if tax.b_notice_stage == "second" &&
+          !tax.second_notice_identity_changed? && !tax.irs_validation_current?
         tax.update!(tin_match_status: status, tin_match_result_code: code, tin_matched_at: Time.current,
+          tin_match_identity_digest: (tax.current_identity_digest if OrganizerTaxInformation::MATCHED_STATUSES.include?(status)),
           **(status == "mismatch" ? { irs_validation_evidence_type: nil, irs_validation_recorded_on: nil,
-            irs_validation_admin_id: nil, irs_validation_document_reference: nil } : {}))
+            irs_validation_admin_id: nil, irs_validation_document_reference: nil,
+            validation_identity_digest: nil } : {}))
         match.update!(result_code: code, imported_at: Time.current)
         counts[tax.tin_match_status] += 1
       end

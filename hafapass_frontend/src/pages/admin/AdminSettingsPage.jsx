@@ -173,6 +173,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(null)
+  const [taxYear, setTaxYear] = useState(String(new Date().getFullYear()))
 
   // `keepForm` re-checks the saved settings (for example payment readiness)
   // without discarding edits the admin has not saved yet.
@@ -182,11 +183,11 @@ function AdminSettingsSession({ identity, resourcePath }) {
     pendingLoad.current?.abort()
     pendingLoad.current = request
     setLoadError('')
-    return apiClient.get('/admin/settings', request.config)
+    return apiClient.get('/admin/settings', { ...request.config, params: { tax_year: taxYear } })
       .then(response => { if (request.current()) { setSaved(response.data); if (!keepForm) setForm(toForm(response.data)) } })
       .catch(failure => { if (request.current() && !request.handleError(failure)) setLoadError('Settings could not be loaded. Nothing has changed.') })
       .finally(() => request.release())
-  }, [beginRequest])
+  }, [beginRequest, taxYear])
   useEffect(() => { load(); return () => pendingLoad.current?.abort() }, [load])
 
   const changes = useMemo(() => {
@@ -215,7 +216,8 @@ function AdminSettingsSession({ identity, resourcePath }) {
     if (!request) return
     setSaving(true)
     try {
-      const response = await apiClient.patch('/admin/settings', changes, request.config)
+      const body = changes.tax_reporting_thresholds ? { ...changes, tax_year: taxYear } : changes
+      const response = await apiClient.patch('/admin/settings', body, request.config)
       if (!request.current()) return
       setSaved(response.data)
       setForm(toForm(response.data))
@@ -278,10 +280,11 @@ function AdminSettingsSession({ identity, resourcePath }) {
 
         <section aria-labelledby="tax-controls-settings" className="card p-5 sm:p-6">
           <h2 id="tax-controls-settings" className="text-lg font-semibold">Tax payout controls</h2>
-          <p className="mt-1 text-sm text-neutral-700">Backup withholding affects payouts. Threshold fields configure the current tax year; a CPA should approve changes before filing.</p>
+          <p className="mt-1 text-sm text-neutral-700">Backup withholding affects payouts. Choose the tax year for threshold corrections; a CPA should approve changes before filing.</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium">When backup withholding applies<select className="input mt-1" value={form.backup_withholding_mode} onChange={update('backup_withholding_mode')}><option value="block">Block payout (default)</option><option value="withhold">Withhold and pay the balance</option></select></label>
             <label className="text-sm font-medium">Withholding rate (basis points)<input className="input mt-1" type="number" min="1" max="10000" value={form.backup_withholding_rate_bps} onChange={update('backup_withholding_rate_bps')} /></label>
+            <label className="text-sm font-medium">Tax year<select className="input mt-1" value={taxYear} onChange={event => setTaxYear(event.target.value)}>{Array.from({ length: new Date().getFullYear() - 1999 }, (_, index) => new Date().getFullYear() - index).map(value => <option key={value} value={value}>{value}</option>)}</select></label>
             {[['threshold_nec', '1099-NEC'], ['threshold_misc', '1099-MISC'], ['threshold_k', '1099-K']].map(([field, label]) => <label key={field} className="text-sm font-medium">{label} threshold (cents)<input className="input mt-1" type="number" min="0" step="1" value={form[field]} onChange={update(field)} /></label>)}
           </div>
         </section>

@@ -5,12 +5,25 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
 
   # GET /api/v1/admin/settings
   def show
-    render json: settings_json(SiteSetting.instance)
+    return invalid_tax_year unless tax_year
+
+    render json: settings_json(SiteSetting.instance, year: tax_year)
   end
 
   # PATCH /api/v1/admin/settings
   def update
+    return invalid_tax_year unless tax_year
+
     settings = SiteSetting.instance
+    raw_thresholds = params[:tax_reporting_thresholds]
+    if raw_thresholds && !raw_thresholds.is_a?(ActionController::Parameters)
+      return render json: { error: "Enter a whole-cent threshold for each form" }, status: :unprocessable_entity
+    end
+    thresholds = raw_thresholds&.to_unsafe_h
+    if thresholds && (thresholds.keys.sort != AnnualTaxThreshold::DEFAULT_AMOUNTS.keys.sort ||
+        thresholds.values.any? { |amount| !amount.to_s.match?(/\A\d+\z/) || amount.to_i > 1_000_000_000 })
+      return render json: { error: "Enter a whole-cent threshold for each form" }, status: :unprocessable_entity
+    end
 
     # Safety: test and live need every credential for that mode, and live also
     # needs RAILS_ENV=production and an approved stripe_live capability. The
@@ -53,14 +66,20 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       fee_changes = changes.slice(*FEE_TERM_FIELDS)
       next false unless settings.save
 
-      if changes.key?("tax_reporting_thresholds")
-        settings.tax_reporting_thresholds.each do |form, amount|
-          threshold = AnnualTaxThreshold.for(year: Date.current.year, form_type: form)
-          threshold.save! unless threshold.persisted?
-          threshold.update!(amount_cents: amount)
+      if thresholds
+        before_thresholds = AnnualTaxThreshold::DEFAULT_AMOUNTS.keys.index_with do |form|
+          AnnualTaxThreshold.for(year: tax_year, form_type: form).amount_cents
         end
-        AuditLogger.record!(action: "annual_tax_thresholds.updated", auditable: settings, actor: @current_user,
-          metadata: { year: Date.current.year, amounts_cents: settings.tax_reporting_thresholds }, request: request)
+        after_thresholds = thresholds.transform_values(&:to_i)
+        if before_thresholds != after_thresholds
+          after_thresholds.each do |form, amount|
+            threshold = AnnualTaxThreshold.for(year: tax_year, form_type: form)
+            threshold.update!(amount_cents: amount)
+          end
+          AuditLogger.record!(action: "annual_tax_thresholds.updated", auditable: settings, actor: @current_user,
+            before_data: before_thresholds, after_data: after_thresholds,
+            metadata: { year: tax_year, amounts_cents: after_thresholds }, request: request)
+        end
       end
       if changes.any?
         AuditLogger.record!(action: "site_settings.updated", auditable: settings, actor: @current_user,
@@ -87,7 +106,7 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
     elsif saved
       mode_label = { "simulate" => "Simulate", "test" => "Test (Stripe Sandbox)", "live" => "Live (Real Money)" }
       Rails.logger.info "\U0001f527 Payment mode changed to: #{mode_label[settings.payment_mode]} by #{@current_user.email}"
-      render json: settings_json(settings)
+      render json: settings_json(settings, year: tax_year)
     else
       render json: { errors: settings.errors.full_messages }, status: :unprocessable_entity
     end
@@ -98,11 +117,21 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
   def settings_params
     params.permit(:payment_mode, :platform_name, :platform_email, :platform_phone,
                   :service_fee_percent, :service_fee_flat_cents, :processing_fee_bearer, :payout_schedule_text,
-                  :business_mailing_address, :backup_withholding_mode, :backup_withholding_rate_bps,
-                  tax_reporting_thresholds: {})
+                  :business_mailing_address, :backup_withholding_mode, :backup_withholding_rate_bps)
   end
 
-  def settings_json(settings)
+  def tax_year
+    @tax_year ||= Integer(params[:tax_year].presence || Date.current.year.to_s, 10)
+    @tax_year if (2000..2100).cover?(@tax_year)
+  rescue ArgumentError
+    nil
+  end
+
+  def invalid_tax_year
+    render json: { error: "Choose a tax year from 2000 to 2100" }, status: :unprocessable_entity
+  end
+
+  def settings_json(settings, year:)
     {
       payment_mode: settings.payment_mode,
       platform_name: settings.platform_name,
@@ -115,8 +144,9 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       payout_schedule_text: settings.payout_schedule_text,
       backup_withholding_mode: settings.backup_withholding_mode,
       backup_withholding_rate_bps: settings.backup_withholding_rate_bps,
+      tax_year: year,
       tax_reporting_thresholds: AnnualTaxThreshold::DEFAULT_AMOUNTS.keys.index_with do |form|
-        AnnualTaxThreshold.for(year: Date.current.year, form_type: form).amount_cents
+        AnnualTaxThreshold.for(year: year, form_type: form).amount_cents
       end,
       stripe_test_configured: settings.can_enable_test?,
       stripe_live_configured: settings.stripe_live_configured?,

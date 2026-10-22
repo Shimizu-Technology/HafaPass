@@ -35,7 +35,7 @@ class PayoutReconciler
         raise ReconciliationError, "Transfer identifier must be text"
       end
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
-      raise ReconciliationError, "Transfer identifier cannot contain a TIN" unless BackupWithholding.safe_text?(external_id)
+      raise ReconciliationError, BackupWithholding::TIN_WARNING unless BackupWithholding.safe_text?(external_id)
       raise ReconciliationError, "Transfer identifier is too long" if external_id.to_s.length > 255
       if status == "paid" && (external_id.blank? || external_id.start_with?("sim_", "manual_po_"))
         raise ReconciliationError, "A real provider or bank transfer identifier is required to record payment"
@@ -131,7 +131,7 @@ class PayoutReconciler
     end
     [reference, reason, values["legacy_payee_name"], values["legacy_evidence_note"],
       values["cancellation_payout_reason"], values["withholding_override_reason"]].compact.each do |field|
-      raise ReconciliationError, "Free-text evidence cannot contain a TIN" unless BackupWithholding.safe_text?(field)
+      raise ReconciliationError, BackupWithholding::TIN_WARNING unless BackupWithholding.safe_text?(field)
     end
     timestamp = values["confirmed_at"].to_s
     raise ArgumentError unless timestamp.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
