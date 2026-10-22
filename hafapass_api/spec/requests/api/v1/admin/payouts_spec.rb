@@ -75,6 +75,11 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     expect(response.parsed_body.fetch("payouts").first).to include(
       "status" => "held", "outstanding_buyer_balance_cents" => 5250)
 
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin),
+      params: { sent_before_cancellation_confirmed: true, cancellation_payout_reason: "Already sent" }
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(payout.reload).to be_status_held
+
     reconcile
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body.fetch("error")).to include("already sent before the cancellation")
@@ -85,6 +90,9 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     get "/api/v1/admin/payouts", params: { event_id: event.id }, headers: auth_headers(admin)
     expect(response.parsed_body.fetch("payouts").first).to include(
       "status" => "paid", "outstanding_buyer_balance_cents" => 5250)
+    get "/api/v1/admin/refund_reconciliation", params: { event_id: event.id }, headers: auth_headers(admin)
+    expect(response.parsed_body.fetch("items")).to include(include(
+      "amount_cents" => 5250, "organizer_already_paid" => true))
   end
 
   it "calculates a held event's payable amount once per listing request" do
