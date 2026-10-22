@@ -147,7 +147,7 @@ module Commerce
       private
 
       def lock_event_context!(order)
-        order.event.organization.lock!
+        order.event.organization.lock! if order.waitlist_offer&.claimed?
         order.event.lock!
       end
 

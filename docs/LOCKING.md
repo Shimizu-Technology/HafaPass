@@ -1,6 +1,6 @@
 # Waitlist, inventory, and email delivery invariants
 
-This is the lock contract for code that changes a waitlist entry, reserves or releases inventory, or processes a waitlist delivery. A transaction may omit ranks it does not need, but it must acquire each rank before any higher rank and must not first acquire a lower rank afterward. Reacquiring a row already owned by the same transaction is harmless; new callers should avoid it. Keep network calls outside these transactions.
+This is the lock contract for code that changes a waitlist entry, reserves or releases inventory, or processes a waitlist delivery. The organization lock is taken first when needed. Paths that do not need it start at the event. A path may skip ranks, but never go back up a rank. Reacquiring a row already owned by the same transaction is harmless; new callers should avoid it. Keep network calls outside these transactions.
 
 | Rank | Locks, in order within the rank |
 | --- | --- |
@@ -10,7 +10,7 @@ This is the lock contract for code that changes a waitlist entry, reserves or re
 | 4 | Waitlist advisory transaction lock keyed by entry ID, then offer, entry, and delivery rows |
 | 5 | Ticket type rows, then pricing tier rows, then seat session and seat rows; sort each set by ID |
 
-`WaitlistLocks.with` owns the rank 1 → 2 → 4 prefix for standalone waitlist operations. A caller already holding an order must acquire ranks 1 and 2 before rank 3, and call `WaitlistLocks.with` before taking any inventory lock. The advisory lock stabilizes the active-offer lookup before the offer and entry rows are locked. Its transaction scope prevents an unsubscribe, rejoin, receipt, or new alert round from slipping between lookup and mutation. The order lifecycle holds the claimed offer's rank 4 locks through conversion or release; it does not return to rank 4 after ticket types or the seat session.
+`WaitlistLocks.with` owns the rank 1 → 2 → 4 prefix for standalone waitlist operations. A caller with a claimed offer must acquire ranks 1 and 2 before rank 3, and call `WaitlistLocks.with` before taking any inventory lock. An ordinary order starts at rank 2. The advisory lock stabilizes the active-offer lookup before the offer and entry rows are locked. Its transaction scope prevents an unsubscribe, rejoin, receipt, or new alert round from slipping between lookup and mutation. The order lifecycle holds the claimed offer's rank 4 locks through conversion or release; it does not return to rank 4 after ticket types or the seat session.
 
 ## Path order
 
@@ -18,14 +18,16 @@ This is the lock contract for code that changes a waitlist entry, reserves or re
 | --- | --- |
 | Offer issuance | Organization → event → advisory → active offer → entry → ticket type → tier. |
 | Checkout with offer | Checkout attempt (preflight owner, never reacquired later) → organization → event → advisory → offer → entry → ticket types → tiers → seat session. A new order and its payment/holds are created while those parent locks are held. |
-| Checkout without offer | Checkout attempt → organization → event → ticket types → tiers → seat session; new order and holds are created under the event lock. |
+| Checkout without offer | Checkout attempt → event → ticket types → tiers → seat session; new order and holds are created under the event lock. |
+| Box office cash sale | Event → ticket types → tiers → seat session; completion stays under the event lock. |
+| Completion, cancellation, failure, or expiry without a claimed offer | Event → order → payment and holds → ticket types, tiers, and seat session when needed. |
 | Completion of a claimed order | Organization → event → order → payment and holds → advisory → offer → entry → ticket types → tiers → seat session. Offer conversion uses the already held rank 4 rows. |
 | Cancel, fail, or expire a claimed order | Organization → event → order → payment (when supplied) → advisory → offer → entry → held inventory and seat session. Offer release uses the already held rank 4 rows. |
 | Refund and refund webhook finalization | Organization → event → order → payment/refund/tickets → ticket types and tiers when inventory is reversed. A refund of a converted order does not reopen its waitlist offer. |
 | Unsubscribe and rejoin | Organization → event → advisory → active offer → entry. Each request commits before the next; the claimed offer of an existing order is left for that order's lifecycle. |
 | Waitlist receipt, alert round, and delivery job | Organization → event → advisory → offer (if any) → entry → delivery. The receipt record is idempotency evidence; it never determines the order of waitlist row locks. |
 
-The order is covered by latch-based PostgreSQL specs with a one-second `lock_timeout`. A test that waits for a competing worker's acquired-lock signal proves that the worker passed the database lock before the test proceeds. No timed sleep is used as a concurrency assertion.
+The order is covered by latch-based PostgreSQL specs with a short `lock_timeout`. Each competing worker signals immediately before attempting its contested lock; a failed cycle raises instead of hanging. No timed sleep is used as a concurrency assertion.
 
 ## Delivery status
 

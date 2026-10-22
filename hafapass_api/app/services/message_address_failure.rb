@@ -6,7 +6,7 @@ class MessageAddressFailure
   PERMANENT_CODES = %w[invalid_email invalid_to_address invalid_recipient recipient_not_found
     mailbox_not_found address_not_found user_unknown].freeze
   SMTP_INVALID_ADDRESS = /\b5\.1\.(?:1|2|3|6|10)\b/
-  INVALID_MESSAGE = /recipient|mailbox|email address|does not exist|nonexistent|user unknown|recipient not found/i
+  INVALID_MESSAGE = /(?:recipient|mailbox)\s+(?:not\s+found|does\s+not\s+exist|unknown|invalid)|invalid\s+(?:recipient|mailbox|email address)|email address|does not exist|nonexistent|user unknown/i
 
   def self.invalid?(message:, code: nil, bounce_type: nil, bounce_subtype: nil, diagnostics: [])
     return false if bounce_type.to_s.casecmp?("Transient")

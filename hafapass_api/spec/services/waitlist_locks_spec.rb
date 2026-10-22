@@ -64,6 +64,10 @@ RSpec.describe WaitlistLocks do
     release = Queue.new
     attempting = Queue.new
     acquired = Queue.new
+    allow_any_instance_of(Organization).to receive(:lock!).and_wrap_original do |method, *arguments|
+      attempting << true if Thread.current[:waitlist_reconcile]
+      method.call(*arguments)
+    end
 
     unsubscribe = worker do
       WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), offer: WaitlistOffer.find(offer.id)) do
@@ -75,7 +79,7 @@ RSpec.describe WaitlistLocks do
     end
     signal(ready)
     reconcile = worker do
-      attempting << true
+      Thread.current[:waitlist_reconcile] = true
       WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), delivery: MessageDelivery.find(delivery.id)) do
         acquired << true
         WaitlistDelivery.reconcile_failure!(MessageDelivery.find(delivery.id))
@@ -114,7 +118,12 @@ RSpec.describe WaitlistLocks do
       delivery = hard_bounced_alert
       ready = Queue.new
       release = Queue.new
+      attempting = Queue.new
       acquired = Queue.new
+      allow_any_instance_of(Organization).to receive(:lock!).and_wrap_original do |method, *arguments|
+        attempting << true if Thread.current[:waitlist_second]
+        method.call(*arguments)
+      end
       first = worker do
         WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), delivery: MessageDelivery.find(delivery.id)) do
           ready << true
@@ -124,11 +133,13 @@ RSpec.describe WaitlistLocks do
       end
       signal(ready)
       second = worker do
+        Thread.current[:waitlist_second] = true
         WaitlistLocks.with(entry: WaitlistEntry.find(entry.id), delivery: MessageDelivery.find(delivery.id)) do
           acquired << true
           order == :receipt_first ? WaitlistEntry.find(entry.id).notify_and_queue! : late_delivery(delivery)
         end
       end
+      signal(attempting)
       release << true
       signal(acquired)
       finish(first, second)

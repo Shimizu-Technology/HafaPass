@@ -83,8 +83,8 @@ module Commerce
           end
           @checkout_attempt.verify_owner!(@checkout_lease_token) unless @checkout_attempt.order_id
         end
-        # docs/LOCKING.md: organization precedes event, offer, and inventory.
-        event.organization.lock!
+        # Only offer claims need the organization rank before the event.
+        event.organization.lock! if waitlist_offer_token.present?
         # Serialize capacity decisions while permitting FK key-share checks in
         # an independent seat-release transaction waiting on this checkout.
         event.lock!("FOR NO KEY UPDATE")
@@ -880,6 +880,7 @@ module Commerce
     end
 
     def finish_failed_provider_setup!(order, payment, lease_token, error, rejected:)
+      fail_order = false
       Order.transaction do
         order.lock!
         payment.lock!
@@ -888,11 +889,14 @@ module Commerce
 
         payment.update!(provider_payload: payload.except("setup_lease_token", "setup_lease_expires_at"))
         if rejected
-          OrderLifecycle.fail!(order, payment: payment, failure_code: "payment_setup_failed", failure_message: error.message,
-            reason: "payment_setup_failed")
+          fail_order = true
         elsif order.pending? && payment.pending?
           payment.update!(failure_code: "payment_setup_result_unknown", failure_message: error.message)
         end
+      end
+      if fail_order
+        OrderLifecycle.fail!(order, payment: payment, failure_code: "payment_setup_failed", failure_message: error.message,
+          reason: "payment_setup_failed")
       end
     end
 
