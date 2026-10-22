@@ -26,17 +26,17 @@ class DataRetentionPurgeJob < ApplicationJob
         batch.each do |record|
           next if DataRetention.held?(record)
           next if record.is_a?(Order) && DataRetention.unresolved_money?(record)
-          related_order = if record.respond_to?(:order)
-            record.order
-          elsif record.respond_to?(:payment)
-            record.payment&.order
-          elsif record.respond_to?(:payment_event)
-            record.payment_event&.payment&.order
-          elsif record.respond_to?(:ticket)
-            record.ticket&.order
-          elsif record.respond_to?(:message_delivery)
+          next if record.is_a?(Order) && record.tickets.exists? && record.event.starts_at&.after?(at)
+          next if record.is_a?(Ticket) && record.event.starts_at&.after?(at)
+          next if record.is_a?(PrivacyRequest) && record.executed_at.nil?
+          next if record.is_a?(MessageDelivery) && (record.queued? || record.delayed?)
+          related_order = record.order if record.respond_to?(:order)
+          related_order ||= record.payment&.order if record.respond_to?(:payment)
+          related_order ||= record.payment_event&.payment&.order if record.respond_to?(:payment_event)
+          related_order ||= record.ticket&.order if record.respond_to?(:ticket)
+          if related_order.nil? && record.respond_to?(:message_delivery)
             delivery = record.message_delivery
-            delivery&.order || delivery&.ticket&.order
+            related_order = delivery&.order || delivery&.ticket&.order
           end
           next if related_order && DataRetention.unresolved_money?(related_order)
           next if record.is_a?(Payout) && !record.status_paid?
@@ -53,7 +53,7 @@ class DataRetentionPurgeJob < ApplicationJob
           case rule.fetch("action")
           when "delete"
             if record.is_a?(OrganizerSalesExportRequest)
-              next unless record.storage_key.blank? || !S3Service.configured? ||
+              next unless record.storage_key.blank? ||
                 begin
                   S3Service.delete_private_export!(record.storage_key)
                   true

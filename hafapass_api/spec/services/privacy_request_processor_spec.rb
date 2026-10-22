@@ -33,9 +33,11 @@ RSpec.describe PrivacyRequestProcessor do
   end
 
   it "blocks deletion under a legal hold" do
+    processor = described_class.new(privacy_request)
+    expect(processor.preview[:blockers]).to be_empty
     LegalHold.place!(scope_type: "buyer_email", scope_value: user.email,
       reason: "Preserve this person's records", actor: admin)
-    expect { described_class.new(privacy_request).execute!(actor: admin) }
+    expect { processor.execute!(actor: admin) }
       .to raise_error(PrivacyRequestProcessor::Blocked)
     expect(order.reload.buyer_email).to eq(user.email)
   end

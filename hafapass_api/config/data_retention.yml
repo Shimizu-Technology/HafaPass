@@ -434,10 +434,10 @@
       ]
     },
     "marketplace_collection_events": {
-      "category": "analytics",
-      "period": "13_months",
+      "category": "logs/audit",
+      "period": "account_lifetime",
       "trigger": "created_at",
-      "action": "delete",
+      "action": "keep",
       "pii_columns": []
     },
     "marketplace_collections": {
@@ -884,7 +884,9 @@
       "action": "anonymize",
       "pii_columns": [
         "recipient_email",
-        "recipient_name",
+        "recipient_name"
+      ],
+      "reviewed_non_pii_columns": [
         "token_version"
       ]
     },

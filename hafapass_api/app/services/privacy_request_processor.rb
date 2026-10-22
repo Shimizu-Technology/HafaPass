@@ -16,30 +16,29 @@ class PrivacyRequestProcessor
   end
 
   def blockers
-    @blockers ||= begin
-      items = []
-      items << "A legal hold covers the account" if @request.user && LegalHold.for_user?(@request.user)
-      if @request.user && (@request.user.admin? || @request.user.support?)
-        items << "Transfer the platform role before deleting this account"
-      end
-      orders.each do |order|
-        items << "Order #{order.reference} is under legal hold" if LegalHold.for_order?(order)
-        items << "Order #{order.reference} has an open dispute, pending refund, or pending payout" if
-          DataRetention.unresolved_money?(order)
-        items << "Order #{order.reference} has tickets for an upcoming event" if
-          order.event.starts_at && order.event.starts_at > Time.current && order.tickets.exists?
-      end
-      if @request.user && OrganizationMembership.where(user_id: @request.user.id).effective.exists?
-        items << "The organizer account has an active organization role; transfer or close it first"
-      end
-      if @request.user
-        linked = [EventFavorite, OrganizerFollow, EventReminder, ImageUploadReceipt]
-        items << "A legal hold covers saved activity or an upload" if linked.any? do |model|
-          model.where(user_id: @request.user_id).find_each.any? { |record| DataRetention.held?(record) }
-        end
-      end
-      items.uniq
+    items = []
+    items << "A legal hold covers the account" if @request.user && LegalHold.for_user?(@request.user)
+    if @request.user && (@request.user.admin? || @request.user.support?)
+      items << "Transfer the platform role before deleting this account"
     end
+    orders.each do |order|
+      items << "Order #{order.reference} is under legal hold" if LegalHold.for_order?(order)
+      items << "Order #{order.reference} has an open dispute, pending refund, or pending payout" if
+        DataRetention.unresolved_money?(order)
+      items << "Order #{order.reference} has tickets for an upcoming event" if
+        order.event.starts_at && order.event.starts_at > Time.current && order.tickets.exists?
+    end
+    if @request.user && OrganizationMembership.where(user_id: @request.user.id).effective.exists?
+      items << "The organizer account has an active organization role; transfer or close it first"
+    end
+    if @request.user
+      linked = [EventFavorite, OrganizerFollow, EventReminder, ImageUploadReceipt]
+      held_activity = linked.any? do |model|
+        model.where(user_id: @request.user_id).find_each.any? { |record| DataRetention.held?(record) }
+      end
+      items << "A legal hold covers saved activity or an upload" if held_activity
+    end
+    items.uniq
   end
 
   def preview
@@ -161,6 +160,7 @@ class PrivacyRequestProcessor
     uploads = user ? ImageUploadReceipt.where(user_id: user.id).to_a : []
     PrivacyRequest.transaction do
       @request.lock!
+      @orders = nil
       raise Blocked, "A legal hold or money operation now blocks deletion" if blockers.any?
 
       orders.each { |order| DataRetention.anonymize_order!(order) }

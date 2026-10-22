@@ -10,6 +10,8 @@ class LegalHold < ApplicationRecord
 
   validates :scope_type, inclusion: { in: SCOPES }
   validates :scope_value, presence: true
+  validates :scope_value, uniqueness: { scope: :scope_type, conditions: -> { active },
+    message: "already has an active hold" }
   validates :reason, presence: true, length: { minimum: 10, maximum: 2_000 }
   validate :valid_scope
 
@@ -29,11 +31,13 @@ class LegalHold < ApplicationRecord
   end
 
   def self.place!(scope_type:, scope_value:, reason:, actor:, request: nil)
-    hold = create!(scope_type: scope_type, scope_value: scope_value, reason: reason, placed_by: actor)
-    AuditLogger.record!(action: "legal_hold.placed", auditable: hold, actor: actor,
-      metadata: { scope_type: hold.scope_type, scope_value: scope_type == "buyer_email" ? "[redacted]" : hold.scope_value },
-      request: request)
-    hold
+    transaction do
+      hold = create!(scope_type: scope_type, scope_value: scope_value, reason: reason, placed_by: actor)
+      AuditLogger.record!(action: "legal_hold.placed", auditable: hold, actor: actor,
+        metadata: { scope_type: hold.scope_type, scope_value: scope_type == "buyer_email" ? "[redacted]" : hold.scope_value },
+        request: request)
+      hold
+    end
   end
 
   def self.for_order?(order)

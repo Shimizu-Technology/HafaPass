@@ -12,6 +12,8 @@ class Api::V1::Admin::LegalHoldsController < Api::V1::Admin::BaseController
     render json: serialize(hold), status: :created
   rescue ActiveRecord::RecordInvalid => error
     render json: { errors: error.record.errors.full_messages }, status: :unprocessable_entity
+  rescue ActiveRecord::RecordNotUnique
+    render json: { errors: ["An active hold already covers this scope"] }, status: :unprocessable_entity
   end
 
   def release
