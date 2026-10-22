@@ -18,5 +18,8 @@ RSpec.describe "Public support contact configuration", type: :request do
     get "/api/v1/config"
 
     expect(response.parsed_body).to include("support_email" => nil, "support_phone" => nil)
+    policies = response.parsed_body.fetch("policies")
+    expect(policies.fetch("privacy").fetch("sections").last.fetch("body"))
+      .to include("contact us at shimizutechnology@gmail.com")
   end
 end

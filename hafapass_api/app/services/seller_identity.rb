@@ -5,7 +5,7 @@
 # sells as the organizer's limited agent and collects the service fee. Receipts,
 # tickets and emails show both so the agency arrangement is visible to buyers.
 class SellerIdentity
-  OPERATOR_NAME = "Shimizu Technology"
+  OPERATOR_NAME = "Shimizu Technology LLC"
 
   Identity = Data.define(:seller_name, :ticketing_service, :operator_name) do
     def line
