@@ -130,6 +130,9 @@ class PayoutCreator
       if EventCancellationRefunds.unresolved?(settlement.event)
         raise PayoutError, "Finish cancellation refunds before paying out this event"
       end
+      if RefundReconciliationQueue.outstanding_for_event?(settlement.event)
+        raise PayoutError, "Resolve outstanding refund liabilities before paying out this event"
+      end
       current_digest = Settlements::Calculator.call(settlement.event).attributes[:source_digest]
       if current_digest != settlement.source_digest
         raise PayoutError, "Financial activity changed; finalize a new settlement before paying out"

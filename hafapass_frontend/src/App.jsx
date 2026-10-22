@@ -63,6 +63,7 @@ const PrivacyRequestsPage = lazy(() => import('./pages/PrivacyRequestsPage'))
 const GuestPrivacyRequestsPage = lazy(() => import('./pages/PrivacyRequestsPage').then(module => ({ default: module.GuestPrivacyRequestsPage })))
 const AdminPayoutsPage = lazy(() => import('./pages/admin/AdminPayoutsPage'))
 const AdminDisputesPage = lazy(() => import('./pages/admin/AdminDisputesPage'))
+const AdminRefundReconciliationPage = lazy(() => import('./pages/admin/AdminRefundReconciliationPage'))
 const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'))
 const AdminTaxReportsPage = lazy(() => import('./pages/admin/AdminTaxReportsPage'))
 const AdminOrganizationsPage = lazy(() => import('./pages/admin/AdminOrganizationsPage'))
@@ -138,6 +139,7 @@ function App() {
           <Route path="/admin/tax-reports" element={<AdminRoute><AdminTaxReportsPage /></AdminRoute>} />
           <Route path="/admin/payouts" element={<AdminRoute><AdminPayoutsPage /></AdminRoute>} />
           <Route path="/admin/disputes" element={<AdminRoute><AdminDisputesPage /></AdminRoute>} />
+          <Route path="/admin/refund_reconciliation" element={<AdminRoute><AdminRefundReconciliationPage /></AdminRoute>} />
           <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLogPage /></AdminRoute>} />
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />

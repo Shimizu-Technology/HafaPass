@@ -127,6 +127,8 @@ Rails.application.routes.draw do
 
       # Organizer events (protected)
       namespace :organizer do
+        get "refund_reconciliation", to: "refund_reconciliations#index"
+        post "refund_reconciliation/:type/:id/:operation", to: "refund_reconciliations#action"
         resource :tax_information, only: [:show, :update]
         resource :organization, only: [:show], controller: "organizations"
         resource :finances, only: [:show], controller: "organization_finances" do
@@ -251,6 +253,8 @@ Rails.application.routes.draw do
             get :export
           end
         end
+        get "refund_reconciliation", to: "refund_reconciliations#index"
+        post "refund_reconciliation/:type/:id/:operation", to: "refund_reconciliations#action"
         resource :tax_reports, only: [:show] do
           get :organizers_export
           get :receipts_export

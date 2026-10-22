@@ -30,6 +30,26 @@ class DataRetention
     !SiteSetting.first&.retention_purge_enabled?
   end
 
+  def self.reconciliation_audits_for_orders(order_ids)
+    ids = Array(order_ids)
+    AuditLog.where(auditable_type: "Refund", auditable_id: Refund.where(order_id: ids).select(:id))
+      .or(AuditLog.where(auditable_type: "Dispute", auditable_id: Dispute.where(order_id: ids).select(:id)))
+      .or(AuditLog.where(auditable_type: "EventCancellationRefundItem",
+        auditable_id: EventCancellationRefundItem.where(order_id: ids).select(:id)))
+      .or(AuditLog.where(auditable_type: "EventChangeResponse",
+        auditable_id: EventChangeResponse.where(order_id: ids).select(:id)))
+  end
+
+  def self.reconciliation_digests_for_orders(orders)
+    references = Array(orders).map(&:reference)
+    scope = MessageDelivery.where(template: "refund_reconciliation_digest")
+    return scope.none if references.empty?
+
+    references.map do |reference|
+      scope.where("metadata @> ?", { items: [{ order_reference: reference }] }.to_json)
+    end.reduce(&:or)
+  end
+
   def self.anonymize_order!(order, eligible_ticket_ids: nil, eligible_support_note_ids: nil,
     anonymize_responses: nil)
     # Keep amounts, references and status so finance and tax reporting still reconcile.
@@ -55,7 +75,8 @@ class DataRetention
       outbound_payload: {}, outbound_wire_body: nil, wire_body_digest: nil, last_error: nil,
       retention_anonymized_at: Time.current, updated_at: Time.current)
     Payment.where(order_id: order.id).update_all(provider_payload: {}, failure_message: nil, updated_at: Time.current)
-    Refund.where(order_id: order.id).update_all(provider_payload: {}, reason: nil, failure_message: nil, updated_at: Time.current)
+    Refund.where(order_id: order.id).update_all(provider_payload: {}, reason: nil, failure_code: nil,
+      failure_message: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
     Dispute.where(order_id: order.id).update_all(provider_payload: {}, updated_at: Time.current)
     PaymentEvent.where(payment_id: order.payments.select(:id)).update_all(data: {}, updated_at: Time.current)
     WebhookEvent.where(id: PaymentEvent.where(payment_id: order.payments.select(:id)).select(:webhook_event_id))
@@ -64,6 +85,7 @@ class DataRetention
     CardPresentPaymentAttempt.where(order_id: order.id).update_all(provider_response: {}, failure_message: nil,
       updated_at: Time.current)
     ReconciliationException.where(order_id: order.id).update_all(details: {}, updated_at: Time.current)
+    EventCancellationRefundItem.where(order_id: order.id).update_all(last_error: nil, updated_at: Time.current)
     notes = if eligible_support_note_ids
       SupportNote.where(id: eligible_support_note_ids)
     else
@@ -79,9 +101,18 @@ class DataRetention
       source: nil, medium: nil, updated_at: Time.current)
     MarketplaceFunnelEvent.where(order_id: order.id).update_all(visitor_hash: "[redacted]", campaign: nil,
       source: nil, medium: nil, updated_at: Time.current)
-    AuditLog.where(auditable_type: "Order", auditable_id: order.id).update_all(ip_address: nil,
+    AuditLog.where(auditable_type: "Order", auditable_id: order.id)
+      .or(reconciliation_audits_for_orders([order.id])).update_all(ip_address: nil,
       before_data: {}, after_data: {}, metadata: {}, retention_anonymized_at: Time.current,
       updated_at: Time.current)
+    reconciliation_digests_for_orders([order]).find_each do |delivery|
+      next if held?(delivery)
+
+      MessageProviderEvent.where(message_delivery_id: delivery.id).update_all(payload: {},
+        processing_error: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
+      delivery.update_columns(metadata: {}, outbound_payload: {}, outbound_wire_body: nil,
+        wire_body_digest: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
+    end
     order.update_columns(buyer_email: replacement, buyer_name: "Deleted buyer", buyer_phone: nil,
       refund_reason: nil,
       marketing_opt_in: false, user_id: nil, guest_access_revoked_at: Time.current,
@@ -94,7 +125,11 @@ class DataRetention
   end
 
   def self.held?(record)
-    return LegalHold.for_order?(record) if record.is_a?(Order)
+    if record.is_a?(Order)
+      return true if LegalHold.for_order?(record)
+
+      return reconciliation_digests_for_orders([record]).any? { |delivery| held?(delivery) }
+    end
     return LegalHold.for_user?(record) if record.is_a?(User)
     if record.is_a?(Organization)
       return LegalHold.active.exists?(scope_type: "organization", scope_value: record.id.to_s)
@@ -124,8 +159,16 @@ class DataRetention
       when "Order" then Order.find_by(id: record.auditable_id)
       when "Event" then Event.find_by(id: record.auditable_id)
       when "Organization" then Organization.find_by(id: record.auditable_id)
+      when "Refund" then Refund.find_by(id: record.auditable_id)
+      when "Dispute" then Dispute.find_by(id: record.auditable_id)
+      when "EventCancellationRefundItem" then EventCancellationRefundItem.find_by(id: record.auditable_id)
+      when "EventChangeResponse" then EventChangeResponse.find_by(id: record.auditable_id)
       end
       return held?(subject) if subject
+    end
+    if record.is_a?(MessageDelivery) && record.template == "refund_reconciliation_digest"
+      references = Array(record.metadata["items"]).filter_map { |item| item["order_reference"] }
+      return true if Order.where(reference: references).includes(:event).any? { |order| LegalHold.for_order?(order) }
     end
     related = record.order if record.respond_to?(:order)
     related ||= record.ticket&.order if record.respond_to?(:ticket)

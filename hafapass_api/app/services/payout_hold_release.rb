@@ -3,8 +3,7 @@
 class PayoutHoldRelease
   class ReleaseError < StandardError; end
 
-  def self.call(payout:, actor:, automatic: false, sent_before_cancellation_confirmed: false,
-    cancellation_payout_reason: nil, request: nil)
+  def self.call(payout:, actor:, automatic: false, request: nil)
     raise ReleaseError, "Administrator access is required" unless automatic || actor&.persisted? && actor.admin?
 
     released = false
@@ -19,13 +18,11 @@ class PayoutHoldRelease
             raise ReleaseError, "Resolve the provider result conflict before releasing this payout"
           end
 
-          liability = EventCancellationRefunds.liability_snapshot(payout.event)
-          if liability[:unresolved]
-            confirmed = !automatic && sent_before_cancellation_confirmed == true &&
-              cancellation_payout_reason.to_s.strip.present?
-            unless confirmed
-              raise ReleaseError, "Buyer refunds remain unresolved; confirm this payout was already sent before cancellation and explain the release"
-            end
+          liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
+            { outstanding_cents: 0, unresolved: false }
+          queue_outstanding = RefundReconciliationQueue.outstanding_for_event?(payout.event)
+          if liability[:unresolved] || queue_outstanding
+            raise ReleaseError, "Resolve outstanding buyer refund liabilities before releasing this payout"
           end
 
           payable = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
@@ -44,8 +41,6 @@ class PayoutHoldRelease
             after_data: payout.attributes.slice("status", "held_from_status", "failure_code", "failure_message"),
             metadata: { event_id: payout.event_id, current_payable_cents: payable,
               other_reserved_cents: other_reserved, outstanding_buyer_balance_cents: liability[:outstanding_cents],
-              sent_before_cancellation_confirmed: sent_before_cancellation_confirmed,
-              cancellation_payout_reason: cancellation_payout_reason.to_s.strip.presence,
               automatic: automatic }, request: request)
           released = true
         end

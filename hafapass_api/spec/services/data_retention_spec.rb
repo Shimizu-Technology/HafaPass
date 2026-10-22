@@ -65,6 +65,7 @@ RSpec.describe DataRetention, "pending-order safety" do
     "message deliveries" => MessageDelivery
   }.each do |label, model|
     it "keeps a pending order with #{label}" do
+      allow(model).to receive(:where).and_call_original
       allow(model).to receive(:where).with(order_id: order.id).and_return(double(exists?: true))
       expect(described_class.delete_pending_order!(order)).to be(false)
       expect(Order.exists?(order.id)).to be(true)
@@ -173,5 +174,19 @@ RSpec.describe DataRetention, "indirect legal holds" do
     LegalHold.place!(scope_type: "user", scope_value: sender.id.to_s,
       reason: "Preserve sender messages", actor: admin)
     expect(described_class.held?(delivery)).to be(true)
+  end
+
+  it "follows a refund reconciliation audit and digest back to a held order" do
+    refund = create(:refund, order: order)
+    audit = AuditLogger.record!(action: "refund_reconciliation.unable", auditable: refund,
+      actor: admin, metadata: { reason: "Buyer asked for a call" })
+    digest = create(:message_delivery, order: nil, event: order.event, recipient: admin.email,
+      template: "refund_reconciliation_digest", status: :sent,
+      metadata: { items: [{ order_reference: order.reference }] })
+    LegalHold.place!(scope_type: "order", scope_value: order.id.to_s,
+      reason: "Preserve refund reconciliation", actor: admin)
+
+    expect(described_class.held?(audit)).to be(true)
+    expect(described_class.held?(digest)).to be(true)
   end
 end

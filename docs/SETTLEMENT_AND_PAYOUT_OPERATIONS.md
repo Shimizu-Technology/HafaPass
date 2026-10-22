@@ -42,6 +42,8 @@ Automated production payout adapters remain disabled. Before enabling one, imple
 - If any sale, refund, dispute, fee, reserve, adjustment, or payout changed after finalization, finalize a new version before paying.
 - A failed payout releases its reservation; a reversed payout restores funds only after the reversal is recorded.
 - A post-payout liability produces a negative balance and reduces later organization payouts. Do not zero it manually.
+- A cancellation hold cannot be released while any buyer refund remains in the reconciliation queue, even with prior-send confirmation. If the check was physically sent before cancellation, record the held payout as `paid` with the admin-only confirmation, reason, and bank evidence. The queue marks the remaining buyer liability for organizer recovery. Organizer finances subtract that unresolved liability immediately; the organization-wide payout balance carries the debit into future payout eligibility. Once refunds succeed, the refund ledger replaces the provisional debit.
+- The daily refund reconciliation sweep processes oldest pending refunds first. `REFUND_RECONCILIATION_MAX_REFUNDS` (default 200), `REFUND_RECONCILIATION_MAX_STRIPE_CALLS` (default 500), and `REFUND_RECONCILIATION_MAX_CONSECUTIVE_ERRORS` (default 5) bound each run. A missing provider refund ID is searched for at most three Stripe pages. Ambiguous or incomplete matches stay open for manual finance review.
 - Escalate any cent variance, unexplained provider object, cross-currency activity, or payout without evidence; do not force reconciliation.
 
 ## Release evidence

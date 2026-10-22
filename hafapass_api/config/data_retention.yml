@@ -176,8 +176,10 @@
       "category": "financial record",
       "period": "7_years_after_year_end",
       "trigger": "created_at",
-      "action": "keep",
-      "pii_columns": []
+      "action": "anonymize",
+      "pii_columns": [
+        "last_error"
+      ]
     },
     "event_cancellation_refund_runs": {
       "category": "financial record",
@@ -746,7 +748,8 @@
       "pii_columns": [
         "provider_payload",
         "reason",
-        "failure_message"
+        "failure_message",
+        "failure_code"
       ]
     },
     "registration_questions": {

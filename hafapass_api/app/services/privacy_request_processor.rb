@@ -58,6 +58,7 @@ class PrivacyRequestProcessor
       audit = audit.or(AuditLog.where(auditable_type: "Ticket", auditable_id: ticket_ids))
       request_ids = @request.user_id ? PrivacyRequest.where(user_id: @request.user_id).pluck(:id) : [@request.id]
       audit = audit.or(AuditLog.where(auditable_type: "PrivacyRequest", auditable_id: request_ids))
+      audit = audit.or(DataRetention.reconciliation_audits_for_orders(order_ids))
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(email)}%"
       audit = audit.or(AuditLog.where("metadata::text ILIKE ? OR before_data::text ILIKE ? OR after_data::text ILIKE ?",
         pattern, pattern, pattern))
@@ -66,7 +67,8 @@ class PrivacyRequestProcessor
         order_note_ids: order_note_ids, event_note_ids: note_ids, audit_ids: audit.pluck(:id),
         recipient_delivery_ids: MessageDelivery.where("lower(recipient) = ?", email)
           .where.not(template: "privacy_request_confirmation").pluck(:id),
-        metadata_delivery_ids: MessageDelivery.where("metadata::text ILIKE ?", pattern).pluck(:id))
+        metadata_delivery_ids: (MessageDelivery.where("metadata::text ILIKE ?", pattern).pluck(:id) |
+          DataRetention.reconciliation_digests_for_orders(selected_orders).pluck(:id)))
     end
   end
 
@@ -81,6 +83,9 @@ class PrivacyRequestProcessor
     end
     orders.each do |order|
       items << "Order #{order.reference} is under legal hold" if LegalHold.for_order?(order)
+      if DataRetention.reconciliation_digests_for_orders([order]).any? { |delivery| DataRetention.held?(delivery) }
+        items << "A legal hold covers a refund reconciliation digest for order #{order.reference}"
+      end
       items << "Order #{order.reference} has an open dispute, pending refund, or pending payout" if
         DataRetention.unresolved_money?(order)
       items << "Order #{order.reference} has tickets for an upcoming event" if
@@ -122,6 +127,8 @@ class PrivacyRequestProcessor
           action: "anonymize", reason: "Keep amount and provider reference; clear provider payload" },
         { table: "refunds", count: Refund.where(order_id: order_ids).count,
           action: "anonymize", reason: "Keep amount and status; clear provider payload" },
+        { table: "cancellation refund items", count: EventCancellationRefundItem.where(order_id: order_ids).count,
+          action: "anonymize", reason: "Keep amount and status; clear error details" },
         { table: "disputes", count: Dispute.where(order_id: order_ids).count,
           action: "anonymize", reason: "Keep dispute amount and status; clear provider payload" },
         { table: "tickets", count: ticket_ids.size,

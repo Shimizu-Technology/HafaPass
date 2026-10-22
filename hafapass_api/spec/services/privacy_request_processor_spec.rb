@@ -156,6 +156,34 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
     expect(delivery.reload.metadata).to eq({})
     expect(PrivacyEmailSuppression.for?(deleted_email)).to be(true)
   end
+
+  it "includes reconciliation audit and digest records in the deletion plan and redacts them" do
+    refund = create(:refund, order: order, reason: "Call #{buyer.email}")
+    audit = AuditLogger.record!(action: "refund_reconciliation.unable", auditable: refund,
+      actor: admin, metadata: { reason: "Call #{buyer.email}" })
+    run = order.event.create_event_cancellation_refund_run!(started_by: admin)
+    item = run.items.create!(order: order, status: :refunded, amount_cents: 1000,
+      last_error: "Call #{buyer.email}")
+    digest = create(:message_delivery, order: nil, event: order.event, recipient: admin.email,
+      template: "refund_reconciliation_digest", status: :sent,
+      metadata: { items: [{ order_reference: order.reference }] })
+    provider_event = MessageProviderEvent.create!(message_delivery: digest, provider: "resend",
+      provider_event_id: SecureRandom.uuid, provider_message_id: SecureRandom.uuid,
+      event_type: "email.delivered", occurred_at: Time.current, received_at: Time.current,
+      payload: { order_reference: order.reference })
+
+    preview = described_class.new(privacy_request).preview
+    expect(preview[:retained]).to include(include(table: "cancellation refund items", count: 1),
+      include(table: "requester audit logs", count: 1),
+      include(table: "recipient message metadata", count: 1))
+
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(refund.reload.reason).to be_nil
+    expect(item.reload.last_error).to be_nil
+    expect(audit.reload.metadata).to eq({})
+    expect(digest.reload.metadata).to eq({})
+    expect(provider_event.reload.payload).to eq({})
+  end
 end
 
 RSpec.describe "Privacy email suppression" do
