@@ -32,6 +32,7 @@ describe('uncertain box office sale', () => {
     await screen.findByText('Do not charge the card again')
     const [url, payload, options] = apiClient.post.mock.calls[0]
     expect(options.headers['Idempotency-Key']).toBeTruthy()
+    expect(payload.expected_total_cents).toBe(500)
     expect(screen.getByLabelText('Buyer name')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
     first.unmount()
@@ -42,6 +43,27 @@ describe('uncertain box office sale', () => {
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation([url, payload, options]))
     expect(await screen.findByText('Sale Complete!')).toBeInTheDocument()
     expect(window.sessionStorage.getItem('hafapass:pending-box-office:v2:local-preview:default:37')).toBeNull()
+  })
+
+  it('shows the active tier and sends its $30 quote instead of the $25 base price', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: true } } : url === '/organizer/card_present_account' ? { payment_ready: true } : url.endsWith('/summary') ? {} : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Tiered Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 2500, current_price_cents: 3000, quantity_available: 10, quantity_sold: 0 }] } }))
+    apiClient.post.mockResolvedValue({ data: { id: 1, total_cents: 3000, tickets: [] } })
+    mountBoxOffice()
+    const user = userEvent.setup()
+    expect(await screen.findByText(/\$30\.00 · 10 at door/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add Admission' }))
+    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    expect(apiClient.post.mock.calls[0][1].expected_total_cents).toBe(3000)
+  })
+
+  it('releases a saved sale after a confirmed price conflict so staff can review the new quote', async () => {
+    apiClient.post.mockRejectedValue({ response: { status: 409, data: { code: 'price_changed', error: 'Ticket price changed. Review the updated total before paying.' } } })
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
+    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    expect(await screen.findByText('Ticket price changed. Review the updated total before paying.')).toBeInTheDocument()
+    expect(screen.queryByText('A saved sale needs confirmation')).not.toBeInTheDocument()
   })
 
   it('preserves a cash sale identity across a lost response and reload', async () => {

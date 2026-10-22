@@ -396,6 +396,7 @@ function CheckoutContent({ buyerId }) {
         marketing_opt_in: marketingOptIn,
         buyer_phone: buyerPhone.trim() || null,
         line_items: lineItems.map(item => ({ ticket_type_id: item.ticket_type_id, quantity: item.quantity })),
+        expected_total_cents: displayedTotal,
         promo_code_id: promoData?.promo_code_id || null,
         catalog_items: Object.entries(catalogSelections).filter(([, value]) => value.quantity > 0).map(([id, value]) => ({
           catalog_item_id: Number(id), quantity: value.quantity,
@@ -503,7 +504,7 @@ function CheckoutContent({ buyerId }) {
   // event page advertised. Missing fee data is an error, not a $0 fee.
   const feeTerms = parseFeeTerms(config)
   const orderLines = orderData ? (orderData.order_items || []).map(item => ({
-    ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents,
+    ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents, feeCents: item.fee_cents || 0,
   })) : lineItems.map(item => estimateCheckoutLine(event, item, { waitlistOffer, seats: selectedSeats })).filter(Boolean)
   const feeDataMissing = !orderData && orderLines.some(line => line.feeCents === null)
 
@@ -607,12 +608,14 @@ function CheckoutContent({ buyerId }) {
           <h2 className="text-base font-semibold text-neutral-900 mb-4">{t('checkout.orderSummary')}</h2>
           <div className="space-y-3 mb-4">
             {orderLines.map(line => (
-              <div key={line.ticket_type_id} className="flex justify-between items-center">
+              <div key={line.id || line.ticket_type_id} className="flex justify-between items-center">
                 <div>
                   <BuyerTicketTypeText ticketType={selectedTicketType(event, line.ticket_type_id) || line} />
                   <span className="text-neutral-600 ml-2 text-sm">&times; {line.quantity}</span>
                 </div>
-                <span className="text-neutral-900 font-medium text-sm">{formatPrice(line.lineTotal)}</span>
+                <span className="text-right text-neutral-900 font-semibold text-sm">{formatPrice(line.lineTotal + line.feeCents)}
+                  {line.feeCents > 0 && <span className="block text-xs font-normal text-neutral-500">{t('buyer.SeatSelector.feeIncluded', { fee: formatMoneyCents(line.feeCents) })}</span>}
+                </span>
               </div>
             ))}
             {selectedSeats.length > 0 && (

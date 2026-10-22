@@ -25,6 +25,13 @@ class MessageDeliveryJob < ApplicationJob
         mark_reminder_sent!(delivery) if delivery.sent? || delivery.delivered?
         next :done
       end
+      if delivery.template == "fee_change_notice" &&
+          !FeeChangeNotice.find(delivery.metadata.fetch("fee_change_notice_id")).effective_owner?
+        delivery.update!(status: :cancelled, last_error: "Recipient is no longer an effective owner")
+        AuditLogger.record!(action: "site_settings.fee_change_notice_skipped", auditable: delivery,
+          metadata: { fee_change_notice_id: delivery.metadata.fetch("fee_change_notice_id"), reason: "owner_removed" })
+        next :done
+      end
       if delivery.send_lease_expires_at.present? && delivery.send_lease_expires_at > Time.current
         self.class.set(wait_until: delivery.send_lease_expires_at).perform_later(delivery.id)
         next :busy
@@ -143,6 +150,17 @@ class MessageDeliveryJob < ApplicationJob
           last_error: "Send blocked by applicable unsubscribe, provider suppression, or missing mailing address")
       end
       WaitlistDelivery.reconcile_failure!(delivery)
+      return
+    end
+
+    if delivery.template == "fee_change_notice" &&
+        !FeeChangeNotice.find(delivery.metadata.fetch("fee_change_notice_id")).effective_owner?
+      delivery.with_lock do
+        delivery.update!(status: :cancelled, last_error: "Recipient is no longer an effective owner",
+          send_lease_token: nil, send_lease_expires_at: nil, provider_outcome_unknown: false)
+        AuditLogger.record!(action: "site_settings.fee_change_notice_skipped", auditable: delivery,
+          metadata: { fee_change_notice_id: delivery.metadata.fetch("fee_change_notice_id"), reason: "owner_removed" })
+      end
       return
     end
 

@@ -80,6 +80,8 @@ class EmailService
         send_organization_invitation(delivery.organization_membership, delivery: delivery)
       when "platform_invitation"
         send_platform_invitation(delivery.platform_invitation, delivery: delivery)
+      when "fee_change_notice"
+        send_fee_change_notice(FeeChangeNotice.find(delivery.metadata.fetch("fee_change_notice_id")), delivery: delivery)
       else
         raise ArgumentError, "Unsupported message template"
       end
@@ -263,6 +265,41 @@ class EmailService
         record_enqueue_failure(delivery, e) if delivery
         Rails.logger.error("[VerificationRequest] Unable to queue profile=#{profile.id}: #{e.class}")
       end
+    end
+
+    def send_fee_change_notice_async(notice)
+      delivery = create_delivery(event: notice.event, requested_by: notice.fee_change.created_by,
+        template: "fee_change_notice", recipient: notice.recipient_email,
+        metadata: { fee_change_notice_id: notice.id }, idempotency_key: "fee-change-notice/#{notice.id}")
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    rescue StandardError => e
+      record_enqueue_failure(delivery, e)
+      raise
+    end
+
+    def send_fee_change_notice(notice, delivery: nil)
+      change = notice.fee_change
+      old_example = notice.example(change.old_terms)
+      new_example = notice.example(change.new_terms)
+      format_terms = lambda do |terms|
+        "#{terms.fetch('service_fee_percent')}% + #{money(terms.fetch('service_fee_flat_cents'))} per paid ticket; " \
+          "card processing paid by #{terms.fetch('processing_fee_bearer')}; payouts #{terms.fetch('payout_schedule_text')}"
+      end
+      html = email_wrapper("Scheduled fee change") do
+        <<~HTML
+          <h2>Fee terms are changing for #{h(notice.organization.name)}</h2>
+          <p>Your current terms: #{h(format_terms.call(change.old_terms))}.</p>
+          <p>New terms from #{h(change.effective_at.in_time_zone('Pacific/Guam').strftime('%B %-d, %Y at %-I:%M %p ChST'))}: #{h(format_terms.call(change.new_terms))}.</p>
+          <p>For a $25.00 #{h(notice.fee_policy.tr('_', ' '))} ticket, the buyer total changes from
+          <strong>#{money(old_example.fetch(:all_in_price_cents))}</strong> (includes #{money(old_example.fetch(:service_fee_cents))} service fee)
+          to <strong>#{money(new_example.fetch(:all_in_price_cents))}</strong> (includes #{money(new_example.fetch(:service_fee_cents))} service fee).</p>
+          <p>Orders placed before the effective date keep their recorded fee terms. You can acknowledge this notice in your organizer dashboard; sales continue while it is unacknowledged.</p>
+          <p><a href="#{frontend_url}/dashboard">Open dashboard</a></p>
+        HTML
+      end
+      deliver(to: notice.recipient_email, subject: safe_subject("Upcoming HåfaPass fee change"), html: html,
+        tag: "fee_change_notice", delivery: delivery, fee_change_notice_id: notice.id)
     end
 
     def send_verification_request(profile, recipient, delivery: nil)
@@ -749,10 +786,10 @@ class EmailService
           <div style="margin-bottom: 28px;">
             <h3 style="color: #1f2937; margin: 0 0 12px;">#{ht('order_confirmation.summary')}</h3>
             <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.reference', reference: order.reference)}</p>
+            <p style="color: #1f2937; font-weight: 700; margin: 0 0 8px;"><strong>#{ht('order_confirmation.total', amount: money(order.total_cents))}</strong></p>
             <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.subtotal', amount: money(order.subtotal_cents))}</p>
             #{discount_row}
             <p style="color: #6b7280; margin: 0 0 4px;">#{ht('order_confirmation.service_fee', amount: money(order.service_fee_cents))}</p>
-            <p style="color: #1f2937; font-weight: 600; margin: 0;"><strong>#{ht('order_confirmation.total', amount: money(order.total_cents))}</strong></p>
             <p style="color: #9ca3af; margin: 12px 0 0; font-size: 12px; line-height: 1.5;">
               #{ht('order_confirmation.seller_disclosure', seller: seller.seller_name, service: seller.ticketing_service,
                 operator: seller.operator_name)}

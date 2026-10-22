@@ -161,7 +161,7 @@ function BoxOfficePageSession({ id, identity }) {
   const totalItems = Object.values(quantities).reduce((s, q) => s + q, 0)
   const totalCents = seatReservation
     ? seatReservation.seats.reduce((sum, seat) => sum + seat.price_cents, 0)
-    : event?.ticket_types?.reduce((s, tt) => s + (quantities[tt.id] || 0) * tt.price_cents, 0) || 0
+    : event?.ticket_types?.reduce((s, tt) => s + (quantities[tt.id] || 0) * (tt.current_price_cents ?? tt.price_cents), 0) || 0
 
   const handleSale = async () => {
     if (!current() || !authorizedEvent.current || pendingSaleRef.current?.recoveryRequired) return
@@ -186,6 +186,7 @@ function BoxOfficePageSession({ id, identity }) {
             payment_method: paymentMethod,
             buyer_name: buyerName || undefined,
             buyer_email: buyerEmail || undefined,
+            expected_total_cents: totalCents,
           },
           total_cents: totalCents,
           created_at: new Date().toISOString(),
@@ -215,7 +216,8 @@ function BoxOfficePageSession({ id, identity }) {
     } catch (err) {
       if (!current()) return
       const data = err.response?.data
-      const uncertain = (recoveringSavedSale && data?.reconciliation_required !== false) || !err.response || err.response.status >= 500 || [408, 409, 429].includes(err.response.status) || Boolean(data?.reconciliation_required)
+      const priceChanged = data?.code === 'price_changed'
+      const uncertain = !priceChanged && ((recoveringSavedSale && data?.reconciliation_required !== false) || !err.response || err.response.status >= 500 || [408, 409, 429].includes(err.response.status) || Boolean(data?.reconciliation_required))
       setSaleError({
         message: data?.error || (uncertain ? 'The connection was interrupted. This sale may have completed. Retry this saved sale or ask a manager to verify its outcome.' : 'Failed to process sale.'),
         reconciliationRequired: uncertain,
@@ -226,6 +228,7 @@ function BoxOfficePageSession({ id, identity }) {
       if (importedLegacyKey.current === pendingSaleRef.current?.key) window.sessionStorage.removeItem(legacyStorageKey)
         pendingSaleRef.current = null
         setPendingSale(null)
+        if (priceChanged) fetchEvent()
       }
     } finally {
       if (current()) setSubmitting(false)
@@ -287,7 +290,7 @@ function BoxOfficePageSession({ id, identity }) {
                 <div className="min-w-0 mr-4">
                   <p className="font-medium text-neutral-900 truncate">{tt.name}</p>
                   <p className="text-sm text-neutral-500">
-                    ${(tt.price_cents / 100).toFixed(2)} · {available === Number.MAX_SAFE_INTEGER ? 'Unlimited' : `${available} at door`}
+                    ${((tt.current_price_cents ?? tt.price_cents) / 100).toFixed(2)} · {available === Number.MAX_SAFE_INTEGER ? 'Unlimited' : `${available} at door`}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">

@@ -126,7 +126,9 @@ RSpec.describe "Admin settings", type: :request do
   end
 
   it "reports configuration and evidence approval separately" do
+    allow(PlatformCapabilities).to receive(:configured?).and_call_original
     allow(PlatformCapabilities).to receive(:configured?).with("stripe_live").and_return(true)
+    allow(PlatformCapabilities).to receive(:enabled?).and_call_original
     allow(PlatformCapabilities).to receive(:enabled?).with("stripe_live").and_return(false)
 
     get "/api/v1/admin/settings", headers: auth_headers(admin)
@@ -136,17 +138,25 @@ RSpec.describe "Admin settings", type: :request do
   end
 
   describe "fee terms" do
-    it "updates the fee, processing bearer and payout schedule with an audit record" do
+    it "schedules the fee, processing bearer and payout terms with an audit record" do
+      PlatformCapabilityReviews::Manager.quick_approve!(capability: "policy_register", actor: admin)
       patch "/api/v1/admin/settings", params: { service_fee_percent: "4.5", service_fee_flat_cents: 75,
-        processing_fee_bearer: "organizer", payout_schedule_text: "  within 5 business days  " }, headers: auth_headers(admin)
+        processing_fee_bearer: "organizer", payout_schedule_text: "  within 5 business days  ",
+        effective_at: 31.days.from_now.iso8601, future_terms_approved: true,
+        approved_registry_digest: FeeChange.proposed_registry_digest(settings: SiteSetting.instance, attributes: {
+          service_fee_percent: "4.5", service_fee_flat_cents: 75, processing_fee_bearer: "organizer",
+          payout_schedule_text: "  within 5 business days  " }) }, headers: auth_headers(admin)
 
       expect(response).to have_http_status(:ok)
-      expect(response.parsed_body).to include("service_fee_percent" => "4.5", "service_fee_flat_cents" => 75,
+      expect(response.parsed_body).to include("service_fee_percent" => "5.0", "service_fee_flat_cents" => 100,
+        "processing_fee_bearer" => "platform", "payout_schedule_text" => "within 3 business days after your event")
+      expect(response.parsed_body.fetch("pending_fee_change").fetch("new_terms")).to include(
+        "service_fee_percent" => "4.5", "service_fee_flat_cents" => 75,
         "processing_fee_bearer" => "organizer", "payout_schedule_text" => "within 5 business days")
-      audit = AuditLog.find_by!(action: "site_settings.fee_terms_updated")
+      audit = AuditLog.find_by!(action: "site_settings.fee_terms_scheduled")
       expect(audit.actor_user).to eq(admin)
       expect(audit.before_data).to include("service_fee_percent" => "5.0", "processing_fee_bearer" => "platform")
-      expect(audit.after_data).to include("service_fee_percent" => "4.5", "service_fee_flat_cents" => "75",
+      expect(audit.after_data).to include("service_fee_percent" => "4.5", "service_fee_flat_cents" => 75,
         "processing_fee_bearer" => "organizer", "payout_schedule_text" => "within 5 business days")
     end
 
@@ -154,7 +164,7 @@ RSpec.describe "Admin settings", type: :request do
       patch "/api/v1/admin/settings", params: { platform_phone: "671-555-0100" }, headers: auth_headers(admin)
 
       expect(response).to have_http_status(:ok)
-      expect(AuditLog.where(action: "site_settings.fee_terms_updated")).to be_empty
+      expect(AuditLog.where(action: "site_settings.fee_terms_scheduled")).to be_empty
     end
 
     [
@@ -168,13 +178,15 @@ RSpec.describe "Admin settings", type: :request do
       { payout_schedule_text: "x" * 201 }
     ].each do |invalid|
       it "rejects #{invalid.keys.first} #{invalid.values.first.to_s.first(12).inspect} without changing settings" do
-        patch "/api/v1/admin/settings", params: invalid, headers: auth_headers(admin)
+        patch "/api/v1/admin/settings", params: invalid.merge(effective_at: 31.days.from_now.iso8601),
+          headers: auth_headers(admin)
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.parsed_body.fetch("errors")).not_to be_empty
+        expect(response.parsed_body.fetch("error")).not_to be_empty
         expect(SiteSetting.instance.reload).to have_attributes(service_fee_percent: 5.0, service_fee_flat_cents: 100,
           processing_fee_bearer: "platform", payout_schedule_text: "within 3 business days after your event")
-        expect(AuditLog.where(action: "site_settings.fee_terms_updated")).to be_empty
+        expect(FeeChange).not_to exist
+        expect(AuditLog.where(action: "site_settings.fee_terms_scheduled")).to be_empty
       end
     end
 

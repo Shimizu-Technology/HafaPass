@@ -67,6 +67,7 @@ describe('EventDetailPage all-in pricing and seller identity', () => {
     expect(screen.getByTestId('seller-line')).toHaveTextContent('Tickets by')
     expect(screen.getByTestId('all-in-note')).toHaveTextContent('Prices include all mandatory fees.')
     expect(seo.props.jsonLd.offers).toMatchObject({ lowPrice: '16.75', highPrice: '48.25', priceCurrency: 'USD' })
+    expect(seo.props.description).toContain('From $16.75. Prices include all mandatory fees.')
   })
 })
 

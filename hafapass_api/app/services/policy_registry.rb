@@ -93,11 +93,13 @@ class PolicyRegistry
       Digest::SHA256.hexdigest(JSON.generate(material_terms))
     end
 
-    def registry_digest
+    def registry_digest(material_terms: self.material_terms)
+      ordered_terms = MATERIAL_SETTINGS.to_h { |key| [key, material_terms.fetch(key)] }
       # Publication fields are included so a status or effective-date change
       # also requires a fresh approval.
       Digest::SHA256.hexdigest(JSON.generate({ "version" => version, "effective_date" => effective_date.to_s,
-        "status" => status, "documents" => templates, "material_terms_digest" => material_terms_digest }))
+        "status" => status, "documents" => templates,
+        "material_terms_digest" => Digest::SHA256.hexdigest(JSON.generate(ordered_terms)) }))
     end
 
     def production_approved?

@@ -681,6 +681,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.check_constraint "policy_hold_at IS NULL AND policy_hold_scope IS NULL AND policy_hold_reason IS NULL OR policy_hold_at IS NOT NULL AND (policy_hold_scope::text = ANY (ARRAY['sales'::character varying::text, 'hidden'::character varying::text])) AND char_length(btrim(policy_hold_reason)) > 0", name: "events_policy_hold_consistent"
   end
 
+  create_table "fee_change_notices", force: :cascade do |t|
+    t.bigint "fee_change_id", null: false
+    t.bigint "organization_id", null: false
+    t.bigint "owner_id", null: false
+    t.string "recipient_email", null: false
+    t.integer "buyer_fee_percent", null: false
+    t.string "fee_policy", null: false
+    t.bigint "event_id", null: false
+    t.datetime "acknowledged_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["fee_change_id", "organization_id", "owner_id"], name: "fee_change_notice_recipient_uniqueness", unique: true
+    t.index ["fee_change_id"], name: "index_fee_change_notices_on_fee_change_id"
+    t.index ["organization_id"], name: "index_fee_change_notices_on_organization_id"
+    t.index ["owner_id"], name: "index_fee_change_notices_on_owner_id"
+  end
+
+  create_table "fee_changes", force: :cascade do |t|
+    t.bigint "created_by_id", null: false
+    t.jsonb "old_terms", null: false
+    t.jsonb "new_terms", null: false
+    t.datetime "effective_at", null: false
+    t.datetime "activated_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "preapproval_id"
+    t.string "preapproved_registry_digest"
+    t.datetime "blocked_at"
+    t.string "activation_error"
+    t.index "(1)", name: "one_pending_fee_change", unique: true, where: "((activated_at IS NULL) AND (blocked_at IS NULL))"
+    t.index ["blocked_at"], name: "index_fee_changes_on_blocked_at"
+    t.index ["created_by_id"], name: "index_fee_changes_on_created_by_id"
+    t.index ["effective_at"], name: "index_fee_changes_on_effective_at"
+    t.index ["preapproval_id"], name: "index_fee_changes_on_preapproval_id"
+  end
+
   create_table "fee_components", force: :cascade do |t|
     t.integer "amount_cents", null: false
     t.datetime "created_at", null: false
@@ -2022,6 +2058,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.string "processing_fee_bearer", default: "platform", null: false
     t.string "payout_schedule_text", default: "within 3 business days after your event", null: false
     t.text "business_mailing_address"
+    t.integer "fee_notice_days", default: 30, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
   end
@@ -2587,6 +2624,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
   add_foreign_key "events", "organizer_profiles"
   add_foreign_key "events", "users", column: "policy_hold_by_user_id"
   add_foreign_key "events", "venues", on_delete: :restrict
+  add_foreign_key "fee_change_notices", "events"
+  add_foreign_key "fee_change_notices", "fee_changes"
+  add_foreign_key "fee_change_notices", "organizations"
+  add_foreign_key "fee_change_notices", "users", column: "owner_id"
+  add_foreign_key "fee_changes", "platform_capability_reviews", column: "preapproval_id"
+  add_foreign_key "fee_changes", "users", column: "created_by_id"
   add_foreign_key "fee_components", "order_items", on_delete: :restrict
   add_foreign_key "fee_components", "orders", on_delete: :restrict
   add_foreign_key "guest_list_entries", "events"

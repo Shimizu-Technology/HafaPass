@@ -10,6 +10,9 @@ module Commerce
 
     PAID_SALES_OPEN_SOON = "Paid ticket sales open soon"
     class CheckoutError < StandardError; end
+    class PriceChanged < CheckoutError; end
+    class RefreshRequired < PriceChanged; end
+    LEGACY_REFRESH_WINDOW_DAYS = Integer(ENV.fetch("FEE_CHANGE_LEGACY_REFRESH_DAYS", "7"))
 
     Result = Data.define(:order, :payment, :payment_intent, :guest_access_token)
 
@@ -23,7 +26,8 @@ module Commerce
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
       attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
       cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
-      checkout_attempt: nil, checkout_lease_token: nil, locale: AppLocale::DEFAULT)
+      checkout_attempt: nil, checkout_lease_token: nil, expected_total_cents: nil, client_quote_required: false,
+      locale: AppLocale::DEFAULT)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -53,6 +57,8 @@ module Commerce
       @checkout_request_digest = checkout_request_digest
       @checkout_attempt = checkout_attempt
       @checkout_lease_token = checkout_lease_token
+      @expected_total_cents = expected_total_cents
+      @client_quote_required = client_quote_required
       @cash_sale_key = cash_sale_key
       @cash_sale_request_digest = cash_sale_request_digest
       # The buyer's language for receipts and ticket emails; staff-created orders stay English.
@@ -104,6 +110,15 @@ module Commerce
         validate_registration!
         promoter = locked_promoter
         totals = calculate_totals(selections, catalog_selections)
+        # Only buyer checkout can come from a stale cached page; server-side
+        # callers such as guest list redemption never send a displayed total.
+        if @client_quote_required && @expected_total_cents.blank? && FeeChange.where.not(activated_at: nil)
+            .where("activated_at >= ?", LEGACY_REFRESH_WINDOW_DAYS.days.ago).exists?
+          raise RefreshRequired, "Prices were updated — please refresh the page to see the current total."
+        end
+        if @expected_total_cents.present? && @expected_total_cents.to_s != totals[:total_cents].to_s
+          raise PriceChanged, "Ticket price changed. Review the updated total before paying."
+        end
         validate_production_payment!(totals, requires_payment)
         validate_live_money_proof_scope!(totals)
         expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now

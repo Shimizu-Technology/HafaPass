@@ -43,6 +43,11 @@ class ReceiptPdfGenerator
         service: seller.ticketing_service, operator: seller.operator_name)
     ]
     lines.unshift(I18n.t("emails.receipt.test_notice")) if %w[test simulated].include?(@order.payment_environment)
+    lines << if %w[test simulated].include?(@order.payment_environment)
+      I18n.t("emails.receipt.test_total", amount: money(@order.total_cents))
+    else
+      I18n.t("emails.receipt.total_paid", amount: money(@order.total_cents))
+    end
     @order.order_items.order(:id).each do |item|
       lines << I18n.t("emails.receipt.line_item", name: item.name, quantity: item.quantity,
         unit: money(item.unit_price_cents), amount: money(item.subtotal_cents))
@@ -50,13 +55,7 @@ class ReceiptPdfGenerator
     lines << I18n.t("emails.receipt.subtotal", amount: money(@order.subtotal_cents))
     lines << I18n.t("emails.receipt.service_fee", amount: money(@order.service_fee_cents))
     lines << I18n.t("emails.receipt.discount", amount: money(@order.discount_cents)) if @order.discount_cents.positive?
-    lines << if @order.total_cents.zero?
-      I18n.t("emails.receipt.complimentary")
-    elsif %w[test simulated].include?(@order.payment_environment)
-      I18n.t("emails.receipt.test_total", amount: money(@order.total_cents))
-    else
-      I18n.t("emails.receipt.total_paid", amount: money(@order.total_cents))
-    end
+    lines << I18n.t("emails.receipt.complimentary") if @order.total_cents.zero?
     lines << I18n.t("emails.receipt.refunded_amount", amount: money(@order.refunded_cents)) if @order.refunded_cents.positive?
     lines << payment_method_line
     refunds = @order.refunds.order(created_at: :asc, id: :asc)

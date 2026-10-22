@@ -34,6 +34,16 @@ RSpec.describe "Organizer guest list redemption", type: :request do
     expect(ticket_type.reload.quantity_sold).to eq(2)
   end
 
+  it "redeems guest list entries during the post-fee-change refresh window" do
+    FeeChange.new(effective_at: 1.day.ago, activated_at: 1.day.ago, created_by: create(:user, :admin),
+      old_terms: { "service_fee_percent" => 5 }, new_terms: { "service_fee_percent" => 6 }).save!(validate: false)
+
+    post "/api/v1/organizer/events/#{event.id}/guest_list/#{entry.id}/redeem", headers: auth_headers(user)
+
+    expect(response).to have_http_status(:ok)
+    expect(entry.reload.order).to be_completed
+  end
+
   it "uses a reserved never-routable placeholder when the guest has no email" do
     entry.update!(guest_email: "")
 

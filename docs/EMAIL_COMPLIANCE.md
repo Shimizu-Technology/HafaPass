@@ -19,6 +19,7 @@ Reviewed on 2026-10-22 against `EmailService.prepare_delivery_payload`, its emai
 | `verification_request` | Transactional/relationship | Notifies staff of an organizer's verification request. |
 | `organization_invitation` | Transactional/relationship | Invites a named person to a specific organization role. |
 | `platform_invitation` | Transactional/relationship | Invites a named person to a specific platform role. |
+| `fee_change_notice` | Transactional/relationship | Notifies an organizer owner of a specific scheduled fee change. |
 | `waitlist_notification` | Commercial | Alerts a waitlist member that tickets are available and invites a new purchase. |
 | `waitlist_offer` | Commercial | Offers reserved inventory and invites a new purchase. |
 | `communication_campaign` | Commercial | Organizer-authored promotional content sent to opted-in buyers. |
