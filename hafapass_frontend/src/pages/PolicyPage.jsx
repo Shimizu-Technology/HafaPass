@@ -17,10 +17,6 @@ export default function PolicyPage() {
     setError(false)
     apiClient.get('/config')
       .then(response => {
-        if (response.data.policy_status !== 'approved' || !response.data.policy_effective_date) {
-          setError(true)
-          return
-        }
         setRegistry({
           version: response.data.buyer_terms_version,
           effectiveDate: response.data.policy_effective_date,
@@ -48,15 +44,20 @@ export default function PolicyPage() {
 
   const content = registry.policies[policy]
   if (!content) return <Navigate to="/policies/buyer-terms" replace />
-  const effectiveDate = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
-    .format(new Date(`${registry.effectiveDate}T00:00:00Z`))
+  // Policies stay readable even if the config omits publication metadata.
+  const effectiveDate = registry.effectiveDate
+    ? new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+      .format(new Date(`${registry.effectiveDate}T00:00:00Z`))
+    : null
 
   return (
     <main className="min-h-screen bg-neutral-50 px-4 py-12">
       <SEO title={content.title} description={content.summary} url={`${PUBLIC_WEB_URL}/policies/${policy}`} />
       <article className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10">
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-neutral-950">{content.title}</h1>
-        <p className="mt-3 text-sm font-medium text-brand-800">{t('buyerDiscovery.policy.effective')} <time dateTime={registry.effectiveDate}>{effectiveDate}</time> · {t('buyerDiscovery.policy.versionLabel', { version: registry.version })}</p>
+        {effectiveDate && (
+          <p className="mt-3 text-sm font-medium text-brand-800">{t('buyerDiscovery.policy.effective')} <time dateTime={registry.effectiveDate}>{effectiveDate}</time> · {t('buyerDiscovery.policy.versionLabel', { version: registry.version })}</p>
+        )}
         <p className="mt-4 text-base leading-7 text-neutral-600">{content.summary}</p>
         <PolicyLanguageNotice className="mt-5" />
         <div className="mt-8 space-y-7">

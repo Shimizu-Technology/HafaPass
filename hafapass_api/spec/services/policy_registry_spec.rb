@@ -55,6 +55,19 @@ RSpec.describe PolicyRegistry do
     end
   end
 
+  it "requires a fresh register approval when only the status or effective date changes" do
+    base = described_class.send(:registry)
+    acceptances = [described_class.buyer_terms[:digest], described_class.organizer_agreement[:digest]]
+    before = described_class.registry_digest
+
+    { "effective_date" => "2099-01-01", "status" => "superseded" }.each do |field, value|
+      allow(described_class).to receive(:registry).and_return(base.merge(field => value))
+
+      expect(described_class.registry_digest).not_to eq(before), "#{field} did not change the register digest"
+      expect([described_class.buyer_terms[:digest], described_class.organizer_agreement[:digest]]).to eq(acceptances)
+    end
+  end
+
   it "keeps legal-review notes out of the public text and lists them for admins" do
     strings = described_class.public_documents.values.flat_map do |document|
       [document["title"], document["summary"]] + document["sections"].flat_map { |section| section.values_at("heading", "body") }
