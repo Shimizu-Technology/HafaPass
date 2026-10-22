@@ -18,6 +18,25 @@ RSpec.describe DataRetention do
           privacy_email_suppressions].include?(table) }
       expect(described_class.schedule.keys.sort).to eq(application_tables.sort)
     end
+
+    it "accounts for every classified PII column in a runnable rule or an explicit exception" do
+      configuration = YAML.safe_load_file(described_class::CONFIG)
+      inventory = configuration.fetch("column_classifications")
+      exceptions = YAML.safe_load_file(Rails.root.join("config/data_retention_pii_elsewhere.yml"))
+        .fetch("tables")
+      uncovered = inventory.to_h do |table, columns|
+        rule = described_class.schedule[table]
+        runnable = DataRetentionPurgeJob::RUNNABLE.include?(table) &&
+          %w[anonymize delete].include?(rule&.fetch("action", nil))
+        covered = runnable ? rule.fetch("pii_columns") : []
+        [table, columns.filter_map { |name, classification| name if classification == "pii" && !covered.include?(name) }]
+      end.reject { |_table, columns| columns.empty? }
+      expect(exceptions.keys.sort).to eq(uncovered.keys.sort)
+      exceptions.each do |table, exception|
+        expect(exception.fetch("reason")).to be_present
+        expect(exception.fetch("columns").sort).to eq(uncovered.fetch(table).sort), table
+      end
+    end
   end
 
   it "uses the end of the calendar year for the seven-year clock" do
@@ -47,6 +66,11 @@ end
 
 RSpec.describe DataRetention, "pending-order safety" do
   let(:order) { create(:order, :pending, created_at: 100.days.ago, expires_at: 100.days.ago) }
+
+  it "covers every provider payment, intent, or session reference on orders" do
+    references = Order.column_names.grep(/\A(?:stripe|provider|clover)_(?:payment|refund|intent|session).*_(?:id|reference)\z/)
+    expect(described_class::ORDER_PROVIDER_REFERENCES).to contain_exactly(*references)
+  end
 
   %w[payments refunds disputes tickets].each do |association|
     it "keeps a pending order with #{association}" do
@@ -108,6 +132,15 @@ RSpec.describe DataRetention, "pending-order safety" do
     expect(described_class.delete_pending_order!(order)).to be(false)
     expect(SupportNote.exists?(note.id)).to be(true)
     expect(Order.exists?(order.id)).to be(true)
+  end
+
+  %w[stripe_payment_intent_id stripe_refund_id].each do |reference|
+    it "keeps a legacy pending order with #{reference} and no payment row" do
+      order.update!(reference => "provider-#{SecureRandom.hex(6)}")
+      expect(order.payments).not_to exist
+      expect(described_class.delete_pending_order!(order)).to be(false)
+      expect(Order.exists?(order.id)).to be(true)
+    end
   end
 
   it "rechecks a newly attached payment after taking the order lock" do

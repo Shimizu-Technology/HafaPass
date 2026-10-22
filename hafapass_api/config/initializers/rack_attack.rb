@@ -107,6 +107,24 @@ class Rack::Attack
     end
   end
 
+  guest_privacy_create = lambda do |req|
+    req.post? && req.path.match?(%r{\A/api/v1/guest_privacy_requests(?:\.[a-z0-9]+)?/*\z})
+  end
+  throttle("guest-privacy-challenge/ip", limit: 5, period: 15.minutes) do |req|
+    req.ip if guest_privacy_create.call(req)
+  end
+  throttle("guest-privacy-challenge/email-order", limit: 3, period: 15.minutes) do |req|
+    next unless guest_privacy_create.call(req)
+
+    begin
+      order_id = req.params["order_id"].to_s
+      email = Order.where(id: order_id).pick(:buyer_email).to_s.strip.downcase
+      Digest::SHA256.hexdigest("#{order_id}/#{email}") if order_id.present? && email.present?
+    rescue ActionController::BadRequest, Rack::QueryParser::ParserError
+      nil
+    end
+  end
+
   throttle("order-resend/ip", limit: 10, period: 10.minutes) do |req|
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/resend\z}) && req.post?
   end

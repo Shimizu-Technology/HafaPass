@@ -1,0 +1,648 @@
+# Explicit exceptions to the runnable purge-column inventory. Review each exception when expanding purge scope.
+tables:
+  accessible_seat_releases:
+    columns:
+    - evidence
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  acquisition_attributions:
+    columns:
+    - campaign
+    - medium
+    - source
+    - visitor_hash
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  admission_actions:
+    columns:
+    - credential_hash
+    - reason_code
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  admission_manifests:
+    columns:
+    - algorithm
+    - digest
+    - signature
+    - source_digest
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  apple_wallet_registrations:
+    columns:
+    - device_library_identifier
+    - push_token
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  audit_logs:
+    columns:
+    - auditable_type
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  balance_adjustments:
+    columns:
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  card_present_accounts:
+    columns:
+    - verification_evidence
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  card_present_payment_attempts:
+    columns:
+    - failure_code
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  catalog_item_holds:
+    columns:
+    - release_reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  catalog_items:
+    columns:
+    - description
+    - name
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  checkout_attempts:
+    columns:
+    - checkout_key_digest
+    - request_digest
+    - lease_token_digest
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  communication_campaigns:
+    columns:
+    - body
+    - name
+    - recipient_count
+    - segment
+    - subject
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  connected_accounts:
+    columns:
+    - capabilities
+    - details_submitted
+    - requirements_due
+    - payout_details
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  distribution_links:
+    columns:
+    - campaign
+    - code
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  distribution_partners:
+    columns:
+    - contact_email
+    - contact_name
+    - name
+    - slug
+    - website_url
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  event_cancellation_refund_items:
+    columns:
+    - last_error
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  event_changes:
+    columns:
+    - after_data
+    - before_data
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  event_day_rehearsal_reviews:
+    columns:
+    - application_revision
+    - assignments
+    - controls
+    - device_results
+    - door_sales_results
+    - event_state_digest
+    - evidence_digest
+    - evidence_reference
+    - incident_drills
+    - manifest_results
+    - reason
+    - reconciliation_results
+    - scan_results
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  event_price_zones:
+    columns:
+    - event_seating_configuration_id
+    - seating_price_zone_id
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  event_referrals:
+    columns:
+    - code
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  event_seats:
+    columns:
+    - event_seating_configuration_id
+    - status_reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  event_slug_redirects:
+    columns:
+    - slug
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  event_state_changes:
+    columns:
+    - metadata
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  event_waivers:
+    columns:
+    - body
+    - content_digest
+    - title
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  events:
+    columns:
+    - cover_image_url
+    - description
+    - localized_content
+    - recurrence_rule
+    - sales_suspension_reason
+    - short_description
+    - slug
+    - supported_locales
+    - title
+    - venue_address
+    - venue_city
+    - venue_name
+    - policy_hold_scope
+    - policy_hold_reason
+    - translations
+    - localized_content_sources
+    - page_customization
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  fee_components:
+    columns:
+    - provider_reference
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  guest_list_entries:
+    columns:
+    - added_by
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  image_upload_receipts:
+    columns:
+    - source_key
+    - final_key
+    - public_url
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  inventory_holds:
+    columns:
+    - release_reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  legal_holds:
+    columns:
+    - scope_type
+    - scope_value
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  live_money_proof_authorizations:
+    columns:
+    - application_revision
+    - buyer_email_digest
+    - event_state_digest
+    - platform_configuration_digest
+    - provider_state_digest
+    - revocation_reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  live_money_proof_reviews:
+    columns:
+    - application_revision
+    - communication_results
+    - controls
+    - entity_results
+    - evidence_digest
+    - evidence_reference
+    - platform_configuration_digest
+    - provider_results
+    - provider_state_digest
+    - reason
+    - reconciliation_results
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  live_pilot_incidents:
+    columns:
+    - evidence_digest
+    - evidence_reference
+    - summary
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  live_pilot_metric_snapshots:
+    columns:
+    - breached_thresholds
+    - evidence_digest
+    - evidence_reference
+    - external_metrics
+    - local_metrics
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  live_pilot_reviews:
+    columns:
+    - application_revision
+    - assignments
+    - controls
+    - event_state_digest
+    - evidence_digest
+    - evidence_reference
+    - reason
+    - support_coverage
+    - thresholds
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  live_pilot_run_actions:
+    columns:
+    - details
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  live_pilot_runs:
+    columns:
+    - abort_reason
+    - completion_evidence_digest
+    - completion_evidence_reference
+    - completion_results
+    - pause_reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  marketplace_collections:
+    columns:
+    - description
+    - seo_description
+    - seo_title
+    - slug
+    - title
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  marketplace_funnel_events:
+    columns:
+    - campaign
+    - medium
+    - source
+    - visitor_hash
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  message_deliveries:
+    columns:
+    - payload_digest
+    - template
+    - send_lease_token
+    - transport_context_digest
+    - wire_body_digest
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  message_provider_events:
+    columns:
+    - message_delivery_id
+    - provider_message_id
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  order_items:
+    columns:
+    - name
+    - tier_name
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  orders:
+    columns:
+    - buyer_fee_percent_snapshot
+    - buyer_terms_digest
+    - fee_policy_snapshot
+    - reference
+    - refund_reason
+    - source
+    - wallet_type
+    - cash_sale_request_digest
+    - checkout_key_digest
+    - checkout_request_digest
+    - processing_fee_bearer_snapshot
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  organization_memberships:
+    columns:
+    - invited_email
+    - pending_event_assignments
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  organizations:
+    columns:
+    - name
+    - slug
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  organizer_profiles:
+    columns:
+    - business_description
+    - business_name
+    - logo_url
+    - policy_digest
+    - verification_notes
+    - verification_requested_at
+    - verification_status
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  organizer_sales_export_requests:
+    columns:
+    - filters
+    - columns
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  organizer_tax_informations:
+    columns:
+    - tin_type
+    - exempt_payee_code
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  payment_readiness_reviews:
+    columns:
+    - controls
+    - evidence_digest
+    - evidence_reference
+    - liability_schedule_reference
+    - merchant_of_record
+    - provider_approval_reference
+    - provider_state_digest
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  payments:
+    columns:
+    - failure_code
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  payouts:
+    columns:
+    - failure_code
+    - failure_message
+    - payee_approval_digest
+    - tax_approval_digest
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  pilot_closeout_reviews:
+    columns:
+    - application_revision
+    - cleanup_results
+    - evidence_digest
+    - evidence_reference
+    - evidence_references
+    - expansion_scope
+    - local_metrics
+    - local_state_digest
+    - outcome_metrics
+    - reason
+    - reconciliation_results
+    - retrospective_actions
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  pilot_readiness_reviews:
+    columns:
+    - application_revision
+    - assignments
+    - controls
+    - event_state_digest
+    - evidence_digest
+    - evidence_reference
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  pilot_validation_reviews:
+    columns:
+    - accessibility_results
+    - application_revision
+    - buyer_flows
+    - controls
+    - device_matrix
+    - event_state_digest
+    - evidence_digest
+    - evidence_reference
+    - load_results
+    - organizer_flows
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  platform_capability_reviews:
+    columns:
+    - capability
+    - configuration_digest
+    - controls
+    - evidence_digest
+    - evidence_reference
+    - reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  platform_invitations:
+    columns:
+    - email
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  pricing_tiers:
+    columns:
+    - name
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  privacy_email_suppressions:
+    columns:
+    - email_digest
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  privacy_requests:
+    columns:
+    - guest_challenge_digest
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  promo_codes:
+    columns:
+    - code
+    - discount_type
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  promoters:
+    columns:
+    - code
+    - email
+    - name
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  reconciliation_exceptions:
+    columns:
+    - code
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  referral_attributions:
+    columns:
+    - campaign
+    - code_snapshot
+    - medium
+    - source
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  registration_questions:
+    columns:
+    - options
+    - prompt
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  registration_responses:
+    columns:
+    - answered_at
+    - kind_snapshot
+    - options_snapshot
+    - prompt_snapshot
+    - required_snapshot
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  runtime_executions:
+    columns:
+    - application_revision
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  runtime_throttle_buckets:
+    columns:
+    - key_hash
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  scanner_devices:
+    columns:
+    - identifier
+    - last_manifest_digest
+    - metadata
+    - name
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  seat_audit_events:
+    columns:
+    - metadata
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  seat_hold_sessions:
+    columns:
+    - event_seating_configuration_id
+    - source
+    - token_digest
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  seat_holds:
+    columns:
+    - release_reason
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  seating_price_zones:
+    columns:
+    - code
+    - color
+    - name
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  seating_rows:
+    columns:
+    - label
+    - seating_section_id
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  seating_sections:
+    columns:
+    - code
+    - name
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  settlement_items:
+    columns:
+    - description
+    - metadata
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  settlements:
+    columns:
+    - source_digest
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  site_settings:
+    columns:
+    - payment_mode
+    - platform_email
+    - platform_name
+    - platform_phone
+    - payout_schedule_text
+    - business_mailing_address
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_batches:
+    columns:
+    - description
+    - on_finish
+    - on_success
+    - on_failure
+    - metadata
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_blocked_executions:
+    columns:
+    - queue_name
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_failed_executions:
+    columns:
+    - error
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_jobs:
+    columns:
+    - queue_name
+    - class_name
+    - arguments
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_pauses:
+    columns:
+    - queue_name
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_processes:
+    columns:
+    - hostname
+    - metadata
+    - name
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_ready_executions:
+    columns:
+    - queue_name
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_recurring_tasks:
+    columns:
+    - key
+    - schedule
+    - command
+    - class_name
+    - arguments
+    - queue_name
+    - description
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_scheduled_executions:
+    columns:
+    - queue_name
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  solid_queue_semaphores:
+    columns:
+    - key
+    reason: Outside the application purge schedule; managed by its owning subsystem.
+  stripe_fee_evidences:
+    columns:
+    - context_digest
+    - evidence_digest
+    - fee_details
+    - last_error_code
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  ticket_transfers:
+    columns:
+    - token_version
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  ticket_types:
+    columns:
+    - description
+    - name
+    - translations
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  tickets:
+    columns:
+    - cancellation_reason
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.
+  users:
+    columns:
+    - clerk_id
+    - email
+    - first_name
+    - last_name
+    - phone
+    - clerk_profile_checked_at
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  venue_layouts:
+    columns:
+    - name
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  venue_seats:
+    columns:
+    - companion_group
+    - label
+    - seating_price_zone_id
+    - seating_row_id
+    - view_note
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  venue_slug_redirects:
+    columns:
+    - slug
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  venues:
+    columns:
+    - accessibility_notes
+    - address
+    - description
+    - name
+    - slug
+    - village
+    - website_url
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  waitlist_entries:
+    columns:
+    - email
+    - name
+    - phone
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  waitlist_offers:
+    columns:
+    - token_version
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  waiver_acceptances:
+    columns:
+    - content_digest
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  wallet_passes:
+    columns:
+    - serial_number
+    - authentication_token_digests
+    - content_digest
+    - content_updated_at
+    - synced_digest
+    - last_error
+    reason: Explicit keep rule; no automated purge is authorized for this table.
+  webhook_events:
+    columns:
+    - last_error
+    reason: Handled by the bespoke retention path or retained as an audit/financial identifier.

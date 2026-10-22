@@ -1,5 +1,39 @@
 require "rails_helper"
 
+RSpec.describe EmailService, "guest privacy challenge" do
+  it "sends synchronously without persisting the verification code or an email body" do
+    order = create(:order)
+    item = PrivacyRequest.create!(kind: "access", order: order, requester_email: order.buyer_email)
+    code = item.issue_guest_challenge!
+    allow(described_class).to receive(:configured?).and_return(false)
+    expect(MessageDeliveryJob).not_to receive(:perform_later)
+
+    delivery = described_class.send_guest_privacy_challenge_now(item, code)
+
+    expect(item.reload.guest_challenge_digest).to eq(Digest::SHA256.hexdigest(code))
+    expect(delivery.reload).to have_attributes(status: "sent", metadata: {}, outbound_payload: {},
+      outbound_wire_body: nil)
+    expect(delivery.attributes.to_json).not_to include(code)
+  end
+
+  it "passes the code only to the synchronous provider call" do
+    order = create(:order)
+    item = PrivacyRequest.create!(kind: "access", order: order, requester_email: order.buyer_email)
+    code = item.issue_guest_challenge!
+    allow(described_class).to receive(:configured?).and_return(true)
+    allow(described_class).to receive(:transport_context_digest).and_return("transport-digest")
+    allow(Resend::Emails).to receive(:send).and_return({ id: "provider-message-id" })
+
+    delivery = described_class.send_guest_privacy_challenge_now(item, code)
+
+    expect(Resend::Emails).to have_received(:send).with(hash_including("html" => include(code)),
+      options: { idempotency_key: delivery.idempotency_key })
+    expect(delivery.reload).to have_attributes(status: "sent", provider_id: "provider-message-id",
+      metadata: {}, outbound_payload: {}, outbound_wire_body: nil)
+    expect(delivery.attributes.to_json).not_to include(code)
+  end
+end
+
 RSpec.describe EmailService do
   it "groups large USD amounts in English and localized receipt emails" do
     order = create(:order, subtotal_cents: 1_000_00, service_fee_cents: 11_345_67, total_cents: 12_345_67)

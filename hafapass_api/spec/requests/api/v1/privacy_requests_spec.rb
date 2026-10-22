@@ -6,7 +6,7 @@ RSpec.describe "Privacy requests and holds", type: :request do
   let(:order) { create(:order, user: buyer, buyer_email: buyer.email) }
 
   before do
-    allow(EmailService).to receive(:send_guest_privacy_challenge_async)
+    allow(EmailService).to receive(:send_guest_privacy_challenge_now)
     allow(ClerkIdentity).to receive(:verified_email_addresses).and_return([buyer.email.downcase])
   end
 
@@ -52,7 +52,7 @@ RSpec.describe "Privacy requests and holds", type: :request do
   it "requires the emailed guest challenge and rejects admin-only verification" do
     guest = create(:order)
     code = nil
-    allow(EmailService).to receive(:send_guest_privacy_challenge_async) { |_item, value| code = value }
+    allow(EmailService).to receive(:send_guest_privacy_challenge_now) { |_item, value| code = value }
     post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
       guest_token: GuestOrderAccess.issue!(guest) }
     item = PrivacyRequest.last
@@ -83,6 +83,59 @@ RSpec.describe "Privacy requests and holds", type: :request do
       headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     expect(item.reload.status).to eq("completed")
+  end
+
+  it "refuses administrator confirmation when the environment forces dry run" do
+    item = PrivacyRequest.create!(kind: "deletion", user: buyer, requester_email: buyer.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DRY_RUN").and_return("true")
+    allow(S3Service).to receive(:delete_upload!)
+    allow(ClerkIdentity).to receive(:delete_user)
+    writes = []
+    callback = ->(_name, _started, _finished, _id, payload) {
+      writes << payload[:sql] if payload[:sql].to_s.match?(/\A\s*(INSERT|UPDATE|DELETE|ALTER|TRUNCATE)\b/i)
+    }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      post "/api/v1/admin/privacy_requests/#{item.id}/execute", params: { confirm_dry_run: true },
+        headers: auth_headers(admin)
+    end
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body["error"]).to include("DATA_RETENTION_DRY_RUN")
+    expect(writes).to be_empty
+    expect(item.reload.executed_at).to be_nil
+    expect(S3Service).not_to have_received(:delete_upload!)
+    expect(ClerkIdentity).not_to have_received(:delete_user)
+  end
+
+  it "throttles guest challenges per order and buyer email" do
+    guest = create(:order)
+    token = GuestOrderAccess.issue!(guest)
+    3.times do
+      post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
+        guest_token: token }
+      expect(response).to have_http_status(:created)
+    end
+    expect do
+      post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
+        guest_token: token }
+    end.not_to change(PrivacyRequest, :count)
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
+  it "throttles guest challenge creation per IP across orders" do
+    5.times do
+      guest = create(:order)
+      post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
+        guest_token: GuestOrderAccess.issue!(guest) }
+      expect(response).to have_http_status(:created)
+    end
+    another = create(:order)
+    expect do
+      post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: another.id,
+        guest_token: GuestOrderAccess.issue!(another) }
+    end.not_to change(PrivacyRequest, :count)
+    expect(response).to have_http_status(:too_many_requests)
   end
 
   it "does not let a buyer place or release a hold" do

@@ -79,7 +79,7 @@ class EmailService
       when "organization_invitation"
         send_organization_invitation(delivery.organization_membership, delivery: delivery)
       when "guest_privacy_challenge"
-        send_guest_privacy_challenge(delivery.privacy_request, delivery: delivery)
+        raise MessageWirePayload::Unavailable, "Guest challenge codes are sent only during issuance"
       when "privacy_request_confirmation"
         send_privacy_request_confirmation(delivery.privacy_request, delivery: delivery)
       when "platform_invitation"
@@ -118,16 +118,39 @@ class EmailService
       raise
     end
 
-    def send_guest_privacy_challenge_async(privacy_request, code)
+    def send_guest_privacy_challenge_now(privacy_request, code)
       delivery = create_delivery(privacy_request: privacy_request, template: "guest_privacy_challenge",
-        recipient: privacy_request.requester_email, metadata: { "code" => code },
+        recipient: privacy_request.requester_email,
         idempotency_key: "guest-privacy-challenge/#{privacy_request.id}")
-      MessageDeliveryJob.perform_later(delivery.id)
+      return delivery if delivery.suppressed?
+
+      delivery.preparing_outbound_payload = true
+      payload = send_guest_privacy_challenge(privacy_request, code: code, delivery: delivery)
+      delivery.preparing_outbound_payload = false
+      if configured?
+        if Rails.env.staging? && !ProviderRehearsal.email_payload_allowed?(payload)
+          raise ProviderDisabled, "Staging email is restricted to approved rehearsal recipients"
+        end
+        delivery.update!(provider: "resend", attempts: 1, provider_attempted_at: Time.current,
+          provider_outcome_unknown: true, transport_context_digest: transport_context_digest)
+        response = Resend::Emails.send(payload, options: { idempotency_key: delivery.idempotency_key })
+        provider_id = response[:id] || response["id"] if response.respond_to?(:[])
+        raise MessageDeliveryJob::UnknownProviderResult, "Provider acceptance did not include a message ID" if provider_id.blank?
+
+        delivery.update!(status: :sent, provider_id: provider_id, sent_at: Time.current, provider_outcome_unknown: false)
+      else
+        raise ProviderDisabled, "Production email is disabled" if Rails.env.production?
+
+        delivery.update!(provider: "simulated", attempts: 1, status: :sent, sent_at: Time.current)
+      end
       delivery
+    rescue StandardError => error
+      delivery&.update_columns(status: MessageDelivery.statuses.fetch("failed"), last_error: error.class.name,
+        failed_at: Time.current) unless delivery&.suppressed?
+      raise
     end
 
-    def send_guest_privacy_challenge(privacy_request, delivery:)
-      code = delivery.metadata.fetch("code")
+    def send_guest_privacy_challenge(privacy_request, code:, delivery:)
       html = email_wrapper("Verify your HåfaPass privacy request") do
         "<p>Your verification code is <strong>#{ERB::Util.html_escape(code)}</strong>. It expires in 15 minutes.</p>"
       end

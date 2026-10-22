@@ -18,27 +18,42 @@ class PrivacyRequestProcessor
     end
   end
 
+  def buyer_emails
+    @buyer_emails ||= [@request.requester_email, @request.user&.email].compact.map(&:downcase).uniq
+  end
+
+  def buyer_owned?(order)
+    buyer_emails.include?(order.buyer_email.to_s.downcase)
+  end
+
+  def related_privacy_requests
+    scope = PrivacyRequest.where("lower(requester_email) IN (?)", buyer_emails)
+    @request.user_id ? scope.or(PrivacyRequest.where(user_id: @request.user_id)) : scope
+  end
+
   def plan
     @plan ||= begin
       selected_orders = orders
       selected_tickets = selected_orders.flat_map do |order|
         order.tickets.select do |ticket|
           !ticket.transferred_away_from?(order) &&
-            (ticket.holder_email.blank? || ticket.holder_email.casecmp?(@request.requester_email))
+            (ticket.holder_email.present? ? buyer_emails.include?(ticket.holder_email.downcase) : buyer_owned?(order))
         end
       end
       ticket_ids = selected_tickets.map(&:id)
       order_note_ids = selected_orders.to_h do |order|
         ids = selected_tickets.select { |ticket| ticket.order_id == order.id }.map(&:id)
-        notes = SupportNote.where(order_id: order.id, ticket_id: [nil, *ids])
+        notes = SupportNote.where(order_id: order.id, ticket_id: buyer_owned?(order) ? [nil, *ids] : ids)
           .or(SupportNote.where(ticket_id: ids))
         [order.id, notes.pluck(:id)]
       end
       response_order_ids = selected_orders.filter_map do |order|
-        order.id if order.tickets.count == selected_tickets.count { |ticket| ticket.order_id == order.id }
+        order.id if buyer_owned?(order) &&
+          order.tickets.count == selected_tickets.count { |ticket| ticket.order_id == order.id }
       end
       order_ids = selected_orders.map(&:id)
-      delivery_ids = MessageDelivery.where(order_id: order_ids, ticket_id: [nil, *ticket_ids])
+      owned_order_ids = selected_orders.select { |order| buyer_owned?(order) }.map(&:id)
+      delivery_ids = MessageDelivery.where(order_id: owned_order_ids, ticket_id: [nil, *ticket_ids])
         .or(MessageDelivery.where(ticket_id: ticket_ids)).pluck(:id)
       email = @request.requester_email.downcase
       fragments = [email, @request.user&.first_name, @request.user&.last_name].compact
@@ -53,12 +68,12 @@ class PrivacyRequestProcessor
       else
         []
       end
-      audit = AuditLog.where(auditable_type: "Order", auditable_id: order_ids)
+      audit = AuditLog.where(auditable_type: "Order", auditable_id: owned_order_ids)
       audit = audit.or(AuditLog.where(auditable_type: "User", auditable_id: @request.user_id)) if @request.user_id
       audit = audit.or(AuditLog.where(auditable_type: "Ticket", auditable_id: ticket_ids))
-      request_ids = @request.user_id ? PrivacyRequest.where(user_id: @request.user_id).pluck(:id) : [@request.id]
+      request_ids = related_privacy_requests.pluck(:id)
       audit = audit.or(AuditLog.where(auditable_type: "PrivacyRequest", auditable_id: request_ids))
-      audit = audit.or(DataRetention.reconciliation_audits_for_orders(order_ids))
+      audit = audit.or(DataRetention.reconciliation_audits_for_orders(owned_order_ids))
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(email)}%"
       audit = audit.or(AuditLog.where("metadata::text ILIKE ? OR before_data::text ILIKE ? OR after_data::text ILIKE ?",
         pattern, pattern, pattern))
@@ -68,7 +83,7 @@ class PrivacyRequestProcessor
         recipient_delivery_ids: MessageDelivery.where("lower(recipient) = ?", email)
           .where.not(template: "privacy_request_confirmation").pluck(:id),
         metadata_delivery_ids: (MessageDelivery.where("metadata::text ILIKE ?", pattern).pluck(:id) |
-          DataRetention.reconciliation_digests_for_orders(selected_orders).pluck(:id)))
+          DataRetention.reconciliation_digests_for_orders(selected_orders.select { |order| buyer_owned?(order) }).pluck(:id)))
     end
   end
 
@@ -177,7 +192,9 @@ class PrivacyRequestProcessor
         {
           order: order.attributes.slice("id", "reference", "buyer_email", "buyer_name", "buyer_phone",
             "created_at", "completed_at", "status", "subtotal_cents", "service_fee_cents", "total_cents",
-            "refund_amount_cents", "marketing_opt_in"),
+            "refund_amount_cents", "marketing_opt_in").tap do |attributes|
+              attributes.except!("buyer_email", "buyer_name", "buyer_phone", "marketing_opt_in") unless buyer_owned?(order)
+            end,
           tickets: order.tickets.filter_map do |ticket|
             if plan.ticket_ids.include?(ticket.id)
               ticket.attributes.slice("id", "attendee_name", "attendee_email", "holder_email",
@@ -206,6 +223,9 @@ class PrivacyRequestProcessor
   end
 
   def execute!(actor:, request: nil, confirm_dry_run: false)
+    if ActiveModel::Type::Boolean.new.cast(ENV["DATA_RETENTION_DRY_RUN"]) && confirm_dry_run
+      raise Blocked, "DATA_RETENTION_DRY_RUN is enabled; administrator confirmation cannot execute this request"
+    end
     return preview if DataRetention.dry_run? && !confirm_dry_run
 
     raise Blocked, "Verify the requester before executing" unless @request.verified?
@@ -231,14 +251,18 @@ class PrivacyRequestProcessor
       metadata: { kind: @request.kind, status: @request.status, order_count: orders.count }, request: request)
     if @request.kind == "deletion"
       confirmations = MessageDelivery.where(privacy_request_id: @request.id)
-      confirmations.where(status: [:queued, :failed, :delayed])
-        .update_all(status: MessageDelivery.statuses.fetch("cancelled"))
-      MessageProviderEvent.where(message_delivery_id: confirmations.select(:id)).update_all(payload: {},
+      DataRetention.update_unheld(confirmations.where(status: [:queued, :failed, :delayed]),
+        status: MessageDelivery.statuses.fetch("cancelled"))
+      DataRetention.update_unheld(MessageProviderEvent.where(message_delivery_id: confirmations.select(:id)), payload: {},
         processing_error: nil, updated_at: Time.current)
-      confirmations.update_all(recipient: "deleted@privacy.invalid", metadata: {}, outbound_payload: {},
+      DataRetention.update_unheld(confirmations, recipient: "deleted@privacy.invalid", metadata: {}, outbound_payload: {},
         outbound_wire_body: nil, wire_body_digest: nil, updated_at: Time.current)
-      @request.update_columns(requester_email: "deleted+request-#{@request.id}@privacy.invalid",
-        guest_challenge_digest: nil, updated_at: Time.current)
+      related_privacy_requests.find_each do |item|
+        next if DataRetention.held?(item)
+
+        item.update_columns(requester_email: "deleted+request-#{item.id}@privacy.invalid",
+          guest_challenge_digest: nil, guest_challenge_expires_at: nil, result: {}, updated_at: Time.current)
+      end
     end
     @request
   end
@@ -260,20 +284,22 @@ class PrivacyRequestProcessor
       current_plan = plan
       PrivacyEmailSuppression.suppress!(@request.requester_email)
       current_plan.orders.each do |order|
-        DataRetention.anonymize_order!(order,
+        DataRetention.anonymize_order!(order, buyer_owned: buyer_owned?(order),
           eligible_ticket_ids: order.tickets.where(id: current_plan.ticket_ids).pluck(:id),
           eligible_support_note_ids: current_plan.order_note_ids.fetch(order.id),
           anonymize_responses: current_plan.response_order_ids.include?(order.id))
       end
-      WalletPass.where(id: current_plan.wallet_pass_ids).find_each(&:destroy!)
+      WalletPass.where(id: current_plan.wallet_pass_ids).find_each do |pass|
+        pass.destroy! unless DataRetention.held?(pass)
+      end
       redact_references!(current_plan, user)
       if user
-        EventFavorite.where(user_id: user.id).delete_all
-        OrganizerFollow.where(user_id: user.id).delete_all
-        EventReminder.where(user_id: user.id).delete_all
-        OrganizationMembership.where(user_id: user.id).update_all(user_id: nil,
+        [EventFavorite, OrganizerFollow, EventReminder].each do |model|
+          model.where(user_id: user.id).find_each { |record| record.delete unless DataRetention.held?(record) }
+        end
+        DataRetention.update_unheld(OrganizationMembership.where(user_id: user.id), user_id: nil,
           invited_email: "deleted+user-#{user.id}@privacy.invalid", updated_at: Time.current)
-        OrganizerProfile.where(user_id: user.id).update_all(user_id: nil, verification_notes: nil,
+        DataRetention.update_unheld(OrganizerProfile.where(user_id: user.id), user_id: nil, verification_notes: nil,
           updated_at: Time.current)
         user.update_columns(clerk_id: "deleted-user-#{user.id}", email: nil, first_name: nil,
           last_name: nil, phone: nil, updated_at: Time.current)
@@ -287,7 +313,8 @@ class PrivacyRequestProcessor
       begin
         S3Service.delete_upload!(upload.final_key)
         S3Service.delete_upload!(upload.source_key)
-        Event.where(id: upload.event_id, cover_image_url: upload.public_url).update_all(cover_image_url: nil) if upload.event_id
+        DataRetention.update_unheld(Event.where(id: upload.event_id, cover_image_url: upload.public_url),
+          cover_image_url: nil) if upload.event_id
         upload.destroy!
       rescue S3Service::UploadError, Aws::S3::Errors::ServiceError, Seahorse::Client::NetworkingError
         manual << "S3 upload deletion"
@@ -302,15 +329,15 @@ class PrivacyRequestProcessor
   end
 
   def redact_references!(current_plan, _user)
-    SupportNote.where(id: current_plan.event_note_ids).update_all(body: "[redacted]",
+    DataRetention.update_unheld(SupportNote.where(id: current_plan.event_note_ids), body: "[redacted]",
       retention_anonymized_at: Time.current, updated_at: Time.current)
-    AuditLog.where(id: current_plan.audit_ids).update_all(ip_address: nil,
+    DataRetention.update_unheld(AuditLog.where(id: current_plan.audit_ids), ip_address: nil,
       before_data: {}, after_data: {}, metadata: {}, retention_anonymized_at: Time.current,
       updated_at: Time.current)
-    MessageDelivery.where(id: current_plan.metadata_delivery_ids).update_all(metadata: {},
+    DataRetention.update_unheld(MessageDelivery.where(id: current_plan.metadata_delivery_ids), metadata: {},
       outbound_payload: {}, outbound_wire_body: nil, wire_body_digest: nil, updated_at: Time.current)
-    MessageDelivery.where(id: current_plan.recipient_delivery_ids)
-      .update_all(status: MessageDelivery.statuses.fetch("cancelled"), recipient: "deleted@privacy.invalid",
+    DataRetention.update_unheld(MessageDelivery.where(id: current_plan.recipient_delivery_ids),
+        status: MessageDelivery.statuses.fetch("cancelled"), recipient: "deleted@privacy.invalid",
         metadata: {}, outbound_payload: {}, outbound_wire_body: nil, wire_body_digest: nil,
         last_error: nil, updated_at: Time.current)
   end

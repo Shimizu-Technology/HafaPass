@@ -12,7 +12,7 @@ class Api::V1::GuestPrivacyRequestsController < ApplicationController
 
     item = PrivacyRequest.create!(kind: kind, order: order, requester_email: order.buyer_email)
     code = item.issue_guest_challenge!
-    EmailService.send_guest_privacy_challenge_async(item, code)
+    EmailService.send_guest_privacy_challenge_now(item, code)
     AuditLogger.record!(action: "privacy_request.submitted", auditable: item,
       metadata: { kind: kind, guest: true }, request: request)
     render json: item.as_json(only: [:id, :kind, :status, :created_at]), status: :created

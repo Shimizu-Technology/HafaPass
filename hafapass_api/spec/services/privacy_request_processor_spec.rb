@@ -61,6 +61,36 @@ RSpec.describe PrivacyRequestProcessor do
 
     expect(described_class.new(privacy_request).orders.map(&:id)).to contain_exactly(order.id, guest_order.id)
   end
+
+  it "shows an account-linked purchase without another buyer's contact and preserves that buyer on deletion" do
+    bob = create(:user)
+    order.update!(buyer_email: bob.email, buyer_name: "Bob Buyer", buyer_phone: "671-555-0199")
+    access = PrivacyRequest.create!(kind: "access", user: user, requester_email: user.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+    exported = described_class.new(access).export[:orders].first[:order]
+    expect(exported).to include("id" => order.id)
+    expect(exported.keys).not_to include("buyer_email", "buyer_name", "buyer_phone")
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(order.reload).to have_attributes(user_id: nil, buyer_email: bob.email,
+      buyer_name: "Bob Buyer", buyer_phone: "671-555-0199")
+  end
+
+  it "pseudonymizes earlier requests while keeping dates, type, and outcome" do
+    earlier = PrivacyRequest.create!(kind: "access", user: user, requester_email: user.email,
+      status: "completed", verified_at: 2.days.ago, executed_at: 1.day.ago,
+      result: { "personal_note" => user.email })
+    earlier_guest = PrivacyRequest.create!(kind: "access", order: order, requester_email: user.email,
+      status: "completed", verified_at: 3.days.ago, executed_at: 2.days.ago)
+    earlier_audit = AuditLogger.record!(action: "privacy_request.executed", auditable: earlier_guest,
+      actor: admin, metadata: { email: user.email })
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(earlier.reload).to have_attributes(kind: "access", status: "completed", result: {})
+    expect(earlier.requester_email).to end_with("@privacy.invalid")
+    expect(earlier.executed_at).to be_present
+    expect(earlier_guest.reload.requester_email).to end_with("@privacy.invalid")
+    expect(earlier_audit.reload.metadata).to eq({})
+    expect(privacy_request.reload.requester_email).to end_with("@privacy.invalid")
+  end
 end
 
 RSpec.describe PrivacyRequestProcessor, "review findings" do
@@ -78,6 +108,24 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
     allow(EmailService).to receive(:send_privacy_request_confirmation_async).and_return(
       build_stubbed(:message_delivery, id: 1))
     allow(MessageDeliveryJob).to receive(:perform_now)
+  end
+
+  it "keeps an order audit log whose actor has a user hold while processing other records" do
+    held_actor = create(:user)
+    held = AuditLogger.record!(action: "retention.held", auditable: order,
+      actor: held_actor, metadata: { note: "preserve" })
+    refund = create(:refund, order: order)
+    held_reconciliation = AuditLogger.record!(action: "refund_reconciliation.held", auditable: refund,
+      actor: held_actor, metadata: { note: "preserve reconciliation" })
+    ordinary = AuditLogger.record!(action: "retention.ordinary", auditable: order,
+      actor: admin, metadata: { note: "redact" })
+    LegalHold.place!(scope_type: "user", scope_value: held_actor.id,
+      reason: "Preserve actor evidence", actor: admin)
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(held.reload.metadata).to eq("note" => "preserve")
+    expect(held_reconciliation.reload.metadata).to eq("note" => "preserve reconciliation")
+    expect(ordinary.reload.metadata).to eq({})
+    expect(order.reload.buyer_email).to end_with("@privacy.invalid")
   end
 
   it "returns only a preview with zero writes and provider calls in dry-run mode" do
