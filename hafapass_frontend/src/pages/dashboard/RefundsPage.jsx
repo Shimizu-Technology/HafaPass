@@ -9,6 +9,7 @@ import { RotateCcw, DollarSign, Loader2, AlertTriangle, Check } from 'lucide-rea
 import apiClient from '../../api/client'
 import TestPaymentBadge from '../../components/TestPaymentBadge'
 import SupportLink from '../../components/SupportLink'
+import RefundReconciliationQueue from '../../components/RefundReconciliationQueue'
 import { partialRefundCents, refundConfirmLabel, ticketCountLabel } from '../../utils/eventToolFormat'
 
 const newRefundRequestKey = () => globalThis.crypto?.randomUUID?.() || `refund-${Date.now()}-${Math.random()}`
@@ -53,6 +54,7 @@ function RefundsPageSession({ eventId, identity }) {
  const legacyStorageKey = `hafapass:pending-refund:${identity.owner}:${eventId}`
  const storageKey = `hafapass:pending-refund:v2:${identity.owner}:${identity.organizationId ?? 'default'}:${eventId}`
  const authorizedEvent = useRef(false)
+ const [canRecordCash, setCanRecordCash] = useState(false)
  const [accessRefreshing, setAccessRefreshing] = useState(false)
  const importedLegacyKey = useRef(null)
  const [contextError, setContextError] = useState('')
@@ -61,6 +63,10 @@ function RefundsPageSession({ eventId, identity }) {
  const [cashInvalidField, setCashInvalidField] = useState(null)
  const [loadError, setLoadError] = useState('')
  const [orders, setOrders] = useState([])
+ const [queueItems, setQueueItems] = useState([])
+ const [queueMeta, setQueueMeta] = useState(null)
+ const [queuePage, setQueuePage] = useState(1)
+ const [queueError, setQueueError] = useState('')
  const listing = useOperationalListing(`refunds:${identity.owner}:${identity.organizationId}:${eventId}`)
  const [orderMeta, setOrderMeta] = useState(null)
  const [loading, setLoading] = useState(true)
@@ -72,10 +78,11 @@ function RefundsPageSession({ eventId, identity }) {
  const withdrawAccess = useCallback(message => {
   ++accessEpoch.current
   authorizedEvent.current = false
+  setCanRecordCash(false)
   requests.current.forEach(request => request.controller.abort())
   // The durable financial operation is retained unchanged. Access refusal is
   // not a provider verdict and cannot clear or replace its original identity.
-  setOrders([]); setRefundingId(null); setRefundRequestKey(null)
+  setOrders([]); setQueueItems([]); setQueueMeta(null); setRefundingId(null); setRefundRequestKey(null)
   setRefundForm(initialRefundForm())
   setNotice(''); setLoadError(''); setProcessing(false); setAccessRefreshing(false); setLoading(false)
   setContextError(message)
@@ -109,11 +116,15 @@ function RefundsPageSession({ eventId, identity }) {
   requests.current.forEach(request => request.controller.abort())
   const canApply = () => current() && generation === loadGeneration.current && epoch === accessEpoch.current
   setLoadError('')
+  setQueueError('')
   setContextError('')
   setProcessing(false)
   authorizedEvent.current = false
+  setCanRecordCash(false)
   setAccessRefreshing(true)
   setOrders([])
+  setQueueItems([])
+  setQueueMeta(null)
   try {
    const eventResponse = await requestApi('get', `/organizer/events/${eventId}`)
    if (!canApply()) return
@@ -122,6 +133,7 @@ function RefundsPageSession({ eventId, identity }) {
    }
    if (eventResponse.data.permissions?.refund !== true || eventResponse.data.permissions?.view_finance !== true) throw new Error('Refund access is not available for your role')
    authorizedEvent.current = true
+   setCanRecordCash(eventResponse.data.permissions.refund === true)
    try {
     const legacy = readSavedRefund(legacyStorageKey)
     const cached = readSavedRefund(storageKey)
@@ -152,15 +164,33 @@ function RefundsPageSession({ eventId, identity }) {
       if (!canApply()) return
    setOrders(res.data.orders || [])
    setOrderMeta(res.data.meta || null)
+   try {
+    const queue = await requestApi('get', '/organizer/refund_reconciliation', { params: { event_id: eventId, page: queuePage } })
+    if (!canApply()) return
+    setQueueItems(queue.data.items || [])
+    setQueueMeta(queue.data.meta || null)
+   } catch {
+    if (canApply()) setQueueError('Refund issues could not be loaded. Try again.')
+   }
   } catch {
    if (canApply()) {
     if (authorizedEvent.current) setLoadError('Orders could not be loaded. Please try again.')
     else setContextError('This event could not be authorized for the selected organization. Retry before viewing or processing refunds.')
    }
   } finally { if (canApply()) { setLoading(false); setAccessRefreshing(false) } }
- }, [eventId, requestApi, current, identity.organizationId, legacyStorageKey, storageKey, listing.q, listing.page])
+ }, [eventId, requestApi, current, identity.organizationId, legacyStorageKey, storageKey, listing.q, listing.page, queuePage])
 
  useEffect(() => { fetchOrders() }, [fetchOrders])
+
+ const recordQueueReturn = async (item, action, payload) => {
+  if (action !== 'manual_return' || !authorizedEvent.current) throw new Error('This action is not available.')
+  const response = await requestApi('post', `/organizer/refund_reconciliation/${encodeURIComponent(item.type)}/${item.id}/manual_return`, payload)
+  if (current()) {
+   setNotice('Manual return recorded. The buyer was repaid outside HåfaPass.')
+   await fetchOrders()
+  }
+  return response
+ }
 
  const partialAmountError = order => !pendingRequest && refundForm.type === 'partial' ? partialRefundCents(refundForm.amount, order.refundable_cents).error : null
  const handleRefund = async (orderId) => {
@@ -263,6 +293,14 @@ function RefundsPageSession({ eventId, identity }) {
     <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Refunds</h2>
     <p className="text-sm text-neutral-500 mt-1">Process full or partial refunds for completed orders</p>
    </div>
+
+   <section aria-labelledby="refund-issues-heading" className="mb-8">
+    <h3 id="refund-issues-heading" className="mb-1 text-lg font-semibold text-neutral-900">Refunds needing follow-up</h3>
+    <p className="mb-3 text-sm text-neutral-600">These buyers are still owed a refund. Record a cash or card return only after you have returned the money.</p>
+    {queueError && <p role="alert" className="mb-3 text-sm text-red-700">{queueError} <button type="button" className="min-h-11 font-semibold underline" onClick={fetchOrders}>Try again</button></p>}
+    {!queueError && <RefundReconciliationQueue items={queueItems} canRecordCash={canRecordCash} onAction={recordQueueReturn} busy={accessRefreshing} />}
+    <OperationalPagination meta={queueMeta && { ...queueMeta, total_count: queueMeta.total_count ?? queueMeta.total }} page={queuePage} onPage={setQueuePage} busy={accessRefreshing} label="Refund issue pages" />
+   </section>
 
    <OperationalSearch label="Find an order" buttonLabel="Search orders" hint="Search by order reference, order number, buyer name or email." query={listing.q} onSearch={listing.search} busy={processing || accessRefreshing} />
    {accessRefreshing && <p role="status" className="mb-3 text-sm text-neutral-700">Loading orders…</p>}

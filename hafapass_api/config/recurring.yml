@@ -20,6 +20,9 @@ default: &default
   sales_export_orphan_sweep:
     class: OrganizerSalesExportOrphanSweepJob
     schedule: every day at 01:00 UTC
+  refund_reconciliation:
+    class: RefundReconciliationJob
+    schedule: every day at 02:00 UTC
 
 production:
   <<: *default
