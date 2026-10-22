@@ -118,7 +118,7 @@ describe('provider readiness captured mutations', () => {
     expect(screen.queryByRole('button', { name: 'Retry administrator access' })).not.toBeInTheDocument()
   })
   it.each(['submit', 'revoke'])('pins the %s capability operation and its original payload to the current actor', async operation => {
-    const item = { ...capability(), pending_submission: null, required_controls: ['privacy_approved'] }
+    const item = { ...capability(), pending_submission: null, required_controls: ['policy_owner_approved'] }
     if (operation === 'revoke') item.latest_approval = { id: 92, active: true, evidence_reference: 'Current approval', expires_at: '2027-01-01T00:00:00Z' }
     apiClient.defaults.adapter = vi.fn(config => Promise.resolve(response(config, config.method === 'get' ? { capabilities: [item] } : {})))
     mount(entry); await screen.findByText('Email delivery')
@@ -138,7 +138,7 @@ describe('provider readiness captured mutations', () => {
     expect(config.headers.get('Authorization')).toBe('Bearer token-a')
     expect(config.signal).toBeInstanceOf(AbortSignal)
     expect(JSON.parse(config.data)).toMatchObject(operation === 'submit'
-      ? { evidence_reference: 'restricted/test-evidence', evidence_digest: 'a'.repeat(64), controls: { privacy_approved: true } }
+      ? { evidence_reference: 'restricted/test-evidence', evidence_digest: 'a'.repeat(64), controls: { policy_owner_approved: true } }
       : { reason: 'Synthetic correction' })
   })
   it('never transports a decision queued behind an old token after leaving the visit', async () => {

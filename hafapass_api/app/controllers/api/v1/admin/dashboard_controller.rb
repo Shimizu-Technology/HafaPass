@@ -54,14 +54,12 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
         configured = false
         help = "Fix the policy text first: #{blockers.join('; ')}"
       end
-      draft = key == "policy_register" && PolicyRegistry.draft?
       if expiring
         message = "The #{label.downcase} approval expires on #{approval.expires_at.to_date.to_fs(:long)}. " \
           "Approve again before then to keep it on."
       end
       { key: key, label: label, message: message, configured: configured, help: help,
-        expires_at: approval&.expires_at, expiring_soon: expiring ? true : false,
-        requires_draft_acknowledgment: draft, acknowledgment_text: draft ? PolicyRegistry::DRAFT_ACKNOWLEDGMENT : nil }
+        expires_at: approval&.expires_at, expiring_soon: expiring ? true : false }
     end
   end
 

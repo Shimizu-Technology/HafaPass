@@ -82,11 +82,11 @@ The FTC's [Part 464 FAQ](https://www.ftc.gov/business-guidance/resources/rule-un
 - [ ] Contract liability caps, indemnity, Guam venue, force majeure and version acceptance.
 - [ ] Record retention, legal holds and principal/agent accounting memo.
 
-## Live draft policy pages
+## Operative policy pages for professional review
 
-All pages should show a draft-review notice until professional approval: [Buyer Terms](https://hafapass.shimizu-technology.com/policies/buyer-terms) · [Refund & Cancellation](https://hafapass.shimizu-technology.com/policies/refunds) · [Privacy](https://hafapass.shimizu-technology.com/policies/privacy) · [Organizer Agreement](https://hafapass.shimizu-technology.com/policies/organizer-agreement) · [Acceptable Use](https://hafapass.shimizu-technology.com/policies/acceptable-use) · [Data Retention](https://hafapass.shimizu-technology.com/policies/retention) · [Cookie Notice](https://hafapass.shimizu-technology.com/policies/cookies) · [Accessibility](https://hafapass.shimizu-technology.com/policies/accessibility).
+Leon has designated the published policies operative effective October 22, 2026. Review the public version shown at each link: [Buyer Terms](https://hafapass.shimizu-technology.com/policies/buyer-terms) · [Refund & Cancellation](https://hafapass.shimizu-technology.com/policies/refunds) · [Privacy](https://hafapass.shimizu-technology.com/policies/privacy) · [Organizer Agreement](https://hafapass.shimizu-technology.com/policies/organizer-agreement) · [Acceptable Use](https://hafapass.shimizu-technology.com/policies/acceptable-use) · [Data Retention](https://hafapass.shimizu-technology.com/policies/retention) · [Cookie Notice](https://hafapass.shimizu-technology.com/policies/cookies) · [Accessibility](https://hafapass.shimizu-technology.com/policies/accessibility).
 
-The branch draft is **not live until integrated and deployed**. Any policy text/version change alters `PolicyRegistry` digests. Organizers must re-accept; the admin policy register requires a new approval of the exact snapshot. Buyer checkout records the new version/digest. Approval of draft text is an explicit operational acknowledgment, not legal signoff.
+This version appears on the site after deployment. Any policy text/version change alters `PolicyRegistry` digests. Organizers must re-accept; the admin policy register requires a new approval of the exact snapshot. Buyer checkout records the new version/digest. Owner and admin approvals are operational decisions, not legal signoff.
 
 ## October 22 policy findings and primary sources
 
@@ -106,7 +106,7 @@ This is engineering's practical review of version `2026-10-counsel-draft-3`, not
 
 The [Compiler's BPT chapter, 11 GCA §§26201–26203.2](https://col.guamcourts.gov/sites/default/files/11gc026_Q.pdf) shows the general rate step down to 4% on October 1, 2026, but the taxable base, class, small-business relief, and whether ticket gross belongs to the organizer remain CPA/DRT questions. The service fee is not described as a government tax in the policies. The [IRS 1099-K filer guidance](https://www.irs.gov/newsroom/form-1099-k-faqs-should-my-organization-be-preparing-filing-and-furnishing-form-1099-k) and [TIN matching guidance](https://www.irs.gov/government-entities/federal-state-local-governments/taxpayer-identification-number-tin-matching-tools) do not turn the app's W-9 collection into filing, matching or backup withholding.
 
-### Questions for counsel and CPA before Leon approves this register
+### Questions for counsel and CPA reviewing the operative register
 
 1. Is **Shimizu Technology LLC** the exact registered contracting and Stripe merchant entity, and is the configured support mailbox monitored? What postal address should appear on commercial mail?
 2. Is the agent-of-payee, Stripe-account-to-business-bank-to-check structure lawful and provider-approved? Which refunds, chargebacks, reserves and bank custody terms need revision?

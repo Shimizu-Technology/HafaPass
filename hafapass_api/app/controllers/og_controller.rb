@@ -11,6 +11,26 @@ class OgController < ApplicationController
     image_url = event.cover_image_url || "#{PublicSiteUrl.base}/og-default.jpg"
     canonical_url = PublicSiteUrl.event(event)
 
+    render_preview(title: title, description: description, image_url: image_url, canonical_url: canonical_url)
+  rescue ActiveRecord::RecordNotFound
+    render html: %(<script>window.location.replace("#{PublicSiteUrl.base}/events");</script>).html_safe,
+           content_type: "text/html", status: :not_found
+  end
+
+  def policy
+    document = PolicyRegistry.public_documents[params[:slug]]
+    raise ActiveRecord::RecordNotFound unless document
+
+    render_preview(title: document.fetch("title"), description: document.fetch("summary"),
+      image_url: "#{PublicSiteUrl.base}/og-default.jpg",
+      canonical_url: "#{PublicSiteUrl.base}/policies/#{params[:slug]}")
+  rescue ActiveRecord::RecordNotFound
+    head :not_found
+  end
+
+  private
+
+  def render_preview(title:, description:, image_url:, canonical_url:)
     html = <<~HTML
       <!DOCTYPE html>
       <html lang="en">
@@ -32,7 +52,7 @@ class OgController < ApplicationController
         <meta name="twitter:description" content="#{ERB::Util.html_escape(description)}" />
         <meta name="twitter:image" content="#{ERB::Util.html_escape(image_url)}" />
 
-        <script>window.location.replace("#{canonical_url}");</script>
+        <script>window.location.replace(#{ERB::Util.json_escape(canonical_url.to_json)});</script>
       </head>
       <body>
         <p>Redirecting to <a href="#{ERB::Util.html_escape(canonical_url)}">#{ERB::Util.html_escape(title)} on HåfaPass</a>...</p>
@@ -41,8 +61,5 @@ class OgController < ApplicationController
     HTML
 
     render html: html.html_safe, content_type: "text/html"
-  rescue ActiveRecord::RecordNotFound
-    render html: %(<script>window.location.replace("#{PublicSiteUrl.base}/events");</script>).html_safe,
-           content_type: "text/html", status: :not_found
   end
 end

@@ -75,13 +75,13 @@ describe('AdminDashboardPage', () => {
     expect(apiClient.get).toHaveBeenCalledTimes(2)
   })
 
-  it('requires the draft-policy acknowledgment before a quick approval and warns about expiring approvals in amber', async () => {
+  it('approves the policy register without an extra acknowledgment and warns about expiring approvals in amber', async () => {
     const user = userEvent.setup()
     const setup = [
       { key: 'policy_register', label: 'Production policy register', message: 'Checkout is off until you approve the production policy register.', configured: true, help: null,
-        requires_draft_acknowledgment: true, acknowledgment_text: 'I approve launching on draft policies and accept the business risk.', expires_at: null, expiring_soon: false },
+        expires_at: null, expiring_soon: false },
       { key: 'resend_production', label: 'Production email (Resend)', message: 'The production email approval expires on Nov 10, 2026. Approve again to keep email on.', configured: true, help: null,
-        requires_draft_acknowledgment: false, expires_at: '2026-11-10T00:00:00Z', expiring_soon: true },
+        expires_at: '2026-11-10T00:00:00Z', expiring_soon: true },
     ]
     apiClient.get.mockResolvedValue({ data: { ...dashboard, setup_required: setup } })
     apiClient.post.mockResolvedValue({ data: { capability: 'policy_register', approved: true } })
@@ -94,10 +94,10 @@ describe('AdminDashboardPage', () => {
     await user.click(within(outage).getByRole('button', { name: /Approve now/ }))
     const dialog = screen.getByRole('dialog', { name: 'Approve Production policy register?' })
     const confirm = within(dialog).getByRole('button', { name: 'Approve' })
-    expect(confirm).toBeDisabled()
-    await user.click(within(dialog).getByRole('checkbox', { name: 'I approve launching on draft policies and accept the business risk.' }))
+    expect(confirm).toBeEnabled()
+    expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument()
     await user.click(confirm)
-    expect(apiClient.post).toHaveBeenCalledWith('/admin/platform_capabilities/policy_register/quick_approve', { draft_policies_acknowledged: true }, expect.anything())
+    expect(apiClient.post).toHaveBeenCalledWith('/admin/platform_capabilities/policy_register/quick_approve', {}, expect.anything())
   })
 
   it('verifies a waiting organizer with an optional note, then refreshes', async () => {

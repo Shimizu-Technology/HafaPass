@@ -485,6 +485,7 @@
     "Footer": {
       "buyerTerms": "Buyer Terms",
       "refunds": "Refunds",
+      "organizerAgreement": "Organizer Agreement",
       "accessibility": "Accessibility",
       "cookies": "Cookies"
     },
@@ -770,11 +771,10 @@
       "weCouldNotLoadTheAuthoritativePolicy": "We could not load the authoritative policy text. Please retry before purchasing or publishing.",
       "retry": "Retry",
       "loadingPolicy": "Loading policy",
-      "version": "{{status}} · version {{version}}",
-      "draftPendingLegalReviewThisTextHas": "Draft pending legal review. This text has not yet been approved by Guam or US counsel.",
+      "effective": "Effective",
+      "versionLabel": "Version {{version}}",
       "otherPolicies": "Other policies",
-      "policy": "Policy",
-      "draftPolicy": "Draft policy"
+      "policy": "Policy"
     }
   },
   "buyerAccount": {
