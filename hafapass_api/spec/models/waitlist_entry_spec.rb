@@ -61,6 +61,8 @@ RSpec.describe WaitlistEntry, type: :model do
 
   describe "#notify!" do
     it "updates status, notified_at, and expires_at" do
+      event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+        marketing_address_certified_at: Time.current)
       entry = WaitlistEntry.transaction { WaitlistEntry.create!(event: event, email: "notify@test.com", quantity: 1) }
       expect(entry.status).to eq("waiting")
 
@@ -70,6 +72,17 @@ RSpec.describe WaitlistEntry, type: :model do
       expect(entry.notified_at).to be_present
       expect(entry.expires_at).to be > Time.current
       expect(entry.expires_at).to be < 25.hours.from_now
+    end
+  end
+
+  describe "#notify_and_queue!" do
+    it "leaves the entry waiting when queuing raises" do
+      event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+        marketing_address_certified_at: Time.current)
+      entry = create(:waitlist_entry, event: event)
+      allow(EmailService).to receive(:send_waitlist_notification_async).and_raise(StandardError, "queue unavailable")
+      expect { entry.notify_and_queue! }.to raise_error(StandardError, "queue unavailable")
+      expect(entry.reload).to be_waiting
     end
   end
 

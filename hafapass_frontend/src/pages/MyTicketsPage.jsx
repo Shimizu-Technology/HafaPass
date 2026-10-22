@@ -3,7 +3,7 @@ import MachineTranslationNotice from '../components/MachineTranslationNotice'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight, Download } from 'lucide-react'
 import { useAuth, useClerk } from '@clerk/clerk-react'
 import apiClient from '../api/client'
@@ -36,6 +36,7 @@ export default function MyTicketsPage() {
 
 function MyTicketsContent({ refreshSession, signOut }) {
   const { t } = useTranslation()
+  const reducedMotion = useReducedMotion()
   const location = useLocation()
   const navigate = useNavigate()
   const [signedOut, setSignedOut] = useState(false)
@@ -246,7 +247,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
   function getStatusBadge(status) {
     switch (status) {
       case 'issued':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700">{t('buyerAccount.myTicketsPage.valid')}</span>
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-900">{t('buyerAccount.myTicketsPage.valid')}</span>
       case 'checked_in':
         return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600">{t('buyerAccount.myTicketsPage.used')}</span>
       case 'cancelled':
@@ -279,7 +280,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
       {/* Light content */}
       <div className="bg-neutral-50 min-h-[40vh]">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="max-w-3xl mx-auto px-4 py-8"
         >
@@ -354,7 +355,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
               return (
                 <StaggerItem key={event.id}>
                 <motion.div
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={reducedMotion ? false : { opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
                   className="card overflow-hidden"
@@ -370,7 +371,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
                           {formatTime(event.starts_at, event)}
                         </p>
                         {event.venue_name && (
-                          <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
+                          <p className="text-sm text-neutral-700 flex items-center gap-1.5 mt-0.5">
                             <MapPin className="w-3.5 h-3.5" />
                             {event.venue_name}
                           </p>
@@ -397,23 +398,26 @@ function MyTicketsContent({ refreshSession, signOut }) {
                             <p className="text-sm font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                             {ticket.seat && <p className="text-xs font-semibold text-brand-700">{ticket.seat.display_label}</p>}
                             {ticket.attendee_name && (
-                              <p className="text-xs text-neutral-500">{ticket.attendee_name}</p>
+                              <p className="text-xs text-neutral-700">{ticket.attendee_name}</p>
                             )}
                           </div>
                         </Link>
                         <div className="flex items-center space-x-2">
                           {getStatusBadge(ticket.status)}
-                          {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast && <button type="button" onClick={() => setTransferTarget({ ticket, event })} className="min-h-11 px-2 text-xs font-semibold text-brand-700 rounded-lg transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-brand-50">{t('buyerAccount.myTicketsPage.transfer')}</button>}
+                          {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast && <button type="button" onClick={() => setTransferTarget({ ticket, event })} className="min-h-11 px-2 text-xs font-semibold text-brand-900 rounded-lg transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-brand-50">{t('buyerAccount.myTicketsPage.transfer')}</button>}
                           <Link
                             to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
-                            className="p-1.5 text-neutral-400 hover:text-brand-500 transition-colors rounded-lg hover:bg-brand-50"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-brand-50 hover:text-brand-800"
+                            aria-label={`${t('buyerAccount.myTicketsPage.openTicketToDownload')} #${ticket.id}`}
                             title={t('buyerAccount.myTicketsPage.openTicketToDownload')}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <Download className="h-4 w-4" />
+                            <Download aria-hidden="true" className="h-4 w-4" />
                           </Link>
-                          <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}>
-                            <ChevronRight className="h-4 w-4 text-neutral-400" />
+                          <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
+                            aria-label={`${t('buyerAccount.myTicketsPage.tabs.tickets')}: ${ticket.ticket_type.name}, #${ticket.id}`}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-neutral-600 hover:bg-brand-50 hover:text-brand-800">
+                            <ChevronRight aria-hidden="true" className="h-4 w-4" />
                           </Link>
                         </div>
                       </div>

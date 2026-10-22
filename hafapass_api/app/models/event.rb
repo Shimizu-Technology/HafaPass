@@ -416,6 +416,7 @@ class Event < ApplicationRecord
 
   # Check if tickets are available and notify next waitlisted people
   def notify_waitlist_if_available
+    return unless WaitlistDelivery.address_ready?(self)
     ticket_types.each do |tt|
       next unless tt.available_quantity > 0
 
@@ -426,12 +427,9 @@ class Event < ApplicationRecord
         .limit(tt.available_quantity)
 
       entries.each do |entry|
-        entry.with_lock do
-          next unless entry.waiting?
-
-          entry.notify!
-          EmailService.send_waitlist_notification_async(entry)
-        end
+        entry.notify_and_queue!
+      rescue WaitlistDelivery::AddressMissing
+        break
       end
     end
   end

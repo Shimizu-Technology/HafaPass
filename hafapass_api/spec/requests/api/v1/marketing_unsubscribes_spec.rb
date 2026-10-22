@@ -1,6 +1,19 @@
 require "rails_helper"
 
 RSpec.describe "Marketing unsubscribe", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
+  it "accepts a one-click opt-out after more than 30 days" do
+    organization = create(:organization)
+    token = MarketingUnsubscribe.token(organization: organization, email: "buyer@example.com")
+
+    travel 31.days do
+      post "/api/v1/marketing/unsubscribe/#{token}", params: { "List-Unsubscribe" => "One-Click" }
+      expect(response).to have_http_status(:ok)
+      expect(MarketingUnsubscribe.exists?(organization: organization, email: "buyer@example.com")).to be(true)
+    end
+  end
+
   it "accepts a signed public link and scopes it to the organizer and address" do
     first = create(:organization)
     second = create(:organization)

@@ -24,6 +24,43 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
     render json: organization_json(organization, membership&.role)
   end
 
+  def update
+    organization = OrganizationContext.resolve(
+      user: current_user,
+      requested_id: request.headers["X-Organization-Id"].presence || params[:organization_id].presence
+    )
+    return render json: { error: "Organization membership required" }, status: :forbidden unless organization
+    unless OrganizationAuthorization.allowed?(user: current_user, organization: organization, permission: :manage_organization)
+      return render json: { error: "Only the organization owner can set the marketing postal address" }, status: :forbidden
+    end
+
+    address = params.require(:organization).permit(:marketing_mailing_address)[:marketing_mailing_address].to_s.strip
+    before_address = organization.marketing_mailing_address
+    before_certified_at = organization.marketing_address_certified_at
+    submitted_certification = ActiveModel::Type::Boolean.new.cast(params.dig(:organization, :certified))
+    organization.marketing_mailing_address = address.presence
+    organization.marketing_address_certified_at =
+      submitted_certification ? Time.current : nil
+    saved = Organization.transaction do
+      if organization.save
+        AuditLogger.record!(action: "organization.marketing_postal_address_updated", auditable: organization,
+          actor: current_user, request: request,
+          before_data: { marketing_mailing_address: before_address, marketing_address_certified_at: before_certified_at },
+          after_data: { marketing_mailing_address: organization.marketing_mailing_address,
+            marketing_address_certified_at: organization.marketing_address_certified_at,
+            submitted_certification: submitted_certification })
+        true
+      else
+        false
+      end
+    end
+    if saved
+      render json: organization_json(organization, organization.organization_memberships.find_by(user: current_user)&.role)
+    else
+      render json: { errors: organization.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
   private
 
   def organization_json(organization, role)
@@ -37,6 +74,8 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
       role: role,
       permissions: OrganizationAuthorization.permissions_for(user: current_user, organization: organization),
       payout_ready: organization.payout_ready?,
+      marketing_mailing_address: organization.marketing_mailing_address,
+      marketing_address_ready: organization.marketing_postal_address_ready?,
       fee_change_notice: fee_change_notice(organization, role),
       admin_view: current_user.admin? && role.nil?
     }

@@ -83,6 +83,8 @@ module Commerce
           end
           @checkout_attempt.verify_owner!(@checkout_lease_token) unless @checkout_attempt.order_id
         end
+        # Only offer claims need the organization rank before the event.
+        event.organization.lock! if waitlist_offer_token.present?
         # Serialize capacity decisions while permitting FK key-share checks in
         # an independent seat-release transaction waiting on this checkout.
         event.lock!("FOR NO KEY UPDATE")
@@ -336,11 +338,40 @@ module Commerce
         raise CheckoutError, "Waitlist offers cannot be combined with an assigned-seat hold"
       end
       enforce_offer_selection!(offer) if offer
-      normalized_quantities.sort.map do |ticket_type_id, quantity|
+      quantities = normalized_quantities.sort
+      # docs/LOCKING.md: acquire every ticket type before any tier or seat
+      # session, including checkouts with several ticket types.
+      ticket_types = quantities.to_h do |ticket_type_id, _quantity|
         ticket_type = event.ticket_types.lock.find_by(id: ticket_type_id)
         raise CheckoutError, "Ticket type #{ticket_type_id} not found for this event" unless ticket_type
+
+        [ticket_type_id, ticket_type]
+      end
+      provisional_session = Seating::Credential.find_session(seat_hold_token) if seat_hold_token.present?
+      provisional_holds = provisional_session&.seat_holds&.status_active&.includes(:pricing_tier)&.to_a || []
+      tiers = quantities.to_h do |ticket_type_id, _quantity|
+        ticket_type = ticket_types.fetch(ticket_type_id)
+        seat_hold = provisional_holds.find { |hold| hold.event_seat.ticket_type_id == ticket_type_id }
+        tier = if complimentary
+          nil
+        elsif seat_hold
+          seat_hold.pricing_tier
+        else
+          ticket_type.active_pricing_tier
+        end
+        [ticket_type_id, tier]
+      end
+      tiers.values.compact.uniq(&:id).sort_by(&:id).each(&:lock!)
+      seat_hold_session_for_checkout if seat_hold_token.present?
+
+      quantities.map do |ticket_type_id, quantity|
+        ticket_type = ticket_types.fetch(ticket_type_id)
         raise CheckoutError, "#{ticket_type.name} is not currently on sale" unless ticket_type.on_sale?
         seat_holds = seat_hold_selection(ticket_type.id)
+        if seat_holds.map(&:id).sort != provisional_holds.select { |hold| hold.event_seat.ticket_type_id == ticket_type_id }.map(&:id).sort ||
+            (!complimentary && seat_holds.any? && seat_holds.first.pricing_tier_id != tiers[ticket_type_id]&.id)
+          raise CheckoutError, "Your seat hold changed; retry checkout"
+        end
         reserved_seat_quantity = seat_holds.length
         available = ticket_type.available_quantity + reserved_seat_quantity +
           (offer&.ticket_type_id == ticket_type.id ? offer.quantity : 0)
@@ -353,14 +384,7 @@ module Commerce
         enforce_door_allocation!(ticket_type, quantity) if source == "box_office"
         enforce_buyer_limit!(ticket_type, quantity)
 
-        tier = if complimentary
-          nil
-        elsif seat_holds.any?
-          seat_holds.first.pricing_tier
-        else
-          ticket_type.active_pricing_tier
-        end
-        tier&.lock!
+        tier = tiers[ticket_type_id]
         if tier&.quantity_based?
           enforce_pricing_tier_capacity!(tier, quantity, offer: offer, reserved_seat_quantity: reserved_seat_quantity)
         end
@@ -415,10 +439,11 @@ module Commerce
       offer = WaitlistCredential.find_offer(waitlist_offer_token)
       raise CheckoutError, "This waitlist offer is invalid or expired" unless offer
 
-      offer.lock!
-      unless offer.active? && offer.event_id == event.id &&
-          offer.waitlist_entry.email.casecmp?(buyer_email.to_s.strip)
-        raise CheckoutError, "This waitlist offer is invalid or expired"
+      WaitlistLocks.with(entry: offer.waitlist_entry, offer: offer) do
+        unless offer.active? && offer.event_id == event.id &&
+            offer.waitlist_entry.email.casecmp?(buyer_email.to_s.strip)
+          raise CheckoutError, "This waitlist offer is invalid or expired"
+        end
       end
 
       offer
@@ -855,6 +880,7 @@ module Commerce
     end
 
     def finish_failed_provider_setup!(order, payment, lease_token, error, rejected:)
+      fail_order = false
       Order.transaction do
         order.lock!
         payment.lock!
@@ -863,11 +889,14 @@ module Commerce
 
         payment.update!(provider_payload: payload.except("setup_lease_token", "setup_lease_expires_at"))
         if rejected
-          OrderLifecycle.fail!(order, payment: payment, failure_code: "payment_setup_failed", failure_message: error.message,
-            reason: "payment_setup_failed")
+          fail_order = true
         elsif order.pending? && payment.pending?
           payment.update!(failure_code: "payment_setup_result_unknown", failure_message: error.message)
         end
+      end
+      if fail_order
+        OrderLifecycle.fail!(order, payment: payment, failure_code: "payment_setup_failed", failure_message: error.message,
+          reason: "payment_setup_failed")
       end
     end
 

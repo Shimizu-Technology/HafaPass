@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1108,7 +1108,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
     t.string "wire_body_digest"
     t.bigint "organization_membership_id"
     t.bigint "platform_invitation_id"
+    t.datetime "reconciled_at"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
+    t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY ((ARRAY['waitlist_notification'::character varying, 'waitlist_offer'::character varying])::text[])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
     t.index ["order_id", "created_at"], name: "index_message_deliveries_on_order_id_and_created_at"
@@ -1288,6 +1290,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
     t.integer "status", default: 0, null: false
     t.string "timezone", default: "Pacific/Guam", null: false
     t.datetime "updated_at", null: false
+    t.text "marketing_mailing_address"
+    t.datetime "marketing_address_certified_at"
     t.index ["slug"], name: "index_organizations_on_slug", unique: true
     t.check_constraint "char_length(currency::text) = 3", name: "organizations_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organizations_status_valid"
@@ -2446,6 +2450,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.string "locale", default: "en", null: false
+    t.datetime "requested_at"
+    t.string "request_ip"
+    t.text "request_user_agent"
+    t.string "delivery_failure"
     t.index ["event_id", "ticket_type_id", "email"], name: "idx_waitlist_unique_entry", unique: true
     t.index ["event_id", "ticket_type_id", "position"], name: "idx_on_event_id_ticket_type_id_position_e28bca8bda"
     t.index ["event_id"], name: "index_waitlist_entries_on_event_id"
@@ -2468,6 +2476,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
     t.integer "unit_price_cents", null: false
     t.datetime "updated_at", null: false
     t.bigint "waitlist_entry_id", null: false
+    t.string "cancel_reason"
     t.index ["event_id"], name: "index_waitlist_offers_on_event_id"
     t.index ["order_id"], name: "index_waitlist_offers_on_order_id"
     t.index ["pricing_tier_id"], name: "index_waitlist_offers_on_pricing_tier_id"
