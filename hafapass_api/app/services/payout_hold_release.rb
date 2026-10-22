@@ -20,7 +20,7 @@ class PayoutHoldRelease
           end
 
           liability = EventCancellationRefunds.liability_snapshot(payout.event)
-          if liability[:unresolved]
+          if liability[:unresolved] || RefundReconciliationQueue.outstanding_for_event?(payout.event)
             confirmed = !automatic && sent_before_cancellation_confirmed == true &&
               cancellation_payout_reason.to_s.strip.present?
             unless confirmed

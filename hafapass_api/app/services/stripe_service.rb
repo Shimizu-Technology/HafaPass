@@ -100,6 +100,13 @@ class StripeService
       match
     end
 
+    def retrieve_refund(refund_id, payment:)
+      raise PaymentError, "Simulated refunds cannot be reconciled with Stripe" if payment.provider_environment == "simulate"
+
+      client, options = operation_client(payment: payment, settings: SiteSetting.instance)
+      client.v1.refunds.retrieve(refund_id, {}, options)
+    end
+
     def cancel_payment_intent(payment_intent_id, idempotency_key:, payment: nil)
       settings = SiteSetting.instance
       if Rails.env.staging? && !payment_intent_id.start_with?("sim_") && !ProviderRehearsal.stripe_enabled?
