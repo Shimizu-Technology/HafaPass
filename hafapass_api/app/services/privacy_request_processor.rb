@@ -9,7 +9,8 @@ class PrivacyRequestProcessor
 
   def orders
     @orders ||= if @request.user_id
-      Order.where(user_id: @request.user_id).order(:id).to_a
+      Order.where(user_id: @request.user_id).or(
+        Order.where(user_id: nil).where("lower(buyer_email) = ?", @request.requester_email.downcase)).order(:id).to_a
     else
       [@request.order].compact
     end
@@ -18,6 +19,9 @@ class PrivacyRequestProcessor
   def blockers
     items = []
     items << "A legal hold covers the account" if @request.user && LegalHold.for_user?(@request.user)
+    if LegalHold.active.exists?(scope_type: "buyer_email", scope_value: @request.requester_email.downcase)
+      items << "A legal hold covers the verified email address"
+    end
     if @request.user && (@request.user.admin? || @request.user.support?)
       items << "Transfer the platform role before deleting this account"
     end

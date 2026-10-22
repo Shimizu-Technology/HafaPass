@@ -53,4 +53,10 @@ RSpec.describe PrivacyRequestProcessor do
     expect(data[:orders].first[:order]).to include("id" => order.id)
     expect(data[:saved_events].first).to include("id" => favorite.id)
   end
+
+  it "includes guest orders sent to the verified account email" do
+    guest_order = create(:order, user: nil, buyer_email: user.email.upcase)
+
+    expect(described_class.new(privacy_request).orders.map(&:id)).to contain_exactly(order.id, guest_order.id)
+  end
 end
