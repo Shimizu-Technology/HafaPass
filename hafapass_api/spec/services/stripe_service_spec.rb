@@ -74,7 +74,7 @@ RSpec.describe StripeService do
 
   describe ".find_refund" do
     let(:refunds_api) { double("refunds API") }
-    let(:list) { double("paginated refund list") }
+    let(:created) { Time.current.change(usec: 0) }
 
     before do
       settings = instance_double(SiteSetting, simulate_mode?: false, live_mode?: false,
@@ -82,37 +82,60 @@ RSpec.describe StripeService do
       allow(SiteSetting).to receive(:instance).and_return(settings)
       client = instance_double(Stripe::StripeClient, v1: double("v1 services", refunds: refunds_api, accounts: accounts_api))
       allow(Stripe::StripeClient).to receive(:new).with("sk_test_lookup").and_return(client)
-      allow(refunds_api).to receive(:list).with({ payment_intent: "pi_lookup", limit: 100 }, {}).and_return(list)
     end
 
-    it "looks through every page and matches the durable operation metadata rather than the amount" do
-      unrelated = OpenStruct.new(id: "re_other", amount: 1000, metadata: { "hafapass_refund_key" => "other-key" })
-      matching = OpenStruct.new(id: "re_found", amount: 1000, metadata: { "hafapass_refund_key" => "our-key" })
-      allow(list).to receive(:auto_paging_each).and_yield(unrelated).and_yield(matching)
+    it "matches the durable operation metadata and the expected amount and time" do
+      unrelated = OpenStruct.new(id: "re_other", amount: 1000, created: created.to_i,
+        metadata: { "hafapass_refund_key" => "other-key" })
+      matching = OpenStruct.new(id: "re_found", amount: 1000, created: created.to_i,
+        metadata: { "hafapass_refund_key" => "our-key" })
+      allow(refunds_api).to receive(:list).and_return(OpenStruct.new(data: [unrelated, matching], has_more: false))
 
-      expect(described_class.find_refund("pi_lookup", idempotency_key: "our-key")).to eq(matching)
-      expect(list).to have_received(:auto_paging_each)
+      expect(described_class.find_refund("pi_lookup", idempotency_key: "our-key",
+        expected_amount_cents: 1000, expected_created_at: created)).to eq(matching)
     end
 
-    it "returns no match only after scanning all provider refunds" do
-      allow(list).to receive(:auto_paging_each).and_yield(OpenStruct.new(metadata: {}))
+    it "returns no match after scanning a complete page" do
+      allow(refunds_api).to receive(:list).and_return(OpenStruct.new(data: [OpenStruct.new(metadata: {})], has_more: false))
       expect(described_class.find_refund("pi_lookup", idempotency_key: "missing-key")).to be_nil
     end
 
-    it "continues past null metadata to recover a matching refund on a later page" do
-      unrelated = OpenStruct.new(id: "re_no_metadata", metadata: nil)
-      matching = OpenStruct.new(id: "re_after_null", metadata: { "hafapass_refund_key" => "our-key" })
-      allow(list).to receive(:auto_paging_each).and_yield(unrelated).and_yield(matching)
+    it "finds a later-page refund using amount and creation time when metadata is missing" do
+      unrelated = OpenStruct.new(id: "re_no_metadata", amount: 500, created: created.to_i, metadata: nil)
+      matching = OpenStruct.new(id: "re_after_null", amount: 1000, created: created.to_i, metadata: nil)
+      allow(refunds_api).to receive(:list).and_return(
+        OpenStruct.new(data: [unrelated], has_more: true), OpenStruct.new(data: [matching], has_more: false))
 
-      expect(described_class.find_refund("pi_lookup", idempotency_key: "our-key")).to eq(matching)
+      expect(described_class.find_refund("pi_lookup", idempotency_key: "our-key",
+        expected_amount_cents: 1000, expected_created_at: created)).to eq(matching)
+      expect(refunds_api).to have_received(:list).with({ payment_intent: "pi_lookup", limit: 100,
+        starting_after: "re_no_metadata" }, {})
     end
 
     it "quarantines duplicate metadata matches instead of guessing one operation" do
       first = OpenStruct.new(id: "re_one", metadata: { "hafapass_refund_key" => "duplicate-key" })
       second = OpenStruct.new(id: "re_two", metadata: { "hafapass_refund_key" => "duplicate-key" })
-      allow(list).to receive(:auto_paging_each).and_yield(first).and_yield(second)
+      allow(refunds_api).to receive(:list).and_return(OpenStruct.new(data: [first, second], has_more: false))
       expect { described_class.find_refund("pi_lookup", idempotency_key: "duplicate-key") }
         .to raise_error(described_class::PaymentError, /Multiple provider refunds/)
+    end
+
+    it "stops after three pages and flags an incomplete lookup for manual review" do
+      allow(refunds_api).to receive(:list) do |params, _options|
+        OpenStruct.new(data: [OpenStruct.new(id: "re_#{params[:starting_after] || 'first'}", metadata: {})], has_more: true)
+      end
+      expect { described_class.find_refund("pi_lookup", idempotency_key: "missing-key") }
+        .to raise_error(described_class::AmbiguousRefund, /pagination limit/)
+      expect(refunds_api).to have_received(:list).exactly(3).times
+    end
+
+    it "counts platform verification and refuses a list call beyond the budget" do
+      budget = described_class::CallBudget.new(1)
+      expect(refunds_api).not_to receive(:list)
+      expect do
+        described_class.find_refund("pi_lookup", idempotency_key: "missing-key", call_budget: budget)
+      end.to raise_error(described_class::BudgetExceeded)
+      expect(budget.calls).to eq(1)
     end
   end
   it "routes an old test payment by its snapshot after the global mode changes" do

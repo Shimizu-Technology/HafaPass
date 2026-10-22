@@ -42,12 +42,9 @@ const CONTROL_LABELS = {
   oauth_scope_reviewed: 'OAuth permissions reviewed',
   live_low_value_tested: 'Small live payment tested',
   unknown_result_runbook_tested: 'Unknown-result procedure tested',
-  counsel_approved: 'Legal counsel approved',
-  accounting_approved: 'Accounting approved',
-  privacy_approved: 'Privacy review approved',
+  policy_owner_approved: 'Policy owner approved',
   effective_dates_approved: 'Effective dates approved',
   reacceptance_rules_approved: 'Re-acceptance rules approved',
-  retention_deletion_and_legal_hold_approved: 'Retention, deletion and legal hold approved',
 }
 const STATUS_LABELS = { not_configured: 'Not configured', disabled_pending_approval: 'Off until approved', approved: 'Approved' }
 const sentenceCase = value => { const text = String(value).replaceAll('_', ' '); return text.charAt(0).toUpperCase() + text.slice(1) }
@@ -66,9 +63,6 @@ function CapabilityCard({ item, refresh, identity }) {
   const mutationBusy = useRef(false)
   const [form, setForm] = useState(initialForm)
   const [reason, setReason] = useState('')
-  const [draftAcknowledged, setDraftAcknowledged] = useState(false)
-  // Approving draft policies for launch is an explicit, recorded business call.
-  const draftAcknowledgment = item.policy_documents?.draft ? item.policy_documents.draft_acknowledgment : null
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
 
@@ -112,12 +106,11 @@ function CapabilityCard({ item, refresh, identity }) {
           <h2 id={`${item.capability}-heading`} className="text-lg font-bold text-neutral-900">{item.label}</h2>
           <p className="mt-1 text-sm text-neutral-600">Setup {item.configured ? 'is complete' : 'is not finished'}. Credentials alone never turn this on; it also needs an approved review.</p>
           {item.policy_documents && (
-            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="policy-register-draft">
+            <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-800" data-testid="policy-register-summary">
               <p className="font-semibold">
-                Version {item.policy_documents.version}
-                {item.policy_documents.status === 'approved' ? '' : ' · Draft pending legal review (not approved by counsel)'}
+                Effective {item.policy_documents.effective_date} · Version {item.policy_documents.version} · Live
               </p>
-              <p className="mt-1 text-amber-900">{item.policy_documents.documents.map(document => document.title).join(', ')}</p>
+              <p className="mt-1 text-neutral-700">{item.policy_documents.documents.map(document => document.title).join(', ')}</p>
               {item.policy_documents.approval_blockers?.length > 0 && (
                 <div className="mt-2 rounded-md bg-red-50 p-2 text-red-900" data-testid="policy-register-blockers">
                   <p className="font-semibold">Fix these technical problems before approval:</p>
@@ -129,7 +122,7 @@ function CapabilityCard({ item, refresh, identity }) {
               {item.policy_documents.review_notes?.length > 0 && (
                 <details className="mt-2" data-testid="policy-register-review-notes">
                   <summary className="min-h-11 cursor-pointer py-2 font-semibold">Outstanding legal-review items ({item.policy_documents.review_notes.length})</summary>
-                  <p className="text-amber-900">For counsel. These don’t block approval.</p>
+                  <p className="text-neutral-700">For later professional review. These don’t block approval.</p>
                   <ul className="mt-1 list-disc space-y-0.5 pl-5">
                     {item.policy_documents.review_notes.map(note => <li key={`${note.document}-${note.section}-${note.note}`}><span className="font-medium">{note.title} · {note.section}:</span> {note.note}</li>)}
                   </ul>
@@ -149,14 +142,8 @@ function CapabilityCard({ item, refresh, identity }) {
           <label className="block text-sm font-medium text-amber-950">Decision reason (required for reject)
             <input className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} />
           </label>
-          {draftAcknowledgment && (
-            <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-white p-3 text-sm text-amber-950">
-              <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={draftAcknowledged} onChange={event => setDraftAcknowledged(event.target.checked)} />
-              <span>{draftAcknowledgment}</span>
-            </label>
-          )}
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-primary" disabled={busy || (draftAcknowledgment && !draftAcknowledged)} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/approve`, draftAcknowledgment ? { draft_policies_acknowledged: true } : undefined, config))}>Approve exact snapshot</button>
+            <button type="button" className="btn-primary" disabled={busy} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/approve`, {}, config))}>Approve exact snapshot</button>
             <button type="button" className="rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50" disabled={busy || !reason.trim()} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/reject`, { reason }, config))}>Reject</button>
           </div>
         </div>

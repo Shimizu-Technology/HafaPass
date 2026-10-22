@@ -72,11 +72,16 @@ class PayoutReconciler
           override_reason: normalized["withholding_override_reason"], request: request)
         liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
           { outstanding_cents: 0, unresolved: false }
-        if liability[:unresolved]
+        queue = RefundReconciliationQueue.new(event_id: payout.event_id).entries
+        if queue.any? && !payout.event.cancelled?
+          raise ReconciliationError, "Resolve outstanding refund liabilities before recording this payout as paid"
+        end
+        if liability[:unresolved] || queue.any?
           unless normalized["sent_before_cancellation_confirmed"] == true && normalized["cancellation_payout_reason"].present?
             raise ReconciliationError, "Confirm this payout was already sent before the cancellation and explain why it is being recorded while buyer refunds remain unresolved"
           end
         end
+        outstanding_buyer_cents = [liability[:outstanding_cents], queue.sum { |item| item[:amount_cents] }].max
         if payout.tax_information_snapshot.blank? && payout.withheld_cents.positive?
           # No W-9 was available, but the full backup withholding was reserved.
         elsif payout.tax_information_snapshot.blank?
@@ -105,8 +110,8 @@ class PayoutReconciler
         organization: payout.organization, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
         metadata: { reconciliation: normalized,
-          outstanding_buyer_balance_cents: status == "paid" ? liability[:outstanding_cents] : nil,
-          buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] : nil }, request: request)
+          outstanding_buyer_balance_cents: status == "paid" ? outstanding_buyer_cents : nil,
+          buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil }, request: request)
     end
     payout
   rescue PayoutWithholdingGuard::WithholdingError => e

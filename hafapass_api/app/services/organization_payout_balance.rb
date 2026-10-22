@@ -26,6 +26,15 @@ class OrganizationPayoutBalance
     organization.events.where.not(id: finalized.map(&:event_id)).find_each do |event|
       entitlement_cents += [net_entitlement(Settlements::Calculator.call(event).attributes), 0].min
     end
+    organization.events.cancelled.joins(:payouts).merge(Payout.status_paid).distinct.find_each do |event|
+      recovery = RefundReconciliationQueue.recovery_amount_for_event(event)
+      # Pending refunds and open disputes are deducted below for every event.
+      # Only add the remaining recovery debit here to avoid reserving it twice.
+      event_order_ids = event.orders.select(:id)
+      already_reserved = Refund.pending.where(order_id: event_order_ids).sum(:amount_cents) +
+        Dispute.open.where(order_id: event_order_ids).sum(:amount_cents)
+      entitlement_cents -= [recovery - already_reserved, 0].max
+    end
     organization_adjustments = organization.balance_adjustments.effective.where(event_id: nil).sum(:amount_cents)
     entitlement_cents += [organization_adjustments, 0].min
     unresolved_refunds = Refund.pending.where(order_id: order_ids).sum(:amount_cents)

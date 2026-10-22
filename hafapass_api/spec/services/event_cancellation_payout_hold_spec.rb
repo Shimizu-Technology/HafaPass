@@ -83,6 +83,17 @@ RSpec.describe "Cancelled event payout holds" do
     expect(AuditLog.where(auditable: payout, action: "payout.released_from_cancellation_hold")).not_to exist
   end
 
+  it "allows a manual release after buyer liability reaches zero" do
+    payout
+    EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
+    create(:refund, order: order, payment: payment, amount_cents: payment.amount_cents)
+    create(:balance_adjustment, event: event, organization: event.organization, amount_cents: 1000)
+    expect(RefundReconciliationQueue.outstanding_for_event?(event)).to be(false)
+
+    expect(PayoutHoldRelease.call(payout: payout, actor: admin)).to be(true)
+    expect(payout.reload).to be_status_processing
+  end
+
   it "blocks release when refunds reduced net payable below the held payout" do
     payout
     EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
@@ -94,19 +105,16 @@ RSpec.describe "Cancelled event payout holds" do
     expect(payout.reload).to be_status_held
   end
 
-  it "requires explicit prior-send confirmation for a manual release while buyers remain owed" do
+  it "blocks manual and automatic release while buyers remain owed, even with prior-send evidence" do
     payout
     EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
     create(:balance_adjustment, event: event, organization: event.organization, amount_cents: 1000)
     expect do
       PayoutHoldRelease.call(payout: payout, actor: admin)
-    end.to raise_error(PayoutHoldRelease::ReleaseError, /Buyer refunds remain unresolved/)
+    end.to raise_error(PayoutHoldRelease::ReleaseError, /buyer refund liabilities/)
 
-    PayoutHoldRelease.call(payout: payout, actor: admin, sent_before_cancellation_confirmed: true,
-      cancellation_payout_reason: "Transfer sent before cancellation notice")
-    expect(payout.reload).to be_status_processing
-    expect(AuditLog.find_by!(auditable: payout, action: "payout.released_from_cancellation_hold")
-      .metadata["cancellation_payout_reason"]).to eq("Transfer sent before cancellation notice")
+    expect(PayoutHoldRelease.call(payout: payout, actor: admin, automatic: true)).to be(false)
+    expect(payout.reload).to be_status_held
   end
 
   it "keeps a late submission result held and escalates reported payment for reconciliation" do
@@ -176,6 +184,7 @@ RSpec.describe "Cancelled event payout holds" do
 
   it "records an already sent payout with explicit evidence and preserves the buyer liability" do
     payout
+    create(:order_item, order: order, unit_price_cents: 5000, subtotal_cents: 5000, organizer_proceeds_cents: 5000)
     EventLifecycle.call(event: event, action: :cancel, actor: profile.user, reason: "Storm")
     PayoutReconciler.call(payout: payout, actor: admin, status: "paid", provider_payout_id: "bank-transfer-42",
       evidence: evidence.merge(sent_before_cancellation_confirmed: true,
@@ -185,6 +194,11 @@ RSpec.describe "Cancelled event payout holds" do
     expect(audit.metadata.dig("reconciliation", "sent_before_cancellation_confirmed")).to be(true)
     expect(audit.metadata["outstanding_buyer_balance_cents"]).to eq(5250)
     expect(EventCancellationRefunds.outstanding_balance_cents(event)).to eq(5250)
+    queue = RefundReconciliationQueue.call(event_id: event.id).fetch(:items)
+    expect(queue).to include(include(amount_cents: 5250, organizer_already_paid: true))
+    finance = OrganizationFinanceSummary.call(event.organization)
+    expect(finance.dig(:breakdown, :negative_balance_cents)).to eq(350)
+    expect(OrganizationPayoutBalance.available_cents(event.organization)).to eq(0)
   end
 
   it "does not require cancellation confirmation for a normal event" do

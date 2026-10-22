@@ -48,7 +48,9 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const [acknowledged, setAcknowledged] = useState(false)
   const [sentBeforeCancellation, setSentBeforeCancellation] = useState(false)
   const [cancellationReason, setCancellationReason] = useState('')
-  const needsCancellationConfirmation = payout.cancellation_refunds_unresolved || payout.outstanding_buyer_balance_cents > 0
+  const buyerRefundsUnresolved = payout.cancellation_refunds_unresolved || payout.outstanding_buyer_balance_cents > 0
+  const needsCancellationConfirmation = payout.event_cancelled && buyerRefundsUnresolved
+  const nonCancellationLiability = !payout.event_cancelled && buyerRefundsUnresolved
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const keepsTransferId = payout.status === 'paid'
@@ -79,6 +81,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     else if (confirmed > new Date()) found.confirmedAt = 'The confirmation time cannot be in the future.'
     else if (confirmed < new Date(payout.created_at)) found.confirmedAt = 'The confirmation time must be after the payout was requested.'
     if (!reason.trim()) found.reason = 'Explain how you confirmed this outcome.'
+    if (outcome === 'paid' && nonCancellationLiability) found.form = 'Resolve outstanding buyer refunds before recording this payout as paid.'
     if (outcome === 'paid' && needsCancellationConfirmation) {
       if (!sentBeforeCancellation) found.sentBeforeCancellation = 'Confirm the payout was sent before the cancellation.'
       if (!cancellationReason.trim()) found.cancellationReason = 'Explain why you are recording this payout while buyer refunds remain outstanding.'
@@ -124,6 +127,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
           {outcome === 'paid' && <><label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={sentBeforeCancellation} onChange={event => setSentBeforeCancellation(event.target.checked)} className="mt-0.5 h-4 w-4" />This payout was already sent before the cancellation</label>{fieldError('sentBeforeCancellation')}
             <label className="mt-3 block">Reason for recording an already sent payout<textarea value={cancellationReason} onChange={event => setCancellationReason(event.target.value)} maxLength={1000} className="input mt-1" /></label>{fieldError('cancellationReason')}</>}
         </div>}
+        {nonCancellationLiability && <p className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">Buyer refunds remain unresolved. Resolve them before recording this payout as paid.</p>}
         {isCheck && payout.payee && <p className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800 [overflow-wrap:anywhere]">Approved payee: <strong>{describePayee(payout.payee)}</strong></p>}
         {payeeChanged && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
           <p className="font-semibold">The payee on file is different from the approved payee above.</p>
@@ -224,8 +228,6 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
 
 function ReleaseHoldDialog({ payout, beginRequest, onClose, onSaved }) {
   const titleId = useId()
-  const [confirmed, setConfirmed] = useState(false)
-  const [reason, setReason] = useState('')
   const [withholdingOverride, setWithholdingOverride] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -233,18 +235,12 @@ function ReleaseHoldDialog({ payout, beginRequest, onClose, onSaved }) {
   const tooLarge = payout.amount_cents > payout.hold_available_cents
   const submit = async event => {
     event.preventDefault()
-    if (unresolved && (!confirmed || !reason.trim())) {
-      setError('Confirm the payout was already sent before cancellation and explain why it can be released.')
-      return
-    }
     const request = beginRequest()
     if (!request) return
     setBusy(true)
     setError('')
     try {
       await apiClient.post(`/admin/payouts/${payout.id}/release_hold`, {
-        sent_before_cancellation_confirmed: confirmed,
-        cancellation_payout_reason: reason.trim(),
         ...(withholdingOverride.trim() ? { withholding_override_reason: withholdingOverride.trim() } : {}),
       }, request.config)
       if (request.current()) onSaved(`Hold released for payout #${payout.id}.`)
@@ -260,14 +256,10 @@ function ReleaseHoldDialog({ payout, beginRequest, onClose, onSaved }) {
       {tooLarge && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">The payout exceeds the event’s current net payable ({money(payout.hold_available_cents, payout.currency)} available after other payouts). Record a failed outcome, then finalize a new settlement and reissue the correct amount.</p>}
       {!payout.held_from_status && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">The original payout status is unknown. Record an outcome and reissue instead of releasing this hold.</p>}
       {['provider_result_conflict', 'provider_result_unknown'].includes(payout.failure_code) && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">The provider result needs reconciliation before this hold can be released.</p>}
-      {unresolved && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950">
-        <p>Buyer refunds remain unresolved. Release is allowed only if this payout was already sent before cancellation.</p>
-        <label className="mt-3 flex gap-2"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />This payout was already sent before the cancellation</label>
-        <label className="mt-3 block">Reason for releasing an already sent payout<textarea className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} maxLength={1000} /></label>
-      </div>}
+      {unresolved && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Resolve all buyer refund liabilities before releasing this payout. If it was already sent before cancellation, record it as paid with the transfer evidence.</p>}
       <label className="mt-3 block text-sm">Backup withholding override reason (admin only, optional)<textarea className="input mt-1" maxLength={1000} value={withholdingOverride} onChange={event => setWithholdingOverride(event.target.value)} /></label>
       {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
-      <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} disabled={busy} className="btn-secondary">Cancel</button><button type="submit" disabled={busy || tooLarge || !payout.held_from_status || ['provider_result_conflict', 'provider_result_unknown'].includes(payout.failure_code)} className="btn-primary">{busy ? 'Releasing…' : 'Release hold'}</button></div>
+      <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} disabled={busy} className="btn-secondary">Cancel</button><button type="submit" disabled={busy || unresolved || tooLarge || !payout.held_from_status || ['provider_result_conflict', 'provider_result_unknown'].includes(payout.failure_code)} className="btn-primary">{busy ? 'Releasing…' : 'Release hold'}</button></div>
     </form>
   </Dialog>
 }
@@ -465,7 +457,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
                 <td data-label="Payout" className={foldCell}><span><span className="font-mono text-xs text-neutral-900">#{payout.id}</span><span className="block text-xs text-content-muted">{formatDate(payout.created_at)}</span></span></td>
                 <td data-label="For" className={foldCell}><span className="min-w-0"><span className="block font-medium text-neutral-900 [overflow-wrap:anywhere]">{payout.organization.name}</span><span className="block text-xs text-content-muted [overflow-wrap:anywhere]">{payout.event.title} · settlement v{payout.settlement.version}</span></span></td>
                 <td data-label="Amount" className={`${foldCell} md:text-right`}><span className="font-semibold text-neutral-900">{money(payout.disbursement_cents ?? payout.amount_cents, payout.currency)}</span>{payout.withheld_cents > 0 && <span className="block text-xs text-amber-800">{money(payout.withheld_cents, payout.currency)} withheld</span>}</td>
-                <td data-label="Status" className={foldCell}><span><Badge status={payout.status} />{payout.paid_at && <span className="block text-xs text-content-muted">Paid {formatDate(payout.paid_at)}</span>}{payout.outstanding_buyer_balance_cents > 0 ? <span className="block text-xs font-semibold text-red-700">{money(payout.outstanding_buyer_balance_cents, payout.currency)} still owed to buyers</span> : payout.cancellation_refunds_unresolved && <span className="block text-xs font-semibold text-amber-800">Buyer refunds pending</span>}</span></td>
+                <td data-label="Status" className={foldCell}><span><Badge status={payout.status} />{payout.paid_at && <span className="block text-xs text-content-muted">Paid {formatDate(payout.paid_at)}</span>}{payout.outstanding_buyer_balance_cents > 0 ? <span className="block text-xs font-semibold text-red-700">{money(payout.outstanding_buyer_balance_cents, payout.currency)} still owed to buyers</span> : payout.cancellation_refunds_unresolved && <span className="block text-xs font-semibold text-amber-800">Buyer refunds pending</span>}{payout.status === 'paid' && (payout.outstanding_buyer_balance_cents > 0 || payout.cancellation_refunds_unresolved) && <span className="block text-xs font-semibold text-red-700">Organizer was already paid; recover from organizer</span>}</span></td>
                 <td data-label="Transfer" className={foldCell}><span className="min-w-0 text-xs text-neutral-700">
                   <span className="block font-mono [overflow-wrap:anywhere]">{payout.provider_payout_id || 'No transfer ID yet'}</span>
                   {payout.failure_message && <span className="block text-red-700">{payout.failure_message}</span>}

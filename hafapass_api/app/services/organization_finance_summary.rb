@@ -114,11 +114,12 @@ class OrganizationFinanceSummary
     paid = payouts.fetch([event.id, "paid"], 0)
     in_flight = IN_FLIGHT_PAYOUT_STATUSES.sum { |status| payouts.fetch([event.id, status.to_s], 0) }
     held = payouts.fetch([event.id, "held"], 0)
+    recovery = paid.positive? ? RefundReconciliationQueue.recovery_amount_for_event(event) : 0
     # Balance before payouts, unfloored: the calculator floors payable at 0,
     # which would hide an event that refunds or disputes pushed below zero.
     balance = preview[:organizer_proceeds_cents] - preview[:processing_fee_cents] - preview[:reserve_cents] +
-      preview[:adjustment_cents]
-    owed = [preview[:payable_cents] - paid - in_flight - held, 0].max
+      preview[:adjustment_cents] - recovery
+    owed = [balance - paid - in_flight - held, 0].max
     sales, item_discounts = @sales.fetch(event.id, [0, 0])
     refunded = @refunded_proceeds.fetch(event.id, 0)
     cash = door_cash_retained(result.items)
@@ -156,8 +157,9 @@ class OrganizationFinanceSummary
       paid_cents: paid,
       in_flight_cents: in_flight,
       held_cents: held,
+      unresolved_buyer_liability_cents: recovery,
       owed_cents: owed,
-      negative_balance_cents: preview[:negative_balance_cents],
+      negative_balance_cents: [paid - balance, 0].max,
       settlement: settlement && {
         id: settlement.id,
         version: settlement.version,
@@ -260,6 +262,7 @@ class OrganizationFinanceSummary
       door_cash_retained_cents: sum.call(:door_cash_retained_cents),
       reserve_cents: sum.call(:reserve_cents),
       adjustment_cents: sum.call(:other_adjustment_cents) + organization_adjustments,
+      unresolved_buyer_liability_cents: sum.call(:unresolved_buyer_liability_cents),
       earned_cents: earned,
       paid_cents: paid,
       in_flight_cents: in_flight,

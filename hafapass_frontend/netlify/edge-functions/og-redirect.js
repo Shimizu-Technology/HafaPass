@@ -1,7 +1,7 @@
 // Netlify Edge Function: social link-preview crawlers can't render the SPA, so
-// /events/:slug requests from them get the Rails OG page (meta tags + link).
+// /events/:slug and /policies/:slug requests from them get the Rails OG page.
 // Search engines are deliberately absent: Google and Bing render the SPA, and
-// the OG page's script redirect back to /events/:slug would loop for them.
+// the OG page's script redirect back to the public URL would loop for them.
 import { apiOrigin } from '../shared/apiOrigin.js'
 
 export const CRAWLER_USER_AGENTS = [
@@ -33,7 +33,7 @@ async function spa(context) {
 }
 
 export default async (request, context) => {
-  const match = new URL(request.url).pathname.match(/^\/events\/([^/]+)\/?$/)
+  const match = new URL(request.url).pathname.match(/^\/(events|policies)\/([^/]+)\/?$/)
   if (!match) return context.next()
   if (!isPreviewCrawler(request.headers.get('user-agent'))) return spa(context)
 
@@ -42,7 +42,7 @@ export default async (request, context) => {
   if (!origin) return spa(context)
 
   try {
-    const response = await fetch(`${origin}/og/events/${encodeURIComponent(decodeURIComponent(match[1]))}`)
+    const response = await fetch(`${origin}/og/${match[1]}/${encodeURIComponent(decodeURIComponent(match[2]))}`)
     // A missing event still gets the API's 404 page; an API outage falls back to the SPA.
     if (!response.ok && response.status !== 404) return spa(context)
     return new Response(await response.text(), {
@@ -55,5 +55,5 @@ export default async (request, context) => {
 }
 
 export const config = {
-  path: '/events/*',
+  path: ['/events/*', '/policies/*'],
 }

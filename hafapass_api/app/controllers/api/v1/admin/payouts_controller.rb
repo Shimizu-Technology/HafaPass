@@ -30,7 +30,10 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     audits = AuditLog.includes(:actor_user).where(auditable_type: "Payout", auditable_id: payouts.map(&:id),
       action: RECONCILIATION_ACTIONS).order(:id).group_by(&:auditable_id)
     liabilities = payouts.map(&:event).uniq.index_with do |event|
-      event.cancelled? ? EventCancellationRefunds.liability_snapshot(event) : { outstanding_cents: 0, unresolved: false }
+      snapshot = event.cancelled? ? EventCancellationRefunds.liability_snapshot(event) : { outstanding_cents: 0, unresolved: false }
+      queue = RefundReconciliationQueue.new(event_id: event.id).entries
+      { outstanding_cents: [snapshot[:outstanding_cents], queue.sum { |item| item[:amount_cents] }].max,
+        unresolved: snapshot[:unresolved] || queue.any? }
     end
     render json: {
       payouts: payouts.map { |payout| payout_list_json(payout, audits.fetch(payout.id, []), liabilities.fetch(payout.event)) },
@@ -64,8 +67,6 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   def release_hold
     payout = Payout.find(params[:id])
     PayoutHoldRelease.call(payout: payout, actor: current_user,
-      sent_before_cancellation_confirmed: params[:sent_before_cancellation_confirmed] == true,
-      cancellation_payout_reason: params[:cancellation_payout_reason],
       withholding_override_reason: params[:withholding_override_reason], request: request)
     render json: { id: payout.id, status: payout.status }
   rescue ActiveRecord::RecordNotFound
@@ -126,6 +127,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       disbursement_cents: payout.disbursement_cents,
       organization: { id: payout.organization_id, name: payout.organization.name },
       event: { id: payout.event_id, title: payout.event.title, slug: payout.event.slug },
+      event_cancelled: payout.event.cancelled?,
       settlement: { id: payout.settlement_id, version: payout.settlement.version },
       # For checks, who to write it to; the check number is the transfer ID
       # and the date on the check is the confirmation time.

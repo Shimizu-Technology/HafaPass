@@ -38,12 +38,14 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     expect(AuditLog.where(auditable: payout)).not_to exist
   end
 
-  it "rejects a TIN in hold-release audit reasons" do
+  it "rejects a TIN in hold-release withholding override reasons" do
     payout.update!(status: :held, held_from_status: "processing")
+    tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
     post "/api/v1/admin/payouts/#{payout.id}/release_hold",
-      params: { cancellation_payout_reason: "TIN 012-34-5678 was reviewed" }, headers: auth_headers(admin)
+      params: { withholding_override_reason: "TIN 012-34-5678 was reviewed" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body["error"]).to include("cannot contain a TIN")
+    expect(response.parsed_body["error"]).to include("without a TIN")
     expect(AuditLog.where(auditable: payout, action: "payout.released_from_cancellation_hold")).not_to exist
   end
 
@@ -132,6 +134,11 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     expect(response.parsed_body.fetch("payouts").first).to include(
       "status" => "held", "outstanding_buyer_balance_cents" => 5250)
 
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin),
+      params: { sent_before_cancellation_confirmed: true, cancellation_payout_reason: "Already sent" }
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(payout.reload).to be_status_held
+
     reconcile
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body.fetch("error")).to include("already sent before the cancellation")
@@ -142,6 +149,9 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     get "/api/v1/admin/payouts", params: { event_id: event.id }, headers: auth_headers(admin)
     expect(response.parsed_body.fetch("payouts").first).to include(
       "status" => "paid", "outstanding_buyer_balance_cents" => 5250)
+    get "/api/v1/admin/refund_reconciliation", params: { event_id: event.id }, headers: auth_headers(admin)
+    expect(response.parsed_body.fetch("items")).to include(include(
+      "amount_cents" => 5250, "organizer_already_paid" => true))
   end
 
   it "calculates a held event's payable amount once per listing request" do

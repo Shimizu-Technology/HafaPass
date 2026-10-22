@@ -243,6 +243,7 @@ function FinancesSession({ identity }) {
               {breakdown.door_cash_retained_cents > 0 && <Line label="Door cash you already kept" value={money(breakdown.door_cash_retained_cents)} sign="−" detail="Cash sales stay with you, so they are not paid out again" />}
               {breakdown.reserve_cents > 0 && <Line label="Reserves held" value={money(breakdown.reserve_cents)} sign="−" />}
               {adjustment !== 0 && <Line label="Adjustments and disputes" value={money(Math.abs(adjustment))} sign={adjustment < 0 ? '−' : '+'} />}
+              {breakdown.unresolved_buyer_liability_cents > 0 && <Line label="Buyer refunds after payout" value={money(breakdown.unresolved_buyer_liability_cents)} sign="−" detail="The organizer was already paid; this amount reduces future payouts until refunds are resolved" />}
               <Line label="Earned for payout" {...signed(breakdown.earned_cents)} strong />
               <Line label="Paid out" value={money(breakdown.paid_cents)} sign="−" />
               {breakdown.in_flight_cents > 0 && <Line label="Payouts in progress" value={money(breakdown.in_flight_cents)} sign="−" />}
