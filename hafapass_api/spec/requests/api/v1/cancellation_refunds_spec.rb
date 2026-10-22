@@ -84,6 +84,8 @@ RSpec.describe "Cancellation refund permissions", type: :request do
       headers: auth_headers(profile.user)
     expect(response).to have_http_status(:ok)
     expect(order.reload).to be_refunded
+    expect(response.parsed_body.dig("run", "status")).to eq("completed")
+    expect(response.parsed_body.dig("run", "items", 0, "status")).to eq("refunded")
     expect(AuditLog.where(action: "event.cancellation_cash_refunded", auditable: event)).to exist
   end
 
@@ -107,6 +109,7 @@ RSpec.describe "Cancellation refund permissions", type: :request do
     post path, params: payload, headers: auth_headers(create(:user, :admin))
     expect(response).to have_http_status(:ok)
     expect(order.reload).to be_refunded
+    expect(response.parsed_body.dig("run", "status")).to eq("completed")
     expect(run.items.find_by!(order: order)).to be_refunded
     expect(order.refunds.succeeded.first.provider_payload["manual_card_return"]["reference"]).to eq("Clover return 42")
     expect(AuditLog.where(action: "event.cancellation_card_refunded", auditable: event)).to exist
@@ -126,6 +129,8 @@ RSpec.describe "Cancellation refund permissions", type: :request do
     separate = create(:refund, order: order, payment: payment, provider: "door_cash", amount_cents: 500)
     create(:refund_item, refund: separate, order_item: order_item, amount_cents: 500,
       organizer_proceeds_cents: 500, fee_cents: 0)
+
+    EventCancellationRefundJob.perform_now(run.id)
 
     get "#{base}/cancellation_refunds", headers: auth_headers(profile.user)
     expect(response.parsed_body.dig("run", "items", 0, "amount_cents")).to eq(4750)
@@ -151,6 +156,8 @@ RSpec.describe "Cancellation refund permissions", type: :request do
     run = event.reload.event_cancellation_refund_run
     EventCancellationRefundJob.perform_now(run.id)
     create(:refund, order: order, payment: payment, provider: "door_cash", amount_cents: 5250)
+
+    EventCancellationRefundJob.perform_now(run.id)
 
     get "#{base}/cancellation_refunds", headers: auth_headers(profile.user)
     item = run.items.find_by!(order: order)

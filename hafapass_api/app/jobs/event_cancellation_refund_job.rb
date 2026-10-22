@@ -28,6 +28,13 @@ class EventCancellationRefundJob < ApplicationJob
       end
       submit_refund(item, run, amount) if amount
     end
+    run.items.needs_manual.find_each do |item|
+      run.event.organization.with_lock do
+        item.order.with_lock do
+          item.with_lock { EventCancellationRefunds.refresh_cash_item!(item, actor: run.started_by) }
+        end
+      end
+    end
     run.reconcile_status!
   end
 
