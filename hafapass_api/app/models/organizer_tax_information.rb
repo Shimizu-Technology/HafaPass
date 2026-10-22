@@ -37,8 +37,10 @@ class OrganizerTaxInformation < ApplicationRecord
   end
 
   def backup_withholding_required?
-    backup_withholding_flag? || (tin_match_status == "mismatch" && irs_validation_recorded_on.nil? &&
-      b_notice_response_due_on.present? && Date.current > b_notice_response_due_on)
+    unresolved_notice = (b_notice_stage == "second" && irs_validation_recorded_on.nil?) ||
+      tin_match_status == "mismatch"
+    backup_withholding_flag? || (unresolved_notice && b_notice_response_due_on.present? &&
+      Date.current > b_notice_response_due_on)
   end
 
   # Explicit allowlist: ciphertext and plaintext never enter normal responses.

@@ -61,6 +61,16 @@ describe('AdminTaxControlsPage', () => {
       { received_on: '2026-10-01' }, expect.anything()))
   })
 
+  it('offers second-notice validation even after a later bulk match reports matched', async () => {
+    const pendingSecondNotice = { payees: [{ ...matching.payees[0], tax_information: {
+      ...matching.payees[0].tax_information, tin_match_status: 'matched', b_notice_stage: 'second',
+      irs_validation_recorded_on: null,
+    } }] }
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/admin/tin_matching' ? pendingSecondNotice : annual }))
+    show()
+    expect(await screen.findByRole('button', { name: 'Record IRS Letter 147C validation' })).toBeInTheDocument()
+  })
+
   it('asks for a purpose and confirmation before exporting full TINs', async () => {
     show()
     await screen.findByText(/TIN status:/)

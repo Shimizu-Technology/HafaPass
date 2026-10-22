@@ -75,14 +75,15 @@ class Api::V1::Admin::TinMatchingController < Api::V1::Admin::BaseController
     required = tax.tin_type == "ssn" ? "ssa_card" : "irs_letter_147c"
     reference = params[:document_reference].to_s.strip
     recorded_on = Date.iso8601(params[:recorded_on].to_s)
-    unless tax.b_notice_stage == "second" && evidence == required && recorded_on <= Date.current &&
+    unless tax.b_notice_stage == "second" && tax.irs_validation_recorded_on.nil? &&
+        evidence == required && recorded_on <= Date.current &&
         reference.length <= 255 && BackupWithholding.safe_text?(reference)
       return render json: { error: "Record the required IRS or SSA evidence, a valid date, and a reference without a TIN" }, status: :unprocessable_entity
     end
     tax.organization.with_lock do
       tax.lock!
       raise BNotice::NoticeError, "Second notice validation state changed; reload and retry" unless
-        tax.b_notice_stage == "second" && tax.tin_match_status == "mismatch" &&
+        tax.b_notice_stage == "second" && tax.irs_validation_recorded_on.nil? &&
         evidence == (tax.tin_type == "ssn" ? "ssa_card" : "irs_letter_147c")
       tax.update!(irs_validation_evidence_type: evidence, irs_validation_recorded_on: recorded_on,
         irs_validation_admin: current_user, irs_validation_document_reference: reference.presence,

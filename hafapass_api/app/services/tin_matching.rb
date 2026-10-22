@@ -56,6 +56,9 @@ class TinMatching
         end
         code = code_text.to_i
         status = OrganizerTaxInformation::MATCH_RESULTS.fetch(code)
+        # An e-Services match is not the SSA/IRS document validation required
+        # to clear a second B-notice. Keep that case open for an admin.
+        status = "mismatch" if tax.b_notice_stage == "second" && tax.irs_validation_recorded_on.nil?
         tax.update!(tin_match_status: status, tin_match_result_code: code, tin_matched_at: Time.current,
           **(status == "mismatch" ? { irs_validation_evidence_type: nil, irs_validation_recorded_on: nil,
             irs_validation_admin_id: nil, irs_validation_document_reference: nil } : {}))

@@ -97,6 +97,8 @@ RSpec.describe "Admin tax operations", type: :request do
     expect(tax.reload.b_notice_stage).to eq("second")
     expect(tax.irs_notice_received_on).to eq(Date.current)
     expect(tax.b_notice_response_due_on).to eq(BNotice.business_days_after(Date.current, 30))
+    tax.update!(tin_match_status: "matched", b_notice_response_due_on: Date.yesterday)
+    expect(tax.reload.backup_withholding_required?).to be(true)
     post "/api/v1/admin/organizations/#{organization.id}/tax_information/validate_second_notice",
       params: { evidence_type: "ssa_card", recorded_on: Date.current.iso8601 }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)

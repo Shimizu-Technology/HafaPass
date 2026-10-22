@@ -41,6 +41,19 @@ RSpec.describe "Tax operations services" do
     end
   end
 
+  describe "second B-notice validation" do
+    it "does not clear withholding when a later TIN match says matched" do
+      tax.update!(tin_match_status: "unverified", b_notice_stage: "second",
+        b_notice_response_due_on: Date.yesterday)
+      request_line = TinMatching.export!(actor: admin).strip
+      TinMatching.import!(content: "#{request_line};0\n", actor: admin)
+      expect(tax.reload.tin_match_status).to eq("mismatch")
+      expect(tax.backup_withholding_required?).to be(true)
+      tax.update!(tin_match_status: "matched")
+      expect(tax.reload.backup_withholding_required?).to be(true)
+    end
+  end
+
   describe BackupWithholding do
     it "blocks by default, withholds exactly to the cent when enabled, and audits an admin override" do
       tax.update!(backup_withholding_flag: true, backup_withholding_reason: "CPA withholding review")
