@@ -95,7 +95,7 @@ describe('checkout navigation', () => {
     expect(await screen.findByText("Includes card processing")).toBeInTheDocument()
     // 5% of $50.00 + 2 × $1.00 = $4.50, so the buyer total is $54.50.
     expect(screen.getByText('$4.50')).toBeInTheDocument()
-    expect(screen.getByText('$54.50')).toBeInTheDocument()
+    expect(screen.getAllByText('$54.50').length).toBeGreaterThanOrEqual(2)
   })
 
   it('tells non-admin buyers that paid ticket sales open soon while production is in test mode', async () => {
@@ -139,7 +139,7 @@ describe('checkout navigation', () => {
 
     // 5% of $50.00 + 2 paid tickets × $1.00 = $4.50, not $6.50.
     expect(await screen.findByText('$4.50')).toBeInTheDocument()
-    expect(screen.getByText('$54.50')).toBeInTheDocument()
+    expect(screen.getAllByText('$54.50').length).toBeGreaterThanOrEqual(2)
   })
 
   it('uses the server per-ticket fee and reloads an event snapshot that has none', async () => {
@@ -156,7 +156,7 @@ describe('checkout navigation', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: "Try again" }))
     // Three advertised all-in tickets at $20.99 = $62.97: $59.97 + $3.00 fee.
     expect(await screen.findByText('$3.00')).toBeInTheDocument()
-    expect(screen.getByText('$62.97')).toBeInTheDocument()
+    expect(screen.getAllByText('$62.97').length).toBeGreaterThanOrEqual(2)
     expect(apiClient.get).toHaveBeenCalledWith('/events/paid-event', expect.anything())
   })
 
@@ -198,7 +198,30 @@ describe('checkout navigation', () => {
     openConfirmation()
     expect(await screen.findByRole('heading', { name: 'Confirmed order 922' })).toBeInTheDocument()
     expect(screen.queryByText('Unexpected event redirect')).not.toBeInTheDocument()
-    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 37, buyer_name: 'Guest Buyer', buyer_email: 'guest@example.invalid', marketing_opt_in: false, terms_accepted: true, terms_version: 'buyer-v1', line_items: [{ ticket_type_id: 7, quantity: 1 }] })
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 37, buyer_name: 'Guest Buyer', buyer_email: 'guest@example.invalid', marketing_opt_in: false, terms_accepted: true, terms_version: 'buyer-v1', line_items: [{ ticket_type_id: 7, quantity: 1 }], expected_total_cents: 0 })
+  })
+
+  it('sends the displayed total and returns the buyer to fresh prices when it changed', async () => {
+    const event = { id: 38, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam',
+      ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, all_in_price_cents: 2725, service_fee_cents: 225 }] }
+    apiClient.get.mockImplementation(url => url === '/config'
+      ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' } })
+      : new Promise(() => {}))
+    apiClient.post.mockRejectedValue({ response: { status: 422, data: { error: 'Ticket price changed. Review the updated total before paying.',
+      code: 'price_changed', checkout_recovery_required: false } } })
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} />
+        <Route path="/events/:slug" element={<h1>Fresh event prices</h1>} /></Routes>
+    </MemoryRouter>)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Full Name'), 'Guest Buyer')
+    await user.type(screen.getByLabelText('Email Address'), 'guest@example.invalid')
+    await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
+    await user.click(screen.getByRole('button', { name: /Place Order/ }))
+    expect(await screen.findByText('Ticket price changed. Review the updated total before paying.')).toBeInTheDocument()
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ expected_total_cents: 2725 })
+    await user.click(screen.getByRole('button', { name: 'Start a new checkout' }))
+    expect(await screen.findByRole('heading', { name: 'Fresh event prices' })).toBeInTheDocument()
   })
   it('restores an unpaid checkout after reload using its original intent and guest access', async () => {
     window.sessionStorage.setItem('hafapass:active-checkout:paid-event', '923')

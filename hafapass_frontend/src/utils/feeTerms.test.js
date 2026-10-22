@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { feeExample, feeRateLabel, organizerFeeExplanation, parseFeeTerms, platformFeeCents } from './feeTerms'
+import { feeExample, feeRateLabel, organizerFeeExplanation, parseFeeTerms, platformFeeCents, quoteBuyerFeeCents } from './feeTerms'
+import parity from './__fixtures__/serviceFeeParity.json'
 
 const allIn = { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
 
 describe('fee terms', () => {
+  it.each(parity.cases)('matches checkout to the cent at $price_cents × $quantity and $buyer_fee_percent% buyer share', example => {
+    const terms = parseFeeTerms({ service_fee_percent: example.service_fee_percent,
+      service_fee_flat_cents: example.service_fee_flat_cents })
+    const quote = quoteBuyerFeeCents(terms, example.price_cents, example.buyer_fee_percent)
+    expect(quote.platformFeeCents * example.quantity).toBe(example.platform_fee_cents)
+    expect(quote.buyerFeeCents * example.quantity).toBe(example.buyer_fee_cents)
+    expect(quote.allInPriceCents * example.quantity).toBe(example.all_in_total_cents)
+  })
   it('parses server terms and refuses to guess missing or invalid values', () => {
     expect(parseFeeTerms(allIn)).toEqual({ percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' })
     expect(parseFeeTerms({ ...allIn, service_fee_percent: undefined })).toBeNull()

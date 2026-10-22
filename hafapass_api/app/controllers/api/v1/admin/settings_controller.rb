@@ -10,6 +10,16 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
     render json: settings_json(SiteSetting.instance, year: tax_year)
   end
 
+  def fee_change_preview
+    settings = SiteSetting.instance
+    proposed_terms = params.permit(*FEE_TERM_FIELDS).to_h
+    render json: FeeChange.notice_preview.merge(
+      minimum_notice_days: settings.fee_notice_days,
+      registry_digest: FeeChange.proposed_registry_digest(settings: settings, attributes: proposed_terms))
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
+  end
+
   # PATCH /api/v1/admin/settings
   def update
     return invalid_tax_year unless tax_year
@@ -23,6 +33,24 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
     if thresholds && (thresholds.keys.sort != AnnualTaxThreshold::DEFAULT_AMOUNTS.keys.sort ||
         thresholds.values.any? { |amount| !amount.to_s.match?(/\A\d+\z/) || amount.to_i > 1_000_000_000 })
       return render json: { error: "Enter a whole-cent threshold for each form" }, status: :unprocessable_entity
+    end
+    requested_fee_terms = settings_params.to_h.slice(*FEE_TERM_FIELDS)
+    changed_fee_terms = requested_fee_terms.any? do |field, value|
+      field == "service_fee_percent" ? settings.service_fee_percent.to_d != value.to_d :
+        settings.public_send(field).to_s != value.to_s
+    end
+    if changed_fee_terms
+      begin
+        effective_at = Time.iso8601(params.require(:effective_at).to_s)
+        minimum = settings.fee_notice_days.days.from_now
+        if effective_at < minimum
+          return render json: { error: "Effective date must be at least #{settings.fee_notice_days} days ahead" },
+            status: :unprocessable_entity
+        end
+      rescue ActionController::ParameterMissing, ArgumentError
+        return render json: { error: "A valid effective date with time zone is required for fee changes" },
+          status: :unprocessable_entity
+      end
     end
 
     # Safety: test and live need every credential for that mode, and live also
@@ -61,9 +89,8 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
         refusal = "The payment mode changed while you were saving. Reload the page and try again."
         next false
       end
-      settings.assign_attributes(settings_params)
+      settings.assign_attributes(settings_params.except(*FEE_TERM_FIELDS))
       changes = settings.changes.except("updated_at")
-      fee_changes = changes.slice(*FEE_TERM_FIELDS)
       next false unless settings.save
 
       if thresholds
@@ -92,12 +119,10 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
           after_data: { "payment_mode" => changes["payment_mode"].last.to_s },
           metadata: payment_mode_audit_metadata(changes["payment_mode"].last.to_s), request: request)
       end
-      if fee_changes.any?
-        # Fee terms apply to orders created after this change; existing orders
-        # keep their snapshotted fee and processing-fee bearer.
-        AuditLogger.record!(action: "site_settings.fee_terms_updated", auditable: settings, actor: @current_user,
-          before_data: fee_changes.transform_values { |values| values.first.to_s },
-          after_data: fee_changes.transform_values { |values| values.last.to_s }, request: request)
+      if changed_fee_terms
+        FeeChange.schedule!(settings: settings, attributes: requested_fee_terms, effective_at: effective_at,
+          actor: @current_user, request: request, future_terms_approved: params[:future_terms_approved] == true || params[:future_terms_approved] == "true",
+          approved_registry_digest: params[:approved_registry_digest])
       end
       true
     end
@@ -106,10 +131,12 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
     elsif saved
       mode_label = { "simulate" => "Simulate", "test" => "Test (Stripe Sandbox)", "live" => "Live (Real Money)" }
       Rails.logger.info "\U0001f527 Payment mode changed to: #{mode_label[settings.payment_mode]} by #{@current_user.email}"
-      render json: settings_json(settings, year: tax_year)
+      render json: settings_json(settings.reload, year: tax_year)
     else
       render json: { errors: settings.errors.full_messages }, status: :unprocessable_entity
     end
+  rescue ArgumentError, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   private
@@ -117,7 +144,8 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
   def settings_params
     params.permit(:payment_mode, :platform_name, :platform_email, :platform_phone,
                   :service_fee_percent, :service_fee_flat_cents, :processing_fee_bearer, :payout_schedule_text,
-                  :business_mailing_address, :backup_withholding_mode, :backup_withholding_rate_bps)
+                  :business_mailing_address, :backup_withholding_mode, :backup_withholding_rate_bps,
+                  :fee_notice_days)
   end
 
   def tax_year
@@ -148,6 +176,11 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       tax_reporting_thresholds: AnnualTaxThreshold::DEFAULT_AMOUNTS.keys.index_with do |form|
         AnnualTaxThreshold.for(year: year, form_type: form).amount_cents
       end,
+      fee_notice_days: settings.fee_notice_days,
+      policy_register_approved: PlatformCapabilities.enabled?("policy_register"),
+      **FeeChange.notice_preview,
+      pending_fee_change: FeeChange.pending.order(:id).last&.as_json(only: [:id, :old_terms, :new_terms, :effective_at, :created_at]),
+      blocked_fee_change: FeeChange.where.not(blocked_at: nil).order(:blocked_at).last&.as_json(only: [:id, :effective_at, :blocked_at, :activation_error]),
       stripe_test_configured: settings.can_enable_test?,
       stripe_live_configured: settings.stripe_live_configured?,
       stripe_live_approved: settings.can_enable_live?,

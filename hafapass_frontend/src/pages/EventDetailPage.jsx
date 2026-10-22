@@ -254,7 +254,9 @@ function EventDetailContent() {
     }
     if (navigator.share) {
       try {
-        await navigator.share({ title: event.title, text: event.short_description || event.description?.slice(0, 120), url })
+        const from = lowestPurchasablePrice(event.ticket_types || [])
+        const priceText = from === null ? '' : from === 0 ? `${t('events.free')}. ` : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(from) })}. ${t('pricing.allInNote', { platform: 'HåfaPass' })} `
+        await navigator.share({ title: event.title, text: `${priceText}${event.short_description || event.description?.slice(0, 120) || ''}`, url })
       } catch {
         // Share cancellation is user-driven; no visible error needed.
       }
@@ -284,6 +286,8 @@ function EventDetailContent() {
   const truncatedDescription = (event.short_description || event.description || '').slice(0, 160)
   const eventUrl = `${PUBLIC_WEB_URL}/events/${event.slug}`
   const lowestPrice = lowestPurchasablePrice(event.ticket_types || [])
+  const advertisedDescription = lowestPrice === null ? truncatedDescription
+    : `${lowestPrice === 0 ? t('events.free') : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) })}. ${t('pricing.allInNote', { platform: 'HåfaPass' })}`}. ${truncatedDescription}`.slice(0, 160)
   const onSale = event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
   const buyBarPrice = lowestPrice === 0 ? t('buyer.EventDetail.free') : lowestPrice !== null ? t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) }) : t('buyer.EventDetail.ticketsAvailable')
 
@@ -301,7 +305,7 @@ function EventDetailContent() {
     name: event.title,
     startDate: event.starts_at,
     ...(event.ends_at && { endDate: event.ends_at }),
-    description: truncatedDescription,
+    description: advertisedDescription,
     ...(coverImage && { image: coverImage }),
     ...(lineup?.items?.length && { performer: lineup.items.map(item => ({ '@type': 'Person', name: item.name })) }),
     url: eventUrl,
@@ -334,7 +338,7 @@ function EventDetailContent() {
     <div className={eventAccentStyle ? 'event-customized' : undefined} style={eventAccentStyle}>
       <SEO
         title={event.title}
-        description={truncatedDescription}
+        description={advertisedDescription}
         image={coverImage || undefined}
         url={eventUrl}
         jsonLd={eventJsonLd}

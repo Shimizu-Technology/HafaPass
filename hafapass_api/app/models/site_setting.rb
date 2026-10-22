@@ -15,6 +15,7 @@ class SiteSetting < ApplicationRecord
   MAX_SERVICE_FEE_PERCENT = 25
   MAX_SERVICE_FEE_FLAT_CENTS = 1_000
   MAX_PAYOUT_SCHEDULE_TEXT_LENGTH = 200
+  validates :fee_notice_days, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 365 }
 
   validates :payment_mode, presence: true, inclusion: { in: PAYMENT_MODES }
   validates :service_fee_percent, presence: true,
@@ -32,7 +33,7 @@ class SiteSetting < ApplicationRecord
   # ── Singleton accessor ──────────────────────────────────────────────
   # Uses singleton_guard column with unique index to prevent duplicate records.
   def self.instance
-    first_or_create!(
+    settings = first_or_create!(
       singleton_guard: 0,
       payment_mode: "simulate",
       platform_name: "HåfaPass",
@@ -41,9 +42,13 @@ class SiteSetting < ApplicationRecord
       processing_fee_bearer: "platform",
       payout_schedule_text: DEFAULT_PAYOUT_SCHEDULE_TEXT
     )
+    FeeChange.activate_due!(settings) if FeeChange.table_exists?
+    settings
   rescue ActiveRecord::RecordNotUnique
     # Another process beat us to it — just fetch the existing row
-    first!
+    settings = first!
+    FeeChange.activate_due!(settings) if FeeChange.table_exists?
+    settings
   end
 
   LEGACY_SERVICE_FEE_PERCENT = 3.0

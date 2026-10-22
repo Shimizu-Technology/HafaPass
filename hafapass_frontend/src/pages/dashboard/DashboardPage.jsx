@@ -294,6 +294,23 @@ function DashboardSession({ authContext }) {
  const canCreate = permissions.manage_events === true
  const canScan = permissions.scan === true || events.some(event => event.permissions?.scan)
  const canManageSettings = canManageOrganizationSettings(organization)
+ const feeNotice = organization?.fee_change_notice
+ const [noticeError, setNoticeError] = useState('')
+ const [acknowledgingNotice, setAcknowledgingNotice] = useState(false)
+
+ const acknowledgeFeeNotice = async () => {
+  const request = beginRequest(profileContext)
+  if (!request || !feeNotice || acknowledgingNotice) return
+  setAcknowledgingNotice(true)
+  setNoticeError('')
+  try {
+   const response = await apiClient.post(`/organizer/fee_change_notices/${feeNotice.id}/acknowledge`, {}, request.config)
+   if (request.current()) setOrganizations(previous => previous.map(item => item.id === organization.id
+    ? { ...item, fee_change_notice: { ...item.fee_change_notice, acknowledged_at: response.data.acknowledged_at } } : item))
+  } catch (failure) {
+   if (request.current()) setNoticeError(failure.response?.data?.error || 'Could not record your acknowledgment. Try again.')
+  } finally { request.release(); setAcknowledgingNotice(false) }
+ }
 
  const contextCurrent = context => Boolean(context && mounted.current && context.generation === loadGeneration.current
   && context.authContext === getApiAuthContext() && context.owner === currentScannerOwner()
@@ -604,6 +621,15 @@ function DashboardSession({ authContext }) {
     <p>You’re viewing <strong>{organization.name}</strong> as a HåfaPass admin. Changes you make here are recorded in the audit log.</p>
     <button type="button" onClick={leaveAdminView} className="btn-secondary shrink-0 !px-4 !py-2 text-sm">Leave this organization</button>
    </div>}
+
+   {feeNotice && <section aria-label="Upcoming fee change" className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+    <h2 className="font-semibold">Upcoming HåfaPass fee change</h2>
+    <p className="mt-1">New terms take effect {new Date(feeNotice.effective_at).toLocaleString()}. On a $25.00 {organization.name} ticket under the current fee policy, the buyer total would change from ${(feeNotice.old_example.all_in_price_cents / 100).toFixed(2)} to ${(feeNotice.new_example.all_in_price_cents / 100).toFixed(2)}.</p>
+    <p className="mt-1">Service fee: {feeNotice.old_terms.service_fee_percent}% + ${(feeNotice.old_terms.service_fee_flat_cents / 100).toFixed(2)} → {feeNotice.new_terms.service_fee_percent}% + ${(feeNotice.new_terms.service_fee_flat_cents / 100).toFixed(2)} per paid ticket. Card processing: {feeNotice.old_terms.processing_fee_bearer} → {feeNotice.new_terms.processing_fee_bearer}. Payouts: {feeNotice.old_terms.payout_schedule_text} → {feeNotice.new_terms.payout_schedule_text}.</p>
+    {feeNotice.acknowledged_at ? <p className="mt-2 font-medium">Acknowledged. This notice remains visible until the effective date.</p>
+     : <button type="button" disabled={acknowledgingNotice} onClick={acknowledgeFeeNotice} className="btn-secondary mt-3">{acknowledgingNotice ? 'Recording…' : 'Acknowledge notice'}</button>}
+    {noticeError && <p role="alert" className="mt-2 text-red-700">{noticeError}</p>}
+   </section>}
 
    {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading}
     agreementError={actionError?.path === 'accept_policy' ? actionError.message : null} onOpenAgreement={() => setActionError(null)}

@@ -6,13 +6,14 @@ import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remainingTickets } from '../utils/ticketPricing'
+import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remainingTickets, ticketAllInCents, ticketServiceFeeCents } from '../utils/ticketPricing'
 
 export default function EventCard({ event }) {
   const { t } = useTranslation()
   const location = useLocation()
   const content = useTranslatedContent(event)
   const lowestPrice = lowestPurchasablePrice(event.ticket_types)
+  const lowestTicket = event.ticket_types?.find(ticket => isTicketPurchasable(ticket) && ticketAllInCents(ticket) === lowestPrice)
   const priceLabel = lowestPrice === null ? ''
     : lowestPrice === 0 ? t('events.free')
     : `${t('events.from')} ${formatTicketPrice(lowestPrice)}`
@@ -57,12 +58,13 @@ export default function EventCard({ event }) {
         {/* Price badge */}
         {priceLabel && (
           <div className="absolute top-3 right-3">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-lg backdrop-blur-md ${
+            <span className={`inline-flex flex-col items-center px-3 py-1 rounded-full text-xs font-bold shadow-lg backdrop-blur-md ${
               lowestPrice === 0
                 ? 'bg-emerald-700 text-white'
                 : 'bg-white/90 text-neutral-900'
             }`}>
               {priceLabel}
+              {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <span className="text-[10px] font-normal">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</span>}
             </span>
           </div>
         )}

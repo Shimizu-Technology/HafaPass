@@ -123,6 +123,7 @@ Rails.application.routes.draw do
 
       # Organizer events (protected)
       namespace :organizer do
+        post "fee_change_notices/:id/acknowledge", to: "fee_change_notices#acknowledge"
         get "refund_reconciliation", to: "refund_reconciliations#index"
         post "refund_reconciliation/:type/:id/:operation", to: "refund_reconciliations#action"
         resource :tax_information, only: [:show, :update]
@@ -259,6 +260,7 @@ Rails.application.routes.draw do
         post "annual_tax_reports/export", to: "annual_tax_reports#export"
         patch "annual_tax_reports/:organization_id", to: "annual_tax_reports#update"
         resource :settings, only: [:show, :update]
+        get "settings/fee_change_preview", to: "settings#fee_change_preview"
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
           member do
