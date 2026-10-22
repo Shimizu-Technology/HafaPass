@@ -12,21 +12,29 @@ export function parseFeeTerms(config) {
   return { percent, flatCents, bearer, payoutScheduleText }
 }
 
-// Mirrors Commerce::OrderCreator#calculate_totals; the created order remains
-// the authoritative amount. paidTicketCount counts only tickets whose unit
-// price is above zero (before promo discounts): free tickets carry no fee.
+// Aggregate illustration for organizer screens. Mixed-price carts use the
+// server's per-ticket quotes instead.
 export function platformFeeCents(terms, ticketSubtotalCents, paidTicketCount) {
   if (!terms || ticketSubtotalCents <= 0) return 0
   return Math.round(ticketSubtotalCents * (terms.percent / 100)) + (paidTicketCount * terms.flatCents)
 }
 
+// A single-ticket mirror of Commerce::ServiceFee. Buyers always receive the
+// server quote; this is for admin/organizer examples and fixture parity tests.
+export function quoteBuyerFeeCents(terms, priceCents, buyerFeePercent = 100) {
+  if (priceCents <= 0) return { platformFeeCents: 0, buyerFeeCents: 0, allInPriceCents: priceCents }
+  const basisPoints = Math.round(terms.percent * 100)
+  const platformFee = Math.floor((priceCents * basisPoints + 5000) / 10000) + terms.flatCents
+  const buyerFee = Math.floor((platformFee * buyerFeePercent + 50) / 100)
+  return { platformFeeCents: platformFee, buyerFeeCents: buyerFee, allInPriceCents: priceCents + buyerFee }
+}
+
 // Buyer and organizer amounts for one ticket at a fee policy, using the same
 // rounding as the server.
 export function feeExample(terms, priceCents, feePolicy, buyerFeePercent) {
-  const platformFee = platformFeeCents(terms, priceCents, priceCents > 0 ? 1 : 0)
   const buyerPercent = feePolicy === 'organizer_absorbs' ? 0 : feePolicy === 'split_fees' ? Number(buyerFeePercent) || 0 : 100
-  const buyerFee = Math.round(platformFee * (buyerPercent / 100))
-  return { buyerPaysCents: priceCents + buyerFee, organizerReceivesCents: priceCents - (platformFee - buyerFee) }
+  const quote = quoteBuyerFeeCents(terms, priceCents, buyerPercent)
+  return { buyerPaysCents: quote.allInPriceCents, organizerReceivesCents: priceCents - (quote.platformFeeCents - quote.buyerFeeCents) }
 }
 
 function dollars(cents) {

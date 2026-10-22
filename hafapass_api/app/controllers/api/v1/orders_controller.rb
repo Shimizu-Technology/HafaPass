@@ -3,7 +3,7 @@
 class Api::V1::OrdersController < ApplicationController
   CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id catalog_items
     registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
-    terms_accepted terms_version live_money_proof marketing_opt_in].freeze
+    terms_accepted terms_version live_money_proof marketing_opt_in expected_total_cents].freeze
   skip_before_action :authenticate_user!, only: [
     :create, :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
@@ -75,6 +75,7 @@ class Api::V1::OrdersController < ApplicationController
       checkout_request_digest: checkout_digest,
       checkout_attempt: @checkout_claim&.attempt,
       checkout_lease_token: @checkout_claim&.lease_token,
+      expected_total_cents: params[:expected_total_cents],
       line_items: params[:line_items],
       buyer_email: params[:buyer_email],
       buyer_name: params[:buyer_name],
@@ -112,6 +113,8 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     render json: response_payload, status: :created
+  rescue Commerce::OrderCreator::PriceChanged => e
+    render_checkout_rejection(e.message, status: :unprocessable_entity, code: "price_changed")
   rescue Commerce::OrderCreator::CheckoutError, Commerce::PaymentRecovery::RecoveryError => e
     render_checkout_rejection(e.message, status: :unprocessable_entity)
   rescue CheckoutAttempt::Conflict => e
@@ -122,8 +125,9 @@ class Api::V1::OrdersController < ApplicationController
     render_checkout_rejection(e.message, status: :unprocessable_entity)
   end
 
-  def render_checkout_rejection(message, status:)
+  def render_checkout_rejection(message, status:, code: nil)
     payload = { error: message }
+    payload[:code] = code if code
     if @checkout_claim
       fenced = @checkout_claim.attempt.reject!(@checkout_claim.lease_token)
       payload[:checkout_recovery_required] = !fenced

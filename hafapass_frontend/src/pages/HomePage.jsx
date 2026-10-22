@@ -10,7 +10,7 @@ import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { formatTicketPrice, lowestPurchasablePrice } from '../utils/ticketPricing'
+import { formatTicketPrice, lowestPurchasablePrice, ticketAllInCents, ticketServiceFeeCents, isTicketPurchasable } from '../utils/ticketPricing'
 import { categoryIcon } from '../utils/categoryIcons'
 
 const categoriesFor = t => [
@@ -26,6 +26,13 @@ function priceLabel(ticketTypes, t) {
   const cents = lowestPurchasablePrice(ticketTypes)
   const price = formatTicketPrice(cents, t('events.free'))
   return cents === 0 ? price : price ? `${t('events.from')} ${price}` : ''
+}
+
+function feeLabel(ticketTypes, t) {
+  const lowest = lowestPurchasablePrice(ticketTypes)
+  const ticket = ticketTypes?.find(item => isTicketPurchasable(item) && ticketAllInCents(item) === lowest)
+  const fee = ticket && ticketServiceFeeCents(ticket)
+  return fee > 0 ? t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(fee) }) : ''
 }
 
 // Images are absolutely positioned inside the sized frame so they never depend on
@@ -139,6 +146,7 @@ export default function HomePage() {
                 <p className="mt-3 flex items-start gap-2 text-sm text-content-muted"><Calendar aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span>{formatEventDate(featuredEvent.starts_at, featuredEvent.timezone, { weekday: 'long' })} · {formatEventTime(featuredEvent.starts_at, featuredEvent.timezone)}</span></p>
                 {featuredEvent.venue_name && <p className="mt-2 flex items-start gap-2 text-sm text-content-muted"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="break-words">{featuredEvent.venue_name}{featuredEvent.venue_city ? `, ${featuredEvent.venue_city}` : ''}</span></p>}
                 {featuredPrice && <p className="mt-3 text-sm font-semibold text-neutral-900">{featuredPrice}</p>}
+                {feeLabel(featuredEvent.ticket_types, t) && <p className="text-xs text-content-muted">{feeLabel(featuredEvent.ticket_types, t)}</p>}
                 <Link to={`/events/${featuredEvent.slug || featuredEvent.id}`} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.getTickets')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
               </div>
             </article>
@@ -172,7 +180,7 @@ export default function HomePage() {
                           <div className="min-w-0 flex-1">
                             <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-content-muted"><span className="inline-flex items-center gap-1.5"><Clock aria-hidden="true" className="h-4 w-4" />{formatEventTime(event.starts_at, event.timezone)}</span>{event.venue_name && <span className="inline-flex min-w-0 items-start gap-1.5"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 break-words">{event.venue_name}</span></span>}</p>
                             <BuyerEventText event={event} linked description className="mt-2 break-words text-base font-semibold text-neutral-950 group-hover:text-brand-800 sm:text-xl" />
-                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">{price && <span className="font-semibold text-neutral-900">{price}</span>}<span className="inline-flex min-h-8 items-center gap-1 font-medium text-brand-800">{t('buyer.Home.viewEvent')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></span></div>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">{price && <span className="font-semibold text-neutral-900">{price}<small className="block font-normal text-content-muted">{feeLabel(event.ticket_types, t)}</small></span>}<span className="inline-flex min-h-8 items-center gap-1 font-medium text-brand-800">{t('buyer.Home.viewEvent')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></span></div>
                           </div>
                         </Link>
                       )

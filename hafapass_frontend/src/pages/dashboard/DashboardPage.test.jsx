@@ -21,6 +21,21 @@ function fixtures(organizations = [scanner], events = [event], summary = { upcom
 }
 beforeEach(() => { vi.clearAllMocks(); window.localStorage.clear() })
 describe('staff dashboard entry', () => {
+  it('shows a scheduled fee notice after acknowledgment without blocking owner actions', async () => {
+    const notice = { id: 7, effective_at: '2027-12-01T02:00:00Z', acknowledged_at: null,
+      old_terms: { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 days' },
+      new_terms: { service_fee_percent: '7.0', service_fee_flat_cents: 150, processing_fee_bearer: 'organizer', payout_schedule_text: 'within 7 days' },
+      old_example: { all_in_price_cents: 2725 }, new_example: { all_in_price_cents: 2825 } }
+    fixtures([{ ...owner, fee_change_notice: notice }])
+    apiClient.post.mockResolvedValue({ data: { acknowledged_at: '2026-10-22T00:00:00Z' } })
+    mount()
+    const banner = await screen.findByRole('region', { name: 'Upcoming fee change' })
+    expect(banner).toHaveTextContent('$27.25 to $28.25')
+    expect(screen.getByRole('link', { name: 'Create event' })).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Acknowledge notice' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/fee_change_notices/7/acknowledge', {}, expect.anything()))
+    expect(banner).toHaveTextContent('Acknowledged. This notice remains visible until the effective date.')
+  })
   it('opens the clicked scanner event and hides unrelated organizer controls', async () => {
     fixtures()
     mount()

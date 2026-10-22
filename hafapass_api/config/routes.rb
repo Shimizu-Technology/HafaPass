@@ -122,6 +122,7 @@ Rails.application.routes.draw do
 
       # Organizer events (protected)
       namespace :organizer do
+        post "fee_change_notices/:id/acknowledge", to: "fee_change_notices#acknowledge"
         resource :tax_information, only: [:show, :update]
         resource :organization, only: [:show], controller: "organizations"
         resource :finances, only: [:show], controller: "organization_finances" do
@@ -243,6 +244,7 @@ Rails.application.routes.draw do
         end
         post "organizations/:organization_id/tax_information/reveal", to: "tax_informations#reveal"
         resource :settings, only: [:show, :update]
+        get "settings/fee_change_preview", to: "settings#fee_change_preview"
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
           member do

@@ -7,7 +7,7 @@ import AdminSessionGate from './AdminSessionGate'
 import Dialog from '../../components/Dialog'
 import FormErrorSummary from '../../components/FormErrorSummary'
 import { usePlatformRequests } from '../../hooks/usePlatformContext'
-import { feeExample, feeRateLabel, platformFeeCents } from '../../utils/feeTerms'
+import { feeExample, feeRateLabel, quoteBuyerFeeCents } from '../../utils/feeTerms'
 import { money } from './adminOperations'
 import PaymentModeSwitch from './PaymentModeSwitch'
 
@@ -37,6 +37,7 @@ const toForm = settings => ({
   service_fee_flat: settings.service_fee_flat_cents == null ? '' : (settings.service_fee_flat_cents / 100).toFixed(2),
   processing_fee_bearer: settings.processing_fee_bearer || 'platform',
   payout_schedule_text: settings.payout_schedule_text || '',
+  fee_notice_days: settings.fee_notice_days == null ? '30' : String(settings.fee_notice_days),
 })
 
 // Form values as the API's attributes. Dollars become whole cents.
@@ -51,6 +52,7 @@ function toAttributes(form) {
     service_fee_flat_cents: flat === '' ? null : Math.round(Number(flat) * 100),
     processing_fee_bearer: form.processing_fee_bearer,
     payout_schedule_text: form.payout_schedule_text.replace(/\s+/g, ' ').trim(),
+    fee_notice_days: Number(form.fee_notice_days),
   }
 }
 
@@ -68,7 +70,8 @@ function validate(form) {
     errors.service_fee_flat_cents = `Enter a flat fee between $0.00 and ${money(MAX_FLAT_CENTS)}, in dollars and cents.`
   }
   if (!values.payout_schedule_text) errors.payout_schedule_text = 'Describe when organizers are paid.'
-  else if (values.payout_schedule_text.length > MAX_SCHEDULE_LENGTH) errors.payout_schedule_text = `Keep payout timing under ${MAX_SCHEDULE_LENGTH} characters.`
+  if (!Number.isInteger(values.fee_notice_days) || values.fee_notice_days < 1 || values.fee_notice_days > 365) errors.fee_notice_days = 'Enter 1 to 365 notice days.'
+  if (values.payout_schedule_text.length > MAX_SCHEDULE_LENGTH) errors.payout_schedule_text = `Keep payout timing under ${MAX_SCHEDULE_LENGTH} characters.`
   return errors
 }
 
@@ -110,7 +113,7 @@ function FeeExample({ form }) {
   const priceCents = Math.round(Number(price) * 100)
   const terms = valid ? { percent: values.service_fee_percent, flatCents: values.service_fee_flat_cents, bearer: values.processing_fee_bearer } : null
   const usable = terms && Number.isFinite(priceCents) && priceCents >= 0
-  const fee = usable ? platformFeeCents(terms, priceCents, priceCents > 0 ? 1 : 0) : 0
+  const fee = usable ? quoteBuyerFeeCents(terms, priceCents).platformFeeCents : 0
   const example = usable ? feeExample(terms, priceCents, 'buyer_pays', 100) : null
   return (
     <section aria-labelledby="fee-example-title" className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
@@ -161,6 +164,8 @@ function AdminSettingsSession({ identity, resourcePath }) {
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(null)
+  const [effectiveAt, setEffectiveAt] = useState('')
+  const [affectedCount, setAffectedCount] = useState(null)
 
   // `keepForm` re-checks the saved settings (for example payment readiness)
   // without discarding edits the admin has not saved yet.
@@ -201,13 +206,15 @@ function AdminSettingsSession({ identity, resourcePath }) {
     if (!request) return
     setSaving(true)
     try {
-      const response = await apiClient.patch('/admin/settings', changes, request.config)
+      const response = await apiClient.patch('/admin/settings', {
+        ...changes, ...(feeChanges.length ? { effective_at: new Date(effectiveAt).toISOString() } : {}),
+      }, request.config)
       if (!request.current()) return
       setSaved(response.data)
       setForm(toForm(response.data))
       setConfirming(null)
       setErrors({})
-      setNotice(feeChanges.length ? 'Settings saved. New orders use the new fee terms; existing orders keep theirs.' : 'Settings saved.')
+      setNotice(feeChanges.length ? 'Fee change scheduled. Affected organizer owners have been queued for notice.' : 'Settings saved.')
     } catch (failure) {
       if (request.handleError(failure) || !request.current()) return
       setConfirming(null)
@@ -217,14 +224,20 @@ function AdminSettingsSession({ identity, resourcePath }) {
     } finally { request.release(); setSaving(false) }
   }
 
-  const submit = event => {
+  const submit = async event => {
     event.preventDefault()
     setNotice('')
     const found = validate(form)
     setErrors(found)
     if (Object.keys(found).length) return
     if (!Object.keys(changes).length) { setNotice('There are no changes to save.'); return }
-    if (feeChanges.length) setConfirming(feeChanges)
+    if (feeChanges.length) {
+      try {
+        const response = await apiClient.get('/admin/settings/fee_change_preview')
+        setAffectedCount(response.data.affected_organizer_count)
+        setConfirming(feeChanges)
+      } catch { setErrors({ form: 'Could not load the affected organizer count. Try again.' }) }
+    }
     else save()
   }
 
@@ -236,7 +249,8 @@ function AdminSettingsSession({ identity, resourcePath }) {
 
   return (
     <AdminLayout>
-      <p className="mb-6 max-w-3xl text-sm text-content-muted">Platform-wide details shown to buyers and organizers. Fee changes apply to new orders only; orders already placed keep the fee and processing terms they were sold with.</p>
+      <p className="mb-6 max-w-3xl text-sm text-content-muted">Platform-wide details shown to buyers and organizers. Scheduled fee changes apply only to orders placed on or after their effective date.</p>
+      {saved.pending_fee_change && <p role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">A fee change is scheduled for {new Date(saved.pending_fee_change.effective_at).toLocaleString()}. Current fees remain in effect until then.</p>}
       <FormErrorSummary errors={summaryErrors} title="Check these settings" />
       {errors.form && <p role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{errors.form}</p>}
       {notice && <p role="status" className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</p>}
@@ -303,6 +317,11 @@ function AdminSettingsSession({ identity, resourcePath }) {
               <textarea id="payout_schedule_text" rows={2} maxLength={MAX_SCHEDULE_LENGTH + 50} value={form.payout_schedule_text} onChange={update('payout_schedule_text')} aria-invalid={!!errors.payout_schedule_text} aria-describedby={describedBy('payout_schedule_text', true, errors.payout_schedule_text)} className={inputClass('payout_schedule_text')} />
             </Field>
           </div>
+          <div className="mt-6">
+            <Field id="fee_notice_days" label="Minimum organizer notice (days)" hint="Fee term changes must be scheduled this many days ahead." error={errors.fee_notice_days}>
+              <input id="fee_notice_days" type="number" min="1" max="365" step="1" value={form.fee_notice_days} onChange={update('fee_notice_days')} className={inputClass('fee_notice_days')} />
+            </Field>
+          </div>
         </section>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -314,8 +333,13 @@ function AdminSettingsSession({ identity, resourcePath }) {
       <PaymentModeSwitch settings={saved} beginRequest={beginRequest} onChanged={data => setSaved(previous => ({ ...previous, ...data }))} onRefresh={() => load({ keepForm: true })} />
 
       {confirming && <Dialog labelledBy={confirmTitle} busy={saving} onClose={() => setConfirming(null)} className="max-w-lg">
-        <h2 id={confirmTitle} className="text-lg font-semibold text-neutral-900">Change fee terms for new orders?</h2>
-        <p className="mt-2 text-sm text-neutral-700">These changes apply to orders placed after you save. Existing orders, settlements and payouts keep the terms they were sold with. The change is recorded in the audit log under your name.</p>
+        <h2 id={confirmTitle} className="text-lg font-semibold text-neutral-900">Schedule fee term changes?</h2>
+        <p className="mt-2 text-sm text-neutral-700">The new terms apply to orders placed on or after the effective date. Existing orders keep their recorded terms. The change and organizer acknowledgments are audited.</p>
+        <p className="mt-2 font-semibold text-neutral-900">{affectedCount ?? '—'} affected organizers will be notified by email.</p>
+        <label className="mt-4 block text-sm font-medium text-neutral-900">Effective date and time
+          <input type="datetime-local" value={effectiveAt} onChange={event => setEffectiveAt(event.target.value)} className="input mt-1" required />
+          <span className="mt-1 block text-xs text-content-muted">At least {form.fee_notice_days} days from now. Time is interpreted in your browser’s time zone.</span>
+        </label>
         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" data-testid="policy-terms-effect">
           <p className="font-semibold">This also changes the organizer agreement.</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
@@ -333,7 +357,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
         </dl>
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" disabled={saving} onClick={() => setConfirming(null)} className="btn-secondary">Keep editing</button>
-          <button type="button" disabled={saving} onClick={save} className="btn-primary">{saving ? 'Saving…' : 'Save fee terms'}</button>
+          <button type="button" disabled={saving || !effectiveAt || new Date(effectiveAt).getTime() < Date.now() + Number(form.fee_notice_days) * 86400000} onClick={save} className="btn-primary">{saving ? 'Scheduling…' : 'Schedule fee change'}</button>
         </div>
       </Dialog>}
     </AdminLayout>

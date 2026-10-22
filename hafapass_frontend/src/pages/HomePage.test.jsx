@@ -146,6 +146,17 @@ describe('hosting entry navigation', () => {
     expect(screen.getByRole('link', { name: 'Classes & Workshops' })).toHaveAttribute('href', '/events?category=workshop')
   })
 
+  it('leads with the all-in featured price and discloses its included service fee', async () => {
+    apiClient.get.mockResolvedValue({ data: { events: [{ id: 46, slug: 'paid-event', title: 'Paid event',
+      is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam',
+      ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, all_in_price_cents: 2725,
+        service_fee_cents: 225, on_sale: true, quantity_remaining: 20 }] }] } })
+    mount()
+    const featured = await screen.findByRole('article', { name: 'Featured event' })
+    expect(within(featured).getByText('From $27.25')).toBeInTheDocument()
+    expect(within(featured).getByText('Includes $2.25 service fee')).toBeInTheDocument()
+  })
+
   it('recovers broken organizer artwork while keeping featured details and action usable', async () => {
     const artwork = 'https://storage.invalid/uploads/organizer-poster.png'
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 45, slug: 'poster', title: 'Organizer poster event',
