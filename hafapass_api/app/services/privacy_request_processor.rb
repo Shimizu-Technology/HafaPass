@@ -116,7 +116,16 @@ class PrivacyRequestProcessor
           disputes: order.disputes.map { |dispute| dispute.attributes.except("provider_payload") }
         }
       end,
-      memberships: @request.user ? OrganizationMembership.where(user_id: @request.user_id).map(&:attributes) : []
+      memberships: @request.user ? OrganizationMembership.where(user_id: @request.user_id).map(&:attributes) : [],
+      organizer_profiles: @request.user ? OrganizerProfile.where(user_id: @request.user_id).map(&:attributes) : [],
+      saved_events: @request.user ? EventFavorite.where(user_id: @request.user_id).map(&:attributes) : [],
+      organizer_follows: @request.user ? OrganizerFollow.where(user_id: @request.user_id).map(&:attributes) : [],
+      event_reminders: @request.user ? EventReminder.where(user_id: @request.user_id).map(&:attributes) : [],
+      image_uploads: @request.user ? ImageUploadReceipt.where(user_id: @request.user_id).map(&:attributes) : [],
+      marketing_withdrawals: MarketingUnsubscribe.where(email: @request.requester_email.downcase).map(&:attributes),
+      privacy_requests: @request.user ? PrivacyRequest.where(user_id: @request.user_id).map do |item|
+        item.attributes.except("result")
+      end : [@request.attributes.except("result")]
     }
   end
 

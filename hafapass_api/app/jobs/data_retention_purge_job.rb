@@ -42,7 +42,8 @@ class DataRetentionPurgeJob < ApplicationJob
           next if record.is_a?(Payout) && !record.status_paid?
           next if record.is_a?(OrganizerTaxInformation) && Payout.where(organization_id: record.organization_id)
             .where("paid_at >= ? OR paid_at IS NULL", cutoff).exists?
-          next if record.is_a?(OrganizerSalesExportRequest) && record.expires_at.nil?
+          next if record.is_a?(OrganizerSalesExportRequest) &&
+            (record.expires_at.nil? || record.expires_at > at)
 
           if dry_run
             counts[table] += 1

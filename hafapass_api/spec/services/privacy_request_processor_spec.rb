@@ -39,4 +39,16 @@ RSpec.describe PrivacyRequestProcessor do
       .to raise_error(PrivacyRequestProcessor::Blocked)
     expect(order.reload.buyer_email).to eq(user.email)
   end
+
+  it "includes account activity and order data in the access JSON" do
+    favorite = EventFavorite.create!(user: user, event: order.event)
+    access = PrivacyRequest.create!(kind: "access", user: user, requester_email: user.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+
+    data = described_class.new(access).export
+
+    expect(data[:account]).to include("email" => user.email)
+    expect(data[:orders].first[:order]).to include("id" => order.id)
+    expect(data[:saved_events].first).to include("id" => favorite.id)
+  end
 end
