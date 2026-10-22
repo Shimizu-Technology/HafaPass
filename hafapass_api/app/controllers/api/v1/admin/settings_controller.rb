@@ -64,6 +64,11 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
           after_data: { "payment_mode" => changes["payment_mode"].last.to_s },
           metadata: payment_mode_audit_metadata(changes["payment_mode"].last.to_s), request: request)
       end
+      if changes.key?("retention_purge_enabled")
+        AuditLogger.record!(action: "site_settings.retention_purge_changed", auditable: settings, actor: @current_user,
+          before_data: { "retention_purge_enabled" => changes["retention_purge_enabled"].first },
+          after_data: { "retention_purge_enabled" => changes["retention_purge_enabled"].last }, request: request)
+      end
       if fee_changes.any?
         # Fee terms apply to orders created after this change; existing orders
         # keep their snapshotted fee and processing-fee bearer.
@@ -89,12 +94,14 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
   def settings_params
     params.permit(:payment_mode, :platform_name, :platform_email, :platform_phone,
                   :service_fee_percent, :service_fee_flat_cents, :processing_fee_bearer, :payout_schedule_text,
-                  :business_mailing_address)
+                  :business_mailing_address, :retention_purge_enabled)
   end
 
   def settings_json(settings)
     {
       payment_mode: settings.payment_mode,
+      retention_purge_enabled: settings.retention_purge_enabled,
+      retention_dry_run: DataRetention.dry_run?,
       platform_name: settings.platform_name,
       platform_email: settings.platform_email,
       platform_phone: settings.platform_phone,

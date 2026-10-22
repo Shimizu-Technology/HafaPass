@@ -8,6 +8,7 @@ import TeamManager from '../../components/team/TeamManager'
 import PayoutMethodSection from './PayoutMethodSection'
 import TaxInformationSection from './TaxInformationSection'
 import { roleDescription, roleLabel } from '../../utils/roles'
+import { Link } from 'react-router-dom'
 
 function StatusPill({ ready, children }) {
   return (
@@ -164,6 +165,12 @@ function SettingsPageSession({ identity }) {
       />
 
       {error && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p>{error}</p><button type="button" onClick={load} className="min-h-11 font-semibold underline">Retry organization settings</button></div>}
+
+      <div className="mt-6 rounded-xl border border-neutral-200 bg-white p-5 text-sm">
+        <h2 className="font-semibold text-neutral-900">Your personal data</h2>
+        <p className="mt-1 text-content-muted">Request a copy of your data or ask us to delete it.</p>
+        <Link to="/account/settings" className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open privacy requests</Link>
+      </div>
 
       {!canManageTeam && !canManagePayouts ? (
         <NoAccessNotice className="mt-8" title="Settings are for the organization owner"

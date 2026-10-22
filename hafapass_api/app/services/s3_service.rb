@@ -66,6 +66,21 @@ class S3Service
       Rails.logger.warn("Pending image cleanup deferred to bucket lifecycle (#{error.class})")
     end
 
+    # Only keys recorded by our upload flow may be removed by a privacy request.
+    def delete_upload!(key)
+      raise UploadError, "Image storage is not configured" unless configured?
+      raise UploadError, "Invalid upload key" unless key.to_s.match?(%r{\A(?:pending|uploads)/(?:events|organizations)/\d+/[0-9a-f-]+\.(?:jpg|jpeg|png|webp)\z})
+
+      s3_client.delete_object(bucket: bucket_name, key: key)
+    end
+
+    def delete_private_export!(key)
+      raise UploadError, "Image storage is not configured" unless configured?
+      raise UploadError, "Invalid export key" unless key.to_s.match?(%r{\Aprivate/sales-exports/[0-9a-zA-Z/_-]+\.(?:csv|xlsx)\z})
+
+      s3_client.delete_object(bucket: bucket_name, key: key)
+    end
+
     def generate_presigned_get(key)
       raise UploadError, "Image storage is not configured" unless configured?
 

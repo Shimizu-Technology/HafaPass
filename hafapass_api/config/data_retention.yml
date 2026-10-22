@@ -1,0 +1,1032 @@
+# Engineering draft; counsel and CPA confirmation required before live purge.
+{
+  "version": 1,
+  "tables": {
+    "accessible_seat_releases": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence",
+        "reason"
+      ]
+    },
+    "acquisition_attributions": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "admission_actions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "attendee_snapshot",
+        "metadata"
+      ]
+    },
+    "admission_manifests": {
+      "category": "scanner/device data",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "payload"
+      ]
+    },
+    "apple_wallet_registrations": {
+      "category": "scanner/device data",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "device_library_identifier",
+        "push_token"
+      ]
+    },
+    "audit_logs": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "ip_address",
+        "before_data",
+        "after_data",
+        "metadata"
+      ]
+    },
+    "balance_adjustments": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "reason"
+      ]
+    },
+    "card_present_accounts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "verification_evidence"
+      ]
+    },
+    "card_present_payment_attempts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "completed_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "provider_response",
+        "failure_message"
+      ]
+    },
+    "catalog_fulfillments": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "catalog_item_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "release_reason"
+      ]
+    },
+    "catalog_items": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "name"
+      ]
+    },
+    "checkout_attempts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "lease_token_digest"
+      ]
+    },
+    "communication_campaigns": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "body",
+        "name",
+        "recipient_count"
+      ]
+    },
+    "connected_accounts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "details_submitted",
+        "payout_details"
+      ]
+    },
+    "disputes": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "provider_payload",
+        "reason"
+      ]
+    },
+    "distribution_links": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "distribution_partners": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "contact_email",
+        "contact_name",
+        "name"
+      ]
+    },
+    "event_cancellation_refund_items": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_cancellation_refund_runs": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "completed_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_change_responses": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_changes": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "after_data",
+        "before_data",
+        "reason"
+      ]
+    },
+    "event_day_rehearsal_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "event_favorites": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_price_zones": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "event_seating_configuration_id",
+        "seating_price_zone_id"
+      ]
+    },
+    "event_referrals": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_reminders": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_seating_configurations": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_seats": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "event_seating_configuration_id",
+        "status_reason"
+      ]
+    },
+    "event_slug_redirects": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_staff_assignments": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_state_changes": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "metadata",
+        "reason"
+      ]
+    },
+    "event_waivers": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "body"
+      ]
+    },
+    "events": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "policy_hold_reason",
+        "sales_suspension_reason",
+        "short_description",
+        "venue_address",
+        "venue_name"
+      ]
+    },
+    "fee_components": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "metadata"
+      ]
+    },
+    "guest_list_entries": {
+      "category": "organizer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "guest_email",
+        "guest_name",
+        "guest_phone",
+        "notes"
+      ]
+    },
+    "image_upload_receipts": {
+      "category": "uploads/S3",
+      "period": "account_lifetime",
+      "trigger": "completed_at",
+      "action": "keep",
+      "pii_columns": [
+        "final_key",
+        "public_url",
+        "source_key"
+      ]
+    },
+    "inventory_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "release_reason"
+      ]
+    },
+    "live_money_proof_authorizations": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "buyer_email_digest",
+        "revocation_reason"
+      ]
+    },
+    "live_money_proof_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "live_pilot_incidents": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference"
+      ]
+    },
+    "live_pilot_metric_snapshots": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference"
+      ]
+    },
+    "live_pilot_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "live_pilot_run_actions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "details"
+      ]
+    },
+    "live_pilot_runs": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "completed_at",
+      "action": "keep",
+      "pii_columns": [
+        "abort_reason",
+        "completion_evidence_digest",
+        "completion_evidence_reference",
+        "pause_reason"
+      ]
+    },
+    "marketing_unsubscribes": {
+      "category": "marketing consent",
+      "period": "3_years_after_withdrawal",
+      "trigger": "unsubscribed_at",
+      "action": "delete",
+      "pii_columns": [
+        "email"
+      ]
+    },
+    "marketplace_collection_events": {
+      "category": "analytics",
+      "period": "13_months",
+      "trigger": "created_at",
+      "action": "delete",
+      "pii_columns": []
+    },
+    "marketplace_collections": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "seo_description"
+      ]
+    },
+    "marketplace_funnel_events": {
+      "category": "analytics",
+      "period": "13_months",
+      "trigger": "occurred_at",
+      "action": "delete",
+      "pii_columns": []
+    },
+    "message_deliveries": {
+      "category": "marketing consent",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "recipient",
+        "outbound_payload",
+        "outbound_wire_body",
+        "metadata",
+        "last_error"
+      ],
+      "reviewed_non_pii_columns": [
+        "payload_digest"
+      ]
+    },
+    "message_provider_events": {
+      "category": "marketing consent",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "payload",
+        "processing_error"
+      ]
+    },
+    "order_items": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name",
+        "tier_name"
+      ]
+    },
+    "orders": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "completed_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "buyer_email",
+        "buyer_name",
+        "buyer_phone",
+        "marketing_opt_in"
+      ],
+      "pending_rule": {
+        "period": "90_days",
+        "trigger": "expired_at",
+        "action": "delete"
+      }
+    },
+    "organization_memberships": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "invited_email"
+      ]
+    },
+    "organizations": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "organizer_follows": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "organizer_profiles": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "business_description",
+        "business_name",
+        "verification_notes",
+        "verification_requested_at",
+        "verification_status"
+      ]
+    },
+    "organizer_sales_export_requests": {
+      "category": "exports",
+      "period": "2_days",
+      "trigger": "created_at",
+      "action": "delete",
+      "pii_columns": [
+        "failure_reason"
+      ]
+    },
+    "organizer_tax_informations": {
+      "category": "tax/TIN",
+      "period": "7_years_after_year_end",
+      "trigger": "certified_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "tin",
+        "tin_last_four",
+        "legal_name",
+        "business_name",
+        "mailing_address",
+        "signer_name"
+      ]
+    },
+    "payment_events": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "data"
+      ]
+    },
+    "payment_readiness_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "payments": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "provider_payload",
+        "failure_message"
+      ]
+    },
+    "payouts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "paid_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "payee_snapshot",
+        "tax_information_snapshot",
+        "tax_information_tin"
+      ]
+    },
+    "pilot_closeout_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "evidence_references",
+        "reason"
+      ]
+    },
+    "pilot_readiness_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "pilot_validation_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "platform_capability_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "platform_invitations": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "email"
+      ]
+    },
+    "pricing_tiers": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "promo_codes": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "promo_redemptions": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "promoter_commission_entries": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "promoters": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "email",
+        "name"
+      ]
+    },
+    "reconciliation_exceptions": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "details"
+      ]
+    },
+    "referral_attributions": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "code_snapshot"
+      ]
+    },
+    "refund_items": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "refund_tickets": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "refunds": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "provider_payload",
+        "reason",
+        "failure_message"
+      ]
+    },
+    "registration_questions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "registration_responses": {
+      "category": "buyer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "answer"
+      ],
+      "reviewed_non_pii_columns": [
+        "answered_at"
+      ]
+    },
+    "scanner_devices": {
+      "category": "scanner/device data",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "identifier",
+        "metadata",
+        "name"
+      ]
+    },
+    "seat_audit_events": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "metadata"
+      ]
+    },
+    "seat_hold_sessions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "event_seating_configuration_id",
+        "token_digest"
+      ]
+    },
+    "seat_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "release_reason"
+      ]
+    },
+    "seating_price_zones": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "seating_rows": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "seating_section_id"
+      ]
+    },
+    "seating_sections": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "settlement_items": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "metadata"
+      ]
+    },
+    "settlements": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "stripe_fee_evidences": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "fee_details"
+      ]
+    },
+    "support_notes": {
+      "category": "organizer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "body"
+      ]
+    },
+    "ticket_inventory_retentions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "retained_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "ticket_transfers": {
+      "category": "buyer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "recipient_email",
+        "recipient_name",
+        "token_version"
+      ]
+    },
+    "ticket_types": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "name"
+      ]
+    },
+    "tickets": {
+      "category": "buyer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "attendee_email",
+        "attendee_name",
+        "holder_email",
+        "holder_user_id",
+        "qr_code"
+      ]
+    },
+    "users": {
+      "category": "organizer PII",
+      "period": "inactive_no_auto_delete",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "email",
+        "first_name",
+        "last_name",
+        "phone",
+        "clerk_id"
+      ]
+    },
+    "venue_layouts": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "venue_seats": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "seating_price_zone_id",
+        "seating_row_id",
+        "view_note"
+      ]
+    },
+    "venue_slug_redirects": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "venues": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "accessibility_notes",
+        "address",
+        "description",
+        "name"
+      ]
+    },
+    "waitlist_entries": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "email",
+        "name",
+        "phone"
+      ]
+    },
+    "waitlist_offers": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "token_version"
+      ]
+    },
+    "waiver_acceptances": {
+      "category": "buyer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "wallet_passes": {
+      "category": "scanner/device data",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "authentication_token_digests"
+      ]
+    },
+    "webhook_events": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "payload"
+      ]
+    },
+    "legal_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "scope_value",
+        "reason"
+      ]
+    },
+    "privacy_requests": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "requester_email",
+        "result"
+      ]
+    }
+  }
+}

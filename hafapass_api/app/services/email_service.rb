@@ -76,6 +76,8 @@ class EmailService
         send_verification_request(profile, delivery.recipient, delivery: delivery)
       when "organization_invitation"
         send_organization_invitation(delivery.organization_membership, delivery: delivery)
+      when "privacy_request_confirmation"
+        send_privacy_request_confirmation(delivery.privacy_request, delivery: delivery)
       when "platform_invitation"
         send_platform_invitation(delivery.platform_invitation, delivery: delivery)
       else
@@ -110,6 +112,28 @@ class EmailService
     rescue StandardError => e
       record_enqueue_failure(delivery, e)
       raise
+    end
+
+    def send_privacy_request_confirmation_async(privacy_request)
+      delivery = create_delivery(privacy_request: privacy_request, template: "privacy_request_confirmation",
+        recipient: privacy_request.requester_email, idempotency_key: "privacy-confirmation/#{privacy_request.id}")
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    end
+
+    def send_privacy_request_confirmation(privacy_request, delivery: nil)
+      subject = "Your HåfaPass privacy request is complete"
+      text = privacy_request.kind == "access" ?
+        "Your data export is ready. Use the secure link below within seven days." :
+        "We have processed your deletion request. Some financial records remain as explained in your request result."
+      if privacy_request.status == "partially_completed"
+        text += " Some provider cleanup still needs manual completion. HåfaPass support will follow up."
+      end
+      link = privacy_request.kind == "access" ?
+        "<p><a href=\"#{ERB::Util.html_escape(PrivacyRequestAccess.url(privacy_request))}\">Download your JSON export</a></p>" : ""
+      html = email_wrapper(subject) { "<p>#{ERB::Util.html_escape(text)}</p>#{link}" }
+      deliver(to: privacy_request.requester_email, subject: subject, html: html,
+        tag: "privacy_request", delivery: delivery)
     end
 
     def send_ticket_email_async(ticket, requested_by: nil)
@@ -502,7 +526,7 @@ class EmailService
     private
 
     def create_delivery(order: nil, ticket: nil, event: nil, requested_by: nil, template:, recipient:, metadata: {},
-      idempotency_key: nil, organization_membership: nil, platform_invitation: nil)
+      idempotency_key: nil, organization_membership: nil, platform_invitation: nil, privacy_request: nil)
       digest_source = [template, recipient.to_s.downcase, order&.cache_key_with_version,
         ticket&.cache_key_with_version, event&.cache_key_with_version, metadata.to_json].join("|")
       invitation_subject = organization_membership || platform_invitation
@@ -513,6 +537,7 @@ class EmailService
         event: event,
         organization_membership: organization_membership,
         platform_invitation: platform_invitation,
+        privacy_request: privacy_request,
         requested_by: requested_by,
         channel: "email",
         template: template,

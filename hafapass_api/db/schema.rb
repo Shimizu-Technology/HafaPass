@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_153000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -64,12 +64,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.integer "source", null: false
     t.bigint "ticket_id"
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["action_uuid"], name: "index_admission_actions_on_action_uuid", unique: true
     t.index ["actor_user_id"], name: "index_admission_actions_on_actor_user_id"
     t.index ["event_id", "occurred_at"], name: "index_admission_actions_on_event_id_and_occurred_at"
     t.index ["event_id", "result"], name: "index_admission_actions_on_event_id_and_result"
     t.index ["event_id"], name: "index_admission_actions_on_event_id"
     t.index ["organization_id"], name: "index_admission_actions_on_organization_id"
+    t.index ["retention_anonymized_at"], name: "index_admission_actions_on_retention_anonymized_at"
     t.index ["reverses_action_id"], name: "idx_admission_single_reversal", unique: true, where: "((reverses_action_id IS NOT NULL) AND (result = 0))"
     t.index ["reverses_action_id"], name: "index_admission_actions_on_reverses_action_id"
     t.index ["scanner_device_id", "sequence"], name: "idx_admission_device_sequence", unique: true, where: "((scanner_device_id IS NOT NULL) AND (sequence IS NOT NULL))"
@@ -98,12 +100,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.integer "ticket_count", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "version", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["digest"], name: "index_admission_manifests_on_digest", unique: true
     t.index ["event_id", "source_digest"], name: "index_admission_manifests_on_event_id_and_source_digest"
     t.index ["event_id", "version"], name: "index_admission_manifests_on_event_id_and_version", unique: true
     t.index ["event_id"], name: "index_admission_manifests_on_event_id"
     t.index ["generated_by_user_id"], name: "index_admission_manifests_on_generated_by_user_id"
     t.index ["organization_id"], name: "index_admission_manifests_on_organization_id"
+    t.index ["retention_anonymized_at"], name: "index_admission_manifests_on_retention_anonymized_at"
     t.check_constraint "ticket_count >= 0", name: "admission_manifests_ticket_count_nonnegative"
     t.check_constraint "version > 0", name: "admission_manifests_version_positive"
   end
@@ -132,10 +136,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.bigint "organization_id"
     t.string "request_id"
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["actor_user_id"], name: "index_audit_logs_on_actor_user_id"
     t.index ["auditable_type", "auditable_id", "occurred_at"], name: "idx_audit_logs_auditable_time"
     t.index ["organization_id", "occurred_at"], name: "index_audit_logs_on_organization_id_and_occurred_at"
     t.index ["organization_id"], name: "index_audit_logs_on_organization_id"
+    t.index ["retention_anonymized_at"], name: "index_audit_logs_on_retention_anonymized_at"
   end
 
   create_table "balance_adjustments", force: :cascade do |t|
@@ -209,6 +215,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.jsonb "provider_response", default: {}, null: false
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["card_present_account_id"], name: "index_card_present_payment_attempts_on_card_present_account_id"
     t.index ["event_id", "status"], name: "index_card_present_payment_attempts_on_event_id_and_status"
     t.index ["event_id"], name: "index_card_present_payment_attempts_on_event_id"
@@ -219,6 +226,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.index ["organization_id"], name: "index_card_present_payment_attempts_on_organization_id"
     t.index ["payment_id"], name: "index_card_present_payment_attempts_on_payment_id"
     t.index ["provider", "provider_payment_id"], name: "idx_card_present_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
+    t.index ["retention_anonymized_at"], name: "index_card_present_payment_attempts_on_retention_anonymized_at"
     t.check_constraint "amount_cents > 0", name: "card_present_attempts_amount_positive"
     t.check_constraint "char_length(currency::text) = 3", name: "card_present_attempts_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "card_present_attempts_status_valid"
@@ -352,9 +360,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.string "reason"
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["order_id"], name: "index_disputes_on_order_id"
     t.index ["payment_id"], name: "index_disputes_on_payment_id"
     t.index ["provider", "provider_dispute_id"], name: "index_disputes_on_provider_and_provider_dispute_id", unique: true
+    t.index ["retention_anonymized_at"], name: "index_disputes_on_retention_anonymized_at"
     t.check_constraint "amount_cents >= 0", name: "disputes_amount_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "disputes_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "disputes_status_valid"
@@ -692,8 +702,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.bigint "order_item_id"
     t.string "provider_reference"
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["order_id"], name: "index_fee_components_on_order_id"
     t.index ["order_item_id"], name: "index_fee_components_on_order_item_id"
+    t.index ["retention_anonymized_at"], name: "index_fee_components_on_retention_anonymized_at"
     t.check_constraint "amount_cents >= 0", name: "fee_components_amount_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "fee_components_currency_length"
   end
@@ -711,9 +723,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.boolean "redeemed", default: false, null: false
     t.bigint "ticket_type_id", null: false
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["event_id", "guest_email"], name: "index_guest_list_entries_on_event_id_and_guest_email"
     t.index ["event_id"], name: "index_guest_list_entries_on_event_id"
     t.index ["order_id"], name: "index_guest_list_entries_on_order_id"
+    t.index ["retention_anonymized_at"], name: "index_guest_list_entries_on_retention_anonymized_at"
     t.index ["ticket_type_id"], name: "index_guest_list_entries_on_ticket_type_id"
   end
 
@@ -755,6 +769,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.index ["ticket_type_id"], name: "index_inventory_holds_on_ticket_type_id"
     t.check_constraint "quantity > 0", name: "inventory_holds_quantity_positive"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "inventory_holds_status_valid"
+  end
+
+  create_table "legal_holds", force: :cascade do |t|
+    t.string "scope_type", null: false
+    t.string "scope_value", null: false
+    t.text "reason", null: false
+    t.bigint "placed_by_id", null: false
+    t.bigint "released_by_id"
+    t.datetime "released_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["placed_by_id"], name: "index_legal_holds_on_placed_by_id"
+    t.index ["released_by_id"], name: "index_legal_holds_on_released_by_id"
+    t.index ["scope_type", "scope_value"], name: "index_active_legal_holds_on_scope", unique: true, where: "(released_at IS NULL)"
   end
 
   create_table "live_money_proof_authorizations", force: :cascade do |t|
@@ -1072,6 +1100,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.string "wire_body_digest"
     t.bigint "organization_membership_id"
     t.bigint "platform_invitation_id"
+    t.bigint "privacy_request_id"
+    t.datetime "retention_anonymized_at"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
@@ -1079,12 +1109,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.index ["order_id"], name: "index_message_deliveries_on_order_id"
     t.index ["organization_membership_id"], name: "index_message_deliveries_on_organization_membership_id"
     t.index ["platform_invitation_id"], name: "index_message_deliveries_on_platform_invitation_id"
+    t.index ["privacy_request_id"], name: "index_message_deliveries_on_privacy_request_id"
     t.index ["provider_id"], name: "index_message_deliveries_on_provider_id"
     t.index ["requested_by_id"], name: "index_message_deliveries_on_requested_by_id"
+    t.index ["retention_anonymized_at"], name: "index_message_deliveries_on_retention_anonymized_at"
     t.index ["status", "updated_at"], name: "index_message_deliveries_on_status_and_updated_at"
     t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
     t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
-    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL OR organization_membership_id IS NOT NULL OR platform_invitation_id IS NOT NULL", name: "message_deliveries_subject_present"
+    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL OR organization_membership_id IS NOT NULL OR platform_invitation_id IS NOT NULL OR privacy_request_id IS NOT NULL", name: "message_deliveries_subject_present"
     t.check_constraint "outbound_wire_body IS NULL AND wire_body_digest IS NULL OR outbound_wire_body IS NOT NULL AND wire_body_digest IS NOT NULL AND wire_body_digest::text = encode(sha256(convert_to(outbound_wire_body, 'UTF8'::name)), 'hex'::text)", name: "message_deliveries_wire_digest_matches"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7, 8])", name: "message_deliveries_status_valid"
   end
@@ -1102,9 +1134,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.string "provider_message_id"
     t.datetime "received_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["message_delivery_id"], name: "index_message_provider_events_on_message_delivery_id"
     t.index ["provider", "provider_event_id"], name: "index_message_provider_events_on_provider_event", unique: true
     t.index ["provider_message_id", "occurred_at"], name: "idx_on_provider_message_id_occurred_at_71bff7dab0"
+    t.index ["retention_anonymized_at"], name: "index_message_provider_events_on_retention_anonymized_at"
   end
 
   create_table "order_items", force: :cascade do |t|
@@ -1189,6 +1223,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.string "processing_fee_bearer_snapshot"
     t.string "locale", default: "en", null: false
     t.boolean "marketing_opt_in", default: false, null: false
+    t.datetime "retention_anonymized_at"
     t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
@@ -1197,6 +1232,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
     t.index ["reference"], name: "index_orders_on_reference", unique: true
+    t.index ["retention_anonymized_at"], name: "index_orders_on_retention_anonymized_at"
     t.index ["source"], name: "index_orders_on_source"
     t.index ["stripe_payment_intent_id"], name: "index_orders_on_unique_payment_intent", unique: true, where: "(stripe_payment_intent_id IS NOT NULL)"
     t.index ["user_id"], name: "index_orders_on_user_id"
@@ -1327,7 +1363,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.string "certification_version", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["organization_id"], name: "index_organizer_tax_informations_on_organization_id", unique: true
+    t.index ["retention_anonymized_at"], name: "index_organizer_tax_informations_on_retention_anonymized_at"
   end
 
   create_table "payment_events", force: :cascade do |t|
@@ -1340,7 +1378,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.datetime "provider_created_at"
     t.datetime "updated_at", null: false
     t.bigint "webhook_event_id", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["payment_id"], name: "index_payment_events_on_payment_id"
+    t.index ["retention_anonymized_at"], name: "index_payment_events_on_retention_anonymized_at"
     t.index ["webhook_event_id"], name: "index_payment_events_on_webhook_event_id", unique: true
     t.check_constraint "amount_cents IS NULL OR amount_cents >= 0", name: "payment_events_amount_nonnegative"
     t.check_constraint "currency IS NULL OR char_length(currency::text) = 3", name: "payment_events_currency_length"
@@ -1397,9 +1437,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.string "provider_environment"
     t.string "provider_account_id"
     t.string "provider_platform_account_id"
+    t.datetime "retention_anonymized_at"
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
+    t.index ["retention_anonymized_at"], name: "index_payments_on_retention_anonymized_at"
     t.check_constraint "amount_cents >= 0", name: "payments_amount_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "payments_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payments_status_valid"
@@ -1428,11 +1470,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.text "tax_information_tin"
     t.string "tax_approval_digest"
     t.string "held_from_status"
+    t.datetime "retention_anonymized_at"
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
     t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
     t.index ["organization_id"], name: "index_payouts_on_organization_id"
     t.index ["provider", "provider_payout_id"], name: "idx_payouts_unique_provider_id", unique: true, where: "(provider_payout_id IS NOT NULL)"
+    t.index ["retention_anonymized_at"], name: "index_payouts_on_retention_anonymized_at"
     t.index ["settlement_id"], name: "index_payouts_on_settlement_id"
     t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
     t.check_constraint "char_length(currency::text) = 3", name: "payouts_currency_length"
@@ -1607,6 +1651,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.check_constraint "tier_type <> 1 OR quantity_sold <= quantity_limit", name: "pricing_tiers_sold_within_limit"
   end
 
+  create_table "privacy_requests", force: :cascade do |t|
+    t.string "kind", null: false
+    t.string "status", default: "submitted", null: false
+    t.bigint "user_id"
+    t.bigint "order_id"
+    t.string "requester_email", null: false
+    t.bigint "verified_by_id"
+    t.datetime "verified_at"
+    t.bigint "executed_by_id"
+    t.datetime "executed_at"
+    t.jsonb "result", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
+    t.index ["executed_by_id"], name: "index_privacy_requests_on_executed_by_id"
+    t.index ["order_id"], name: "index_privacy_requests_on_order_id"
+    t.index ["retention_anonymized_at"], name: "index_privacy_requests_on_retention_anonymized_at"
+    t.index ["status", "created_at"], name: "index_privacy_requests_on_status_and_created_at"
+    t.index ["user_id"], name: "index_privacy_requests_on_user_id"
+    t.index ["verified_by_id"], name: "index_privacy_requests_on_verified_by_id"
+  end
+
   create_table "promo_codes", force: :cascade do |t|
     t.boolean "active", default: true, null: false
     t.string "code", null: false
@@ -1689,8 +1755,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
     t.bigint "webhook_event_id"
+    t.datetime "retention_anonymized_at"
     t.index ["order_id"], name: "index_reconciliation_exceptions_on_order_id"
     t.index ["payment_id"], name: "index_reconciliation_exceptions_on_payment_id"
+    t.index ["retention_anonymized_at"], name: "index_reconciliation_exceptions_on_retention_anonymized_at"
     t.index ["status", "created_at"], name: "index_reconciliation_exceptions_on_status_and_created_at"
     t.index ["webhook_event_id"], name: "index_reconciliation_exceptions_on_webhook_event_id"
     t.check_constraint "status = ANY (ARRAY[0, 1])", name: "reconciliation_exceptions_status_valid"
@@ -1763,11 +1831,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.integer "status", default: 0, null: false
     t.datetime "succeeded_at"
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["idempotency_key"], name: "index_refunds_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_refunds_on_order_id"
     t.index ["payment_id"], name: "index_refunds_on_payment_id"
     t.index ["provider", "provider_refund_id"], name: "index_refunds_on_unique_provider_refund", unique: true, where: "(provider_refund_id IS NOT NULL)"
     t.index ["requested_by_id"], name: "index_refunds_on_requested_by_id"
+    t.index ["retention_anonymized_at"], name: "index_refunds_on_retention_anonymized_at"
     t.check_constraint "amount_cents > 0", name: "refunds_amount_positive"
     t.check_constraint "char_length(currency::text) = 3", name: "refunds_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "refunds_status_valid"
@@ -1799,9 +1869,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.bigint "registration_question_id", null: false
     t.boolean "required_snapshot", default: false, null: false
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["order_id", "registration_question_id"], name: "index_registration_responses_unique", unique: true
     t.index ["order_id"], name: "index_registration_responses_on_order_id"
     t.index ["registration_question_id"], name: "index_registration_responses_on_registration_question_id"
+    t.index ["retention_anonymized_at"], name: "index_registration_responses_on_retention_anonymized_at"
   end
 
   create_table "runtime_executions", id: false, force: :cascade do |t|
@@ -2018,6 +2090,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.string "processing_fee_bearer", default: "platform", null: false
     t.string "payout_schedule_text", default: "within 3 business days after your event", null: false
     t.text "business_mailing_address"
+    t.boolean "retention_purge_enabled", default: false, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
   end
@@ -2206,11 +2279,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.bigint "order_id"
     t.bigint "ticket_id"
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["author_user_id"], name: "index_support_notes_on_author_user_id"
     t.index ["event_id", "created_at"], name: "index_support_notes_on_event_id_and_created_at"
     t.index ["event_id"], name: "index_support_notes_on_event_id"
     t.index ["order_id", "created_at"], name: "index_support_notes_on_order_id_and_created_at"
     t.index ["order_id"], name: "index_support_notes_on_order_id"
+    t.index ["retention_anonymized_at"], name: "index_support_notes_on_retention_anonymized_at"
     t.index ["ticket_id", "created_at"], name: "index_support_notes_on_ticket_id_and_created_at"
     t.index ["ticket_id"], name: "index_support_notes_on_ticket_id"
     t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL", name: "support_notes_subject_present"
@@ -2243,9 +2318,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.integer "token_version", default: 0, null: false
     t.datetime "updated_at", null: false
     t.string "locale", default: "en", null: false
+    t.datetime "retention_anonymized_at"
     t.index "lower((recipient_email)::text)", name: "index_ticket_transfers_on_lower_recipient"
     t.index ["accepted_by_user_id"], name: "index_ticket_transfers_on_accepted_by_user_id"
     t.index ["initiated_by_user_id"], name: "index_ticket_transfers_on_initiated_by_user_id"
+    t.index ["retention_anonymized_at"], name: "index_ticket_transfers_on_retention_anonymized_at"
     t.index ["ticket_id"], name: "index_ticket_transfers_on_ticket_id"
     t.index ["ticket_id"], name: "index_ticket_transfers_one_pending", unique: true, where: "(status = 0)"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "ticket_transfers_status_valid"
@@ -2300,6 +2377,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.bigint "ticket_type_id", null: false
     t.datetime "updated_at", null: false
     t.datetime "first_admitted_at"
+    t.datetime "retention_anonymized_at"
     t.index "lower((holder_email)::text)", name: "index_tickets_on_lower_holder_email"
     t.index ["event_id"], name: "index_tickets_on_event_id"
     t.index ["event_seat_id"], name: "index_tickets_on_event_seat_id"
@@ -2309,6 +2387,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.index ["order_item_id"], name: "index_tickets_on_order_item_id"
     t.index ["pricing_tier_id"], name: "index_tickets_on_pricing_tier_id"
     t.index ["qr_code"], name: "index_tickets_on_qr_code", unique: true
+    t.index ["retention_anonymized_at"], name: "index_tickets_on_retention_anonymized_at"
     t.index ["ticket_type_id"], name: "index_tickets_on_ticket_type_id"
     t.check_constraint "display_credential_version > 0", name: "tickets_display_version_positive"
     t.check_constraint "scan_credential_version > 0", name: "tickets_scan_version_positive"
@@ -2487,7 +2566,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
     t.string "provider_event_id", null: false
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.datetime "retention_anonymized_at"
     t.index ["provider", "provider_event_id"], name: "index_webhook_events_on_unique_provider_event", unique: true
+    t.index ["retention_anonymized_at"], name: "index_webhook_events_on_retention_anonymized_at"
     t.index ["status", "created_at"], name: "index_webhook_events_on_status_and_created_at"
     t.check_constraint "attempts >= 0", name: "webhook_events_attempts_nonnegative"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "webhook_events_status_valid"
@@ -2591,6 +2672,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
   add_foreign_key "inventory_holds", "orders", on_delete: :restrict
   add_foreign_key "inventory_holds", "pricing_tiers", on_delete: :restrict
   add_foreign_key "inventory_holds", "ticket_types", on_delete: :restrict
+  add_foreign_key "legal_holds", "users", column: "placed_by_id", on_delete: :restrict
+  add_foreign_key "legal_holds", "users", column: "released_by_id", on_delete: :restrict
   add_foreign_key "live_money_proof_authorizations", "connected_accounts", on_delete: :restrict
   add_foreign_key "live_money_proof_authorizations", "event_day_rehearsal_reviews", on_delete: :restrict
   add_foreign_key "live_money_proof_authorizations", "events", on_delete: :restrict
@@ -2643,6 +2726,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
   add_foreign_key "message_deliveries", "orders", on_delete: :restrict
   add_foreign_key "message_deliveries", "organization_memberships"
   add_foreign_key "message_deliveries", "platform_invitations"
+  add_foreign_key "message_deliveries", "privacy_requests", on_delete: :restrict
   add_foreign_key "message_deliveries", "tickets", on_delete: :restrict
   add_foreign_key "message_deliveries", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "message_provider_events", "message_deliveries", on_delete: :nullify
@@ -2690,6 +2774,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_141000) do
   add_foreign_key "platform_invitations", "users", column: "accepted_by_user_id"
   add_foreign_key "platform_invitations", "users", column: "invited_by_user_id"
   add_foreign_key "pricing_tiers", "ticket_types"
+  add_foreign_key "privacy_requests", "orders", on_delete: :restrict
+  add_foreign_key "privacy_requests", "users", column: "executed_by_id", on_delete: :restrict
+  add_foreign_key "privacy_requests", "users", column: "verified_by_id", on_delete: :restrict
+  add_foreign_key "privacy_requests", "users", on_delete: :nullify
   add_foreign_key "promo_codes", "events"
   add_foreign_key "promo_redemptions", "orders", on_delete: :restrict
   add_foreign_key "promo_redemptions", "promo_codes", on_delete: :restrict

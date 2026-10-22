@@ -24,7 +24,8 @@ class OrganizerSalesExportOrphanSweepJob < ApplicationJob
       page = client.list_objects_v2(bucket: bucket, prefix: PREFIX, continuation_token: token)
       candidates = page.contents.select { |object| object.key.start_with?(PREFIX) && object.last_modified < cutoff }
       associated = OrganizerSalesExportRequest.where(storage_key: candidates.map(&:key))
-        .where("expires_at IS NULL OR expires_at > ?", cutoff).pluck(:storage_key).to_set
+        .select { |item| item.expires_at.nil? || item.expires_at > cutoff || DataRetention.held?(item) }
+        .map(&:storage_key).to_set
       candidates.each do |object|
         next if associated.include?(object.key)
 

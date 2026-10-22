@@ -6,6 +6,7 @@ class OrganizerSalesExportCleanupJob < ApplicationJob
   def perform(export_id)
     export_request = OrganizerSalesExportRequest.find_by(id: export_id)
     return unless export_request&.status == "ready" && export_request.expires_at <= Time.current
+    return if DataRetention.held?(export_request)
 
     if export_request.storage_key.present?
       raise "Export storage unavailable for cleanup" unless S3Service.configured?
