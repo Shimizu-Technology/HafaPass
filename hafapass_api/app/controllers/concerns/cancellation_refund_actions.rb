@@ -53,6 +53,7 @@ module CancellationRefundActions
         end
       end
     end
+    run.reconcile_status!
     EventCancellationRefundJob.perform_later(run.id)
     render json: cancellation_json
   rescue Commerce::RefundCreator::RefundError => e
@@ -89,6 +90,7 @@ module CancellationRefundActions
         end
       end
     end
+    run.reconcile_status!
     EventCancellationRefundJob.perform_later(run.id)
     render json: cancellation_json
   rescue Commerce::RefundCreator::RefundError => e
