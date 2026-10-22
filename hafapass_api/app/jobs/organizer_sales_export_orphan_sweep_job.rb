@@ -13,6 +13,9 @@ class OrganizerSalesExportOrphanSweepJob < ApplicationJob
 
   def perform
     OrganizerSalesExportRequest.fail_expired_processing!
+    # An orphan key only identifies its organization, so a narrower hold
+    # lookup cannot reliably rule out an event, order, user, or email hold.
+    return if LegalHold.active.exists?
     return unless S3Service.configured?
 
     client = Aws::S3::Client.new(region: ENV.fetch("AWS_REGION", "us-west-2"),
