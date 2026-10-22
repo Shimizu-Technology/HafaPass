@@ -44,10 +44,11 @@ describe('public policy pages', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/config')
   })
 
-  it('does not present an older draft response as a live policy', async () => {
+  it('keeps the policy readable without draft labels when publication metadata is missing', async () => {
     apiClient.get.mockResolvedValue({ data: { policy_status: 'draft-pending-legal-review', policies } })
     renderPolicy('buyer-terms')
-    expect(await screen.findByRole('heading', { name: 'Policy unavailable' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Buyer Terms' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Buyer Terms' })).toBeInTheDocument()
+    expect(screen.queryByText(/draft/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Effective/)).not.toBeInTheDocument()
   })
 })
