@@ -24,8 +24,7 @@ class DataRetentionPurgeJob < ApplicationJob
       relation = relation.where(retention_anonymized_at: nil) if model.column_names.include?("retention_anonymized_at")
       relation.in_batches(of: DataRetention::BATCH_SIZE) do |batch|
         batch.each do |record|
-          next if DataRetention.held?(record)
-          next if record.is_a?(Order) && DataRetention.unresolved_money?(record)
+          next if RetentionGuard.protected?(record)
           next if record.is_a?(Order) && record.tickets.exists? && record.event.starts_at&.after?(at)
           next if record.is_a?(Ticket) && record.event.starts_at&.after?(at)
           next if record.is_a?(PrivacyRequest) && record.executed_at.nil?
@@ -38,7 +37,7 @@ class DataRetentionPurgeJob < ApplicationJob
             delivery = record.message_delivery
             related_order = delivery&.order || delivery&.ticket&.order
           end
-          next if related_order && DataRetention.unresolved_money?(related_order)
+          next if related_order && RetentionGuard.protected?(related_order)
           next if record.is_a?(Payout) && !record.status_paid?
           next if record.is_a?(OrganizerTaxInformation) && Payout.where(organization_id: record.organization_id)
             .where("paid_at >= ? OR paid_at IS NULL", cutoff).exists?
@@ -50,21 +49,27 @@ class DataRetentionPurgeJob < ApplicationJob
             next
           end
 
-          case rule.fetch("action")
-          when "delete"
-            if record.is_a?(OrganizerSalesExportRequest)
-              next unless record.storage_key.blank? ||
+          written = false
+          record.with_lock do
+            if RetentionGuard.protected?(record)
+              Rails.logger.info("[DataRetention] skipped protected #{table} record")
+              next
+            end
+            case rule.fetch("action")
+            when "delete"
+              if record.is_a?(OrganizerSalesExportRequest) && record.storage_key.present?
                 begin
                   S3Service.delete_private_export!(record.storage_key)
-                  true
                 rescue S3Service::UploadError, Aws::S3::Errors::ServiceError, Seahorse::Client::NetworkingError
-                  false
+                  next
                 end
+              end
+              record.destroy!
+            when "anonymize" then DataRetention.anonymize!(record)
             end
-            record.destroy!
-          when "anonymize" then record.with_lock { DataRetention.anonymize!(record) }
+            written = true
           end
-          counts[table] += 1
+          counts[table] += 1 if written
         end
       end
     end

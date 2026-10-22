@@ -496,11 +496,12 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
 
   it "runs the two-day export cleanup even when automated retention is dry-run" do
     request_record = OrganizerSalesExportRequest.create!(event: event, actor_user: owner,
-      filters: {}, columns: [], status: "ready", storage_key: nil,
+      filters: {}, columns: [], status: "ready", storage_key: "private/sales-exports/dry-run.csv",
       expires_at: 1.minute.ago)
     allow(DataRetention).to receive(:dry_run?).and_return(true)
+    expect(S3Service).to receive(:delete_private_export!).with(request_record.storage_key)
     OrganizerSalesExportCleanupJob.perform_now(request_record.id)
-    expect(request_record.reload.status).to eq("expired")
+    expect(request_record.reload).to have_attributes(status: "expired", storage_key: nil)
   end
 
   it "removes an uploaded CSV if the export fails before completion" do

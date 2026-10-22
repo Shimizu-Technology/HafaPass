@@ -6,7 +6,7 @@ module TelemetryPrivacy
   FILTERED = "[FILTERED]"
   SECRET_PATH = %r{(/(?:tickets|check_in|ticket-transfers|organization-invitations|ticket_email_attachments)/)([^/]+)}i
   URL_IN_TEXT = %r{https?://[^\s<>"']+|/[^\s<>"']+}i
-  SECRET_KEY = /authorization|cookie|token|credential|qr_code|password|secret|email|phone|query(?:_string)?|http\.query|request_body|\Abody\z/i
+  SECRET_KEY = /authorization|cookie|token|credential|qr_code|password|secret|email|phone|\A(?:code|verification_code|otp)\z|query(?:_string)?|http\.query|request_body|\Abody\z/i
   URL_KEY = /url|href|path|location|referer|referrer|transaction|\A(?:from|to)\z/i
 
   class << self

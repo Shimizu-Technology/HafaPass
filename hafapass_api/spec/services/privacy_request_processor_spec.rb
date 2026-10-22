@@ -44,6 +44,21 @@ RSpec.describe PrivacyRequestProcessor do
     expect(order.reload.buyer_email).to eq(user.email)
   end
 
+  it "rechecks a hold introduced after deletion planning and before the order write" do
+    processor = described_class.new(privacy_request)
+    expect(processor.preview[:blockers]).to be_empty
+    allow(DataRetention).to receive(:anonymize_order!).and_wrap_original do |original, candidate, **options|
+      LegalHold.place!(scope_type: "order", scope_value: candidate.id.to_s,
+        reason: "Preserve after privacy scan", actor: admin)
+      original.call(candidate, **options)
+    end
+
+    expect { processor.execute!(actor: admin) }.to raise_error(PrivacyRequestProcessor::Blocked)
+    expect(order.reload.buyer_email).to eq(user.email)
+    expect(user.reload.email).to eq(user.email)
+    expect(privacy_request.reload.executed_at).to be_nil
+  end
+
   it "includes account activity and order data in the access JSON" do
     favorite = EventFavorite.create!(user: user, event: order.event)
     access = PrivacyRequest.create!(kind: "access", user: user, requester_email: user.email,
@@ -62,6 +77,22 @@ RSpec.describe PrivacyRequestProcessor do
     expect(described_class.new(privacy_request).orders.map(&:id)).to contain_exactly(order.id, guest_order.id)
   end
 
+  it "uses every verified email for guest orders, messages, and suppression" do
+    alias_email = "alice.other@example.test"
+    account_email = user.email.dup
+    privacy_request.update!(verified_emails: [user.email, alias_email])
+    guest_order = create(:order, user: nil, buyer_email: alias_email)
+    delivery = create(:message_delivery, order: guest_order, recipient: alias_email)
+    exported_ids = described_class.new(privacy_request).export[:orders].map { |entry| entry[:order]["id"] }
+    expect(exported_ids).to contain_exactly(order.id, guest_order.id)
+
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(guest_order.reload.buyer_email).to end_with("@privacy.invalid")
+    expect(delivery.reload.recipient).to end_with("@privacy.invalid")
+    expect(PrivacyEmailSuppression.for?(account_email)).to be(true)
+    expect(PrivacyEmailSuppression.for?(alias_email)).to be(true)
+  end
+
   it "shows an account-linked purchase without another buyer's contact and preserves that buyer on deletion" do
     bob = create(:user)
     order.update!(buyer_email: bob.email, buyer_name: "Bob Buyer", buyer_phone: "671-555-0199")
@@ -73,6 +104,110 @@ RSpec.describe PrivacyRequestProcessor do
     described_class.new(privacy_request).execute!(actor: admin)
     expect(order.reload).to have_attributes(user_id: nil, buyer_email: bob.email,
       buyer_name: "Bob Buyer", buyer_phone: "671-555-0199")
+  end
+
+  it "exports Alice's linked purchase without Bob's reasons and deletes only Alice's fields" do
+    bob = create(:user)
+    order.event.update_columns(starts_at: 1.year.ago)
+    order.update!(buyer_email: bob.email, buyer_name: "Bob Buyer", buyer_phone: "671-555-0199")
+    order.update_columns(refund_reason: "Alice asks for help")
+    alice_ticket = create(:ticket, order: order, event: order.event,
+      ticket_type: create(:ticket_type, event: order.event),
+      holder_email: user.email, attendee_email: user.email, attendee_name: "Alice Holder")
+    bob_ticket = create(:ticket, order: order, event: order.event,
+      ticket_type: create(:ticket_type, event: order.event),
+      holder_email: bob.email, attendee_email: bob.email, attendee_name: "Bob Holder")
+    refund = create(:refund, order: order, reason: "Bob's private refund reason")
+    dispute = Dispute.create!(order: order, provider: "stripe", provider_dispute_id: SecureRandom.uuid,
+      amount_cents: 100, currency: "usd", opened_at: 1.day.ago, status: :won,
+      reason: "Bob's private dispute reason")
+
+    exported = described_class.new(privacy_request).export[:orders].first
+    expect(exported[:order]).to include("id" => order.id, "total_cents" => order.total_cents)
+    expect(exported[:order]["refund_reason"]).to eq("Alice asks for help")
+    expect(exported[:order].keys).not_to include("buyer_email", "buyer_name", "buyer_phone")
+    expect(exported[:tickets].map { |ticket| ticket["id"] }).to eq([alice_ticket.id])
+    expect(exported[:refunds].first).to include("amount_cents" => refund.amount_cents)
+    expect(exported[:refunds].first).not_to have_key("reason")
+    expect(exported[:disputes].first).to include("amount_cents" => dispute.amount_cents)
+    expect(exported[:disputes].first).not_to have_key("reason")
+
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(order.reload).to have_attributes(user_id: nil, buyer_email: bob.email,
+      buyer_name: "Bob Buyer", refund_reason: nil)
+    expect(alice_ticket.reload).to have_attributes(holder_email: nil, attendee_email: nil,
+      attendee_name: nil)
+    expect(bob_ticket.reload).to have_attributes(holder_email: bob.email, attendee_email: bob.email,
+      attendee_name: "Bob Holder")
+    expect(refund.reload.reason).to eq("Bob's private refund reason")
+    expect(dispute.reload.reason).to eq("Bob's private dispute reason")
+  end
+
+  it "exports Bob's buyer fields without Alice's ticket and preserves Alice on Bob's deletion" do
+    bob = create(:user)
+    bob_order = create(:order, user: bob, buyer_email: bob.email, buyer_name: "Bob Buyer")
+    bob_order.event.update_columns(starts_at: 1.year.ago)
+    alice_ticket = create(:ticket, order: bob_order, event: bob_order.event,
+      ticket_type: create(:ticket_type, event: bob_order.event),
+      holder_email: user.email, attendee_email: user.email, attendee_name: "Alice Holder")
+    bob_ticket = create(:ticket, order: bob_order, event: bob_order.event,
+      ticket_type: create(:ticket_type, event: bob_order.event),
+      holder_email: bob.email, attendee_email: bob.email, attendee_name: "Bob Holder")
+    bob_refund = create(:refund, order: bob_order, reason: "Bob's refund request")
+    bob_dispute = Dispute.create!(order: bob_order, provider: "stripe", provider_dispute_id: SecureRandom.uuid,
+      amount_cents: 100, currency: "usd", opened_at: 1.day.ago, status: :won,
+      reason: "Bob's dispute reason")
+    bob_request = PrivacyRequest.create!(kind: "deletion", user: bob, requester_email: bob.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+    exported = described_class.new(bob_request).export[:orders].first
+    expect(exported[:order]).to include("buyer_email" => bob.email)
+    expect(exported[:tickets].map { |ticket| ticket["id"] }).to eq([bob_ticket.id])
+    expect(exported[:refunds].first["reason"]).to eq("Bob's refund request")
+    expect(exported[:disputes].first["reason"]).to eq("Bob's dispute reason")
+
+    described_class.new(bob_request).execute!(actor: admin)
+    expect(bob_order.reload.buyer_email).to end_with("@privacy.invalid")
+    expect(bob_ticket.reload.holder_email).to be_nil
+    expect(bob_refund.reload.reason).to be_nil
+    expect(bob_dispute.reload.reason).to eq("Bob's dispute reason")
+    expect(alice_ticket.reload).to have_attributes(holder_email: user.email,
+      attendee_email: user.email, attendee_name: "Alice Holder")
+  end
+
+  it "clears a verified holder without exposing or deleting another attendee" do
+    order.event.update_columns(starts_at: 1.year.ago)
+    bob = create(:user)
+    ticket = create(:ticket, order: order, event: order.event,
+      ticket_type: create(:ticket_type, event: order.event),
+      holder_email: user.email, attendee_email: bob.email, attendee_name: "Bob Attendee")
+    exported = described_class.new(privacy_request).export[:orders].first[:tickets].first
+    expect(exported).to include("holder_email" => user.email)
+    expect(exported.keys).not_to include("attendee_email", "attendee_name")
+
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(ticket.reload).to have_attributes(holder_email: nil, attendee_email: bob.email,
+      attendee_name: "Bob Attendee", retention_anonymized_at: nil)
+  end
+
+  it "redacts only Alice's entry in a digest shared with Bob" do
+    bob = create(:user)
+    bob_order = create(:order, buyer_email: bob.email)
+    digest = create(:message_delivery, order: nil, event: order.event, recipient: admin.email,
+      template: "refund_reconciliation_digest", status: :sent,
+      metadata: { items: [
+        { order_reference: order.reference, buyer_email: user.email, reason: "Alice asks for a refund" },
+        { order_reference: bob_order.reference, buyer_email: bob.email, reason: "Bob asks for a refund" }
+      ] })
+    audit = AuditLogger.record!(action: "retention.mixed_contact", auditable: order,
+      actor: admin, metadata: { alice_email: user.email, bob_email: bob.email })
+
+    described_class.new(privacy_request).execute!(actor: admin)
+
+    items = digest.reload.metadata.fetch("items")
+    expect(items.first).to eq("order_reference" => order.reference)
+    expect(items.second).to include("order_reference" => bob_order.reference,
+      "buyer_email" => bob.email, "reason" => "Bob asks for a refund")
+    expect(audit.reload.metadata).to eq("bob_email" => bob.email)
   end
 
   it "pseudonymizes earlier requests while keeping dates, type, and outcome" do
@@ -110,7 +245,7 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
     allow(MessageDeliveryJob).to receive(:perform_now)
   end
 
-  it "keeps an order audit log whose actor has a user hold while processing other records" do
+  it "keeps held actor evidence and unrelated audit text while processing other records" do
     held_actor = create(:user)
     held = AuditLogger.record!(action: "retention.held", auditable: order,
       actor: held_actor, metadata: { note: "preserve" })
@@ -124,7 +259,7 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
     described_class.new(privacy_request).execute!(actor: admin)
     expect(held.reload.metadata).to eq("note" => "preserve")
     expect(held_reconciliation.reload.metadata).to eq("note" => "preserve reconciliation")
-    expect(ordinary.reload.metadata).to eq({})
+    expect(ordinary.reload.metadata).to eq("note" => "redact")
     expect(order.reload.buyer_email).to end_with("@privacy.invalid")
   end
 
@@ -229,8 +364,8 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
     expect(refund.reload.reason).to be_nil
     expect(item.reload.last_error).to be_nil
     expect(audit.reload.metadata).to eq({})
-    expect(digest.reload.metadata).to eq({})
-    expect(provider_event.reload.payload).to eq({})
+    expect(digest.reload.metadata).to eq("items" => [{ "order_reference" => order.reference }])
+    expect(provider_event.reload.payload).to eq("order_reference" => order.reference)
   end
 end
 

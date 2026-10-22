@@ -28,6 +28,24 @@ RSpec.describe "Backend credential observability privacy" do
     event
   end
 
+  it "filters a guest verification code from logged JSON params and Sentry" do
+    code = "834219"
+    body = { "code" => code, "verification_code" => code, "otp" => code, "token" => code }
+    env = Rack::MockRequest.env_for("/api/v1/guest_privacy_requests/1/verify", method: "POST",
+      input: body.to_json, "CONTENT_TYPE" => "application/json",
+      "action_dispatch.parameter_filter" => Rails.application.config.filter_parameters)
+    request = ActionDispatch::Request.new(env)
+    expect(request.filtered_parameters.values).not_to include(code)
+    expect(request.filtered_parameters).to include("code" => "[FILTERED]")
+
+    event = Sentry::ErrorEvent.new(configuration: Sentry.configuration, message: "Guest verification failed")
+    event.rack_env = env
+    event.request.data = body
+    event.extra = { code: code, nested: { verification_code: code, otp: code, token: code } }
+    sanitized = Sentry.configuration.before_send.call(event, {})
+    expect(JSON.generate(sanitized.to_hash)).not_to include(code)
+  end
+
   it "demonstrates that Rails parameter filtering alone retains bearer path segments" do
     request = ActionDispatch::Request.new(env_for(url))
     rails_view = ActionDispatch::Http::FilterParameters.instance_method(:filtered_path).bind(request).call

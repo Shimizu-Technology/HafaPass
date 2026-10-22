@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class DataRetention
+  Protected = Class.new(StandardError)
   CONFIG = Rails.root.join("config/data_retention.yml")
   BATCH_SIZE = 100
   # Only abandoned checkout artifacts may be removed with an order. New foreign
@@ -54,10 +55,28 @@ class DataRetention
   end
 
   def self.anonymize_order!(order, eligible_ticket_ids: nil, eligible_support_note_ids: nil,
-    anonymize_responses: nil, buyer_owned: true)
+    anonymize_responses: nil, buyer_owned: true, privacy_user_id: nil, privacy_emails: nil)
+    Order.transaction do
+      order.lock!
+      if RetentionGuard.protected?(order)
+        Rails.logger.info("[DataRetention] skipped protected orders record")
+        return false
+      end
+      anonymize_order_locked!(order, eligible_ticket_ids: eligible_ticket_ids,
+        eligible_support_note_ids: eligible_support_note_ids,
+        anonymize_responses: anonymize_responses, buyer_owned: buyer_owned,
+        privacy_user_id: privacy_user_id, privacy_emails: privacy_emails)
+    end
+  end
+
+  def self.anonymize_order_locked!(order, eligible_ticket_ids:, eligible_support_note_ids:,
+    anonymize_responses:, buyer_owned:, privacy_user_id:, privacy_emails:)
     unless buyer_owned
-      order.update_columns(user_id: nil, updated_at: Time.current)
-      return
+      ticket_ids = Array(eligible_ticket_ids)
+      anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
+        user_id: privacy_user_id, buyer_owned: false)
+      order.update_columns(user_id: nil, refund_reason: nil, updated_at: Time.current)
+      return true
     end
     # Keep amounts, references and status so finance and tax reporting still reconcile.
     # Use a stable synthetic address to make retries idempotent.
@@ -65,16 +84,25 @@ class DataRetention
     ticket_ids = eligible_ticket_ids || order.tickets.where(holder_user_id: [nil, order.user_id])
       .where("holder_email IS NULL OR lower(holder_email) = ?", order.buyer_email.to_s.downcase).pluck(:id)
     anonymize_responses = order.tickets.count == ticket_ids.length if anonymize_responses.nil?
-    update_unheld(Ticket.where(id: ticket_ids), attendee_email: nil, attendee_name: nil, holder_email: nil, holder_user_id: nil,
-      qr_code: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
+    if privacy_emails
+      anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
+        user_id: privacy_user_id, buyer_owned: true)
+    else
+      update_unheld(Ticket.where(id: ticket_ids), attendee_email: nil, attendee_name: nil, holder_email: nil,
+        holder_user_id: nil, cancellation_reason: nil, qr_code: nil,
+        retention_anonymized_at: Time.current, updated_at: Time.current)
+    end
     if anonymize_responses
       update_unheld(RegistrationResponse.where(order_id: order.id), answer: {}, retention_anonymized_at: Time.current,
         updated_at: Time.current)
     end
-    update_unheld(TicketTransfer.where(ticket_id: ticket_ids), recipient_email: replacement,
+    transfers = TicketTransfer.where(ticket_id: ticket_ids)
+    transfers = transfers.where("lower(recipient_email) IN (?)", privacy_emails) if privacy_emails
+    update_unheld(transfers, recipient_email: replacement,
       recipient_name: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
     deliveries = MessageDelivery.where(order_id: order.id, ticket_id: [nil, *ticket_ids])
       .or(MessageDelivery.where(ticket_id: ticket_ids))
+    deliveries = deliveries.where("lower(recipient) IN (?)", privacy_emails) if privacy_emails
     update_unheld(MessageProviderEvent.where(message_delivery_id: deliveries.select(:id)), payload: {},
       processing_error: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
     update_unheld(deliveries.where(status: [:queued, :delayed, :failed]), status: MessageDelivery.statuses.fetch("cancelled"))
@@ -82,7 +110,9 @@ class DataRetention
       outbound_payload: {}, outbound_wire_body: nil, wire_body_digest: nil, last_error: nil,
       retention_anonymized_at: Time.current, updated_at: Time.current)
     update_unheld(Payment.where(order_id: order.id), provider_payload: {}, failure_message: nil, updated_at: Time.current)
-    update_unheld(Refund.where(order_id: order.id), provider_payload: {}, reason: nil, failure_code: nil,
+    refunds = Refund.where(order_id: order.id)
+    refunds = refunds.where(requested_by_id: [nil, privacy_user_id]) if privacy_user_id
+    update_unheld(refunds, provider_payload: {}, reason: nil, failure_code: nil,
       failure_message: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
     update_unheld(Dispute.where(order_id: order.id), provider_payload: {}, updated_at: Time.current)
     update_unheld(PaymentEvent.where(payment_id: order.payments.select(:id)), data: {}, updated_at: Time.current)
@@ -99,8 +129,16 @@ class DataRetention
       SupportNote.where(order_id: order.id, ticket_id: [nil, *ticket_ids])
         .or(SupportNote.where(ticket_id: ticket_ids))
     end
+    if privacy_emails
+      patterns = privacy_emails.map { |email| "%#{ActiveRecord::Base.sanitize_sql_like(email)}%" }
+      matched = notes.where(patterns.map { "body ILIKE ?" }.join(" OR "), *patterns)
+      matched = matched.or(notes.where(author_user_id: privacy_user_id)) if privacy_user_id
+      notes = matched
+    end
     update_unheld(notes, body: "[redacted]", retention_anonymized_at: Time.current, updated_at: Time.current)
-    update_unheld(GuestListEntry.where(order_id: order.id), guest_email: nil, guest_name: "[redacted]",
+    guests = GuestListEntry.where(order_id: order.id)
+    guests = guests.where("lower(guest_email) IN (?)", privacy_emails) if privacy_emails
+    update_unheld(guests, guest_email: nil, guest_name: "[redacted]",
       guest_phone: nil, notes: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
     update_unheld(AdmissionAction.where(ticket_id: ticket_ids), attendee_snapshot: {}, metadata: {},
       retention_anonymized_at: Time.current, updated_at: Time.current)
@@ -108,33 +146,71 @@ class DataRetention
       source: nil, medium: nil, updated_at: Time.current)
     update_unheld(MarketplaceFunnelEvent.where(order_id: order.id), visitor_hash: "[redacted]", campaign: nil,
       source: nil, medium: nil, updated_at: Time.current)
-    update_unheld(AuditLog.where(auditable_type: "Order", auditable_id: order.id)
-      .or(reconciliation_audits_for_orders([order.id])), ip_address: nil,
-      before_data: {}, after_data: {}, metadata: {}, retention_anonymized_at: Time.current,
-      updated_at: Time.current)
+    unless privacy_emails
+      update_unheld(AuditLog.where(auditable_type: "Order", auditable_id: order.id)
+        .or(reconciliation_audits_for_orders([order.id])), ip_address: nil,
+        before_data: {}, after_data: {}, metadata: {}, retention_anonymized_at: Time.current,
+        updated_at: Time.current)
+    end
     reconciliation_digests_for_orders([order]).find_each do |delivery|
-      next if held?(delivery)
+      next if privacy_emails
 
-      update_unheld(MessageProviderEvent.where(message_delivery_id: delivery.id), payload: {},
-        processing_error: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
-      delivery.update_columns(metadata: {}, outbound_payload: {}, outbound_wire_body: nil,
-        wire_body_digest: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
+      delivery.with_lock do
+        next if RetentionGuard.protected?(delivery)
+
+        update_unheld(MessageProviderEvent.where(message_delivery_id: delivery.id), payload: {},
+          processing_error: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
+        delivery.update_columns(metadata: {}, outbound_payload: {}, outbound_wire_body: nil,
+          wire_body_digest: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
+      end
     end
     order.update_columns(buyer_email: replacement, buyer_name: "Deleted buyer", buyer_phone: nil,
       refund_reason: nil,
       marketing_opt_in: false, user_id: nil, guest_access_revoked_at: Time.current,
       retention_anonymized_at: Time.current, updated_at: Time.current)
+    true
+  end
+
+  def self.anonymize_requester_tickets!(order, ticket_ids, emails:, user_id:, buyer_owned:)
+    Ticket.where(id: ticket_ids).find_each do |ticket|
+      ticket.with_lock do
+        if RetentionGuard.protected?(ticket)
+          Rails.logger.info("[DataRetention] skipped protected tickets record")
+          next
+        end
+        holder_owned = ticket.holder_email.present? ? emails.include?(ticket.holder_email.downcase) :
+          (user_id && ticket.holder_user_id == user_id)
+        attendee_owned = emails.include?(ticket.attendee_email.to_s.downcase)
+        legacy_owned = buyer_owned && ticket.holder_email.blank? && ticket.holder_user_id.nil? &&
+          ticket.attendee_email.blank? && ticket.attendee_name.to_s.casecmp?(order.buyer_name.to_s)
+        attrs = { updated_at: Time.current }
+        attrs.merge!(holder_email: nil, holder_user_id: nil, cancellation_reason: nil, qr_code: nil) if holder_owned || legacy_owned
+        attrs.merge!(attendee_email: nil, attendee_name: nil) if attendee_owned || legacy_owned
+        next if attrs.size == 1
+
+        attrs[:retention_anonymized_at] = Time.current if
+          (attrs.key?(:holder_email) || ticket.holder_email.blank?) &&
+          (attrs.key?(:attendee_email) || ticket.attendee_email.blank?) &&
+          (attrs.key?(:attendee_name) || ticket.attendee_name.blank?)
+        Ticket.where(id: ticket.id).update_all(attrs)
+      end
+    end
   end
 
   def self.update_unheld(scope, **attributes)
     scope.find_each do |record|
-      record.class.where(id: record.id).update_all(attributes) unless held?(record)
+      record.with_lock do
+        if RetentionGuard.protected?(record)
+          Rails.logger.info("[DataRetention] skipped protected #{record.class.table_name} record")
+          next
+        end
+        record.class.where(id: record.id).update_all(attributes)
+      end
     end
   end
 
   def self.unresolved_money?(order)
-    order.disputes.open.exists? || order.refunds.pending.exists? ||
-      order.event.payouts.where(status: Payout.statuses.slice("pending", "processing", "held").values).exists?
+    RetentionGuard.unresolved_money?(order)
   end
 
   def self.held?(record)
@@ -206,34 +282,37 @@ class DataRetention
     case record
     when Order then anonymize_order!(record)
     when Payout
-      record.update_columns(payee_snapshot: {}, tax_information_snapshot: {}, tax_information_tin: "[redacted]",
+      Payout.where(id: record.id).update_all(failure_message: nil, payee_snapshot: {},
+        tax_information_snapshot: {}, tax_information_tin: "[redacted]",
         retention_anonymized_at: Time.current, updated_at: Time.current)
     when OrganizerTaxInformation
       record.update_columns(tin: "[redacted]", tin_last_four: "XXXX", legal_name: "[redacted]",
         business_name: nil, mailing_address: "[redacted]", signer_name: "[redacted]",
         retention_anonymized_at: Time.current, updated_at: Time.current)
     when AuditLog
-      record.update_columns(ip_address: nil, before_data: {}, after_data: {}, metadata: {},
+      AuditLog.where(id: record.id).update_all(ip_address: nil, before_data: {}, after_data: {}, metadata: {},
         retention_anonymized_at: Time.current, updated_at: Time.current)
     when MessageDelivery
       record.update_columns(recipient: "deleted@privacy.invalid", outbound_payload: {}, outbound_wire_body: nil,
-        wire_body_digest: nil, metadata: {}, last_error: nil, retention_anonymized_at: Time.current,
+        wire_body_digest: nil, payload_digest: nil, send_lease_token: nil, transport_context_digest: nil,
+        metadata: {}, last_error: nil, retention_anonymized_at: Time.current,
         updated_at: Time.current)
     else
       fields = schedule.fetch(record.class.table_name).fetch("pii_columns")
       attrs = fields.to_h do |field|
         column = record.class.columns_hash.fetch(field)
-        [field, column.type == :jsonb ? {} : (column.null ? nil : "[redacted]")]
+        [field, column.type == :jsonb ? (field == "verified_emails" ? [] : {}) :
+          (column.null ? nil : "[redacted]")]
       end
       attrs[:retention_anonymized_at] = Time.current if record.has_attribute?(:retention_anonymized_at)
       attrs[:updated_at] = Time.current if record.has_attribute?(:updated_at)
-      record.update_columns(attrs) if attrs.any?
+      record.class.where(id: record.id).update_all(attrs) if attrs.any?
     end
   end
 
   def self.pending_order_purgeable?(order)
     return false unless order.pending? || order.expired?
-    return false if held?(order)
+    return false if RetentionGuard.protected?(order)
     return false if ORDER_PROVIDER_REFERENCES.any? { |column| order.public_send(column).present? }
     return false if order.payments.exists? || order.refunds.exists? || order.disputes.exists? ||
       order.tickets.exists? || PrivacyRequest.where(order_id: order.id).exists? ||
@@ -261,7 +340,7 @@ class DataRetention
       PromoRedemption.where(order_id: order.id), ReferralAttribution.where(order_id: order.id),
       AcquisitionAttribution.where(order_id: order.id), MarketplaceFunnelEvent.where(order_id: order.id),
       OrderItem.where(order_id: order.id)]
-    return false if purge_scopes.any? { |scope| scope.find_each.any? { |child| held?(child) } }
+    return false if purge_scopes.any? { |scope| scope.find_each.any? { |child| RetentionGuard.protected?(child) } }
 
     connection = ActiveRecord::Base.connection
     connection.data_sources.each do |table|
@@ -282,20 +361,33 @@ class DataRetention
   def self.delete_pending_order!(order)
     Order.transaction do
       order.lock!
+      if RetentionGuard.protected?(order)
+        Rails.logger.info("[DataRetention] skipped protected orders record")
+        return false
+      end
       return false unless pending_order_purgeable?(order)
 
       item_ids = OrderItem.where(order_id: order.id).select(:id)
-      SeatHold.where(order_item_id: item_ids).delete_all
-      CatalogItemHold.where(order_item_id: item_ids).delete_all
-      InventoryHold.where(order_id: order.id).delete_all
-      SeatHoldSession.where(order_id: order.id).delete_all
-      PromoRedemption.where(order_id: order.id).delete_all
-      ReferralAttribution.where(order_id: order.id).delete_all
-      AcquisitionAttribution.where(order_id: order.id).delete_all
-      MarketplaceFunnelEvent.where(order_id: order.id).delete_all
-      OrderItem.where(order_id: order.id).delete_all
+      [SeatHold.where(order_item_id: item_ids), CatalogItemHold.where(order_item_id: item_ids),
+        InventoryHold.where(order_id: order.id), SeatHoldSession.where(order_id: order.id),
+        PromoRedemption.where(order_id: order.id), ReferralAttribution.where(order_id: order.id),
+        AcquisitionAttribution.where(order_id: order.id), MarketplaceFunnelEvent.where(order_id: order.id),
+        OrderItem.where(order_id: order.id)].each do |scope|
+        scope.find_each do |child|
+          child.with_lock do
+            raise Protected if RetentionGuard.protected?(child)
+
+            child.delete
+          end
+        end
+      end
+      raise Protected if RetentionGuard.protected?(order)
+
       order.delete
       true
     end
+  rescue Protected
+    Rails.logger.info("[DataRetention] skipped protected pending-order child record")
+    false
   end
 end

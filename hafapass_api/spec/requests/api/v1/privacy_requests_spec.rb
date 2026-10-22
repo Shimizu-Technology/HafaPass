@@ -113,12 +113,12 @@ RSpec.describe "Privacy requests and holds", type: :request do
     token = GuestOrderAccess.issue!(guest)
     3.times do
       post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
-        guest_token: token }
+        guest_token: token }, as: :json
       expect(response).to have_http_status(:created)
     end
     expect do
       post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
-        guest_token: token }
+        guest_token: token }, as: :json
     end.not_to change(PrivacyRequest, :count)
     expect(response).to have_http_status(:too_many_requests)
   end

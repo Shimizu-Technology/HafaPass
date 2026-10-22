@@ -117,10 +117,17 @@ class Rack::Attack
     next unless guest_privacy_create.call(req)
 
     begin
-      order_id = req.params["order_id"].to_s
+      body = if req.media_type == "application/json"
+        raw = req.body.read(16_385)
+        req.body.rewind
+        raw.bytesize <= 16_384 ? JSON.parse(raw) : {}
+      else
+        req.params
+      end
+      order_id = body.is_a?(Hash) ? body["order_id"].to_s : ""
       email = Order.where(id: order_id).pick(:buyer_email).to_s.strip.downcase
       Digest::SHA256.hexdigest("#{order_id}/#{email}") if order_id.present? && email.present?
-    rescue ActionController::BadRequest, Rack::QueryParser::ParserError
+    rescue JSON::ParserError, IOError, ActionController::BadRequest, Rack::QueryParser::ParserError
       nil
     end
   end

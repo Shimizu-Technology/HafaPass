@@ -45,6 +45,51 @@ RSpec.describe DataRetentionPurgeJob do
     expect(order.reload.retention_anonymized_at).to be_nil
   end
 
+  it "preserves a shared reconciliation digest for an old order with a pending refund" do
+    order = create(:order, completed_at: 8.years.ago)
+    create(:refund, order: order, status: :pending)
+    digest = create(:message_delivery, order: nil, event: order.event, recipient: "ops@example.test",
+      template: "refund_reconciliation_digest",
+      status: :sent, created_at: 8.years.ago,
+      metadata: { items: [{ order_reference: order.reference, reason: "needs follow-up" }] })
+
+    described_class.perform_now
+
+    expect(order.reload.retention_anonymized_at).to be_nil
+    expect(digest.reload.metadata.dig("items", 0, "reason")).to eq("needs follow-up")
+  end
+
+  it "keeps an old order while a provider webhook still awaits processing" do
+    order = create(:order, completed_at: 8.years.ago)
+    webhook = WebhookEvent.create!(provider: "stripe", provider_event_id: SecureRandom.uuid,
+      event_type: "payment.updated", status: :received,
+      payload: { data: { object: { order_reference: order.reference } } })
+
+    described_class.perform_now
+
+    expect(webhook.reload.payload.dig("data", "object", "order_reference")).to eq(order.reference)
+    expect(order.reload.retention_anonymized_at).to be_nil
+  end
+
+  it "rechecks a hold created after the scan and before the locked write" do
+    order = create(:order, completed_at: 8.years.ago)
+    actor = create(:user, :admin)
+    checks = 0
+    allow(RetentionGuard).to receive(:protected?).and_wrap_original do |original, record|
+      result = original.call(record)
+      if record.is_a?(Order) && record.id == order.id && (checks += 1) == 1
+        LegalHold.place!(scope_type: "order", scope_value: order.id.to_s,
+          reason: "Preserve during litigation", actor: actor)
+      end
+      result
+    end
+
+    described_class.perform_now
+
+    expect(checks).to be >= 2
+    expect(order.reload.buyer_email).to eq("buyer@example.com")
+  end
+
   it "deletes an abandoned pending order and its checkout children after 90 days" do
     order = create(:order, :pending, created_at: 100.days.ago, expires_at: 100.days.ago)
     item = create(:order_item, order: order)

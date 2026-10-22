@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_154000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_155000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1676,6 +1676,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_154000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.jsonb "verified_emails", default: [], null: false
     t.index ["executed_by_id"], name: "index_privacy_requests_on_executed_by_id"
     t.index ["order_id"], name: "index_privacy_requests_on_order_id"
     t.index ["retention_anonymized_at"], name: "index_privacy_requests_on_retention_anonymized_at"

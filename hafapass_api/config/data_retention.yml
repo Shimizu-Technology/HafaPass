@@ -26,6 +26,7 @@
       "action": "anonymize",
       "pii_columns": [
         "attendee_snapshot",
+        "credential_hash",
         "metadata"
       ]
     },
@@ -54,9 +55,9 @@
       "trigger": "occurred_at",
       "action": "anonymize",
       "pii_columns": [
-        "ip_address",
-        "before_data",
         "after_data",
+        "before_data",
+        "ip_address",
         "metadata"
       ]
     },
@@ -84,8 +85,8 @@
       "trigger": "completed_at",
       "action": "anonymize",
       "pii_columns": [
-        "provider_response",
-        "failure_message"
+        "failure_message",
+        "provider_response"
       ]
     },
     "catalog_fulfillments": {
@@ -465,11 +466,15 @@
       "trigger": "created_at",
       "action": "anonymize",
       "pii_columns": [
+        "last_error",
+        "metadata",
+        "payload_digest",
         "recipient",
         "outbound_payload",
+        "send_lease_token",
+        "transport_context_digest",
         "outbound_wire_body",
-        "metadata",
-        "last_error"
+        "wire_body_digest"
       ],
       "reviewed_non_pii_columns": [
         "payload_digest"
@@ -504,6 +509,7 @@
         "buyer_email",
         "buyer_name",
         "buyer_phone",
+        "refund_reason",
         "marketing_opt_in"
       ],
       "pending_rule": {
@@ -565,10 +571,10 @@
       "trigger": "certified_at",
       "action": "anonymize",
       "pii_columns": [
-        "tin",
-        "tin_last_four",
         "legal_name",
         "business_name",
+        "tin",
+        "tin_last_four",
         "mailing_address",
         "signer_name"
       ]
@@ -599,8 +605,8 @@
       "trigger": "created_at",
       "action": "anonymize",
       "pii_columns": [
-        "provider_payload",
-        "failure_message"
+        "failure_message",
+        "provider_payload"
       ]
     },
     "payouts": {
@@ -609,6 +615,7 @@
       "trigger": "paid_at",
       "action": "anonymize",
       "pii_columns": [
+        "failure_message",
         "payee_snapshot",
         "tax_information_snapshot",
         "tax_information_tin"
@@ -746,10 +753,10 @@
       "trigger": "created_at",
       "action": "anonymize",
       "pii_columns": [
-        "provider_payload",
-        "reason",
+        "failure_code",
         "failure_message",
-        "failure_code"
+        "provider_payload",
+        "reason"
       ]
     },
     "registration_questions": {
@@ -911,6 +918,7 @@
       "pii_columns": [
         "attendee_email",
         "attendee_name",
+        "cancellation_reason",
         "holder_email",
         "holder_user_id",
         "qr_code"
@@ -1010,6 +1018,7 @@
       "trigger": "created_at",
       "action": "anonymize",
       "pii_columns": [
+        "last_error",
         "payload"
       ]
     },
@@ -1029,8 +1038,10 @@
       "trigger": "created_at",
       "action": "anonymize",
       "pii_columns": [
+        "guest_challenge_digest",
         "requester_email",
-        "result"
+        "result",
+        "verified_emails"
       ]
     }
   },
@@ -1072,7 +1083,7 @@
       "metadata": "pii",
       "occurred_at": "system",
       "organization_id": "system",
-      "reason_code": "pii",
+      "reason_code": "non-personal",
       "received_at": "system",
       "result": "non-personal",
       "reverses_action_id": "system",
@@ -1085,9 +1096,9 @@
     },
     "admission_manifests": {
       "id": "system",
-      "algorithm": "pii",
+      "algorithm": "non-personal",
       "created_at": "system",
-      "digest": "pii",
+      "digest": "non-personal",
       "event_id": "system",
       "expires_at": "system",
       "generated_at": "system",
@@ -1095,8 +1106,8 @@
       "key_id": "system",
       "organization_id": "system",
       "payload": "pii",
-      "signature": "pii",
-      "source_digest": "pii",
+      "signature": "non-personal",
+      "source_digest": "non-personal",
       "ticket_count": "system",
       "updated_at": "system",
       "version": "system",
@@ -1122,7 +1133,7 @@
       "actor_user_id": "system",
       "after_data": "pii",
       "auditable_id": "system",
-      "auditable_type": "pii",
+      "auditable_type": "non-personal",
       "before_data": "pii",
       "created_at": "system",
       "ip_address": "pii",
@@ -1176,7 +1187,7 @@
       "currency": "financial",
       "event_id": "system",
       "external_payment_id": "system",
-      "failure_code": "pii",
+      "failure_code": "non-personal",
       "failure_message": "pii",
       "idempotency_key": "system",
       "initiated_at": "system",
@@ -1540,13 +1551,13 @@
       "metadata": "pii",
       "order_id": "system",
       "order_item_id": "system",
-      "provider_reference": "pii",
+      "provider_reference": "non-personal",
       "updated_at": "system",
       "retention_anonymized_at": "system"
     },
     "guest_list_entries": {
       "id": "system",
-      "added_by": "pii",
+      "added_by": "non-personal",
       "created_at": "system",
       "event_id": "system",
       "guest_email": "pii",
@@ -1807,7 +1818,7 @@
       "sent_at": "system",
       "status": "system",
       "suppressed_at": "system",
-      "template": "pii",
+      "template": "non-personal",
       "ticket_id": "system",
       "updated_at": "system",
       "outbound_payload": "pii",
@@ -1827,14 +1838,14 @@
       "id": "system",
       "created_at": "system",
       "event_type": "system",
-      "message_delivery_id": "pii",
+      "message_delivery_id": "non-personal",
       "occurred_at": "system",
       "payload": "pii",
       "processed_at": "system",
       "processing_error": "pii",
       "provider": "system",
       "provider_event_id": "system",
-      "provider_message_id": "pii",
+      "provider_message_id": "non-personal",
       "received_at": "system",
       "updated_at": "system",
       "retention_anonymized_at": "system"
@@ -1861,52 +1872,52 @@
       "updated_at": "system"
     },
     "orders": {
-      "id": "system",
+      "id": "non-personal",
       "buyer_email": "pii",
-      "buyer_fee_percent_snapshot": "pii",
+      "buyer_fee_percent_snapshot": "money",
       "buyer_name": "pii",
       "buyer_phone": "pii",
-      "buyer_terms_accepted_at": "system",
-      "buyer_terms_digest": "pii",
-      "buyer_terms_version": "system",
-      "cancelled_at": "system",
-      "completed_at": "system",
-      "created_at": "system",
-      "currency": "financial",
-      "discount_cents": "financial",
-      "event_id": "system",
-      "expired_at": "system",
-      "expires_at": "system",
-      "fee_policy_snapshot": "pii",
-      "guest_access_expires_at": "system",
-      "guest_access_revoked_at": "system",
-      "guest_access_version": "system",
-      "organizer_fee_cents": "financial",
-      "payment_method": "system",
-      "promo_code_id": "system",
-      "reference": "pii",
-      "refund_amount_cents": "financial",
+      "buyer_terms_accepted_at": "non-personal",
+      "buyer_terms_digest": "non-personal",
+      "buyer_terms_version": "non-personal",
+      "cancelled_at": "non-personal",
+      "completed_at": "non-personal",
+      "created_at": "non-personal",
+      "currency": "money",
+      "discount_cents": "money",
+      "event_id": "non-personal",
+      "expired_at": "non-personal",
+      "expires_at": "non-personal",
+      "fee_policy_snapshot": "money",
+      "guest_access_expires_at": "non-personal",
+      "guest_access_revoked_at": "non-personal",
+      "guest_access_version": "non-personal",
+      "organizer_fee_cents": "money",
+      "payment_method": "non-personal",
+      "promo_code_id": "non-personal",
+      "reference": "non-personal",
+      "refund_amount_cents": "money",
       "refund_reason": "pii",
-      "refunded_at": "financial",
-      "service_fee_cents": "financial",
-      "source": "pii",
-      "status": "system",
-      "stripe_payment_intent_id": "system",
-      "stripe_refund_id": "financial",
-      "subtotal_cents": "financial",
-      "total_cents": "financial",
-      "updated_at": "system",
-      "user_id": "system",
-      "wallet_type": "pii",
-      "cash_sale_key": "system",
-      "cash_sale_request_digest": "pii",
-      "checkout_key_digest": "pii",
-      "checkout_request_digest": "pii",
-      "checkout_recovery_expires_at": "system",
-      "processing_fee_bearer_snapshot": "pii",
-      "locale": "system",
+      "refunded_at": "money",
+      "service_fee_cents": "money",
+      "source": "non-personal",
+      "status": "non-personal",
+      "stripe_payment_intent_id": "provider reference",
+      "stripe_refund_id": "provider reference",
+      "subtotal_cents": "money",
+      "total_cents": "money",
+      "updated_at": "non-personal",
+      "user_id": "non-personal",
+      "wallet_type": "non-personal",
+      "cash_sale_key": "non-personal",
+      "cash_sale_request_digest": "non-personal",
+      "checkout_key_digest": "non-personal",
+      "checkout_request_digest": "non-personal",
+      "checkout_recovery_expires_at": "non-personal",
+      "processing_fee_bearer_snapshot": "money",
+      "locale": "non-personal",
       "marketing_opt_in": "pii",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "non-personal"
     },
     "organization_memberships": {
       "id": "system",
@@ -1984,11 +1995,11 @@
       "legal_name": "pii",
       "business_name": "pii",
       "tax_classification": "financial",
-      "tin_type": "pii",
+      "tin_type": "non-personal",
       "tin": "pii",
       "tin_last_four": "pii",
       "mailing_address": "pii",
-      "exempt_payee_code": "pii",
+      "exempt_payee_code": "non-personal",
       "signer_name": "pii",
       "certified_at": "system",
       "certification_version": "system",
@@ -2035,7 +2046,7 @@
       "created_at": "system",
       "currency": "financial",
       "failed_at": "system",
-      "failure_code": "pii",
+      "failure_code": "non-personal",
       "failure_message": "pii",
       "idempotency_key": "system",
       "order_id": "system",
@@ -2057,7 +2068,7 @@
       "created_at": "system",
       "currency": "financial",
       "event_id": "system",
-      "failure_code": "pii",
+      "failure_code": "non-personal",
       "failure_message": "pii",
       "idempotency_key": "system",
       "initiated_at": "system",
@@ -2069,10 +2080,10 @@
       "status": "system",
       "updated_at": "system",
       "payee_snapshot": "pii",
-      "payee_approval_digest": "pii",
+      "payee_approval_digest": "non-personal",
       "tax_information_snapshot": "pii",
       "tax_information_tin": "pii",
-      "tax_approval_digest": "pii",
+      "tax_approval_digest": "non-personal",
       "held_from_status": "system",
       "retention_anonymized_at": "system"
     },
@@ -2210,7 +2221,8 @@
       "result": "pii",
       "created_at": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "verified_emails": "pii"
     },
     "promo_codes": {
       "id": "system",
@@ -2266,7 +2278,7 @@
       "id": "system",
       "actual_amount_cents": "financial",
       "actual_currency": "financial",
-      "code": "pii",
+      "code": "non-personal",
       "created_at": "system",
       "details": "pii",
       "expected_amount_cents": "financial",
@@ -2349,14 +2361,14 @@
     "registration_responses": {
       "id": "system",
       "answer": "pii",
-      "answered_at": "pii",
+      "answered_at": "non-personal",
       "created_at": "system",
-      "kind_snapshot": "pii",
-      "options_snapshot": "pii",
+      "kind_snapshot": "non-personal",
+      "options_snapshot": "non-personal",
       "order_id": "system",
-      "prompt_snapshot": "pii",
+      "prompt_snapshot": "non-personal",
       "registration_question_id": "system",
-      "required_snapshot": "pii",
+      "required_snapshot": "non-personal",
       "updated_at": "system",
       "retention_anonymized_at": "system"
     },
@@ -2689,7 +2701,7 @@
       "recipient_name": "pii",
       "status": "system",
       "ticket_id": "system",
-      "token_version": "pii",
+      "token_version": "non-personal",
       "updated_at": "system",
       "locale": "system",
       "retention_anonymized_at": "system"

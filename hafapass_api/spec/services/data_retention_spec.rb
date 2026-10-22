@@ -11,7 +11,9 @@ RSpec.describe DataRetention do
         columns = connection.columns(table).map(&:name).sort
         classifications = inventory.fetch(table)
         expect(classifications.keys.sort).to eq(columns), "Unclassified columns in #{table}"
-        expect(classifications.values - %w[pii financial non-personal system]).to be_empty
+        allowed = table == "orders" ? ["provider reference", "money", "pii", "non-personal"] :
+          %w[pii financial non-personal system]
+        expect(classifications.values - allowed).to be_empty
       end
       application_tables = tables.reject { |table| table.start_with?("solid_queue_") ||
         %w[ar_internal_metadata schema_migrations site_settings runtime_executions runtime_throttle_buckets
@@ -19,22 +21,75 @@ RSpec.describe DataRetention do
       expect(described_class.schedule.keys.sort).to eq(application_tables.sort)
     end
 
-    it "accounts for every classified PII column in a runnable rule or an explicit exception" do
+    it "lists every classified PII column in each anonymizer's allow-list" do
       configuration = YAML.safe_load_file(described_class::CONFIG)
       inventory = configuration.fetch("column_classifications")
-      exceptions = YAML.safe_load_file(Rails.root.join("config/data_retention_pii_elsewhere.yml"))
-        .fetch("tables")
-      uncovered = inventory.to_h do |table, columns|
-        rule = described_class.schedule[table]
-        runnable = DataRetentionPurgeJob::RUNNABLE.include?(table) &&
-          %w[anonymize delete].include?(rule&.fetch("action", nil))
-        covered = runnable ? rule.fetch("pii_columns") : []
-        [table, columns.filter_map { |name, classification| name if classification == "pii" && !covered.include?(name) }]
-      end.reject { |_table, columns| columns.empty? }
-      expect(exceptions.keys.sort).to eq(uncovered.keys.sort)
-      exceptions.each do |table, exception|
-        expect(exception.fetch("reason")).to be_present
-        expect(exception.fetch("columns").sort).to eq(uncovered.fetch(table).sort), table
+      DataRetentionPurgeJob::RUNNABLE.each do |table|
+        rule = described_class.schedule.fetch(table)
+        next unless rule.fetch("action") == "anonymize"
+
+        pii = inventory.fetch(table).filter_map { |name, kind| name if kind == "pii" }
+        expect(rule.fetch("pii_columns").sort).to eq(pii.sort), table
+      end
+    end
+
+    it "removes populated PII sentinels from a real row of every anonymizable table" do
+      # This is a column-coverage fixture. The independent relationship specs
+      # below exercise holds and money with valid associated records.
+      baseline_order = create(:order)
+      ActiveRecord::Base.connection.execute("SET LOCAL session_replication_role = replica")
+      DataRetentionPurgeJob::RUNNABLE.each do |table|
+        next unless described_class.schedule.fetch(table).fetch("action") == "anonymize"
+
+        model = table.classify.constantize
+        pii = described_class.schedule.fetch(table).fetch("pii_columns")
+        sentinel = "PIISENTINEL#{SecureRandom.hex(4)}"
+        row = if table == "orders"
+          created = create(:order, buyer_email: "#{sentinel}@example.test")
+          created.update_columns(buyer_name: sentinel, buyer_phone: sentinel,
+            refund_reason: sentinel, marketing_opt_in: true)
+          created
+        else
+          attrs = model.columns.each_with_object({}) do |column, values|
+            next if column.name == "id"
+
+            if pii.include?(column.name)
+              values[column.name] = case column.type
+              when :jsonb then column.name == "verified_emails" ? [sentinel] : { "value" => sentinel }
+              when :boolean then true
+              when :integer, :bigint then 123_456
+              when :inet then "127.0.0.77"
+              else column.limit ? sentinel.first(column.limit) : sentinel
+              end
+            elsif !column.null && column.default.nil?
+              values[column.name] = case column.type
+              when :datetime, :date then 8.years.ago
+              when :jsonb then {}
+              when :integer, :bigint then 1
+              when :boolean then false
+              else "x"
+              end
+            end
+          end
+          attrs["order_id"] = baseline_order.id if %w[message_deliveries support_notes].include?(table)
+          attrs["wire_body_digest"] = Digest::SHA256.hexdigest(attrs.fetch("outbound_wire_body")) if
+            table == "message_deliveries"
+          id = model.insert_all!([attrs], returning: %w[id]).rows.first.first
+          model.find(id)
+        end
+        expect(pii).not_to be_empty, table
+        originals = pii.to_h { |column| [column, row.public_send(column)] }
+        pii.each do |column|
+          value = row.public_send(column)
+          expect(value).to be_present, "#{table}.#{column} fixture was empty"
+        end
+
+        described_class.anonymize!(row)
+        pii.each do |column|
+          expect(row.reload.public_send(column)).not_to eq(originals.fetch(column)), "#{table}.#{column} survived"
+        end
+        expect(row.reload.marketing_opt_in).to be(false) if table == "orders"
+        expect(row.reload.holder_user_id).to be_nil if table == "tickets"
       end
     end
   end
@@ -64,12 +119,44 @@ RSpec.describe DataRetention do
   end
 end
 
+RSpec.describe RetentionGuard do
+  it "resolves nested order, refund, payment, and ticket references from persisted metadata" do
+    order = create(:order)
+    refund = create(:refund, order: order, status: :pending)
+    ticket = create(:ticket, order: order, event: order.event)
+    payment = refund.payment
+    actor = create(:user, :admin)
+    shapes = [
+      { order_id: order.id },
+      { items: [{ order_reference: order.reference }] },
+      { reconciliation: { refund_id: refund.id } },
+      { payment_id: payment.id },
+      { ticket_id: ticket.id }
+    ]
+    logs = shapes.map do |metadata|
+      AuditLogger.record!(action: "retention.metadata_reference", auditable: actor,
+        actor: actor, metadata: metadata)
+    end
+
+    expect(described_class.protected_batch?(logs).values).to all(be(true))
+    expect(logs.size).to eq(5)
+  end
+end
+
 RSpec.describe DataRetention, "pending-order safety" do
   let(:order) { create(:order, :pending, created_at: 100.days.ago, expires_at: 100.days.ago) }
 
-  it "covers every provider payment, intent, or session reference on orders" do
-    references = Order.column_names.grep(/\A(?:stripe|provider|clover)_(?:payment|refund|intent|session).*_(?:id|reference)\z/)
+  it "classifies every order column and uses every provider reference to block purge" do
+    classifications = YAML.safe_load_file(DataRetention::CONFIG).fetch("column_classifications").fetch("orders")
+    expect(classifications.keys.sort).to eq(Order.column_names.sort)
+    expect(classifications.values.uniq - ["provider reference", "money", "pii", "non-personal"]).to be_empty
+    references = classifications.filter_map { |column, kind| column if kind == "provider reference" }
     expect(described_class::ORDER_PROVIDER_REFERENCES).to contain_exactly(*references)
+    references.each do |column|
+      referenced = create(:order, :pending, created_at: 100.days.ago, expires_at: 100.days.ago)
+      referenced.update_column(column, "provider_#{referenced.id}")
+      expect(described_class.delete_pending_order!(referenced)).to be(false)
+    end
   end
 
   %w[payments refunds disputes tickets].each do |association|

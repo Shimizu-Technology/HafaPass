@@ -10,7 +10,8 @@ class Api::V1::GuestPrivacyRequestsController < ApplicationController
       return render json: { error: "A current verified order link is required" }, status: :forbidden
     end
 
-    item = PrivacyRequest.create!(kind: kind, order: order, requester_email: order.buyer_email)
+    item = PrivacyRequest.create!(kind: kind, order: order, requester_email: order.buyer_email,
+      verified_emails: [order.buyer_email.to_s.downcase])
     code = item.issue_guest_challenge!
     EmailService.send_guest_privacy_challenge_now(item, code)
     AuditLogger.record!(action: "privacy_request.submitted", auditable: item,

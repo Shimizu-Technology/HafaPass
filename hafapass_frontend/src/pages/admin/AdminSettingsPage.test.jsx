@@ -36,6 +36,8 @@ describe('AdminSettingsPage', () => {
     const user = userEvent.setup()
     renderPage()
     const button = await screen.findByRole('button', { name: 'Enable scheduled purge' })
+    expect(screen.getByText(/two-day sales-export S3 cleanup runs independently of DATA_RETENTION_DRY_RUN/))
+      .toHaveTextContent('still respects legal holds')
     expect(button).toBeDisabled()
     await user.click(screen.getByRole('checkbox', { name: /reviewed the retention schedule/ }))
     await user.click(button)

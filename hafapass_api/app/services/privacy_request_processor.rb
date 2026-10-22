@@ -12,14 +12,15 @@ class PrivacyRequestProcessor
   def orders
     @orders ||= if @request.user_id
       Order.where(user_id: @request.user_id).or(
-        Order.where(user_id: nil).where("lower(buyer_email) = ?", @request.requester_email.downcase)).order(:id).to_a
+        Order.where(user_id: nil).where("lower(buyer_email) IN (?)", buyer_emails)).order(:id).to_a
     else
       [@request.order].compact
     end
   end
 
   def buyer_emails
-    @buyer_emails ||= [@request.requester_email, @request.user&.email].compact.map(&:downcase).uniq
+    @buyer_emails ||= (Array(@request.verified_emails) + [@request.requester_email]).compact
+      .map(&:downcase).uniq
   end
 
   def buyer_owned?(order)
@@ -37,7 +38,10 @@ class PrivacyRequestProcessor
       selected_tickets = selected_orders.flat_map do |order|
         order.tickets.select do |ticket|
           !ticket.transferred_away_from?(order) &&
-            (ticket.holder_email.present? ? buyer_emails.include?(ticket.holder_email.downcase) : buyer_owned?(order))
+            (ticket.holder_email.present? ? buyer_emails.include?(ticket.holder_email.downcase) :
+              ((@request.user_id && ticket.holder_user_id == @request.user_id) ||
+              (buyer_owned?(order) && ticket.holder_email.blank? && ticket.holder_user_id.nil? &&
+                (ticket.attendee_email.blank? || buyer_emails.include?(ticket.attendee_email.downcase)))))
         end
       end
       ticket_ids = selected_tickets.map(&:id)
@@ -55,8 +59,8 @@ class PrivacyRequestProcessor
       owned_order_ids = selected_orders.select { |order| buyer_owned?(order) }.map(&:id)
       delivery_ids = MessageDelivery.where(order_id: owned_order_ids, ticket_id: [nil, *ticket_ids])
         .or(MessageDelivery.where(ticket_id: ticket_ids)).pluck(:id)
-      email = @request.requester_email.downcase
-      fragments = [email, @request.user&.first_name, @request.user&.last_name].compact
+      fragments = [*buyer_emails,
+        [@request.user&.first_name, @request.user&.last_name].compact.join(" ")].compact
         .reject { |value| value.length < 3 }
       note_ids = if fragments.any?
         condition = fragments.map { "body ILIKE ?" }.join(" OR ")
@@ -74,15 +78,18 @@ class PrivacyRequestProcessor
       request_ids = related_privacy_requests.pluck(:id)
       audit = audit.or(AuditLog.where(auditable_type: "PrivacyRequest", auditable_id: request_ids))
       audit = audit.or(DataRetention.reconciliation_audits_for_orders(owned_order_ids))
-      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(email)}%"
-      audit = audit.or(AuditLog.where("metadata::text ILIKE ? OR before_data::text ILIKE ? OR after_data::text ILIKE ?",
-        pattern, pattern, pattern))
+      email_patterns = buyer_emails.map { |email| "%#{ActiveRecord::Base.sanitize_sql_like(email)}%" }
+      audit_condition = email_patterns.map do
+        "metadata::text ILIKE ? OR before_data::text ILIKE ? OR after_data::text ILIKE ?"
+      end.join(" OR ")
+      audit = audit.or(AuditLog.where(audit_condition, *email_patterns.flat_map { |pattern| [pattern] * 3 }))
+      metadata_condition = email_patterns.map { "metadata::text ILIKE ?" }.join(" OR ")
       Plan.new(orders: selected_orders, ticket_ids: ticket_ids, response_order_ids: response_order_ids,
         delivery_ids: delivery_ids, wallet_pass_ids: WalletPass.where(ticket_id: ticket_ids).pluck(:id),
         order_note_ids: order_note_ids, event_note_ids: note_ids, audit_ids: audit.pluck(:id),
-        recipient_delivery_ids: MessageDelivery.where("lower(recipient) = ?", email)
+        recipient_delivery_ids: MessageDelivery.where("lower(recipient) IN (?)", buyer_emails)
           .where.not(template: "privacy_request_confirmation").pluck(:id),
-        metadata_delivery_ids: (MessageDelivery.where("metadata::text ILIKE ?", pattern).pluck(:id) |
+        metadata_delivery_ids: (MessageDelivery.where(metadata_condition, *email_patterns).pluck(:id) |
           DataRetention.reconciliation_digests_for_orders(selected_orders.select { |order| buyer_owned?(order) }).pluck(:id)))
     end
   end
@@ -98,8 +105,8 @@ class PrivacyRequestProcessor
     end
     orders.each do |order|
       items << "Order #{order.reference} is under legal hold" if LegalHold.for_order?(order)
-      if DataRetention.reconciliation_digests_for_orders([order]).any? { |delivery| DataRetention.held?(delivery) }
-        items << "A legal hold covers a refund reconciliation digest for order #{order.reference}"
+      if DataRetention.reconciliation_digests_for_orders([order]).any? { |delivery| RetentionGuard.protected?(delivery) }
+        items << "A hold or unresolved money covers a refund reconciliation digest for order #{order.reference}"
       end
       items << "Order #{order.reference} has an open dispute, pending refund, or pending payout" if
         DataRetention.unresolved_money?(order)
@@ -168,7 +175,7 @@ class PrivacyRequestProcessor
           plan.order_note_ids.values.sum(&:size),
           action: "anonymize", reason: "Keep operational history; clear personal content" },
         { table: "marketing withdrawal proof", count: MarketingUnsubscribe.where(
-          email: @request.requester_email.downcase).count,
+          email: buyer_emails).count,
           action: "keep", reason: "Withdrawal evidence remains for three years" },
         { table: "event-only support notes", count: plan.event_note_ids.size,
           action: "anonymize", reason: "Notes that mention the requester are redacted" },
@@ -190,23 +197,42 @@ class PrivacyRequestProcessor
       account: @request.user&.attributes&.slice("id", "email", "first_name", "last_name", "phone", "created_at"),
       orders: orders.map do |order|
         {
-          order: order.attributes.slice("id", "reference", "buyer_email", "buyer_name", "buyer_phone",
+          order: export_fields(order, "id", "reference", "buyer_email", "buyer_name", "buyer_phone",
             "created_at", "completed_at", "status", "subtotal_cents", "service_fee_cents", "total_cents",
             "refund_amount_cents", "marketing_opt_in").tap do |attributes|
               attributes.except!("buyer_email", "buyer_name", "buyer_phone", "marketing_opt_in") unless buyer_owned?(order)
+              attributes["refund_reason"] = order.refund_reason if
+                order.refund_reason.present? && (buyer_owned?(order) ||
+                  (@request.user_id && order.user_id == @request.user_id))
             end,
           tickets: order.tickets.filter_map do |ticket|
             if plan.ticket_ids.include?(ticket.id)
-              ticket.attributes.slice("id", "attendee_name", "attendee_email", "holder_email",
-                "status", "checked_in_at", "created_at")
+              export_fields(ticket, "id", "status", "checked_in_at", "created_at").tap do |fields|
+                holder_owned = buyer_emails.include?(ticket.holder_email.to_s.downcase)
+                attendee_owned = buyer_emails.include?(ticket.attendee_email.to_s.downcase)
+                fields["holder_email"] = ticket.holder_email if holder_owned
+                if attendee_owned
+                  fields["attendee_email"] = ticket.attendee_email
+                  fields["attendee_name"] = ticket.attendee_name
+                end
+              end
             elsif ticket.transferred?
               { "id" => ticket.id, "status" => "transferred" }
             end
           end,
           registration_responses: plan.response_order_ids.include?(order.id) ?
             RegistrationResponse.where(order_id: order.id).map(&:attributes) : [],
-          refunds: order.refunds.map { |refund| refund.attributes.except("provider_payload") },
-          disputes: order.disputes.map { |dispute| dispute.attributes.except("provider_payload") }
+          refunds: order.refunds.map do |refund|
+            export_fields(refund, "id", "amount_cents", "currency", "status", "created_at").tap do |fields|
+              fields["reason"] = refund.reason if buyer_owned?(order) &&
+                (refund.requested_by_id.nil? || refund.requested_by_id == @request.user_id)
+            end
+          end,
+          disputes: order.disputes.map do |dispute|
+            export_fields(dispute, "id", "amount_cents", "currency", "status", "created_at").tap do |fields|
+              fields["reason"] = dispute.reason if buyer_owned?(order)
+            end
+          end
         }
       end,
       memberships: @request.user ? OrganizationMembership.where(user_id: @request.user_id).map(&:attributes) : [],
@@ -215,7 +241,7 @@ class PrivacyRequestProcessor
       organizer_follows: @request.user ? OrganizerFollow.where(user_id: @request.user_id).map(&:attributes) : [],
       event_reminders: @request.user ? EventReminder.where(user_id: @request.user_id).map(&:attributes) : [],
       image_uploads: @request.user ? ImageUploadReceipt.where(user_id: @request.user_id).map(&:attributes) : [],
-      marketing_withdrawals: MarketingUnsubscribe.where(email: @request.requester_email.downcase).map(&:attributes),
+      marketing_withdrawals: MarketingUnsubscribe.where(email: buyer_emails).map(&:attributes),
       privacy_requests: @request.user ? PrivacyRequest.where(user_id: @request.user_id).map do |item|
         item.attributes.except("result")
       end : [@request.attributes.except("result")]
@@ -258,16 +284,25 @@ class PrivacyRequestProcessor
       DataRetention.update_unheld(confirmations, recipient: "deleted@privacy.invalid", metadata: {}, outbound_payload: {},
         outbound_wire_body: nil, wire_body_digest: nil, updated_at: Time.current)
       related_privacy_requests.find_each do |item|
-        next if DataRetention.held?(item)
-
-        item.update_columns(requester_email: "deleted+request-#{item.id}@privacy.invalid",
-          guest_challenge_digest: nil, guest_challenge_expires_at: nil, result: {}, updated_at: Time.current)
+        item.with_lock do
+          if RetentionGuard.protected?(item)
+            Rails.logger.info("[PrivacyRequest] skipped protected privacy_requests record")
+            next
+          end
+          item.update_columns(requester_email: "deleted+request-#{item.id}@privacy.invalid",
+            guest_challenge_digest: nil, guest_challenge_expires_at: nil, result: {},
+            verified_emails: [], updated_at: Time.current)
+        end
       end
     end
     @request
   end
 
   private
+
+  def export_fields(record, *columns)
+    columns.to_h { |column| [column, record.public_send(column)] }
+  end
 
   def execute_deletion!(actor)
     user = @request.user
@@ -280,29 +315,55 @@ class PrivacyRequestProcessor
       orders.each(&:lock!)
       Ticket.where(order_id: orders.map(&:id)).order(:id).lock("FOR UPDATE").load
       raise Blocked, "A legal hold or money operation now blocks deletion" if blockers.any?
+      raise Blocked, "A protected record now blocks deletion" if
+        RetentionGuard.protected_batch?(orders).values.any?
 
       current_plan = plan
-      PrivacyEmailSuppression.suppress!(@request.requester_email)
+      owned_orders = current_plan.orders.select { |order| buyer_owned?(order) }
+      owned_references = owned_orders.map(&:reference)
+      personal_values = personal_tokens + owned_orders.flat_map { |order| [order.buyer_name, order.refund_reason] }
+        .compact.reject { |value| value.length < 3 }
+      buyer_emails.each { |email| PrivacyEmailSuppression.suppress!(email) }
       current_plan.orders.each do |order|
-        DataRetention.anonymize_order!(order, buyer_owned: buyer_owned?(order),
+        written = DataRetention.anonymize_order!(order, buyer_owned: buyer_owned?(order),
           eligible_ticket_ids: order.tickets.where(id: current_plan.ticket_ids).pluck(:id),
           eligible_support_note_ids: current_plan.order_note_ids.fetch(order.id),
-          anonymize_responses: current_plan.response_order_ids.include?(order.id))
+          anonymize_responses: current_plan.response_order_ids.include?(order.id),
+          privacy_user_id: user&.id, privacy_emails: buyer_emails)
+        raise Blocked, "A protected order now blocks deletion" unless written
       end
       WalletPass.where(id: current_plan.wallet_pass_ids).find_each do |pass|
-        pass.destroy! unless DataRetention.held?(pass)
+        pass.with_lock do
+          if RetentionGuard.protected?(pass)
+            Rails.logger.info("[PrivacyRequest] skipped protected wallet_passes record")
+          else
+            pass.destroy!
+          end
+        end
       end
-      redact_references!(current_plan, user)
+      redact_references!(current_plan, user, owned_references, personal_values)
       if user
         [EventFavorite, OrganizerFollow, EventReminder].each do |model|
-          model.where(user_id: user.id).find_each { |record| record.delete unless DataRetention.held?(record) }
+          model.where(user_id: user.id).find_each do |record|
+            record.with_lock do
+              if RetentionGuard.protected?(record)
+                Rails.logger.info("[PrivacyRequest] skipped protected #{model.table_name} record")
+              else
+                record.delete
+              end
+            end
+          end
         end
         DataRetention.update_unheld(OrganizationMembership.where(user_id: user.id), user_id: nil,
           invited_email: "deleted+user-#{user.id}@privacy.invalid", updated_at: Time.current)
         DataRetention.update_unheld(OrganizerProfile.where(user_id: user.id), user_id: nil, verification_notes: nil,
           updated_at: Time.current)
-        user.update_columns(clerk_id: "deleted-user-#{user.id}", email: nil, first_name: nil,
-          last_name: nil, phone: nil, updated_at: Time.current)
+        user.with_lock do
+          raise Blocked, "A protected account now blocks deletion" if RetentionGuard.protected?(user)
+
+          user.update_columns(clerk_id: "deleted-user-#{user.id}", email: nil, first_name: nil,
+            last_name: nil, phone: nil, updated_at: Time.current)
+        end
       end
       @request.update!(status: "completed", executed_by: actor, executed_at: Time.current,
         result: { retained_financial_orders: orders.count, removed_saved_records: true })
@@ -311,11 +372,18 @@ class PrivacyRequestProcessor
     manual = []
     uploads.each do |upload|
       begin
-        S3Service.delete_upload!(upload.final_key)
-        S3Service.delete_upload!(upload.source_key)
-        DataRetention.update_unheld(Event.where(id: upload.event_id, cover_image_url: upload.public_url),
-          cover_image_url: nil) if upload.event_id
-        upload.destroy!
+        upload.with_lock do
+          if RetentionGuard.protected?(upload)
+            Rails.logger.info("[PrivacyRequest] skipped protected image_upload_receipts record")
+            manual << "Protected S3 upload"
+            next
+          end
+          S3Service.delete_upload!(upload.final_key)
+          S3Service.delete_upload!(upload.source_key)
+          DataRetention.update_unheld(Event.where(id: upload.event_id, cover_image_url: upload.public_url),
+            cover_image_url: nil) if upload.event_id
+          upload.destroy!
+        end
       rescue S3Service::UploadError, Aws::S3::Errors::ServiceError, Seahorse::Client::NetworkingError
         manual << "S3 upload deletion"
       end
@@ -328,17 +396,99 @@ class PrivacyRequestProcessor
         ImageUploadReceipt.where(id: uploads.map(&:id)).count))
   end
 
-  def redact_references!(current_plan, _user)
-    DataRetention.update_unheld(SupportNote.where(id: current_plan.event_note_ids), body: "[redacted]",
-      retention_anonymized_at: Time.current, updated_at: Time.current)
-    DataRetention.update_unheld(AuditLog.where(id: current_plan.audit_ids), ip_address: nil,
-      before_data: {}, after_data: {}, metadata: {}, retention_anonymized_at: Time.current,
-      updated_at: Time.current)
-    DataRetention.update_unheld(MessageDelivery.where(id: current_plan.metadata_delivery_ids), metadata: {},
-      outbound_payload: {}, outbound_wire_body: nil, wire_body_digest: nil, updated_at: Time.current)
+  def redact_references!(current_plan, _user, owned_references, personal_values)
+    note_ids = current_plan.event_note_ids | current_plan.order_note_ids.values.flatten
+    SupportNote.where(id: note_ids).find_each do |note|
+      note.with_lock do
+        if RetentionGuard.protected?(note)
+          Rails.logger.info("[PrivacyRequest] skipped protected support_notes record")
+          next
+        end
+        next unless (@request.user_id && note.author_user_id == @request.user_id) ||
+          personal_values.any? { |value| note.body.to_s.downcase.include?(value.downcase) }
+
+        SupportNote.where(id: note.id).update_all(body: "[redacted]",
+          retention_anonymized_at: Time.current, updated_at: Time.current)
+      end
+    end
+    AuditLog.where(id: current_plan.audit_ids).find_each do |audit|
+      audit.with_lock do
+        if RetentionGuard.protected?(audit)
+          Rails.logger.info("[PrivacyRequest] skipped protected audit_logs record")
+          next
+        end
+        own_request = audit.auditable_type == "PrivacyRequest" &&
+          related_privacy_requests.where(id: audit.auditable_id).exists?
+        own_refund = audit.auditable_type == "Refund" &&
+          Refund.where(id: audit.auditable_id, order_id: current_plan.orders.map(&:id),
+            requested_by_id: [nil, @request.user_id]).exists?
+        attrs = if own_request || own_refund
+          { before_data: {}, after_data: {}, metadata: {} }
+        else
+          { before_data: redact_personal_value(audit.before_data, owned_references, personal_values),
+            after_data: redact_personal_value(audit.after_data, owned_references, personal_values),
+            metadata: redact_personal_value(audit.metadata, owned_references, personal_values) }
+        end
+        attrs[:ip_address] = nil if audit.actor_user_id == @request.user_id ||
+          (audit.actor_user_id.nil? && own_request)
+        attrs[:updated_at] = Time.current
+        AuditLog.where(id: audit.id).update_all(attrs)
+      end
+    end
+    MessageDelivery.where(id: current_plan.metadata_delivery_ids).find_each do |delivery|
+      delivery.with_lock do
+        if RetentionGuard.protected?(delivery)
+          Rails.logger.info("[PrivacyRequest] skipped protected message_deliveries record")
+          next
+        end
+        tokens = personal_values + Array(delivery.metadata["items"]).filter_map do |item|
+          item["reason"] if item.is_a?(Hash) && owned_references.include?(item["order_reference"])
+        end
+        body = redact_personal_value(delivery.outbound_wire_body, owned_references, tokens)
+        MessageDelivery.where(id: delivery.id).update_all(
+          metadata: redact_personal_value(delivery.metadata, owned_references, tokens),
+          outbound_payload: redact_personal_value(delivery.outbound_payload, owned_references, tokens),
+          outbound_wire_body: body, wire_body_digest: body && Digest::SHA256.hexdigest(body),
+          updated_at: Time.current)
+        MessageProviderEvent.where(message_delivery_id: delivery.id).find_each do |event|
+          event.with_lock do
+            next if RetentionGuard.protected?(event)
+
+            MessageProviderEvent.where(id: event.id).update_all(
+              payload: redact_personal_value(event.payload, owned_references, tokens),
+              processing_error: redact_personal_value(event.processing_error, owned_references, tokens),
+              updated_at: Time.current)
+          end
+        end
+      end
+    end
+    DataRetention.update_unheld(MessageProviderEvent.where(message_delivery_id: current_plan.recipient_delivery_ids),
+      payload: {}, processing_error: nil, updated_at: Time.current)
     DataRetention.update_unheld(MessageDelivery.where(id: current_plan.recipient_delivery_ids),
         status: MessageDelivery.statuses.fetch("cancelled"), recipient: "deleted@privacy.invalid",
         metadata: {}, outbound_payload: {}, outbound_wire_body: nil, wire_body_digest: nil,
         last_error: nil, updated_at: Time.current)
+  end
+
+  def personal_tokens
+    [*buyer_emails, [@request.user&.first_name, @request.user&.last_name].compact.join(" ")].compact
+      .reject { |value| value.length < 3 }.uniq
+  end
+
+  def redact_personal_value(value, owned_references, tokens)
+    case value
+    when Hash
+      owned_item = owned_references.include?(value["order_reference"] || value[:order_reference])
+      value.each_with_object({}) do |(key, item), result|
+        next if owned_item && %w[buyer_email buyer_name reason refund_reason dispute_reason].include?(key.to_s)
+        next if item.is_a?(String) && tokens.any? { |token| item.casecmp?(token) }
+
+        result[key] = redact_personal_value(item, owned_references, tokens)
+      end
+    when Array then value.map { |item| redact_personal_value(item, owned_references, tokens) }
+    when String
+      tokens.reduce(value) { |text, token| text.gsub(/#{Regexp.escape(token)}/i, "[redacted]") }
+    else value
+    end
   end
 end

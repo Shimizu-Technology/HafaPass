@@ -15,7 +15,8 @@ class Api::V1::Me::PrivacyRequestsController < ApplicationController
     email = emails.include?(current_user.email.to_s.downcase) ? current_user.email.downcase : emails.first
     return render json: { error: "Verify an email address in your account first" }, status: :unprocessable_entity if email.blank?
 
-    item = PrivacyRequest.create!(kind: kind, user: current_user, requester_email: email)
+    item = PrivacyRequest.create!(kind: kind, user: current_user, requester_email: email,
+      verified_emails: emails)
     AuditLogger.record!(action: "privacy_request.submitted", auditable: item, actor: current_user,
       metadata: { kind: kind }, request: request)
     render json: item.as_json(only: [:id, :kind, :status, :created_at]), status: :created
