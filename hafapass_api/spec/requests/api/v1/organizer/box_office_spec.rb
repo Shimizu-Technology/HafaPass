@@ -30,6 +30,21 @@ RSpec.describe "Api::V1::Organizer::BoxOffice", type: :request do
       expect(json["tickets"].first["display_credential"]).to be_present
     end
 
+    it "charges the active $30 tier shown in the organizer event quote and rejects a stale $25 total" do
+      create(:pricing_tier, ticket_type: ticket_type, tier_type: :quantity_based,
+        price_cents: 3000, quantity_limit: 50, quantity_sold: 0, position: 0)
+      get "/api/v1/organizer/events/#{event.id}", headers: headers
+      expect(response.parsed_body.fetch("ticket_types").sole.fetch("current_price_cents")).to eq(3000)
+      post "/api/v1/organizer/events/#{event.id}/box_office",
+        params: valid_params.merge(expected_total_cents: 5000), headers: headers
+      expect(response).to have_http_status(:conflict)
+      expect(Order.where(buyer_email: "john@example.com")).not_to exist
+      post "/api/v1/organizer/events/#{event.id}/box_office",
+        params: valid_params.merge(expected_total_cents: 6000), headers: headers
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body.fetch("total_cents")).to eq(6000)
+    end
+
     it "creates order with walk-in defaults when no buyer info provided" do
       post "/api/v1/organizer/events/#{event.id}/box_office",
         params: { line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }], payment_method: "door_cash" },

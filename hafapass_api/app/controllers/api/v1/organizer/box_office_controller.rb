@@ -31,7 +31,7 @@ module Api
           result = Commerce::CashSaleCreator.call(
             event: @event,
             user: current_user,
-            parameters: params.permit(:buyer_name, :buyer_email, :buyer_phone, :payment_method, :seat_hold_token,
+            parameters: params.permit(:buyer_name, :buyer_email, :buyer_phone, :payment_method, :seat_hold_token, :expected_total_cents,
               line_items: [:ticket_type_id, :quantity]),
             idempotency_key: request.headers["Idempotency-Key"]
           )
@@ -39,6 +39,8 @@ module Api
           render json: order_json(result.order), status: result.replayed ? :ok : :created
         rescue Commerce::CashSaleCreator::Conflict => e
           render json: { error: e.message }, status: :conflict
+        rescue Commerce::OrderCreator::PriceChanged => e
+          render json: { error: e.message, code: "price_changed" }, status: :conflict
         rescue Commerce::OrderCreator::CheckoutError => e
           render json: { error: e.message }, status: :unprocessable_entity
         rescue CardPresentPayments::Processor::ProcessingError => e
@@ -115,7 +117,8 @@ module Api
             service_fee: false,
             source: "box_office",
             payment_method: "door_card",
-            seat_hold_token: params[:seat_hold_token]
+            seat_hold_token: params[:seat_hold_token],
+            expected_total_cents: params[:expected_total_cents]
           )
           attempt = CardPresentPayments::Processor.call(
             order: result.order,

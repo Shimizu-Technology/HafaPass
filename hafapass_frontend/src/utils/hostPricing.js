@@ -1,4 +1,5 @@
 import { formatMoneyCents } from './money'
+import { quoteBuyerFeeCents } from './feeTerms'
 
 // Organizer pricing for the public host page. Every number comes from the
 // public `/config` response; nothing here assumes a rate. The fee math mirrors
@@ -77,7 +78,7 @@ export function serviceFeeCents({ priceCents, quantity, pricing }) {
   if (priceCents <= 0 || quantity <= 0) return 0
   // Rounded per ticket, like checkout. Integer half-up rounding avoids float
   // drift (e.g. 5% of $10.10 is 50.5 cents, charged as 51 on every ticket).
-  const perTicket = Math.floor((priceCents * pricing.basisPoints + 5000) / 10000) + pricing.flatCents
+  const perTicket = quoteBuyerFeeCents({ percent: pricing.basisPoints / 100, flatCents: pricing.flatCents }, priceCents).platformFeeCents
   return perTicket * quantity
 }
 
