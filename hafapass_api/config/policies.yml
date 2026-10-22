@@ -1,4 +1,4 @@
-version: 2026-10-counsel-draft-2
+version: 2026-10-counsel-draft-3
 status: draft-pending-legal-review
 # Outstanding legal-review items. Not served publicly and not part of any
 # digest: they are shown to admins in the policy register as information.
@@ -117,7 +117,7 @@ documents:
           Nothing in these terms limits rights you have under consumer protection laws that cannot be waived.
       - heading: Governing law and disputes
         body: |-
-          These terms are governed by the laws of Guam, subject to consumer rights that cannot be waived. If you have a complaint, contact us so we can try to resolve it. If a court case is needed, the parties may bring it in a court with jurisdiction in Guam, subject to any mandatory law that applies to you.
+          These terms are governed by the laws of Guam, subject to consumer rights that cannot be waived. If you have a complaint, contact us so we can try to resolve it. If a court case is needed, the parties may bring it in the Superior Court of Guam, or another court with jurisdiction in Guam, subject to any mandatory law that applies to you.
       - heading: Changes and contact
         body: |-
           We may update these terms. The version you accepted at checkout applies to that order, and we record which version that was.
@@ -140,13 +140,13 @@ documents:
         body: |-
           If an event is postponed, your ticket stays valid while the organizer sets a new date. You can request a refund for an unused ticket from your order page or contact us. If the event is rescheduled, check the new event details before attending.
 
-          If the event changes materially in another way, such as a different venue or headline act, contact us with your order number. We will review the change with the organizer and applicable law. We will communicate any refund option and deadline before it closes.
+          If the event changes materially in another way, such as a different venue or headline act, contact us with your order number. We will review the change with the organizer and applicable law. Check the event notice and your order page for any refund option or deadline; contact us if either is unclear.
       - heading: Refunding part of an order
         body: |-
           Where the event's rules allow it, you may be able to refund some tickets in an order and keep the rest. A partial refund returns the ticket price and the service fee charged on each ticket refunded. The service fee is refunded with the ticket it was charged on.
       - heading: Tickets that can't be refunded
         body: |-
-          A ticket can't be refunded if it has already been used for entry, transferred to someone else, refunded already, or is part of an open payment dispute.
+          For an ordinary refund request, a ticket can't be refunded if it has already been used for entry, transferred to someone else, or refunded already. An open payment dispute must be resolved before we can issue a separate refund. These limits do not remove a refund required by law or the cancellation remedy above.
       - heading: How and when you receive the money
         body: |-
           Stripe card refunds go back to the original card. Once our payment provider confirms a refund, it usually appears within 5 to 10 business days, depending on your bank or card issuer. For non-Stripe card payments at the door, the organizer handles the return through its card provider and records it. For tickets paid for in cash at the door, the organizer handles the physical cash return; {{platform_name}} may record that return but does not transfer the cash. Free tickets have no payment to return; cancelling one releases the seat.
@@ -217,7 +217,7 @@ documents:
           We do not sell your personal information. We do not use third-party advertising cookies or let advertising networks track you on {{platform_name}}. See our Cookie Notice for details.
       - heading: How long we keep it
         body: |-
-          We retain order, payment, refund, payout, tax and audit records for accounting, tax, dispute and legal needs. Our proposed minimum is seven years, subject to professional review and any longer legal duty. The service does not currently run an automatic seven-year deletion job for those records. Marketplace analytics not tied to an order are deleted after 13 months. Our Data Retention Schedule has more detail.
+          We retain order, payment, refund, payout, tax and audit records for accounting, tax, dispute and legal needs. We have not set an automatic deletion date for these records. Marketplace analytics not tied to an order are deleted after 13 months. Our Data Retention Schedule has more detail.
       - heading: Your choices and rights
         body: |-
           You can ask to access, correct, export, or delete your personal information by contacting us {{support_contact}}. We will verify your identity and assess the request under applicable law and our recordkeeping duties. Some records, such as completed orders, may need to be kept for legal, tax, or dispute reasons.
@@ -227,7 +227,7 @@ documents:
         body: |-
           We limit staff access to personal information by role, record sensitive actions, and encrypt data in transit. No system is perfectly secure.
 
-          If a breach affects your personal information, we will notify you and any required authorities as required by Guam's breach notification law (9 GCA Chapter 48, Notification of Breaches of Personal Information) and other applicable US laws.
+          If we discover a security incident, we will assess what information was involved and give any notices required by Guam's breach notification law (9 GCA Chapter 48, Notification of Breaches of Personal Information) or other applicable law.
       - heading: Children
         body: |-
           {{platform_name}} is not directed to children under 13. People under 13 should not create an account or place an order. A parent or guardian may buy tickets for a child and provide an attendee name where needed. If you believe a child under 13 gave us personal information directly, contact us so we can investigate and take appropriate action.
@@ -262,7 +262,7 @@ documents:
 
           For each event you choose how the fee is handled: buyers pay it on top of the ticket price, you absorb it so buyers pay only the ticket price, or you split it and buyers pay a set share. Advertised prices always show the buyer's full total.
 
-          We may change the fee schedule with advance notice. A change applies to events published after it takes effect. Each order records the fee in force when the buyer paid, and that fee applies to that order.
+          We may change the fee schedule. You must accept the current agreement before publishing a new event. The fee shown to a buyer before payment applies to that order; a later fee change does not change a completed order. Check the current fee terms before selling more tickets, including for an event already published.
       - heading: Payouts
         body: |-
           We pay your available balance {{payout_schedule}}, after we reconcile the event's sales, refunds, and disputes and receive required tax information. Payouts are made by check from {{operator_name}}'s business account unless a different payout method is approved and recorded for you.
@@ -311,7 +311,7 @@ documents:
           We may pause ticket sales, hold payouts, remove a listing, or suspend your account if we reasonably believe you have broken this agreement or the law, or that buyers are at risk. Either party may end this agreement with notice. Obligations for tickets already sold, refunds, disputes, negative balances, and indemnity continue after it ends.
       - heading: Governing law and changes
         body: |-
-          This agreement is governed by the laws of Guam. Either party may bring a dispute in a court with jurisdiction in Guam after giving the other a reasonable chance to resolve it informally, unless urgent relief is needed.
+          This agreement is governed by the laws of Guam. Either party may bring a dispute in the Superior Court of Guam, or another court with jurisdiction in Guam, after giving the other a reasonable chance to resolve it informally, unless urgent relief is needed.
 
           We may update this agreement. You must accept the current version before you publish a new event, and {{platform_name}} records which version you accepted and when. For questions, contact us {{support_contact}}.
   acceptable-use:
@@ -361,7 +361,7 @@ documents:
     sections:
       - heading: Financial, order, and audit records
         body: |-
-          We keep orders, payments, refunds, payouts, tax records, disputes, admissions, and audit records for accounting, tax, legal, and dispute purposes. Seven years is the proposed minimum pending professional review; no automatic seven-year purge is currently in place. A legal hold or longer legal duty may extend retention.
+          We keep orders, payments, refunds, payouts, tax records, disputes, admissions, and audit records for accounting, tax, legal, and dispute purposes. There is currently no automatic deletion date for these records. We will set a retention schedule after professional review; a legal hold or legal duty may require longer retention.
       - heading: Marketplace analytics
         body: |-
           Analytics events not tied to an order, such as page visits and campaign attribution, are deleted after 13 months. Attribution recorded on an order, such as a referral code, is kept with that order.
@@ -376,7 +376,7 @@ documents:
           Organizers should remove offline scanner data from their devices after the event and any needed reconciliation. Tell us promptly if a scanner device is lost or stolen so access can be revoked. We cannot erase data on an organizer's device remotely.
       - heading: Deletion requests and holds
         body: |-
-          We honor deletion requests where we can. Legal holds, open disputes, fraud investigations, and legal or tax duties may require us to keep specific records; when they do, we keep only those records and delete the rest. To ask for deletion, contact us {{support_contact}}.
+          We review deletion requests and delete information where we can. Legal holds, open disputes, fraud investigations, and legal or tax duties may require us to retain records. We do not currently have an automated process that separates and deletes every other record when a request is made. To ask for deletion, contact us {{support_contact}}.
   cookies:
     title: Cookie Notice
     summary: |-
@@ -415,7 +415,7 @@ documents:
           {{platform_name}} is designed for phones and desktop computers. We use keyboard controls, labels, and reduced-motion settings in many parts of the service. We have not completed an independent conformance audit of every checkout, organizer, scanner, and wallet flow.
       - heading: Known limitations
         body: |-
-          Seat maps for events with assigned seating may be harder to use with a screen reader. If you have trouble choosing seats, contact us and we will help you complete your order.
+          Seat maps for events with assigned seating may be harder to use with a screen reader. If you have trouble choosing seats, contact us so we can work with you on an accessible way to buy tickets.
 
           Images and PDFs uploaded by organizers may not include text descriptions. We are working to improve this.
       - heading: Accessibility at events
@@ -423,4 +423,4 @@ documents:
           Each organizer is responsible for accessibility at its venue and event. Where the organizer provides it, accessibility information is shown on the event page. For events with assigned seating, organizers confirm whether accessible seating is available. For questions about a specific venue, contact the organizer or ask us to pass your question on.
       - heading: Get help or report a barrier
         body: |-
-          If something on {{platform_name}} is hard to use, or you need help buying tickets, contact us {{support_contact}}. Tell us the page and what happened. We aim to respond within 5 business days.
+          If something on {{platform_name}} is hard to use, or you need help buying tickets, contact us {{support_contact}}. Tell us the page and what happened, and include the event name if you need tickets for a specific date.
