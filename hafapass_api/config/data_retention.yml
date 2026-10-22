@@ -313,6 +313,20 @@
         "venue_name"
       ]
     },
+    "fee_change_notices": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": ["recipient_email"]
+    },
+    "fee_changes": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": ["activation_error"]
+    },
     "fee_components": {
       "category": "financial record",
       "period": "7_years_after_year_end",
@@ -1541,6 +1555,33 @@
       "localized_content_sources": "pii",
       "page_customization": "pii"
     },
+    "fee_change_notices": {
+      "id": "system",
+      "fee_change_id": "system",
+      "organization_id": "system",
+      "owner_id": "system",
+      "recipient_email": "pii",
+      "buyer_fee_percent": "financial",
+      "fee_policy": "financial",
+      "event_id": "system",
+      "acknowledged_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "fee_changes": {
+      "id": "system",
+      "created_by_id": "system",
+      "old_terms": "financial",
+      "new_terms": "financial",
+      "effective_at": "system",
+      "activated_at": "system",
+      "created_at": "system",
+      "updated_at": "system",
+      "preapproval_id": "system",
+      "preapproved_registry_digest": "system",
+      "blocked_at": "system",
+      "activation_error": "pii"
+    },
     "fee_components": {
       "id": "system",
       "amount_cents": "financial",
@@ -2528,7 +2569,8 @@
       "processing_fee_bearer": "financial",
       "payout_schedule_text": "pii",
       "business_mailing_address": "pii",
-      "retention_purge_enabled": "non-personal"
+      "retention_purge_enabled": "non-personal",
+      "fee_notice_days": "non-personal"
     },
     "solid_queue_batch_executions": {
       "id": "system",

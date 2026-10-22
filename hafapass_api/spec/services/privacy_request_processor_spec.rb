@@ -59,6 +59,17 @@ RSpec.describe PrivacyRequestProcessor do
     expect(privacy_request.reload.executed_at).to be_nil
   end
 
+  it "checks an access request for a hold while locked before marking it complete" do
+    access = PrivacyRequest.create!(kind: "access", user: user, requester_email: user.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+    LegalHold.place!(scope_type: "user", scope_value: user.id.to_s,
+      reason: "Preserve request evidence", actor: admin)
+
+    expect { described_class.new(access).execute!(actor: admin) }
+      .to raise_error(PrivacyRequestProcessor::Blocked, /protected request/)
+    expect(access.reload).to have_attributes(status: "verified", executed_at: nil)
+  end
+
   it "includes account activity and order data in the access JSON" do
     favorite = EventFavorite.create!(user: user, event: order.event)
     access = PrivacyRequest.create!(kind: "access", user: user, requester_email: user.email,

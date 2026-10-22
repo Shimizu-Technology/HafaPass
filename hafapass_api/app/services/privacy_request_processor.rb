@@ -261,7 +261,7 @@ class PrivacyRequestProcessor
     end
 
     if @request.kind == "access"
-      @request.update!(status: "completed", executed_by: actor, executed_at: Time.current,
+      update_request_unless_protected!(status: "completed", executed_by: actor, executed_at: Time.current,
         result: { export_available_until: 7.days.from_now.iso8601 })
     else
       execute_deletion!(actor)
@@ -270,7 +270,7 @@ class PrivacyRequestProcessor
       delivery = EmailService.send_privacy_request_confirmation_async(@request)
       MessageDeliveryJob.perform_now(delivery.id) if @request.kind == "deletion"
     rescue StandardError
-      @request.update!(status: "partially_completed",
+      update_request_unless_protected!(status: "partially_completed",
         result: @request.result.merge(manual_steps: Array(@request.result["manual_steps"]) | ["Confirmation email"]))
     end
     AuditLogger.record!(action: "privacy_request.executed", auditable: @request, actor: actor,
@@ -299,6 +299,16 @@ class PrivacyRequestProcessor
   end
 
   private
+
+  def update_request_unless_protected!(**attributes)
+    @request.with_lock do
+      if RetentionGuard.protected?(@request)
+        Rails.logger.info("[PrivacyRequest] skipped protected privacy_requests record")
+        raise Blocked, "A protected request now blocks processing"
+      end
+      @request.update!(attributes)
+    end
+  end
 
   def export_fields(record, *columns)
     columns.to_h { |column| [column, record.public_send(column)] }
@@ -365,7 +375,7 @@ class PrivacyRequestProcessor
             last_name: nil, phone: nil, updated_at: Time.current)
         end
       end
-      @request.update!(status: "completed", executed_by: actor, executed_at: Time.current,
+      update_request_unless_protected!(status: "completed", executed_by: actor, executed_at: Time.current,
         result: { retained_financial_orders: orders.count, removed_saved_records: true })
     end
 
@@ -391,7 +401,7 @@ class PrivacyRequestProcessor
     if clerk_id
       manual << "Clerk user deletion" unless ClerkIdentity.delete_user(clerk_id)
     end
-    @request.update!(status: manual.any? ? "partially_completed" : "completed",
+    update_request_unless_protected!(status: manual.any? ? "partially_completed" : "completed",
       result: @request.result.merge(manual_steps: manual.uniq, deleted_uploads: uploads.count -
         ImageUploadReceipt.where(id: uploads.map(&:id)).count))
   end

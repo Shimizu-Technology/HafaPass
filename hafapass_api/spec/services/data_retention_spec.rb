@@ -117,9 +117,49 @@ RSpec.describe DataRetention do
     expect(payment.reload).to have_attributes(amount_cents: 5250, provider_payload: {})
     expect { described_class.anonymize_order!(order) }.not_to change { order.reload.buyer_email }
   end
+
+  it "rolls back child anonymization when a hold appears before the final order write" do
+    order = create(:order, completed_at: 8.years.ago)
+    ticket = create(:ticket, order: order, event: order.event,
+      ticket_type: create(:ticket_type, event: order.event), attendee_email: "buyer@example.com")
+    actor = create(:user, :admin)
+    order_checks = 0
+    allow(RetentionGuard).to receive(:protected?).and_wrap_original do |original, record|
+      if record.is_a?(Order) && record.id == order.id && (order_checks += 1) == 2
+        LegalHold.place!(scope_type: "order", scope_value: order.id.to_s,
+          reason: "Preserve during anonymization", actor: actor)
+      end
+      original.call(record)
+    end
+
+    expect(described_class.anonymize_order!(order)).to be(false)
+    expect(ticket.reload.attendee_email).to eq("buyer@example.com")
+    expect(order.reload.buyer_email).to eq("buyer@example.com")
+  end
 end
 
 RSpec.describe RetentionGuard do
+  it "protects a fee notice through its event's unresolved refund and its owner's hold" do
+    owner = create(:user)
+    order = create(:order, completed_at: 8.years.ago)
+    change = FeeChange.create!(created_by: owner, old_terms: { "service_fee_percent" => "1" },
+      new_terms: { "service_fee_percent" => "2" }, effective_at: 8.years.ago, created_at: 8.years.ago)
+    notice = FeeChangeNotice.create!(fee_change: change, organization: order.event.organization,
+      owner: owner, event: order.event, recipient_email: owner.email, buyer_fee_percent: 2,
+      fee_policy: "buyer", created_at: 8.years.ago)
+    refund = create(:refund, order: order, status: :pending)
+
+    expect(described_class.protected?(notice)).to be(true)
+    DataRetentionPurgeJob.perform_now
+    expect(notice.reload.recipient_email).to eq(owner.email)
+
+    refund.update!(status: :succeeded)
+    LegalHold.place!(scope_type: "user", scope_value: owner.id.to_s,
+      reason: "Preserve owner records", actor: create(:user, :admin))
+    expect(described_class.protected?(notice)).to be(true)
+    expect(described_class.protected?(change)).to be(true)
+  end
+
   it "resolves nested order, refund, payment, and ticket references from persisted metadata" do
     order = create(:order)
     refund = create(:refund, order: order, status: :pending)

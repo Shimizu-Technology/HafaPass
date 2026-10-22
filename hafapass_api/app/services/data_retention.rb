@@ -56,7 +56,7 @@ class DataRetention
 
   def self.anonymize_order!(order, eligible_ticket_ids: nil, eligible_support_note_ids: nil,
     anonymize_responses: nil, buyer_owned: true, privacy_user_id: nil, privacy_emails: nil)
-    Order.transaction do
+    Order.transaction(requires_new: true) do
       order.lock!
       if RetentionGuard.protected?(order)
         Rails.logger.info("[DataRetention] skipped protected orders record")
@@ -67,6 +67,9 @@ class DataRetention
         anonymize_responses: anonymize_responses, buyer_owned: buyer_owned,
         privacy_user_id: privacy_user_id, privacy_emails: privacy_emails)
     end
+  rescue Protected
+    Rails.logger.info("[DataRetention] skipped protected orders record")
+    false
   end
 
   def self.anonymize_order_locked!(order, eligible_ticket_ids:, eligible_support_note_ids:,
@@ -75,6 +78,8 @@ class DataRetention
       ticket_ids = Array(eligible_ticket_ids)
       anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
         user_id: privacy_user_id, buyer_owned: false)
+      raise Protected if RetentionGuard.protected?(order)
+
       order.update_columns(user_id: nil, refund_reason: nil, updated_at: Time.current)
       return true
     end
@@ -164,6 +169,8 @@ class DataRetention
           wire_body_digest: nil, retention_anonymized_at: Time.current, updated_at: Time.current)
       end
     end
+    raise Protected if RetentionGuard.protected?(order)
+
     order.update_columns(buyer_email: replacement, buyer_name: "Deleted buyer", buyer_phone: nil,
       refund_reason: nil,
       marketing_opt_in: false, user_id: nil, guest_access_revoked_at: Time.current,
@@ -239,6 +246,8 @@ class DataRetention
     scopes << ["user", record.author_user_id.to_s] if record.respond_to?(:author_user_id) && record.author_user_id
     scopes << ["user", record.accepted_by_user_id.to_s] if record.respond_to?(:accepted_by_user_id) && record.accepted_by_user_id
     scopes << ["user", record.initiated_by_user_id.to_s] if record.respond_to?(:initiated_by_user_id) && record.initiated_by_user_id
+    scopes << ["user", record.created_by_id.to_s] if record.respond_to?(:created_by_id) && record.created_by_id
+    scopes << ["user", record.owner_id.to_s] if record.respond_to?(:owner_id) && record.owner_id
     %i[email buyer_email requester_email recipient recipient_email holder_email].each do |field|
       scopes << ["buyer_email", record.public_send(field).to_s.downcase] if
         record.respond_to?(field) && record.public_send(field).present?

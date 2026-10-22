@@ -9,7 +9,8 @@ class DataRetentionPurgeJob < ApplicationJob
     tickets registration_responses ticket_transfers guest_list_entries support_notes admission_actions
     admission_manifests message_provider_events privacy_requests marketing_unsubscribes
     organizer_sales_export_requests payments refunds disputes
-    payment_events fee_components reconciliation_exceptions card_present_payment_attempts webhook_events].freeze
+    payment_events fee_components fee_changes fee_change_notices reconciliation_exceptions
+    card_present_payment_attempts webhook_events].freeze
 
   def perform(at: Time.current)
     dry_run = DataRetention.dry_run?
@@ -55,7 +56,7 @@ class DataRetentionPurgeJob < ApplicationJob
               Rails.logger.info("[DataRetention] skipped protected #{table} record")
               next
             end
-            case rule.fetch("action")
+            result = case rule.fetch("action")
             when "delete"
               if record.is_a?(OrganizerSalesExportRequest) && record.storage_key.present?
                 begin
@@ -65,9 +66,10 @@ class DataRetentionPurgeJob < ApplicationJob
                 end
               end
               record.destroy!
+              true
             when "anonymize" then DataRetention.anonymize!(record)
             end
-            written = true
+            written = result != false
           end
           counts[table] += 1 if written
         end

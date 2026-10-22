@@ -6,6 +6,8 @@ class RetentionGuard
   REFERENCE_KEYS = %w[order_id order_ids order_reference order_references refund_id refund_ids
     payout_id payout_ids payment_id payment_ids ticket_id ticket_ids dispute_id dispute_ids
     ticket_transfer_id ticket_transfer_ids message_delivery_id message_delivery_ids
+    transfer_id transfer_ids card_present_payment_attempt_id card_present_payment_attempt_ids
+    provider_payout_id provider_dispute_id external_payment_id
     event_change_id event_change_ids settlement_id settlement_ids].freeze
   MONEY_PAYOUT_STATUSES = %w[pending processing held failed].freeze
 
@@ -35,6 +37,7 @@ class RetentionGuard
     ids << record.payment_event&.payment&.order_id if record.respond_to?(:payment_event)
     ids << record.order_item&.order_id if record.respond_to?(:order_item)
     ids.concat(Order.where(event_id: record.event_id).pluck(:id)) if record.is_a?(Payout)
+    ids.concat(Order.where(event_id: record.event_id).pluck(:id)) if record.is_a?(FeeChangeNotice)
     if record.respond_to?(:message_delivery) && record.message_delivery
       ids.concat(related_orders(record.message_delivery).map(&:id))
     end
@@ -49,11 +52,17 @@ class RetentionGuard
     ids.concat(Payment.where(id: references.fetch("payment_id", []) + references.fetch("payment_ids", [])).pluck(:order_id))
     ids.concat(Ticket.where(id: references.fetch("ticket_id", []) + references.fetch("ticket_ids", [])).pluck(:order_id))
     ids.concat(TicketTransfer.where(id: references.fetch("ticket_transfer_id", []) +
-      references.fetch("ticket_transfer_ids", [])).joins(:ticket).pluck("tickets.order_id"))
+      references.fetch("ticket_transfer_ids", []) + references.fetch("transfer_id", []) +
+      references.fetch("transfer_ids", [])).joins(:ticket).pluck("tickets.order_id"))
+    ids.concat(CardPresentPaymentAttempt.where(id: references.fetch("card_present_payment_attempt_id", []) +
+      references.fetch("card_present_payment_attempt_ids", [])).pluck(:order_id))
+    ids.concat(CardPresentPaymentAttempt.where(external_payment_id: references.fetch("external_payment_id", [])).pluck(:order_id))
     delivery_ids = references.fetch("message_delivery_id", []) + references.fetch("message_delivery_ids", [])
     MessageDelivery.where(id: delivery_ids).find_each { |delivery| ids.concat(related_orders(delivery).map(&:id)) }
     payouts = Payout.where(id: references.fetch("payout_id", []) + references.fetch("payout_ids", []))
+      .or(Payout.where(provider_payout_id: references.fetch("provider_payout_id", [])))
     ids.concat(Order.where(event_id: payouts.select(:event_id)).pluck(:id))
+    ids.concat(Dispute.where(provider_dispute_id: references.fetch("provider_dispute_id", [])).pluck(:order_id))
     event_ids = EventChange.where(id: references.fetch("event_change_id", []) +
       references.fetch("event_change_ids", [])).pluck(:event_id)
     event_ids.concat(Settlement.where(id: references.fetch("settlement_id", []) +
