@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_190400) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1450,6 +1450,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190400) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payments_status_valid"
   end
 
+  create_table "payout_check_adjustments", force: :cascade do |t|
+    t.bigint "payout_id", null: false
+    t.bigint "created_by_user_id", null: false
+    t.integer "amount_cents", null: false
+    t.text "reason", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_user_id"], name: "index_payout_check_adjustments_on_created_by_user_id"
+    t.index ["payout_id"], name: "index_payout_check_adjustments_on_payout_id"
+    t.check_constraint "amount_cents <> 0", name: "payout_check_adjustments_nonzero"
+  end
+
+  create_table "payout_line_allocations", force: :cascade do |t|
+    t.bigint "payout_id", null: false
+    t.bigint "order_item_id", null: false
+    t.integer "amount_cents", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["order_item_id"], name: "index_payout_line_allocations_on_order_item_id"
+    t.index ["payout_id", "order_item_id"], name: "index_payout_line_allocations_on_payout_id_and_order_item_id", unique: true
+    t.index ["payout_id"], name: "index_payout_line_allocations_on_payout_id"
+    t.check_constraint "amount_cents >= 0", name: "payout_line_allocations_nonnegative"
+  end
+
   create_table "payouts", force: :cascade do |t|
     t.integer "amount_cents", null: false
     t.bigint "connected_account_id", null: false
@@ -1477,17 +1501,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190400) do
     t.integer "withholding_rate_bps", default: 0, null: false
     t.string "withholding_reason"
     t.text "withholding_override_reason"
+    t.integer "under_withheld_cents", default: 0, null: false
+    t.integer "carried_withholding_cents", default: 0, null: false
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
     t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
     t.index ["organization_id"], name: "index_payouts_on_organization_id"
     t.index ["provider", "provider_payout_id"], name: "idx_payouts_unique_provider_id", unique: true, where: "(provider_payout_id IS NOT NULL)"
     t.index ["settlement_id"], name: "index_payouts_on_settlement_id"
+    t.check_constraint "(withheld_cents + carried_withholding_cents) <= amount_cents", name: "payouts_total_withholding_within_gross"
     t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
+    t.check_constraint "carried_withholding_cents >= 0", name: "payouts_carried_withholding_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "payouts_currency_length"
     t.check_constraint "jsonb_typeof(payee_snapshot) = 'object'::text", name: "payouts_payee_snapshot_object"
     t.check_constraint "jsonb_typeof(tax_information_snapshot) = 'object'::text", name: "payouts_tax_snapshot_object"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payouts_status_valid"
+    t.check_constraint "under_withheld_cents >= 0", name: "payouts_under_withheld_nonnegative"
     t.check_constraint "withheld_cents >= 0 AND withheld_cents < amount_cents", name: "payouts_withholding_valid"
   end
 
@@ -2739,6 +2768,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190400) do
   add_foreign_key "payment_readiness_reviews", "payment_readiness_reviews", column: "parent_review_id", on_delete: :restrict
   add_foreign_key "payment_readiness_reviews", "users", column: "actor_user_id", on_delete: :restrict
   add_foreign_key "payments", "orders", on_delete: :restrict
+  add_foreign_key "payout_check_adjustments", "payouts"
+  add_foreign_key "payout_check_adjustments", "users", column: "created_by_user_id"
+  add_foreign_key "payout_line_allocations", "order_items"
+  add_foreign_key "payout_line_allocations", "payouts"
   add_foreign_key "payouts", "connected_accounts", on_delete: :restrict
   add_foreign_key "payouts", "events", on_delete: :restrict
   add_foreign_key "payouts", "organizations", on_delete: :restrict

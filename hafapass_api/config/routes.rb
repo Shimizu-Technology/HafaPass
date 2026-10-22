@@ -386,6 +386,7 @@ Rails.application.routes.draw do
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:index, :create, :destroy]
         resources :payouts, only: [:index, :create, :update] do
+          post :check_amount_adjustment, on: :member
           post :release_hold, on: :member
         end
         resources :disputes, only: [:index]

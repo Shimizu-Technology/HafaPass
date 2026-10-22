@@ -190,7 +190,8 @@ RSpec.describe "Tax operations services" do
       expect(reports.length).to eq(1)
       expect(reports.first.payee_key).to eq(described_class.payee_key_for(first))
       expect(reports.first.payee_key).not_to eq(described_class.payee_key_for(second))
-      expect(reports.first.row).to include(gross_paid_cents: 0, refund_clawbacks_cents: 450)
+      expect(reports.first.row).to include(gross_paid_cents: 0, refund_clawbacks_cents: 100)
+      expect(described_class.unattributed_for_organization(organization: organization, year: 2027)).to eq(350)
     end
 
     it "allocates a refund across both paid identities by line proceeds, including largest-remainder cents" do
@@ -226,8 +227,62 @@ RSpec.describe "Tax operations services" do
       rounded = described_class.for_organization(organization: organization, year: 2027).to_h do |report|
         [report.payee_key, report.row[:refund_clawbacks_cents]]
       end
-      expect(rounded).to eq(described_class.payee_key_for(first) => 180, described_class.payee_key_for(second) => 721)
-      expect(rounded.values.sum).to eq(901)
+      expect(rounded).to eq(described_class.payee_key_for(first) => 100, described_class.payee_key_for(second) => 400)
+      expect(rounded.values.sum).to eq(500)
+      expect(described_class.unattributed_for_organization(organization: organization, year: 2027)).to eq(401)
+    end
+
+    it "weights a 50 cent refund by each payout's own 20/80 cent sale-line allocation" do
+      event = create(:event, organization: organization)
+      account = create(:connected_account, organization: organization)
+      order = create(:order, event: event)
+      item = create(:order_item, order: order)
+      settlement = create(:settlement, organization: organization, event: event)
+      settlement.settlement_items.create!(kind: "sale_proceeds", amount_cents: 100,
+        currency: organization.currency, description: "Sale", occurred_at: Time.utc(2026, 9, 1),
+        source_type: "OrderItem", source_id: item.id)
+      first = create(:payout, organization: organization, event: event, settlement: settlement,
+        connected_account: account, status: :paid, amount_cents: 20, paid_at: Time.utc(2026, 10, 1))
+      PayoutLineAllocator.record!(first)
+      tax.update!(legal_name: "Second Payee", tin: "987654321")
+      second = create(:payout, organization: organization, event: event, settlement: settlement,
+        connected_account: account, status: :paid, amount_cents: 80, paid_at: Time.utc(2026, 10, 2))
+      PayoutLineAllocator.record!(second)
+      expect([first, second].map { |payout| payout.payout_line_allocations.sum(:amount_cents) }).to eq([20, 80])
+      refund = create(:refund, order: order, amount_cents: 50, succeeded_at: Time.utc(2026, 10, 3))
+      create(:refund_item, refund: refund, order_item: item, amount_cents: 50,
+        organizer_proceeds_cents: 50, fee_cents: 0)
+
+      rows = described_class.for_organization(organization: organization, year: 2026).to_h do |report|
+        [report.payee_key, report.row[:refund_clawbacks_cents]]
+      end
+      expect(rows).to eq(described_class.payee_key_for(first) => 10, described_class.payee_key_for(second) => 40)
+      expect(described_class.unattributed_for_organization(organization: organization, year: 2026)).to eq(0)
+    end
+
+    it "caps clawbacks at line amounts paid and flags a larger refund as unattributed" do
+      event = create(:event, organization: organization)
+      account = create(:connected_account, organization: organization)
+      order = create(:order, event: event)
+      item = create(:order_item, order: order)
+      settlement = create(:settlement, organization: organization, event: event)
+      settlement.settlement_items.create!(kind: "sale_proceeds", amount_cents: 100,
+        currency: organization.currency, description: "Sale", occurred_at: Time.utc(2026, 9, 1),
+        source_type: "OrderItem", source_id: item.id)
+      first = create(:payout, organization: organization, event: event, settlement: settlement,
+        connected_account: account, status: :paid, amount_cents: 20, paid_at: Time.utc(2026, 10, 1))
+      tax.update!(legal_name: "Second Payee", tin: "987654321")
+      second = create(:payout, organization: organization, event: event, settlement: settlement,
+        connected_account: account, status: :paid, amount_cents: 80, paid_at: Time.utc(2026, 10, 2))
+      refund = create(:refund, order: order, amount_cents: 150, succeeded_at: Time.utc(2026, 10, 3))
+      create(:refund_item, refund: refund, order_item: item, amount_cents: 150,
+        organizer_proceeds_cents: 150, fee_cents: 0)
+
+      rows = described_class.for_organization(organization: organization, year: 2026).to_h do |report|
+        [report.payee_key, report.row[:refund_clawbacks_cents]]
+      end
+      expect(rows).to eq(described_class.payee_key_for(first) => 20, described_class.payee_key_for(second) => 80)
+      expect(described_class.unattributed_for_organization(organization: organization, year: 2026)).to eq(50)
     end
 
     it "reads per-form per-year threshold settings" do

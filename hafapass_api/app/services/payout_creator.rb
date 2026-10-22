@@ -127,7 +127,18 @@ class PayoutCreator
       elsif terminal
         action = "payout.late_result_ignored"
       else
+        shortfall = incoming_paid && payout.status_processing? ? PayeeWithholdingBalance.shortfall_for(payout) : 0
+        attributes = attributes.merge(under_withheld_cents: shortfall) if shortfall.positive?
         payout.update!(attributes)
+        if shortfall.positive?
+          AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
+            organization: payout.organization, before_data: { under_withheld_cents: 0 },
+            after_data: { under_withheld_cents: shortfall }, request: request)
+        end
+        if incoming_paid && payout.carried_withholding_cents.positive?
+          AuditLogger.record!(action: "payout.under_withholding_collected", auditable: payout, actor: actor,
+            organization: payout.organization, metadata: { amount_cents: payout.carried_withholding_cents }, request: request)
+        end
       end
       AuditLogger.record!(action: action, auditable: payout, actor: actor,
         organization: payout.organization, before_data: before_data,
@@ -193,6 +204,7 @@ class PayoutCreator
         tax_approval_digest: account.readiness_state_digest,
         **withholding
       )
+      PayoutLineAllocator.record!(payout)
       if withholding[:withholding_override_reason].present?
         AuditLogger.record!(action: "payout.backup_withholding_overridden", auditable: payout, actor: actor,
           organization: payout.organization, metadata: { reason: withholding[:withholding_override_reason] }, request: request)

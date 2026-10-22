@@ -63,17 +63,23 @@ RSpec.describe PayoutWithholdingGuard do
     expect(audits.last.after_data).to include("withheld_cents" => 0)
   end
 
-  it "keeps a paid provider result in review when withholding changed after submission" do
+  it "keeps a paid provider result immutable and carries the withholding shortfall" do
     payout.update!(status: :processing)
     tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS review")
     SiteSetting.instance.update!(backup_withholding_mode: "withhold")
     creator = PayoutCreator.new(settlement: payout.settlement, actor: admin, idempotency_key: payout.idempotency_key)
     creator.send(:record_submission_outcome!, payout, status: :paid, provider_payout_id: "bank-42",
       initiated_at: Time.current, paid_at: Time.current)
-    expect(payout.reload).to have_attributes(status: "processing", withheld_cents: 0,
-      failure_code: "withholding_review_required")
-    audit = AuditLog.find_by!(auditable: payout, action: "payout.withholding_review_required")
-    expect(audit.metadata.dig("provider_result", "status")).to eq("paid")
+    expect(payout.reload).to have_attributes(status: "paid", withheld_cents: 0,
+      under_withheld_cents: 2400)
+    expect(AuditLog.where(auditable: payout, action: "payout.under_withholding_carried")).to exist
+  end
+
+  it "refuses any amount rewrite after a payout starts processing" do
+    payout.update!(status: :processing)
+    expect { payout.update!(withheld_cents: 2400) }
+      .to raise_error(ActiveRecord::RecordInvalid, /submitted payout.*fixed/)
+    expect(payout.reload).to have_attributes(withheld_cents: 0, amount_cents: 10_000)
   end
 
   it "requires a separate audited admin withholding override and rejects a TIN in it" do

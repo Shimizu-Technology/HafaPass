@@ -12,7 +12,12 @@ class Api::V1::Admin::AnnualTaxReportsController < Api::V1::Admin::BaseControlle
   end
 
   def index
-    render json: { year: year, reports: reports.map(&:row) }
+    render json: { year: year, reports: reports.map(&:row),
+      unattributed_adjustments: organizations.filter_map do |organization|
+        cents = AnnualPayeeReport.unattributed_for_organization(organization: organization, year: year)
+        { organization_id: organization.id, organization_name: organization.name,
+          amount_cents: cents, reporting_status: "cpa_review" } if cents.positive?
+      end }
   end
 
   def update
@@ -37,21 +42,30 @@ class Api::V1::Admin::AnnualTaxReportsController < Api::V1::Admin::BaseControlle
         "Full-TIN export requires a 10-1000 character purpose" : BackupWithholding::TIN_WARNING
       return render json: { error: error }, status: :unprocessable_entity
     end
+    payer_tin = ENV["TAX_PAYER_TIN"].presence || "SET_TAX_PAYER_TIN"
+    payer_digits = payer_tin.gsub(/\D/, "")
+    payer_tin = "***-**-#{payer_digits.last(4)}" if !full_tins && payer_digits.length >= 9
     rows = reports.map do |report_service|
       report = report_service.row
-      payer_tin = ENV["TAX_PAYER_TIN"].presence || "SET_TAX_PAYER_TIN"
-      payer_digits = payer_tin.gsub(/\D/, "")
-      payer_tin = "***-**-#{payer_digits.last(4)}" if !full_tins && payer_digits.length >= 9
       [year, payer_tin, report[:organization_id], report[:legal_name],
         full_tins ? report_service.payee_tin : report[:masked_tin], report[:masked_tin], report[:form_type], report[:jurisdiction], report[:reporting_status],
         report[:threshold_cents], report[:gross_paid_cents], report[:withheld_cents],
-        report[:net_disbursed_cents], report[:refund_clawbacks_cents]]
+        report[:net_disbursed_cents], report[:refund_clawbacks_cents], report[:check_amount_adjustment_cents], 0]
+    end
+    organizations.each do |organization|
+      excess = AnnualPayeeReport.unattributed_for_organization(organization: organization, year: year)
+      next unless excess.positive?
+
+      rows << [year, payer_tin,
+        organization.id, "UNATTRIBUTED REFUND ADJUSTMENT", nil, nil, "review_required", "irs", "cpa_review",
+        nil, 0, 0, 0, 0, 0, excess]
     end
     AuditLogger.record!(action: "annual_tax_report.exported", auditable: current_user, actor: current_user,
       metadata: { year: year, count: rows.length, full_tins: full_tins, purpose: full_tins ? purpose : nil }, request: request)
     data = CSV.generate do |csv|
       csv << %w[year payer_tin organization_id payee_name payee_tin masked_payee_tin form_type jurisdiction
-        reporting_status threshold_cents gross_paid_cents withheld_cents net_disbursed_cents refund_clawbacks_cents]
+        reporting_status threshold_cents gross_paid_cents withheld_cents net_disbursed_cents refund_clawbacks_cents
+        check_amount_adjustment_cents unattributed_refund_adjustment_cents]
       rows.each { |row| csv << row.map { |value| value.is_a?(String) && value.start_with?("=", "+", "-", "@") ? "\t#{value}" : value } }
     end
     send_data data, filename: "annual-payees-#{year}#{full_tins ? '-SENSITIVE-FULL-TINS' : '-masked'}.csv", type: "text/csv", disposition: "attachment"

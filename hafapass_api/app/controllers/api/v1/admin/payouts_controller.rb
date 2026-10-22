@@ -48,7 +48,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :cancellation_payout_reason, :withholding_override_reason).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :cancellation_payout_reason, :withholding_override_reason, :actual_check_amount_cents).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -62,6 +62,18 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   rescue ActiveRecord::RecordNotUnique
     message = payout&.provider == "check" ? "That check number is already recorded" : "That transfer identifier is already recorded"
     render json: { error: message }, status: :unprocessable_entity
+  end
+
+  def check_amount_adjustment
+    payout = Payout.find(params[:id])
+    adjustment = PayoutCheckAmountAdjuster.call(payout: payout, actor: current_user,
+      actual_check_amount_cents: params[:actual_check_amount_cents], reason: params[:reason], request: request)
+    render json: { id: adjustment.id, check_amount_cents: payout.confirmed_check_amount_cents,
+      adjustment_cents: adjustment.amount_cents }
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Payout not found" }, status: :not_found
+  rescue PayoutCheckAmountAdjuster::AdjustmentError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   def release_hold
@@ -125,6 +137,10 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       "withholding_override_reason"
     ).merge(
       disbursement_cents: payout.disbursement_cents,
+      confirmed_check_amount_cents: payout.provider == "check" ? payout.confirmed_check_amount_cents : nil,
+      check_amount_adjustment_cents: payout.provider == "check" ? payout.payout_check_adjustments.sum(:amount_cents) : 0,
+      under_withheld_cents: payout.under_withheld_cents,
+      carried_withholding_cents: payout.carried_withholding_cents,
       organization: { id: payout.organization_id, name: payout.organization.name },
       event: { id: payout.event_id, title: payout.event.title, slug: payout.event.slug },
       event_cancelled: payout.event.cancelled?,

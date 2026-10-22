@@ -23,6 +23,10 @@ class AnnualPayeeReport
     end
   end
 
+  def self.unattributed_for_organization(organization:, year:)
+    new(organization: organization, year: year).unattributed_refund_adjustment_cents
+  end
+
   def initialize(organization:, year:, payee_key: nil)
     @organization = organization
     @year = Integer(year.to_s, 10)
@@ -38,13 +42,18 @@ class AnnualPayeeReport
     end
   end
 
+  def unattributed_refund_adjustment_cents
+    refund_adjustments.sum { |entry| entry[:payout] ? 0 : entry[:amount_cents] }
+  end
+
   def row
     setting = AnnualTaxReportSetting.find_by(organization: organization, year: year, payee_key: payee_key || "all")
     form = setting&.form_type || "review_required"
     threshold_setting = AnnualTaxThreshold.for(year: year, form_type: form)
     threshold = threshold_setting&.amount_cents
     gross = paid_payouts.sum(&:amount_cents)
-    withheld = paid_payouts.sum(&:withheld_cents)
+    withheld = paid_payouts.sum { |payout| payout.withheld_cents + payout.carried_withholding_cents }
+    check_adjustments = paid_payouts.sum { |payout| payout.payout_check_adjustments.sum(:amount_cents) }
     first_payout = paid_payouts.first || refund_attributions.find { |entry| self.class.payee_key_for(entry[:payout]) == payee_key }&.dig(:payout)
     snapshot = first_payout&.tax_information_snapshot.to_h
     snapshot_name = snapshot["legal_name"].presence || first_payout&.payee_snapshot.to_h["payee_name"]
@@ -55,9 +64,10 @@ class AnnualPayeeReport
       form_type: form, jurisdiction: setting&.jurisdiction || "irs",
       threshold_cents: threshold, threshold_transaction_count: threshold_setting&.transaction_count,
       threshold_met: form == "1099-k" ? nil : (threshold && gross >= threshold),
-      gross_paid_cents: gross, withheld_cents: withheld, net_disbursed_cents: gross - withheld,
+      gross_paid_cents: gross, withheld_cents: withheld, net_disbursed_cents: gross - withheld + check_adjustments,
+      check_amount_adjustment_cents: check_adjustments,
       refund_clawbacks_cents: refund_clawbacks_cents,
-      reporting_status: withheld.positive? || refund_clawbacks_cents.positive? || %w[review_required 1099-k].include?(form) ? "cpa_review" :
+      reporting_status: withheld.positive? || check_adjustments.nonzero? || refund_clawbacks_cents.positive? || %w[review_required 1099-k].include?(form) ? "cpa_review" :
         form == "none" ? "not_reportable" : (gross >= threshold ? "prepare" : "below_threshold") }
   end
 
@@ -86,9 +96,12 @@ class AnnualPayeeReport
           pdf.text "Backup withholding: #{money(data[:withheld_cents])}"
           pdf.text "Checks/transfers to payee: #{money(data[:net_disbursed_cents])}"
           pdf.text "Post-payout refund adjustments: #{money(data[:refund_clawbacks_cents])}"
+          pdf.text "Check amount adjustments: #{money(data[:check_amount_adjustment_cents])}" if data[:check_amount_adjustment_cents].nonzero?
           pdf.move_down 18
         end
       end
+      excess = self.class.unattributed_for_organization(organization: organization, year: year)
+      pdf.text "Unattributed refund adjustment for CPA review: #{money(excess)}" if excess.positive?
       pdf.text "This is an account statement, not a filed tax form. The payer and its CPA determine form, jurisdiction, " \
         "reportable amount, adjustments, and filing duties. Refund adjustments show refunded organizer proceeds " \
         "after a payout; they do not by themselves prove recovery."
@@ -103,42 +116,51 @@ class AnnualPayeeReport
   end
 
   def refund_attributions
-    @refund_attributions ||= RefundItem.joins(refund: { order: :event })
-      .where(events: { organization_id: organization.id }, refunds: { status: Refund.statuses[:succeeded], succeeded_at: period })
-      .includes(refund: :order).flat_map do |item|
-        order = item.refund.order
-        # Attribute each refund line to every paid settlement that actually
-        # disbursed proceeds from that same sale line.
-        candidates = organization.payouts.status_paid.joins(settlement: :settlement_items)
-          .where(settlement_items: { kind: "sale_proceeds", source_type: "OrderItem",
-            source_id: item.order_item_id })
-          .where("payouts.paid_at < ?", item.refund.succeeded_at)
-          .distinct.order("payouts.paid_at, payouts.id")
-        weights = candidates.map do |payout|
-          paid = payout.settlement.settlement_items.where(kind: "sale_proceeds", source_type: "OrderItem",
-            source_id: item.order_item_id).sum(:amount_cents)
-          [payout, paid] if paid.positive?
-        end.compact
-        # Legacy settlements without persisted line items can be attributed
-        # only when there is exactly one historical payout for the event.
-        if weights.empty?
-          legacy = organization.payouts.status_paid.where(event_id: order.event_id)
-            .where("paid_at < ?", item.refund.succeeded_at).to_a
-          weights = [[legacy.first, 1]] if legacy.one? && legacy.first.settlement.settlement_items.empty?
-        end
-        next [] if weights.empty?
+    @refund_attributions ||= refund_adjustments.select { |entry| entry[:payout] }
+  end
 
-        total = weights.sum(&:last)
-        refund = item.organizer_proceeds_cents
-        shares = weights.map do |payout, paid|
-          numerator = refund * paid
-          { payout: payout, cents: numerator / total, remainder: numerator % total }
+  def refund_adjustments
+    @refund_adjustments ||= begin
+      used = Hash.new(0)
+      entries = []
+      items = RefundItem.joins(refund: { order: :event })
+        .where(events: { organization_id: organization.id }, refunds: { status: Refund.statuses[:succeeded] })
+        .where("refunds.succeeded_at < ?", period.end)
+        .includes(refund: :order).order("refunds.succeeded_at", "refund_items.id")
+      items.each do |item|
+        candidates = organization.payouts.status_paid.where(event_id: item.refund.order.event_id)
+          .where("paid_at < ?", item.refund.succeeded_at).order(:paid_at, :id).to_a
+        weights = candidates.filter_map do |payout|
+          paid = PayoutLineAllocator.paid_for(payout, item.order_item_id)
+          paid = payout.amount_cents if paid.zero? && candidates.one? && payout.settlement.settlement_items.empty?
+          remaining = paid - used[[item.order_item_id, payout.id]]
+          [payout, remaining] if remaining.positive?
         end
-        remaining = refund - shares.sum { |share| share[:cents] }
-        shares.sort_by { |share| [-share[:remainder], share[:payout].id] }.first(remaining)
-          .each { |share| share[:cents] += 1 }
-        shares.map { |share| { item: item, payout: share[:payout], amount_cents: share[:cents] } }
+        total = weights.sum(&:last)
+        attributed = [item.organizer_proceeds_cents, total].min
+        shares = weights.map do |payout, available|
+          numerator = attributed * available
+          { payout: payout, available: available, cents: numerator / total, remainder: numerator % total }
+        end
+        remainder = attributed - shares.sum { |share| share[:cents] }
+        shares.sort_by { |share| [-share[:remainder], share[:payout].id] }.each do |share|
+          break if remainder.zero?
+          next if share[:cents] >= share[:available]
+
+          share[:cents] += 1
+          remainder -= 1
+        end
+        next unless period.cover?(item.refund.succeeded_at) || shares.any?
+
+        shares.each do |share|
+          used[[item.order_item_id, share[:payout].id]] += share[:cents]
+          entries << { item: item, payout: share[:payout], amount_cents: share[:cents] } if period.cover?(item.refund.succeeded_at) && share[:cents].positive?
+        end
+        excess = item.organizer_proceeds_cents - attributed
+        entries << { item: item, payout: nil, amount_cents: excess } if excess.positive? && period.cover?(item.refund.succeeded_at)
       end
+      entries
+    end
   end
 
   def refund_clawbacks_cents

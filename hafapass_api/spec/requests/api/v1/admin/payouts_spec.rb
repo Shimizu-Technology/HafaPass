@@ -18,17 +18,13 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     patch "/api/v1/admin/payouts/#{payout.id}", params: attributes, headers: auth_headers(actor)
   end
 
-  it "blocks recording payment after a new withholding flag unless separately overridden" do
+  it "records an issued payment after a new withholding flag without rewriting its net" do
     tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
     tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
     reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body["error"]).to include("withholding review blocks")
-    expect(payout.reload).to be_status_processing
-    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true,
-      withholding_override_reason: "CPA approved the actual transfer")))
     expect(response).to have_http_status(:ok)
-    expect(AuditLog.where(auditable: payout, action: "payout.backup_withholding_overridden")).to exist
+    expect(payout.reload).to have_attributes(status: "paid", withheld_cents: 0,
+      under_withheld_cents: 24)
   end
 
   it "rejects TINs in reconciliation references and reasons before audit" do
@@ -64,7 +60,7 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
     post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body["error"]).to include("withholding review blocks")
+    expect(response.parsed_body["error"]).to include("cancel and reissue")
     expect(payout.reload).to be_status_held
   end
 

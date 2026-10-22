@@ -41,7 +41,8 @@ const placeholderReference = value => !value || value.startsWith('sim_') || valu
 function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const titleId = useId()
   const [outcome, setOutcome] = useState(payout.allowed_outcomes[0])
-  const [transferId, setTransferId] = useState(placeholderReference(payout.provider_payout_id) ? '' : payout.provider_payout_id)
+  const [transferId, setTransferId] = useState(payout.provider === 'check' && payout.disbursement_cents === 0
+    ? `withholding_only_${payout.id}` : placeholderReference(payout.provider_payout_id) ? '' : payout.provider_payout_id)
   const [reference, setReference] = useState('')
   const [confirmedAt, setConfirmedAt] = useState(nowForInput)
   const [reason, setReason] = useState('')
@@ -68,8 +69,33 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const [legacyPayeeName, setLegacyPayeeName] = useState('')
   const [legacyEvidenceNote, setLegacyEvidenceNote] = useState('')
   const [withholdingOverride, setWithholdingOverride] = useState('')
+  const [actualCheckAmount, setActualCheckAmount] = useState('')
+  const [checkAdjustmentReason, setCheckAdjustmentReason] = useState('')
+  const [recordedCheckAmount, setRecordedCheckAmount] = useState(payout.confirmed_check_amount_cents ?? payout.disbursement_cents)
+  const [adjustmentNotice, setAdjustmentNotice] = useState('')
   const [legacyPayeeConfirmed, setLegacyPayeeConfirmed] = useState(false)
   const describePayee = payee => payee ? `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}` : ''
+
+  const checkCents = () => /^\d+(?:\.\d{1,2})?$/.test(actualCheckAmount.trim())
+    ? Math.round(Number(actualCheckAmount.trim()) * 100) : null
+
+  const adjustCheckAmount = async () => {
+    const cents = checkCents()
+    if (!cents || checkAdjustmentReason.trim().length < 10) {
+      setErrors({ form: 'Enter the actual check amount and a reason of at least 10 characters.' })
+      return
+    }
+    const request = beginRequest()
+    if (!request) return
+    setBusy(true); setErrors({})
+    try {
+      await apiClient.post(`/admin/payouts/${payout.id}/check_amount_adjustment`,
+        { actual_check_amount_cents: cents, reason: checkAdjustmentReason.trim() }, request.config)
+      if (request.current()) { setRecordedCheckAmount(cents); setAdjustmentNotice('Audited check amount adjustment recorded. You can now reconcile this check.') }
+    } catch (failure) {
+      if (request.current() && !request.handleError(failure)) setErrors({ form: errorMessage(failure, 'The adjustment was not recorded.') })
+    } finally { request.release(); setBusy(false) }
+  }
 
   const submit = async event => {
     event.preventDefault()
@@ -88,6 +114,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     }
     if (payout.conflict && !acknowledged) found.conflict = 'Confirm you reviewed the provider conflict.'
     if (outcome === 'paid' && payeeChanged && !payeeConfirmed) found.payee = 'Confirm you wrote this check to the approved payee shown above.'
+    if (outcome === 'paid' && isCheck && checkCents() === null) found.actualCheckAmount = 'Enter the actual check amount in dollars and cents.'
     if (outcome === 'paid' && legacyTaxPayee) {
       if (!legacyPayeeName.trim()) found.legacyPayeeName = 'Enter the payee who was actually paid.'
       if (!legacyEvidenceNote.trim()) found.legacyEvidenceNote = 'Enter a check number, bank reference, or other evidence note.'
@@ -105,6 +132,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         ...(outcome === 'paid' && legacyTaxPayee ? { legacy_payee_name: legacyPayeeName.trim(), legacy_evidence_note: legacyEvidenceNote.trim(), legacy_payee_confirmed: true } : {}),
         ...(outcome === 'paid' && needsCancellationConfirmation ? { sent_before_cancellation_confirmed: true, cancellation_payout_reason: cancellationReason.trim() } : {}),
         ...(outcome === 'paid' && withholdingOverride.trim() ? { withholding_override_reason: withholdingOverride.trim() } : {}) }
+      if (outcome === 'paid' && isCheck) evidence.actual_check_amount_cents = checkCents()
       if (payout.conflict) evidence.conflict_audit_id = payout.conflict.audit_id
       const body = { status: outcome, evidence }
       if (transferId.trim() && !keepsTransferId) body.provider_payout_id = transferId.trim()
@@ -122,6 +150,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
       <form noValidate onSubmit={submit}>
         <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Record outcome for payout #{payout.id}</h2>
         <p className="mt-1 text-sm text-content-muted">{money(payout.disbursement_cents ?? payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. {payout.withheld_cents > 0 && `${money(payout.withheld_cents, payout.currency)} withheld from ${money(payout.amount_cents, payout.currency)} gross. `}Record only what the bank or provider has confirmed; your name and evidence go into the audit log.</p>
+        {payout.under_withheld_cents > 0 && <p className="mt-2 text-sm font-semibold text-amber-900">{money(payout.under_withheld_cents, payout.currency)} under-withheld; collect from a later payout.</p>}
         {needsCancellationConfirmation && <div className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           <p className="font-semibold">{payout.outstanding_buyer_balance_cents > 0 ? `${money(payout.outstanding_buyer_balance_cents, payout.currency)} remains owed to buyers for this cancelled event.` : 'Buyer refunds are still pending for this cancelled event.'}</p>
           {outcome === 'paid' && <><label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={sentBeforeCancellation} onChange={event => setSentBeforeCancellation(event.target.checked)} className="mt-0.5 h-4 w-4" />This payout was already sent before the cancellation</label>{fieldError('sentBeforeCancellation')}
@@ -188,7 +217,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-neutral-900">
-              {isCheck ? 'Check number' : 'Transfer ID'} {outcome === 'paid' ? '(required)' : '(optional)'}
+              {isCheck ? payout.disbursement_cents === 0 ? 'Withholding-only reference' : 'Check number' : 'Transfer ID'} {outcome === 'paid' ? '(required)' : '(optional)'}
               <input value={transferId} disabled={keepsTransferId} onChange={event => setTransferId(event.target.value)} maxLength={255} aria-invalid={!!errors.transfer} aria-describedby={errors.transfer ? 'reconcile-transfer-error' : undefined} className={`input mt-1 ${errors.transfer ? 'input-error' : ''}`} />
             </label>
             {keepsTransferId && <p className="mt-1 text-sm text-content-muted">A reversal keeps the original {isCheck ? 'check number' : 'transfer ID'}.</p>}
@@ -216,7 +245,14 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
             {fieldError('reason')}
           </div>
         </div>
-        {outcome === 'paid' && <label className="mt-4 block text-sm font-medium">Backup withholding override reason (admin only, optional)<textarea className="input mt-1" maxLength={1000} value={withholdingOverride} onChange={event => setWithholdingOverride(event.target.value)} /></label>}
+        {isCheck && outcome === 'paid' && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+          <label className="block font-medium">{payout.disbursement_cents === 0 ? 'Actual amount sent to payee (USD)' : 'Actual amount written on the check (USD)'}<input type="number" min="0" step="0.01" value={actualCheckAmount} onChange={event => setActualCheckAmount(event.target.value)} className="input mt-1" /></label>
+          {fieldError('actualCheckAmount')}
+          <p className="mt-2">Recorded check amount: {money(recordedCheckAmount, payout.currency)}. If the written amount differs, record a separate audited adjustment with a reason before reconciliation.</p>
+          {checkCents() > 0 && checkCents() !== recordedCheckAmount && (payout.status === 'processing' || payout.held_from_status === 'processing') && <div className="mt-3"><label className="block font-medium">Check amount adjustment reason<textarea value={checkAdjustmentReason} onChange={event => setCheckAdjustmentReason(event.target.value)} className="input mt-1" maxLength={1000} /></label><button type="button" onClick={adjustCheckAmount} disabled={busy || checkAdjustmentReason.trim().length < 10} className="btn-secondary mt-2">Record audited adjustment</button></div>}
+          {adjustmentNotice && <p role="status" className="mt-2 text-emerald-800">{adjustmentNotice}</p>}
+        </div>}
+        {outcome === 'paid' && payout.status !== 'processing' && payout.held_from_status !== 'processing' && <label className="mt-4 block text-sm font-medium">Backup withholding override reason (admin only, optional)<textarea className="input mt-1" maxLength={1000} value={withholdingOverride} onChange={event => setWithholdingOverride(event.target.value)} /></label>}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" disabled={busy} onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" disabled={busy} className={outcome === 'paid' ? 'btn-primary' : 'btn-danger'}>{busy ? 'Recording…' : `Record as ${OUTCOMES[outcome].label.toLowerCase()}`}</button>
@@ -456,7 +492,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
               <tr key={payout.id} className={foldRow}>
                 <td data-label="Payout" className={foldCell}><span><span className="font-mono text-xs text-neutral-900">#{payout.id}</span><span className="block text-xs text-content-muted">{formatDate(payout.created_at)}</span></span></td>
                 <td data-label="For" className={foldCell}><span className="min-w-0"><span className="block font-medium text-neutral-900 [overflow-wrap:anywhere]">{payout.organization.name}</span><span className="block text-xs text-content-muted [overflow-wrap:anywhere]">{payout.event.title} · settlement v{payout.settlement.version}</span></span></td>
-                <td data-label="Amount" className={`${foldCell} md:text-right`}><span className="font-semibold text-neutral-900">{money(payout.disbursement_cents ?? payout.amount_cents, payout.currency)}</span>{payout.withheld_cents > 0 && <span className="block text-xs text-amber-800">{money(payout.withheld_cents, payout.currency)} withheld</span>}</td>
+                <td data-label="Amount" className={`${foldCell} md:text-right`}><span className="font-semibold text-neutral-900">{money(payout.disbursement_cents ?? payout.amount_cents, payout.currency)}</span>{payout.withheld_cents > 0 && <span className="block text-xs text-amber-800">{money(payout.withheld_cents, payout.currency)} withheld</span>}{payout.carried_withholding_cents > 0 && <span className="block text-xs text-amber-800">Includes {money(payout.carried_withholding_cents, payout.currency)} prior shortfall</span>}{payout.under_withheld_cents > 0 && <span className="block text-xs text-red-800">{money(payout.under_withheld_cents, payout.currency)} under-withheld</span>}</td>
                 <td data-label="Status" className={foldCell}><span><Badge status={payout.status} />{payout.paid_at && <span className="block text-xs text-content-muted">Paid {formatDate(payout.paid_at)}</span>}{payout.outstanding_buyer_balance_cents > 0 ? <span className="block text-xs font-semibold text-red-700">{money(payout.outstanding_buyer_balance_cents, payout.currency)} still owed to buyers</span> : payout.cancellation_refunds_unresolved && <span className="block text-xs font-semibold text-amber-800">Buyer refunds pending</span>}{payout.status === 'paid' && (payout.outstanding_buyer_balance_cents > 0 || payout.cancellation_refunds_unresolved) && <span className="block text-xs font-semibold text-red-700">Organizer was already paid; recover from organizer</span>}</span></td>
                 <td data-label="Transfer" className={foldCell}><span className="min-w-0 text-xs text-neutral-700">
                   <span className="block font-mono [overflow-wrap:anywhere]">{payout.provider_payout_id || 'No transfer ID yet'}</span>

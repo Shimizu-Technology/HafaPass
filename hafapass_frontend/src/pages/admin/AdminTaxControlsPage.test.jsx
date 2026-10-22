@@ -54,7 +54,7 @@ describe('AdminTaxControlsPage', () => {
     expect(prompt).toHaveBeenCalled()
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('full taxpayer identification numbers'))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/tin_matching/export',
-      { purpose: 'IRS matching review' }, expect.anything()))
+      { purpose: 'IRS matching review', confirm_full_tins: true }, expect.anything()))
     await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(expect.any(Blob), expect.stringContaining('SENSITIVE-FULL-TINS.txt')))
     await userEvent.upload(screen.getByLabelText('IRS result file'), new File(['1;012345678;Island Events;abc;0'], 'result.txt', { type: 'text/plain' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/tin_matching/import', expect.any(FormData), expect.anything()))

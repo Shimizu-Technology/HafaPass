@@ -37,8 +37,13 @@ class PayoutReconciler
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
       raise ReconciliationError, BackupWithholding::TIN_WARNING unless BackupWithholding.safe_text?(external_id)
       raise ReconciliationError, "Transfer identifier is too long" if external_id.to_s.length > 255
-      if status == "paid" && (external_id.blank? || external_id.start_with?("sim_", "manual_po_"))
+      withholding_only = payout.provider == "check" && payout.disbursement_cents.zero? &&
+        external_id == "withholding_only_#{payout.id}"
+      if status == "paid" && !withholding_only && (external_id.blank? || external_id.start_with?("sim_", "manual_po_", "withholding_only_"))
         raise ReconciliationError, "A real provider or bank transfer identifier is required to record payment"
+      end
+      if status == "paid" && payout.provider == "check" && payout.disbursement_cents.zero? && !withholding_only
+        raise ReconciliationError, "Use the withholding-only reference for a zero-net payout"
       end
       if external_id.present? && external_id != payout.provider_payout_id &&
           Payout.where(provider: payout.provider, provider_payout_id: external_id).where.not(id: payout.id).exists?
@@ -70,6 +75,13 @@ class PayoutReconciler
       if status == "paid"
         PayoutWithholdingGuard.call(payout: payout, actor: actor,
           override_reason: normalized["withholding_override_reason"], request: request)
+        if payout.provider == "check"
+          actual = normalized["actual_check_amount_cents"]
+          raise ReconciliationError, "Enter the actual check amount in cents" unless actual
+          unless actual == payout.confirmed_check_amount_cents
+            raise ReconciliationError, "Actual check amount does not match the recorded net. Record a reasoned, audited check amount adjustment before reconciling."
+          end
+        end
         liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
           { outstanding_cents: 0, unresolved: false }
         queue = RefundReconciliationQueue.new(event_id: payout.event_id).entries
@@ -101,14 +113,29 @@ class PayoutReconciler
         end
       end
 
-      before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
+      shortfall = if status == "paid" && (payout.status_processing? || payout.held_from_status == "processing")
+        PayeeWithholdingBalance.shortfall_for(payout)
+      else
+        0
+      end
+      before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at", "under_withheld_cents")
       payout.update!(status: status, provider_payout_id: external_id,
         paid_at: status == "paid" ? confirmed_at : payout.paid_at,
+        under_withheld_cents: shortfall,
         failure_code: status == "failed" ? "reconciled_failure" : nil,
         failure_message: status == "failed" ? normalized.fetch("reason") : nil)
+      if shortfall.positive?
+        AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
+          organization: payout.organization, before_data: { under_withheld_cents: 0 },
+          after_data: { under_withheld_cents: shortfall }, request: request)
+      end
+      if status == "paid" && payout.carried_withholding_cents.positive?
+        AuditLogger.record!(action: "payout.under_withholding_collected", auditable: payout, actor: actor,
+          organization: payout.organization, metadata: { amount_cents: payout.carried_withholding_cents }, request: request)
+      end
       AuditLogger.record!(action: "payout.reconciled", auditable: payout, actor: actor,
         organization: payout.organization, before_data: before_data,
-        after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
+        after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at", "under_withheld_cents"),
         metadata: { reconciliation: normalized,
           outstanding_buyer_balance_cents: status == "paid" ? outstanding_buyer_cents : nil,
           buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil }, request: request)
@@ -138,6 +165,12 @@ class PayoutReconciler
 
     confirmed_at = Time.iso8601(timestamp)
     normalized = { "reference" => reference, "reason" => reason, "confirmed_at" => confirmed_at.utc.iso8601(6) }
+    if values.key?("actual_check_amount_cents")
+      amount = values["actual_check_amount_cents"].to_s
+      raise ReconciliationError, "Actual check amount must be a nonnegative number of cents" unless amount.match?(/\A(?:0|[1-9]\d*)\z/) && amount.to_i <= 2_147_483_647
+
+      normalized["actual_check_amount_cents"] = amount.to_i
+    end
     if values.key?("conflict_audit_id")
       conflict_id = values["conflict_audit_id"].to_s
       raise ReconciliationError, "Conflict audit identifier must be a positive integer" unless conflict_id.match?(/\A[1-9]\d*\z/)

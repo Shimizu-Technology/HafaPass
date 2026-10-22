@@ -25,7 +25,7 @@ RSpec.describe "Admin tax operations", type: :request do
     post "/api/v1/admin/tin_matching/export", headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)
     expect(AuditLog.where(action: "tin_matching.exported")).not_to exist
-    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review" }, headers: auth_headers(admin)
+    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review", confirm_full_tins: true }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     expect(response.headers["Cache-Control"]).to include("no-store")
     expect(response.headers["Content-Disposition"]).to include("SENSITIVE-FULL-TINS")
@@ -47,8 +47,22 @@ RSpec.describe "Admin tax operations", type: :request do
     expect(AuditLog.where(action: "tin_matching.imported").last.metadata.to_json).not_to include(tax.tin)
   end
 
+  it "requires both an explicit full-TIN confirmation and a purpose at the export API" do
+    [nil, false, "false", "1"].each do |confirmation|
+      post "/api/v1/admin/tin_matching/export",
+        params: { purpose: "IRS matching review", confirm_full_tins: confirmation }.compact,
+        headers: auth_headers(admin)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("error")).to include("Explicitly confirm")
+    end
+    post "/api/v1/admin/tin_matching/export", params: { confirm_full_tins: true }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("purpose")
+    expect(AuditLog.where(action: "tin_matching.exported")).to be_empty
+  end
+
   it "filters the matching upload and TIN from request logs" do
-    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review" }, headers: auth_headers(admin)
+    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review", confirm_full_tins: true }, headers: auth_headers(admin)
     request_line = response.body.strip
     filtered = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
       .filter(tin: tax.tin, file: "#{request_line};3")
@@ -144,7 +158,7 @@ RSpec.describe "Admin tax operations", type: :request do
     expect(tax.tin_match_status).to eq("unverified")
     expect(tax.backup_withholding_required?).to be(true)
 
-    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review" }, headers: auth_headers(admin)
+    post "/api/v1/admin/tin_matching/export", params: { purpose: "IRS matching review", confirm_full_tins: true }, headers: auth_headers(admin)
     line = response.body.strip
     Tempfile.create(["replacement-result", ".txt"]) do |file|
       file.write("#{line};0\n")
@@ -231,7 +245,9 @@ RSpec.describe "Admin tax operations", type: :request do
     get "/api/v1/admin/annual_tax_reports", params: { year: 2027 }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body["reports"].first).to include("organization_id" => organization.id,
-      "gross_paid_cents" => 0, "refund_clawbacks_cents" => 450)
+        "gross_paid_cents" => 0, "refund_clawbacks_cents" => 100)
+    expect(response.parsed_body.fetch("unattributed_adjustments")).to include(include(
+      "organization_id" => organization.id, "amount_cents" => 350, "reporting_status" => "cpa_review"))
   end
 
   it "requires a purpose for a full-TIN export" do

@@ -5,6 +5,8 @@ class Payout < ApplicationRecord
   belongs_to :event
   belongs_to :settlement
   belongs_to :connected_account
+  has_many :payout_check_adjustments, dependent: :restrict_with_error
+  has_many :payout_line_allocations, dependent: :restrict_with_error
   encrypts :tax_information_tin
   self.filter_attributes += [:tax_information_tin]
 
@@ -15,7 +17,10 @@ class Payout < ApplicationRecord
   validates :provider_payout_id, uniqueness: { scope: :provider }, allow_blank: true
   validates :amount_cents, numericality: { only_integer: true, greater_than: 0 }
   validates :withheld_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :under_withheld_cents, :carried_withholding_cents,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :withholding_less_than_amount
+  validate :freeze_disbursed_amounts
   validates :currency, length: { is: 3 }
   validate :relationships_share_organization
 
@@ -24,7 +29,11 @@ class Payout < ApplicationRecord
     :tax_information_snapshot, :tax_information_tin, :tax_approval_digest
 
   def disbursement_cents
-    amount_cents - withheld_cents
+    amount_cents - withheld_cents - carried_withholding_cents
+  end
+
+  def confirmed_check_amount_cents
+    disbursement_cents + payout_check_adjustments.sum(:amount_cents)
   end
 
   PAYEE_CHANGED_MESSAGE = "The payee on file differs from the approved payee shown. Confirm you wrote this " \
@@ -79,6 +88,20 @@ class Payout < ApplicationRecord
 
   def withholding_less_than_amount
     errors.add(:withheld_cents, "must be less than the gross payout") if withheld_cents.to_i >= amount_cents.to_i
+    if withheld_cents.to_i + carried_withholding_cents.to_i > amount_cents.to_i
+      errors.add(:carried_withholding_cents, "cannot exceed the remaining net payout")
+    end
+  end
+
+  def freeze_disbursed_amounts
+    return unless persisted? && (%w[processing paid reversed].include?(status_was) || held_from_status == "processing")
+
+    if will_save_change_to_withheld_cents? || will_save_change_to_withholding_rate_bps? ||
+        will_save_change_to_withholding_reason? || will_save_change_to_withholding_override_reason? ||
+        will_save_change_to_carried_withholding_cents? ||
+        status_was == "paid" && will_save_change_to_under_withheld_cents?
+      errors.add(:base, "A submitted payout's gross, withheld, and net amounts are fixed")
+    end
   end
 
   def relationships_share_organization

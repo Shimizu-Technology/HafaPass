@@ -6,10 +6,14 @@ class Api::V1::Admin::TinMatchingController < Api::V1::Admin::BaseController
   def index
     records = OrganizerTaxInformation.includes(:organization).order(:id)
     render json: { payees: records.map { |tax| { organization_id: tax.organization_id,
-      organization_name: tax.organization.name, tax_information: tax.safe_json } } }
+      organization_name: tax.organization.name, tax_information: tax.safe_json,
+      under_withheld_cents: PayeeWithholdingBalance.for_tax(tax) } } }
   end
 
   def export
+    unless params[:confirm_full_tins] == true || params[:confirm_full_tins] == "true"
+      return render json: { error: "Explicitly confirm full-TIN export" }, status: :unprocessable_entity
+    end
     purpose = params[:purpose].to_s.strip
     unless BackupWithholding.safe_reason?(purpose)
       error = BackupWithholding.safe_text?(purpose) ?
