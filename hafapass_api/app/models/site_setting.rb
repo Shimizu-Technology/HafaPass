@@ -39,12 +39,12 @@ class SiteSetting < ApplicationRecord
       payout_schedule_text: DEFAULT_PAYOUT_SCHEDULE_TEXT
     )
     FeeChange.activate_due!(settings) if FeeChange.table_exists?
-    settings.reload
+    settings
   rescue ActiveRecord::RecordNotUnique
     # Another process beat us to it — just fetch the existing row
     settings = first!
     FeeChange.activate_due!(settings) if FeeChange.table_exists?
-    settings.reload
+    settings
   end
 
   LEGACY_SERVICE_FEE_PERCENT = 3.0
