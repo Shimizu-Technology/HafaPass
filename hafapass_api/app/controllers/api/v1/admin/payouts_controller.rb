@@ -94,7 +94,9 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     payee_changed = payout.provider == "check" && !payout.payee_matches_approval?
     conflict = audits.reverse.find { |audit| audit.action == "payout.provider_result_conflict" }
     hold_available = if payout.status_held?
-      current_payable = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
+      current_payable = (@payable_cents_by_event ||= {}).fetch(payout.event_id) do
+        @payable_cents_by_event[payout.event_id] = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
+      end
       other_reserved = payout.event.payouts.where(status: [:pending, :processing, :held, :paid])
         .where.not(id: payout.id).sum(:amount_cents)
       [current_payable - other_reserved, 0].max

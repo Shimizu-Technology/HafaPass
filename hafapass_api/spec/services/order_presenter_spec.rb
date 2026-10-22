@@ -8,6 +8,13 @@ RSpec.describe OrderPresenter do
     expect(described_class.call(order)[:cancellation_refund]).to include(status: "not_started")
   end
 
+  it "presents a partially refunded legacy cancellation before a refund run starts" do
+    order = create(:order, event: create(:event, :cancelled), status: :partially_refunded)
+    create(:payment, :succeeded, order: order, provider_environment: "live")
+
+    expect(described_class.call(order)[:cancellation_refund]).to include(status: "not_started")
+  end
+
   it "presents a cancelled order's pending and completed refund status to the buyer" do
     event = create(:event, :cancelled)
     order = create(:order, event: event)

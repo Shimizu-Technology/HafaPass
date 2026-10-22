@@ -771,7 +771,7 @@
       "retry": "Retry",
       "loadingPolicy": "Loading policy",
       "version": "{{status}} · version {{version}}",
-      "draftPendingLegalReviewThisTextHas": "Draft pending legal review. This text has not yet been approved by Guam or US counsel, and notes in square brackets mark points still to be confirmed.",
+      "draftPendingLegalReviewThisTextHas": "Draft pending legal review. This text has not yet been approved by Guam or US counsel.",
       "otherPolicies": "Other policies",
       "policy": "Policy",
       "draftPolicy": "Draft policy"

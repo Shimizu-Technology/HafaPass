@@ -211,7 +211,7 @@ API. The new table is additive and does not populate or approve any organizer's
 W-9. Existing organizers need completed tax information before payout readiness;
 saving tax details invalidates all payout-method approval revisions.
 
-The draft policy version is `2026-10-counsel-draft-2`; its content and registry
+The draft policy version is `2026-10-counsel-draft-3`; its content and registry
 digests change. Existing `policy_register` capability approvals no longer match.
 Review Provider readiness and complete the applicable policy-register review
 through the existing workflow before expecting paid-sale readiness. Engineering

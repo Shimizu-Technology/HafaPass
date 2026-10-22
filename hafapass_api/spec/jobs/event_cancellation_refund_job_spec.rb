@@ -162,6 +162,57 @@ RSpec.describe EventCancellationRefundJob do
     expect(disputed.refunds).to be_empty
   end
 
+  it "refreshes a manual item's balance after a refund callback without writing from summary" do
+    cash = paid_order(email: "cash-partial@example.com", method: "door_cash")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    described_class.perform_now(run.id)
+    item = run.items.find_by!(order: cash)
+    expect(item).to have_attributes(status: "needs_manual", amount_cents: 5250)
+
+    expect do
+      create(:refund, order: cash, payment: cash.payments.first, provider: "door_cash", amount_cents: 500)
+    end.to have_enqueued_job(described_class).with(run.id)
+    expect(run.summary[:items].first).to include(status: "needs_manual", amount_cents: 5250)
+    expect(item.reload.amount_cents).to eq(5250)
+
+    described_class.perform_now(run.id)
+
+    expect(run.reload.summary[:items].first).to include(status: "needs_manual", amount_cents: 4750)
+    expect(AuditLog.where(action: "event.cancellation_refund_amount_changed", auditable: event)).to exist
+  end
+
+  it "keeps refreshing other manual items when one fails, then retries the job" do
+    first = paid_order(email: "cash-one@example.com", method: "door_cash")
+    second = paid_order(email: "cash-two@example.com", method: "door_cash")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    described_class.perform_now(run.id)
+    [first, second].each do |order|
+      create(:refund, order: order, payment: order.payments.first, provider: "door_cash", amount_cents: 500)
+    end
+    failing = run.items.find_by!(order: first)
+    allow(EventCancellationRefunds).to receive(:refresh_cash_item!).and_call_original
+    allow(EventCancellationRefunds).to receive(:refresh_cash_item!)
+      .with(having_attributes(id: failing.id), anything).and_raise(ActiveRecord::Deadlocked)
+
+    expect { described_class.perform_now(run.id) }.to have_enqueued_job(described_class).with(run.id)
+
+    expect(run.items.find_by!(order: second).amount_cents).to eq(4750)
+    expect(failing.reload.amount_cents).to eq(5250)
+  end
+
+  it "does not reconcile a run when its summary is read" do
+    cash = paid_order(email: "cash-resolved@example.com", method: "door_cash")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    described_class.perform_now(run.id)
+    run.items.find_by!(order: cash).update!(status: :skipped)
+
+    expect { run.summary }.not_to change { run.reload.status }
+    expect(run).to be_needs_attention
+  end
+
   it "waits for an individual refund, then refunds its balance when it fails" do
     order = paid_order(email: "individual@example.com")
     individual = create(:refund, order: order, payment: order.payments.first, amount_cents: order.total_cents,

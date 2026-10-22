@@ -9,12 +9,13 @@ RSpec.describe CardPresentPayments::Processor do
   let(:account) { create(:card_present_account, :verified, organization: event.organization) }
   let(:gateway) { instance_double(CardPresentGateway) }
 
-  def pending_sale
+  def pending_sale(marketing_opt_in: false)
     Commerce::OrderCreator.call(
       event: event,
       line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
       buyer_email: "walkin@example.com",
       buyer_name: "Walk-in",
+      marketing_opt_in: marketing_opt_in,
       user: user,
       payment_required: true,
       payment_provider: "boh_clover",
@@ -22,6 +23,22 @@ RSpec.describe CardPresentPayments::Processor do
       source: "box_office",
       payment_method: "door_card"
     )
+  end
+
+  it "restores an earlier unsubscribe when an opted-in card-present order completes" do
+    MarketingUnsubscribe.create!(organization: event.organization, email: "walkin@example.com",
+      unsubscribed_at: 2.minutes.ago)
+    sale = pending_sale(marketing_opt_in: true)
+    allow(gateway).to receive(:charge).and_return(CardPresentGateway::Result.new(
+      provider_payment_id: "clover-opt-in", amount_cents: sale.order.total_cents, currency: "usd",
+      state: "CLOSED", result: "SUCCESS", provider_response: { "id" => "clover-opt-in" }))
+
+    attempt = described_class.call(order: sale.order, payment: sale.payment, account: account, user: user,
+      idempotency_key: "terminal-opt-in", gateway: gateway)
+
+    expect(attempt).to be_status_succeeded
+    expect(sale.order).to be_completed
+    expect(MarketingUnsubscribe.where(organization: event.organization, email: sale.order.buyer_email)).not_to exist
   end
 
   it "issues the ticket only after an exact confirmed terminal result" do
