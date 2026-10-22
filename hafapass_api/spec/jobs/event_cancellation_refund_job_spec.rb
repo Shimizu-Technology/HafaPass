@@ -182,6 +182,26 @@ RSpec.describe EventCancellationRefundJob do
     expect(AuditLog.where(action: "event.cancellation_refund_amount_changed", auditable: event)).to exist
   end
 
+  it "keeps refreshing other manual items when one fails, then retries the job" do
+    first = paid_order(email: "cash-one@example.com", method: "door_cash")
+    second = paid_order(email: "cash-two@example.com", method: "door_cash")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    described_class.perform_now(run.id)
+    [first, second].each do |order|
+      create(:refund, order: order, payment: order.payments.first, provider: "door_cash", amount_cents: 500)
+    end
+    failing = run.items.find_by!(order: first)
+    allow(EventCancellationRefunds).to receive(:refresh_cash_item!).and_call_original
+    allow(EventCancellationRefunds).to receive(:refresh_cash_item!)
+      .with(having_attributes(id: failing.id), anything).and_raise(ActiveRecord::Deadlocked)
+
+    expect { described_class.perform_now(run.id) }.to have_enqueued_job(described_class).with(run.id)
+
+    expect(run.items.find_by!(order: second).amount_cents).to eq(4750)
+    expect(failing.reload.amount_cents).to eq(5250)
+  end
+
   it "does not reconcile a run when its summary is read" do
     cash = paid_order(email: "cash-resolved@example.com", method: "door_cash")
     EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
