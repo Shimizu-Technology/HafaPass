@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "audit:prod": "npm audit --omit=dev --audit-level=high"
+    "audit:prod": "npm audit --omit=dev --audit-level=high || (sleep 30 && npm audit --omit=dev --audit-level=high) || (sleep 90 && npm audit --omit=dev --audit-level=high)"
   },
   "engines": {
     "node": ">=20.19.0"
