@@ -37,8 +37,24 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
       role: role,
       permissions: OrganizationAuthorization.permissions_for(user: current_user, organization: organization),
       payout_ready: organization.payout_ready?,
+      fee_change_notice: fee_change_notice(organization, role),
       admin_view: current_user.admin? && role.nil?
     }
+  end
+
+  def fee_change_notice(organization, role)
+    return unless role == "owner"
+
+    notice = FeeChangeNotice.joins(:fee_change).where(organization: organization, owner: current_user,
+      fee_changes: { activated_at: nil })
+      .where("fee_changes.effective_at > ?", Time.current).order("fee_changes.effective_at").first
+    return unless notice
+
+    change = notice.fee_change
+    { id: notice.id, effective_at: change.effective_at, acknowledged_at: notice.acknowledged_at,
+      old_terms: change.old_terms,
+      new_terms: change.new_terms, old_example: notice.example(change.old_terms),
+      new_example: notice.example(change.new_terms) }
   end
 
   def admin_requested_organization

@@ -2,7 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import EventCard from './EventCard'
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key, options) => options?.defaultValue || key }) }))
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key, options) => key === 'buyer.SeatSelector.feeIncluded'
+  ? `Includes ${options.fee} service fee` : options?.defaultValue || key }) }))
 const event = { id: 1, title: 'Guam event', slug: 'guam-event', status: 'published' }
 function mount(tickets) { render(<MemoryRouter><EventCard event={{ ...event, ticket_types: tickets }} /></MemoryRouter>) }
 describe('event card availability and prices', () => {
@@ -27,6 +28,7 @@ describe('event card availability and prices', () => {
     mount([{ price_cents: 2000, current_price_cents: 2000, all_in_price_cents: 2200, service_fee_cents: 200, quantity_remaining: 3, on_sale: true },
       { price_cents: 1900, current_price_cents: 1900, all_in_price_cents: 2295, service_fee_cents: 395, quantity_remaining: 3, on_sale: true }])
     expect(screen.getByText('events.from $22.00')).toBeInTheDocument()
+    expect(screen.getByText('Includes $2.00 service fee')).toBeInTheDocument()
     expect(screen.queryByText(/\$19.00|\$20.00/)).not.toBeInTheDocument()
   })
 })

@@ -65,10 +65,11 @@ class PlatformCapabilities
       definition(name).fetch(:required_env).all? { |key| ENV[key].present? } && provider_specific_configuration_valid?(name)
     end
 
-    def configuration_digest(name)
+    def configuration_digest(name, material_terms: nil)
       name = name.to_s
       facts = if name == "policy_register"
-        { version: PolicyRegistry.version, registry_digest: PolicyRegistry.registry_digest }
+        { version: PolicyRegistry.version, registry_digest: material_terms ?
+          PolicyRegistry.registry_digest(material_terms: material_terms) : PolicyRegistry.registry_digest }
       else
         {
           revision: ENV["PROVIDER_CONFIGURATION_REVISION"].to_s,

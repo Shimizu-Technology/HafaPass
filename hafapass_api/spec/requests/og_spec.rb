@@ -22,6 +22,7 @@ RSpec.describe "OG Meta Endpoints", type: :request do
 
   describe "GET /og/events/:slug" do
     it "returns HTML with OG meta tags for a published event" do
+      create(:ticket_type, event: event, price_cents: 2500)
       get "/og/events/#{event.slug}"
 
       expect(response).to have_http_status(:ok)
@@ -35,6 +36,8 @@ RSpec.describe "OG Meta Endpoints", type: :request do
       expect(body).to include(event.cover_image_url)
       expect(body).to include('twitter:card')
       expect(body).to include('summary_large_image')
+      expect(body).to include('Beach Party 2026 · From $27.25 (includes fees)')
+      expect(body.scan('From $27.25 (includes fees)').length).to be >= 4
       expect(body).to include("#{PublicSiteUrl.base}/events/#{event.slug}")
     end
 
