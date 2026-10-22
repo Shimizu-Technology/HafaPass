@@ -10,6 +10,10 @@ module Api
         entry = @event.waitlist_entries.build(waitlist_params)
         entry.quantity ||= 1
         entry.locale = request_locale
+        entry.email = entry.email.to_s.strip.downcase
+        entry.requested_at = Time.current
+        entry.request_ip = request.remote_ip
+        entry.request_user_agent = request.user_agent.to_s.first(512).presence
 
         # Attach user if authenticated
         if request.headers["Authorization"].present?
@@ -25,7 +29,17 @@ module Api
           end
         end
 
-        if entry.save
+        existing = @event.waitlist_entries.find_by(email: entry.email, ticket_type_id: entry.ticket_type_id)
+        if existing&.cancelled?
+          existing.with_lock do
+            existing.update!(name: entry.name, phone: entry.phone, quantity: entry.quantity,
+              locale: entry.locale, user: entry.user, status: :waiting, requested_at: entry.requested_at,
+              request_ip: entry.request_ip, request_user_agent: entry.request_user_agent,
+              management_version: existing.management_version + 1, delivery_failure: nil,
+              notified_at: nil, expires_at: nil)
+          end
+          render json: entry_json(existing), status: :created
+        elsif entry.save
           render json: entry_json(entry), status: :created
         else
           render json: { errors: entry.errors.full_messages }, status: :unprocessable_entity

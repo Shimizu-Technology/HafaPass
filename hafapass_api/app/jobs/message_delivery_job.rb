@@ -41,6 +41,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "This is not a material event change")
         next :done
       end
+      if obsolete_waitlist?(delivery)
+        delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active")
+        next :done
+      end
       if delivery.undeliverable_recipient?
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
@@ -64,6 +68,11 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
           last_error: "Recipient has a prior bounce, complaint, or suppression")
         next :done
+      end
+      if waitlist_delivery?(delivery) && delivery.outbound_payload.blank?
+        organization = delivery.event.organization.reload
+        delivery.update!(metadata: delivery.metadata.merge("mailing_address" => organization.marketing_mailing_address,
+          "organizer_name" => organization.name))
       end
       if delivery.promotional? && !current_marketing_address?(delivery)
         delivery.update!(status: :suppressed, suppressed_at: Time.current,
@@ -108,7 +117,18 @@ class MessageDeliveryJob < ApplicationJob
       :send
     end
     unless outcome == :send
-      MessageProviderEventProcessor.reconcile_for!(delivery) if outcome == :done
+      if outcome == :done
+        WaitlistDelivery.reconcile_failure!(delivery)
+        MessageProviderEventProcessor.reconcile_for!(delivery)
+      end
+      return
+    end
+
+    if obsolete_waitlist?(delivery)
+      delivery.with_lock do
+        delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active",
+          send_lease_token: nil, send_lease_expires_at: nil)
+      end
       return
     end
 
@@ -122,6 +142,7 @@ class MessageDeliveryJob < ApplicationJob
           provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil,
           last_error: "Promotional send blocked by unsubscribe, provider suppression, or missing mailing address")
       end
+      WaitlistDelivery.reconcile_failure!(delivery)
       return
     end
 
@@ -155,11 +176,31 @@ class MessageDeliveryJob < ApplicationJob
           send_lease_token: nil, send_lease_expires_at: nil)
       end
     end
+    WaitlistDelivery.reconcile_failure!(delivery) if delivery
     Sentry.capture_exception(error, extra: { message_delivery_id: delivery_id })
     raise
   end
 
   private
+
+  def waitlist_delivery?(delivery)
+    %w[waitlist_notification waitlist_offer].include?(delivery.template)
+  end
+
+  def obsolete_waitlist?(delivery)
+    return false unless waitlist_delivery?(delivery)
+
+    if delivery.template == "waitlist_offer"
+      offer = WaitlistOffer.find_by(id: delivery.metadata["waitlist_offer_id"])
+      offer.nil? || !offer.offered? || offer.order_id.present?
+    else
+      entry = WaitlistEntry.find_by(id: delivery.metadata["waitlist_entry_id"])
+      return true if entry.nil? || !entry.notified?
+      return entry.notified_at&.iso8601(6) != delivery.metadata["notified_at"] if delivery.metadata["notified_at"].present?
+
+      entry.notified_at.nil? || delivery.created_at < entry.notified_at
+    end
+  end
 
   def current_marketing_address?(delivery)
     organization = Organization.find_by(id: delivery.event&.organization_id)

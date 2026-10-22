@@ -30,21 +30,27 @@ module Api
           render json: {
             waitlist: paginated_entries.map { |e| entry_json(e) },
             stats: stats,
+            marketing_address_ready: WaitlistDelivery.address_ready?(@event),
+            marketing_address_error: WaitlistDelivery::ADDRESS_ERROR,
             meta: pagination_meta(pagy)
           }
         end
 
         # POST /api/v1/organizer/events/:event_id/waitlist/:id/notify
         def notify
+          return address_error unless WaitlistDelivery.address_ready?(@event)
           unless @entry.waiting?
             render json: { error: "Can only notify entries with 'waiting' status" }, status: :unprocessable_entity
             return
           end
 
-          @entry.notify!
-          EmailService.send_waitlist_notification_async(@entry)
+          unless @entry.notify_and_queue!
+            return render json: { error: "Can only notify entries with 'waiting' status" }, status: :unprocessable_entity
+          end
 
           render json: entry_json(@entry)
+        rescue WaitlistDelivery::AddressMissing
+          address_error
         end
 
         def offer
@@ -56,6 +62,7 @@ module Api
 
         # POST /api/v1/organizer/events/:event_id/waitlist/notify_next
         def notify_next
+          return address_error unless WaitlistDelivery.address_ready?(@event)
           count = (params[:count] || 1).to_i
           count = [count, 50].min # Cap at 50
 
@@ -66,12 +73,12 @@ module Api
 
           notified = []
           entries.each do |entry|
-            entry.notify!
-            EmailService.send_waitlist_notification_async(entry)
-            notified << entry_json(entry)
+            notified << entry_json(entry) if entry.notify_and_queue!
           end
 
           render json: { notified: notified, count: notified.size }
+        rescue WaitlistDelivery::AddressMissing
+          address_error
         end
 
         # DELETE /api/v1/organizer/events/:event_id/waitlist/:id
@@ -86,6 +93,10 @@ module Api
         end
 
         private
+
+        def address_error
+          render json: { error: WaitlistDelivery::ADDRESS_ERROR, settings_url: "/dashboard/settings" }, status: :unprocessable_entity
+        end
 
         def set_event
           return if performed?
@@ -112,7 +123,8 @@ module Api
             status: entry.status,
             notified_at: entry.notified_at,
             expires_at: entry.expires_at,
-            created_at: entry.created_at
+            created_at: entry.created_at,
+            delivery_failure: entry.delivery_failure
           }
           if entry.ticket_type
             json[:ticket_type] = { id: entry.ticket_type.id, name: entry.ticket_type.name }

@@ -21,6 +21,7 @@ module WaitlistOffers
         entry.event.lock!
         entry.lock!
         raise OfferError, "Only waiting entries can receive an offer" unless entry.waiting?
+        WaitlistDelivery.ensure_address!(entry.event)
         # Covers policy holds and suspended or closed sales: an offer reserves
         # inventory and emails the buyer, so it must not go out while nobody can buy.
         raise OfferError, "This event is not currently on sale" unless entry.event.sales_open?
@@ -40,10 +41,12 @@ module WaitlistOffers
           unit_price_cents: tier&.price_cents || selected.price_cents,
           expires_at: OFFER_DURATION.from_now
         )
-        entry.update!(status: :offered, notified_at: Time.current, expires_at: offer.expires_at)
+        entry.update!(status: :offered, notified_at: Time.current, expires_at: offer.expires_at, delivery_failure: nil)
         EmailService.send_waitlist_offer_async(offer)
       end
       offer
+    rescue WaitlistDelivery::AddressMissing => e
+      raise OfferError, e.message
     rescue ActiveRecord::RecordNotUnique
       raise OfferError, "This waitlist entry already has an active offer"
     end

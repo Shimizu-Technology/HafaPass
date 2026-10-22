@@ -165,7 +165,7 @@
   },
   "waitlist": {
     "joinTitle": "Join the Waitlist",
-    "getNotified": "Get notified when tickets become available.",
+    "getNotified": "We'll email you if tickets become available for this event. You can stop these alerts anytime.",
     "yourName": "Your name",
     "emailAddress": "Email address",
     "phone": "Phone (optional)",

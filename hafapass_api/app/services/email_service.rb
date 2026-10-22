@@ -171,7 +171,7 @@ class EmailService
 
       delivery = create_delivery(event: waitlist_entry.event, template: "waitlist_notification",
         recipient: waitlist_entry.email,
-        metadata: { waitlist_entry_id: waitlist_entry.id }.merge(commercial_metadata(waitlist_entry.event)),
+        metadata: { waitlist_entry_id: waitlist_entry.id, notified_at: waitlist_entry.notified_at&.iso8601(6) }.merge(commercial_metadata(waitlist_entry.event)),
         idempotency_key: "waitlist-notification/#{waitlist_entry.id}/#{waitlist_entry.notified_at&.iso8601(6)}")
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
@@ -517,14 +517,18 @@ class EmailService
       raise MessageWirePayload::Unavailable, "Commercial email requires a durable delivery" unless delivery
 
       organization = delivery.event.organization
-      token = MarketingUnsubscribe.token(organization: organization, email: delivery.recipient)
-      encoded_token = ERB::Util.url_encode(token)
+      entry = if delivery.template == "waitlist_offer"
+        WaitlistOffer.find(delivery.metadata.fetch("waitlist_offer_id")).waitlist_entry
+      else
+        WaitlistEntry.find(delivery.metadata.fetch("waitlist_entry_id"))
+      end
+      encoded_token = ERB::Util.url_encode(WaitlistUnsubscribe.token(entry))
       name = delivery.metadata.fetch("organizer_name")
       address = delivery.metadata.fetch("mailing_address")
       footer = <<~HTML
         <p style="color:#6b7280;font-size:13px">Sent by #{h(name)} through HåfaPass.</p>
         <p style="color:#6b7280;font-size:13px">#{h(address)}</p>
-        <p><a href="#{h("#{frontend_url}/unsubscribe/#{encoded_token}")}">Unsubscribe from #{h(name)} emails</a></p>
+        <p><a href="#{h("#{frontend_url}/unsubscribe/#{encoded_token}")}">Stop alerts for this event</a></p>
       HTML
       { footer: footer, organizer_name: name,
         one_click_url: "#{PublicSiteUrl.api || 'http://localhost:3000'}/api/v1/marketing/unsubscribe/#{encoded_token}" }

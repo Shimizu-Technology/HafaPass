@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2411,6 +2411,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_150000) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.string "locale", default: "en", null: false
+    t.datetime "requested_at"
+    t.string "request_ip"
+    t.text "request_user_agent"
+    t.string "delivery_failure"
     t.index ["event_id", "ticket_type_id", "email"], name: "idx_waitlist_unique_entry", unique: true
     t.index ["event_id", "ticket_type_id", "position"], name: "idx_on_event_id_ticket_type_id_position_e28bca8bda"
     t.index ["event_id"], name: "index_waitlist_entries_on_event_id"
@@ -2433,6 +2437,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_150000) do
     t.integer "unit_price_cents", null: false
     t.datetime "updated_at", null: false
     t.bigint "waitlist_entry_id", null: false
+    t.string "cancel_reason"
     t.index ["event_id"], name: "index_waitlist_offers_on_event_id"
     t.index ["order_id"], name: "index_waitlist_offers_on_order_id"
     t.index ["pricing_tier_id"], name: "index_waitlist_offers_on_pricing_tier_id"

@@ -39,8 +39,18 @@ class MessageDelivery < ApplicationRecord
   end
 
   def marketing_unsubscribed?
-    promotional? && event&.organization_id.present? &&
-      MarketingUnsubscribe.exists?(organization_id: event.organization_id, email: recipient.to_s.strip.downcase)
+    return false unless promotional? && event&.organization_id.present?
+
+    unsubscribe = MarketingUnsubscribe.find_by(organization_id: event.organization_id, email: recipient.to_s.strip.downcase)
+    return false unless unsubscribe
+    return true if template == "communication_campaign"
+
+    entry = if template == "waitlist_offer"
+      WaitlistOffer.find_by(id: metadata["waitlist_offer_id"])&.waitlist_entry
+    else
+      WaitlistEntry.find_by(id: metadata["waitlist_entry_id"])
+    end
+    entry.nil? || entry.requested_at.nil? || unsubscribe.unsubscribed_at >= entry.requested_at
   end
   scope :ticket_email, -> { where(channel: "email", template: TICKET_EMAIL_TEMPLATES) }
   scope :unconfirmed_provider_result, -> {

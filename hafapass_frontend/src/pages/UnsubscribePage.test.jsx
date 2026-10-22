@@ -41,3 +41,17 @@ it('shows the confirmation and action in the buyer language', async () => {
   await userEvent.click(screen.getByRole('button', { name: ja.unsubscribe.action }))
   expect(await screen.findByText(ja.unsubscribe.unsubscribedConfirmation.replace('{{organization}}', 'Island Nights'))).toBeInTheDocument()
 })
+
+it('offers event and organizer choices for a waitlist link', async () => {
+  apiClient.get.mockResolvedValue({ data: { organization: 'Island Nights', event: 'Friday Show', scope: 'waitlist', unsubscribed: false } })
+  apiClient.post.mockResolvedValue({ data: { unsubscribed: true } })
+  render(<MemoryRouter initialEntries={['/unsubscribe/waitlist-token']}><Routes><Route path="/unsubscribe/:token" element={<UnsubscribePage />} /></Routes></MemoryRouter>)
+  expect(await screen.findByRole('button', { name: 'Stop alerts for this event' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Stop all marketing from this organizer' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Stop alerts for this event' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/marketing/unsubscribe/waitlist-token', { scope: 'event' })
+  expect(await screen.findByText('Alerts for Friday Show have stopped.')).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Stop all marketing from this organizer' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/marketing/unsubscribe/waitlist-token', { scope: 'organizer' })
+  expect(await screen.findByText('All marketing from Island Nights has stopped.')).toBeInTheDocument()
+})

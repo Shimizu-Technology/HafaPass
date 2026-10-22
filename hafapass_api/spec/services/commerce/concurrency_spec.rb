@@ -358,6 +358,8 @@ RSpec.describe "Commerce concurrency", :non_transactional do
 
   it "creates exactly one inventory-holding offer for concurrent waitlist actions" do
     event = create(:event, :published, starts_at: 5.days.from_now)
+    event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
     ticket_type = create(:ticket_type, event: event, quantity_available: 2)
     entry = create(:waitlist_entry, event: event, ticket_type: ticket_type)
     allow(EmailService).to receive(:send_waitlist_offer_async)

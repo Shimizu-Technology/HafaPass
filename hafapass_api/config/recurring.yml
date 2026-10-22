@@ -11,6 +11,9 @@ default: &default
   stripe_fee_recovery:
     class: SweepPendingStripeFeesJob
     schedule: every 5 minutes
+  waitlist_delivery_sweep:
+    class: SweepWaitlistDeliveriesJob
+    schedule: every minute
   marketplace_retention:
     class: PurgeMarketplaceAnalyticsJob
     schedule: every day at 00:00 UTC

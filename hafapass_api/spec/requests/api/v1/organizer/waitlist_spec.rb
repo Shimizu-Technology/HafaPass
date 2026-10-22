@@ -8,11 +8,23 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
   let(:headers) { auth_headers(user) }
 
   before do
+    event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
     allow(EmailService).to receive(:send_waitlist_notification_async)
     allow(EmailService).to receive(:send_waitlist_offer_async)
   end
 
   describe "POST /api/v1/organizer/events/:event_id/waitlist/:id/offer" do
+    it "refuses before reserving inventory when the address is uncertified" do
+      event.organization.update!(marketing_address_certified_at: nil)
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
+      before_quantity = ga_ticket.available_quantity
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/offer", headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to include("business mailing address")
+      expect(entry.reload).to be_waiting
+      expect(ga_ticket.reload.available_quantity).to eq(before_quantity)
+    end
     it "reserves inventory and queues a single-use offer" do
       entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket, quantity: 2)
 
@@ -58,6 +70,14 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
   end
 
   describe "POST /api/v1/organizer/events/:event_id/waitlist/:id/notify" do
+    it "refuses before marking an alert notified when the address is uncertified" do
+      event.organization.update!(marketing_address_certified_at: nil)
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/notify", headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["settings_url"]).to eq("/dashboard/settings")
+      expect(entry.reload).to be_waiting
+    end
     it "notifies a waiting entry" do
       entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
 

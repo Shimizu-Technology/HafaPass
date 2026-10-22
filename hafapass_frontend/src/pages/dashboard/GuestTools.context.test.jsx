@@ -410,3 +410,21 @@ describe('waitlist readable statuses', () => {
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 })
+
+it('shows address readiness and a delivery failure before organizer waitlist retry', async () => {
+  activeTool = tools[2]
+  apiClient.get.mockImplementation((path, config) => {
+    if (path.endsWith('/waitlist')) return Promise.resolve({ data: {
+      waitlist: [{ ...tools[2].row('actor-a'), delivery_failure: 'mailing address missing' }],
+      stats: { total_waiting: 1 }, marketing_address_ready: false,
+    } })
+    return load(path, config)
+  })
+  mount(tools[2])
+  expect(await screen.findByText(/Add your business mailing address in/)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/dashboard/settings')
+  expect(screen.getByRole('button', { name: 'Notify Next' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Offer' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Offer' })).toHaveAttribute('aria-describedby', 'waitlist-address-required')
+  expect(screen.getByText(/Couldn't send: mailing address missing/)).toBeInTheDocument()
+})

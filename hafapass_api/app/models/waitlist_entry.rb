@@ -13,6 +13,7 @@ class WaitlistEntry < ApplicationRecord
   validates :email, uniqueness: { scope: [:event_id, :ticket_type_id], message: "is already on the waitlist for this ticket type" }
 
   before_validation :assign_position, on: :create
+  before_validation :record_request_time, on: :create
 
   scope :active, -> { where(status: [:waiting, :notified, :offered]) }
   scope :by_position, -> { order(:position) }
@@ -22,11 +23,23 @@ class WaitlistEntry < ApplicationRecord
   end
 
   def notify!
+    WaitlistDelivery.ensure_address!(event)
     update!(
       status: :notified,
       notified_at: Time.current,
-      expires_at: 24.hours.from_now
+      expires_at: 24.hours.from_now,
+      delivery_failure: nil
     )
+  end
+
+  def notify_and_queue!
+    with_lock do
+      return false unless waiting?
+
+      notify!
+      EmailService.send_waitlist_notification_async(self)
+      true
+    end
   end
 
   def offer_expired?
@@ -38,6 +51,10 @@ class WaitlistEntry < ApplicationRecord
   end
 
   private
+
+  def record_request_time
+    self.requested_at ||= Time.current
+  end
 
   def assign_position
     return if position.present?
