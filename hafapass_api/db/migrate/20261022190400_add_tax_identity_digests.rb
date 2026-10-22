@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
 class AddTaxIdentityDigests < ActiveRecord::Migration[8.0]
+  disable_ddl_transaction!
+
   def up
     add_column :organizer_tax_informations, :tin_digest, :string
     add_column :organizer_tax_informations, :validation_identity_digest, :string
     add_column :organizer_tax_informations, :tin_match_identity_digest, :string
     add_column :organizer_tax_informations, :b_notice_identity_digest, :string
-    add_index :organizer_tax_informations, :tin_digest
+    add_index :organizer_tax_informations, :tin_digest, algorithm: :concurrently
 
     # Existing encrypted W-9s must be searchable before text screening begins.
     OrganizerTaxInformation.reset_column_information
@@ -16,7 +18,7 @@ class AddTaxIdentityDigests < ActiveRecord::Migration[8.0]
   end
 
   def down
-    remove_index :organizer_tax_informations, :tin_digest
+    remove_index :organizer_tax_informations, :tin_digest, algorithm: :concurrently
     remove_column :organizer_tax_informations, :validation_identity_digest
     remove_column :organizer_tax_informations, :tin_match_identity_digest
     remove_column :organizer_tax_informations, :b_notice_identity_digest

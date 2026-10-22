@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_190400) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -118,8 +118,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
     t.string "payee_key", default: "all", null: false
     t.index ["organization_id", "year", "payee_key"], name: "idx_annual_tax_settings_on_payee_year", unique: true
     t.index ["organization_id"], name: "index_annual_tax_report_settings_on_organization_id"
-    t.check_constraint "form_type::text = ANY (ARRAY['review_required'::character varying::text, '1099-nec'::character varying::text, '1099-misc'::character varying::text, '1099-k'::character varying::text, 'none'::character varying::text])", name: "annual_tax_report_form_valid"
-    t.check_constraint "jurisdiction::text = ANY (ARRAY['irs'::character varying::text, 'guam_drt'::character varying::text])", name: "annual_tax_report_jurisdiction_valid"
+    t.check_constraint "form_type::text = ANY (ARRAY['review_required'::character varying, '1099-nec'::character varying, '1099-misc'::character varying, '1099-k'::character varying, 'none'::character varying]::text[])", name: "annual_tax_report_form_valid"
+    t.check_constraint "jurisdiction::text = ANY (ARRAY['irs'::character varying, 'guam_drt'::character varying]::text[])", name: "annual_tax_report_jurisdiction_valid"
   end
 
   create_table "annual_tax_thresholds", force: :cascade do |t|
@@ -323,7 +323,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: { "type" => "all_attendees" }, null: false
+    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false
@@ -1372,7 +1372,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
     t.string "b_notice_identity_digest"
     t.index ["organization_id"], name: "index_organizer_tax_informations_on_organization_id", unique: true
     t.index ["tin_digest"], name: "index_organizer_tax_informations_on_tin_digest"
-    t.check_constraint "tin_match_status::text = ANY (ARRAY['unverified'::character varying::text, 'matched'::character varying::text, 'missing_or_invalid'::character varying::text, 'not_issued'::character varying::text, 'mismatch'::character varying::text, 'invalid_request'::character varying::text, 'duplicate'::character varying::text, 'matched_ssn'::character varying::text, 'matched_ein'::character varying::text, 'matched_both'::character varying::text])", name: "tax_information_tin_match_status_valid"
+    t.check_constraint "tin_match_status::text = ANY (ARRAY['unverified'::character varying, 'matched'::character varying, 'missing_or_invalid'::character varying, 'not_issued'::character varying, 'mismatch'::character varying, 'invalid_request'::character varying, 'duplicate'::character varying, 'matched_ssn'::character varying, 'matched_ein'::character varying, 'matched_both'::character varying]::text[])", name: "tax_information_tin_match_status_valid"
   end
 
   create_table "payment_events", force: :cascade do |t|
@@ -2070,9 +2070,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_170100) do
     t.text "business_mailing_address"
     t.string "backup_withholding_mode", default: "block", null: false
     t.integer "backup_withholding_rate_bps", default: 2400, null: false
-    t.jsonb "tax_reporting_thresholds", default: { "1099-k" => 2000000, "1099-nec" => 200000, "1099-misc" => 200000 }, null: false
+    t.jsonb "tax_reporting_thresholds", default: {"1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000}, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
-    t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying::text, 'withhold'::character varying::text])", name: "site_settings_backup_withholding_mode_valid"
+    t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying, 'withhold'::character varying]::text[])", name: "site_settings_backup_withholding_mode_valid"
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
   end
 
