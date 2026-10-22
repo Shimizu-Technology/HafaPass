@@ -243,6 +243,15 @@ RSpec.describe "Recording a check payout", type: :request do
     expect(payout.reload.disbursement_cents).to eq(100)
     expect(payout.confirmed_check_amount_cents).to eq(99)
   end
+
+  it "rejects check adjustments outside processing or a hold from processing" do
+    payout.update!(status: :held, held_from_status: "pending")
+    post "/api/v1/admin/payouts/#{payout.id}/check_amount_adjustment", headers: auth_headers(admin), params: {
+      actual_check_amount_cents: 99, reason: "Check register shows a one cent error"
+    }
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(payout.payout_check_adjustments).to be_empty
+  end
 end
 
 RSpec.describe "Check payee changes while a payout is in flight", type: :request do

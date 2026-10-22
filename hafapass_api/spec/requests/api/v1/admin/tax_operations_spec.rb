@@ -191,6 +191,15 @@ RSpec.describe "Admin tax operations", type: :request do
     expect(response.parsed_body["tax_reporting_thresholds"]["1099-nec"]).to eq(200_000)
   end
 
+  it "caps backup withholding below the full payout and ignores the deprecated threshold column" do
+    setting = SiteSetting.instance
+    setting.tax_reporting_thresholds = {}
+    setting.backup_withholding_rate_bps = 9_999
+    expect(setting).to be_valid
+    setting.backup_withholding_rate_bps = 10_000
+    expect(setting).not_to be_valid
+  end
+
   it "keeps annual CSV full TIN access audited and JSON masked" do
     event = create(:event, organization: organization)
     create(:payout, organization: organization, event: event,

@@ -92,6 +92,23 @@ describe('AdminTaxControlsPage', () => {
     vi.restoreAllMocks()
   })
 
+  it('shows the server error returned as a Blob for a failed download', async () => {
+    apiClient.post.mockRejectedValueOnce({ response: { data: new Blob([JSON.stringify({ error: 'Export requires CPA approval' })], { type: 'application/json' }) } })
+    show()
+    await screen.findByText(/TIN status:/)
+    await userEvent.click(screen.getByRole('button', { name: 'Export masked CPA CSV' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Export requires CPA approval')
+    expect(saveBlob).not.toHaveBeenCalled()
+  })
+
+  it('uses the generic error when a failed download Blob is not JSON', async () => {
+    apiClient.post.mockRejectedValueOnce({ response: { data: new Blob(['unreadable response']) } })
+    show()
+    await screen.findByText(/TIN status:/)
+    await userEvent.click(screen.getByRole('button', { name: 'Export masked CPA CSV' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Action failed. Retry.')
+  })
+
   it('requires a reason for a manual withholding flag', async () => {
     show()
     await screen.findByText(/TIN status:/)

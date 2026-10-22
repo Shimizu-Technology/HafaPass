@@ -17,7 +17,8 @@ class PayoutCheckAmountAdjuster
 
     payout.organization.with_lock do
       payout.lock!
-      unless payout.provider == "check" && (payout.status_processing? || payout.held_from_status == "processing")
+      unless payout.provider == "check" && (payout.status_processing? ||
+          payout.status_held? && payout.held_from_status == "processing")
         raise AdjustmentError, "Only an issued check awaiting reconciliation can be adjusted"
       end
       before_amount = payout.confirmed_check_amount_cents

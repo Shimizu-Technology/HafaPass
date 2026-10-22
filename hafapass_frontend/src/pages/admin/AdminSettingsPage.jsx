@@ -79,7 +79,7 @@ function validate(form) {
   }
   if (!values.payout_schedule_text) errors.payout_schedule_text = 'Describe when organizers are paid.'
   else if (values.payout_schedule_text.length > MAX_SCHEDULE_LENGTH) errors.payout_schedule_text = `Keep payout timing under ${MAX_SCHEDULE_LENGTH} characters.`
-  if (!form.backup_withholding_rate_bps.trim() || !Number.isInteger(values.backup_withholding_rate_bps) || values.backup_withholding_rate_bps < 1 || values.backup_withholding_rate_bps > 10000) errors.backup_withholding_rate_bps = 'Enter a rate from 1 to 10000 basis points.'
+  if (!form.backup_withholding_rate_bps.trim() || !Number.isInteger(values.backup_withholding_rate_bps) || values.backup_withholding_rate_bps < 1 || values.backup_withholding_rate_bps > 9999) errors.backup_withholding_rate_bps = 'Enter a rate from 1 to 9999 basis points.'
   for (const [field, value] of Object.entries({ threshold_nec: form.threshold_nec, threshold_misc: form.threshold_misc, threshold_k: form.threshold_k })) {
     if (!/^\d+$/.test(value) || Number(value) > 1000000000) errors[field] = 'Enter a whole-cent threshold.'
   }
@@ -222,9 +222,8 @@ function AdminSettingsSession({ identity, resourcePath }) {
     if (!request) return
     setSaving(true)
     try {
-      const body = changes.tax_reporting_thresholds ? { ...changes, tax_year: taxYear } : { ...changes }
       const response = await apiClient.patch('/admin/settings', {
-        ...body, ...(feeChanges.length ? { effective_at: new Date(effectiveAt).toISOString(),
+        ...changes, tax_year: taxYear, ...(feeChanges.length ? { effective_at: new Date(effectiveAt).toISOString(),
           future_terms_approved: futureTermsApproved,
           approved_registry_digest: feePreview.registry_digest } : {}),
       }, request.config)
@@ -304,7 +303,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
           <p className="mt-1 text-sm text-neutral-700">Backup withholding affects payouts. Choose the tax year for threshold corrections; a CPA should approve changes before filing.</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium">When backup withholding applies<select className="input mt-1" value={form.backup_withholding_mode} onChange={update('backup_withholding_mode')}><option value="block">Block payout (default)</option><option value="withhold">Withhold and pay the balance</option></select></label>
-            <label className="text-sm font-medium">Withholding rate (basis points)<input className="input mt-1" type="number" min="1" max="10000" value={form.backup_withholding_rate_bps} onChange={update('backup_withholding_rate_bps')} /></label>
+            <label className="text-sm font-medium">Withholding rate (basis points)<input className="input mt-1" type="number" min="1" max="9999" value={form.backup_withholding_rate_bps} onChange={update('backup_withholding_rate_bps')} /></label>
             <label className="text-sm font-medium">Tax year<select className="input mt-1" value={taxYear} onChange={event => setTaxYear(event.target.value)}>{Array.from({ length: new Date().getFullYear() - 1999 }, (_, index) => new Date().getFullYear() - index).map(value => <option key={value} value={value}>{value}</option>)}</select></label>
             {[['threshold_nec', '1099-NEC'], ['threshold_misc', '1099-MISC'], ['threshold_k', '1099-K']].map(([field, label]) => <label key={field} className="text-sm font-medium">{label} threshold (cents)<input className="input mt-1" type="number" min="0" step="1" value={form[field]} onChange={update(field)} /></label>)}
           </div>

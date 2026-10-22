@@ -27,6 +27,9 @@ class PayeeWithholdingBalance
   end
 
   def self.shortfall_for(payout)
+    return 0 if payout.withholding_override_reason.present? &&
+      AuditLog.where(auditable: payout, action: "payout.backup_withholding_overridden").exists?
+
     tax = payout.organization.organizer_tax_information&.reload
     needed = tax.nil? || tax.certified_at.nil? || tax.backup_withholding_required?
     return 0 unless needed

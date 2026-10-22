@@ -24,8 +24,7 @@ class SiteSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: MAX_SERVICE_FEE_FLAT_CENTS }
   validates :processing_fee_bearer, inclusion: { in: PROCESSING_FEE_BEARERS }
   validates :backup_withholding_mode, inclusion: { in: BACKUP_WITHHOLDING_MODES }
-  validates :backup_withholding_rate_bps, numericality: { only_integer: true, in: 1..10_000 }
-  validate :valid_tax_reporting_thresholds
+  validates :backup_withholding_rate_bps, numericality: { only_integer: true, in: 1..9_999 }
   validates :payout_schedule_text, presence: true, length: { maximum: MAX_PAYOUT_SCHEDULE_TEXT_LENGTH }
   validates :business_mailing_address, length: { maximum: 500 }, allow_blank: true
   normalizes :payout_schedule_text, with: ->(text) { text.squish }
@@ -134,13 +133,6 @@ class SiteSetting < ApplicationRecord
   before_destroy :prevent_destroy
 
   private
-
-  def valid_tax_reporting_thresholds
-    values = tax_reporting_thresholds
-    unless values.is_a?(Hash) && %w[1099-nec 1099-misc 1099-k].all? { |key| values[key].is_a?(Integer) && values[key].between?(0, 1_000_000_000) }
-      errors.add(:tax_reporting_thresholds, "must have nonnegative cent values for NEC, MISC and K")
-    end
-  end
 
   def prevent_destroy
     raise ActiveRecord::RecordNotDestroyed, "Cannot delete site settings"

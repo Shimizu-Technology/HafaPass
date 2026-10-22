@@ -35,7 +35,6 @@ class PayoutReconciler
         raise ReconciliationError, "Transfer identifier must be text"
       end
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
-      raise ReconciliationError, BackupWithholding::TIN_WARNING unless BackupWithholding.safe_text?(external_id)
       raise ReconciliationError, "Transfer identifier is too long" if external_id.to_s.length > 255
       withholding_only = payout.provider == "check" && payout.disbursement_cents.zero? &&
         external_id == "withholding_only_#{payout.id}"

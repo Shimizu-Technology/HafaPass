@@ -121,6 +121,30 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     expect(audit.after_data.fetch("status")).to eq("paid")
   end
 
+  it "does not carry a shortfall when an audited override payout is reconciled as paid" do
+    tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
+    payout.update!(status: :pending)
+    organization.with_lock do
+      payout.with_lock do
+        PayoutWithholdingGuard.call(payout: payout, actor: admin, override_reason: "CPA approved this payout")
+      end
+    end
+    payout.update!(status: :processing)
+
+    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
+
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to have_attributes(status: "paid", under_withheld_cents: 0)
+    expect(AuditLog.where(auditable: payout, action: "payout.under_withholding_carried")).not_to exist
+  end
+
+  it "accepts a nine-digit bank transfer identifier while screening free-text evidence" do
+    reconcile(payload.merge(provider_payout_id: "012345678"))
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload.provider_payout_id).to eq("012345678")
+  end
+
   it "shows cancelled-event buyer liability and requires already-sent evidence through the API" do
     order = create(:order, event: event)
     create(:payment, :succeeded, order: order, provider_environment: "live")

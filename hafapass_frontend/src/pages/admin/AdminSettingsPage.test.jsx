@@ -96,7 +96,9 @@ describe('AdminSettingsPage', () => {
     await user.type(await screen.findByLabelText('Support phone', { exact: false }), '671-555-0100')
     await user.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/settings', { platform_phone: '671-555-0100' }, expect.anything()))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/settings', {
+      platform_phone: '671-555-0100', tax_year: String(new Date().getFullYear()),
+    }, expect.anything()))
   })
 
   it('loads and saves a prior tax year threshold with its selected year', async () => {
@@ -134,6 +136,18 @@ describe('AdminSettingsPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Check these settings')
     expect(percent).toHaveAttribute('aria-invalid', 'true')
     expect(percent).toHaveAccessibleDescription(/between 0% and 25%/)
+    expect(apiClient.patch).not.toHaveBeenCalled()
+  })
+
+  it('caps the withholding rate below 10000 basis points', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const rate = await screen.findByLabelText('Withholding rate (basis points)')
+    expect(rate).toHaveAttribute('max', '9999')
+    await user.clear(rate)
+    await user.type(rate, '10000')
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a rate from 1 to 9999 basis points.')
     expect(apiClient.patch).not.toHaveBeenCalled()
   })
 

@@ -34,6 +34,8 @@ TINs are encrypted in the W-9 and payout snapshot. Admin pages and PDFs show onl
 
 For payments in **2026**, the IRS increased the general 1099-NEC and many 1099-MISC reporting thresholds from $600 to **$2,000**. Some MISC categories retain different thresholds. The configured defaults are $2,000 for NEC and MISC from 2026 onward; earlier years use $600. Thresholds are stored per form and tax year in `annual_tax_thresholds`; choose the year in Admin Settings to correct a prior year's row, with an audit recording that year and the before/after amounts. Form 1099-K has different rules: payment card transactions and third-party settlement organization payments differ, and the latter generally uses a $20,000 **and** 200-transaction threshold. The $20,000/200 row is advisory; the product does not decide 1099-K eligibility or count its qualifying transactions. Any backup withholding warrants CPA review regardless of the amount. See [IRS 2026 threshold bulletin](https://www.irs.gov/irb/2026-19_IRB), [2026 NEC/MISC instructions](https://www.irs.gov/instructions/i1099mec), and [IRS 1099-K FAQ](https://www.irs.gov/newsroom/form-1099-k-faqs-general-information).
 
+The `site_settings.tax_reporting_thresholds` column is deprecated and unused. Annual threshold reads and writes use `annual_tax_thresholds`; keep the legacy column in place until a separately reviewed data cleanup.
+
 ## CPA decisions to record
 
 - Whether the operator is the required filer for organizer check payouts, and whether each payee/year needs NEC, MISC, K, or none, including corporate exceptions, duplicate-reporting rules, and the correct gross/net boxes.

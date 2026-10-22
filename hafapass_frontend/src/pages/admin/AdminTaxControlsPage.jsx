@@ -61,8 +61,22 @@ function Controls({ identity }) {
   }
 
   const download = (path, body, filename) => run(async config => {
-    const response = await apiClient.post(path, body, { ...config, responseType: 'blob' })
-    saveBlob(response.data, filename)
+    try {
+      const response = await apiClient.post(path, body, { ...config, responseType: 'blob' })
+      saveBlob(response.data, filename)
+    } catch (error) {
+      if (error.response?.data instanceof Blob) {
+        try {
+          error.response.data = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => { try { resolve(JSON.parse(reader.result)) } catch (parseError) { reject(parseError) } }
+            reader.onerror = () => reject(reader.error)
+            reader.readAsText(error.response.data)
+          })
+        } catch { /* Use the generic error. */ }
+      }
+      throw error
+    }
   }, 'Download ready. Store this file securely.')
 
   return <AdminLayout><div className="space-y-6">
