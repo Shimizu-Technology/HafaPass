@@ -161,7 +161,8 @@ class MessageDeliveryJob < ApplicationJob
   private
 
   def known_rejection?(error)
-    error.is_a?(Resend::Error::InvalidRequestError) || error.is_a?(Resend::Error::RateLimitExceededError) ||
+    error.is_a?(Resend::Error::InvalidRequestError) || error.is_a?(Resend::Error::NotFoundError) ||
+      error.is_a?(Resend::Error::RateLimitExceededError) ||
       error.is_a?(EmailService::ProviderDisabled)
   end
 

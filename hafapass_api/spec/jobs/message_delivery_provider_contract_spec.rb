@@ -214,6 +214,12 @@ RSpec.describe MessageDeliveryJob do
     expect(delivery.reload).to be_sent
   end
 
+  it "treats a Resend not-found response as a definite rejection" do
+    allow(Resend::Emails).to receive(:send).and_raise(Resend::Error::NotFoundError.new("missing", 404))
+    expect { described_class.new.perform(delivery.id) }.to raise_error(Resend::Error::NotFoundError)
+    expect(delivery.reload.provider_outcome_unknown).to be(false)
+  end
+
   it "does not let a later authentication rejection erase an earlier unknown outcome" do
     allow(Resend::Emails).to receive(:send).and_raise(IOError, "response lost")
     expect { described_class.new.perform(delivery.id) }.to raise_error(IOError)
