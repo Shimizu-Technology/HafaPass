@@ -229,16 +229,20 @@ module Commerce
         offer = order.waitlist_offer
         return unless offer&.claimed?
 
-        offer.update!(status: :converted, converted_at: Time.current, token_version: offer.token_version + 1)
-        offer.waitlist_entry.update!(status: :converted, expires_at: nil)
+        WaitlistLocks.with(entry: offer.waitlist_entry, offer: offer) do
+          offer.update!(status: :converted, converted_at: Time.current, token_version: offer.token_version + 1)
+          offer.waitlist_entry.update!(status: :converted, expires_at: nil)
+        end
       end
 
       def release_waitlist_offer!(order, at: Time.current)
         offer = order.waitlist_offer
         return unless offer&.claimed?
 
-        offer.update!(status: :expired, token_version: offer.token_version + 1)
-        offer.waitlist_entry.update!(status: :waiting, expires_at: nil, notified_at: nil)
+        WaitlistLocks.with(entry: offer.waitlist_entry, offer: offer) do
+          offer.update!(status: :expired, token_version: offer.token_version + 1)
+          offer.waitlist_entry.update!(status: :waiting, expires_at: nil, notified_at: nil)
+        end
       end
 
       def record_promoter_commission!(order)

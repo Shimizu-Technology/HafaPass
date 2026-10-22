@@ -12,9 +12,9 @@ class SendWaitlistNotificationJob < ApplicationJob
     EmailService.send_waitlist_notification_async(entry)
     Rails.logger.info("[SendWaitlistNotificationJob] Queued notification for waitlist entry #{waitlist_entry_id}")
   rescue => e
-    entry&.with_lock do
+    WaitlistLocks.with(entry: entry) do
       entry.update!(status: :waiting, expires_at: nil, delivery_failure: "Unable to queue alert: #{e.message}".first(255)) if entry.notified?
-    end
+    end if entry
     Rails.logger.error("[SendWaitlistNotificationJob] Failed for entry #{waitlist_entry_id}: #{e.message}")
     raise
   end

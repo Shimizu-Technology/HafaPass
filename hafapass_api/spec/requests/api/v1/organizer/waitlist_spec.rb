@@ -36,6 +36,29 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
       expect(ga_ticket.reload.available_quantity).to eq(98)
       expect(EmailService).to have_received(:send_waitlist_offer_async)
     end
+
+    it "explains a withdrawn delivered offer to the buyer and lets the organizer reissue it" do
+      entry = create(:waitlist_entry, event: event, ticket_type: ga_ticket)
+      offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ga_ticket)
+      token = WaitlistCredential.offer(offer)
+      delivery = create(:message_delivery, event: event, order: nil, recipient: entry.email,
+        template: "waitlist_offer", metadata: { waitlist_offer_id: offer.id }, status: :delivered)
+      offer.update!(status: :cancelled, token_version: offer.token_version + 1, cancel_reason: "Inventory withdrawn")
+      entry.update!(status: :waiting, expires_at: nil)
+      WaitlistDelivery.reconcile_success!(delivery)
+
+      get "/api/v1/waitlist_offers/#{token}"
+      expect(response).to have_http_status(:gone)
+      expect(response.parsed_body).to include("code" => "offer_withdrawn", "event_slug" => event.slug)
+
+      get "/api/v1/organizer/events/#{event.id}/waitlist", headers: headers
+      expect(response.parsed_body.fetch("waitlist").first["withdrawn_offer_delivered"]).to be(true)
+
+      post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/offer", headers: headers
+      expect(response).to have_http_status(:created)
+      expect(entry.reload).to be_offered
+      expect(response.parsed_body.dig("offer", "id")).not_to eq(offer.id)
+    end
   end
 
   describe "GET /api/v1/organizer/events/:event_id/waitlist" do

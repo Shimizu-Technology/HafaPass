@@ -17,7 +17,7 @@ class WaitlistDelivery
 
   def self.reconcile_failure!(delivery)
     return unless %w[waitlist_notification waitlist_offer].include?(delivery.template)
-    delivery.with_lock do
+    WaitlistLocks.for_delivery(delivery) do
       next if delivery.reconciled_at? || !%w[suppressed failed bounced complained].include?(delivery.status)
 
       if delivery.complained?
@@ -34,6 +34,14 @@ class WaitlistDelivery
   def self.definitive_failure?(delivery)
     delivery.suppressed? || (delivery.bounced? && !transient_bounce?(delivery)) ||
       (delivery.failed? && !delivery.provider_outcome_unknown?)
+  end
+
+  def self.definitive_offer_failure?(delivery)
+    delivery.suppressed? || (delivery.bounced? && !transient_bounce?(delivery)) ||
+      (delivery.failed? && !delivery.provider_outcome_unknown? &&
+        delivery.last_error.to_s.match?(/recipient|mailbox|email address|does not exist/i) &&
+        (delivery.last_error.to_s.start_with?("Resend::Error::InvalidRequestError", "Resend::Error::NotFoundError") ||
+          MessageProviderEvent.exists?(message_delivery: delivery, event_type: "email.failed")))
   end
 
   def self.transient_bounce?(delivery)
@@ -62,14 +70,12 @@ class WaitlistDelivery
     return unless offer
 
     # Checkout locks the offer before it can change either the offer or entry.
-    offer.lock!
     return unless offer.offered? && offer.order_id.nil?
 
     entry = offer.waitlist_entry
-    entry.lock!
     return unless offer.offered? && entry.offered?
 
-    if definitive_failure?(delivery)
+    if definitive_offer_failure?(delivery)
       reason = failure_reason(delivery)
       offer.update!(status: :cancelled, token_version: offer.token_version + 1, cancel_reason: reason)
       entry.update!(status: :waiting, expires_at: nil, delivery_failure: reason)
@@ -82,7 +88,6 @@ class WaitlistDelivery
     entry = WaitlistEntry.find_by(id: delivery.metadata["waitlist_entry_id"])
     return unless entry
 
-    entry.lock!
     return unless entry.notified? && same_notification_round?(entry, delivery)
 
     if definitive_failure?(delivery)
@@ -106,20 +111,25 @@ class WaitlistDelivery
     end
     return unless entry
 
-    entry.lock!
     entry.update!(delivery_failure: "Recipient complained and opted out") if entry.active?
   end
 
   def self.reconcile_success!(delivery)
+    WaitlistLocks.for_delivery(delivery) { reconcile_success_locked!(delivery) }
+  end
+
+  def self.reconcile_success_locked!(delivery)
     return unless delivery.delivered?
 
     if delivery.template == "waitlist_offer"
       offer = WaitlistOffer.find_by(id: delivery.metadata["waitlist_offer_id"])
       return unless offer
 
-      offer.lock!
       entry = offer.waitlist_entry
-      entry.lock!
+      if offer.cancelled?
+        delivery.update!(metadata: delivery.metadata.merge("delivered_after_offer_withdrawal" => true))
+        entry.update!(delivery_failure: "A withdrawn offer email was delivered; reissue if inventory is available") if entry.waiting?
+      end
       entry.update!(delivery_failure: nil) if offer.offered? && entry.offered? && entry.delivery_failure == UNCONFIRMED
       return
     end
@@ -128,7 +138,6 @@ class WaitlistDelivery
     entry = WaitlistEntry.find_by(id: delivery.metadata["waitlist_entry_id"])
     return unless entry
 
-    entry.lock!
     return unless same_notification_round?(entry, delivery)
 
     if entry.waiting? && entry.delivery_failure.present?
@@ -142,8 +151,7 @@ class WaitlistDelivery
     offer = WaitlistOffer.where(waitlist_entry_id: entry.id, status: :offered).order(id: :desc).first
     return false unless offer
 
-    offer.with_lock do
-      entry.lock!
+    WaitlistLocks.with(entry: entry, offer: offer) do
       next false unless offer.active? && entry.offered? && entry.delivery_failure == UNCONFIRMED
       if MessageDelivery.where(template: "waitlist_offer", status: :delivered)
           .where("idempotency_key LIKE ?", "waitlist-offer/#{offer.id}%").exists?

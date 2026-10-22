@@ -106,7 +106,7 @@ RSpec.describe WaitlistDelivery do
     ticket = create(:ticket_type, event: event, quantity_available: 3)
     offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
     delivery = MessageDelivery.find_by!(idempotency_key: "waitlist-offer/#{offer.id}")
-    delivery.update!(status: :failed, last_error: "provider rejected")
+    delivery.update!(status: :failed, last_error: "Resend::Error::InvalidRequestError: recipient rejected")
     SweepWaitlistDeliveriesJob.perform_now
     expect(offer.reload).to be_cancelled
     expect(entry.reload).to be_waiting
@@ -127,6 +127,50 @@ RSpec.describe WaitlistDelivery do
     expect(described_class.retry_unconfirmed_offer!(entry.reload)).to be false
     expect(MessageDelivery.where(template: "waitlist_offer").count).to eq(2)
     expect(offer.reload).to be_offered
+  end
+
+  it "keeps a generic known failure offer active until normal expiry" do
+    ticket = create(:ticket_type, event: event, quantity_available: 3)
+    offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
+    delivery = MessageDelivery.find_by!(idempotency_key: "waitlist-offer/#{offer.id}")
+    delivery.update!(status: :failed, provider_outcome_unknown: false, last_error: "Provider unavailable")
+
+    described_class.reconcile_failure!(delivery)
+
+    expect(offer.reload).to be_offered
+    expect(entry.reload).to be_offered
+    expect(entry.delivery_failure).to eq(described_class::UNCONFIRMED)
+  end
+
+  it "releases an offer when the provider rejects the recipient" do
+    ticket = create(:ticket_type, event: event, quantity_available: 3)
+    offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
+    delivery = MessageDelivery.find_by!(idempotency_key: "waitlist-offer/#{offer.id}")
+    delivery.update!(provider: "resend", provider_id: "rejected-offer-#{offer.id}", status: :sent)
+
+    MessageProviderEventProcessor.call(provider_event_id: "failed-offer-#{offer.id}", event: {
+      "type" => "email.failed", "created_at" => Time.current.iso8601,
+      "data" => { "email_id" => delivery.provider_id, "bounce" => { "message" => "Mailbox does not exist" } }
+    })
+    SweepWaitlistDeliveriesJob.perform_now
+
+    expect(offer.reload).to be_cancelled
+    expect(entry.reload).to be_waiting
+  end
+
+  it "records a delivered receipt for a withdrawn offer and leaves the buyer waiting" do
+    ticket = create(:ticket_type, event: event, quantity_available: 3)
+    offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
+    delivery = MessageDelivery.find_by!(idempotency_key: "waitlist-offer/#{offer.id}")
+    offer.update!(status: :cancelled, token_version: offer.token_version + 1, cancel_reason: "Inventory withdrawn")
+    entry.update!(status: :waiting, expires_at: nil)
+    delivery.update!(status: :delivered)
+
+    described_class.reconcile_success!(delivery)
+
+    expect(delivery.reload.metadata["delivered_after_offer_withdrawal"]).to be(true)
+    expect(entry.reload).to be_waiting
+    expect(entry.delivery_failure).to include("withdrawn offer email")
   end
 
   it "keeps an uncertain alert notified and offers an explicit manual retry" do

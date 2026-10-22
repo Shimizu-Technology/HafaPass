@@ -78,6 +78,18 @@ describe('EventDetailPage buyer polish', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  it('explains a withdrawn offer link and does not offer its claim button', async () => {
+    apiClient.get.mockImplementation(url => url.startsWith('/waitlist_offers/')
+      ? Promise.reject({ response: { status: 410, data: { code: 'offer_withdrawn', event_slug: 'reef-night' } } })
+      : Promise.resolve({ data: baseEvent }))
+    render(<MemoryRouter initialEntries={['/events/reef-night?waitlist_offer=signed-offer']}><Routes>
+      <Route path="/events/:slug" element={<EventDetailPage />} />
+    </Routes></MemoryRouter>)
+
+    expect(await screen.findByText("This ticket offer was withdrawn — you're still on the waitlist and we'll email you if tickets become available")).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Claim waitlist offer' })).not.toBeInTheDocument()
+  })
+
   it('keeps the back link on its own row above the category label', async () => {
     mount(baseEvent)
     const back = await screen.findByRole('link', { name: 'All Events' })

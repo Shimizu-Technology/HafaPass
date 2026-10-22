@@ -1,6 +1,8 @@
 # Email classification and send controls
 
-Reviewed on 2026-10-22 against `EmailService.prepare_delivery_payload`, its 15 templates, `MessageDeliveryJob`, and the organizer campaign sender. `ApplicationMailer` is an unused stub; delivery goes through Resend. Classification follows the message's primary purpose, not its job or template name. The [FTC CAN-SPAM guide](https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance-guide-business) distinguishes commercial content from purchase and relationship notices.
+Reviewed on 2026-10-22 against `EmailService.prepare_delivery_payload`, its email templates, `MessageDeliveryJob`, and the organizer campaign sender. `ApplicationMailer` is an unused stub; delivery goes through Resend. Classification follows the message's primary purpose, not its job or template name. The [FTC CAN-SPAM guide](https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance-guide-business) distinguishes commercial content from purchase and relationship notices.
+
+`MessageDelivery::EMAIL_TEMPLATE_CLASSIFICATION` is the shared send-time classification. A spec checks every row below against that source. Marketing unsubscribe and spam complaints block commercial templates only. Hard bounces and provider-level invalid-address suppression block every template.
 
 | Template | Classification | Primary purpose |
 | --- | --- | --- |
@@ -10,6 +12,7 @@ Reviewed on 2026-10-22 against `EmailService.prepare_delivery_payload`, its 15 t
 | `order_recovery` | Transactional | Restores access to an existing order. |
 | `event_change` | Transactional | Reports a material change to a purchased event. |
 | `refund_notification` | Transactional | Reports an actual refund. |
+| `refund_reconciliation_digest` | Transactional/relationship | Gives platform staff a refund operations digest. |
 | `guest_list` | Transactional/relationship | Confirms a specific guest-list admission. |
 | `ticket_transfer` | Transactional | Gives the named recipient access to a transferred ticket. |
 | `event_reminder` | Transactional/relationship | Sends a reminder the user specifically requested. |

@@ -22,13 +22,20 @@ class WaitlistCredential
       SignedCredential.issue(
         namespace: OFFER_NAMESPACE,
         payload: { offer_id: offer.id, version: offer.token_version },
-        expires_at: offer.expires_at
+        expires_at: [offer.expires_at, 30.days.from_now].max
       )
     end
 
     def find_offer(token)
       find(token, namespace: OFFER_NAMESPACE, model: WaitlistOffer, id_key: "offer_id",
         version_attribute: :token_version)
+    end
+
+    def find_withdrawn_offer(token)
+      payload = SignedCredential.verify(namespace: OFFER_NAMESPACE, token: token)
+      offer = WaitlistOffer.find_by(id: payload["offer_id"]) if payload
+      offer if offer&.cancelled? && offer.waitlist_entry.waiting? && offer.order_id.nil? &&
+        ActiveSupport::SecurityUtils.secure_compare(payload["version"].to_s, (offer.token_version - 1).to_s)
     end
 
     private

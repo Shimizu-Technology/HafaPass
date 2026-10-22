@@ -19,30 +19,31 @@ module WaitlistOffers
       offer = nil
       Event.transaction do
         entry.event.lock!
-        entry.lock!
-        raise OfferError, "Only waiting entries can receive an offer" unless entry.waiting?
-        # Covers policy holds and suspended or closed sales: an offer reserves
-        # inventory and emails the buyer, so it must not go out while nobody can buy.
-        raise OfferError, "This event is not currently on sale" unless entry.event.sales_open?
-        WaitlistDelivery.ensure_address!(entry.event)
+        WaitlistLocks.with(entry: entry) do
+          raise OfferError, "Only waiting entries can receive an offer" unless entry.waiting?
+          # Covers policy holds and suspended or closed sales: an offer reserves
+          # inventory and emails the buyer, so it must not go out while nobody can buy.
+          raise OfferError, "This event is not currently on sale" unless entry.event.sales_open?
+          WaitlistDelivery.ensure_address!(entry.event)
 
-        selected = select_ticket_type
-        selected.lock!
-        quantity = [entry.quantity, selected.available_quantity, entry.event.remaining_capacity].min
-        raise OfferError, "No inventory is available for this waitlist entry" unless quantity.positive?
+          selected = select_ticket_type
+          selected.lock!
+          quantity = [entry.quantity, selected.available_quantity, entry.event.remaining_capacity].min
+          raise OfferError, "No inventory is available for this waitlist entry" unless quantity.positive?
 
-        tier = selected.active_pricing_tier
-        tier&.lock!
-        offer = entry.waitlist_offers.create!(
-          event: entry.event,
-          ticket_type: selected,
-          pricing_tier: tier,
-          quantity: quantity,
-          unit_price_cents: tier&.price_cents || selected.price_cents,
-          expires_at: OFFER_DURATION.from_now
-        )
-        entry.update!(status: :offered, notified_at: Time.current, expires_at: offer.expires_at, delivery_failure: nil)
-        EmailService.send_waitlist_offer_async(offer)
+          tier = selected.active_pricing_tier
+          tier&.lock!
+          offer = entry.waitlist_offers.create!(
+            event: entry.event,
+            ticket_type: selected,
+            pricing_tier: tier,
+            quantity: quantity,
+            unit_price_cents: tier&.price_cents || selected.price_cents,
+            expires_at: OFFER_DURATION.from_now
+          )
+          entry.update!(status: :offered, notified_at: Time.current, expires_at: offer.expires_at, delivery_failure: nil)
+          EmailService.send_waitlist_offer_async(offer)
+        end
       end
       offer
     rescue WaitlistDelivery::AddressMissing => e

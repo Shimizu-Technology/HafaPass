@@ -18,7 +18,7 @@ class WaitlistUnsubscribe
   end
 
   def self.stop!(entry, all: false)
-    entry.with_lock do
+    WaitlistLocks.with(entry: entry) do
       if entry.active?
         entry.waitlist_offers.where(status: [:offered, :claimed]).find_each do |offer|
           offer.update!(status: :cancelled, token_version: offer.token_version + 1,
@@ -33,8 +33,8 @@ class WaitlistUnsubscribe
     organization.with_lock do
       MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: entry.email)
         .update!(unsubscribed_at: Time.current)
-      WaitlistEntry.joins(:event).where(events: { organization_id: organization.id })
-        .where("LOWER(waitlist_entries.email) = ?", entry.email.downcase).where(status: [:waiting, :notified, :offered]).find_each { |other| stop!(other) }
     end
+    WaitlistEntry.joins(:event).where(events: { organization_id: organization.id })
+      .where("LOWER(waitlist_entries.email) = ?", entry.email.downcase).where(status: [:waiting, :notified, :offered]).find_each { |other| stop!(other) }
   end
 end

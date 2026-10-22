@@ -24,7 +24,18 @@ class MessageDelivery < ApplicationRecord
   attr_accessor :preparing_outbound_payload
 
   TICKET_EMAIL_TEMPLATES = %w[order_confirmation fulfillment_resend].freeze
-  PROMOTIONAL_TEMPLATES = %w[communication_campaign waitlist_notification waitlist_offer].freeze
+  # Keep this classification in sync with docs/EMAIL_COMPLIANCE.md.
+  EMAIL_TEMPLATE_CLASSIFICATION = {
+    "order_confirmation" => :transactional, "fulfillment_resend" => :transactional,
+    "ticket_delivery" => :transactional, "order_recovery" => :transactional,
+    "event_change" => :transactional, "refund_notification" => :transactional,
+    "refund_reconciliation_digest" => :transactional, "guest_list" => :transactional,
+    "ticket_transfer" => :transactional, "event_reminder" => :transactional,
+    "verification_request" => :transactional, "organization_invitation" => :transactional,
+    "platform_invitation" => :transactional, "waitlist_notification" => :commercial,
+    "waitlist_offer" => :commercial, "communication_campaign" => :commercial
+  }.freeze
+  PROMOTIONAL_TEMPLATES = EMAIL_TEMPLATE_CLASSIFICATION.select { |_, kind| kind == :commercial }.keys.freeze
 
   def promotional?
     channel == "email" && PROMOTIONAL_TEMPLATES.include?(template)
@@ -109,9 +120,11 @@ class MessageDelivery < ApplicationRecord
       SQL
       .select(:message_delivery_id)
     hard_bounces = history.where(status: :bounced).where.not(id: transient_bounces)
-    hard_bounces.or(history.where(status: :complained)).or(
-      history.where(status: :suppressed).where.not(provider_id: [nil, ""])
-    ).where.not(id: id).exists?
+    provider_suppressions = history.where(status: :suppressed).where.not(provider_id: [nil, ""])
+      .or(history.where("metadata ->> 'provider_address_invalid' = 'true'"))
+    blocked = hard_bounces.or(provider_suppressions)
+    blocked = blocked.or(history.where(status: :complained)) if promotional?
+    blocked.where.not(id: id).exists?
   end
 
   private

@@ -99,7 +99,7 @@ module Api
 
         # DELETE /api/v1/organizer/events/:event_id/waitlist/:id
         def destroy
-          @entry.with_lock do
+          WaitlistLocks.with(entry: @entry) do
             @entry.waitlist_offers.where(status: [:offered, :claimed]).find_each do |offer|
               offer.update!(status: :cancelled, token_version: offer.token_version + 1)
             end
@@ -142,6 +142,12 @@ module Api
             created_at: entry.created_at,
             delivery_failure: entry.delivery_failure
           }
+          if entry.waiting?
+            withdrawn_ids = entry.waitlist_offers.cancelled.select(:id)
+            json[:withdrawn_offer_delivered] = MessageDelivery.where(template: "waitlist_offer")
+              .where("metadata ->> 'waitlist_offer_id' IN (?)", withdrawn_ids.map { |offer| offer.id.to_s })
+              .where("metadata ->> 'delivered_after_offer_withdrawal' = 'true'").exists?
+          end
           if entry.ticket_type
             json[:ticket_type] = { id: entry.ticket_type.id, name: entry.ticket_type.name }
           end

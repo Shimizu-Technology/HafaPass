@@ -33,16 +33,18 @@ class WaitlistEntry < ApplicationRecord
   end
 
   def notify_and_queue!
-    with_lock do
+    WaitlistLocks.with(entry: self) do
       return false unless waiting?
 
-      # A late provider receipt can turn a previously failed round into a
-      # delivered one. Never create another round for that buyer.
-      if notified_at.present? && MessageDelivery.exists?(
-          template: "waitlist_notification", status: :delivered,
-          idempotency_key: "waitlist-notification/#{id}/#{notified_at.iso8601(6)}")
-        update!(status: :notified, expires_at: 24.hours.from_now, delivery_failure: nil)
-        return false
+      if notified_at.present?
+        latest = MessageDelivery.where(template: "waitlist_notification",
+          idempotency_key: "waitlist-notification/#{id}/#{notified_at.iso8601(6)}").order(id: :desc).first
+        latest&.lock!
+        if latest&.delivered?
+          update!(status: :notified, expires_at: 24.hours.from_now, delivery_failure: nil)
+          return false
+        end
+        return false if latest && !WaitlistDelivery.definitive_failure?(latest)
       end
 
       notify!
@@ -52,7 +54,7 @@ class WaitlistEntry < ApplicationRecord
   end
 
   def retry_unconfirmed_notification!
-    with_lock do
+    WaitlistLocks.with(entry: self) do
       return false unless notified? && delivery_failure == WaitlistDelivery::UNCONFIRMED
       return false if MessageDelivery.exists?(template: "waitlist_notification", status: :delivered,
         idempotency_key: "waitlist-notification/#{id}/#{notified_at.iso8601(6)}")

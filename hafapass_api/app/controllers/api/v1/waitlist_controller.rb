@@ -31,7 +31,7 @@ module Api
 
         existing = @event.waitlist_entries.find_by(email: entry.email, ticket_type_id: entry.ticket_type_id)
         if existing&.cancelled?
-          reactivated = existing.with_lock do
+          reactivated = WaitlistLocks.with(entry: existing) do
             existing.update(name: entry.name, phone: entry.phone, quantity: entry.quantity,
               locale: entry.locale, user: entry.user, status: :waiting, requested_at: entry.requested_at,
               request_ip: entry.request_ip, request_user_agent: entry.request_user_agent,
@@ -66,7 +66,7 @@ module Api
           return render json: { error: "No active waitlist entry found" }, status: :not_found
         end
 
-        entry.with_lock do
+        WaitlistLocks.with(entry: entry) do
           entry.waitlist_offers.where(status: [:offered, :claimed]).find_each do |offer|
             offer.update!(status: :cancelled, token_version: offer.token_version + 1)
           end

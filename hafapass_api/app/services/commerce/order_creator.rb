@@ -400,10 +400,11 @@ module Commerce
       offer = WaitlistCredential.find_offer(waitlist_offer_token)
       raise CheckoutError, "This waitlist offer is invalid or expired" unless offer
 
-      offer.lock!
-      unless offer.active? && offer.event_id == event.id &&
-          offer.waitlist_entry.email.casecmp?(buyer_email.to_s.strip)
-        raise CheckoutError, "This waitlist offer is invalid or expired"
+      WaitlistLocks.with(entry: offer.waitlist_entry, offer: offer) do
+        unless offer.active? && offer.event_id == event.id &&
+            offer.waitlist_entry.email.casecmp?(buyer_email.to_s.strip)
+          raise CheckoutError, "This waitlist offer is invalid or expired"
+        end
       end
 
       offer
