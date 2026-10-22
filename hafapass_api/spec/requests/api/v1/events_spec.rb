@@ -3,7 +3,28 @@ require "rails_helper"
 RSpec.describe "Api::V1::Events", type: :request do
   let(:organizer_profile) { create(:organizer_profile) }
 
+  it "groups a large fixed promo amount shown during checkout" do
+    event = create(:event, :published, organizer_profile: organizer_profile)
+    create(:promo_code, event: event, code: "LARGE", discount_type: "fixed", discount_value: 1234567)
+
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "LARGE", subtotal_cents: 2000000 }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("description")).to eq("$12,345.67 off")
+  end
+
   describe "GET /api/v1/events" do
+    it "sends only card design fields in lists and the full design on detail" do
+      event = create(:event, :published, organizer_profile: organizer_profile,
+        page_customization: { accent: "#123456", focal_point: { x: 25, y: 70 },
+          sections: [{ type: "faq", enabled: true, items: [{ question: "When?", answer: "Tonight" }] }] })
+      create(:ticket_type, event: event)
+      get "/api/v1/events"
+      expect(response.parsed_body.fetch("events").find { |row| row["id"] == event.id }
+        .fetch("page_customization").keys).to match_array(%w[accent focal_point])
+      get "/api/v1/events/#{event.slug}"
+      expect(response.parsed_body.fetch("page_customization").fetch("sections").first.fetch("type")).to eq("faq")
+    end
     it "returns upcoming purchasable events and excludes non-purchasable inventory" do
       published_upcoming = create(:event, :published, organizer_profile: organizer_profile, starts_at: 3.days.from_now)
       create(:ticket_type, event: published_upcoming)
@@ -101,6 +122,7 @@ RSpec.describe "Api::V1::Events", type: :request do
 
   describe "GET /api/v1/events/:slug" do
     it "serves maintained Japanese content while preserving English as the fallback" do
+      with_locales_enabled(%w[ja])
       event = create(:event, :published, supported_locales: %w[en ja],
         localized_content: { "ja" => { "title" => "グアム・フェスティバル", "description" => "島のお祭り" } })
       create(:ticket_type, event: event)
@@ -110,6 +132,19 @@ RSpec.describe "Api::V1::Events", type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("title" => "グアム・フェスティバル", "description" => "島のお祭り")
       expect(response.parsed_body["localized_content"]).to have_key("ja")
+    end
+
+    it "serializes the event design and organizer logo to buyers" do
+      event = create(:event, :published, organizer_profile: organizer_profile,
+        page_customization: { "accent" => "#123456", "focal_point" => { "x" => 25, "y" => 70 } })
+      logo_url = "https://storage.invalid/uploads/logo.webp"
+      ImageUploadReceipt.create!(user: organizer_profile.user, organization: event.organization,
+        source_key: "pending/logo", final_key: "uploads/logo.webp", public_url: logo_url, completed_at: Time.current)
+      organizer_profile.update!(logo_url: logo_url)
+      get "/api/v1/events/#{event.slug}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["page_customization"]).to include("accent" => "#123456")
+      expect(response.parsed_body["organizer"]["logo_url"]).to eq("https://storage.invalid/uploads/logo.webp")
     end
 
     it "returns a published event with ticket types" do

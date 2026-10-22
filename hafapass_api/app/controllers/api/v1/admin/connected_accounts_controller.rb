@@ -14,7 +14,7 @@ class Api::V1::Admin::ConnectedAccountsController < Api::V1::Admin::BaseControll
       "id", "organization_id", "provider", "provider_account_id", "status", "charges_enabled",
       "payouts_enabled", "details_submitted", "requirements_due", "capabilities", "last_synced_at"
     ).merge(
-      payout_ready: account.externally_ready? && active_approval.present?,
+      payout_ready: account.payout_ready?,
       readiness_submission: payment_readiness_review_json(account.pending_payment_readiness_submission),
       readiness_approval: payment_readiness_review_json(account.latest_payment_readiness_approval),
       readiness_approval_active: active_approval.present?

@@ -3,7 +3,8 @@
 class Settlement < ApplicationRecord
   MONEY_COLUMNS = %i[
     gross_cents discount_cents refund_cents net_cents platform_fee_cents processing_fee_cents
-    organizer_proceeds_cents reserve_cents adjustment_cents payable_cents paid_cents negative_balance_cents
+    platform_processing_fee_cents organizer_proceeds_cents reserve_cents adjustment_cents payable_cents paid_cents
+    negative_balance_cents
   ].freeze
 
   belongs_to :organization
@@ -25,7 +26,13 @@ class Settlement < ApplicationRecord
   before_destroy :prevent_finalized_destruction
 
   def paid_or_processing_cents
-    event.payouts.where(status: [:pending, :processing, :paid]).sum(:amount_cents)
+    event.payouts.where(status: [:pending, :processing, :held, :paid]).sum(:amount_cents)
+  end
+
+  # Platform fee revenue after the card processing HåfaPass covered. It can be
+  # negative when processing exceeds the fee; the organizer is never charged.
+  def net_platform_fee_cents
+    platform_fee_cents - platform_processing_fee_cents
   end
 
   def available_to_payout_cents

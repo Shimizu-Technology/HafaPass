@@ -52,10 +52,11 @@ function mount(Page, tool) {
 beforeEach(() => {
   vi.clearAllMocks(); window.localStorage.clear(); window.sessionStorage.clear()
   vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
+  vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
   window.localStorage.setItem('hafapass_organization_id', '1'); bind()
   apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: fixtures(url, config) }))
 })
-afterEach(() => { binders.splice(0).forEach(clear => clear()); vi.unstubAllEnvs(); vi.restoreAllMocks() })
+afterEach(() => { binders.splice(0).forEach(clear => clear()); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 describe('organization settings authority', () => {
   it.each(['success', 'error'])('does not expose an Alpha invitation %s after organization replacement', async outcome => {
@@ -120,8 +121,8 @@ describe('private event records', () => {
     apiClient.get.mockImplementation((url, config) => url.includes('search=old') ? old.promise : Promise.resolve({ data: fixtures(url, config) }))
     mount(AttendeesPage, 'attendees')
     await screen.findAllByText('Attendee 37')
-    await act(async () => fireEvent.change(screen.getByPlaceholderText('Search by name or email...'), { target: { value: 'old' } }))
-    await act(async () => fireEvent.change(screen.getByPlaceholderText('Search by name or email...'), { target: { value: 'new' } }))
+    await act(async () => fireEvent.change(screen.getByPlaceholderText('Search name, email or order #...'), { target: { value: 'old' } }))
+    await act(async () => fireEvent.change(screen.getByPlaceholderText('Search name, email or order #...'), { target: { value: 'new' } }))
     await screen.findAllByText('Attendee 37')
     await act(async () => old.resolve({ data: { attendees: [{ id: 9, attendee_name: 'Old private result', status: 'issued' }] } }))
     expect(screen.queryByText('Old private result')).not.toBeInTheDocument()
@@ -132,8 +133,7 @@ describe('private event records', () => {
     await screen.findByText('Event 37')
     expect(screen.queryByRole('button', { name: /Finalize/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Pay / })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /Full List/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'View All' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View attendee list' })).not.toBeInTheDocument()
   })
 })
 
@@ -142,14 +142,14 @@ it('recovers attendee outages with the current filters without declaring the lis
   apiClient.get.mockImplementation((url, config) => url.includes('/attendees') && failing ? Promise.reject(new Error('Synthetic outage')) : Promise.resolve({ data: fixtures(url, config) }))
   mount(AttendeesPage, 'attendees')
   await screen.findByRole('alert')
-  await act(async () => fireEvent.change(screen.getByPlaceholderText('Search by name or email...'), { target: { value: 'guests' } }))
+  await act(async () => fireEvent.change(screen.getByPlaceholderText('Search name, email or order #...'), { target: { value: 'guests' } }))
   await screen.findByRole('alert')
-  expect(screen.queryByText('No attendees found.')).not.toBeInTheDocument()
+  expect(screen.queryByText('No attendees match these filters.')).not.toBeInTheDocument()
   failing = false
   await userEvent.click(screen.getByRole('button', { name: 'Retry attendee list' }))
   await screen.findAllByText('Attendee 37')
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  expect(screen.getByPlaceholderText('Search by name or email...')).toHaveValue('guests')
+  expect(screen.getByPlaceholderText('Search name, email or order #...')).toHaveValue('guests')
   expect(apiClient.get.mock.calls.filter(([url]) => url.includes('/attendees')).at(-1)[0]).toContain('search=guests')
 })
 
@@ -341,3 +341,84 @@ for (const [Page, tool, kind] of [[BoxOfficePage, 'box-office', 'box-office'], [
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 }
+
+describe('attendee list totals and export', () => {
+  it('shows blob API errors and a useful door-list rate-limit message', async () => {
+    apiClient.post.mockImplementation(url => url.endsWith('/sales_exports')
+      ? Promise.reject({ response: { status: 422,
+        data: new Blob([JSON.stringify({ error: 'Invalid export columns' })], { type: 'application/json' }) } })
+      : Promise.resolve({ data: {} }))
+    apiClient.get.mockImplementation((url, config) => url.includes('/sales_exports/door_list?')
+      ? Promise.reject({ response: { status: 429, data: new Blob(['{}']) } })
+      : Promise.resolve({ data: fixtures(url, config) }))
+    mount(AttendeesPage, 'attendees')
+    await screen.findAllByText('Attendee 37')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid export columns')
+    await userEvent.click(screen.getByRole('button', { name: 'Print door list' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Try again later')
+  })
+
+  it('shows the API total count and notes when filters narrow it', async () => {
+    apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: url.includes('/attendees?')
+      ? { attendees: [{ id: 1, attendee_name: 'Attendee one', status: 'issued', ticket_type: 'Entry' }], meta: { total_pages: 1, total_count: url.includes('status=checked_in') ? 1 : 17 } }
+      : fixtures(url, config) }))
+    mount(AttendeesPage, 'attendees')
+    expect(await screen.findByText('17 attendees')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Filters & sort' }))
+    fireEvent.change(screen.getByLabelText('Filter attendees by status'), { target: { value: 'checked_in' } })
+    expect(await screen.findByText('1 attendee match these filters')).toBeInTheDocument()
+  })
+
+  it('downloads the API attendee CSV export with scoped ownership', async () => {
+    const blob = new Blob(['name,email\n'], { type: 'text/csv' })
+    const createObjectURL = vi.fn(() => 'blob:attendees'); const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = createObjectURL; static revokeObjectURL = revokeObjectURL })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: fixtures(url, config) }))
+    apiClient.post.mockResolvedValue({ data: blob, status: 200 })
+    mount(AttendeesPage, 'attendees')
+    await screen.findAllByText('Attendee 37')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+    const call = apiClient.post.mock.calls.find(([url]) => url === '/organizer/events/37/sales_exports')
+    expect(call[2]).toMatchObject({ responseType: 'blob', organizationId: '1', authContext: { userId: 'actor-a' } })
+    expect(createObjectURL).toHaveBeenCalledWith(blob)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:attendees')
+  })
+
+  it('keeps a pending export alive across a filter change but cancels it when access is withdrawn', async () => {
+    const blob = new Blob(['name,email\n'], { type: 'text/csv' })
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:attendees'); static revokeObjectURL = vi.fn() })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    let exportRead = deferred()
+    let denyList = false
+    apiClient.post.mockImplementation(url => url.endsWith('/sales_exports') ? exportRead.promise : Promise.resolve({ data: {} }))
+    apiClient.get.mockImplementation((url, config) => denyList && url.includes('/attendees?') ? Promise.reject({ response: { status: 403 } })
+      : Promise.resolve({ data: fixtures(url, config) }))
+    mount(AttendeesPage, 'attendees')
+    await screen.findAllByText('Attendee 37')
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    fireEvent.change(screen.getByPlaceholderText('Search name, email or order #...'), { target: { value: 'checked' } })
+    await waitFor(() => expect(apiClient.get.mock.calls.some(([url]) => url.includes('search=checked'))).toBe(true))
+    await screen.findAllByText('Attendee 37')
+    const firstExport = apiClient.post.mock.calls.filter(([url]) => url.endsWith('/sales_exports'))[0][2]
+    expect(firstExport.signal.aborted).toBe(false)
+    await act(async () => exportRead.resolve({ data: blob, status: 200 }))
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+
+    exportRead = deferred()
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
+    const secondExport = apiClient.post.mock.calls.filter(([url]) => url.endsWith('/sales_exports'))[1][2]
+    denyList = true
+    fireEvent.change(screen.getByPlaceholderText('Search name, email or order #...'), { target: { value: 'issued' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your attendee access changed')
+    expect(secondExport.signal.aborted).toBe(true)
+    await act(async () => exportRead.resolve({ data: blob, status: 200 }))
+    expect(click).toHaveBeenCalledTimes(1)
+  })
+})

@@ -32,7 +32,7 @@ describe('EventDayRehearsalReviewDialog', () => {
     expect(screen.getByRole('button', { name: 'Submit Gate G rehearsal' })).toBeDisabled()
   })
 
-  it('lets an independent admin approve the exact pending rehearsal', async () => {
+  it('lets an admin approve the exact pending rehearsal', async () => {
     apiClient.get.mockResolvedValue({ data: {
       event, event_day_rehearsal: { prerequisite_ready: true, approved: false, pending_submission: pending },
     } })

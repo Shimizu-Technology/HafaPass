@@ -27,6 +27,7 @@ test('admin requests a bounded hidden Gate H live-money authorization', async ({
   })
 
   await page.goto('/admin/events')
+  await page.getByRole('button', { name: /^Release gates for / }).click()
   await page.getByRole('button', { name: 'Prepare Gate H live-money proof' }).click()
   await page.getByLabel('Proof buyer email').fill('finance-proof@example.com')
   await page.getByLabel('Maximum total cents').fill('400')

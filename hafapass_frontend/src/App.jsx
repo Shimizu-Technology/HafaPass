@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -18,14 +18,18 @@ const OrderConfirmationPage = lazy(() => import('./pages/OrderConfirmationPage')
 const OrderRecoveryPage = lazy(() => import('./pages/OrderRecoveryPage'))
 const TicketPage = lazy(() => import('./pages/TicketPage'))
 const PolicyPage = lazy(() => import('./pages/PolicyPage'))
+const UnsubscribePage = lazy(() => import('./pages/UnsubscribePage'))
 const MyTicketsPage = lazy(() => import('./pages/MyTicketsPage'))
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
 const CreateEventPage = lazy(() => import('./pages/dashboard/CreateEventPage'))
 const EditEventPage = lazy(() => import('./pages/dashboard/EditEventPage'))
+const EventOverviewPage = lazy(() => import('./pages/dashboard/EventOverviewPage'))
 const EventAnalyticsPage = lazy(() => import('./pages/dashboard/EventAnalyticsPage'))
 const ScannerPage = lazy(() => import('./pages/dashboard/ScannerPage'))
 const SettingsPage = lazy(() => import('./pages/dashboard/SettingsPage'))
+const FinancesPage = lazy(() => import('./pages/dashboard/FinancesPage'))
 const InvitationAcceptPage = lazy(() => import('./pages/dashboard/InvitationAcceptPage'))
+const PlatformInvitationAcceptPage = lazy(() => import('./pages/PlatformInvitationAcceptPage'))
 const EventStaffPage = lazy(() => import('./pages/dashboard/EventStaffPage'))
 const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
 const GuestListPage = lazy(() => import('./pages/dashboard/GuestListPage'))
@@ -39,9 +43,11 @@ const CollectionsPage = lazy(() => import('./pages/CollectionsPage'))
 const CollectionPage = lazy(() => import('./pages/CollectionPage'))
 const VenuePage = lazy(() => import('./pages/VenuePage'))
 const OrganizerPage = lazy(() => import('./pages/OrganizerPage'))
+const HostPage = lazy(() => import('./pages/HostPage'))
 const DistributionRedirectPage = lazy(() => import('./pages/DistributionRedirectPage'))
 const SavedPage = lazy(() => import('./pages/SavedPage'))
 const SeatingManagementPage = lazy(() => import('./pages/dashboard/SeatingManagementPage'))
+const NotFound = lazy(() => import('./components/NotFound'))
 
 // Admin pages
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'))
@@ -51,6 +57,13 @@ const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'))
 const SupportPage = lazy(() => import('./pages/support/SupportPage'))
 const MarketplaceAdminPage = lazy(() => import('./pages/admin/MarketplaceAdminPage'))
 const ProviderReadinessPage = lazy(() => import('./pages/admin/ProviderReadinessPage'))
+const AdminSettingsPage = lazy(() => import('./pages/admin/AdminSettingsPage'))
+const AdminPayoutsPage = lazy(() => import('./pages/admin/AdminPayoutsPage'))
+const AdminDisputesPage = lazy(() => import('./pages/admin/AdminDisputesPage'))
+const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'))
+const AdminTaxReportsPage = lazy(() => import('./pages/admin/AdminTaxReportsPage'))
+const AdminOrganizationsPage = lazy(() => import('./pages/admin/AdminOrganizationsPage'))
+const AdminOrganizationPage = lazy(() => import('./pages/admin/AdminOrganizationPage'))
 
 function PageLoader() {
   return (
@@ -73,6 +86,8 @@ function App() {
           <Route path="/collections/:slug" element={<CollectionPage />} />
           <Route path="/venues/:slug" element={<VenuePage />} />
           <Route path="/organizers/:slug" element={<OrganizerPage />} />
+          <Route path="/host" element={<HostPage />} />
+          <Route path="/pricing" element={<Navigate to="/host#pricing" replace />} />
           <Route path="/go/:code" element={<DistributionRedirectPage />} />
           <Route path="/refer/:code" element={<DistributionRedirectPage />} />
           <Route path="/checkout/:slug" element={<CheckoutPage />} />
@@ -80,11 +95,13 @@ function App() {
           <Route path="/orders/recover" element={<OrderRecoveryPage />} />
           <Route path="/tickets/:credential" element={<TicketPage />} />
           <Route path="/policies/:policy" element={<PolicyPage />} />
+          <Route path="/unsubscribe/:token" element={<UnsubscribePage />} />
           <Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />
           <Route path="/saved" element={<ProtectedRoute><SavedPage /></ProtectedRoute>} />
           <Route path="/ticket-transfers/accept" element={<ProtectedRoute><TicketTransferAcceptPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id" element={<ProtectedRoute><EventOverviewPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/analytics" element={<ProtectedRoute><EventAnalyticsPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/promo-codes" element={<ProtectedRoute><PromoCodesPage /></ProtectedRoute>} />
@@ -97,18 +114,28 @@ function App() {
           <Route path="/dashboard/events/:id/seating" element={<ProtectedRoute><SeatingManagementPage /></ProtectedRoute>} />
           <Route path="/dashboard/scanner" element={<ProtectedRoute><ScannerPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/dashboard/finances" element={<ProtectedRoute><FinancesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/team" element={<ProtectedRoute><EventStaffPage /></ProtectedRoute>} />
           <Route path="/organization-invitations/accept" element={<ProtectedRoute><InvitationAcceptPage /></ProtectedRoute>} />
+          <Route path="/platform-invitations/accept" element={<ProtectedRoute><PlatformInvitationAcceptPage /></ProtectedRoute>} />
           {/* Admin routes */}
           <Route path="/admin" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
           <Route path="/admin/events" element={<AdminRoute><AdminEventsPage /></AdminRoute>} />
           <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
+          <Route path="/admin/organizations" element={<AdminRoute><AdminOrganizationsPage /></AdminRoute>} />
+          <Route path="/admin/organizations/:id" element={<AdminRoute><AdminOrganizationPage /></AdminRoute>} />
           <Route path="/admin/orders" element={<AdminRoute><AdminOrdersPage /></AdminRoute>} />
           <Route path="/admin/marketplace" element={<AdminRoute><MarketplaceAdminPage /></AdminRoute>} />
           <Route path="/admin/provider-readiness" element={<AdminRoute><ProviderReadinessPage /></AdminRoute>} />
+          <Route path="/admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
+          <Route path="/admin/tax-reports" element={<AdminRoute><AdminTaxReportsPage /></AdminRoute>} />
+          <Route path="/admin/payouts" element={<AdminRoute><AdminPayoutsPage /></AdminRoute>} />
+          <Route path="/admin/disputes" element={<AdminRoute><AdminDisputesPage /></AdminRoute>} />
+          <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLogPage /></AdminRoute>} />
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </Suspense>

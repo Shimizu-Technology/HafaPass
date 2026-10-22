@@ -35,7 +35,6 @@ module PaymentReadinessReviews
 
     def self.approve!(submission:, actor:, request: nil)
       raise ReviewError, "Only a submission can be approved" unless submission.decision_submission?
-      raise ReviewError, "The submitter cannot approve their own evidence" if submission.actor_user_id == actor.id
       if submission.child_reviews.where(decision: [:approval, :rejection]).exists?
         raise ReviewError, "This submission already has a decision"
       end

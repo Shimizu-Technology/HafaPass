@@ -9,6 +9,13 @@ RSpec.describe "Marketplace discovery", type: :request do
   end
   let!(:ticket_type) { create(:ticket_type, event: event, price_cents: 2000) }
 
+  it "includes the image asset host on organizer listing and detail responses" do
+    get "/api/v1/organizers"
+    expect(response.parsed_body.fetch("organizers").first).to include("image_asset_host" => S3Service.public_asset_host)
+    get "/api/v1/organizers/#{profile.organization.slug}"
+    expect(response.parsed_body).to include("image_asset_host" => S3Service.public_asset_host)
+  end
+
   it "publishes non-empty curated collections and credibility pages" do
     collection = create(:marketplace_collection, title: "Family Weekend")
     collection.marketplace_collection_events.create!(event: event, position: 0)
@@ -31,6 +38,23 @@ RSpec.describe "Marketplace discovery", type: :request do
     get "/api/v1/organizers/#{profile.organization.slug}"
     expect(response.parsed_body).to include("verified" => true)
     expect(response.parsed_body.fetch("events").first.fetch("slug")).to eq(event.slug)
+  end
+
+  it "passes the buyer language through collection, venue, and organizer listings" do
+    with_locales_enabled(%w[en ko], machine_translation: true)
+    event.update_columns(translations: { "title" => { "ko" => "ko:#{event.title}",
+      "_digest" => Translatable.digest(event.title) } })
+    collection = create(:marketplace_collection)
+    collection.marketplace_collection_events.create!(event: event, position: 0)
+
+    ["/api/v1/marketplace_collections/#{collection.slug}", "/api/v1/venues/#{venue.slug}",
+      "/api/v1/organizers/#{profile.organization.slug}"].each do |path|
+      get path, headers: { "Accept-Language" => "ko-KR" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("events").first).to include("title" => "ko:#{event.title}",
+        "content_locale" => "ko", "machine_translated" => true)
+    end
   end
 
   it "filters paginated inventory by family, village, and transparent price bands" do
@@ -59,6 +83,30 @@ RSpec.describe "Marketplace discovery", type: :request do
     ids = response.parsed_body.fetch("events").pluck("id")
     expect(ids).to include(event.id, discounted.id)
     expect(ids).not_to include(increased.id)
+  end
+
+  it "filters price bands on the all-in price shown on cards, not the base price" do
+    SiteSetting.instance.update!(service_fee_percent: 5.0, service_fee_flat_cents: 100)
+    # $23.50 + (5% = $1.18) + $1.00 = $25.68 all-in: over $25 for buyers.
+    over = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+      starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours)
+    create(:ticket_type, event: over, price_cents: 2350)
+    # The same ticket with the fee absorbed is $23.50 all-in.
+    absorbed = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+      starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours, fee_policy: :organizer_absorbs, buyer_fee_percent: 0)
+    create(:ticket_type, event: absorbed, price_cents: 2350)
+    # $22.85 + $1.14 + $1.00 = $24.99, half of a split fee keeps it lower still.
+    under = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+      starts_at: 3.days.from_now, ends_at: 3.days.from_now + 2.hours)
+    create(:ticket_type, event: under, price_cents: 2285)
+
+    get "/api/v1/events", params: { price: "under_25", per_page: 50 }
+
+    ids = response.parsed_body.fetch("events").pluck("id")
+    expect(ids).to include(absorbed.id, under.id)
+    expect(ids).not_to include(over.id)
+    listed = response.parsed_body.fetch("events").find { |item| item["id"] == under.id }
+    expect(listed.fetch("ticket_types").sole.fetch("all_in_price_cents")).to eq(2499)
   end
 
   it "moves to the next effective price when assigned-seat holds exhaust a quantity tier" do

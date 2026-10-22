@@ -24,7 +24,16 @@ test('buyer discovers a governed collection and filters Guam inventory', async (
 
   await page.goto('/discover')
   await expect(page.getByRole('heading', { name: 'Family Weekend' })).toBeVisible()
-  await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
+  const eventCard = page.getByRole('link', { name: /Family Night Market/ })
+  await expect(eventCard).toBeVisible()
+  // Visibility can precede the public route fade finishing. Audit the rendered
+  // colors after every ancestor is opaque; keep the contrast rule enabled.
+  await expect.poll(() => eventCard.evaluate(element => {
+    for (let node = element; node; node = node.parentElement) {
+      if (Number(getComputedStyle(node).opacity) !== 1) return false
+    }
+    return true
+  })).toBe(true)
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations.filter(item => ['serious', 'critical'].includes(item.impact))).toEqual([])
 
@@ -282,7 +291,7 @@ test('reduced-motion event navigation retains B inventory through a late A respo
   let oldRoute
   let submitted
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
-  await page.route('**/api/v1/config', route => json(route, { payment_mode: 'simulate', buyer_terms_version: 'test-v1', service_fee_flat_cents: 0 }))
+  await page.route('**/api/v1/config', route => json(route, { payment_mode: 'simulate', buyer_terms_version: 'test-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 }))
   await page.route('**/api/v1/marketplace_funnel_events', route => json(route, {}, 201))
   await page.route('**/api/v1/events/event-a', route => { oldRoute = route })
   await page.route('**/api/v1/events/event-b', route => json(route, b))

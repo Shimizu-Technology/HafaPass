@@ -1,13 +1,15 @@
 import EventWorkspace from '../../components/EventWorkspace'
-import { Loader2, Trash2, UserRoundCog } from 'lucide-react'
+import { Loader2, Mail, RotateCw, Trash2, UserPlus, UserRoundCog } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 import EventAccessNotice from '../../components/EventAccessNotice'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
+import { RoleRadioGroup, RoleSelect } from '../../components/team/RoleChoice'
+import { InvitationLinkPanel, InvitationStatusPill } from '../../components/team/TeamManager'
+import { EVENT_ASSIGNMENT_ROLES, EVENT_INVITE_ROLES, emailDeliveryLabel, invitationUrl, roleLabel } from '../../utils/roles'
 
-const ROLES = ['manager', 'box_office', 'scanner']
-const label = value => value?.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
+const label = roleLabel
 
 function EventStaffSession({ id, identity }) {
   const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/team`)
@@ -23,6 +25,11 @@ function EventStaffSession({ id, identity }) {
   const [event, setEvent] = useState(null)
   const [assignments, setAssignments] = useState([])
   const [candidates, setCandidates] = useState([])
+  const [invitations, setInvitations] = useState([])
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('scanner')
+  const [link, setLink] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [userId, setUserId] = useState('')
   const [role, setRole] = useState('scanner')
   const [loading, setLoading] = useState(true)
@@ -51,13 +58,14 @@ function EventStaffSession({ id, identity }) {
       const savedEvent = eventResponse.data
       if (String(savedEvent.id) !== String(id) || (identity.organizationId != null && savedEvent.organization_id != null && String(savedEvent.organization_id) !== String(identity.organizationId))) throw new Error('Wrong event context')
       if (savedEvent.permissions?.manage_staff !== true) {
-        setEvent(savedEvent); setAssignments([]); setCandidates([])
+        setEvent(savedEvent); setAssignments([]); setCandidates([]); setInvitations([])
         return
       }
       const staffResponse = await apiClient.get(`/organizer/events/${id}/staff_assignments`, request.config)
       if (!canApply()) return
       setEvent(savedEvent)
       setAssignments(staffResponse.data.assignments || [])
+      setInvitations(staffResponse.data.pending_invitations || [])
       const available = staffResponse.data.candidates || []
       setCandidates(available)
       setUserId(value => available.some(candidate => String(candidate.user_id) === value) ? value : available[0]?.user_id?.toString() || '')
@@ -109,6 +117,38 @@ function EventStaffSession({ id, identity }) {
       setAssignments(items => [...items.filter(item => item.id !== response.data.id), response.data])
     })
   }
+  // One step: invite by email with door access to this event. People already
+  // on the team are assigned at once; everyone else joins when they accept.
+  const inviteStaff = submitEvent => {
+    submitEvent.preventDefault()
+    const email = inviteEmail.trim()
+    if (!email) return
+    setNotice(null); setLink(null)
+    return mutate('Invite event staff', config => apiClient.post(`/organizer/events/${id}/staff_assignments`, { email, role: inviteRole }, config), response => {
+      setInviteEmail('')
+      if (response.data.assignment) {
+        setAssignments(items => [...items.filter(item => item.id !== response.data.assignment.id), response.data.assignment])
+        setNotice(`${response.data.assignment.email} is already on your team and can now work this event as ${label(inviteRole)}.`)
+      } else {
+        const invitation = response.data.invitation
+        setInvitations(items => [...items.filter(item => item.membership_id !== invitation.membership_id), invitation])
+        setNotice(`Invitation sent to ${invitation.email}. They can work this event as ${label(invitation.role)} as soon as they accept.`)
+        setLink(invitationUrl(invitation) ? { url: invitationUrl(invitation), email: invitation.email } : null)
+      }
+    })
+  }
+  const resendInvitation = invitation => {
+    setNotice(null); setLink(null)
+    return mutate('Resend event invitation', config => apiClient.post(`/organizer/events/${id}/staff_invitations/${invitation.membership_id}/resend`, {}, config), response => {
+      setInvitations(items => items.map(item => item.membership_id === invitation.membership_id ? response.data : item))
+      setNotice(`A new invitation was sent to ${invitation.email}.`)
+      setLink(invitationUrl(response.data) ? { url: invitationUrl(response.data), email: invitation.email } : null)
+    })
+  }
+  const withdrawInvitation = invitation => mutate('Withdraw event invitation', config => apiClient.delete(`/organizer/events/${id}/staff_invitations/${invitation.membership_id}`, config), () => {
+    setInvitations(items => items.filter(item => item.membership_id !== invitation.membership_id))
+    setNotice(`${invitation.email} was removed from this event’s invitations.`)
+  })
   const revoke = assignment => mutate('Revoke event staff', config => apiClient.delete(`/organizer/events/${id}/staff_assignments/${assignment.id}`, config), () => {
     setAssignments(items => items.map(item => item.id === assignment.id ? { ...item, status: 'revoked' } : item))
   })
@@ -120,7 +160,7 @@ function EventStaffSession({ id, identity }) {
   if (loading) return <div role="status" aria-label="Loading event staff" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
 
   if (!event) return <div className="mx-auto max-w-3xl p-6"><p role="alert" className="text-red-700">{error || 'Event staff could not be loaded.'}</p><button disabled={refreshing} onClick={load} className="btn-secondary mt-4">Retry staff list</button></div>
-  if (event.permissions?.manage_staff !== true) return <EventAccessNotice event={event} message="Your event access does not include managing staff." />
+  if (event.permissions?.manage_staff !== true) return <EventAccessNotice event={event} message="Your role doesn’t include managing this event’s team. Ask your organization owner if you need it." />
   const locked = refreshing || busy || Boolean(pending)
   return (
     <EventWorkspace eventId={id} event={event}><main className="mx-auto max-w-3xl">
@@ -129,17 +169,52 @@ function EventStaffSession({ id, identity }) {
 
       <div className="mt-4 flex flex-wrap items-center gap-3"><button disabled={busy || refreshing} onClick={load} className="btn-secondary">{refreshing ? 'Refreshing staff…' : 'Refresh saved staff'}</button></div>
       {pending && <div role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{pending.label} may have completed. Review the refreshed staff list before making another change.</p><button disabled={busy || refreshing || !reviewed} onClick={acknowledge} className="btn-secondary mt-3">I verified the staff list</button></div>}
-      <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="font-semibold text-neutral-900">Add an assignment</h2>
-        <form onSubmit={assign} className="mt-4 grid gap-3 sm:grid-cols-[1fr_10rem_auto]">
+      {notice && <p role="status" className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900">{notice}</p>}
+      {link && <InvitationLinkPanel url={link.url} email={link.email} onDismiss={() => setLink(null)} />}
+      <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-5" aria-labelledby="invite-staff-heading">
+        <h2 id="invite-staff-heading" className="flex items-center gap-2 font-semibold text-neutral-900"><UserPlus aria-hidden="true" className="h-4 w-4 text-brand-600" />Invite door staff by email</h2>
+        <p className="mt-1 text-sm text-content-muted">They get an email and can work this event as soon as they accept. They only see the events you assign.</p>
+        <form onSubmit={inviteStaff} className="mt-4 space-y-4">
+          <label className="block text-sm font-medium text-neutral-900">
+            Email
+            <input type="email" required disabled={locked} value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} className="input mt-1" placeholder="door.staff@example.com" autoComplete="off" />
+          </label>
+          <RoleRadioGroup legend="What will they do?" roles={EVENT_INVITE_ROLES} value={inviteRole} onChange={setInviteRole} disabled={locked} name="event-invite-role" />
+          <button disabled={locked || !inviteEmail.trim()} className="btn-primary w-full sm:w-auto">Send invitation</button>
+        </form>
+      </section>
+
+      {invitations.length > 0 && (
+        <section className="mt-6 rounded-2xl border border-neutral-200 bg-white" aria-labelledby="pending-staff-heading">
+          <div className="border-b border-neutral-100 px-5 py-4"><h2 id="pending-staff-heading" className="font-semibold text-neutral-900">Waiting to accept</h2></div>
+          <ul className="divide-y divide-neutral-100">
+            {invitations.map(invitation => (
+              <li key={invitation.membership_id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-center gap-2 font-medium text-neutral-900"><span className="[overflow-wrap:anywhere]">{invitation.email}</span><InvitationStatusPill status={invitation.invitation_status} /></p>
+                  <p className="text-sm text-content-muted">{label(invitation.role)} · <Mail aria-hidden="true" className="inline h-3.5 w-3.5" /> {invitation.invitation_status === 'expired' ? 'The link expired. Resend to email a new one.' : emailDeliveryLabel(invitation.email_delivery)}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" disabled={locked} onClick={() => resendInvitation(invitation)} className="btn-secondary gap-2 !px-3 !py-2 text-sm"><RotateCw aria-hidden="true" className="h-4 w-4" />Resend</button>
+                  <button type="button" disabled={locked} onClick={() => withdrawInvitation(invitation)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-700 [@media(hover:hover)]:hover:bg-red-50" aria-label={`Withdraw invitation for ${invitation.email}`}><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5">
+        <h2 className="font-semibold text-neutral-900">Assign someone already on your team</h2>
+        <form onSubmit={assign} className="mt-4 grid gap-3 sm:grid-cols-[1fr_14rem_auto] sm:items-start">
           <select disabled={locked} required value={userId} onChange={event => setUserId(event.target.value)} className="input" aria-label="Team member">
             <option value="">Choose a team member</option>
             {candidates.map(candidate => <option key={candidate.user_id} value={candidate.user_id}>{candidate.name || candidate.email} · {label(candidate.organization_role)}</option>)}
           </select>
-          <select disabled={locked} value={role} onChange={event => setRole(event.target.value)} className="input" aria-label="Event role">{ROLES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select>
+          <RoleSelect label="Event role" roles={EVENT_ASSIGNMENT_ROLES} value={role} onChange={setRole} disabled={locked} />
           <button disabled={locked || !userId} className="btn-primary">Assign</button>
         </form>
-        {candidates.length === 0 && <p className="mt-3 text-sm text-amber-700">Invite organization members from <Link className="font-semibold underline" to="/dashboard/settings">Settings</Link> before assigning event access.</p>}
+        {candidates.length === 0 && <p className="mt-3 text-sm text-content-muted">No one else has joined your team yet. Invite door staff by email above.</p>}
       </section>
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-neutral-200 bg-white">

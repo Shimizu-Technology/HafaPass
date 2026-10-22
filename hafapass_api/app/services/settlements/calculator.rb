@@ -25,7 +25,12 @@ module Settlements
       refunded_proceeds = refund_items.sum(&:organizer_proceeds_cents)
       platform_fees = [platform_fee_components.sum(&:amount_cents) - refunded_fees, 0].max
       organizer_proceeds = [order_items.sum(&:organizer_proceeds_cents) - refunded_proceeds, 0].max
-      processing_fees = processing_fee_components.sum(&:amount_cents)
+      # Actual processing on an order whose bearer snapshot is "platform" is
+      # split by charged amount: HåfaPass covers the ticket share (which earns
+      # its fee) and the organizer bears the share for add-ons and donations.
+      # Legacy (NULL) and "organizer" orders keep the full original deduction.
+      processing_fees = processing_fee_components.sum { |component| processing_split(component).last }
+      platform_processing_fees = processing_fee_components.sum { |component| processing_split(component).first }
       dispute_losses = lost_disputes.sum(&:amount_cents)
       reserve_effect = posted_adjustments.select { |adjustment| reserve_kind?(adjustment) }.sum(&:amount_cents)
       reserves = [-reserve_effect, 0].max
@@ -48,6 +53,7 @@ module Settlements
         net_cents: [charged - refunds, 0].max,
         platform_fee_cents: platform_fees,
         processing_fee_cents: processing_fees,
+        platform_processing_fee_cents: platform_processing_fees,
         organizer_proceeds_cents: organizer_proceeds,
         reserve_cents: reserves,
         adjustment_cents: adjustment_total - dispute_losses,
@@ -59,12 +65,29 @@ module Settlements
       Result.new(attributes: attributes, items: items)
     end
 
+    # Read-only per-order view of the same processing split, for organizer
+    # exports: { order_id => [platform_cents, organizer_cents] }. It does not
+    # feed the statement or its digest.
+    def processing_by_order
+      processing_fee_components.each_with_object(Hash.new { |hash, key| hash[key] = [0, 0] }) do |component, totals|
+        platform, organizer = processing_split(component)
+        totals[component.order_id][0] += platform
+        totals[component.order_id][1] += organizer
+      end
+    end
+
     private
 
     attr_reader :event
 
+    # Production settles real money only: orders paid through Stripe test (or
+    # simulated) mode during QA never become organizer proceeds.
     def orders
-      @orders ||= event.orders.where(status: [:completed, :partially_refunded, :refunded]).order(:id).to_a
+      @orders ||= begin
+        scope = event.orders.where(status: [:completed, :partially_refunded, :refunded])
+        scope = scope.excluding_test_payments
+        scope.order(:id).to_a
+      end
     end
 
     def order_ids
@@ -109,6 +132,36 @@ module Settlements
 
     def processing_fee_components
       @processing_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "processing", estimated: false).order(:id).to_a
+    end
+
+    # Bearer comes only from each order's creation-time snapshot, never from
+    # the live site setting, so a settings change cannot restate past orders.
+    def platform_processing_order_ids
+      @platform_processing_order_ids ||= Set.new(orders.select(&:platform_bears_processing?).map(&:id))
+    end
+
+    # [platform_cents, organizer_cents] for one actual processing cost. For a
+    # platform-bearer order the cost is allocated pro rata by charged amount:
+    # ticket lines (subtotal - discount + buyer fee + tax) to the platform,
+    # catalog/add-on/donation lines to the organizer. Rounding cents fall on
+    # the platform share. All of it stays with the organizer for other orders.
+    def processing_split(component)
+      @processing_splits ||= {}
+      @processing_splits[component.id] ||= if platform_processing_order_ids.include?(component.order_id)
+        ticket_cents, other_cents = charged_by_line_kind.fetch(component.order_id, [0, 0])
+        platform, organizer = Commerce::MoneyAllocator.call(component.amount_cents, [ticket_cents, other_cents])
+        platform + organizer == component.amount_cents ? [platform, organizer] : [component.amount_cents, 0]
+      else
+        [0, component.amount_cents]
+      end
+    end
+
+    def charged_by_line_kind
+      @charged_by_line_kind ||= order_items.group_by(&:order_id).transform_values do |items|
+        charged = ->(item) { item.subtotal_cents - item.discount_cents + item.fee_cents + item.tax_cents }
+        tickets, others = items.partition(&:item_ticket?)
+        [tickets.sum(&charged), others.sum(&charged)]
+      end
     end
 
     def lost_disputes
@@ -189,15 +242,37 @@ module Settlements
 
     def processing_items
       processing_fee_components.map do |component|
-        statement_item(
-          kind: "processing_fee",
-          amount_cents: -component.amount_cents,
-          source: component,
-          description: "Actual payment processing cost",
-          occurred_at: component.updated_at,
-          metadata: { order_id: component.order_id, provider_reference: component.provider_reference }
-        )
+        if platform_processing_order_ids.include?(component.order_id)
+          platform_processing_item(component)
+        else
+          # Legacy wording and metadata are part of existing source digests.
+          statement_item(
+            kind: "processing_fee",
+            amount_cents: -component.amount_cents,
+            source: component,
+            description: "Actual payment processing cost",
+            occurred_at: component.updated_at,
+            metadata: { order_id: component.order_id, provider_reference: component.provider_reference }
+          )
+        end
       end
+    end
+
+    # The statement binds the actual cost into its digest. Only the organizer
+    # share (add-ons and donations) affects the organizer; the platform's fee
+    # revenue absorbs the ticket share, even when it exceeds the fee collected.
+    def platform_processing_item(component)
+      platform_cents, organizer_cents = processing_split(component)
+      statement_item(
+        kind: "processing_fee",
+        amount_cents: -organizer_cents,
+        source: component,
+        description: organizer_cents.zero? ? "Card processing covered by HåfaPass" :
+          "Card processing on add-ons and donations; HåfaPass covers the ticket share",
+        occurred_at: component.updated_at,
+        metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
+          processing_fee_bearer: "platform", platform_cost_cents: platform_cents, organizer_cost_cents: organizer_cents }
+      )
     end
 
     def dispute_items
@@ -227,7 +302,7 @@ module Settlements
     end
 
     def payout_items
-      event.payouts.where(status: [:pending, :processing, :paid, :reversed]).order(:id).map do |payout|
+      event.payouts.where(status: [:pending, :processing, :held, :paid, :reversed]).order(:id).map do |payout|
         statement_item(
           kind: "payout",
           amount_cents: payout.status_reversed? ? payout.amount_cents : -payout.amount_cents,

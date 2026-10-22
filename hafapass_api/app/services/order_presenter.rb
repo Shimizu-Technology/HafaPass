@@ -20,6 +20,7 @@ class OrderPresenter
       currency: order.currency,
       subtotal_cents: order.subtotal_cents,
       service_fee_cents: order.service_fee_cents,
+      processing_fee_bearer: order.processing_fee_bearer_snapshot,
       discount_cents: order.discount_cents,
       total_cents: order.total_cents,
       refunded_cents: order.refunded_cents,
@@ -28,11 +29,17 @@ class OrderPresenter
       buyer_name: order.buyer_name,
       buyer_phone: order.buyer_phone,
       completed_at: order.completed_at,
+      created_at: order.created_at,
       expires_at: order.expires_at,
       wallet_type: order.wallet_type,
       guest_access_token: guest_access_token,
       payment_status: latest_payment&.status,
+      payment_environment: order.payment_environment,
+      receipt_available: order.receipt_available?,
       payment_state: latest_payment&.provider_payload.to_h["status"],
+      payment_method: payment_method_json,
+      refund_history: refund_history_json,
+      buyer_status: order.buyer_status,
       payment_resumable: order.pending? && latest_payment&.provider == "stripe" &&
         latest_payment&.provider_payment_id.present? && latest_payment&.pending? &&
         order.expires_at&.future? && latest_payment&.provider_payload.to_h["status"] != "processing",
@@ -40,7 +47,9 @@ class OrderPresenter
       ticket_access_blocked: order.ticket_access_blocked? || order.full_refund_pending?,
       promo_code: order.promo_code ? { id: order.promo_code.id, code: order.promo_code.code } : nil,
       event: event_json,
+      seller: SellerIdentity.for_event(order.event).as_json,
       latest_event_change: latest_event_change_json,
+      cancellation_refund: cancellation_refund_json,
       order_items: ordered_order_items.map { |item| order_item_json(item) },
       tickets: include_tickets ? presented_tickets.map { |ticket| ticket_json(ticket) } : []
     }.compact
@@ -49,6 +58,34 @@ class OrderPresenter
   private
 
   attr_reader :order, :include_tickets, :guest_access_token
+
+  def cancellation_refund_json
+    return unless order.event.cancelled?
+
+    succeeded = order.refunds.succeeded.order(succeeded_at: :desc, id: :desc).first
+    item = order.event.event_cancellation_refund_run&.items&.find_by(order: order)
+    return unless succeeded || item || (order.completed? && order.total_cents.positive?)
+
+    status = if succeeded && (order.refunded? || item&.refunded?)
+      "refunded"
+    elsif item&.needs_manual?
+      order.payment_method == "door_card" ? "needs_card_return" : "needs_cash_return"
+    elsif item&.failed?
+      "needs_attention"
+    elsif item&.waiting_on_dispute?
+      "awaiting_dispute"
+    elsif item&.skipped?
+      "resolved"
+    elsif !item && order.completed?
+      "not_started"
+    else
+      "processing"
+    end
+    { status: status,
+      amount_cents: status == "refunded" ? (order.refund_amount_cents.positive? ? order.refund_amount_cents : order.refunded_cents) :
+        item&.amount_cents || succeeded&.amount_cents,
+      refunded_at: succeeded&.succeeded_at, payment_method: order.payment_method }
+  end
 
   def event_json
     event = order.event
@@ -63,18 +100,20 @@ class OrderPresenter
       ends_at: event.ends_at,
       doors_open_at: event.doors_open_at,
       timezone: event.timezone,
-      transfers_enabled: event.transfers_enabled,
+      transfers_enabled: event.transfers_available?,
       assigned_seating: event.assigned_seating?,
-      cover_image_url: event.cover_image_url
+      cover_image_url: event.cover_image_url,
+      image_asset_host: S3Service.public_asset_host
     }
   end
 
   def latest_event_change_json
     changes = order.event.event_changes
     change = if changes.loaded?
-      changes.max_by { |candidate| [candidate.occurred_at || Time.at(0), candidate.id] }
+      changes.select { |candidate| EventChange::TYPES.include?(candidate.change_type) }
+        .max_by { |candidate| [candidate.occurred_at || Time.at(0), candidate.id] }
     else
-      changes.order(occurred_at: :desc, id: :desc).first
+      changes.buyer_visible.order(occurred_at: :desc, id: :desc).first
     end
     return unless change
 
@@ -113,7 +152,7 @@ class OrderPresenter
   end
 
   def ticket_json(ticket)
-    transferred_away = ticket.holder_user_id.present? && ticket.holder_user_id != order.user_id
+    transferred_away = ticket.transferred_away_from?(order)
     {
       id: ticket.id,
       display_credential: transferred_away ? nil : ticket.display_credential,
@@ -124,6 +163,7 @@ class OrderPresenter
         (ticket.refund_pending? ? "Ticket access is paused while its refund is pending" : nil),
       attendee_name: transferred_away ? nil : ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
+      pending_transfer: !transferred_away && ticket.issued? ? ticket.pending_transfer_summary : nil,
       refundable_cents: !transferred_away && ticket.issued? ? ticket_refundable_amounts.fetch(ticket.id, 0) : 0,
       ticket_type: {
         id: ticket.ticket_type.id,
@@ -158,6 +198,22 @@ class OrderPresenter
     payments.order(:id).last
   end
 
+  def payment_method_json
+    payment = order.payments.to_a.select { |entry| entry.succeeded? || entry.partially_refunded? || entry.refunded? }.max_by(&:id)
+    return unless payment
+
+    # Only the card summary already saved by the provider is safe to expose.
+    brand, last4 = payment.card_summary.values_at(:brand, :last4)
+    { type: payment.provider, card_brand: brand, last4: last4 }.compact
+  end
+
+  def refund_history_json
+    order.refunds.to_a.sort_by { |refund| [refund.created_at, refund.id] }.reverse.map do |refund|
+      { id: refund.id, amount_cents: refund.amount_cents, status: refund.status,
+        requested_at: refund.created_at, succeeded_at: refund.succeeded_at }
+    end
+  end
+
   def confirmation_delivery
     deliveries = order.message_deliveries
     if deliveries.loaded?
@@ -187,7 +243,7 @@ class OrderPresenter
   def presented_tickets
     @presented_tickets ||= begin
       tickets = order.tickets
-      tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets,
+      tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
         event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
       tickets.to_a.sort_by(&:id)
     end

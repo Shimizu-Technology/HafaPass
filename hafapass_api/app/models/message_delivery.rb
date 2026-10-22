@@ -6,6 +6,8 @@ class MessageDelivery < ApplicationRecord
   belongs_to :event, optional: true
   belongs_to :communication_campaign, optional: true
   belongs_to :requested_by, class_name: "User", optional: true
+  belongs_to :organization_membership, optional: true
+  belongs_to :platform_invitation, optional: true
   has_many :message_provider_events, dependent: :nullify
 
   enum :status, {
@@ -22,6 +24,20 @@ class MessageDelivery < ApplicationRecord
   attr_accessor :preparing_outbound_payload
 
   TICKET_EMAIL_TEMPLATES = %w[order_confirmation fulfillment_resend].freeze
+  PROMOTIONAL_TEMPLATES = %w[communication_campaign].freeze
+
+  def promotional?
+    channel == "email" && PROMOTIONAL_TEMPLATES.include?(template)
+  end
+
+  def transactional?
+    channel == "email" && !promotional?
+  end
+
+  def marketing_unsubscribed?
+    promotional? && event&.organization_id.present? &&
+      MarketingUnsubscribe.exists?(organization_id: event.organization_id, email: recipient.to_s.strip.downcase)
+  end
   scope :ticket_email, -> { where(channel: "email", template: TICKET_EMAIL_TEMPLATES) }
   scope :unconfirmed_provider_result, -> {
     where(provider_outcome_unknown: true).or(
@@ -51,6 +67,14 @@ class MessageDelivery < ApplicationRecord
     # Legacy attempted rows have no marker: a crash may have followed acceptance.
     unknown = provider_outcome_unknown? || (provider == "resend" && provider_attempted_at.nil? && attempts.positive?)
     unknown && (provider_attempted_at || created_at) <= PROVIDER_REPLAY_WINDOW.ago
+  end
+
+  # HåfaPass's own reserved placeholder addresses (e.g. guest-list entries without
+  # an email) can never be delivered, so they are never handed to a provider.
+  PLACEHOLDER_EMAIL_DOMAIN = "@hafapass.invalid"
+
+  def undeliverable_recipient?
+    recipient.to_s.strip.downcase.end_with?(PLACEHOLDER_EMAIL_DOMAIN)
   end
 
   def suppressed_recipient?
@@ -106,7 +130,8 @@ class MessageDelivery < ApplicationRecord
   end
 
   def subject_present
-    errors.add(:base, "Order, ticket, or event is required") if order_id.blank? && ticket_id.blank? && event_id.blank?
+    subjects = [order_id, ticket_id, event_id, organization_membership_id, platform_invitation_id]
+    errors.add(:base, "Order, ticket, event, or invitation is required") if subjects.all?(&:blank?)
   end
 
   def assign_idempotency_key

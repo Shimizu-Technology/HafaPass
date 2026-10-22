@@ -1,9 +1,19 @@
+import TranslatedTicketContent from './TranslatedTicketContent'
+import MachineTranslationNotice from './MachineTranslationNotice'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Minus, Plus, ShoppingCart, Clock, Zap } from 'lucide-react'
-import { formatTicketPrice, ticketPriceCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
+import PaidCheckoutGate from './PaidCheckoutGate'
+import usePaidCheckoutAdminOnly from '../hooks/usePaidCheckoutAdminOnly'
+import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFeeCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
 
-export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
+// Rows and the buy button lead with all-in prices (ticket + the buyer's
+// service fee), with the breakdown as a smaller secondary line.
+// In production test mode free tickets stay buyable for everyone but paid
+// ones only for platform admins.
+// `showOriginal` follows the event page's "Show original" switch for
+// machine-translated ticket names.
+export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false, showTranslationNotice = true }) {
   const { t } = useTranslation()
   const [quantities, setQuantities] = useState({})
 
@@ -16,11 +26,9 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
     : Math.max(0, Math.min(tt.max_per_order || 10, tt.max_per_buyer || Infinity, remainingTickets(tt) ?? 0))
   const getClampedQty = (tt) => Math.min(getQty(tt.id), getMaxQty(tt))
 
-  // Use current_price_cents if available, fallback to price_cents
-  const getPrice = ticketPriceCents
-
   const totalSelected = ticketTypes.reduce((sum, tt) => sum + getClampedQty(tt), 0)
-  const totalCents = ticketTypes.reduce((sum, tt) => sum + (getClampedQty(tt) * getPrice(tt)), 0)
+  const totalCents = ticketTypes.reduce((sum, tt) => sum + (getClampedQty(tt) * ticketAllInCents(tt)), 0)
+  const paidAdminOnly = usePaidCheckoutAdminOnly(totalCents > 0)
 
   const handleCheckout = () => {
     const lineItems = ticketTypes
@@ -47,34 +55,48 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
           const soldOut = getMaxQty(tt) === 0
           const maxQty = getMaxQty(tt)
           const qty = getClampedQty(tt)
-          const currentPrice = getPrice(tt)
-          const hasDiscount = tt.active_tier && currentPrice < tt.price_cents
+          const basePrice = ticketPriceCents(tt)
+          const currentPrice = ticketAllInCents(tt)
+          const feeCents = ticketServiceFeeCents(tt)
+          const regularPrice = Number.isSafeInteger(tt.regular_all_in_price_cents) ? tt.regular_all_in_price_cents : tt.price_cents
+          const hasDiscount = tt.active_tier && basePrice < tt.price_cents
+          // The struck-through regular price already says what comes next when
+          // the next tier returns to it; don't repeat the same price twice.
+          const nextTierPrice = !tt.next_tier ? null
+            : Number.isSafeInteger(tt.next_tier.all_in_price_cents) ? tt.next_tier.all_in_price_cents : tt.next_tier.price_cents
 
           return (
-            <div key={tt.id} className={`card p-4 transition-all duration-200 ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
+            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`card p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-medium text-neutral-900 break-words max-w-full">{tt.name}</h3>
+                    <h3 className="font-medium text-neutral-900 break-words max-w-full">{content.name}</h3>
                     {soldOut && (
-                      <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : 'Sales unavailable'}</span>
+                      <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : t('buyer.TicketTypesSection.salesUnavailable')}</span>
                     )}
                   </div>
-                  {tt.description && <p className="text-sm text-neutral-600 mt-0.5 break-words">{tt.description}</p>}
+                  {content.description && <p className="text-sm text-neutral-600 mt-0.5 break-words">{content.description}</p>}
+
+                  {showTranslationNotice && content.notice && <MachineTranslationNotice {...content.notice} />}
 
                   {/* Pricing with tier info */}
                   <div className="mt-1">
                     {tt.active_tier ? (
                       <div>
-                        <p className="text-sm font-semibold text-accent-600">
+                        <p className="text-sm font-semibold text-neutral-900">
                           {tt.active_tier.name} — {formatPrice(currentPrice)}
                         </p>
                         {hasDiscount && (
-                          <p className="text-xs text-neutral-600 line-through">{formatPrice(tt.price_cents)}</p>
+                          <p className="text-xs text-neutral-600 line-through">{formatPrice(regularPrice)}</p>
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm font-semibold text-accent-600">{formatPrice(currentPrice)}</p>
+                      <p className="text-sm font-semibold text-neutral-900">{formatPrice(currentPrice)}</p>
+                    )}
+                    {feeCents > 0 && (
+                      <p className="text-xs text-neutral-500">
+                        {t('pricing.ticketPlusFee', { price: formatTicketPrice(basePrice), fee: formatTicketPrice(feeCents) })}
+                      </p>
                     )}
                   </div>
 
@@ -97,9 +119,9 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                   )}
 
                   {/* Next tier info */}
-                  {tt.next_tier && (
+                  {nextTierPrice !== null && !(hasDiscount && nextTierPrice === regularPrice) && (
                     <p className="text-xs text-neutral-600 mt-1">
-                      {t('pricing.regularPrice', { price: formatPrice(tt.next_tier.price_cents) })}
+                      {t('pricing.regularPrice', { price: formatPrice(nextTierPrice) })}
                     </p>
                   )}
                 </div>
@@ -109,7 +131,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                     <button
                       onClick={() => setQty(tt.id, qty - 1)}
                       disabled={qty === 0}
-                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={`Decrease quantity for ${tt.name}`}
+                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={t('buyer.TicketTypesSection.decreaseQuantityFor', { value1: tt.name })}
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
@@ -117,24 +139,24 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout }) {
                     <button
                       onClick={() => setQty(tt.id, Math.min(qty + 1, maxQty))}
                       disabled={qty >= maxQty}
-                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={`Increase quantity for ${tt.name}`}
+                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={t('buyer.TicketTypesSection.increaseQuantityFor', { value1: tt.name })}
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
               </div>
-            </div>
+            </div>}</TranslatedTicketContent>
           )
         })}
       </div>
 
-      {totalSelected > 0 && (
+      {totalSelected > 0 && <PaidCheckoutGate active={paidAdminOnly && totalCents > 0}>
         <button onClick={handleCheckout} className="w-full mt-5 btn-primary text-base !py-4 gap-2">
           <ShoppingCart className="w-5 h-5" />
           {t('eventDetail.buyTickets')} &mdash; {formatPrice(totalCents)}
         </button>
-      )}
+      </PaidCheckoutGate>}
     </div>
   )
 }

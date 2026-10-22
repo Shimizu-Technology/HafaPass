@@ -1,9 +1,19 @@
 class Event < ApplicationRecord
+  has_one :event_cancellation_refund_run, dependent: :restrict_with_error
+  include PublicSlug
+  include Translatable
+  include EventPageCustomization
+
+  CONTENT_FIELDS = %w[title short_description description].freeze
+  translates(*CONTENT_FIELDS, context: "Public listing for an event sold on HåfaPass, a ticketing site in Guam. " \
+    "Keep names of people, performers, venues, villages, organizations and brands as written, and keep CHamoru words as written.")
+
   has_many :message_deliveries, dependent: :restrict_with_error
   has_many :support_notes, dependent: :restrict_with_error
   belongs_to :organizer_profile
   belongs_to :organization
   belongs_to :venue, optional: true
+  belongs_to :policy_hold_by_user, class_name: "User", optional: true
   belongs_to :recurrence_parent, class_name: "Event", optional: true
   has_many :recurrence_children, class_name: "Event", foreign_key: "recurrence_parent_id", dependent: :nullify
   has_many :ticket_types, dependent: :destroy
@@ -52,8 +62,15 @@ class Event < ApplicationRecord
   has_many :live_pilot_incidents, dependent: :restrict_with_error
   has_many :live_pilot_metric_snapshots, dependent: :restrict_with_error
   has_many :pilot_closeout_reviews, dependent: :restrict_with_error
+  # Only events that were once public keep retired links, and those events
+  # cannot be deleted; a draft's rows (from a reclaimed link) go with it.
+  has_many :slug_redirects, class_name: "EventSlugRedirect", dependent: :delete_all
+  public_slug_redirects :slug_redirects
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
+  # A platform-admin policy hold: "sales" stops all sales but leaves the event
+  # page up; "hidden" also removes it from public pages and discovery.
+  POLICY_HOLD_SCOPES = %w[sales hidden].freeze
   CATEGORY_LABELS = {
     "nightlife" => "Nightlife",
     "concert" => "Music & Concerts",
@@ -77,7 +94,9 @@ class Event < ApplicationRecord
   enum :fee_policy, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }
 
   validates :title, presence: true
-  validates :slug, presence: true, uniqueness: true
+  validates :slug, presence: true
+  validates :slug, uniqueness: { message: "is already used by another event" }, unless: :slug_chosen?
+  validate :chosen_slug_is_available, if: :slug_chosen?
   validates :max_capacity, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 2_147_483_647 }, allow_nil: true
   validates :buyer_fee_percent, numericality: { only_integer: true, in: 0..100 }
   validate :capacity_covers_committed_inventory
@@ -87,18 +106,34 @@ class Event < ApplicationRecord
   validate :valid_iana_timezone
   validate :chronological_event_times
   validate :live_money_candidate_flag_immutable_after_orders
+  validate :page_customization_is_valid, if: :will_save_change_to_page_customization?
+  validate :cover_image_is_approved
 
-  before_validation :generate_slug, if: -> { slug.blank? || title_changed? }
+  before_validation :assign_slug
+  before_validation :clamp_page_focal_point, if: :will_save_change_to_page_customization?
+
+  def cover_image_is_approved
+    return unless new_record? || will_save_change_to_cover_image_url?
+    return if cover_image_url.blank? || ApprovedImageUrl.valid?(cover_image_url, organization_id: organization_id)
+
+    errors.add(:cover_image_url, ApprovedImageUrl::MESSAGE)
+  end
+  before_save :record_localized_content_sources, if: :will_save_change_to_localized_content?
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
+  after_update -> { Wallet::PassSync.event_changed(self) }, if: :wallet_visible_change?
 
   scope :published, -> { where(status: :published) }
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
   scope :past, -> { where("starts_at <= ?", Time.current) }
   scope :featured, -> { where(is_featured: true) }
-  scope :publicly_visible, -> { where(status: [:published, :completed], live_money_proof_candidate: false) }
+  scope :without_hidden_policy_hold, -> { where("events.policy_hold_scope IS DISTINCT FROM 'hidden'") }
+  scope :publicly_visible, -> {
+    where(status: [:published, :completed], live_money_proof_candidate: false).without_hidden_policy_hold
+  }
   scope :discoverable, ->(at = Time.current) {
     published
       .where(live_money_proof_candidate: false)
+      .where(policy_hold_at: nil)
       .where("COALESCE(events.ends_at, events.starts_at) > ?", at)
       .where(sales_suspended_at: nil)
       .joins(:ticket_types)
@@ -167,22 +202,155 @@ class Event < ApplicationRecord
     CATEGORY_LABELS.fetch(category)
   end
 
+  # Production's one sales gate: HåfaPass has verified the organizer (one
+  # admin action; suspending verification pauses all of the organizer's sales).
+  # It is not tied to deploys or event edits. Elsewhere nothing extra applies.
   def sales_open?(at: Time.current)
-    published? && sales_suspended_at.nil? && (ends_at || starts_at).present? && (ends_at || starts_at) > at
+    published? && sales_suspended_at.nil? && policy_hold_at.nil? && (ends_at || starts_at).present? &&
+      (ends_at || starts_at) > at && organizer_sales_verified?
+  end
+
+  def organizer_sales_verified?
+    !Rails.env.production? || organizer_profile.verification_status_verified?
+  end
+
+  def paid_event?
+    ticket_types.any? do |ticket_type|
+      ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
+    end
+  end
+
+  # Why a published event is not selling, in organizer language. nil when the
+  # event can sell. Checked in the order buyers and organizers would fix them.
+  # Platform facts read once per request when many events are serialized.
+  def self.sales_context
+    { policy_approved: !Rails.env.production? || PolicyRegistry.production_approved?,
+      stripe_enabled: SiteSetting.instance.stripe_enabled?, payout_ready: {} }
+  end
+
+  def sales_blocker(at: Time.current, context: nil)
+    return :not_published unless published?
+    return :event_paused if policy_hold?
+    return :sales_paused if sales_suspended_at.present?
+    return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
+
+    unless organizer_sales_verified?
+      return :organizer_paused if organizer_profile.verification_status_suspended?
+      return :organizer_verification_requested if organizer_profile.verification_status_pending?
+
+      return :organizer_not_verified
+    end
+    context ||= self.class.sales_context
+    return :platform_setup unless context[:policy_approved]
+    return nil unless paid_event?
+    return :payments_off if Rails.env.production? && !context[:stripe_enabled]
+
+    payout_ready = context[:payout_ready].fetch(organization_id) do
+      context[:payout_ready][organization_id] = organization.payout_ready?
+    end
+    return :payout_details_missing unless payout_ready
+
+    nil
+  end
+
+  SALES_STATUS_MESSAGES = {
+    not_published: "Not on sale: the event is not published.",
+    event_paused: "Visible but not on sale: sales paused by HåfaPass.",
+    sales_closed: "Not on sale: sales for this event have ended.",
+    organizer_not_verified: "Visible but not on sale yet: waiting for HåfaPass to verify your organization before tickets go on sale.",
+    organizer_verification_requested: "Visible but not on sale yet: verification requested. HåfaPass will review it soon.",
+    organizer_paused: "Visible but not on sale: HåfaPass paused sales for your organization.",
+    platform_setup: "Visible but not on sale yet: HåfaPass is finishing platform setup.",
+    payments_off: "Visible but not on sale yet: HåfaPass has not turned on payments.",
+    payout_details_missing: "Visible but not on sale yet: add your payout details in Settings → Payouts for paid tickets."
+  }.freeze
+
+  GATE_I_SUSPENSION_PREFIX = "[GATE I] "
+
+  def sales_status(at: Time.current, context: nil)
+    reason = sales_blocker(at: at, context: context)
+    { on_sale: reason.nil?, reason: reason&.to_s, message: sales_status_message(reason) }
+  end
+
+  # Gate I pauses are placed by HåfaPass; seating pauses by the organizer.
+  def sales_status_message(reason)
+    return "On sale." unless reason
+    return SALES_STATUS_MESSAGES.fetch(reason) unless reason == :sales_paused
+
+    text = sales_suspension_reason.to_s
+    by_hafapass = text.start_with?(GATE_I_SUSPENSION_PREFIX)
+    detail = text.delete_prefix(GATE_I_SUSPENSION_PREFIX).strip.presence
+    [by_hafapass ? "Sales paused by HåfaPass" : "Sales paused", detail].compact.join(": ") + "."
+  end
+
+  def policy_hold?
+    policy_hold_at.present?
+  end
+
+  # Organizers see the scope, reason and time; only admins see who placed it.
+  def policy_hold_summary(include_actor: false)
+    return nil unless policy_hold?
+
+    summary = { scope: policy_hold_scope, reason: policy_hold_reason, placed_at: policy_hold_at }
+    include_actor ? summary.merge(placed_by: policy_hold_by_user&.email) : summary
+  end
+
+  # The stored setting only takes effect while the platform allows transfers.
+  def transfers_available?
+    transfers_enabled? && LaunchCapabilities.enabled?(:ticket_transfers)
   end
 
   def assigned_seating?
     event_seating_configuration&.status_active? || false
   end
 
+  RETRANSLATE_REFUSALS = {
+    unavailable: ["Automatic translation is not available right now. Buyers see your English text.", :unprocessable_entity],
+    not_public: ["Automatic translation starts when the event is published.", :unprocessable_entity],
+    recently_requested: ["A translation was requested in the last few minutes. Try again shortly.", :too_many_requests]
+  }.freeze
+
+  # Queues a full machine re-translation of the event and its ticket types.
+  # Returns :queued or the reason it was refused (see Translatable#retranslate!).
+  def self.retranslate_with_ticket_types(event)
+    outcome = event.retranslate!
+    event.ticket_types.find_each { |ticket_type| ticket_type.queue_translation!(nil, force: true) } if outcome == :queued
+    outcome
+  end
+
+  # Only text buyers can already see is sent for machine translation.
+  def machine_translation_eligible?(status_value = status, hold = policy_hold_scope, proof = live_money_proof_candidate)
+    %w[published completed].include?(status_value.to_s) && !proof && hold != "hidden"
+  end
+
+  # Public text in a buyer's language: the organizer's own translation first,
+  # then a current machine translation, then the English original. Languages
+  # not enabled on the server (HAFAPASS_ENABLED_LOCALES) read as English.
   def content_for(locale)
-    code = locale.to_s.split(/[-_]/).first
-    translation = supported_locales.include?(code) ? localized_content.fetch(code, {}) : {}
-    {
-      title: translation["title"].presence || title,
-      description: translation["description"].presence || description,
-      short_description: translation["short_description"].presence || short_description
-    }
+    code = AppLocale.normalize(locale)
+    code = AppLocale::DEFAULT unless code && AppLocale.enabled?(code)
+    provided = supported_locales.include?(code) ? localized_content.fetch(code, {}) : {}
+    machine_translated = false
+    content = CONTENT_FIELDS.to_h do |field|
+      next [field.to_sym, provided[field]] if provided[field].present?
+
+      value, machine = translated_value(field, code)
+      machine_translated ||= machine
+      [field.to_sym, value]
+    end
+    content.merge(locale: code, machine_translated: machine_translated)
+  end
+
+  # { locale => [fields] } of organizer wording written for English that has
+  # since changed, so the organizer can review it.
+  def stale_localized_content
+    localized_content.each_with_object({}) do |(locale, fields), stale|
+      changed = fields.keys.select do |field|
+        source = localized_content_sources.dig(locale, field)
+        source.present? && source != Translatable.digest(self[field])
+      end
+      stale[locale] = changed if changed.any?
+    end
   end
 
   def has_available_inventory?(at: Time.current)
@@ -201,20 +369,21 @@ class Event < ApplicationRecord
     [max_capacity - sold - held, 0].max
   end
 
-  def publish_checklist(at: Time.current)
-    paid_event = ticket_types.any? do |ticket_type|
-      ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
-    end
+  # The detailed launch-gate reviews (pilot readiness, validation, rehearsal,
+  # live-money proof, bounded pilot) are optional records now; they never
+  # block publishing or sales. Organizer verification is the one admin step.
+  def publish_checklist(at: Time.current, organizer_agreement: nil)
+    paid_event = paid_event?
     configured_inventory = ticket_types.sum(&:quantity_available)
-    pilot_readiness_approved, pilot_validation_approved, event_day_rehearsal_approved, live_money_approved,
-      live_pilot_approved =
-      production_release_approvals(at: at)
-    checks = [
+    [
       checklist_item("launch_scope", "Event features supported for this release", LaunchCapabilities.event_supported?(self)),
-      checklist_item("production_policy_approved", "Production policy register approved",
-        !Rails.env.production? || PolicyRegistry.production_approved?),
-      checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?),
-      checklist_item("policy_accepted", "Organizer policy accepted", organizer_profile.policy_accepted?),
+      # In production an unverified organizer may publish (to preview and
+      # share); tickets go on sale once HåfaPass verifies them. Elsewhere
+      # verification is still required to publish.
+      checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?,
+        required_to_publish: !Rails.env.production?),
+      checklist_item("policy_accepted", "Organizer policy accepted",
+        organizer_profile.policy_accepted?(current: organizer_agreement || PolicyRegistry.organizer_agreement)),
       checklist_item("title", "Event title added", title.present?),
       checklist_item("description", "Event description added", description.present?),
       checklist_item("venue", "Venue name and address added", venue_name.present? && venue_address.present? && venue_city.present?),
@@ -225,49 +394,19 @@ class Event < ApplicationRecord
       checklist_item("sales_window", "Ticket sales windows are valid", valid_ticket_sales_windows?(at: at)),
       checklist_item("live_money_candidate_scope", "Live-money proof event is hidden, single-ticket, and capped at $5",
         !live_money_proof_candidate? || live_money_proof_candidate_configured?),
-      checklist_item("payout", paid_event ? "Payout account ready for paid sales" : "No payout account needed for a free event",
-        !paid_event || organization.payout_ready?),
-      checklist_item("pilot_readiness_approved", "Event-specific pilot readiness independently approved",
-        pilot_readiness_approved),
-      checklist_item("pilot_validation_approved", "Buyer, organizer, accessibility, and load validation independently approved",
-        pilot_validation_approved),
-      checklist_item("event_day_rehearsal_approved", "Physical event-day rehearsal independently approved",
-        event_day_rehearsal_approved),
-      checklist_item("live_money_approved",
-        paid_event ? "Live charge, refund, settlement, payout, and bank receipt independently approved" :
-          "No live-money approval needed for a free event",
-        !paid_event || live_money_approved),
-      checklist_item("live_pilot_approved", "Bounded live-pilot plan independently approved",
-        live_money_proof_candidate? || live_pilot_approved)
+      checklist_item("payout", paid_event ? "Payout details on file for paid sales" : "No payout details needed for a free event",
+        !paid_event || organization.payout_ready?)
     ]
-    checks
   end
 
   def ready_to_publish?(at: Time.current)
-    publish_checklist(at: at).all? { |item| item[:complete] }
-  end
-
-  def production_release_gate_status(at: Time.current)
-    readiness, validation, rehearsal, live_money, live_pilot = production_release_approvals(at: at)
-    return :pilot_readiness unless readiness
-    return :pilot_validation unless validation
-    return :event_day_rehearsal unless rehearsal
-    return :live_money unless live_money
-    return :live_pilot unless live_pilot
-    return :live_pilot_operation if !live_money_proof_candidate? && Rails.env.production? &&
-      LivePilot.active_run(self, at: at).nil?
-
-    :ready
+    publish_checklist(at: at).all? { |item| item[:complete] || !item[:required_to_publish] }
   end
 
   def live_money_proof_candidate_configured?
     types = ticket_types.to_a
     type = types.one? ? types.first : nil
-    settings = SiteSetting.instance
-    buyer_fee = if type
-      platform_fee = (type.price_cents * (settings.service_fee_percent / 100.0)).round + settings.service_fee_flat_cents
-      (platform_fee * buyer_fee_percent / 100.0).round
-    end
+    buyer_fee = Commerce::ServiceFee.for_event(self, type.price_cents).buyer_fee_cents if type
     live_money_proof_candidate? && title.start_with?("[LIVE MONEY TEST]") && max_capacity == 1 &&
       type.present? && type.price_cents.between?(1, 500) && type.quantity_available == 1 &&
       type.price_cents + buyer_fee <= LiveMoneyProofAuthorization::MAX_AMOUNT_CENTS && type.max_per_order == 1 &&
@@ -297,29 +436,20 @@ class Event < ApplicationRecord
     end
   end
 
-  private
+  # Published, postponed, cancelled and completed events were public at some
+  # point. Archived events count when their history shows a publish.
+  def ever_published?
+    return true if published_at.present? || %w[published postponed cancelled completed].include?(status_in_database)
+    return false if new_record?
 
-  def production_release_approvals(at:)
-    return [true, true, true, true, true] unless Rails.env.production?
-
-    state_digest = PilotReadiness.event_state_digest(self)
-    readiness = PilotReadiness.active_approval(self, at: at, state_digest: state_digest)
-    validation = PilotValidation.active_approval(
-      self, at: at, readiness_approval: readiness, state_digest: state_digest
-    ) if readiness
-    rehearsal = EventDayRehearsal.active_approval(
-      self, at: at, validation_approval: validation, state_digest: state_digest
-    ) if validation
-    paid_event = ticket_types.any? do |ticket_type|
-      ticket_type.price_cents.positive? || ticket_type.pricing_tiers.any? { |tier| tier.price_cents.positive? }
-    end
-    live_money_approval = LiveMoneyProof.active_approval(organization, at: at) if paid_event && !live_money_proof_candidate?
-    live_money = live_money_proof_candidate? || !paid_event || live_money_approval.present?
-    live_pilot = live_money_proof_candidate? || (rehearsal.present? && live_money && LivePilot.active_approval(
-      self, at: at, state_digest: state_digest, rehearsal: rehearsal, live_money: live_money_approval
-    ).present?)
-    [readiness.present?, validation.present?, rehearsal.present?, live_money, live_pilot]
+    event_state_changes.exists?(to_status: "published")
   end
+
+  def slug_follows_title?
+    !custom_slug? && !ever_published?
+  end
+
+  private
 
   def active_seat_holds_count(at: Time.current)
     return 0 unless event_seating_configuration
@@ -340,6 +470,10 @@ class Event < ApplicationRecord
     end
   end
 
+  def wallet_visible_change?
+    %w[status title starts_at ends_at venue_name venue_address].any? { |attribute| saved_change_to_attribute?(attribute) }
+  end
+
   def copy_venue_details
     self.venue_name = venue.name
     self.venue_address = venue.address
@@ -354,27 +488,51 @@ class Event < ApplicationRecord
     end
   end
 
+  def translation_became_eligible?
+    machine_translation_eligible? &&
+      !machine_translation_eligible?(status_in_database, policy_hold_scope_in_database, live_money_proof_candidate_in_database)
+  end
+
+  # Ticket types were not sent while the event was private.
+  def translation_cascade
+    ticket_types.find_each { |ticket_type| ticket_type.queue_translation!(nil) }
+  end
+
+  # Remembers which English each piece of organizer wording was written for.
+  def record_localized_content_sources
+    before = localized_content_in_database || {}
+    self.localized_content_sources = localized_content.to_h do |locale, fields|
+      kept = localized_content_sources.fetch(locale, {})
+      [locale, fields.to_h do |field, value|
+        unchanged = before.dig(locale, field) == value && kept[field].present?
+        [field, unchanged ? kept[field] : Translatable.digest(self[field])]
+      end]
+    end
+  end
+
   def supported_locales_are_known
     values = Array(supported_locales)
     errors.add(:supported_locales, "must include English") unless values.include?("en")
-    errors.add(:supported_locales, "contains an unsupported locale") unless (values - %w[en ja ch]).empty?
+    unless (values - [AppLocale::DEFAULT] - AppLocale::ORGANIZER_CONTENT_LOCALES).empty?
+      errors.add(:supported_locales, "contains an unsupported locale")
+    end
   end
 
   def localized_content_is_valid
-    unless localized_content.is_a?(Hash) && localized_content.keys.all? { |key| %w[ja ch].include?(key) }
-      errors.add(:localized_content, "may only contain Japanese and CHamoru content")
+    unless localized_content.is_a?(Hash) && (localized_content.keys - AppLocale::ORGANIZER_CONTENT_LOCALES).empty?
+      errors.add(:localized_content, "may only contain supported languages")
       return
     end
 
     valid = localized_content.values.all? do |translation|
-      translation.is_a?(Hash) && (translation.keys - %w[title description short_description]).empty? &&
+      translation.is_a?(Hash) && (translation.keys - CONTENT_FIELDS).empty? &&
         translation.values.all? { |value| value.is_a?(String) }
     end
     errors.add(:localized_content, "has an invalid translation shape") unless valid
   end
 
-  def checklist_item(code, label, complete)
-    { code: code, label: label, complete: !!complete }
+  def checklist_item(code, label, complete, required_to_publish: true)
+    { code: code, label: label, complete: !!complete, required_to_publish: required_to_publish }
   end
 
   def valid_ticket_sales_windows?(at: Time.current)
@@ -415,12 +573,34 @@ class Event < ApplicationRecord
     errors.add(:max_capacity, "cannot be less than sold and actively held inventory") if max_capacity < committed
   end
 
-  def generate_slug
-    base_slug = title.to_s.parameterize
-    self.slug = base_slug
-
-    if Event.where(slug: self.slug).where.not(id: self.id).exists?
-      self.slug = "#{base_slug}-#{SecureRandom.hex(3)}"
+  # Links are generated from the title. A draft's link follows title edits
+  # until the organizer picks a link name; once an event has ever been public,
+  # its link changes only when someone deliberately chooses a new one.
+  def assign_slug
+    @slug_chosen = slug_changed? && slug.present? && slug != @generated_slug
+    if @slug_chosen
+      self.slug = self.class.normalize_public_slug(slug)
+      self.custom_slug = true
+    elsif slug.blank? || (title_changed? && slug_follows_title? && @slug_generated_from != title)
+      @slug_generated_from = title
+      self.slug = @generated_slug = unique_generated_slug(title, fallback: "event")
     end
+  end
+
+  def slug_chosen?
+    @slug_chosen == true
+  end
+
+  def generated_slug_source
+    [title, "event"]
+  end
+
+  def chosen_slug_is_available
+    problem = self.class.public_slug_problem(slug, record: self)
+    errors.add(:slug, problem) if problem
+  end
+
+  def retain_previous_slug?
+    ever_published?
   end
 end

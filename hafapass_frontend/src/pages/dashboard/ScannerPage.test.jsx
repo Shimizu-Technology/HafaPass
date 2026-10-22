@@ -62,7 +62,7 @@ describe('scanner recovery and camera ownership', () => {
     const device = { id: 91, identifier: 'readable-door-device', effective: true, authorization_expires_at: deviceExpiry }
     const manifest = await signedManifest(eventId, [], { expires_at: new Date(Date.now() + 600_000).toISOString() })
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Synthetic Guam check-in', timezone: 'Pacific/Guam' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Synthetic Guam check-in', timezone: 'Pacific/Guam' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     apiClient.post.mockResolvedValue({ data: device })
     render(<ScannerPage />)
@@ -103,7 +103,7 @@ describe('scanner recovery and camera ownership', () => {
     const device = { id: 91, identifier: 'result-details-ui', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
     const manifest = await signedManifest(eventId, [])
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Result detail event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Result detail event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     apiClient.post.mockResolvedValue({ data: device })
     render(<ScannerPage />)
@@ -128,7 +128,7 @@ describe('scanner recovery and camera ownership', () => {
     const vibrate = vi.fn()
     vi.stubGlobal('navigator', new Proxy(navigator, { get: (target, name) => name === 'vibrate' ? vibrate : Reflect.get(target, name) }))
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Waiting Event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Waiting Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     let acknowledge
     let submitted
@@ -171,7 +171,7 @@ describe('scanner recovery and camera ownership', () => {
       return saved
     })
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Lost ACK Event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Lost ACK Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     const sent = []
     let loseResponse
@@ -237,7 +237,7 @@ describe('scanner recovery and camera ownership', () => {
       attendee_name: ticket_id === 501 ? 'First Guest' : 'Second Guest', ticket_type: 'General', credential_hash: await sha256Hex(`in-flight-${ticket_id}`) })))
     const manifest = await signedManifest(eventId, tickets)
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'In-flight Event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'In-flight Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     let acknowledgeFirst
     const sent = []
@@ -287,7 +287,7 @@ describe('scanner recovery and camera ownership', () => {
     const ticket = { ticket_id: 501, code: 'HP-T501', state: 'valid', attendee_name: 'Peer ACK Guest', ticket_type: 'General', credential_hash: await sha256Hex('peer-ack-qr') }
     const manifest = await signedManifest(eventId, [ticket])
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Peer ACK Event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Peer ACK Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     apiClient.post.mockResolvedValue({ data: device })
     const originalQueue = admissionStore.queueAdmission
@@ -317,7 +317,7 @@ describe('scanner recovery and camera ownership', () => {
     const ticket = { ticket_id: 501, state: 'valid', attendee_name: 'Between Reads Guest', ticket_type: 'General', credential_hash: await sha256Hex('between-reads-qr') }
     const manifest = await signedManifest(eventId, [ticket])
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Between Reads Event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Between Reads Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     apiClient.post.mockResolvedValue({ data: device })
     const originalState = admissionStore.localScanState
@@ -351,7 +351,7 @@ describe('scanner recovery and camera ownership', () => {
       attendee_name: `Guest ${ticket_id}`, ticket_type: 'General', credential_hash: await sha256Hex(`busy-sync-${ticket_id}`) })))
     const manifest = await signedManifest(eventId, tickets)
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Busy Sync Event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Busy Sync Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     let finishOlder
     let syncCalls = 0
@@ -395,7 +395,7 @@ describe('scanner recovery and camera ownership', () => {
     const ticket = { ticket_id: 501, state: 'valid', attendee_name: 'Later Guest', ticket_type: 'General', credential_hash: await sha256Hex('later-command-qr') }
     const manifest = await signedManifest(eventId, [ticket])
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Later Command Event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Later Command Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     apiClient.post.mockResolvedValue({ data: device })
     const originalQueue = admissionStore.queueAdmission
@@ -433,7 +433,7 @@ describe('scanner recovery and camera ownership', () => {
       attendee_name: `Guest ${ticket_id}`, ticket_type: 'General', credential_hash: await sha256Hex(`unknown-${ticket_id}`) })))
     const manifest = await signedManifest(eventId, tickets)
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/organizer/events'
-      ? { events: [{ id: eventId, title: 'Unknown Journal Event' }] }
+      ? { events: [{ id: eventId, status: 'published', title: 'Unknown Journal Event' }] }
       : url.endsWith('/manifest') ? manifest : { counts: {}, permissions: {}, recent_actions: [] } }))
     apiClient.post.mockImplementation(url => url.endsWith('/sync') ? Promise.reject(new Error('Response unavailable')) : Promise.resolve({ data: device }))
     const originalQueue = admissionStore.queueAdmission
@@ -490,7 +490,7 @@ describe('scanner recovery and camera ownership', () => {
     const updated = await signedManifest(eventId, [{ ...ticket, state: 'refund_pending' }], { version: 2 })
     let currentManifest = original
     apiClient.get.mockImplementation(url => {
-      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, title: 'Refund Event' }] } })
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, status: 'published', title: 'Refund Event' }] } })
       if (url.endsWith('/manifest')) return Promise.resolve({ data: currentManifest })
       return Promise.resolve({ data: { counts: {}, permissions: {}, recent_actions: [] } })
     })
@@ -542,7 +542,7 @@ describe('scanner recovery and camera ownership', () => {
     const renewed = await signedManifest(eventId, [{ ...ticket, state: 'valid' }], { version: 2 })
     let manifestCalls = 0
     apiClient.get.mockImplementation(url => {
-      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, title: 'Undo Event' }] } })
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, status: 'published', title: 'Undo Event' }] } })
       if (url.endsWith('/manifest')) return Promise.resolve({ data: ++manifestCalls === 1 ? initial : renewed })
       return Promise.resolve({ data: { counts: { admitted: 0, remaining: 1, conflicts: 0, rejected: 0 }, permissions: { can_reverse: true },
         recent_actions: [{ action_uuid: 'original-admission', ticket_id: 501, kind: 'admit', result: 'accepted', attendee: { attendee_name: 'Guest' } }] } })
@@ -576,7 +576,7 @@ describe('scanner recovery and camera ownership', () => {
     await saveDevice(eventId, { id: 91, identifier: 'revoked-device', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() })
     await saveVerifiedManifest(await signedManifest(eventId))
     window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
-    apiClient.get.mockResolvedValue({ data: { events: [{ id: eventId, title: 'Revoked Event' }] } })
+    apiClient.get.mockResolvedValue({ data: { events: [{ id: eventId, status: 'published', title: 'Revoked Event' }] } })
     apiClient.post.mockRejectedValue({ response: { status: 422, data: { error: 'You are not assigned to scan this event' } } })
     render(<ScannerPage />)
     await screen.findByText('You are not assigned to scan this event')
@@ -591,7 +591,7 @@ describe('scanner recovery and camera ownership', () => {
     const cancelled = await signedManifest(eventId, [{ ...ticket, state: 'cancelled' }], { version: 2 })
     let manifestCalls = 0
     apiClient.get.mockImplementation(url => {
-      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, title: 'Refresh Event' }] } })
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, status: 'published', title: 'Refresh Event' }] } })
       if (url.endsWith('/manifest')) return Promise.resolve({ data: ++manifestCalls === 1 ? initial : cancelled })
       return Promise.resolve({ data: { counts: { admitted: 0, remaining: 1, conflicts: 0, rejected: 0 }, permissions: {}, recent_actions: [] } })
     })
@@ -615,7 +615,7 @@ describe('scanner recovery and camera ownership', () => {
     const tickets = await Promise.all([92001, 92002].map(async id => ({ ticket_id: id + 1, state: 'valid', attendee_name: 'Guest', ticket_type: 'General', credential_hash: await sha256Hex(`qr-${id}`) })))
     const manifests = await Promise.all([92001, 92002].map((id, index) => signedManifest(id, [tickets[index]])))
     apiClient.get.mockImplementation(url => {
-      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: 92001, title: 'Event A' }, { id: 92002, title: 'Event B' }] } })
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: 92001, status: 'published', title: 'Event A' }, { id: 92002, status: 'published', title: 'Event B' }] } })
       if (url.endsWith('/manifest')) return Promise.resolve({ data: manifests[url.includes('/92001/') ? 0 : 1] })
       return Promise.resolve({ data: { counts: { admitted: 0, remaining: 1, conflicts: 0, rejected: 0 }, permissions: {}, recent_actions: [] } })
     })
@@ -653,7 +653,7 @@ describe('scanner recovery and camera ownership', () => {
     const base64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
     Object.assign(changed, { key_id: await sha256Hex(publicKey), public_key_spki: base64(publicKey), signature: base64(signature).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '') })
     apiClient.get.mockImplementation(url => {
-      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, title: 'Rotated Key Event' }] } })
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, status: 'published', title: 'Rotated Key Event' }] } })
       if (url.endsWith('/manifest')) return Promise.resolve({ data: changed })
       return Promise.resolve({ data: { counts: {}, permissions: {}, recent_actions: [] } })
     })

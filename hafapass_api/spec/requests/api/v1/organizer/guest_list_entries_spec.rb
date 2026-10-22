@@ -33,4 +33,13 @@ RSpec.describe "Organizer guest list redemption", type: :request do
     expect(order.tickets.count).to eq(2)
     expect(ticket_type.reload.quantity_sold).to eq(2)
   end
+
+  it "uses a reserved never-routable placeholder when the guest has no email" do
+    entry.update!(guest_email: "")
+
+    post "/api/v1/organizer/events/#{event.id}/guest_list/#{entry.id}/redeem", headers: auth_headers(user)
+
+    expect(response).to have_http_status(:ok)
+    expect(entry.reload.order.buyer_email).to eq("guest-list@hafapass.invalid")
+  end
 end

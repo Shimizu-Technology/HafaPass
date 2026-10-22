@@ -43,7 +43,8 @@ module Api
                 cash_return: refund.provider_payload["cash_return"], succeeded_at: refund.succeeded_at, recorded_at: refund.created_at
               } },
               ticket_count: order.tickets.size, total_cents: order.total_cents, status: order.status,
-              refunded_cents: order.refunded_cents, refundable_cents: order.refundable_cents, created_at: order.created_at
+              refunded_cents: order.refunded_cents, refundable_cents: order.refundable_cents, created_at: order.created_at,
+              test_payment: order.test_payment?
           }
         end
       end

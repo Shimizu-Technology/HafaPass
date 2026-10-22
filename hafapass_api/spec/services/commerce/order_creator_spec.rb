@@ -2,11 +2,12 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Commerce::OrderCreator do
-  let(:event) { create(:event, :published) }
+  let(:event) { create(:event, :published, organizer_profile: create(:organizer_profile, :verified)) }
   let(:ticket_type) { create(:ticket_type, event: event, price_cents: 1000) }
 
-  it "blocks internal and box-office checkout in production without current pilot readiness" do
+  it "blocks every commerce channel in production while the organizer is not verified" do
     allow(Rails.env).to receive(:production?).and_return(true)
+    event.organizer_profile.update!(verification_status: :suspended)
 
     expect do
       described_class.call(
@@ -18,65 +19,22 @@ RSpec.describe Commerce::OrderCreator do
         source: "box_office",
         payment_method: "door_cash"
       )
-    end.to raise_error(described_class::CheckoutError, /current pilot readiness approval/)
-
+    end.to raise_error(described_class::CheckoutError, /not currently on sale/)
     expect(event.orders).to be_empty
   end
 
-  it "blocks every commerce channel in production without current Gate F validation" do
+  it "sells at the box office in production without any per-event launch-gate reviews" do
     allow(Rails.env).to receive(:production?).and_return(true)
-    allow(event).to receive(:production_release_gate_status).and_return(:pilot_validation)
+    allow(EmailService).to receive(:send_order_confirmation_async)
 
-    expect do
-      described_class.call(
-        event: event,
-        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
-        buyer_email: "walkin@example.com",
-        buyer_name: "Walk-in",
-        payment_required: false,
-        source: "box_office",
-        payment_method: "door_cash"
-      )
-    end.to raise_error(described_class::CheckoutError, /current Gate F validation approval/)
+    result = described_class.call(
+      event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "walkin@example.com", buyer_name: "Walk-in",
+      payment_required: false, source: "box_office", payment_method: "door_cash"
+    )
 
-    expect(event.orders).to be_empty
-  end
-
-  it "blocks every commerce channel in production without current Gate G rehearsal approval" do
-    allow(Rails.env).to receive(:production?).and_return(true)
-    allow(event).to receive(:production_release_gate_status).and_return(:event_day_rehearsal)
-
-    expect do
-      described_class.call(
-        event: event,
-        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
-        buyer_email: "walkin@example.com",
-        buyer_name: "Walk-in",
-        payment_required: false,
-        source: "box_office",
-        payment_method: "door_cash"
-      )
-    end.to raise_error(described_class::CheckoutError, /current Gate G rehearsal approval/)
-
-    expect(event.orders).to be_empty
-  end
-
-  it "blocks every commerce channel without Gate I approval or an active pilot sales window" do
-    allow(Rails.env).to receive(:production?).and_return(true)
-    call = lambda do
-      described_class.call(
-        event: event,
-        line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
-        buyer_email: "walkin@example.com", buyer_name: "Walk-in",
-        payment_required: false, source: "box_office", payment_method: "door_cash"
-      )
-    end
-
-    allow(event).to receive(:production_release_gate_status).and_return(:live_pilot)
-    expect(&call).to raise_error(described_class::CheckoutError, /current Gate I bounded-pilot approval/)
-    allow(event).to receive(:production_release_gate_status).and_return(:live_pilot_operation)
-    expect(&call).to raise_error(described_class::CheckoutError, /sales window is not active/)
-    expect(event.orders).to be_empty
+    expect(result.order).to be_persisted
   end
 
   it "rejects checkout for events that ended or are no longer published" do
@@ -317,8 +275,6 @@ RSpec.describe Commerce::OrderCreator do
   describe "production paid checkout" do
     before do
       allow(Rails.env).to receive(:production?).and_return(true)
-      allow(event).to receive(:production_release_gate_status).and_return(nil)
-      allow(LivePilot).to receive(:enforce_inventory_cap!)
     end
 
     it "rejects simulated paid checkout without creating an order or contacting Stripe" do
@@ -326,7 +282,7 @@ RSpec.describe Commerce::OrderCreator do
       expect do
         described_class.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
           buyer_email: "test@example.com", buyer_name: "Tester", payment_required: true)
-      end.to raise_error(described_class::CheckoutError, /Simulated payments/)
+      end.to raise_error(described_class::CheckoutError, /has not turned on payments/)
       expect(event.orders).to be_empty
       expect(StripeService).not_to have_received(:create_payment_intent)
     end

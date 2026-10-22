@@ -2,7 +2,7 @@ class SitemapsController < ApplicationController
   skip_before_action :authenticate_user!
 
   def show
-    @events = Event.published.where(live_money_proof_candidate: false)
+    @events = Event.published.where(live_money_proof_candidate: false).without_hidden_policy_hold
       .where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current).order(updated_at: :desc)
     @collections = MarketplaceCollection.currently_visible.with_discoverable_events
     @venues = Venue.published.joins(:events).merge(Event.discoverable).distinct
@@ -23,6 +23,13 @@ class SitemapsController < ApplicationController
           xml.loc "#{base_url}/events"
           xml.changefreq "daily"
           xml.priority "0.9"
+        end
+
+        # Organizer landing page with pricing
+        xml.url do
+          xml.loc "#{base_url}/host"
+          xml.changefreq "monthly"
+          xml.priority "0.8"
         end
 
         # Individual published events

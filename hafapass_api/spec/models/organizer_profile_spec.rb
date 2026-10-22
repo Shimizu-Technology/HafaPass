@@ -2,6 +2,17 @@ require 'rails_helper'
 
 RSpec.describe OrganizerProfile, type: :model do
   describe "validations" do
+    it "rechecks an existing logo when the organization changes" do
+      profile = create(:organizer_profile)
+      logo = "https://storage.invalid/uploads/logo.webp"
+      ImageUploadReceipt.create!(user: profile.user, organization: profile.organization,
+        source_key: "pending/logo", final_key: "uploads/logo.webp", public_url: logo, completed_at: Time.current)
+      profile.update!(logo_url: logo)
+      profile.organization = create(:organization)
+
+      expect(profile).not_to be_valid
+      expect(profile.errors[:logo_url]).to include(ApprovedImageUrl::MESSAGE)
+    end
     it "is valid with valid attributes" do
       profile = build(:organizer_profile)
       expect(profile).to be_valid

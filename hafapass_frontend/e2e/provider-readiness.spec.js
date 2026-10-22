@@ -32,18 +32,18 @@ test('admin sees fail-closed provider state and submits a complete policy eviden
 
   await expect(page.getByRole('heading', { name: 'Provider and policy readiness' })).toBeVisible()
   const stripe = page.getByRole('region', { name: 'Stripe live payments' })
-  await expect(stripe.getByText('Not Configured')).toBeVisible()
-  await expect(stripe.getByRole('button', { name: 'Submit immutable evidence' })).toBeDisabled()
+  await expect(stripe.getByText('Not configured')).toBeVisible()
+  await expect(stripe.getByRole('button', { name: 'Submit evidence (can’t be edited later)' })).toBeDisabled()
 
   const policy = page.getByRole('region', { name: 'Production policy register' })
-  await expect(policy.getByText('Disabled Pending Approval')).toBeVisible()
+  await expect(policy.getByText('Off until approved')).toBeVisible()
   await policy.getByLabel('Evidence reference').fill('controlled/legal/policy-register-17')
   await policy.getByLabel('SHA-256 evidence digest').fill('a'.repeat(64))
   for (const checkbox of await policy.getByRole('checkbox').all()) await checkbox.check()
   const submissionResponse = page.waitForResponse(response =>
     response.url().includes('/api/v1/admin/platform_capabilities/policy_register/reviews') &&
       response.request().method() === 'POST')
-  await policy.getByRole('button', { name: 'Submit immutable evidence' }).click()
+  await policy.getByRole('button', { name: 'Submit evidence (can’t be edited later)' }).click()
   await submissionResponse
 
   expect(submitted).toMatchObject({

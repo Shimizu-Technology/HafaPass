@@ -30,6 +30,12 @@ module HafapassApi
       :sidekiq
     end
 
+    # Languages for buyer-facing copy (see AppLocale and docs/TRANSLATIONS.md).
+    # Anything missing in a language falls back to English.
+    config.i18n.available_locales = %i[en ko ja zh-Hant zh tl]
+    config.i18n.default_locale = :en
+    config.i18n.fallbacks = [:en]
+
     # Enable Rack::Attack for rate limiting
     config.middleware.use Rack::Attack
   end

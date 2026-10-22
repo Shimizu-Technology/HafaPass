@@ -2,7 +2,8 @@
 
 class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer::EventResourcesController
   def index
-    render json: { communication_campaigns: event.communication_campaigns.order(created_at: :desc).map { |item| serialize(item) } }
+    campaigns = event.communication_campaigns.order(created_at: :desc)
+    render json: { communication_campaigns: campaigns.map { |item| serialize(item) } }
   end
 
   def create
@@ -37,7 +38,7 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
 
   def send_now
     campaign = event.communication_campaigns.find(params[:id])
-    CommunicationCampaigns::Sender.call(campaign)
+    CommunicationCampaigns::Sender.call(campaign, actor: current_user)
     render json: serialize(campaign.reload), status: :accepted
   rescue CommunicationCampaigns::Sender::CampaignError => e
     render json: { error: e.message }, status: :unprocessable_entity
@@ -76,7 +77,10 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
   end
 
   def serialize(campaign)
-    campaign.as_json(only: [:id, :name, :subject, :body, :segment, :status, :scheduled_at,
+    result = campaign.as_json(only: [:id, :name, :subject, :body, :segment, :status, :scheduled_at,
       :started_at, :sent_at, :recipient_count, :created_at])
+    return result unless campaign.draft? || campaign.scheduled?
+
+    result.merge(audience: CommunicationCampaigns::Sender.new(campaign).audience_counts)
   end
 end

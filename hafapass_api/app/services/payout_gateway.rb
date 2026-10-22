@@ -21,7 +21,7 @@ class PayoutGateway
       return Result.new(provider_payout_id: "sim_po_#{SecureRandom.hex(12)}", status: :paid)
     end
 
-    if %w[manual legacy_manual].include?(payout.provider)
+    if %w[manual legacy_manual check].include?(payout.provider)
       return Result.new(provider_payout_id: "manual_po_#{payout.id}", status: :processing)
     end
 

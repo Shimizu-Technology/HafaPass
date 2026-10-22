@@ -5,32 +5,34 @@ function json(route, body, status = 200) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/organizer/tax_information', route => json(route, { tax_information: null, edit_locked: false, certification: 'Under penalties of perjury, I certify.' }))
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
 })
 
-test('owner can review team roles, Guam payout gates, and create an invitation', async ({ page }) => {
+test('owner can review team roles, choose check payouts, and create an invitation', async ({ page }) => {
   await page.route('**/api/v1/organizer/organization', route => json(route, {
     id: 7, name: 'Island Events', role: 'owner', payout_ready: false, timezone: 'Pacific/Guam'
   }))
   await page.route('**/api/v1/organizer/memberships', route => {
     if (route.request().method() === 'POST') return json(route, {
-      id: 2, email: 'finance@example.com', role: 'finance', status: 'invited', invitation_token: 'browser-signed-token'
+      id: 2, email: 'finance@example.com', role: 'finance', status: 'invited', invitation_status: 'pending', invitation_token: 'browser-signed-token'
     }, 201)
-    return json(route, [{ id: 1, email: 'owner@example.com', name: 'Island Owner', role: 'owner', status: 'active' }])
+    return json(route, [{ id: 1, email: 'owner@example.com', name: 'Island Owner', role: 'owner', status: 'active', invitation_status: 'accepted' }])
   })
   await page.route('**/api/v1/organizer/connected_accounts', route => json(route, []))
 
   await page.goto('/dashboard/settings')
 
   await expect(page.getByRole('heading', { name: 'Island Events' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Assisted local bank setup' })).toBeVisible()
-  await page.getByText('Other provider availability', { exact: true }).click()
-  await expect(page.getByText(/Unavailable unless Stripe confirms Guam/)).toBeVisible()
-  await page.getByLabel('Teammate email').fill('finance@example.com')
-  await page.getByLabel('Team role').selectOption('finance')
-  await page.getByRole('button', { name: 'Invite' }).click()
-  await expect(page.getByText('Secure invitation link')).toBeVisible()
-  await expect(page.getByRole('textbox', { name: 'Invitation link' })).toHaveValue(/browser-signed-token/)
+  const payouts = page.getByRole('region', { name: 'How you get paid' })
+  await expect(payouts.getByRole('radio', { name: /Check/ })).toBeChecked()
+  await expect(payouts.getByLabel('Pay to (name on the check)')).toBeVisible()
+  const team = page.getByRole('region', { name: 'Organization team' })
+  await team.getByLabel('Teammate email').fill('finance@example.com')
+  await team.getByRole('radio', { name: /Finance/ }).check()
+  await team.getByRole('button', { name: 'Invite', exact: true }).click()
+  await expect(team.getByText('Invitation sent to finance@example.com as Finance.')).toBeVisible()
+  await expect(team.getByRole('textbox', { name: 'Invitation link' })).toHaveValue(/browser-signed-token/)
 })
 
 test('finance dashboard separates ticket economics and immutable payout state', async ({ page }) => {

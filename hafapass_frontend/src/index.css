@@ -30,6 +30,10 @@
   button, a, [role="button"] { touch-action: manipulation; }
   button { user-select: none; }
   input, select, textarea { scroll-margin-block: 7rem 4rem; }
+  /* Native checkboxes, radios and ranges use the brand instead of browser blue. */
+  input[type="checkbox"], input[type="radio"], input[type="range"], progress {
+    accent-color: theme('colors.action.teal');
+  }
 
   /* Smooth transitions on all interactive elements */
   a, button, input, select, textarea {
@@ -40,9 +44,9 @@
 @layer components {
   .btn-primary {
     @apply inline-flex min-h-11 items-center justify-center px-6 py-3 font-semibold rounded-xl bg-action
-           text-white transition-all duration-200
+           text-white transition-[background-color,box-shadow,transform] duration-150 ease-out-strong
            hover:shadow-glow-accent
-           active:translate-y-0 active:shadow-md
+           active:scale-[0.97] active:shadow-md
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2
            disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none;
     box-shadow: 0 1px 3px rgba(240,86,74,0.3), 0 1px 2px rgba(0,0,0,0.06);
@@ -59,18 +63,25 @@
 
   .btn-secondary {
     @apply inline-flex min-h-11 items-center justify-center px-6 py-3 bg-white text-neutral-700 font-semibold rounded-xl
-           border border-neutral-200/80 transition-all duration-200
+           border border-neutral-200/80 transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out-strong
            hover:bg-neutral-50 hover:border-neutral-300 hover:shadow-soft
-           active:translate-y-0
+           active:scale-[0.97]
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-ghost {
     @apply inline-flex min-h-11 items-center justify-center px-6 py-3 text-neutral-600 font-semibold rounded-xl
-           transition-all duration-200
+           transition-[background-color,color,transform] duration-150 ease-out-strong
            hover:text-neutral-900 hover:bg-neutral-100
-           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2;
+           active:scale-[0.97]
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Press feedback is for live controls only; disabled buttons stay still. */
+  :is(.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost):is(:disabled, [aria-disabled="true"]) {
+    transform: none;
   }
 
   .card {
@@ -78,7 +89,8 @@
   }
 
   .card-hover {
-    @apply hover:shadow-card-hover hover:border-neutral-300/60 hover:-translate-y-0.5 transition-all duration-300;
+    @apply hover:shadow-card-hover hover:border-neutral-300/60 hover:-translate-y-0.5
+           transition-[box-shadow,border-color,transform] duration-200 ease-out-strong;
   }
 
   .glass {
@@ -88,7 +100,7 @@
 
   .input {
     @apply w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl text-neutral-900
-           placeholder:text-neutral-400 transition-all duration-200
+           placeholder:text-neutral-400 transition-[border-color,box-shadow,background-color] duration-200
            focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500
            hover:border-neutral-300;
   }
@@ -100,8 +112,9 @@
   }
 }
 
-/* Enabled controls restore full contrast immediately, including buttons with transition-all utilities. */
-.btn-primary, .btn-secondary {
+/* Enabled controls restore full contrast immediately (opacity is never transitioned),
+   even when a page adds its own transition utility to a shared button class. */
+.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost {
   transition-property: background-color, border-color, color, box-shadow, transform;
 }
 
@@ -112,6 +125,7 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  :is(.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost):active { transform: none; }
   .btn-primary:hover, .btn-secondary:hover, .card-hover:hover { transform: none; }
 }
 
@@ -135,3 +149,26 @@
     font-size: max(16px, 1rem);
   }
 }
+
+/* Host page: the door preview settles in once on arrival (rare, first-visit
+   motion). Transform and opacity only; reduced motion shows it still. */
+@keyframes host-preview-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes host-check-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+.host-preview-front { animation: host-preview-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.host-preview-back { animation: host-preview-in 280ms cubic-bezier(0.23, 1, 0.32, 1) 60ms both; }
+.host-preview-check { animation: host-check-in 220ms cubic-bezier(0.23, 1, 0.32, 1) 200ms both; }
+@media (prefers-reduced-motion: reduce) {
+  .host-preview-front, .host-preview-back, .host-preview-check { animation: none; }
+}
+
+/* Event-specific accents stay inside the public event page. The ticket layout is fixed. */
+.event-customized .btn-primary, .event-customized .event-buy { background: var(--event-accent); color: var(--event-on-accent); border: 1px solid var(--event-link); }
+.event-customized .btn-primary:hover { box-shadow: inset 0 0 0 2px var(--event-on-accent); }
+.event-customized .event-link, .event-customized .event-heading, .event-customized .text-brand-600, .event-customized .text-brand-700, .event-customized .prose h2 { color: var(--event-link); }
+.event-customized a:not(.btn-primary):hover { text-decoration: underline; }

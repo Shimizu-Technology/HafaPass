@@ -4,7 +4,7 @@
 # Apply the same boundary to Rails logs, structured logs, and Sentry exports.
 module TelemetryPrivacy
   FILTERED = "[FILTERED]"
-  SECRET_PATH = %r{(/(?:tickets|check_in|ticket-transfers|organization-invitations)/)([^/]+)}i
+  SECRET_PATH = %r{(/(?:tickets|check_in|ticket-transfers|organization-invitations|ticket_email_attachments)/)([^/]+)}i
   URL_IN_TEXT = %r{https?://[^\s<>"']+|/[^\s<>"']+}i
   SECRET_KEY = /authorization|cookie|token|credential|qr_code|password|secret|email|phone|query(?:_string)?|http\.query|request_body|\Abody\z/i
   URL_KEY = /url|href|path|location|referer|referrer|transaction|\A(?:from|to)\z/i

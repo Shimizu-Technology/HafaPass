@@ -49,6 +49,29 @@ for (const width of [320, 390, 1440]) {
   })
 }
 
+test('buyer-pays prices are all-in from the first display through the checkout total', async ({ page }) => {
+  await prepare(page)
+  const allIn = { ...event, fee_policy: 'buyer_pays', buyer_fee_percent: 100, service_fee_includes_processing: true,
+    seller: { seller_name: 'Island Nights', ticketing_service: 'HåfaPass', line: 'Sold by Island Nights · Tickets by HåfaPass' },
+    ticket_types: [{ id: 10, name: 'General admission with dinner and entertainment', price_cents: 1999, current_price_cents: 1999,
+      all_in_price_cents: 2199, service_fee_cents: 200, quantity_remaining: 20, on_sale: true }] }
+  await page.route('**/api/v1/config', route => json(route, { payment_mode: 'simulate', service_fee_percent: 5,
+    service_fee_flat_cents: 100, processing_fee_bearer: 'platform', buyer_terms_version: 'qa-v1' }))
+  await page.route('**/api/v1/events/guam-community-night', route => json(route, allIn))
+  await page.goto('/events/guam-community-night')
+  const tickets = page.locator('#tickets')
+  await expect(tickets.getByText('$21.99', { exact: true })).toBeVisible()
+  await expect(tickets.getByText('$19.99 ticket + $2.00 service fee')).toBeVisible()
+  await expect(tickets.getByText('Sold by Island Nights · Tickets by HåfaPass')).toBeVisible()
+  await tickets.getByRole('button', { name: 'Increase quantity for General admission with dinner and entertainment', exact: true }).click()
+  await tickets.getByRole('button', { name: 'Increase quantity for General admission with dinner and entertainment', exact: true }).click()
+  await expect(tickets.getByRole('button', { name: /Buy Tickets/ })).toContainText('$43.98')
+  await tickets.getByRole('button', { name: /Buy Tickets/ }).click()
+  await expect(page).toHaveURL(/\/checkout\/guam-community-night$/)
+  await expect(page.getByText('$4.00', { exact: true })).toBeVisible()
+  await expect(page.getByText('$43.98', { exact: true }).first()).toBeVisible()
+})
+
 test('an event outage retries in place instead of pretending the event is missing', async ({ page }) => {
   await prepare(page)
   let requests = 0

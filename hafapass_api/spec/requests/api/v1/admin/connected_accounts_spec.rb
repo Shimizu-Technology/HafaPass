@@ -10,7 +10,8 @@ RSpec.describe "Admin connected accounts and payout controls", type: :request do
   end
   let(:headers) { auth_headers(admin) }
 
-  it "keeps readiness blocked until a second admin approves complete evidence" do
+  it "keeps readiness blocked until an admin approves complete evidence, even the submitter" do
+    create(:organizer_tax_information, organization: organization)
     patch "/api/v1/admin/connected_accounts/#{account.id}", params: {
       provider_account_id: "paypal-merchant-verified",
       charges_enabled: true,
@@ -42,17 +43,14 @@ RSpec.describe "Admin connected accounts and payout controls", type: :request do
     expect(response.parsed_body.fetch("provider_state_digest")).to eq(account.reload.readiness_state_digest)
     submission_id = response.parsed_body.fetch("id")
 
+    # One administrator may submit and approve; the audit trail keeps both acts.
     patch "/api/v1/admin/payment_readiness_reviews/#{submission_id}/approve", headers: headers
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body.fetch("error")).to include("cannot approve their own")
-
-    independent_admin = create(:user, :admin)
-    patch "/api/v1/admin/payment_readiness_reviews/#{submission_id}/approve",
-      headers: auth_headers(independent_admin)
 
     expect(response).to have_http_status(:created)
     expect(response.parsed_body).to include("decision" => "approval", "connected_account_payout_ready" => true)
     expect(account.reload).to be_payout_ready
+    expect(AuditLog.where(action: %w[payment_readiness.submitted payment_readiness.approved]).pluck(:actor_user_id).uniq)
+      .to eq([admin.id])
   end
 
   it "rejects cross-organization adjustment references" do

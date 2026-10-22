@@ -41,7 +41,7 @@ module Commerce
     end
 
     def initialize(order:, amount_cents: nil, reason: nil, requested_by: nil, idempotency_key: nil,
-      provider_refund: nil, tickets: nil, payment: nil, cash_return: nil)
+      provider_refund: nil, tickets: nil, payment: nil, cash_return: nil, manual_card_return: nil)
       @order = order
       @requested_amount_cents = amount_cents&.to_i
       @reason = reason
@@ -51,10 +51,11 @@ module Commerce
       @tickets = tickets.nil? ? nil : Array(tickets).compact
       @captured_payment = payment
       @cash_return = cash_return
+      @manual_card_return = manual_card_return
     end
 
     def call
-      return record_cash_return! if cash_return
+      return record_manual_return! if cash_return || manual_card_return
 
       refund = reserve_refund!
       return refund unless refund.pending?
@@ -79,28 +80,30 @@ module Commerce
 
     private
 
-    attr_reader :order, :requested_amount_cents, :reason, :requested_by, :idempotency_key, :provider_refund, :tickets, :captured_payment, :cash_return
+    attr_reader :order, :requested_amount_cents, :reason, :requested_by, :idempotency_key, :provider_refund, :tickets, :captured_payment, :cash_return, :manual_card_return
 
-    # This records an organizer's attestation that physical cash was already
-    # returned. It never sends money or represents a provider refund. Keep the
-    # evidence, allocations and ticket changes in one recoverable transaction.
-    def record_cash_return!
+    # An operator records money already returned through cash or a separate
+    # card provider. This method never sends money. Keep the evidence,
+    # allocations and ticket changes in one recoverable transaction.
+    def record_manual_return!
       validate_cash_return!
       Order.transaction do
         refund = reserve_refund!
         next refund unless refund.pending?
 
-        response = OpenStruct.new(id: "cash_return_#{refund.id}", status: "succeeded",
+        response = OpenStruct.new(id: "#{manual_card_return ? 'manual_card_return' : 'cash_return'}_#{refund.id}", status: "succeeded",
           amount: refund.amount_cents, currency: refund.currency)
         finalize_refund!(refund, response)
       end
     end
 
     def validate_cash_return!
-      unless cash_return.is_a?(Hash) && requested_by&.persisted? && reason.present? && provider_refund.nil?
-        raise RefundError, "Cash return requires an actor, reason, reference and returned_at timestamp"
+      evidence_data = manual_card_return || cash_return
+      unless evidence_data.is_a?(Hash) && requested_by&.persisted? && reason.present? && provider_refund.nil? &&
+          !(cash_return && manual_card_return)
+        raise RefundError, "Manual return requires an actor, reason, reference and returned_at timestamp"
       end
-      evidence = cash_return.stringify_keys
+      evidence = evidence_data.stringify_keys
       reference = evidence["reference"].to_s.strip
       timestamp = evidence["returned_at"].to_s
       raise ArgumentError unless timestamp.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
@@ -111,6 +114,7 @@ module Commerce
       end
       @cash_return_evidence = { "reference" => reference, "returned_at" => returned_at.utc.iso8601(6),
         "recorded_by_user_id" => requested_by.id, "cash_custodian" => "organizer" }
+      @cash_return_evidence.delete("cash_custodian") if manual_card_return
     rescue ArgumentError
       raise RefundError, "Cash return timestamp must be ISO 8601 with an offset"
     end
@@ -139,9 +143,13 @@ module Commerce
         unless payment && payment.order_id == order.id && (payment.succeeded? || payment.partially_refunded?)
           raise RefundError, "A captured payment is required for a refund"
         end
-        if cash_return
-          unless payment.provider == "door_cash" && order.payment_method == "door_cash"
+        if cash_return || manual_card_return
+          if cash_return && !(payment.provider == "door_cash" && order.payment_method == "door_cash")
             raise RefundError, "Cash return recording requires an organizer-collected cash payment"
+          end
+          if manual_card_return && (payment.provider == "stripe" || payment.provider == "door_cash" ||
+              order.payment_method != "door_card")
+            raise RefundError, "Manual card return requires a captured non-Stripe door-card payment"
           end
         elsif payment.provider != "stripe" || payment.provider_payment_id.blank?
           raise RefundError, "Automated refunds are not supported for this payment provider"
@@ -150,7 +158,14 @@ module Commerce
           raise RefundError, "Simulated payments cannot be refunded in production"
         end
         payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
-        remaining = [order.refundable_cents, payment_remaining].min
+        order_remaining = if Payment.live_or_legacy_capture.where(id: payment.id).exists?
+          live_payments = order.payments.merge(Payment.live_or_legacy_capture)
+          live_refunds = order.refunds.where(payment_id: live_payments.select(:id), status: [:pending, :succeeded]).sum(:amount_cents)
+          [[order.total_cents, live_payments.sum(:amount_cents)].min - live_refunds, 0].max
+        else
+          order.refundable_cents
+        end
+        remaining = [order_remaining, payment_remaining].min
         amount = requested_amount_cents || selected_tickets&.sum(&:refundable_cents) || remaining
         if selected_tickets && requested_amount_cents && requested_amount_cents != selected_tickets.sum(&:refundable_cents)
           raise RefundError, "Ticket refunds must match the selected ticket value"
@@ -168,7 +183,9 @@ module Commerce
           currency: order.currency,
           status: :pending,
           reason: reason,
-          provider_payload: cash_return ? { cash_return: @cash_return_evidence, manual_record: true } : {}
+          provider_payload: cash_return || manual_card_return ? {
+            (manual_card_return ? :manual_card_return : :cash_return) => @cash_return_evidence, manual_record: true
+          } : {}
         )
         selected_tickets&.each do |ticket|
           refund.refund_tickets.create!(ticket: ticket, amount_cents: ticket.refundable_cents)
@@ -276,7 +293,9 @@ module Commerce
     def validate_replay!(refund)
       unless (requested_amount_cents.nil? || requested_amount_cents == refund.amount_cents) &&
           (tickets.nil? || tickets.map(&:id).sort == refund.refund_tickets.pluck(:ticket_id).sort) &&
-          (!cash_return || (refund.provider == "door_cash" && refund.provider_payload["cash_return"] == @cash_return_evidence))
+          (!cash_return || (refund.provider == "door_cash" && refund.provider_payload["cash_return"] == @cash_return_evidence)) &&
+          (!manual_card_return || (refund.provider != "stripe" && refund.provider != "door_cash" &&
+            refund.provider_payload["manual_card_return"] == @cash_return_evidence))
         raise RefundError, "Idempotency-Key was already used for a different refund request"
       end
       @replayed_refund = true
@@ -348,7 +367,11 @@ module Commerce
         allocate_items!(refund)
         record_promoter_commission_reversal!(refund)
 
-        succeeded_total = refund.order.refunds.succeeded.sum(:amount_cents)
+        succeeded_refunds = refund.order.refunds.succeeded
+        if Payment.live_or_legacy_capture.where(id: refund.payment_id).exists?
+          succeeded_refunds = succeeded_refunds.where(payment_id: refund.order.payments.merge(Payment.live_or_legacy_capture).select(:id))
+        end
+        succeeded_total = succeeded_refunds.sum(:amount_cents)
         full_refund = succeeded_total >= refund.order.total_cents
         refund.order.update!(
           status: full_refund ? :refunded : :partially_refunded,
@@ -382,6 +405,10 @@ module Commerce
       refund.order.order_items.order(:id).each do |item|
         successful_allocations = RefundItem.joins(:refund)
           .where(order_item: item, refunds: { status: Refund.statuses[:succeeded] })
+        if Payment.live_or_legacy_capture.where(id: refund.payment_id).exists?
+          successful_allocations = successful_allocations.where(
+            refunds: { payment_id: refund.order.payments.merge(Payment.live_or_legacy_capture).select(:id) })
+        end
         organizer_remaining = item.organizer_proceeds_cents - successful_allocations.sum(:organizer_proceeds_cents)
         fee_remaining = item.fee_cents - successful_allocations.sum(:fee_cents)
         organizer_fee_remaining = item.organizer_fee_cents - successful_allocations.sum(:organizer_fee_cents)

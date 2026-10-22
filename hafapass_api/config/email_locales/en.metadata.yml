@@ -1,0 +1,94 @@
+# Context for the `gt` CLI when it translates en.yml. Not loaded by Rails.
+emails:
+  footer:
+    context: HåfaPass is the product name and Shimizu Technology the company name; keep both as written.
+  formats:
+    event_datetime:
+      context: Date and time pattern for an event. Reorder the placeholders for the target language; keep every %{placeholder}.
+    month_names:
+      context: Full month names, January to December, in order.
+    am:
+      context: Before-noon marker shown before or after a 12-hour clock time.
+    pm:
+      context: Afternoon marker shown before or after a 12-hour clock time.
+  order_confirmation:
+    service_fee:
+      context: HåfaPass's service fee for the purchase. It is not a tax; never translate it as tax.
+    entry_instructions:
+      context: "%{my_tickets_link} becomes a link labelled My Tickets. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+    all_transferred:
+      context: "%{my_tickets_link} becomes a link labelled My Tickets. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+    subject:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    heading:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    thanks:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    tickets_heading:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    ticket_column:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    view_ticket:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+  refund:
+    returned:
+      context: "%{amount} is a US dollar amount such as $25.00."
+    subject:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    body:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    questions:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition. The organizer is the person or business hosting the event and selling its tickets.'
+  transfer:
+    sign_in:
+      context: "%{email} is the recipient's email address; %{expires_at} is a date and time."
+    subject:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    title:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    heading:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    accept:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+  waitlist_offer:
+    body:
+      context: "%{count} is a number of tickets, %{ticket_type} the ticket option name, %{event} the event name. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+    subject:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    heading:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    cta:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+  my_tickets:
+    context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+  pdf_note:
+    single:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    all:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    capped:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    partial:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+  ticket:
+    subject:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    heading:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    view:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+  waitlist:
+    subject:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    title:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    heading:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    greeting:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    greeting_anonymous:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    deadline:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+    cta:
+      context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'

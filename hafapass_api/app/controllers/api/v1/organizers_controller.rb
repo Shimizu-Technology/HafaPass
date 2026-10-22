@@ -20,7 +20,7 @@ class Api::V1::OrganizersController < ApplicationController
         { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
     render json: organizer_json(organization).merge(
-      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true) },
+      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: event.organizer_sales_verified?, fee_terms: listing_fee_terms, locale: request_locale) },
       meta: pagination_meta(pagy)
     )
   end
@@ -35,6 +35,7 @@ class Api::V1::OrganizersController < ApplicationController
       slug: organization.slug,
       description: profile.business_description,
       logo_url: profile.logo_url,
+      image_asset_host: S3Service.public_asset_host,
       verified: profile.verification_status_verified?,
       ambros_partner: profile.is_ambros_partner,
       completed_events: metric_for(@completed_events, organization.id) { organization.events.completed.count },

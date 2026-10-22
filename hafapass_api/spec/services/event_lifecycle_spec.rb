@@ -17,6 +17,18 @@ RSpec.describe EventLifecycle do
     expect(event.event_state_changes.last.update(reason: "rewritten")).to be(false)
   end
 
+  it "keeps lifecycle transitions available for events with legacy invalid page design" do
+    event.update_columns(page_customization: { accent: "legacy-invalid" })
+    event.reload
+
+    described_class.call(event: event, action: :publish, actor: actor)
+    described_class.call(event: event, action: :postpone, actor: actor, reason: "Venue closure")
+    described_class.call(event: event, action: :cancel, actor: actor, reason: "Event cancelled")
+
+    expect(event.reload).to be_cancelled
+    expect(event.page_customization).to eq("accent" => "legacy-invalid")
+  end
+
   it "rejects an incomplete event with its publishing checklist" do
     event.ticket_types.destroy_all
 
@@ -39,54 +51,13 @@ RSpec.describe EventLifecycle do
     }
   end
 
-  it "blocks production publication without a current event-specific readiness approval" do
+  it "publishes in production without any per-event launch-gate review" do
     allow(Rails.env).to receive(:production?).and_return(true)
     allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
 
-    expect {
-      described_class.call(event: event, action: :publish, actor: actor)
-    }.to raise_error(described_class::TransitionError) { |error|
-      expect(error.checklist).to include(
-        include(code: "pilot_readiness_approved", complete: false)
-      )
-    }
-  end
+    described_class.call(event: event, action: :publish, actor: actor)
 
-  it "blocks production publication after Gate E until candidate validation is approved" do
-    allow(Rails.env).to receive(:production?).and_return(true)
-    allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
-    readiness = instance_double(PilotReadinessReview)
-    expect(PilotReadiness).to receive(:event_state_digest).with(event).once.and_return("a" * 64)
-    allow(PilotReadiness).to receive(:active_approval)
-      .with(event, at: anything, state_digest: "a" * 64).and_return(readiness)
-    allow(PilotValidation).to receive(:active_approval)
-      .with(event, at: anything, readiness_approval: readiness, state_digest: "a" * 64).and_return(nil)
-
-    expect do
-      described_class.call(event: event, action: :publish, actor: actor)
-    end.to raise_error(described_class::TransitionError) { |error|
-      expect(error.checklist).to include(include(code: "pilot_validation_approved", complete: false))
-    }
-  end
-
-  it "blocks production publication after Gate F until the physical event-day rehearsal is approved" do
-    allow(Rails.env).to receive(:production?).and_return(true)
-    allow(PolicyRegistry).to receive(:production_approved?).and_return(true)
-    readiness = instance_double(PilotReadinessReview)
-    validation = instance_double(PilotValidationReview)
-    expect(PilotReadiness).to receive(:event_state_digest).with(event).once.and_return("a" * 64)
-    allow(PilotReadiness).to receive(:active_approval)
-      .with(event, at: anything, state_digest: "a" * 64).and_return(readiness)
-    allow(PilotValidation).to receive(:active_approval)
-      .with(event, at: anything, readiness_approval: readiness, state_digest: "a" * 64).and_return(validation)
-    allow(EventDayRehearsal).to receive(:active_approval)
-      .with(event, at: anything, validation_approval: validation, state_digest: "a" * 64).and_return(nil)
-
-    expect do
-      described_class.call(event: event, action: :publish, actor: actor)
-    end.to raise_error(described_class::TransitionError) { |error|
-      expect(error.checklist).to include(include(code: "event_day_rehearsal_approved", complete: false))
-    }
+    expect(event.reload).to be_published
   end
 
   it "requires a reason to postpone and stops sales after postponement" do

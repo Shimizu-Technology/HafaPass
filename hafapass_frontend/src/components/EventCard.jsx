@@ -1,3 +1,6 @@
+import { focalPosition, approvedImageUrl } from '../utils/eventPageDesign'
+import useTranslatedContent from '../hooks/useTranslatedContent'
+import MachineTranslationNotice from './MachineTranslationNotice'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
@@ -8,6 +11,7 @@ import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remaini
 export default function EventCard({ event }) {
   const { t } = useTranslation()
   const location = useLocation()
+  const content = useTranslatedContent(event)
   const lowestPrice = lowestPurchasablePrice(event.ticket_types)
   const priceLabel = lowestPrice === null ? ''
     : lowestPrice === 0 ? t('events.free')
@@ -23,11 +27,13 @@ export default function EventCard({ event }) {
     >
       {/* Image */}
       <div className="aspect-[16/10] overflow-hidden bg-gradient-to-br from-brand-100 to-brand-200 relative rounded-t-2xl">
-        {event.cover_image_url ? (
+        {approvedImageUrl(event.cover_image_url, event.image_asset_host) ? (
           <img
             src={event.cover_image_url}
-            alt={event.title}
+            alt={content.title}
+            width="800" height="500"
             className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+            style={{ objectPosition: focalPosition(event.page_customization) }}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -66,13 +72,15 @@ export default function EventCard({ event }) {
         {/* Category badge */}
         {event.category && event.category !== 'other' && (
           <span className="inline-block text-xs font-semibold text-brand-700 uppercase tracking-wider mb-2">
-            {event.category_label || event.category}
+            {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
           </span>
         )}
 
         <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-600 transition-colors duration-200 line-clamp-2 min-h-[3.5rem]">
-          {event.title}
+          {content.title}
         </h3>
+        {/* Cards link to the event, so the "Show original" switch lives on the event page. */}
+        {content.notice && <MachineTranslationNotice {...content.notice} labelOnly className="-mt-2 mb-3" />}
 
         <div className="space-y-1.5 mb-4 flex-1">
           {event.starts_at && (
@@ -110,12 +118,12 @@ export default function EventCard({ event }) {
                 <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
                 <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-700' : 'text-neutral-600'}`}>
                   {hasAvailability ? t('events.ticketsAvailable') : hasInventory
-                    ? t('events.salesUnavailable', { defaultValue: 'Sales unavailable' }) : t('events.soldOut')}
+                    ? t('events.salesUnavailable') : t('events.soldOut')}
                 </span>
               </>
             )}
           </div>
-          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 group-hover:text-brand-700 transition-all duration-200 group-hover:translate-x-0.5">
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 group-hover:text-brand-700 transition-[color,transform] duration-200 ease-out-strong group-hover:translate-x-0.5">
             {t('common.view')}
             <ArrowRight className="w-3.5 h-3.5" />
           </span>

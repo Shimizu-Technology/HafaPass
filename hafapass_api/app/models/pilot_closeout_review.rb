@@ -41,7 +41,6 @@ class PilotCloseoutReview < ApplicationRecord
   validates :evidence_digest, :local_state_digest, format: { with: /\A[0-9a-f]{64}\z/ }
   validate :relationships_match
   validate :parent_matches_decision
-  validate :independent_approver
   validate :parent_snapshot_matches
   validate :negative_reason_present
   validate :outcome_metrics_complete
@@ -83,12 +82,6 @@ class PilotCloseoutReview < ApplicationRecord
     elsif decision_revocation? && !parent_review&.decision_approval?
       errors.add(:parent_review, "must be a Gate J approval")
     end
-  end
-
-  def independent_approver
-    return unless decision_approval? && parent_review
-
-    errors.add(:actor_user, "must differ from the closeout submitter") if actor_user_id == parent_review.actor_user_id
   end
 
   def parent_snapshot_matches
@@ -217,7 +210,7 @@ class PilotCloseoutReview < ApplicationRecord
     if decision_submission? && !(expires_at > signed_at && expires_at <= signed_at + 90.days)
       errors.add(:expansion_scope, "must expire after signing and within 90 days")
     elsif decision_approval? && expires_at <= signed_at
-      errors.add(:expansion_scope, "expired before independent approval")
+      errors.add(:expansion_scope, "expired before approval")
     end
   rescue ArgumentError
     errors.add(:expansion_scope, "expires_at must be ISO-8601")

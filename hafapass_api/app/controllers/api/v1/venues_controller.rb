@@ -6,22 +6,25 @@ class Api::V1::VenuesController < ApplicationController
 
   def index
     venues = Venue.published.joins(:events).merge(Event.discoverable).distinct.order(:name)
-    venues = venues.where("venues.village ILIKE ?", params[:village].to_s.strip) if params[:village].present?
+    venues = venues.accent_insensitive_equals(:village, params[:village]) if params[:village].present?
     pagy, records = paginate(venues)
     render json: { venues: records.map { |venue| venue_json(venue) }, meta: pagination_meta(pagy) }
   end
 
   def show
-    venue = Venue.published.find_by!(slug: params[:slug])
+    venue = Venue.find_by_public_slug!(params[:slug], scope: Venue.published)
     events = venue.events.merge(Event.discoverable).includes(:venue, :organization, :organizer_profile,
       ticket_types: [:inventory_holds, :waitlist_offers,
         { event_seats: :active_precheckout_seat_holds },
         { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }]).order(:starts_at)
     pagy, records = paginate(events)
-    render json: venue_json(venue).merge(
-      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: true) },
+    json = venue_json(venue).merge(
+      events: records.map { |event| Marketplace::EventSerializer.call(event, purchasable: event.organizer_sales_verified?, fee_terms: listing_fee_terms, locale: request_locale) },
       meta: pagination_meta(pagy)
     )
+    # A retired link name still finds the venue; the SPA swaps in `slug`.
+    json[:redirected_from] = params[:slug] if venue.slug != params[:slug]
+    render json: json
   end
 
   private

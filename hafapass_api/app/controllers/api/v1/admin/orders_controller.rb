@@ -10,7 +10,13 @@ class Api::V1::Admin::OrdersController < Api::V1::Admin::BaseController
 
     if params[:search].present?
       q = "%#{params[:search]}%"
-      orders = orders.where("buyer_name ILIKE :q OR buyer_email ILIKE :q", q: q)
+      # "#42" or "42" also finds order 42, so other admin screens can link to an order.
+      order_id = params[:search].to_s.strip.delete_prefix("#")
+      orders = if order_id.match?(/\A\d{1,18}\z/)
+        orders.where("buyer_name ILIKE :q OR buyer_email ILIKE :q OR orders.id = :id", q: q, id: order_id.to_i)
+      else
+        orders.where("buyer_name ILIKE :q OR buyer_email ILIKE :q", q: q)
+      end
     end
     orders = orders.where(status: params[:status]) if params[:status].present?
     orders = orders.where(event_id: params[:event_id]) if params[:event_id].present?
@@ -45,6 +51,7 @@ class Api::V1::Admin::OrdersController < Api::V1::Admin::BaseController
       organizer_proceeds_cents: o.organizer_proceeds_cents,
       currency: o.currency,
       status: o.status,
+      test_payment: o.test_payment?,
       created_at: o.created_at,
       event_id: o.event_id,
       event_title: o.event&.title,

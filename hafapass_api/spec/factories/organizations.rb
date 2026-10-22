@@ -40,9 +40,13 @@ FactoryBot.define do
 
     transient do
       with_readiness_approval { true }
+      with_tax_information { true }
     end
 
     after(:create) do |account, evaluator|
+      if evaluator.with_tax_information && !account.organization.organizer_tax_information
+        create(:organizer_tax_information, organization: account.organization)
+      end
       next unless evaluator.with_readiness_approval && account.status_ready?
 
       submitter = create(:user, :admin)
@@ -137,6 +141,20 @@ FactoryBot.define do
     amount_cents { 100 }
     currency { organization.currency }
     status { :pending }
+    transient do
+      with_tax_snapshot { true }
+    end
+
+    after(:build) do |payout, evaluator|
+      next unless evaluator.with_tax_snapshot
+
+      tax = payout.organization.organizer_tax_information
+      next unless tax
+
+      payout.tax_information_snapshot = Payout.tax_snapshot(tax)
+      payout.tax_information_tin = tax.tin
+      payout.tax_approval_digest = payout.connected_account.readiness_state_digest
+    end
   end
 
   factory :scanner_device do

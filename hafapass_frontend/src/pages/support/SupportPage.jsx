@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Loader2, Mail, Search, Send, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Loader2, Mail, Search, Send } from 'lucide-react'
 import apiClient from '../../api/client'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
+import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
+import { useAccountRole } from '../../utils/workspace'
 
 const badge = {
   delivered: 'bg-emerald-100 text-emerald-800',
@@ -17,6 +19,7 @@ const badge = {
 
 function SupportSession({ identity, resourcePath }) {
   const { beginRequest } = usePlatformRequests(identity, resourcePath)
+  const role = useAccountRole()
   const searchGeneration = useRef(0)
   const deliveryGeneration = useRef(0)
   const pendingSearch = useRef(null)
@@ -131,14 +134,15 @@ function SupportSession({ identity, resourcePath }) {
   }
 
   return (
-    <main className="min-h-screen bg-neutral-50 px-4 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-600 text-white"><ShieldCheck className="h-5 w-5" /></div>
-          <div><h1 className="text-2xl font-bold text-neutral-950">Support console</h1><p className="text-sm text-neutral-500">Find orders and attendees, check delivery, and resend tickets.</p></div>
-        </div>
+    <WorkspacePage>
+        <PageHeader
+          back={role === 'admin' && <BackLink to="/admin">Back to admin panel</BackLink>}
+          title="Support console"
+          description="Find orders and attendees, check delivery, and resend tickets."
+          className="!mb-7"
+        />
 
-        <form onSubmit={search} className="mt-7 flex flex-col gap-2 sm:flex-row" role="search">
+        <form onSubmit={search} className="flex flex-col gap-2 sm:flex-row" role="search">
           <label htmlFor="support-query" className="sr-only">Order, ticket, attendee, or event lookup</label>
           <input id="support-query" value={query} onChange={event => setQuery(event.target.value)} className="input flex-1" placeholder="Order reference, buyer email, attendee, or event" />
           <button className="btn-primary inline-flex items-center gap-2" disabled={loading || query.trim().length < 3}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Search</button>
@@ -195,8 +199,7 @@ function SupportSession({ identity, resourcePath }) {
             </table>
           </div>
         </section>
-      </div>
-    </main>
+    </WorkspacePage>
   )
 }
 
@@ -204,6 +207,6 @@ export default function SupportPage() {
   const identity = usePlatformIdentity()
   const visit = usePlatformVisit('/support')
   if (!visit.active) return null
-  if (!identity.ready) return <p role="status">Checking account access…</p>
+  if (!identity.ready) return <WorkspacePage><p role="status">Checking account access…</p></WorkspacePage>
   return <SupportSession key={`${identity.accountKey}:${visit.generation}`} identity={identity} resourcePath="/support" />
 }

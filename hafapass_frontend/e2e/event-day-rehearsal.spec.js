@@ -26,6 +26,7 @@ test('admin records complete Gate G physical event-day rehearsal evidence', asyn
   })
 
   await page.goto('/admin/events')
+  await page.getByRole('button', { name: /^Release gates for / }).click()
   await page.getByRole('button', { name: 'Prepare Gate G rehearsal' }).click()
   await page.getByLabel('Restricted evidence reference').fill('private-rehearsal/gate-g/42')
   await page.getByLabel('Evidence SHA-256').fill('c'.repeat(64))
@@ -67,7 +68,7 @@ test('admin records complete Gate G physical event-day rehearsal evidence', asyn
     await page.getByLabel(`${label} Private contact reference`).fill(`private-directory/${label}`)
     await page.getByLabel(`${label} Acknowledgement reference`).fill(`private-rehearsal/acks/${label}`)
   }
-  for (const checkbox of await page.getByRole('checkbox').all()) {
+  for (const checkbox of await page.getByRole('dialog').getByRole('checkbox').all()) {
     if (!(await checkbox.isChecked())) await checkbox.check()
   }
 

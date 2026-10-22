@@ -4,6 +4,7 @@ import { Link, MemoryRouter, Route, Routes, useLocation, useParams } from 'react
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { setAuthTokenGetter } from '../api/client'
 import EventWorkspace from './EventWorkspace'
+import { loadOrganizerOrganizations } from '../utils/organizerOrganizations'
 
 const launch = vi.hoisted(() => ({ assigned_seating: true, advanced_sales_tools: true }))
 vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
@@ -27,7 +28,7 @@ beforeEach(() => {
   vi.clearAllMocks(); window.localStorage.clear()
   window.localStorage.setItem('hafapass_organization_id', '1')
   launch.assigned_seating = true; launch.advanced_sales_tools = true
-  apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer' }] : dto() }))
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer', role: 'owner' }] : dto() }))
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function () { this.open = true; this.querySelector('button')?.focus() } })
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function () { this.open = false } })
 })
@@ -47,10 +48,54 @@ describe('connected event workspace', () => {
     expect(screen.getByText('Synthetic Guam venue')).toBeInTheDocument()
     expect(screen.getByText(/Pacific\/Guam/)).toHaveTextContent('7:00 PM')
     expect(screen.getByText('Published', { exact: true })).toBeInTheDocument()
-    expect(screen.getByText(/^Your access:/)).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
+    expect(screen.getByText('Organization role: Owner')).toBeInTheDocument()
+    expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
     expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Edit event' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Refunds' })).toHaveAttribute('href', '/dashboard/events/37/refunds')
+  })
+
+  it('shows the organization role and lists the event tools the permissions actually grant', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer', role: 'scanner' }] : dto() }))
+    mount()
+    expect(await screen.findByText('Organization role: Door scanner')).toBeInTheDocument()
+    expect(screen.queryByText(/Event access/)).not.toBeInTheDocument()
+    expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
+  })
+
+  it('falls back to plain wording when the organization role is unknown', async () => {
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/organizations' ? [{ id: 1, name: 'Synthetic organizer' }] : dto() }))
+    mount({ event: { ...dto(), permissions: { scan: true } } })
+    expect(await screen.findByText('Synthetic organizer')).toBeInTheDocument()
+    expect(screen.getByText('You can work on parts of this event')).toBeInTheDocument()
+    expect(screen.getByText('What you can do').closest('details')).not.toHaveTextContent('Finances')
+  })
+
+  it('leads with the event overview for members who can view the event', () => {
+    render(<MemoryRouter initialEntries={['/dashboard/events/37']}><Routes>
+      <Route path="/dashboard/events/:id" element={<EventWorkspace eventId={37} event={{ ...dto(), permissions: { ...permissions, view_events: true } }}><p>Overview body</p></EventWorkspace>} />
+    </Routes></MemoryRouter>)
+    const links = within(screen.getByRole('navigation', { name: 'Event workspace' })).getAllByRole('link')
+    expect(links[0]).toHaveTextContent('Overview')
+    expect(links[0]).toHaveAttribute('href', '/dashboard/events/37')
+    expect(links[0]).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByText('You can work on parts of this event')).toBeInTheDocument()
+    expect(screen.getByText('What you can do').closest('details')).not.toHaveTextContent('Overview')
+    expect(screen.getByText('Overview body')).toBeInTheDocument()
+  })
+
+  it('shares one organization lookup with the workspace navbar', async () => {
+    const navbarLookup = loadOrganizerOrganizations(null)
+    mount()
+    expect(await screen.findByText('Synthetic organizer')).toBeInTheDocument()
+    await navbarLookup
+    expect(apiClient.get.mock.calls.filter(([path]) => path === '/organizer/organizations')).toHaveLength(1)
+  })
+
+  it('shares the workspace navbar container so the left edge stays put', () => {
+    mount()
+    const shell = screen.getByRole('heading', { level: 1 }).closest('header').parentElement
+    expect(shell).toHaveClass('mx-auto', 'max-w-6xl', 'px-4', 'sm:px-6', 'lg:px-8')
   })
 
   it.each([
@@ -200,4 +245,11 @@ it('moves focus to the authorized ticket section without discarding the current 
   expect(screen.getByLabelText('Working draft')).toHaveValue('Unsaved local text')
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(screen.getByTestId('workspace-location')).toHaveTextContent('/dashboard/events/37/edit#ticket-types')
+})
+
+it('tells the organizer about a HåfaPass policy hold and its reason', () => {
+  mount({ event: { ...dto(), policy_hold: { scope: 'hidden', reason: 'Counterfeit listing reported', placed_at: '2026-10-20T00:00:00Z' } } })
+  const notice = screen.getByText('HåfaPass has hidden this event and paused ticket sales.').closest('[role="status"]')
+  expect(notice).toHaveTextContent('Reason: Counterfeit listing reported')
+  expect(notice).toHaveTextContent('Existing tickets stay valid and nothing has been refunded.')
 })

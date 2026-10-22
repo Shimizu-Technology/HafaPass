@@ -26,6 +26,7 @@ test('admin records complete Gate F device, accessibility, and load evidence', a
   })
 
   await page.goto('/admin/events')
+  await page.getByRole('button', { name: /^Release gates for / }).click()
   await page.getByRole('button', { name: 'Prepare Gate F evidence' }).click()
   await page.getByLabel('Restricted evidence reference').fill('private-qa/gate-f/guam-community-night')
   await page.getByLabel('Evidence SHA-256').fill('b'.repeat(64))
@@ -63,7 +64,7 @@ test('admin records complete Gate F device, accessibility, and load evidence', a
     ['Expected hold expirations', '10'], ['Observed hold expirations', '10'],
   ]
   for (const [label, value] of numericFields) await page.getByLabel(label).fill(value)
-  for (const checkbox of await page.getByRole('checkbox').all()) {
+  for (const checkbox of await page.getByRole('dialog').getByRole('checkbox').all()) {
     if (!(await checkbox.isChecked())) await checkbox.check()
   }
 

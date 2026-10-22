@@ -5,26 +5,40 @@ require "prawn/table"
 
 module Admissions
   class DoorListPdf
-    def initialize(event)
+    MAX_TICKETS = 10_000
+    BATCH_SIZE = 100
+    def initialize(event, tickets: nil)
       @event = event
+      @tickets = tickets
     end
 
     def generate
       Prawn::Document.new(page_size: "LETTER", margin: 36) do |pdf|
-        pdf.font "Helvetica"
-        pdf.text "HafaPass emergency door list", size: 18, style: :bold, color: "0D9488"
+        configure_fonts(pdf, [])
+        pdf.text @tickets ? "HåfaPass door list" : "HåfaPass emergency door list", size: 18, style: :bold, color: "0D9488"
         pdf.move_down 6
-        pdf.text event.title, size: 14, style: :bold
-        pdf.text event_details, size: 9, color: "4B5563"
+        pdf.text @title || event.title, size: 14, style: :bold
+        pdf.text @details || event_details, size: 9, color: "4B5563"
         pdf.move_down 12
-        pdf.text "Generated #{Time.current.in_time_zone(event.timezone).strftime("%Y-%m-%d %-I:%M %p %Z")}. " \
-          "Use only during a scanner outage; record every admission and reconcile it afterward.", size: 8, color: "6B7280"
+        guidance = @tickets ? "Mark check-ins and reconcile them with the scanner afterward." :
+          "Use only during a scanner outage; record every admission and reconcile it afterward."
+        pdf.text "Generated #{Time.current.in_time_zone(event.timezone).strftime("%Y-%m-%d %-I:%M %p %Z")}. #{guidance}",
+          size: 8, color: "6B7280"
         pdf.move_down 12
-        pdf.table(rows, header: true, width: pdf.bounds.width, cell_style: { size: 8, padding: 5 }) do |table|
-          table.row(0).font_style = :bold
-          table.row(0).background_color = "E5E7EB"
-          table.columns(0).width = 72
-          table.columns(3).width = 70
+        count = 0
+        source.each_slice(BATCH_SIZE) do |batch|
+          count += batch.length
+          raise ArgumentError, "Door list is limited to #{MAX_TICKETS} tickets" if count > MAX_TICKETS
+
+          table_rows = [header] + batch.map { |ticket| row(ticket) }
+          configure_fonts(pdf, table_rows)
+          pdf.table(table_rows, header: true, width: pdf.bounds.width, cell_style: { size: 8, padding: 5 }) do |table|
+            table.row(0).font_style = :bold
+            table.row(0).background_color = "E5E7EB"
+            table.columns(0).width = @tickets ? 145 : 72
+            table.columns(@tickets ? 4 : 3).width = 70
+            table.columns(3).width = 80 if @tickets
+          end
         end
         pdf.number_pages "Page <page> of <total>", at: [pdf.bounds.left, 0], align: :center, size: 7
       end.render
@@ -34,23 +48,53 @@ module Admissions
 
     attr_reader :event
 
-    def rows
-      [["Ticket", "Attendee", "Type", "Status", "Door mark"]] +
-        event.tickets.includes(:ticket_type,
-          event_seat: { venue_seat: { seating_row: :seating_section } }).order(:attendee_name, :id).map do |ticket|
-          ["HP-T#{ticket.id}", safe_text(ticket.attendee_name.presence || "Guest"),
-            safe_text([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")),
-            ticket.status.humanize, "________"]
+    def source
+      return @tickets if @tickets
+
+      Enumerator.new do |output|
+        # Snapshot at most MAX_TICKETS + 1 IDs before rendering; new tickets
+        # cannot shift a later batch and the existing cap bounds memory.
+        ids = event.tickets.order(:attendee_name, :id).limit(MAX_TICKETS + 1).pluck(:id)
+        raise ArgumentError, "Door list is limited to #{MAX_TICKETS} tickets" if ids.length > MAX_TICKETS
+        ids.each_slice(BATCH_SIZE) do |slice|
+          records = event.tickets.where(id: slice).includes(:ticket_type,
+            event_seat: { venue_seat: { seating_row: :seating_section } }).index_by(&:id)
+          slice.each { |id| output << records[id] if records[id] }
         end
+      end
+    end
+
+    def header
+      @tickets ? ["Attendee", "Type", "Order #", "Status", "Check in"] :
+        ["Ticket", "Attendee", "Type", "Status", "Door mark"]
+    end
+
+    def row(ticket)
+      if @tickets
+        [ticket.attendee_name.presence || "Guest", ticket.ticket_type.name, ticket.order.reference,
+          OrganizerTicketSalesStatus.label(OrganizerTicketSalesStatus.for(ticket, event_cancelled: event.cancelled?)), "________"]
+      else
+        ["HP-T#{ticket.id}", ticket.attendee_name.presence || "Guest",
+          [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
+          OrganizerTicketSalesStatus.label(OrganizerTicketSalesStatus.for(ticket, event_cancelled: event.cancelled?)), "________"]
+      end
+    end
+
+    # An emergency list must always print, so a character no bundled font can
+    # draw (a rare script) is shown as "?" instead of stopping the download.
+    def configure_fonts(pdf, table_rows)
+      unsupported = PdfFonts.configure(pdf, texts: [event.title, event_details, *table_rows.flatten], strict: false)
+      return if unsupported.empty?
+
+      pattern = Regexp.union(unsupported)
+      table_rows.each { |row| row.map! { |value| value.to_s.gsub(pattern, "?") } }
+      @title = event.title.to_s.gsub(pattern, "?")
+      @details = event_details.gsub(pattern, "?")
     end
 
     def event_details
       local_start = event.starts_at&.in_time_zone(event.timezone)
       [local_start&.strftime("%A, %B %-d, %Y %-I:%M %p %Z"), event.venue_name].compact.join(" · ")
-    end
-
-    def safe_text(value)
-      value.to_s.encode("Windows-1252", invalid: :replace, undef: :replace, replace: "?")
     end
   end
 end

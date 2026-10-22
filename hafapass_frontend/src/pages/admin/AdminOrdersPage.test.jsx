@@ -57,10 +57,17 @@ describe('AdminOrdersPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Order 42 details' }))
 
     expect(screen.getByText('Financial ledger')).toBeInTheDocument()
-    expect(screen.getByText('Immutable order items')).toBeInTheDocument()
+    expect(screen.getByText('Order items as purchased')).toBeInTheDocument()
     expect(screen.getByText(/General Admission/)).toBeInTheDocument()
     expect(screen.getByText(/pi_test/)).toBeInTheDocument()
     expect(screen.getByText(/payment amount mismatch/)).toBeInTheDocument()
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/admin/orders', expect.objectContaining({ params: { page: 1, per_page: 20 } })))
+  })
+
+  it('marks orders paid in Stripe test mode', async () => {
+    const original = (await apiClient.get.getMockImplementation()?.()) || (await apiClient.get())
+    apiClient.get.mockResolvedValue({ data: { ...original.data, orders: original.data.orders.map(order => ({ ...order, test_payment: true })) } })
+    render(<MemoryRouter initialEntries={['/admin/orders']}><AdminOrdersPage /></MemoryRouter>)
+    expect(await screen.findByText('Test')).toHaveTextContent('Test payment')
   })
 })

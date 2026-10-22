@@ -13,12 +13,19 @@ const shell = (path = '/admin/events') => render(<MemoryRouter initialEntries={[
 beforeEach(() => { window.localStorage.clear(); vi.clearAllMocks() })
 
 describe('admin workspace navigation', () => {
-  it.each(['/admin', '/admin/events/42', '/admin/users', '/admin/orders', '/admin/marketplace', '/admin/provider-readiness', '/support'])('marks exactly the current destination at %s', path => {
+  it.each(['/admin', '/admin/events/42', '/admin/users', '/admin/orders', '/admin/marketplace', '/admin/payouts', '/admin/disputes', '/admin/settings', '/admin/provider-readiness', '/admin/audit-log', '/support'])('marks exactly the current destination at %s', path => {
     shell(path)
     const links = within(screen.getByRole('navigation', { name: 'Admin sidebar' })).getAllByRole('link')
     const current = links.filter(link => link.getAttribute('aria-current') === 'page')
     expect(current).toHaveLength(1)
     expect(path === '/admin' ? current[0].getAttribute('href') === path : path.startsWith(current[0].getAttribute('href'))).toBe(true)
+  })
+  it('groups destinations under Marketplace, Money and Platform headings', () => {
+    shell('/admin/payouts')
+    const nav = screen.getByRole('navigation', { name: 'Admin sidebar' })
+    expect(within(nav).getAllByRole('list')).toHaveLength(4)
+    expect(within(nav).getByText('Money').nextElementSibling).toHaveTextContent('PayoutsDisputes')
+    expect(screen.getByRole('heading', { name: 'Payouts' })).toBeInTheDocument()
   })
   it('does not activate partial sibling route names', () => {
     shell('/admin/events-archive')

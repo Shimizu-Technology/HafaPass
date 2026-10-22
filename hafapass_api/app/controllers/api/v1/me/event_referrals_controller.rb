@@ -20,7 +20,7 @@ class Api::V1::Me::EventReferralsController < ApplicationController
       id: referral.id,
       event_id: referral.event_id,
       code: referral.code,
-      url: "#{ENV.fetch('FRONTEND_URL', 'http://localhost:5173')}/refer/#{referral.code}",
+      url: "#{PublicSiteUrl.frontend}/refer/#{referral.code}",
       visits: referral.marketplace_funnel_events.landing.count,
       purchases: referral.acquisition_attributions.joins(:order)
         .where(orders: { status: [:completed, :partially_refunded, :refunded] }).count

@@ -41,6 +41,11 @@ function cleanupFieldsForTest() { return ['temporary_staff_revoked', 'scanner_de
 describe('PilotCloseoutDialog', () => {
   beforeEach(() => { apiClient.get.mockReset(); apiClient.post.mockReset() })
 
+  it('does not take focus when its trigger first renders', () => {
+    render(<PilotCloseoutDialog event={event} />)
+    expect(document.activeElement).toBe(document.body)
+  })
+
   it('fails closed until a completed Gate I run exists', async () => {
     apiClient.get.mockResolvedValue({ data: { event, pilot_closeout: { eligible: false, approved: false } } })
     render(<PilotCloseoutDialog event={event} />)
@@ -95,7 +100,7 @@ describe('PilotCloseoutDialog', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
-  it('lets a second administrator approve the exact pending closeout', async () => {
+  it('lets an administrator approve the exact pending closeout', async () => {
     apiClient.get.mockResolvedValue({ data: {
       event, pilot_closeout: { eligible: true, approved: false, pending_submission: pending },
     } })

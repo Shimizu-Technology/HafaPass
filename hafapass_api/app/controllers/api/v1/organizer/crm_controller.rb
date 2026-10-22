@@ -3,6 +3,8 @@
 require "csv"
 
 class Api::V1::Organizer::CrmController < Api::V1::Organizer::EventResourcesController
+  include SpreadsheetExport
+
   def segments
     scope = active_tickets
     render json: {
@@ -18,26 +20,26 @@ class Api::V1::Organizer::CrmController < Api::V1::Organizer::EventResourcesCont
   end
 
   def export
-    csv = CSV.generate(headers: true, force_quotes: true) do |output|
-      output << %w[name email ticket_type ticket_status checked_in_at order_reference purchased_at]
-      active_tickets.includes(:ticket_type, :order).order(:id).each do |ticket|
-        output << [ticket.attendee_name, ticket.holder_email, ticket.ticket_type.name, ticket.status,
-          ticket.checked_in_at, ticket.order.reference, ticket.order.completed_at].map { |value| spreadsheet_safe(value) }
-      end
+    if AuditLog.where(actor_user: current_user, action: "sales.exported", occurred_at: 1.hour.ago..).count >= 10
+      return render json: { error: "Export limit reached. Try again later." }, status: :too_many_requests
     end
-    send_data csv, type: "text/csv", filename: "#{event.slug}-attendees.csv", disposition: "attachment"
+
+    query = OrganizerSalesQuery.new(event: event, params: params.to_unsafe_h.merge("view" => "tickets"),
+      attendee_access: true)
+    rows = query.each_batch.lazy.select { |ticket| !ticket.cancelled? && ticket.holder_email.present? }
+    count = query.relation.where.not(status: Ticket.statuses[:cancelled]).where.not(holder_email: [nil, ""]).count
+    AuditLogger.record!(action: "sales.exported", auditable: event, actor: current_user,
+      organization: current_organization, metadata: { filters: query.filters, columns: %w[name email ticket_type ticket_status checked_in_at order_reference purchased_at], row_count: count }, request: request)
+    stream_csv(filename: "#{event.slug}-attendees.csv",
+      header: %w[name email ticket_type ticket_status checked_in_at order_reference purchased_at],
+      bom: true,
+      rows: rows.map { |ticket| [ticket.attendee_name, ticket.holder_email, ticket.ticket_type.name, ticket.status,
+        ticket.checked_in_at, ticket.order.reference, ticket.order.completed_at] })
+  rescue OrganizerSalesQuery::InvalidFilter => error
+    render json: { error: error.message }, status: :unprocessable_entity
   end
 
   private
-
-  def spreadsheet_safe(value)
-    return value unless value.is_a?(String)
-
-    # OWASP's Excel-resistant mitigation is a tab inside a quoted field. An
-    # apostrophe alone may be stripped when Excel saves/reopens a CSV. This
-    # export is for spreadsheet viewing; the protective tab is exported data.
-    value.match?(/\A[[:space:]\u0000-\u001f]*[=+@\-＝＋＠－]/) || value.match?(/\A[\t\r\n]/) ? "\t#{value}" : value
-  end
 
   def resource_permission
     :view_attendees

@@ -3,21 +3,22 @@
 class Api::V1::OrdersController < ApplicationController
   CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id catalog_items
     registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
-    terms_accepted terms_version live_money_proof].freeze
+    terms_accepted terms_version live_money_proof marketing_opt_in].freeze
   skip_before_action :authenticate_user!, only: [
-    :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create, :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :optional_authenticate_user!, only: [
-    :create, :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :create, :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :set_accessible_order, only: [
-    :show, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
 
   def create
+    response.headers["Cache-Control"] = "private, no-store"
     checkout_key = params[:checkout_key].presence
     if checkout_key && (!checkout_key.is_a?(String) || !checkout_key.match?(/\A[0-9a-f]{64}\z/))
       return render json: { error: "Checkout recovery key is invalid", checkout_recovery_required: true }, status: :unprocessable_entity
@@ -45,29 +46,10 @@ class Api::V1::OrdersController < ApplicationController
       return render_checkout_rejection("Checkout is unavailable until the current policy register is approved", status: :service_unavailable)
     end
 
-    release_gate = event.production_release_gate_status
-    if release_gate == :pilot_readiness
-      return render_checkout_rejection("Checkout is unavailable until this event has a current pilot readiness approval", status: :service_unavailable)
-    end
-
-    if release_gate == :pilot_validation
-      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate F validation approval", status: :service_unavailable)
-    end
-
-    if release_gate == :event_day_rehearsal
-      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate G rehearsal approval", status: :service_unavailable)
-    end
-
-    if release_gate == :live_money
-      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate H live-money approval", status: :service_unavailable)
-    end
-
-    if release_gate == :live_pilot
-      return render_checkout_rejection("Checkout is unavailable until this event has a current Gate I bounded-pilot approval", status: :service_unavailable)
-    end
-
-    if release_gate == :live_pilot_operation
-      return render_checkout_rejection("Checkout is unavailable while the bounded live-pilot sales window is inactive", status: :service_unavailable)
+    # Production's one sales gate: HåfaPass verified the organizer and has not
+    # paused the event. Not tied to deploys or event edits.
+    if !existing_order && !event.organizer_sales_verified?
+      return render_checkout_rejection("Tickets for this event are not on sale yet", status: :service_unavailable)
     end
 
     unless existing_order
@@ -78,7 +60,7 @@ class Api::V1::OrdersController < ApplicationController
 
       unless ActiveModel::Type::Boolean.new.cast(params[:terms_accepted]) &&
           params[:terms_version].to_s == PolicyRegistry.buyer_terms[:version]
-        return render_checkout_rejection("Accept the current HafaPass buyer terms before checkout", status: :unprocessable_entity)
+        return render_checkout_rejection("Accept the current HåfaPass buyer terms before checkout", status: :unprocessable_entity)
       end
 
       proof_authorization = proof_authorization_for(event)
@@ -97,6 +79,7 @@ class Api::V1::OrdersController < ApplicationController
       buyer_email: params[:buyer_email],
       buyer_name: params[:buyer_name],
       buyer_phone: params[:buyer_phone],
+      marketing_opt_in: [true, "true", 1, "1"].include?(params[:marketing_opt_in]),
       user: @current_user,
       promo_code_id: params[:promo_code_id],
       catalog_items: params[:catalog_items],
@@ -109,7 +92,8 @@ class Api::V1::OrdersController < ApplicationController
       buyer_terms_version: buyer_terms[:version],
       buyer_terms_digest: buyer_terms[:digest],
       buyer_terms_accepted_at: Time.current,
-      live_money_proof_authorization: proof_authorization
+      live_money_proof_authorization: proof_authorization,
+      locale: request_locale
     )
 
     response_payload = OrderPresenter.call(
@@ -149,10 +133,19 @@ class Api::V1::OrdersController < ApplicationController
   private :render_checkout_rejection
 
   def show
+    response.headers["Cache-Control"] = "private, no-store"
     render json: OrderPresenter.call(
       @order,
       include_tickets: @order.completed? || @order.partially_refunded? || @order.refunded? || @order.cancelled?
     )
+  end
+
+  def receipt
+    return render json: { error: "Order not found" }, status: :not_found unless @order.receipt_available?
+
+    response.headers["Cache-Control"] = "private, no-store"
+    send_data ReceiptPdfGenerator.new(@order).generate,
+      filename: "hafapass-receipt-#{@order.reference}.pdf", type: "application/pdf", disposition: "attachment"
   end
 
   def payment_resume
@@ -278,7 +271,8 @@ class Api::V1::OrdersController < ApplicationController
       ticket: ticket,
       recipient_email: params[:recipient_email],
       recipient_name: params[:recipient_name],
-      initiated_by: @current_user
+      initiated_by: @current_user,
+      locale: request_locale
     )
     render json: transfer_json(transfer), status: :created
   rescue TicketTransfers::Manager::TransferError => e
@@ -318,7 +312,7 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def event_change_response
-    change = @order.event.event_changes.find_by(id: params[:event_change_id])
+    change = @order.event.event_changes.buyer_visible.find_by(id: params[:event_change_id])
     return render json: { error: "Event change not found" }, status: :not_found unless change
 
     decision = params[:decision].to_s
@@ -416,9 +410,10 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def set_accessible_order
+    response.headers["Cache-Control"] = "private, no-store" if %w[show receipt].include?(action_name)
     order = Order.find_by(id: params[:id])
     authorized = order && (
-      @current_user&.admin? ||
+      (@current_user&.admin? && action_name != "receipt") ||
       (order.user_id.present? && order.user_id == @current_user&.id) ||
       GuestOrderAccess.find(guest_access_token)&.id == order.id
     )

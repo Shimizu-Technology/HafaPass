@@ -17,5 +17,15 @@ class Refund < ApplicationRecord
   validates :amount_cents, numericality: { only_integer: true, greater_than: 0 }
   validates :currency, length: { is: 3 }
 
+  after_save -> { Wallet::PassSync.tickets_changed(order.tickets.select(:id)) },
+    if: -> { previously_new_record? || saved_change_to_status? }
+  after_commit :resume_event_cancellation_refunds,
+    if: -> { saved_change_to_status? && (succeeded? || failed? || cancelled?) }
+
+  def resume_event_cancellation_refunds
+    run = order.event.event_cancellation_refund_run
+    EventCancellationRefundJob.perform_later(run.id) if run && run.items.where(order_id: order_id).exists?
+  end
+
   attr_readonly :order_id, :payment_id, :requested_by_id, :provider, :idempotency_key, :amount_cents, :currency
 end

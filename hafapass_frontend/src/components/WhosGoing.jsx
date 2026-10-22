@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { motion, useReducedMotion } from 'framer-motion'
 
 const AVATAR_COLORS = [
@@ -22,6 +23,7 @@ function getColor(name) {
 }
 
 export default function WhosGoing({ attendeeCount, attendeesPreview, showAttendees }) {
+  const { t } = useTranslation()
   const reducedMotion = useReducedMotion()
   if (!showAttendees || !attendeeCount || attendeeCount === 0) return null
 
@@ -31,7 +33,7 @@ export default function WhosGoing({ attendeeCount, attendeesPreview, showAttende
 
   return (
     <div className="mb-8">
-      <h2 className="text-lg font-semibold text-neutral-900 mb-3">Who's Going</h2>
+      <h2 className="text-lg font-semibold text-neutral-900 mb-3">{t('buyer.WhosGoing.whosGoing')}</h2>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex max-w-full -space-x-2">
           {shown.map((name, i) => (
@@ -58,14 +60,14 @@ export default function WhosGoing({ attendeeCount, attendeesPreview, showAttende
           )}
         </div>
         <p className="text-sm text-neutral-600 font-medium break-words">
-          {attendeeCount} {attendeeCount === 1 ? 'person' : 'people'} going
-        </p>
+          {t('buyer.WhosGoing.peopleGoing', { count: attendeeCount })}</p>
       </div>
     </div>
   )
 }
 
 export function WhosGoingBadge({ attendeeCount }) {
+  const { t } = useTranslation()
   if (!attendeeCount || attendeeCount === 0) return null
 
   return (
@@ -74,7 +76,7 @@ export function WhosGoingBadge({ attendeeCount }) {
         <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
         <path d="M13 5v2" /><path d="M13 17v2" /><path d="M13 11v2" />
       </svg>
-      <span>{attendeeCount} going</span>
+      <span>{t('buyer.WhosGoing.countGoing', { count: attendeeCount })}</span>
     </div>
   )
 }

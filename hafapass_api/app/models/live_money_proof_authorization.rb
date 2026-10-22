@@ -21,7 +21,6 @@ class LiveMoneyProofAuthorization < ApplicationRecord
     only_integer: true, greater_than: 0, less_than_or_equal_to: MAX_AMOUNT_CENTS
   }
   validate :relationships_match
-  validate :approval_is_independent
   validate :valid_state_pairs
 
   attr_readonly :event_id, :connected_account_id, :event_day_rehearsal_review_id, :requested_by_user_id,
@@ -71,12 +70,6 @@ class LiveMoneyProofAuthorization < ApplicationRecord
     errors.add(:event_day_rehearsal_review, "must belong to the proof event") unless
       event_day_rehearsal_review.event_id == event_id
     errors.add(:order, "must belong to the proof event") if order && order.event_id != event_id
-  end
-
-  def approval_is_independent
-    return unless approved_by_user_id && approved_by_user_id == requested_by_user_id
-
-    errors.add(:approved_by_user, "must be independent from the requester")
   end
 
   def valid_state_pairs

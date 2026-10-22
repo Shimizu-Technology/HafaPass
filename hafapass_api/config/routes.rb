@@ -16,6 +16,8 @@ Rails.application.routes.draw do
       get "health", to: "health#show"
       get "readiness", to: "health#readiness"
       get "config", to: "config#show"
+      get "marketing/unsubscribe/:token", to: "marketing_unsubscribes#show", as: :marketing_unsubscribe
+      post "marketing/unsubscribe/:token", to: "marketing_unsubscribes#create"
       get "me", to: "me#show"
       post "users/sync", to: "users#sync"
 
@@ -26,6 +28,7 @@ Rails.application.routes.draw do
       post "organizer_profile/accept_policy", to: "organizer_profiles#accept_policy"
       post "organizer_profile/submit_verification", to: "organizer_profiles#submit_verification"
       post "organization_invitations/accept", to: "organization_invitations#accept"
+      post "platform_invitations/accept", to: "platform_invitations#accept"
 
       # Presigned upload URL (authenticated) - works in simulate mode too
       post "uploads/presign", to: "uploads#presign"
@@ -34,6 +37,7 @@ Rails.application.routes.draw do
       # Orders (public create for guest checkout)
       resources :orders, only: [:create, :show] do
         member do
+          get :receipt
           post :payment_resume
           post :cancel
           post :resend
@@ -56,6 +60,21 @@ Rails.application.routes.draw do
       get "tickets/:credential/download", to: "tickets#download", as: :ticket_download
       get "tickets/:credential/wallet/apple", to: "tickets#apple_wallet", as: :ticket_apple_wallet
       get "tickets/:credential/wallet/google", to: "tickets#google_wallet", as: :ticket_google_wallet
+
+      # Ticket PDFs fetched by the email provider when it sends a ticket email.
+      get "ticket_email_attachments/:token", to: "ticket_email_attachments#show", format: false,
+        constraints: { token: /[A-Za-z0-9_\-=]+--[A-Za-z0-9_\-=]+/ }
+
+      # Apple PassKit web service (Apple appends /v1/... to the pass's webServiceURL).
+      scope "wallet/apple/v1", controller: "apple_wallet_web_service", format: false,
+        constraints: { pass_type_identifier: /[A-Za-z0-9.\-]+/, serial_number: /[A-Za-z0-9.\-]+/,
+          device_library_identifier: /[A-Za-z0-9.\-_]+/ } do
+        post "devices/:device_library_identifier/registrations/:pass_type_identifier/:serial_number", action: :register
+        delete "devices/:device_library_identifier/registrations/:pass_type_identifier/:serial_number", action: :unregister
+        get "devices/:device_library_identifier/registrations/:pass_type_identifier", action: :serial_numbers
+        get "passes/:pass_type_identifier/:serial_number", action: :latest_pass
+        post "log", action: :log
+      end
 
       # Ticket check-in
       post "check_in/:credential", to: "check_ins#create", as: :check_in
@@ -103,24 +122,43 @@ Rails.application.routes.draw do
 
       # Organizer events (protected)
       namespace :organizer do
+        resource :tax_information, only: [:show, :update]
         resource :organization, only: [:show], controller: "organizations"
+        resource :finances, only: [:show], controller: "organization_finances" do
+          get :orders_export
+          get :payouts_export
+        end
         resources :organizations, only: [:index]
-        resources :memberships, only: [:index, :create, :update, :destroy]
-        resources :connected_accounts, only: [:index, :create]
+        resources :memberships, only: [:index, :create, :update, :destroy] do
+          member do
+            post :resend
+            post :invitation_link
+            post :transfer_ownership
+          end
+        end
+        resources :connected_accounts, only: [:index, :create, :update]
         resources :venue_layouts, only: [:index, :show, :create, :update]
         resource :card_present_account, only: [:show]
         resources :events, only: [:index, :show, :create, :update, :destroy] do
+          collection do
+            get :summary
+          end
           member do
             post :publish
             post :postpone
             post :resume
             post :cancel
+            get :cancellation_refunds
+            post :retry_cancellation_refunds
+            post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
             post :complete
             post :archive
             post :clone
             post :generate_recurrences
             get :stats
             get :attendees
+            get :slug_availability
+            post :retranslate
           end
           resources :ticket_types, only: [:index, :show, :create, :update, :destroy] do
             resources :pricing_tiers, only: [:index, :create, :update, :destroy]
@@ -128,6 +166,8 @@ Rails.application.routes.draw do
           resources :promo_codes, only: [:index, :show, :create, :update, :destroy]
           resources :staff_assignments, only: [:index, :create, :update, :destroy],
                     controller: "event_staff_assignments"
+          post "staff_invitations/:membership_id/resend", to: "event_staff_assignments#resend_invitation"
+          delete "staff_invitations/:membership_id", to: "event_staff_assignments#revoke_invitation"
           resources :scanner_devices, only: [:index, :create, :update, :destroy] do
             member do
               get :manifest
@@ -141,6 +181,8 @@ Rails.application.routes.draw do
           resource :finance, only: [:show], controller: "finances" do
             post :finalize
             post :payout
+            get :orders_export
+            get :statement_export
           end
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do
@@ -175,6 +217,11 @@ Rails.application.routes.draw do
           resources :communication_campaigns, only: [:index, :create, :update, :destroy] do
             member { post :send_now }
           end
+          post "attendees/:ticket_id/resend", to: "attendee_deliveries#create", as: :resend_attendee_ticket
+          post "sales_exports", to: "sales_exports#create"
+          get "sales_exports", to: "sales_exports#index"
+          get "sales_exports/door_list", to: "sales_exports#door_list"
+          get "sales_exports/:id", to: "sales_exports#show"
           get "crm/export", to: "crm#export"
           get "crm/segments", to: "crm#segments"
           post "catalog_fulfillments/:order_item_id", to: "catalog_fulfillments#create"
@@ -189,9 +236,27 @@ Rails.application.routes.draw do
 
       # Admin endpoints
       namespace :admin do
+        resource :tax_reports, only: [:show] do
+          get :organizers_export
+          get :receipts_export
+          post :preparation_export
+        end
+        post "organizations/:organization_id/tax_information/reveal", to: "tax_informations#reveal"
         resource :settings, only: [:show, :update]
         resource :dashboard, only: [:show], controller: "dashboard"
-        resources :events, only: [:index, :update]
+        resources :events, only: [:index, :update] do
+          member do
+            get :cancellation_refunds
+            post :cancel_and_refund
+            post :start_cancellation_refunds
+            post :retry_cancellation_refunds
+            post "cancellation_refunds/:order_id/mark_cash_refunded", to: "events#mark_cash_refunded"
+            post "cancellation_refunds/:order_id/mark_card_refunded", to: "events#mark_card_refunded"
+          end
+          resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
+          resource :sales_suspension, only: [:destroy], controller: "event_sales_suspensions"
+          post :retranslate, on: :member
+        end
         get "events/:event_id/pilot_readiness", to: "pilot_readiness_reviews#show"
         post "events/:event_id/pilot_readiness_reviews", to: "pilot_readiness_reviews#create"
         resources :pilot_readiness_reviews, only: [] do
@@ -268,6 +333,18 @@ Rails.application.routes.draw do
           end
         end
         resources :users, only: [:index, :update]
+        resources :platform_invitations, only: [:index, :create, :destroy] do
+          member { post :resend }
+        end
+        resources :organizations, only: [:index, :show, :create] do
+          resources :memberships, only: [:index, :create, :update, :destroy], controller: "organization_memberships" do
+            member do
+              post :resend
+              post :invitation_link
+              post :transfer_ownership
+            end
+          end
+        end
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]
         resources :connected_accounts, only: [:update] do
@@ -282,6 +359,7 @@ Rails.application.routes.draw do
         end
         resources :platform_capabilities, only: [:index]
         post "platform_capabilities/:capability/reviews", to: "platform_capability_reviews#create"
+        post "platform_capabilities/:capability/quick_approve", to: "platform_capability_reviews#quick_approve"
         resources :platform_capability_reviews, only: [] do
           member do
             post :approve
@@ -290,8 +368,12 @@ Rails.application.routes.draw do
           end
         end
         resources :card_present_accounts, only: [:create, :update]
-        resources :balance_adjustments, only: [:create, :destroy]
-        resources :payouts, only: [:update]
+        resources :balance_adjustments, only: [:index, :create, :destroy]
+        resources :payouts, only: [:index, :update] do
+          post :release_hold, on: :member
+        end
+        resources :disputes, only: [:index]
+        resources :audit_logs, only: [:index]
         resource :marketplace, only: [:show], controller: "marketplace"
         resources :marketplace_collections, except: [:show]
         resources :distribution_partners, except: [:show]

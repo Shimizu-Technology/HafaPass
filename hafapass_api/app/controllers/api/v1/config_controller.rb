@@ -10,16 +10,23 @@ class Api::V1::ConfigController < ApplicationController
 
     render json: {
       payment_mode: settings.payment_mode,
+      # Production test mode: only platform admins may complete paid checkout.
+      paid_checkout_admin_only: Rails.env.production? && settings.test_mode?,
       environment: Rails.env.to_s,
       provider_rehearsal: ProviderRehearsal.enabled?,
       launch_capabilities: LaunchCapabilities.public_configuration,
       stripe_publishable_key: settings.stripe_publishable_key,
       platform_name: settings.platform_name,
+      support_email: settings.platform_email.presence,
+      support_phone: settings.platform_phone.presence,
       service_fee_percent: settings.service_fee_percent,
       service_fee_flat_cents: settings.service_fee_flat_cents,
+      processing_fee_bearer: settings.processing_fee_bearer,
+      payout_schedule_text: settings.payout_schedule_text,
       public_web_url: PublicSiteUrl.base,
       buyer_terms_version: PolicyRegistry.buyer_terms[:version],
       policies: PolicyRegistry.public_documents,
+      policy_status: PolicyRegistry.status,
       event_categories: Event::CATEGORY_LABELS.map { |value, label| { value: value, label: label } }
     }
   end

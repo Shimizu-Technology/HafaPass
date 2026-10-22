@@ -7,7 +7,13 @@
     "admin": "Admin",
     "signIn": "Hålum",
     "getStarted": "Tutuhon",
-    "search": "Aligao aktibidat..."
+    "search": "Aligao aktibidat...",
+    "finances": "Finances",
+    "settings": "Settings",
+    "support": "Support",
+    "viewPublicSite": "View public site",
+    "workspace": "Workspace",
+    "workspaceHome": "HåfaPass workspace home"
   },
   "home": {
     "hero": "Pass-mu Para Todu Aktibidat Giya Guåhan",
@@ -98,7 +104,7 @@
     "enterCode": "Na'hålom code",
     "apply": "Aplika",
     "editInfo": "Edit info",
-    "termsNotice": "Annai un kompletu este na fåhan, un agree ni HafaPass terms of service."
+    "termsNotice": "Annai un kompletu este na fåhan, un agree ni HåfaPass terms of service."
   },
   "tickets": {
     "myTickets": "Tikét-hu Siha",

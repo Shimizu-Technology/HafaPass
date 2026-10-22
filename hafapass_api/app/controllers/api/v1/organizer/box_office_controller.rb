@@ -160,6 +160,7 @@ module Api
             source: order.source,
             payment_method: order.payment_method,
             completed_at: order.completed_at,
+            test_payment: order.test_payment?,
             card_present_payment: order.card_present_payment_attempts.order(:id).last&.then { |attempt|
               {
                 status: attempt.status,

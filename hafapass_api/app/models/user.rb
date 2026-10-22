@@ -60,7 +60,32 @@ class User < ApplicationRecord
   has_many :pilot_closeout_reviews, foreign_key: :actor_user_id,
     dependent: :restrict_with_error, inverse_of: :actor_user
 
+  has_many :sent_platform_invitations, class_name: "PlatformInvitation", foreign_key: :invited_by_user_id,
+    dependent: :restrict_with_error, inverse_of: :invited_by_user
+  has_many :accepted_platform_invitations, class_name: "PlatformInvitation", foreign_key: :accepted_by_user_id,
+    dependent: :nullify, inverse_of: :accepted_by_user
+
   enum :role, { attendee: 0, organizer: 1, admin: 2, support: 3 }
+
+  STAFF_ROLE_RANK = { "attendee" => 0, "organizer" => 0, "support" => 1, "admin" => 2 }.freeze
+
+  def staff?
+    admin? || support?
+  end
+
+  # "organizer" is a label, not a permission: organization access comes only
+  # from an effective OrganizationMembership. Non-staff accounts carry the
+  # label that matches their memberships.
+  def derived_member_role
+    organization_memberships.effective.exists? ? "organizer" : "attendee"
+  end
+
+  def sync_member_label!
+    return if staff?
+
+    label = derived_member_role
+    update!(role: label) unless role == label
+  end
 
   validates :clerk_id, presence: true, uniqueness: true
 end

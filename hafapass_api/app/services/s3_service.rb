@@ -11,6 +11,13 @@ class S3Service
       ENV["AWS_ACCESS_KEY_ID"].present? && ENV["AWS_SECRET_ACCESS_KEY"].present? && ENV["AWS_BUCKET"].present?
     end
 
+    def public_asset_host
+      return "storage.invalid" if Rails.env.local? && ENV["AWS_BUCKET"].blank?
+      return nil if ENV["AWS_BUCKET"].blank?
+
+      URI.parse(public_url("uploads/image.webp")).host
+    end
+
     def generate_presigned_post(filename, content_type, byte_size:, event_id: nil, organization_id: nil)
       validate_upload!(filename, content_type, byte_size)
       raise UploadError, "Image storage is not configured" unless configured?

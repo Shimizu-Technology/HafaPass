@@ -8,6 +8,7 @@ module Commerce
     SETUP_LEASE_DURATION = 1.minute
     PROVIDER_REQUEST_TIMEOUT = 30.seconds
 
+    PAID_SALES_OPEN_SOON = "Paid ticket sales open soon"
     class CheckoutError < StandardError; end
 
     Result = Data.define(:order, :payment, :payment_intent, :guest_access_token)
@@ -16,18 +17,19 @@ module Commerce
       new(**).call
     end
 
-    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, user: nil, promo_code_id: nil,
+    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, promo_code_id: nil,
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
       attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
       cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
-      checkout_attempt: nil, checkout_lease_token: nil)
+      checkout_attempt: nil, checkout_lease_token: nil, locale: AppLocale::DEFAULT)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
       @buyer_name = buyer_name
       @buyer_phone = buyer_phone
+      @marketing_opt_in = marketing_opt_in
       @user = user
       @promo_code_id = promo_code_id
       @payment_required = payment_required
@@ -53,6 +55,8 @@ module Commerce
       @checkout_lease_token = checkout_lease_token
       @cash_sale_key = cash_sale_key
       @cash_sale_request_digest = cash_sale_request_digest
+      # The buyer's language for receipts and ticket emails; staff-created orders stay English.
+      @locale = AppLocale.normalize(locale) || AppLocale::DEFAULT
     end
 
     def call
@@ -87,25 +91,6 @@ module Commerce
           next
         end
         validate_launch_scope!
-        release_gate = event.production_release_gate_status
-        if release_gate == :pilot_readiness
-          raise CheckoutError, "This event does not have a current pilot readiness approval"
-        end
-        if release_gate == :pilot_validation
-          raise CheckoutError, "This event does not have a current Gate F validation approval"
-        end
-        if release_gate == :event_day_rehearsal
-          raise CheckoutError, "This event does not have a current Gate G rehearsal approval"
-        end
-        if release_gate == :live_money
-          raise CheckoutError, "This event does not have a current Gate H live-money approval"
-        end
-        if release_gate == :live_pilot
-          raise CheckoutError, "This event does not have a current Gate I bounded-pilot approval"
-        end
-        if release_gate == :live_pilot_operation
-          raise CheckoutError, "This event's bounded live-pilot sales window is not active"
-        end
         raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)
@@ -136,6 +121,8 @@ module Commerce
           buyer_email: buyer_email,
           buyer_name: buyer_name,
           buyer_phone: buyer_phone,
+          marketing_opt_in: @marketing_opt_in,
+          locale: @locale,
           source: source,
           payment_method: payment_method,
           checkout_key_digest: @checkout_key_digest,
@@ -148,6 +135,7 @@ module Commerce
           buyer_terms_accepted_at: buyer_terms_accepted_at,
           fee_policy_snapshot: event.fee_policy,
           buyer_fee_percent_snapshot: event.buyer_fee_percent,
+          processing_fee_bearer_snapshot: totals[:processing_fee_bearer],
           organizer_fee_cents: totals[:organizer_fee_cents],
           expires_at: expires_at
         )
@@ -169,10 +157,12 @@ module Commerce
 
         if requires_payment && order.total_cents.positive?
           provider = payment_provider.presence || "stripe"
+          # Read once so the environment and its platform account always agree.
+          payment_mode = SiteSetting.instance.payment_mode if provider == "stripe"
           payment = order.payments.create!(
             provider: provider,
-            provider_environment: provider == "stripe" ? SiteSetting.instance.payment_mode : nil,
-            provider_platform_account_id: provider == "stripe" ? StripeService.platform_account_id(SiteSetting.instance.payment_mode) : nil,
+            provider_environment: payment_mode,
+            provider_platform_account_id: payment_mode ? StripeService.platform_account_id(payment_mode) : nil,
             idempotency_key: "#{provider}:payment:order:#{order.id}",
             amount_cents: order.total_cents,
             currency: order.currency,
@@ -259,8 +249,16 @@ module Commerce
       unless requires_payment
         raise CheckoutError, "A recorded payment is required for paid tickets"
       end
-      if (payment_provider.blank? || payment_provider == "stripe") && SiteSetting.instance.simulate_mode?
-        raise CheckoutError, "Simulated payments cannot be used for paid tickets in production"
+      stripe = payment_provider.blank? || payment_provider == "stripe"
+      if stripe && SiteSetting.instance.simulate_mode?
+        raise CheckoutError, "Paid tickets are not on sale yet: HåfaPass has not turned on payments"
+      end
+      # Production test mode is a QA tool: only platform admins buy paid
+      # tickets with test cards, so no one else holds a test-paid ticket that
+      # a door would admit. Free tickets stay open to everyone.
+      raise CheckoutError, PAID_SALES_OPEN_SOON if stripe && SiteSetting.instance.test_mode? && !user&.admin?
+      unless event.organization.payout_ready?
+        raise CheckoutError, "Paid tickets are not on sale until the organizer adds payout details"
       end
     end
 
@@ -499,14 +497,23 @@ module Commerce
       end
       subtotal_cents = ticket_subtotal_cents + catalog_subtotal_cents
       settings = SiteSetting.instance
-      ticket_count = selections.sum { |selection| selection[:quantity] }
-      platform_fee_cents = if service_fee && ticket_subtotal_cents.positive?
-        (ticket_subtotal_cents * (settings.service_fee_percent / 100.0)).round +
-          (ticket_count * settings.service_fee_flat_cents)
-      else
-        0
+      # Commerce::ServiceFee prices each ticket exactly as public listings
+      # advertise it: percent of the selected unit price (tier or seat price,
+      # before any promo discount) rounded per ticket, plus the flat fee per
+      # paid ticket, then the event's buyer share. Free and complimentary
+      # tickets carry no fee; a promo-discounted ticket is still a paid ticket.
+      # Orders created without a service fee (box office, comps) carry none.
+      fee_terms = ServiceFee.terms(settings)
+      selections.each do |selection|
+        selection[:fee_quote] = if service_fee
+          ServiceFee.for_event(event, selection[:unit_price_cents], terms: fee_terms)
+        else
+          ServiceFee.quote(unit_price_cents: 0, buyer_fee_percent: 0, terms: fee_terms)
+        end
       end
-      buyer_fee_cents = (platform_fee_cents * event.buyer_fee_percent / 100.0).round
+      paid_ticket_count = selections.sum { |selection| selection[:unit_price_cents].positive? ? selection[:quantity] : 0 }
+      platform_fee_cents = selections.sum { |selection| selection[:fee_quote].platform_fee_cents * selection[:quantity] }
+      buyer_fee_cents = selections.sum { |selection| selection[:fee_quote].buyer_fee_cents * selection[:quantity] }
       organizer_fee_cents = platform_fee_cents - buyer_fee_cents
       promo_code = locked_promo_code(ticket_subtotal_cents)
       discount_cents = promo_code ? promo_code.calculate_discount(ticket_subtotal_cents) : 0
@@ -520,7 +527,15 @@ module Commerce
         organizer_fee_cents: organizer_fee_cents,
         discount_cents: discount_cents,
         total_cents: [subtotal_cents + buyer_fee_cents - discount_cents, 0].max,
-        promo_code: promo_code
+        promo_code: promo_code,
+        # Read once with the fee terms so the order's fee and its processing
+        # bearer always come from the same settings snapshot. Orders created
+        # without a service fee (box office, comps, guest list) earn no fee to
+        # cover processing, so the organizer bears it.
+        processing_fee_bearer: service_fee ? settings.processing_fee_bearer : "organizer",
+        service_fee_percent: settings.service_fee_percent,
+        service_fee_flat_cents: settings.service_fee_flat_cents,
+        paid_ticket_count: paid_ticket_count
       }
     end
 
@@ -539,8 +554,10 @@ module Commerce
     def create_ledger!(order, selections, catalog_selections, totals, expires_at)
       ticket_subtotals = selections.map { |selection| selection[:unit_price_cents] * selection[:quantity] }
       discounts = MoneyAllocator.call(totals[:discount_cents], ticket_subtotals)
-      buyer_fees = MoneyAllocator.call(totals[:service_fee_cents], ticket_subtotals)
-      organizer_fees = MoneyAllocator.call(totals[:organizer_fee_cents], ticket_subtotals)
+      # Each line carries exactly its own tickets' fees, so a refund of one
+      # ticket type returns the fee that was advertised and charged on it.
+      buyer_fees = selections.map { |selection| selection[:fee_quote].buyer_fee_cents * selection[:quantity] }
+      organizer_fees = selections.map { |selection| selection[:fee_quote].organizer_fee_cents * selection[:quantity] }
 
       selections.each_with_index do |selection, index|
         subtotal = ticket_subtotals[index]
@@ -602,8 +619,11 @@ module Commerce
         currency: order.currency,
         estimated: true,
         metadata: {
-          percent: SiteSetting.instance.service_fee_percent.to_s,
-          flat_cents_per_ticket: SiteSetting.instance.service_fee_flat_cents,
+          percent: totals[:service_fee_percent].to_s,
+          flat_cents_per_ticket: totals[:service_fee_flat_cents],
+          paid_ticket_count: totals[:paid_ticket_count],
+          rounding: ServiceFee::ROUNDING,
+          processing_fee_bearer: totals[:processing_fee_bearer],
           fee_policy: event.fee_policy,
           buyer_paid_cents: totals[:service_fee_cents],
           organizer_absorbed_cents: totals[:organizer_fee_cents]
