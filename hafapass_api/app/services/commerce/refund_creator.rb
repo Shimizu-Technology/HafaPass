@@ -125,6 +125,7 @@ module Commerce
 
       Order.transaction do
         order.event.organization.lock!
+        order.event.lock!
         order.lock!
         existing = order.refunds.find_by(idempotency_key: idempotency_key)
         next validate_replay!(existing) if existing
@@ -210,6 +211,7 @@ module Commerce
     def provider_submission_allowed?(refund, mark_unknown: false)
       Refund.transaction do
         order.event.organization.lock!
+        order.event.lock!
         order.lock!
         refund.lock!
         return false unless refund.pending? && refund.provider_refund_id.blank?
@@ -320,6 +322,7 @@ module Commerce
 
       Refund.transaction do
         refund.order.event.organization.lock!
+        refund.order.event.lock!
         refund.order.lock!
         refund.lock!
         # A webhook can finish this operation while the original POST is still

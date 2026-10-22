@@ -68,16 +68,20 @@ class DataRetention
     ensure_destructive_enabled!
     LegalHold.with_retention_lock do
       Order.transaction(requires_new: true) do
-        order.lock!
-        ensure_destructive_enabled!
-        if RetentionGuard.protected?(order)
-          Rails.logger.info("[DataRetention] skipped protected orders record")
-          return false
+        order.event.organization.with_lock do
+          order.event.with_lock do
+            order.lock!
+            ensure_destructive_enabled!
+            if RetentionGuard.protected?(order)
+              Rails.logger.info("[DataRetention] skipped protected orders record")
+              return false
+            end
+            anonymize_order_locked!(order, eligible_ticket_ids: eligible_ticket_ids,
+              eligible_support_note_ids: eligible_support_note_ids,
+              anonymize_responses: anonymize_responses, buyer_owned: buyer_owned,
+              privacy_user_id: privacy_user_id, privacy_emails: privacy_emails, privacy_names: privacy_names)
+          end
         end
-        anonymize_order_locked!(order, eligible_ticket_ids: eligible_ticket_ids,
-          eligible_support_note_ids: eligible_support_note_ids,
-          anonymize_responses: anonymize_responses, buyer_owned: buyer_owned,
-          privacy_user_id: privacy_user_id, privacy_emails: privacy_emails, privacy_names: privacy_names)
       end
     end
   rescue Protected
@@ -339,10 +343,14 @@ class DataRetention
     when Payout
       Payout.where(id: record.id).update_all(failure_message: nil, payee_snapshot: {},
         tax_information_snapshot: {}, tax_information_tin: "[redacted]",
+        withholding_reason: nil, withholding_override_reason: nil,
         retention_anonymized_at: Time.current, updated_at: Time.current)
     when OrganizerTaxInformation
       record.update_columns(tin: "[redacted]", tin_last_four: "XXXX", legal_name: "[redacted]",
         business_name: nil, mailing_address: "[redacted]", signer_name: "[redacted]",
+        backup_withholding_reason: nil, irs_validation_document_reference: nil,
+        tin_digest: nil, validation_identity_digest: nil, tin_match_identity_digest: nil,
+        b_notice_identity_digest: nil,
         retention_anonymized_at: Time.current, updated_at: Time.current)
     when AuditLog
       AuditLog.where(id: record.id).update_all(ip_address: nil, before_data: {}, after_data: {}, metadata: {},
@@ -390,6 +398,7 @@ class DataRetention
       "%#{order.reference}%", "%#{order.id}%").exists?
 
     item_ids = OrderItem.where(order_id: order.id).select(:id)
+    return false if PayoutLineAllocation.where(order_item_id: item_ids).exists?
     purge_scopes = [SeatHold.where(order_item_id: item_ids), CatalogItemHold.where(order_item_id: item_ids),
       InventoryHold.where(order_id: order.id), SeatHoldSession.where(order_id: order.id),
       PromoRedemption.where(order_id: order.id), ReferralAttribution.where(order_id: order.id),
@@ -417,34 +426,38 @@ class DataRetention
     ensure_destructive_enabled!
     LegalHold.with_retention_lock do
       Order.transaction do
-        order.lock!
-        ensure_destructive_enabled!
-        if RetentionGuard.protected?(order)
-          Rails.logger.info("[DataRetention] skipped protected orders record")
-          return false
-        end
-        return false unless pending_order_purgeable?(order)
-
-        item_ids = OrderItem.where(order_id: order.id).select(:id)
-        [SeatHold.where(order_item_id: item_ids), CatalogItemHold.where(order_item_id: item_ids),
-          InventoryHold.where(order_id: order.id), SeatHoldSession.where(order_id: order.id),
-          PromoRedemption.where(order_id: order.id), ReferralAttribution.where(order_id: order.id),
-          AcquisitionAttribution.where(order_id: order.id), MarketplaceFunnelEvent.where(order_id: order.id),
-          OrderItem.where(order_id: order.id)].each do |scope|
-          scope.find_each do |child|
-            child.with_lock do
-              ensure_destructive_enabled!
-              raise Protected if RetentionGuard.protected?(child)
-
-              child.delete
+        order.event.organization.with_lock do
+          order.event.with_lock do
+            order.lock!
+            ensure_destructive_enabled!
+            if RetentionGuard.protected?(order)
+              Rails.logger.info("[DataRetention] skipped protected orders record")
+              return false
             end
+            return false unless pending_order_purgeable?(order)
+
+            item_ids = OrderItem.where(order_id: order.id).select(:id)
+            [SeatHold.where(order_item_id: item_ids), CatalogItemHold.where(order_item_id: item_ids),
+              InventoryHold.where(order_id: order.id), SeatHoldSession.where(order_id: order.id),
+              PromoRedemption.where(order_id: order.id), ReferralAttribution.where(order_id: order.id),
+              AcquisitionAttribution.where(order_id: order.id), MarketplaceFunnelEvent.where(order_id: order.id),
+              OrderItem.where(order_id: order.id)].each do |scope|
+              scope.find_each do |child|
+                child.with_lock do
+                  ensure_destructive_enabled!
+                  raise Protected if RetentionGuard.protected?(child)
+
+                  child.delete
+                end
+              end
+            end
+            raise Protected if RetentionGuard.protected?(order)
+
+            ensure_destructive_enabled!
+            order.delete
+            true
           end
         end
-        raise Protected if RetentionGuard.protected?(order)
-
-        ensure_destructive_enabled!
-        order.delete
-        true
       end
     end
   rescue Protected

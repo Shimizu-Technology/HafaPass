@@ -125,6 +125,18 @@ describe('SettingsPage', () => {
     expect(screen.queryByRole('button', { name: 'Choose bank transfer' })).not.toBeInTheDocument()
   })
 
+  it('shows the marketing address confirmation beside its form without payout access', async () => {
+    organization = { ...organization, permissions: { manage_members: false, manage_payout_settings: false, manage_organization: true } }
+    apiClient.patch.mockResolvedValue({ data: { ...organization, marketing_address_ready: true } })
+    show()
+    const section = (await screen.findByRole('heading', { name: 'Marketing postal address' })).closest('section')
+    await userEvent.type(within(section).getByLabelText('Physical postal address'), '123 Marine Drive, Hagåtña, GU 96910')
+    await userEvent.click(within(section).getByRole('checkbox'))
+    await userEvent.click(within(section).getByRole('button', { name: 'Save marketing address' }))
+    expect(await within(section).findByRole('status')).toHaveTextContent('Marketing postal address saved')
+    expect(screen.queryByRole('heading', { name: 'How you get paid' })).not.toBeInTheDocument()
+  })
+
   it('shows a calm no-access state to roles without team or payout rights', async () => {
     organization = { ...organization, role: 'marketer', permissions: { manage_members: false, manage_payout_settings: false } }
     show()

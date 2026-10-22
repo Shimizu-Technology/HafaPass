@@ -1,6 +1,6 @@
 import { formatMoneyCents } from '../utils/money'
 import { useTranslation } from 'react-i18next'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import {
   PaymentElement,
@@ -14,6 +14,9 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
   const elements = useElements()
   const [paymentError, setPaymentError] = useState(null)
   const [statusMessage, setStatusMessage] = useState(null)
+  const errorRef = useRef(null)
+
+  useEffect(() => { if (paymentError) errorRef.current?.focus() }, [paymentError])
 
   const formatPrice = (cents) => formatMoneyCents(cents)
 
@@ -58,7 +61,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
   return (
     <form onSubmit={handleSubmit} aria-busy={submitting}>
       {paymentError && (
-        <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+        <div ref={errorRef} tabIndex={-1} role="alert" className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
           <p className="text-red-700 text-sm">{paymentError}</p>
         </div>
       )}
@@ -68,7 +71,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
         </div>
       )}
 
-      <div className="mb-4">
+      <div className="mb-4" role="group" aria-label={t('checkout.payment')}>
         <PaymentElement
           options={{
             layout: 'tabs',

@@ -39,6 +39,20 @@
         "payload"
       ]
     },
+    "annual_tax_report_settings": {
+      "category": "tax/TIN",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "annual_tax_thresholds": {
+      "category": "tax/TIN",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "apple_wallet_registrations": {
       "category": "scanner/device data",
       "period": "7_years_after_year_end",
@@ -318,14 +332,18 @@
       "period": "7_years_after_year_end",
       "trigger": "created_at",
       "action": "anonymize",
-      "pii_columns": ["recipient_email"]
+      "pii_columns": [
+        "recipient_email"
+      ]
     },
     "fee_changes": {
       "category": "financial record",
       "period": "7_years_after_year_end",
       "trigger": "created_at",
       "action": "anonymize",
-      "pii_columns": ["activation_error"]
+      "pii_columns": [
+        "activation_error"
+      ]
     },
     "fee_components": {
       "category": "financial record",
@@ -366,6 +384,16 @@
       "action": "keep",
       "pii_columns": [
         "release_reason"
+      ]
+    },
+    "legal_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "scope_value",
+        "reason"
       ]
     },
     "live_money_proof_authorizations": {
@@ -547,7 +575,8 @@
       "trigger": "created_at",
       "action": "keep",
       "pii_columns": [
-        "name"
+        "name",
+        "marketing_mailing_address"
       ]
     },
     "organizer_follows": {
@@ -590,7 +619,13 @@
         "tin",
         "tin_last_four",
         "mailing_address",
-        "signer_name"
+        "signer_name",
+        "backup_withholding_reason",
+        "irs_validation_document_reference",
+        "tin_digest",
+        "validation_identity_digest",
+        "tin_match_identity_digest",
+        "b_notice_identity_digest"
       ]
     },
     "payment_events": {
@@ -623,6 +658,22 @@
         "provider_payload"
       ]
     },
+    "payout_check_adjustments": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "reason"
+      ]
+    },
+    "payout_line_allocations": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "payouts": {
       "category": "financial record",
       "period": "7_years_after_year_end",
@@ -632,7 +683,9 @@
         "failure_message",
         "payee_snapshot",
         "tax_information_snapshot",
-        "tax_information_tin"
+        "tax_information_tin",
+        "withholding_reason",
+        "withholding_override_reason"
       ]
     },
     "pilot_closeout_reviews": {
@@ -696,6 +749,18 @@
       "action": "keep",
       "pii_columns": [
         "name"
+      ]
+    },
+    "privacy_requests": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "guest_challenge_digest",
+        "requester_email",
+        "result",
+        "verified_emails"
       ]
     },
     "promo_codes": {
@@ -938,6 +1003,13 @@
         "qr_code"
       ]
     },
+    "tin_match_requests": {
+      "category": "tax/TIN",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "users": {
       "category": "organizer PII",
       "period": "inactive_no_auto_delete",
@@ -998,7 +1070,10 @@
       "pii_columns": [
         "email",
         "name",
-        "phone"
+        "phone",
+        "request_ip",
+        "request_user_agent",
+        "delivery_failure"
       ]
     },
     "waitlist_offers": {
@@ -1007,7 +1082,8 @@
       "trigger": "expires_at",
       "action": "keep",
       "pii_columns": [
-        "token_version"
+        "token_version",
+        "cancel_reason"
       ]
     },
     "waiver_acceptances": {
@@ -1034,28 +1110,6 @@
       "pii_columns": [
         "last_error",
         "payload"
-      ]
-    },
-    "legal_holds": {
-      "category": "logs/audit",
-      "period": "7_years_after_year_end",
-      "trigger": "created_at",
-      "action": "keep",
-      "pii_columns": [
-        "scope_value",
-        "reason"
-      ]
-    },
-    "privacy_requests": {
-      "category": "logs/audit",
-      "period": "7_years_after_year_end",
-      "trigger": "created_at",
-      "action": "anonymize",
-      "pii_columns": [
-        "guest_challenge_digest",
-        "requester_email",
-        "result",
-        "verified_emails"
       ]
     }
   },
@@ -1126,6 +1180,25 @@
       "updated_at": "system",
       "version": "system",
       "retention_anonymized_at": "system"
+    },
+    "annual_tax_report_settings": {
+      "id": "system",
+      "organization_id": "system",
+      "year": "financial",
+      "form_type": "financial",
+      "jurisdiction": "financial",
+      "created_at": "system",
+      "updated_at": "system",
+      "payee_key": "financial"
+    },
+    "annual_tax_thresholds": {
+      "id": "system",
+      "year": "financial",
+      "form_type": "financial",
+      "amount_cents": "financial",
+      "transaction_count": "financial",
+      "created_at": "system",
+      "updated_at": "system"
     },
     "apple_wallet_registrations": {
       "id": "system",
@@ -1873,7 +1946,8 @@
       "organization_membership_id": "system",
       "platform_invitation_id": "system",
       "privacy_request_id": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "reconciled_at": "system"
     },
     "message_provider_events": {
       "id": "system",
@@ -1985,7 +2059,9 @@
       "slug": "pii",
       "status": "system",
       "timezone": "system",
-      "updated_at": "system"
+      "updated_at": "system",
+      "marketing_mailing_address": "pii",
+      "marketing_address_certified_at": "system"
     },
     "organizer_follows": {
       "id": "system",
@@ -2046,7 +2122,26 @@
       "certification_version": "system",
       "created_at": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "tin_match_status": "financial",
+      "tin_match_result_code": "financial",
+      "tin_matched_at": "system",
+      "b_notice_stage": "financial",
+      "b_notice_sent_at": "system",
+      "b_notice_response_due_on": "system",
+      "backup_withholding_flag": "financial",
+      "backup_withholding_reason": "pii",
+      "irs_notice_received_on": "system",
+      "b_notice_send_due_on": "system",
+      "first_b_notice_received_on": "system",
+      "irs_validation_evidence_type": "non-personal",
+      "irs_validation_recorded_on": "system",
+      "irs_validation_admin_id": "system",
+      "irs_validation_document_reference": "pii",
+      "tin_digest": "pii",
+      "validation_identity_digest": "pii",
+      "tin_match_identity_digest": "pii",
+      "b_notice_identity_digest": "pii"
     },
     "payment_events": {
       "id": "system",
@@ -2102,6 +2197,23 @@
       "provider_platform_account_id": "system",
       "retention_anonymized_at": "system"
     },
+    "payout_check_adjustments": {
+      "id": "system",
+      "payout_id": "system",
+      "created_by_user_id": "system",
+      "amount_cents": "financial",
+      "reason": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "payout_line_allocations": {
+      "id": "system",
+      "payout_id": "system",
+      "order_item_id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "updated_at": "system"
+    },
     "payouts": {
       "id": "system",
       "amount_cents": "financial",
@@ -2126,7 +2238,13 @@
       "tax_information_tin": "pii",
       "tax_approval_digest": "non-personal",
       "held_from_status": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "withheld_cents": "financial",
+      "withholding_rate_bps": "financial",
+      "withholding_reason": "pii",
+      "withholding_override_reason": "pii",
+      "under_withheld_cents": "financial",
+      "carried_withholding_cents": "financial"
     },
     "pilot_closeout_reviews": {
       "id": "system",
@@ -2570,7 +2688,10 @@
       "payout_schedule_text": "pii",
       "business_mailing_address": "pii",
       "retention_purge_enabled": "non-personal",
-      "fee_notice_days": "non-personal"
+      "fee_notice_days": "non-personal",
+      "backup_withholding_mode": "financial",
+      "backup_withholding_rate_bps": "financial",
+      "tax_reporting_thresholds": "financial"
     },
     "solid_queue_batch_executions": {
       "id": "system",
@@ -2792,6 +2913,17 @@
       "first_admitted_at": "system",
       "retention_anonymized_at": "system"
     },
+    "tin_match_requests": {
+      "id": "system",
+      "organizer_tax_information_id": "system",
+      "account_reference": "financial",
+      "tax_information_updated_at": "system",
+      "exported_at": "system",
+      "imported_at": "system",
+      "result_code": "financial",
+      "created_at": "system",
+      "updated_at": "system"
+    },
     "users": {
       "id": "system",
       "clerk_id": "pii",
@@ -2869,7 +3001,11 @@
       "ticket_type_id": "system",
       "updated_at": "system",
       "user_id": "system",
-      "locale": "system"
+      "locale": "system",
+      "requested_at": "system",
+      "request_ip": "pii",
+      "request_user_agent": "pii",
+      "delivery_failure": "pii"
     },
     "waitlist_offers": {
       "id": "system",
@@ -2886,7 +3022,8 @@
       "token_version": "pii",
       "unit_price_cents": "financial",
       "updated_at": "system",
-      "waitlist_entry_id": "system"
+      "waitlist_entry_id": "system",
+      "cancel_reason": "pii"
     },
     "waiver_acceptances": {
       "id": "system",

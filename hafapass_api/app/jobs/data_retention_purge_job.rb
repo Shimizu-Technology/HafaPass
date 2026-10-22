@@ -51,7 +51,11 @@ class DataRetentionPurgeJob < ApplicationJob
 
           written = false
           LegalHold.with_retention_lock do
-            record.with_lock do
+            if record.is_a?(Order)
+              written = DataRetention.anonymize!(record)
+              next
+            end
+            with_ranked_record_lock(record) do
               if RetentionGuard.protected?(record)
                 Rails.logger.info("[DataRetention] skipped protected #{table} record")
                 next
@@ -84,5 +88,17 @@ class DataRetentionPurgeJob < ApplicationJob
       end
     Rails.logger.info("[DataRetention] dry_run=#{DataRetention.dry_run?} counts=#{counts.sort.to_h.to_json}")
     counts
+  end
+
+  private
+
+  def with_ranked_record_lock(record, &block)
+    if record.is_a?(Payout)
+      record.organization.with_lock do
+        record.event.with_lock { record.with_lock(&block) }
+      end
+    else
+      record.with_lock(&block)
+    end
   end
 end

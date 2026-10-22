@@ -131,7 +131,8 @@ Rails.application.routes.draw do
         get "refund_reconciliation", to: "refund_reconciliations#index"
         post "refund_reconciliation/:type/:id/:operation", to: "refund_reconciliations#action"
         resource :tax_information, only: [:show, :update]
-        resource :organization, only: [:show], controller: "organizations"
+        get "annual_statements/:year", to: "annual_statements#show"
+        resource :organization, only: [:show, :update], controller: "organizations"
         resource :finances, only: [:show], controller: "organization_finances" do
           get :orders_export
           get :payouts_export
@@ -212,6 +213,7 @@ Rails.application.routes.draw do
           resources :waitlist, only: [:index, :destroy], controller: "waitlist" do
             member do
               post :notify
+              post :retry_unconfirmed
               post :offer
             end
             collection do
@@ -261,7 +263,17 @@ Rails.application.routes.draw do
           get :receipts_export
           post :preparation_export
         end
-        post "organizations/:organization_id/tax_information/reveal", to: "tax_informations#reveal"
+        get "tin_matching", to: "tin_matching#index"
+        post "tin_matching/export", to: "tin_matching#export"
+        post "tin_matching/import", to: "tin_matching#import"
+        patch "organizations/:organization_id/tax_information/withholding_flag", to: "tin_matching#flag"
+        post "organizations/:organization_id/tax_information/b_notice_pdf", to: "tin_matching#notice_pdf"
+        post "organizations/:organization_id/tax_information/notice_received", to: "tin_matching#notice_received"
+        post "organizations/:organization_id/tax_information/b_notice_sent", to: "tin_matching#notice_sent"
+        post "organizations/:organization_id/tax_information/validate_second_notice", to: "tin_matching#validate_second_notice"
+        get "annual_tax_reports", to: "annual_tax_reports#index"
+        post "annual_tax_reports/export", to: "annual_tax_reports#export"
+        patch "annual_tax_reports/:organization_id", to: "annual_tax_reports#update"
         resource :settings, only: [:show, :update]
         get "settings/fee_change_preview", to: "settings#fee_change_preview"
         resource :dashboard, only: [:show], controller: "dashboard"
@@ -390,7 +402,8 @@ Rails.application.routes.draw do
         end
         resources :card_present_accounts, only: [:create, :update]
         resources :balance_adjustments, only: [:index, :create, :destroy]
-        resources :payouts, only: [:index, :update] do
+        resources :payouts, only: [:index, :create, :update] do
+          post :check_amount_adjustment, on: :member
           post :release_hold, on: :member
         end
         resources :disputes, only: [:index]

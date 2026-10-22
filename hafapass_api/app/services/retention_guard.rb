@@ -14,6 +14,8 @@ class RetentionGuard
   def self.protected?(record)
     return true if DataRetention.held?(record)
     return true if record.is_a?(Payout) && MONEY_PAYOUT_STATUSES.include?(record.status)
+    organization = related_organization(record)
+    return true if organization && DataRetention.held?(organization)
 
     references = references_in(record)
     orders = related_orders(record, references)
@@ -36,7 +38,15 @@ class RetentionGuard
     ids << record.payment&.order_id if record.respond_to?(:payment)
     ids << record.payment_event&.payment&.order_id if record.respond_to?(:payment_event)
     ids << record.order_item&.order_id if record.respond_to?(:order_item)
+    ids << record.order_item&.order_id if record.is_a?(PayoutLineAllocation)
     ids.concat(Order.where(event_id: record.event_id).pluck(:id)) if record.is_a?(Payout)
+    if record.is_a?(PayoutCheckAdjustment) || record.is_a?(PayoutLineAllocation)
+      ids.concat(Order.where(event_id: record.payout.event_id).pluck(:id))
+    end
+    if record.is_a?(TinMatchRequest) || record.is_a?(AnnualTaxReportSetting)
+      organization = related_organization(record)
+      ids.concat(Order.where(event_id: Event.where(organization_id: organization.id).select(:id)).pluck(:id)) if organization
+    end
     ids.concat(Order.where(event_id: record.event_id).pluck(:id)) if record.is_a?(FeeChangeNotice)
     if record.is_a?(FeeChange)
       ids.concat(Order.where(event_id: record.notices.select(:event_id)).pluck(:id))
@@ -94,6 +104,14 @@ class RetentionGuard
 
     pending.find_each.any? do |receipt|
       related_orders(receipt).any? { |candidate| candidate.id == order.id }
+    end
+  end
+
+  def self.related_organization(record)
+    case record
+    when TinMatchRequest then record.organizer_tax_information&.organization
+    when AnnualTaxReportSetting then record.organization
+    when PayoutCheckAdjustment, PayoutLineAllocation then record.payout&.organization
     end
   end
 

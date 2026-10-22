@@ -34,6 +34,7 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
         status: :unprocessable_entity
     end
 
+    return render json: { error: BackupWithholding::TIN_WARNING }, status: :unprocessable_entity unless BackupWithholding.safe_text?(params[:reason])
     organization = Organization.find(params[:organization_id])
     event = organization.events.find(params[:event_id]) if params[:event_id].present?
     adjustment = organization.balance_adjustments.create!(
@@ -64,6 +65,7 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
   end
 
   def destroy
+    return render json: { error: BackupWithholding::TIN_WARNING }, status: :unprocessable_entity unless BackupWithholding.safe_text?(params[:reason])
     adjustment = BalanceAdjustment.status_posted.find(params[:id])
     reversal = nil
     BalanceAdjustment.transaction do

@@ -324,6 +324,10 @@ class PrivacyRequestProcessor
         DataRetention.ensure_destructive_enabled!
         @orders = nil
         @plan = nil
+        # Lock each rank across the whole request before descending to the next.
+        organization_ids = orders.map { |order| order.event.organization_id }.uniq
+        Organization.where(id: organization_ids).order(:id).lock("FOR UPDATE").load
+        Event.where(id: orders.map(&:event_id)).order(:id).lock("FOR UPDATE").load
         orders.each(&:lock!)
         Ticket.where(order_id: orders.map(&:id)).order(:id).lock("FOR UPDATE").load
         raise Blocked, "A legal hold or money operation now blocks deletion" if blockers.any?

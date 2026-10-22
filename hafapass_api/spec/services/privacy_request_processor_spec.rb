@@ -75,6 +75,7 @@ RSpec.describe PrivacyRequestProcessor do
 
   it "includes account activity and order data in the access JSON" do
     favorite = EventFavorite.create!(user: user, event: order.event)
+    tax = create(:organizer_tax_information, organization: order.event.organization)
     access = PrivacyRequest.create!(kind: "access", user: user, requester_email: user.email,
       status: "verified", verified_at: Time.current, verified_by: admin)
 
@@ -83,6 +84,7 @@ RSpec.describe PrivacyRequestProcessor do
     expect(data[:account]).to include("email" => user.email)
     expect(data[:orders].first[:order]).to include("id" => order.id)
     expect(data[:saved_events].first).to include("id" => favorite.id)
+    expect(data.to_json).not_to include(tax.tin, tax.tin_last_four)
   end
 
   it "includes guest orders sent to the verified account email" do

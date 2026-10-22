@@ -236,6 +236,25 @@ RSpec.describe RetentionGuard do
     expect(described_class.protected_batch?(logs).values).to all(be(true))
     expect(logs.size).to eq(5)
   end
+
+  it "protects new tax and payout records through their organization, payout, and order" do
+    order = create(:order)
+    organization = order.event.organization
+    payout = Payout.new(organization: organization, event: order.event, status: :paid)
+    records = [
+      AnnualTaxReportSetting.new(organization: organization),
+      TinMatchRequest.new(organizer_tax_information: OrganizerTaxInformation.new(organization: organization)),
+      PayoutCheckAdjustment.new(payout: payout),
+      PayoutLineAllocation.new(payout: payout)
+    ]
+    create(:refund, order: order, status: :pending)
+
+    expect(described_class.protected_batch?(records).values).to all(be(true))
+
+    LegalHold.place!(scope_type: "organization", scope_value: organization.id.to_s,
+      reason: "Preserve tax and payout evidence", actor: create(:user, :admin))
+    expect(described_class.protected_batch?(records).values).to all(be(true))
+  end
 end
 
 RSpec.describe DataRetention, "pending-order safety" do

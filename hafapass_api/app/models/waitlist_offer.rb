@@ -22,7 +22,7 @@ class WaitlistOffer < ApplicationRecord
   end
 
   def expire!(at: Time.current, requeue: true)
-    with_lock do
+    WaitlistLocks.with(entry: waitlist_entry, offer: self) do
       return false unless offered? || claimed?
 
       update!(status: :expired, token_version: token_version + 1)

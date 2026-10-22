@@ -3,7 +3,7 @@
 class PayoutHoldRelease
   class ReleaseError < StandardError; end
 
-  def self.call(payout:, actor:, automatic: false, request: nil)
+  def self.call(payout:, actor:, automatic: false, withholding_override_reason: nil, request: nil)
     raise ReleaseError, "Administrator access is required" unless automatic || actor&.persisted? && actor.admin?
 
     released = false
@@ -17,6 +17,9 @@ class PayoutHoldRelease
           if %w[provider_result_conflict provider_result_unknown].include?(payout.failure_code)
             raise ReleaseError, "Resolve the provider result conflict before releasing this payout"
           end
+
+          PayoutWithholdingGuard.call(payout: payout, actor: actor,
+            override_reason: withholding_override_reason, request: request)
 
           liability = payout.event.cancelled? ? EventCancellationRefunds.liability_snapshot(payout.event) :
             { outstanding_cents: 0, unresolved: false }
@@ -47,6 +50,10 @@ class PayoutHoldRelease
       end
     end
     released
+  rescue PayoutWithholdingGuard::WithholdingError => e
+    raise ReleaseError, e.message unless automatic
+
+    false
   rescue ReleaseError
     raise unless automatic
 

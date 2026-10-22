@@ -25,7 +25,19 @@ class MessageDelivery < ApplicationRecord
   attr_accessor :preparing_outbound_payload
 
   TICKET_EMAIL_TEMPLATES = %w[order_confirmation fulfillment_resend].freeze
-  PROMOTIONAL_TEMPLATES = %w[communication_campaign].freeze
+  # Keep this classification in sync with docs/EMAIL_COMPLIANCE.md.
+  EMAIL_TEMPLATE_CLASSIFICATION = {
+    "order_confirmation" => :transactional, "fulfillment_resend" => :transactional,
+    "ticket_delivery" => :transactional, "order_recovery" => :transactional,
+    "event_change" => :transactional, "refund_notification" => :transactional,
+    "refund_reconciliation_digest" => :transactional, "guest_list" => :transactional,
+    "ticket_transfer" => :transactional, "event_reminder" => :transactional,
+    "verification_request" => :transactional, "organization_invitation" => :transactional,
+    "platform_invitation" => :transactional, "fee_change_notice" => :transactional,
+    "waitlist_notification" => :commercial,
+    "waitlist_offer" => :commercial, "communication_campaign" => :commercial
+  }.freeze
+  PROMOTIONAL_TEMPLATES = EMAIL_TEMPLATE_CLASSIFICATION.select { |_, kind| kind == :commercial }.keys.freeze
 
   def promotional?
     channel == "email" && PROMOTIONAL_TEMPLATES.include?(template)
@@ -35,9 +47,23 @@ class MessageDelivery < ApplicationRecord
     channel == "email" && !promotional?
   end
 
+  def requires_marketing_consent?
+    channel == "email" && template == "communication_campaign"
+  end
+
   def marketing_unsubscribed?
-    promotional? && event&.organization_id.present? &&
-      MarketingUnsubscribe.exists?(organization_id: event.organization_id, email: recipient.to_s.strip.downcase)
+    return false unless promotional? && event&.organization_id.present?
+
+    unsubscribe = MarketingUnsubscribe.find_by(organization_id: event.organization_id, email: recipient.to_s.strip.downcase)
+    return false unless unsubscribe
+    return true if template == "communication_campaign"
+
+    entry = if template == "waitlist_offer"
+      WaitlistOffer.find_by(id: metadata["waitlist_offer_id"])&.waitlist_entry
+    else
+      WaitlistEntry.find_by(id: metadata["waitlist_entry_id"])
+    end
+    entry.nil? || entry.requested_at.nil? || unsubscribe.unsubscribed_at >= entry.requested_at
   end
   scope :ticket_email, -> { where(channel: "email", template: TICKET_EMAIL_TEMPLATES) }
   scope :unconfirmed_provider_result, -> {
@@ -96,9 +122,11 @@ class MessageDelivery < ApplicationRecord
       SQL
       .select(:message_delivery_id)
     hard_bounces = history.where(status: :bounced).where.not(id: transient_bounces)
-    hard_bounces.or(history.where(status: :complained)).or(
-      history.where(status: :suppressed).where.not(provider_id: [nil, ""])
-    ).where.not(id: id).exists?
+    provider_suppressions = history.where(status: :suppressed).where.not(provider_id: [nil, ""])
+      .or(history.where("metadata ->> 'provider_address_invalid' = 'true'"))
+    blocked = hard_bounces.or(provider_suppressions)
+    blocked = blocked.or(history.where(status: :complained)) if promotional?
+    blocked.where.not(id: id).exists?
   end
 
   private

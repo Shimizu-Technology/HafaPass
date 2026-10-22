@@ -97,7 +97,7 @@ RSpec.describe "Recording a check payout", type: :request do
       status: :processing, provider_payout_id: "manual_po_fixture", created_at: 1.hour.ago,
       payee_snapshot: account.check_payee, payee_approval_digest: account.readiness_state_digest)
   end
-  let(:evidence) { { reference: "Check 1042", confirmed_at: 10.minutes.ago.iso8601(6), reason: "Check written" } }
+  let(:evidence) { { reference: "Check 1042", confirmed_at: 10.minutes.ago.iso8601(6), reason: "Check written", actual_check_amount_cents: 100 } }
 
   it "shows who the check is for and records the check number and date" do
     get "/api/v1/admin/payouts", headers: auth_headers(admin)
@@ -108,11 +108,163 @@ RSpec.describe "Recording a check payout", type: :request do
     check_date = 10.minutes.ago
     patch "/api/v1/admin/payouts/#{payout.id}", headers: auth_headers(admin), params: {
       status: "paid", provider_payout_id: "Check 1042",
-      evidence: { reference: "Check 1042", confirmed_at: check_date.iso8601(6), reason: "Check written and picked up" }
+      evidence: { reference: "Check 1042", confirmed_at: check_date.iso8601(6), reason: "Check written and picked up", actual_check_amount_cents: 100 }
     }
     expect(response).to have_http_status(:ok)
     expect(payout.reload).to have_attributes(status: "paid", provider_payout_id: "Check 1042")
     expect(payout.paid_at).to be_within(1.second).of(check_date)
+  end
+
+  it "preserves a $100 issued check and collects late backup withholding from the next payout" do
+    issued = create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, amount_cents: 10_000, status: :processing,
+      provider_payout_id: "manual_po_issued", created_at: 1.hour.ago,
+      payee_snapshot: account.check_payee, payee_approval_digest: account.readiness_state_digest)
+    tax = organization.organizer_tax_information
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS withholding notice")
+    SiteSetting.instance.update!(backup_withholding_mode: "withhold")
+
+    patch "/api/v1/admin/payouts/#{issued.id}", headers: auth_headers(admin), params: {
+      status: "paid", provider_payout_id: "Check 1042",
+      evidence: evidence.merge(actual_check_amount_cents: 10_000, approved_tax_payee_confirmed: true)
+    }
+    expect(response).to have_http_status(:ok)
+    expect(issued.reload).to have_attributes(amount_cents: 10_000, withheld_cents: 0,
+      under_withheld_cents: 2400)
+    expect(issued.disbursement_cents).to eq(10_000)
+    expect(PayeeWithholdingBalance.for_tax(tax)).to eq(2400)
+
+    next_payout = create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, amount_cents: 10_000, status: :pending,
+      payee_snapshot: account.check_payee, payee_approval_digest: account.readiness_state_digest)
+    organization.with_lock do
+      next_payout.with_lock { PayoutWithholdingGuard.call(payout: next_payout, actor: admin) }
+    end
+    expect(next_payout.reload).to have_attributes(withheld_cents: 2400, carried_withholding_cents: 2400)
+    expect(next_payout.disbursement_cents).to eq(5200)
+    expect(AuditLog.where(auditable: issued, action: "payout.under_withholding_carried")).to exist
+    expect(AuditLog.where(auditable: next_payout, action: "payout.backup_withholding_recalculated")).to exist
+    PayoutReconciler.call(payout: next_payout, actor: admin, status: "failed",
+      evidence: { reference: "Check voided", confirmed_at: Time.current.iso8601(6),
+        reason: "Check voided before disbursement" })
+
+    small_payout = create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, amount_cents: 2000, status: :pending,
+      payee_snapshot: account.check_payee, payee_approval_digest: account.readiness_state_digest)
+    organization.with_lock do
+      small_payout.with_lock { PayoutWithholdingGuard.call(payout: small_payout, actor: admin) }
+    end
+    expect(small_payout.reload).to have_attributes(withheld_cents: 480, carried_withholding_cents: 1520)
+    expect(small_payout.disbursement_cents).to eq(0)
+    small_payout.update!(status: :processing)
+    PayoutReconciler.call(payout: small_payout, actor: admin, status: "paid",
+      provider_payout_id: "withholding_only_#{small_payout.id}",
+      evidence: { reference: "Withholding ledger entry", confirmed_at: Time.current.iso8601(6),
+        reason: "No check was due after withholding", actual_check_amount_cents: 0 })
+    expect(small_payout.reload).to be_status_paid
+    expect(PayeeWithholdingBalance.for_tax(tax)).to eq(880)
+    expect(AuditLog.where(auditable: small_payout, action: "payout.under_withholding_collected")).to exist
+    report = AnnualPayeeReport.new(organization: organization, year: Time.current.in_time_zone("Pacific/Guam").year,
+      payee_key: AnnualPayeeReport.payee_key_for(issued))
+    expect(report.row).to include(withheld_cents: 2000, net_disbursed_cents: 10_000)
+  end
+
+  it "measures a recorded shortfall at the current withholding rate without changing the payout amount" do
+    tax = organization.organizer_tax_information
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS withholding notice")
+    issued = create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, amount_cents: 10_000, status: :processing,
+      payee_snapshot: account.check_payee, payee_approval_digest: account.readiness_state_digest)
+
+    SiteSetting.instance.update!(backup_withholding_rate_bps: 2800)
+    expect(PayeeWithholdingBalance.shortfall_for(issued)).to eq(2800)
+    SiteSetting.instance.update!(backup_withholding_rate_bps: 2400)
+    expect(PayeeWithholdingBalance.shortfall_for(issued)).to eq(2400)
+    expect(issued.reload).to have_attributes(amount_cents: 10_000, withheld_cents: 0)
+  end
+
+  it "reverses a paid check without changing its carry and excludes that carry from annual withholding" do
+    tax = organization.organizer_tax_information
+    issued = create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, status: :paid, amount_cents: 10_000, under_withheld_cents: 2400,
+      paid_at: Time.current, payee_snapshot: account.check_payee)
+    carrying = create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, amount_cents: 10_000,
+      payee_snapshot: account.check_payee, payee_approval_digest: account.readiness_state_digest)
+    organization.with_lock do
+      carrying.with_lock { PayoutWithholdingGuard.call(payout: carrying, actor: admin) }
+    end
+    carrying.update!(status: :processing)
+    PayoutReconciler.call(payout: carrying, actor: admin, status: "paid", provider_payout_id: "Check 1043",
+      evidence: { reference: "Check 1043", confirmed_at: Time.current.iso8601(6),
+        reason: "Check disbursed", actual_check_amount_cents: 7600 })
+    year = Time.current.in_time_zone("Pacific/Guam").year
+    key = AnnualPayeeReport.payee_key_for(issued)
+    report = -> { AnnualPayeeReport.new(organization: organization, year: year, payee_key: key).row }
+    expect(PayeeWithholdingBalance.for_tax(tax)).to eq(0)
+    expect(report.call[:withheld_cents]).to eq(2400)
+
+    PayoutReconciler.call(payout: carrying, actor: admin, status: "reversed", provider_payout_id: "Check 1043",
+      evidence: { reference: "Bank reversal", confirmed_at: Time.current.iso8601(6),
+        reason: "Check was returned" })
+
+    expect(carrying.reload).to have_attributes(status: "reversed", under_withheld_cents: 0,
+      carried_withholding_cents: 2400, withheld_cents: 0)
+    expect(PayeeWithholdingBalance.for_tax(tax)).to eq(2400)
+    expect(report.call[:withheld_cents]).to eq(0)
+  end
+
+  it "preserves a paid check's under-withheld amount on reversal" do
+    tax = organization.organizer_tax_information
+    issued = create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, amount_cents: 10_000, status: :processing,
+      payee_snapshot: account.check_payee, payee_approval_digest: account.readiness_state_digest)
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS review")
+    PayoutReconciler.call(payout: issued, actor: admin, status: "paid", provider_payout_id: "Check 1044",
+      evidence: { reference: "Check 1044", confirmed_at: Time.current.iso8601(6),
+        reason: "Check disbursed", actual_check_amount_cents: 10_000, approved_tax_payee_confirmed: true })
+    expect(issued.reload.under_withheld_cents).to eq(2400)
+
+    PayoutReconciler.call(payout: issued, actor: admin, status: "reversed", provider_payout_id: "Check 1044",
+      evidence: { reference: "Bank reversal", confirmed_at: Time.current.iso8601(6),
+        reason: "Check was returned" })
+
+    expect(issued.reload).to have_attributes(status: "reversed", under_withheld_cents: 2400,
+      amount_cents: 10_000, withheld_cents: 0)
+  end
+
+  it "rejects a check amount mismatch until an admin records a reasoned audited adjustment" do
+    mismatched = evidence.merge(actual_check_amount_cents: 99)
+    patch "/api/v1/admin/payouts/#{payout.id}", headers: auth_headers(admin), params: {
+      status: "paid", provider_payout_id: "Check 1042", evidence: mismatched
+    }
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("Actual check amount does not match")
+    expect(payout.reload).to have_attributes(status: "processing", withheld_cents: 0)
+    expect(payout.payout_check_adjustments).to be_empty
+
+    post "/api/v1/admin/payouts/#{payout.id}/check_amount_adjustment", headers: auth_headers(admin), params: {
+      actual_check_amount_cents: 99, reason: "Check register shows a one cent error"
+    }
+    expect(response).to have_http_status(:ok)
+    expect(payout.payout_check_adjustments.last.amount_cents).to eq(-1)
+    expect(AuditLog.where(auditable: payout, action: "payout.check_amount_adjusted")).to exist
+
+    patch "/api/v1/admin/payouts/#{payout.id}", headers: auth_headers(admin), params: {
+      status: "paid", provider_payout_id: "Check 1042", evidence: mismatched
+    }
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload.disbursement_cents).to eq(100)
+    expect(payout.confirmed_check_amount_cents).to eq(99)
+  end
+
+  it "rejects check adjustments outside processing or a hold from processing" do
+    payout.update!(status: :held, held_from_status: "pending")
+    post "/api/v1/admin/payouts/#{payout.id}/check_amount_adjustment", headers: auth_headers(admin), params: {
+      actual_check_amount_cents: 99, reason: "Check register shows a one cent error"
+    }
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(payout.payout_check_adjustments).to be_empty
   end
 end
 
@@ -134,7 +286,7 @@ RSpec.describe "Check payee changes while a payout is in flight", type: :request
   end
   let(:paid) do
     { status: "paid", provider_payout_id: "Check 2001",
-      evidence: { reference: "Check 2001", confirmed_at: 5.minutes.ago.iso8601(6), reason: "Check mailed" } }
+      evidence: { reference: "Check 2001", confirmed_at: 5.minutes.ago.iso8601(6), reason: "Check mailed", actual_check_amount_cents: 100 } }
   end
 
   it "blocks payee edits while a check payout is in flight" do

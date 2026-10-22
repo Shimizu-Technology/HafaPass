@@ -101,8 +101,8 @@ class Api::V1::Organizer::FinancesController < Api::V1::Organizer::BaseControlle
   def payout_json(payout)
     payout.attributes.slice(
       "id", "settlement_id", "provider", "provider_payout_id", "amount_cents", "currency", "status",
-      "failure_code", "failure_message", "initiated_at", "paid_at", "created_at"
-    )
+      "failure_code", "failure_message", "initiated_at", "paid_at", "created_at", "withheld_cents"
+    ).merge(disbursement_cents: payout.disbursement_cents)
   end
 
   def connected_account_json(account)
