@@ -185,6 +185,7 @@ describe('AdminPayoutsPage', () => {
     expect(dialog.getByText(/recorded as paid on the date written on the check, not when it clears/)).toBeInTheDocument()
     await user.type(dialog.getByLabelText(/Check number/), '1042')
     await user.type(dialog.getByLabelText(/Reference/), 'register 7')
+    await user.type(dialog.getByLabelText(/Actual amount written on the check/), '42.00')
     await user.type(dialog.getByLabelText('How you confirmed it'), 'written')
     await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
     expect(apiClient.patch).not.toHaveBeenCalled()
@@ -193,8 +194,33 @@ describe('AdminPayoutsPage', () => {
     await user.click(dialog.getByRole('checkbox', { name: 'I wrote this check to the approved payee shown above' }))
     await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
     expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', expect.objectContaining({
-      evidence: expect.objectContaining({ approved_payee_confirmed: true }),
+      evidence: expect.objectContaining({ approved_payee_confirmed: true, actual_check_amount_cents: 4200 }),
     }), expect.anything())
+  })
+
+  it('requires the actual written amount and offers a reasoned adjustment for a mismatch', async () => {
+    const user = userEvent.setup()
+    apiClient.post.mockResolvedValue({ data: { check_amount_cents: 4199 } })
+    apiClient.patch.mockResolvedValue({ data: {} })
+    respond({ payouts: [{ ...payout, provider: 'check', disbursement_cents: 4200,
+      confirmed_check_amount_cents: 4200, payee: { payee_name: 'Ambros Inc.', delivery_method: 'pickup' } }] })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    await user.type(dialog.getByLabelText(/Check number/), '1042')
+    await user.type(dialog.getByLabelText(/Reference/), 'register 7')
+    await user.type(dialog.getByLabelText('How you confirmed it'), 'Check register review')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(dialog.getByText('Enter the actual check amount in dollars and cents.')).toBeInTheDocument()
+    await user.type(dialog.getByLabelText(/Actual amount written on the check/), '41.99')
+    await user.type(dialog.getByLabelText('Check amount adjustment reason'), 'Check register differs by one cent')
+    await user.click(dialog.getByRole('button', { name: 'Record audited adjustment' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/payouts/12/check_amount_adjustment',
+      { actual_check_amount_cents: 4199, reason: 'Check register differs by one cent' }, expect.anything()))
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', expect.objectContaining({
+      evidence: expect.objectContaining({ actual_check_amount_cents: 4199 }),
+    }), expect.anything()))
   })
 
   it('requires confirmation for a changed W-9 approval before recording paid', async () => {

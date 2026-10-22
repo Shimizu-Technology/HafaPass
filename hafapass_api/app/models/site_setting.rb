@@ -8,6 +8,7 @@ class SiteSetting < ApplicationRecord
   # keeps the ticket price. "organizer" is the legacy rule, where actual
   # processing is deducted from organizer proceeds. Orders snapshot this value.
   PROCESSING_FEE_BEARERS = %w[platform organizer].freeze
+  BACKUP_WITHHOLDING_MODES = %w[block withhold].freeze
   DEFAULT_SERVICE_FEE_PERCENT = 5.0
   DEFAULT_SERVICE_FEE_FLAT_CENTS = 100
   DEFAULT_PAYOUT_SCHEDULE_TEXT = "within 3 business days after your event"
@@ -22,6 +23,8 @@ class SiteSetting < ApplicationRecord
   validates :service_fee_flat_cents, presence: true,
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: MAX_SERVICE_FEE_FLAT_CENTS }
   validates :processing_fee_bearer, inclusion: { in: PROCESSING_FEE_BEARERS }
+  validates :backup_withholding_mode, inclusion: { in: BACKUP_WITHHOLDING_MODES }
+  validates :backup_withholding_rate_bps, numericality: { only_integer: true, in: 1..9_999 }
   validates :payout_schedule_text, presence: true, length: { maximum: MAX_PAYOUT_SCHEDULE_TEXT_LENGTH }
   validates :business_mailing_address, length: { maximum: 500 }, allow_blank: true
   normalizes :payout_schedule_text, with: ->(text) { text.squish }

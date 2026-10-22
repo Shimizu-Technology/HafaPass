@@ -7,12 +7,13 @@ class PayoutCreator
     new(**).call
   end
 
-  def initialize(settlement:, actor:, idempotency_key:, amount_cents: nil, request: nil)
+  def initialize(settlement:, actor:, idempotency_key:, amount_cents: nil, request: nil, withholding_override_reason: nil)
     @settlement = settlement
     @actor = actor
     @idempotency_key = idempotency_key
     @requested_amount_cents = amount_cents&.to_i
     @request = request
+    @withholding_override_reason = withholding_override_reason
   end
 
   def call
@@ -36,13 +37,19 @@ class PayoutCreator
 
   private
 
-  attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request
+  attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request, :withholding_override_reason
 
   def submit_payout!(payout)
-    payout.with_lock do
-      raise PayoutError, "Payout was held before submission" unless payout.status_pending?
+    payout.organization.with_lock do
+      payout.with_lock do
+        raise PayoutError, "Payout was held before submission" unless payout.status_pending?
+
+        PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request)
+      end
     end
     PayoutGateway.submit(payout)
+  rescue PayoutWithholdingGuard::WithholdingError => e
+    raise PayoutError, e.message
   rescue PayoutGateway::PayoutError => e
     record_submission_error!(
       payout,
@@ -76,12 +83,24 @@ class PayoutCreator
     Payout.transaction do
       payout.organization.lock!
       payout.lock!
+      provider_result = attributes.dup
+      withholding_review = false
+      if %w[paid processing].include?(attributes[:status].to_s)
+        begin
+          PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request,
+            allow_recalculation: false)
+        rescue PayoutWithholdingGuard::WithholdingError
+          withholding_review = true
+          attributes = attributes.merge(status: :processing, failure_code: "withholding_review_required",
+            failure_message: "Provider outcome needs withholding review before payment can be recorded")
+        end
+      end
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
       terminal = payout.status_paid? || payout.status_failed? || payout.status_reversed?
       incoming_paid = attributes[:status].to_s == "paid"
       same_transfer = payout.provider_payout_id == attributes[:provider_payout_id]
       conflict = terminal && incoming_paid && (payout.status_failed? || !same_transfer)
-      action = "payout.#{attributes.fetch(:status)}"
+      action = withholding_review ? "payout.withholding_review_required" : "payout.#{attributes.fetch(:status)}"
       if payout.status_held?
         if incoming_paid
           payout.update!(provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
@@ -108,13 +127,24 @@ class PayoutCreator
       elsif terminal
         action = "payout.late_result_ignored"
       else
+        shortfall = incoming_paid && payout.status_processing? ? PayeeWithholdingBalance.shortfall_for(payout) : 0
+        attributes = attributes.merge(under_withheld_cents: shortfall) if shortfall.positive?
         payout.update!(attributes)
+        if shortfall.positive?
+          AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
+            organization: payout.organization, before_data: { under_withheld_cents: 0 },
+            after_data: { under_withheld_cents: shortfall }, request: request)
+        end
+        if incoming_paid && payout.carried_withholding_cents.positive?
+          AuditLogger.record!(action: "payout.under_withholding_collected", auditable: payout, actor: actor,
+            organization: payout.organization, metadata: { amount_cents: payout.carried_withholding_cents }, request: request)
+        end
       end
       AuditLogger.record!(action: action, auditable: payout, actor: actor,
         organization: payout.organization, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
         metadata: { amount_cents: payout.amount_cents, settlement_id: settlement.id,
-          failure_code: attributes[:failure_code], provider_result: attributes }, request: request)
+          failure_code: attributes[:failure_code], provider_result: provider_result }, request: request)
     end
   end
 
@@ -138,10 +168,15 @@ class PayoutCreator
         raise PayoutError, "Financial activity changed; finalize a new settlement before paying out"
       end
 
-      account = settlement.organization.payout_account
-      raise PayoutError, "A payout-ready connected account is required" unless account
       tax = settlement.organization.organizer_tax_information
-      raise PayoutError, "A certified W-9 is required before payout" unless tax&.certified_at
+      withholding_review = tax.nil? || tax.certified_at.nil? || tax.backup_withholding_required?
+      account = settlement.organization.payout_account
+      if account.nil? && withholding_review
+        account = settlement.organization.connected_accounts.find do |candidate|
+          candidate.externally_ready? && candidate.active_payment_readiness_approval.present?
+        end
+      end
+      raise PayoutError, "A payout-ready connected account is required" unless account
 
       available = [
         settlement.available_to_payout_cents,
@@ -150,6 +185,9 @@ class PayoutCreator
       amount = requested_amount_cents || available
       raise PayoutError, "Payout amount must be positive" unless amount.positive?
       raise PayoutError, "Payout amount exceeds the available balance" if amount > available
+
+      withholding = BackupWithholding.for_payout(organization: settlement.organization,
+        amount_cents: amount, actor: actor, override_reason: withholding_override_reason)
 
       payout = settlement.payouts.create!(
         organization: settlement.organization,
@@ -162,13 +200,21 @@ class PayoutCreator
         status: :pending,
         payee_snapshot: account.check_payee,
         payee_approval_digest: account.provider == "check" ? account.readiness_state_digest : nil,
-        tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax.tin,
-        tax_approval_digest: account.readiness_state_digest
+        tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax&.tin,
+        tax_approval_digest: account.readiness_state_digest,
+        **withholding
       )
+      PayoutLineAllocator.record!(payout)
+      if withholding[:withholding_override_reason].present?
+        AuditLogger.record!(action: "payout.backup_withholding_overridden", auditable: payout, actor: actor,
+          organization: payout.organization, metadata: { reason: withholding[:withholding_override_reason] }, request: request)
+      end
       [payout, true]
     end
   rescue ActiveRecord::RecordNotUnique
     [validate_idempotent_replay!(Payout.find_by!(idempotency_key: idempotency_key)), false]
+  rescue BackupWithholding::WithholdingError => e
+    raise PayoutError, e.message
   end
 
   def validate_idempotent_replay!(payout)

@@ -148,6 +148,25 @@ RSpec.describe Settlements::Finalizer do
     expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
   end
 
+  it "reserves the gross payout and records cent-exact withholding and net disbursement" do
+    record_sale!(event)
+    create(:connected_account, organization: organization)
+    organization.organizer_tax_information.update!(backup_withholding_flag: true,
+      backup_withholding_reason: "CPA requested backup withholding")
+    settlement = described_class.call(event: event, actor: actor)
+
+    expect { PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "tax-block") }
+      .to raise_error(PayoutCreator::PayoutError, /blocks this payout/)
+    expect(organization.payouts).to be_empty
+
+    SiteSetting.instance.update!(backup_withholding_mode: "withhold")
+    payout = PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "tax-withheld")
+
+    expect(payout).to be_status_paid
+    expect(payout).to have_attributes(amount_cents: 4817, withheld_cents: 1156, disbursement_cents: 3661)
+    expect(settlement.available_to_payout_cents).to eq(0)
+  end
+
   it "calculates organization balance from only the latest finalized settlement per event" do
     record_sale!(event)
     described_class.call(event: event, actor: actor)

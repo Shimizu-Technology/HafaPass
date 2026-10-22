@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -106,6 +106,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.index ["organization_id"], name: "index_admission_manifests_on_organization_id"
     t.check_constraint "ticket_count >= 0", name: "admission_manifests_ticket_count_nonnegative"
     t.check_constraint "version > 0", name: "admission_manifests_version_positive"
+  end
+
+  create_table "annual_tax_report_settings", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.integer "year", null: false
+    t.string "form_type", default: "review_required", null: false
+    t.string "jurisdiction", default: "irs", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "payee_key", default: "all", null: false
+    t.index ["organization_id", "year", "payee_key"], name: "idx_annual_tax_settings_on_payee_year", unique: true
+    t.index ["organization_id"], name: "index_annual_tax_report_settings_on_organization_id"
+    t.check_constraint "form_type::text = ANY (ARRAY['review_required'::character varying::text, '1099-nec'::character varying::text, '1099-misc'::character varying::text, '1099-k'::character varying::text, 'none'::character varying::text])", name: "annual_tax_report_form_valid"
+    t.check_constraint "jurisdiction::text = ANY (ARRAY['irs'::character varying::text, 'guam_drt'::character varying::text])", name: "annual_tax_report_jurisdiction_valid"
+  end
+
+  create_table "annual_tax_thresholds", force: :cascade do |t|
+    t.integer "year", null: false
+    t.string "form_type", null: false
+    t.integer "amount_cents", null: false
+    t.integer "transaction_count"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["year", "form_type"], name: "index_annual_tax_thresholds_on_year_and_form_type", unique: true
   end
 
   create_table "apple_wallet_registrations", force: :cascade do |t|
@@ -1110,7 +1134,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.bigint "platform_invitation_id"
     t.datetime "reconciled_at"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
-    t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY ((ARRAY['waitlist_notification'::character varying, 'waitlist_offer'::character varying])::text[])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
+    t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY (ARRAY[('waitlist_notification'::character varying)::text, ('waitlist_offer'::character varying)::text])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
     t.index ["idempotency_key"], name: "index_message_deliveries_on_idempotency_key", unique: true
     t.index ["order_id", "created_at"], name: "index_message_deliveries_on_order_id_and_created_at"
@@ -1367,7 +1391,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.string "certification_version", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "tin_match_status", default: "unverified", null: false
+    t.integer "tin_match_result_code"
+    t.datetime "tin_matched_at"
+    t.string "b_notice_stage"
+    t.datetime "b_notice_sent_at"
+    t.date "b_notice_response_due_on"
+    t.boolean "backup_withholding_flag", default: false, null: false
+    t.text "backup_withholding_reason"
+    t.date "irs_notice_received_on"
+    t.date "b_notice_send_due_on"
+    t.date "first_b_notice_received_on"
+    t.string "irs_validation_evidence_type"
+    t.date "irs_validation_recorded_on"
+    t.bigint "irs_validation_admin_id"
+    t.string "irs_validation_document_reference"
+    t.string "tin_digest"
+    t.string "validation_identity_digest"
+    t.string "tin_match_identity_digest"
+    t.string "b_notice_identity_digest"
     t.index ["organization_id"], name: "index_organizer_tax_informations_on_organization_id", unique: true
+    t.index ["tin_digest"], name: "index_organizer_tax_informations_on_tin_digest"
+    t.check_constraint "tin_match_status::text = ANY (ARRAY['unverified'::character varying::text, 'matched'::character varying::text, 'missing_or_invalid'::character varying::text, 'not_issued'::character varying::text, 'mismatch'::character varying::text, 'invalid_request'::character varying::text, 'duplicate'::character varying::text, 'matched_ssn'::character varying::text, 'matched_ein'::character varying::text, 'matched_both'::character varying::text])", name: "tax_information_tin_match_status_valid"
   end
 
   create_table "payment_events", force: :cascade do |t|
@@ -1445,6 +1490,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payments_status_valid"
   end
 
+  create_table "payout_check_adjustments", force: :cascade do |t|
+    t.bigint "payout_id", null: false
+    t.bigint "created_by_user_id", null: false
+    t.integer "amount_cents", null: false
+    t.text "reason", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_user_id"], name: "index_payout_check_adjustments_on_created_by_user_id"
+    t.index ["payout_id"], name: "index_payout_check_adjustments_on_payout_id"
+    t.check_constraint "amount_cents <> 0", name: "payout_check_adjustments_nonzero"
+  end
+
+  create_table "payout_line_allocations", force: :cascade do |t|
+    t.bigint "payout_id", null: false
+    t.bigint "order_item_id", null: false
+    t.integer "amount_cents", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["order_item_id"], name: "index_payout_line_allocations_on_order_item_id"
+    t.index ["payout_id", "order_item_id"], name: "index_payout_line_allocations_on_payout_id_and_order_item_id", unique: true
+    t.index ["payout_id"], name: "index_payout_line_allocations_on_payout_id"
+    t.check_constraint "amount_cents >= 0", name: "payout_line_allocations_nonnegative"
+  end
+
   create_table "payouts", force: :cascade do |t|
     t.integer "amount_cents", null: false
     t.bigint "connected_account_id", null: false
@@ -1468,17 +1537,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.text "tax_information_tin"
     t.string "tax_approval_digest"
     t.string "held_from_status"
+    t.integer "withheld_cents", default: 0, null: false
+    t.integer "withholding_rate_bps", default: 0, null: false
+    t.string "withholding_reason"
+    t.text "withholding_override_reason"
+    t.integer "under_withheld_cents", default: 0, null: false
+    t.integer "carried_withholding_cents", default: 0, null: false
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
     t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
     t.index ["organization_id"], name: "index_payouts_on_organization_id"
     t.index ["provider", "provider_payout_id"], name: "idx_payouts_unique_provider_id", unique: true, where: "(provider_payout_id IS NOT NULL)"
     t.index ["settlement_id"], name: "index_payouts_on_settlement_id"
+    t.check_constraint "(withheld_cents + carried_withholding_cents) <= amount_cents", name: "payouts_total_withholding_within_gross"
     t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
+    t.check_constraint "carried_withholding_cents >= 0", name: "payouts_carried_withholding_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "payouts_currency_length"
     t.check_constraint "jsonb_typeof(payee_snapshot) = 'object'::text", name: "payouts_payee_snapshot_object"
     t.check_constraint "jsonb_typeof(tax_information_snapshot) = 'object'::text", name: "payouts_tax_snapshot_object"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payouts_status_valid"
+    t.check_constraint "under_withheld_cents >= 0", name: "payouts_under_withheld_nonnegative"
+    t.check_constraint "withheld_cents >= 0 AND withheld_cents < amount_cents", name: "payouts_withholding_valid"
   end
 
   create_table "pilot_closeout_reviews", force: :cascade do |t|
@@ -2058,8 +2137,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.string "processing_fee_bearer", default: "platform", null: false
     t.string "payout_schedule_text", default: "within 3 business days after your event", null: false
     t.text "business_mailing_address"
+    t.string "backup_withholding_mode", default: "block", null: false
+    t.integer "backup_withholding_rate_bps", default: 2400, null: false
+    t.jsonb "tax_reporting_thresholds", default: {"1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000}, null: false
     t.integer "fee_notice_days", default: 30, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
+    t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying::text, 'withhold'::character varying::text])", name: "site_settings_backup_withholding_mode_valid"
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
   end
 
@@ -2355,6 +2438,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
     t.check_constraint "scan_credential_version > 0", name: "tickets_scan_version_positive"
   end
 
+  create_table "tin_match_requests", force: :cascade do |t|
+    t.bigint "organizer_tax_information_id", null: false
+    t.string "account_reference", null: false
+    t.datetime "tax_information_updated_at", null: false
+    t.datetime "exported_at", null: false
+    t.datetime "imported_at"
+    t.integer "result_code"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_reference"], name: "index_tin_match_requests_on_account_reference", unique: true
+    t.index ["organizer_tax_information_id"], name: "index_tin_match_requests_on_organizer_tax_information_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "clerk_id", null: false
     t.datetime "created_at", null: false
@@ -2553,6 +2649,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
   add_foreign_key "admission_manifests", "events", on_delete: :restrict
   add_foreign_key "admission_manifests", "organizations", on_delete: :restrict
   add_foreign_key "admission_manifests", "users", column: "generated_by_user_id", on_delete: :restrict
+  add_foreign_key "annual_tax_report_settings", "organizations"
   add_foreign_key "apple_wallet_registrations", "wallet_passes"
   add_foreign_key "audit_logs", "organizations", on_delete: :restrict
   add_foreign_key "audit_logs", "users", column: "actor_user_id", on_delete: :nullify
@@ -2716,12 +2813,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
   add_foreign_key "organizer_sales_export_requests", "events"
   add_foreign_key "organizer_sales_export_requests", "users", column: "actor_user_id"
   add_foreign_key "organizer_tax_informations", "organizations"
+  add_foreign_key "organizer_tax_informations", "users", column: "irs_validation_admin_id"
   add_foreign_key "payment_events", "payments", on_delete: :restrict
   add_foreign_key "payment_events", "webhook_events", on_delete: :restrict
   add_foreign_key "payment_readiness_reviews", "connected_accounts", on_delete: :restrict
   add_foreign_key "payment_readiness_reviews", "payment_readiness_reviews", column: "parent_review_id", on_delete: :restrict
   add_foreign_key "payment_readiness_reviews", "users", column: "actor_user_id", on_delete: :restrict
   add_foreign_key "payments", "orders", on_delete: :restrict
+  add_foreign_key "payout_check_adjustments", "payouts"
+  add_foreign_key "payout_check_adjustments", "users", column: "created_by_user_id"
+  add_foreign_key "payout_line_allocations", "order_items"
+  add_foreign_key "payout_line_allocations", "payouts"
   add_foreign_key "payouts", "connected_accounts", on_delete: :restrict
   add_foreign_key "payouts", "events", on_delete: :restrict
   add_foreign_key "payouts", "organizations", on_delete: :restrict
@@ -2814,6 +2916,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_180200) do
   add_foreign_key "tickets", "pricing_tiers"
   add_foreign_key "tickets", "ticket_types"
   add_foreign_key "tickets", "users", column: "holder_user_id", on_delete: :restrict
+  add_foreign_key "tin_match_requests", "organizer_tax_informations"
   add_foreign_key "venue_layouts", "organizations", on_delete: :restrict
   add_foreign_key "venue_layouts", "venues", on_delete: :restrict
   add_foreign_key "venue_seats", "seating_price_zones", on_delete: :restrict

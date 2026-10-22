@@ -88,6 +88,7 @@ function FinancesSession({ identity }) {
   const [state, setState] = useState({ status: 'loading', data: null, error: null })
   const [exporting, setExporting] = useState(null)
   const [exportError, setExportError] = useState(null)
+  const [statementYear, setStatementYear] = useState(String(new Date().getFullYear()))
   const feeTerms = usePlatformFeeTerms()
   const loadRequest = useRef(null)
 
@@ -192,13 +193,15 @@ function FinancesSession({ identity }) {
   const heldCents = Math.max(0, events.reduce((sum, row) => sum + (row.requestable_cents || 0), 0) - (totals.requestable_cents || 0))
 
   const exportButtons = (
-    <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+    <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
       <button type="button" disabled={Boolean(exporting)} onClick={() => download('orders', '/organizer/finances/orders_export', `${slug}-orders-${today}.csv`)} className="btn-secondary gap-2 whitespace-nowrap !px-4 !py-2.5 text-sm">
         {exporting === 'orders' ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Download aria-hidden="true" className="h-4 w-4" />} Orders CSV
       </button>
       <button type="button" disabled={Boolean(exporting)} onClick={() => download('payouts', '/organizer/finances/payouts_export', `${slug}-payouts-${today}.csv`)} className="btn-secondary gap-2 whitespace-nowrap !px-4 !py-2.5 text-sm">
         {exporting === 'payouts' ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Download aria-hidden="true" className="h-4 w-4" />} Payouts CSV
       </button>
+      <label className="text-xs font-medium text-neutral-700">Statement year<select className="input mt-1" value={statementYear} onChange={e => setStatementYear(e.target.value)}>{Array.from({ length: 8 }, (_, i) => new Date().getFullYear() + 1 - i).map(year => <option key={year}>{year}</option>)}</select></label>
+      <button type="button" disabled={Boolean(exporting)} onClick={() => download('annual', `/organizer/annual_statements/${statementYear}`, `${slug}-annual-statement-${statementYear}.pdf`)} className="btn-secondary gap-2 !px-4 !py-2.5 text-sm"><Download aria-hidden="true" className="h-4 w-4" /> Annual PDF</button>
     </div>
   )
 
@@ -361,7 +364,7 @@ function FinancesSession({ identity }) {
                   </div>
                   <div className="flex shrink-0 items-center gap-3 sm:justify-end">
                     <PayoutStatusBadge status={payout.status} />
-                    <span className="font-semibold tabular-nums text-neutral-950">{money(payout.amount_cents)}</span>
+                    <span className="font-semibold tabular-nums text-neutral-950">{money(payout.disbursement_cents ?? payout.amount_cents)}{payout.withheld_cents > 0 && <span className="block text-xs font-normal text-amber-800">{money(payout.withheld_cents)} withheld</span>}</span>
                   </div>
                 </li>
               ))}

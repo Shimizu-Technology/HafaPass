@@ -18,6 +18,7 @@ const navGroups = [
   ] },
   { label: 'Money', items: [
     { to: '/admin/tax-reports', label: 'Tax reports', icon: ScrollText },
+    { to: '/admin/tax-controls', label: 'Tax controls', icon: ScrollText },
     { to: '/admin/payouts', label: 'Payouts', icon: Landmark },
     { to: '/admin/disputes', label: 'Disputes', icon: Scale },
     { to: '/admin/refund_reconciliation', label: 'Refund issues', icon: RotateCcw },

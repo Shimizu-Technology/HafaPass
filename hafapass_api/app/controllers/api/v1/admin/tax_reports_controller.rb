@@ -17,7 +17,14 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
 
   # Deliberate POST: only this audited action includes complete TINs.
   def preparation_export
-    export_organizers(full_tin: true)
+    full_tin = ActiveModel::Type::Boolean.new.cast(params[:include_full_tins])
+    purpose = params[:purpose].to_s.strip
+    if full_tin && !BackupWithholding.safe_reason?(purpose)
+      error = BackupWithholding.safe_text?(purpose) ?
+        "Full-TIN export requires a 10-1000 character purpose" : BackupWithholding::TIN_WARNING
+      return render json: { error: error }, status: :unprocessable_entity
+    end
+    export_organizers(full_tin: full_tin, purpose: purpose)
   end
 
   def receipts_export
@@ -38,8 +45,7 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
     render json: { error: "Choose a year from 2000 to 2100" }, status: :unprocessable_entity
   end
 
-  def export_organizers(full_tin: false)
-    audit_export!(full_tin ? "1099_preparation_full_tin" : "organizer_payouts")
+  def export_organizers(full_tin: false, purpose: nil)
     # Build sensitive rows before streaming so errors cannot log secret content.
     rows = @report.organizers.map do |row|
       tax = row[:tax_information] || {}
@@ -53,12 +59,14 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
       end
       values
     end
+    audit_export!(full_tin ? "1099_preparation_full_tin" : "organizer_payouts", count: rows.length, purpose: full_tin ? purpose : nil)
     header = full_tin ? ORGANIZER_HEADER + ["full_tin_for_1099_preparation_import_as_text"] : ORGANIZER_HEADER
-    stream_csv(filename: "organizer-#{full_tin ? '1099-preparation' : 'payouts'}-#{@report.year}.csv", header: header, rows: rows)
+    stream_csv(filename: "organizer-#{full_tin ? 'SENSITIVE-FULL-TINS' : 'payouts-masked'}-#{@report.year}.csv", header: header, rows: rows)
   end
 
-  def audit_export!(kind)
+  def audit_export!(kind, count: nil, purpose: nil)
     AuditLogger.record!(action: "tax_report.exported", auditable: current_user, actor: current_user,
-      metadata: { export: kind, year: @report.year, organization_ids: @report.organization_ids }, request: request)
+      metadata: { export: kind, year: @report.year, organization_ids: @report.organization_ids,
+        count: count, purpose: purpose }, request: request)
   end
 end

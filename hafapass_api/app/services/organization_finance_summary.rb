@@ -25,6 +25,8 @@ class OrganizationFinanceSummary
       event_title: payout.event.title,
       settlement_version: payout.settlement.version,
       amount_cents: payout.amount_cents,
+      withheld_cents: payout.withheld_cents,
+      disbursement_cents: payout.disbursement_cents,
       currency: payout.currency,
       status: payout.status,
       provider: payout.provider,

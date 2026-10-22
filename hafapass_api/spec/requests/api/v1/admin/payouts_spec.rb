@@ -18,6 +18,61 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     patch "/api/v1/admin/payouts/#{payout.id}", params: attributes, headers: auth_headers(actor)
   end
 
+  it "records an issued payment after a new withholding flag without rewriting its net" do
+    tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
+    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to have_attributes(status: "paid", withheld_cents: 0,
+      under_withheld_cents: 24)
+  end
+
+  it "rejects TINs in reconciliation references and reasons before audit" do
+    reconcile(payload.merge(evidence: evidence.merge(reference: "bank 012-34-5678")))
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("This looks like a taxpayer ID")
+    expect(AuditLog.where(auditable: payout)).not_to exist
+  end
+
+  it "rejects a TIN in hold-release withholding override reasons" do
+    payout.update!(status: :held, held_from_status: "processing")
+    tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold",
+      params: { withholding_override_reason: "TIN 012-34-5678 was reviewed" }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("This looks like a taxpayer ID")
+    expect(AuditLog.where(auditable: payout, action: "payout.released_from_cancellation_hold")).not_to exist
+  end
+
+  it "rejects a TIN in a manual balance adjustment reason" do
+    post "/api/v1/admin/balance_adjustments",
+      params: { organization_id: organization.id, kind: "manual_credit", amount_cents: 100,
+        reason: "TIN 012-34-5678 was reviewed" }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("This looks like a taxpayer ID")
+    expect(AuditLog.where(action: "balance_adjustment.posted")).not_to exist
+  end
+
+  it "blocks release when a new withholding flag applies" do
+    tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+    payout.update!(status: :held, held_from_status: "processing")
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
+    post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("cancel and reissue")
+    expect(payout.reload).to be_status_held
+  end
+
+  it "routes admin payout requests through the idempotency gate" do
+    post "/api/v1/admin/payouts", params: { settlement_id: settlement.id }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to include("Idempotency-Key")
+
+    post "/api/v1/admin/payouts", params: { settlement_id: settlement.id }, headers: auth_headers(create(:user))
+    expect(response).to have_http_status(:forbidden)
+  end
+
   it "exposes a release-hold action and rejects a stale payout above current payable" do
     payout.update!(status: :held, held_from_status: "processing")
     post "/api/v1/admin/payouts/#{payout.id}/release_hold", headers: auth_headers(admin)
@@ -64,6 +119,30 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
     expect(audit.metadata.fetch("reconciliation")).to eq(evidence.stringify_keys)
     expect(audit.before_data.fetch("status")).to eq("processing")
     expect(audit.after_data.fetch("status")).to eq("paid")
+  end
+
+  it "does not carry a shortfall when an audited override payout is reconciled as paid" do
+    tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS notice received")
+    payout.update!(status: :pending)
+    organization.with_lock do
+      payout.with_lock do
+        PayoutWithholdingGuard.call(payout: payout, actor: admin, override_reason: "CPA approved this payout")
+      end
+    end
+    payout.update!(status: :processing)
+
+    reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
+
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload).to have_attributes(status: "paid", under_withheld_cents: 0)
+    expect(AuditLog.where(auditable: payout, action: "payout.under_withholding_carried")).not_to exist
+  end
+
+  it "accepts a nine-digit bank transfer identifier while screening free-text evidence" do
+    reconcile(payload.merge(provider_payout_id: "012345678"))
+    expect(response).to have_http_status(:ok)
+    expect(payout.reload.provider_payout_id).to eq("012345678")
   end
 
   it "shows cancelled-event buyer liability and requires already-sent evidence through the API" do

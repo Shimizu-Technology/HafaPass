@@ -327,6 +327,22 @@ RSpec.describe "Organizer finances and exports", type: :request do
         "amount" => "100.00", "status" => "paid", "provider_reference" => "po_fixture_1", "statement_version" => "1"))
     end
 
+    it "downloads a masked annual statement only for finance members" do
+      year = Date.current.year
+      tax = organization.organizer_tax_information || create(:organizer_tax_information, organization: organization)
+
+      get "/api/v1/organizer/annual_statements/#{year}", headers: org_headers(owner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.media_type).to eq("application/pdf")
+      expect(response.headers["Cache-Control"]).to include("no-store")
+      expect(response.body).not_to include(tax.tin)
+      expect(AuditLog.where(action: "annual_tax_report.statement_downloaded")).to exist
+
+      get "/api/v1/organizer/annual_statements/#{year}", headers: org_headers(member(:marketer))
+      expect(response).to have_http_status(:forbidden)
+    end
+
     it "denies exports to roles without finance access and to other organizations" do
       marketer = member(:marketer)
       get "/api/v1/organizer/finances/orders_export", headers: org_headers(marketer)
