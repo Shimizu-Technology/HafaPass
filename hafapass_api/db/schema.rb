@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -706,9 +706,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_150000) do
     t.datetime "activated_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index "(1)", name: "one_pending_fee_change", unique: true, where: "(activated_at IS NULL)"
+    t.bigint "preapproval_id"
+    t.string "preapproved_registry_digest"
+    t.datetime "blocked_at"
+    t.string "activation_error"
+    t.index "(1)", name: "one_pending_fee_change", unique: true, where: "((activated_at IS NULL) AND (blocked_at IS NULL))"
+    t.index ["blocked_at"], name: "index_fee_changes_on_blocked_at"
     t.index ["created_by_id"], name: "index_fee_changes_on_created_by_id"
     t.index ["effective_at"], name: "index_fee_changes_on_effective_at"
+    t.index ["preapproval_id"], name: "index_fee_changes_on_preapproval_id"
   end
 
   create_table "fee_components", force: :cascade do |t|
@@ -2613,6 +2619,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_150000) do
   add_foreign_key "fee_change_notices", "fee_changes"
   add_foreign_key "fee_change_notices", "organizations"
   add_foreign_key "fee_change_notices", "users", column: "owner_id"
+  add_foreign_key "fee_changes", "platform_capability_reviews", column: "preapproval_id"
   add_foreign_key "fee_changes", "users", column: "created_by_id"
   add_foreign_key "fee_components", "order_items", on_delete: :restrict
   add_foreign_key "fee_components", "orders", on_delete: :restrict

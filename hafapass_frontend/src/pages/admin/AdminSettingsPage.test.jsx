@@ -13,6 +13,7 @@ const settings = {
   service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform',
   payout_schedule_text: 'within 3 business days after your event',
   fee_notice_days: 30,
+  policy_draft: true, policy_register_approved: true,
   stripe_test_configured: true, stripe_live_configured: true, stripe_live_approved: false,
   environment: 'production', payments_by_mode: { test: 12 },
   payment_mode_readiness: {
@@ -30,7 +31,9 @@ describe('AdminSettingsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('fee_change_preview')
-      ? { affected_organizer_count: 4, minimum_notice_days: 30 } : settings }))
+      ? { affected_organizer_count: 4, owner_email_count: 3,
+        unreachable_organization_ids: [9], unreachable_organizations: [{ id: 9, name: 'Missing Owner Events' }],
+        minimum_notice_days: 30, registry_digest: 'a'.repeat(64) } : settings }))
     apiClient.patch.mockImplementation((_path, body) => Promise.resolve({ data: { ...settings, ...body } }))
   })
 
@@ -62,18 +65,29 @@ describe('AdminSettingsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Save settings' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Schedule fee term changes?' })
-    expect(dialog).toHaveTextContent('4 affected organizers')
+    expect(dialog).toHaveTextContent('4 organizations affected · 3 owners will be emailed')
+    expect(dialog).toHaveTextContent('1 affected organization has no reachable owner')
+    expect(dialog).toHaveTextContent('Missing Owner Events')
+    expect(dialog).toHaveTextContent(`Future policy register digest: ${'a'.repeat(64)}`)
+    expect(apiClient.get).toHaveBeenCalledWith('/admin/settings/fee_change_preview', {
+      params: { service_fee_flat_cents: 75 },
+    })
     expect(dialog).toHaveTextContent('At least 45 days from now')
     expect(dialog).toHaveTextContent('$1.00')
     expect(dialog).toHaveTextContent('$0.75')
     expect(within(dialog).getByTestId('policy-terms-effect')).toHaveTextContent('Every organizer must accept the updated agreement')
-    expect(within(dialog).getByTestId('policy-terms-effect')).toHaveTextContent('needs a new approval')
+    expect(within(dialog).getByTestId('policy-terms-effect')).toHaveTextContent('Approve the exact future terms')
     expect(apiClient.patch).not.toHaveBeenCalled()
     fireEvent.change(within(dialog).getByLabelText(/Effective date and time/), { target: { value: '2027-12-01T12:00' } })
+    expect(within(dialog).getByRole('button', { name: 'Schedule fee change' })).toBeDisabled()
+    await user.click(within(dialog).getByLabelText(/I approve these exact future fee/))
+    await user.click(within(dialog).getByLabelText(/I’m approving these draft policies/))
     await user.click(within(dialog).getByRole('button', { name: 'Schedule fee change' }))
 
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/settings',
-      expect.objectContaining({ service_fee_flat_cents: 75, fee_notice_days: 45, effective_at: expect.any(String) }), expect.anything()))
+      expect.objectContaining({ service_fee_flat_cents: 75, fee_notice_days: 45, effective_at: expect.any(String),
+        future_terms_approved: true, draft_policies_acknowledged: true,
+        approved_registry_digest: 'a'.repeat(64) }), expect.anything()))
     expect(await screen.findByRole('status')).toHaveTextContent('Fee change scheduled')
   })
 

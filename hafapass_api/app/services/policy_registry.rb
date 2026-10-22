@@ -97,9 +97,10 @@ class PolicyRegistry
       Digest::SHA256.hexdigest(JSON.generate(material_terms))
     end
 
-    def registry_digest
+    def registry_digest(material_terms: self.material_terms)
+      ordered_terms = MATERIAL_SETTINGS.to_h { |key| [key, material_terms.fetch(key)] }
       Digest::SHA256.hexdigest(JSON.generate({ "version" => version, "documents" => templates,
-        "material_terms_digest" => material_terms_digest }))
+        "material_terms_digest" => Digest::SHA256.hexdigest(JSON.generate(ordered_terms)) }))
     end
 
     def production_approved?

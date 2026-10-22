@@ -9,8 +9,13 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
   end
 
   def fee_change_preview
-    render json: { affected_organizer_count: FeeChange.affected_organizer_count,
-      minimum_notice_days: SiteSetting.instance.fee_notice_days }
+    settings = SiteSetting.instance
+    proposed_terms = params.permit(*FEE_TERM_FIELDS).to_h
+    render json: FeeChange.notice_preview.merge(
+      minimum_notice_days: settings.fee_notice_days,
+      registry_digest: FeeChange.proposed_registry_digest(settings: settings, attributes: proposed_terms))
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   # PATCH /api/v1/admin/settings
@@ -88,7 +93,9 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       end
       if changed_fee_terms
         FeeChange.schedule!(settings: settings, attributes: requested_fee_terms, effective_at: effective_at,
-          actor: @current_user, request: request)
+          actor: @current_user, request: request, future_terms_approved: params[:future_terms_approved] == true || params[:future_terms_approved] == "true",
+          draft_policies_acknowledged: params[:draft_policies_acknowledged] == true || params[:draft_policies_acknowledged] == "true",
+          approved_registry_digest: params[:approved_registry_digest])
       end
       true
     end
@@ -125,8 +132,11 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
       processing_fee_bearer: settings.processing_fee_bearer,
       payout_schedule_text: settings.payout_schedule_text,
       fee_notice_days: settings.fee_notice_days,
-      affected_organizer_count: FeeChange.affected_organizer_count,
+      policy_draft: PolicyRegistry.draft?,
+      policy_register_approved: PlatformCapabilities.enabled?("policy_register"),
+      **FeeChange.notice_preview,
       pending_fee_change: FeeChange.pending.order(:id).last&.as_json(only: [:id, :old_terms, :new_terms, :effective_at, :created_at]),
+      blocked_fee_change: FeeChange.where.not(blocked_at: nil).order(:blocked_at).last&.as_json(only: [:id, :effective_at, :blocked_at, :activation_error]),
       stripe_test_configured: settings.can_enable_test?,
       stripe_live_configured: settings.stripe_live_configured?,
       stripe_live_approved: settings.can_enable_live?,

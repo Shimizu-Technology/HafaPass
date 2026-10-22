@@ -165,7 +165,9 @@ function AdminSettingsSession({ identity, resourcePath }) {
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(null)
   const [effectiveAt, setEffectiveAt] = useState('')
-  const [affectedCount, setAffectedCount] = useState(null)
+  const [feePreview, setFeePreview] = useState(null)
+  const [futureTermsApproved, setFutureTermsApproved] = useState(false)
+  const [draftPoliciesAcknowledged, setDraftPoliciesAcknowledged] = useState(false)
 
   // `keepForm` re-checks the saved settings (for example payment readiness)
   // without discarding edits the admin has not saved yet.
@@ -207,7 +209,9 @@ function AdminSettingsSession({ identity, resourcePath }) {
     setSaving(true)
     try {
       const response = await apiClient.patch('/admin/settings', {
-        ...changes, ...(feeChanges.length ? { effective_at: new Date(effectiveAt).toISOString() } : {}),
+        ...changes, ...(feeChanges.length ? { effective_at: new Date(effectiveAt).toISOString(),
+          future_terms_approved: futureTermsApproved, draft_policies_acknowledged: draftPoliciesAcknowledged,
+          approved_registry_digest: feePreview.registry_digest } : {}),
       }, request.config)
       if (!request.current()) return
       setSaved(response.data)
@@ -233,8 +237,12 @@ function AdminSettingsSession({ identity, resourcePath }) {
     if (!Object.keys(changes).length) { setNotice('There are no changes to save.'); return }
     if (feeChanges.length) {
       try {
-        const response = await apiClient.get('/admin/settings/fee_change_preview')
-        setAffectedCount(response.data.affected_organizer_count)
+        const response = await apiClient.get('/admin/settings/fee_change_preview', {
+          params: Object.fromEntries(feeChanges.map(field => [field, changes[field]])),
+        })
+        setFeePreview(response.data)
+        setFutureTermsApproved(false)
+        setDraftPoliciesAcknowledged(false)
         setConfirming(feeChanges)
       } catch { setErrors({ form: 'Could not load the affected organizer count. Try again.' }) }
     }
@@ -251,6 +259,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
     <AdminLayout>
       <p className="mb-6 max-w-3xl text-sm text-content-muted">Platform-wide details shown to buyers and organizers. Scheduled fee changes apply only to orders placed on or after their effective date.</p>
       {saved.pending_fee_change && <p role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">A fee change is scheduled for {new Date(saved.pending_fee_change.effective_at).toLocaleString()}. Current fees remain in effect until then.</p>}
+      {saved.blocked_fee_change && <p role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Scheduled fee activation was blocked: {saved.blocked_fee_change.activation_error}. Review the policy text and schedule a corrected change.</p>}
       <FormErrorSummary errors={summaryErrors} title="Check these settings" />
       {errors.form && <p role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{errors.form}</p>}
       {notice && <p role="status" className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</p>}
@@ -335,7 +344,9 @@ function AdminSettingsSession({ identity, resourcePath }) {
       {confirming && <Dialog labelledBy={confirmTitle} busy={saving} onClose={() => setConfirming(null)} className="max-w-lg">
         <h2 id={confirmTitle} className="text-lg font-semibold text-neutral-900">Schedule fee term changes?</h2>
         <p className="mt-2 text-sm text-neutral-700">The new terms apply to orders placed on or after the effective date. Existing orders keep their recorded terms. The change and organizer acknowledgments are audited.</p>
-        <p className="mt-2 font-semibold text-neutral-900">{affectedCount ?? '—'} affected organizers will be notified by email.</p>
+        {saved.policy_register_approved === false && <p role="alert" className="mt-2 text-sm text-red-800">Approve the current policy register in <Link to="/admin/provider-readiness" className="font-semibold underline">provider readiness</Link> before scheduling a fee change.</p>}
+        <p className="mt-2 font-semibold text-neutral-900">{feePreview?.affected_organizer_count ?? '—'} organizations affected · {feePreview?.owner_email_count ?? '—'} owners will be emailed.</p>
+        {feePreview?.unreachable_organizations?.length > 0 && <div role="alert" className="mt-2 text-sm text-red-800"><p>{feePreview.unreachable_organizations.length} affected {feePreview.unreachable_organizations.length === 1 ? 'organization has' : 'organizations have'} no reachable owner:</p><ul className="mt-1 list-disc pl-5">{feePreview.unreachable_organizations.map(organization => <li key={organization.id}>{organization.name}</li>)}</ul></div>}
         <label className="mt-4 block text-sm font-medium text-neutral-900">Effective date and time
           <input type="datetime-local" value={effectiveAt} onChange={event => setEffectiveAt(event.target.value)} className="input mt-1" required />
           <span className="mt-1 block text-xs text-content-muted">At least {form.fee_notice_days} days from now. Time is interpreted in your browser’s time zone.</span>
@@ -344,7 +355,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
           <p className="font-semibold">This also changes the organizer agreement.</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
             <li>Every organizer must accept the updated agreement before publishing again.</li>
-            <li>Any production policy register approval stops applying; it needs a new approval in <Link to="/admin/provider-readiness" className="font-semibold underline">provider readiness</Link>.</li>
+            <li>The current policy approval applies until this change activates. Approve the exact future terms below so checkout stays available.</li>
           </ul>
         </div>
         <dl className="mt-4 space-y-3 text-sm">
@@ -355,9 +366,12 @@ function AdminSettingsSession({ identity, resourcePath }) {
             </div>
           ))}
         </dl>
+        <p className="mt-4 break-all text-xs text-neutral-600">Future policy register digest: <code>{feePreview?.registry_digest}</code></p>
+        <label className="mt-4 flex gap-2 text-sm text-neutral-900"><input type="checkbox" checked={futureTermsApproved} onChange={event => setFutureTermsApproved(event.target.checked)} />I approve these exact future fee and policy terms at the effective date.</label>
+        {saved.policy_draft !== false && <label className="mt-2 flex gap-2 text-sm text-neutral-900"><input type="checkbox" checked={draftPoliciesAcknowledged} onChange={event => setDraftPoliciesAcknowledged(event.target.checked)} />I’m approving these draft policies for launch before legal review. HåfaPass will update them after counsel reviews.</label>}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" disabled={saving} onClick={() => setConfirming(null)} className="btn-secondary">Keep editing</button>
-          <button type="button" disabled={saving || !effectiveAt || new Date(effectiveAt).getTime() < Date.now() + Number(form.fee_notice_days) * 86400000} onClick={save} className="btn-primary">{saving ? 'Scheduling…' : 'Schedule fee change'}</button>
+          <button type="button" disabled={saving || saved.policy_register_approved === false || !feePreview?.registry_digest || !futureTermsApproved || (saved.policy_draft !== false && !draftPoliciesAcknowledged) || !effectiveAt || new Date(effectiveAt).getTime() < Date.now() + Number(form.fee_notice_days) * 86400000} onClick={save} className="btn-primary">{saving ? 'Scheduling…' : 'Schedule fee change'}</button>
         </div>
       </Dialog>}
     </AdminLayout>

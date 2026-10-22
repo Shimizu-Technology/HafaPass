@@ -11,6 +11,9 @@ default: &default
   stripe_fee_recovery:
     class: SweepPendingStripeFeesJob
     schedule: every 5 minutes
+  fee_change_activation_sweep:
+    class: ActivateFeeChangeJob
+    schedule: every minute
   marketplace_retention:
     class: PurgeMarketplaceAnalyticsJob
     schedule: every day at 00:00 UTC

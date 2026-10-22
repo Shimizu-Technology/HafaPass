@@ -11,6 +11,8 @@ module Commerce
     PAID_SALES_OPEN_SOON = "Paid ticket sales open soon"
     class CheckoutError < StandardError; end
     class PriceChanged < CheckoutError; end
+    class RefreshRequired < PriceChanged; end
+    LEGACY_REFRESH_WINDOW_DAYS = Integer(ENV.fetch("FEE_CHANGE_LEGACY_REFRESH_DAYS", "7"))
 
     Result = Data.define(:order, :payment, :payment_intent, :guest_access_token)
 
@@ -106,6 +108,10 @@ module Commerce
         validate_registration!
         promoter = locked_promoter
         totals = calculate_totals(selections, catalog_selections)
+        if @expected_total_cents.blank? && FeeChange.where.not(activated_at: nil)
+            .where("activated_at >= ?", LEGACY_REFRESH_WINDOW_DAYS.days.ago).exists?
+          raise RefreshRequired, "Prices were updated — please refresh the page to see the current total."
+        end
         if @expected_total_cents.present? && @expected_total_cents.to_s != totals[:total_cents].to_s
           raise PriceChanged, "Ticket price changed. Review the updated total before paying."
         end

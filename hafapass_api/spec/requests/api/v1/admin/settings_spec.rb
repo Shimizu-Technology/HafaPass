@@ -126,7 +126,9 @@ RSpec.describe "Admin settings", type: :request do
   end
 
   it "reports configuration and evidence approval separately" do
+    allow(PlatformCapabilities).to receive(:configured?).and_call_original
     allow(PlatformCapabilities).to receive(:configured?).with("stripe_live").and_return(true)
+    allow(PlatformCapabilities).to receive(:enabled?).and_call_original
     allow(PlatformCapabilities).to receive(:enabled?).with("stripe_live").and_return(false)
 
     get "/api/v1/admin/settings", headers: auth_headers(admin)
@@ -137,9 +139,15 @@ RSpec.describe "Admin settings", type: :request do
 
   describe "fee terms" do
     it "schedules the fee, processing bearer and payout terms with an audit record" do
+      PlatformCapabilityReviews::Manager.quick_approve!(capability: "policy_register", actor: admin,
+        draft_policies_acknowledged: true)
       patch "/api/v1/admin/settings", params: { service_fee_percent: "4.5", service_fee_flat_cents: 75,
         processing_fee_bearer: "organizer", payout_schedule_text: "  within 5 business days  ",
-        effective_at: 31.days.from_now.iso8601 }, headers: auth_headers(admin)
+        effective_at: 31.days.from_now.iso8601, future_terms_approved: true,
+        draft_policies_acknowledged: true,
+        approved_registry_digest: FeeChange.proposed_registry_digest(settings: SiteSetting.instance, attributes: {
+          service_fee_percent: "4.5", service_fee_flat_cents: 75, processing_fee_bearer: "organizer",
+          payout_schedule_text: "  within 5 business days  " }) }, headers: auth_headers(admin)
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("service_fee_percent" => "5.0", "service_fee_flat_cents" => 100,

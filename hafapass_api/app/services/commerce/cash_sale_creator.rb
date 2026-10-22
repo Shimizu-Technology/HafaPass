@@ -41,7 +41,8 @@ module Commerce
           source: "box_office",
           payment_method: "door_cash",
           cash_sale_key: key,
-          cash_sale_request_digest: key ? request_digest : nil
+          cash_sale_request_digest: key ? request_digest : nil,
+          expected_total_cents: parameters["expected_total_cents"]
         ).order
         Result.new(order: order, replayed: false)
       end
@@ -69,7 +70,7 @@ module Commerce
 
     def request_digest
       @request_digest ||= begin
-        requested = parameters.slice("line_items", "buyer_name", "buyer_email", "buyer_phone", "payment_method")
+        requested = parameters.slice("line_items", "buyer_name", "buyer_email", "buyer_phone", "payment_method", "expected_total_cents")
         requested["seat_hold_digest"] = Digest::SHA256.hexdigest(parameters["seat_hold_token"].to_s)
         identity = { "event_id" => event.id, "organization_id" => event.organization_id, "user_id" => user.id,
                      "request" => requested }

@@ -6,8 +6,14 @@ class OgController < ApplicationController
   def event
     event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_visible)
 
-    title = event.title
-    description = (event.short_description || event.description || "Get tickets on HåfaPass").truncate(160)
+    fee_terms = Commerce::ServiceFee.terms
+    starting_price = event.ticket_types.select { |ticket_type| ticket_type.on_sale? && ticket_type.available_quantity.positive? }.map do |ticket_type|
+      Commerce::ServiceFee.for_event(event, ticket_type.current_price_cents, terms: fee_terms).all_in_price_cents
+    end.min
+    price_text = starting_price && "From #{UsdMoney.format_cents(starting_price)} (includes fees)"
+    title = [event.title, price_text].compact.join(" · ")
+    description = [price_text, event.short_description || event.description || "Get tickets on HåfaPass"]
+      .compact.join(" · ").truncate(160)
     image_url = event.cover_image_url || "#{PublicSiteUrl.base}/og-default.jpg"
     canonical_url = PublicSiteUrl.event(event)
 

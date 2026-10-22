@@ -113,6 +113,8 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     render json: response_payload, status: :created
+  rescue Commerce::OrderCreator::RefreshRequired => e
+    render_checkout_rejection(e.message, status: :conflict, code: "price_changed")
   rescue Commerce::OrderCreator::PriceChanged => e
     render_checkout_rejection(e.message, status: :unprocessable_entity, code: "price_changed")
   rescue Commerce::OrderCreator::CheckoutError, Commerce::PaymentRecovery::RecoveryError => e

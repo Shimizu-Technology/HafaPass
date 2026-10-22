@@ -353,8 +353,13 @@ RSpec.describe "Admin operations screens", type: :request do
       expect(general.after_data).to eq("platform_email" => "help@hafapass.test")
       expect(AuditLog.where(action: %w[site_settings.fee_terms_updated site_settings.payment_mode_changed])).not_to exist
 
+      PlatformCapabilityReviews::Manager.quick_approve!(capability: "policy_register", actor: admin,
+        draft_policies_acknowledged: true)
       patch "/api/v1/admin/settings", params: { payment_mode: "simulate", service_fee_flat_cents: 75,
-        effective_at: 31.days.from_now.iso8601 }, headers: headers
+        effective_at: 31.days.from_now.iso8601, future_terms_approved: true,
+        draft_policies_acknowledged: true,
+        approved_registry_digest: FeeChange.proposed_registry_digest(settings: SiteSetting.instance,
+          attributes: { service_fee_flat_cents: 75 }) }, headers: headers
       expect(AuditLog.where(action: "site_settings.updated").count).to eq(1)
       expect(AuditLog.find_by!(action: "site_settings.fee_terms_scheduled").after_data).to include("service_fee_flat_cents" => 75)
       expect(AuditLog.where(action: "site_settings.payment_mode_changed")).not_to exist
