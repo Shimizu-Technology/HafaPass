@@ -169,6 +169,20 @@ RSpec.describe "Recording a check payout", type: :request do
     expect(report.row).to include(withheld_cents: 2000, net_disbursed_cents: 10_000)
   end
 
+  it "measures a recorded shortfall at the current withholding rate without changing the payout amount" do
+    tax = organization.organizer_tax_information
+    tax.update!(backup_withholding_flag: true, backup_withholding_reason: "IRS withholding notice")
+    issued = create(:payout, organization: organization, event: event, settlement: settlement,
+      connected_account: account, amount_cents: 10_000, status: :processing,
+      payee_snapshot: account.check_payee, payee_approval_digest: account.readiness_state_digest)
+
+    SiteSetting.instance.update!(backup_withholding_rate_bps: 2800)
+    expect(PayeeWithholdingBalance.shortfall_for(issued)).to eq(2800)
+    SiteSetting.instance.update!(backup_withholding_rate_bps: 2400)
+    expect(PayeeWithholdingBalance.shortfall_for(issued)).to eq(2400)
+    expect(issued.reload).to have_attributes(amount_cents: 10_000, withheld_cents: 0)
+  end
+
   it "reverses a paid check without changing its carry and excludes that carry from annual withholding" do
     tax = organization.organizer_tax_information
     issued = create(:payout, organization: organization, event: event, settlement: settlement,

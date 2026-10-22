@@ -10,8 +10,13 @@ class AnnualPayeeReport
   def self.payee_key_for(payout)
     snapshot = payout.tax_information_snapshot.to_h
     name = snapshot["legal_name"].presence || payout.payee_snapshot.to_h["payee_name"].to_s
-    OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base,
-      "#{name}\0#{payout.tax_information_tin}")
+    identity_key(name, payout.tax_information_tin)
+  end
+
+  # Single source for the payee identity key so reports and withholding
+  # carry-forward always group the same payee together.
+  def self.identity_key(legal_name, tin)
+    OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, "#{legal_name}\0#{tin}")
   end
 
   def self.for_organization(organization:, year:)

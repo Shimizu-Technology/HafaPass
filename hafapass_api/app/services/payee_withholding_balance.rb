@@ -21,9 +21,7 @@ class PayeeWithholdingBalance
   def self.for_tax(tax)
     return 0 unless tax
 
-    key = OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base,
-      "#{tax.legal_name}\0#{tax.tin}")
-    outstanding(organization: tax.organization, key: key)
+    outstanding(organization: tax.organization, key: AnnualPayeeReport.identity_key(tax.legal_name, tax.tin))
   end
 
   def self.shortfall_for(payout)
